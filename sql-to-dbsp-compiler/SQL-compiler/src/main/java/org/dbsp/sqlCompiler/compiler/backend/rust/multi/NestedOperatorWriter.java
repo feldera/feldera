@@ -159,6 +159,8 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         this.builder()
                 .append(RustWriter.COMMON_PREAMBLE)
                 .append(RustWriter.STANDARD_PREAMBLE);
+        if (!useHandles)
+            this.builder().append(RustWriter.CATALOG_PREAMBLE);
         ToRustVisitor visitor = new ToRustVisitor(
                 compiler, this.builder(), this.circuit.metadata, new ProjectDeclarations(), this.materializations)
                 .withPreferHash(true);

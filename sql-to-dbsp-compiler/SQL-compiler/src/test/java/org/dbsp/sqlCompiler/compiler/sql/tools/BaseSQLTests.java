@@ -196,17 +196,21 @@ public class BaseSQLTests {
         this.statementsFailingInCompilation(statements, substring, false);
     }
 
+    /** Cargo features that make the optional dependencies of the 'temp' crate available. */
+    static final String OPTIONAL_FEATURES = "catalog,adapterlib";
+
     public static void compileAndTestRust(boolean quiet) throws IOException, InterruptedException {
         if (!BaseSQLTests.skipRust) {
             BaseSQLTests.setupCargoLock();
-            Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, quiet);
+            Utilities.compileAndTestRust(
+                    BaseSQLTests.RUST_DIRECTORY, quiet, "--features", OPTIONAL_FEATURES);
         }
     }
 
     public static void compileAndCheckRust(boolean quiet) throws IOException, InterruptedException {
         if (!BaseSQLTests.skipRust) {
             BaseSQLTests.setupCargoLock();
-            Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, quiet);
+            Utilities.compileAndCheckRust(BaseSQLTests.RUST_DIRECTORY, quiet, OPTIONAL_FEATURES);
         }
     }
 
@@ -317,6 +321,7 @@ public class BaseSQLTests {
             executionDirectory = ".";
             stubsDir = Paths.get(directory);
             createEmptyStubs();
+            Utilities.createEmptyFile(Paths.get(directory, DBSPCompiler.UDF_FILE_NAME));
         } else {
             directory = RUST_MULTI_DIRECTORY;
             executionDirectory = "../..";
@@ -365,18 +370,21 @@ public class BaseSQLTests {
             } else {
                 BaseSQLTests.setupCargoLock();
             }
+            boolean catalogFeature = !multiCrates && !compiler.options.ioOptions.emitHandles;
+            String features = catalogFeature ? "catalog" : "";
             if (check) {
-                Utilities.compileAndCheckRust(directory, true, testCrate);
+                Utilities.compileAndCheckRust(directory, true, features, testCrate);
             } else {
-                String[] extraArgs;
-                if (testCrate.isEmpty())
-                    extraArgs = new String[] {};
-                else {
-                    extraArgs = new String[2];
-                    extraArgs[0] = "--package";
-                    extraArgs[1] = testCrate;
+                List<String> extraArgs = new ArrayList<>();
+                if (!features.isEmpty()) {
+                    extraArgs.add("--features");
+                    extraArgs.add(features);
                 }
-                Utilities.compileAndTestRust(directory, true, extraArgs);
+                if (!testCrate.isEmpty()) {
+                    extraArgs.add("--package");
+                    extraArgs.add(testCrate);
+                }
+                Utilities.compileAndTestRust(directory, true, extraArgs.toArray(new String[0]));
             }
         }
 

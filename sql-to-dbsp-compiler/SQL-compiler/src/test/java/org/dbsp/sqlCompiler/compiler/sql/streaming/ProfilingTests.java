@@ -51,8 +51,9 @@ public class ProfilingTests extends StreamingTestBase {
             Utilities.deleteFile(outFilePath.toFile(), true);
             return Linq.map(split, Long::parseLong, Long.class);
         } finally {
-            File mainFile = new File(mainFilePath);
-            // Utilities.deleteFile(mainFile, true);
+            // Cargo treats a leftover src/main.rs as a bin target, and this one has no
+            // 'fn main', so leaving it behind breaks 'cargo check' in every later test
+            Utilities.deleteFile(file, true);
         }
     }
 

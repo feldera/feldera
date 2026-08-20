@@ -29,7 +29,6 @@ import org.junit.Test;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.PrintWriter;
@@ -949,22 +948,9 @@ public class MetadataTests extends BaseSQLTests {
                 }]');
                 CREATE MATERIALIZED VIEW V AS SELECT * FROM T;""";
 
-        // Save a copy of cargo.toml
-        Path cargo = Paths.get(RUST_DIRECTORY, "..", "Cargo.toml");
-        Path cargoBackup = Paths.get(RUST_DIRECTORY, "..", "Cargo.toml.bak");
+        // The UDF names adapterlib, which the 'adapterlib' feature of the test crate supplies
         File udf = Paths.get(RUST_DIRECTORY, DBSPCompiler.UDF_FILE_NAME).toFile();
         try {
-            Files.copy(cargo, cargoBackup, StandardCopyOption.REPLACE_EXISTING);
-            String cargoContents = Utilities.readFile(cargo);
-            cargoContents = cargoContents.replace("[dependencies]",
-                    """
-                            [dependencies]
-                            feldera-adapterlib = { path = "../../crates/adapterlib" }
-                            """);
-            PrintWriter p = new PrintWriter(cargo.toFile(), StandardCharsets.UTF_8);
-            p.write(cargoContents);
-            p.close();
-
             PrintWriter udfWriter = new PrintWriter(udf, StandardCharsets.UTF_8);
             udfWriter.println("""
                     use feldera_adapterlib::format::{ParseError, Splitter};
@@ -1006,10 +992,7 @@ public class MetadataTests extends BaseSQLTests {
                 throw new RuntimeException(messages.toString());
             BaseSQLTests.compileAndTestRust(false);
         } finally {
-            // Restore cargo.toml
             cleanupUdf();
-            Files.copy(cargoBackup, cargo, StandardCopyOption.REPLACE_EXISTING);
-            Utilities.deleteFile(cargoBackup.toFile(), true);
         }
     }
 
@@ -1026,22 +1009,9 @@ public class MetadataTests extends BaseSQLTests {
                    "config": {}
                 }]') AS SELECT * FROM T;""";
 
-        // Save a copy of cargo.toml
-        Path cargo = Paths.get(RUST_DIRECTORY, "..", "Cargo.toml");
-        Path cargoBackup = Paths.get(RUST_DIRECTORY, "..", "Cargo.toml.bak");
-        File udf = Paths.get(RUST_DIRECTORY, "udf.rs").toFile();
+        // The UDF names adapterlib, which the 'adapterlib' feature of the test crate supplies
+        File udf = Paths.get(RUST_DIRECTORY, DBSPCompiler.UDF_FILE_NAME).toFile();
         try {
-            Files.copy(cargo, cargoBackup, StandardCopyOption.REPLACE_EXISTING);
-            String cargoContents = Utilities.readFile(cargo);
-            cargoContents = cargoContents.replace("[dependencies]",
-                    """
-                            [dependencies]
-                            feldera-adapterlib = { path = "../../crates/adapterlib" }
-                            """);
-            PrintWriter p = new PrintWriter(cargo.toFile(), StandardCharsets.UTF_8);
-            p.write(cargoContents);
-            p.close();
-
             PrintWriter udfWriter = new PrintWriter(udf, StandardCharsets.UTF_8);
             udfWriter.println("""
                     use feldera_adapterlib::format::{ParseError, Splitter};
@@ -1078,13 +1048,9 @@ public class MetadataTests extends BaseSQLTests {
             if (messages.errorCount() > 0)
                 throw new RuntimeException(messages.toString());
             BaseSQLTests.compileAndTestRust(false);
-            // Truncate udf file to 0 bytes
-            FileWriter writer = new FileWriter(udf);
-            writer.close();
         } finally {
-            // Restore cargo.toml
-            Files.copy(cargoBackup, cargo, StandardCopyOption.REPLACE_EXISTING);
-            Utilities.deleteFile(cargoBackup.toFile(), true);
+            // A udf.rs left behind here would break every later test that builds this crate
+            cleanupUdf();
         }
     }
 

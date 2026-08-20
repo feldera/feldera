@@ -227,6 +227,8 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
     public void write(DBSPCompiler compiler) {
         this.builder().append(COMMON_PREAMBLE);
         this.builder().append(STANDARD_PREAMBLE);
+        if (!compiler.options.ioOptions.emitHandles)
+            this.builder().append(CATALOG_PREAMBLE);
         this.builder().append(ALLOC_PREAMBLE);
         Set<String> deps = new HashSet<>(this.dependencies);
         List<String> sorted = Linq.list(deps);
