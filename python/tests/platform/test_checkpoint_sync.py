@@ -336,29 +336,51 @@ class TestCheckpointSync(SharedTestPipeline):
         )
 
     def _wait_for_automated_sync(self, chk_uuid=None, chk_steps=None):
-        """Poll until the periodic sync has uploaded a checkpoint at least as recent as *chk_uuid*."""
+        """Poll until the periodic sync has uploaded a checkpoint at least as recent as *chk_uuid*.
+
+        Reads the raw sync status rather than
+        `Pipeline.last_successful_checkpoint_sync`, which raises the same
+        `RuntimeError` whether the sync failed, was never attempted, or is still
+        in flight.  A timeout here reports the last status and the checkpoints
+        that were available, since the interesting failures are a `failure` the
+        sync kept retrying and a status that reports nothing at all.
+        """
+        last_status = None
 
         def checkpoint_sync_completed() -> bool:
-            try:
-                synced = self.pipeline.last_successful_checkpoint_sync()
-                print("Automatically synced checkpoint UUID:", synced, file=sys.stderr)
-                if synced is None:
-                    return False
-                if chk_uuid is None:
-                    return True
-                s_steps = self._checkpoint_steps(synced)
-                if chk_steps is not None and s_steps is not None:
-                    return s_steps >= chk_steps
-                return UUID(str(synced)) >= UUID(str(chk_uuid))
-            except RuntimeError:
+            nonlocal last_status
+            last_status = self.pipeline.client.sync_checkpoint_status(
+                self.pipeline.name
+            )
+            print(f"Automated sync status: {last_status}", file=sys.stderr)
+            uuids = [
+                UUID(u)
+                for u in (last_status.get("success"), last_status.get("periodic"))
+                if u is not None
+            ]
+            if not uuids:
                 return False
+            synced = max(uuids)
+            if chk_uuid is None:
+                return True
+            s_steps = self._checkpoint_steps(synced)
+            if chk_steps is not None and s_steps is not None:
+                return s_steps >= chk_steps
+            return synced >= UUID(str(chk_uuid))
 
-        wait_for_condition(
-            "automated checkpoint sync completes",
-            checkpoint_sync_completed,
-            timeout_s=30.0,
-            poll_interval_s=0.5,
-        )
+        try:
+            wait_for_condition(
+                "automated checkpoint sync completes",
+                checkpoint_sync_completed,
+                timeout_s=30.0,
+                poll_interval_s=0.5,
+            )
+        except TimeoutError as e:
+            chks = [chk.to_dict() for chk in self.pipeline.checkpoints()]
+            raise TimeoutError(
+                f"{e}; waited for {chk_uuid} (steps {chk_steps}),"
+                f" last sync status {last_status}, checkpoints {chks}"
+            ) from e
 
     def _sync_and_verify(self, chk_uuid=None, chk_steps=None):
         """Trigger a manual sync and assert it covers *chk_uuid*. Returns the synced UUID."""
