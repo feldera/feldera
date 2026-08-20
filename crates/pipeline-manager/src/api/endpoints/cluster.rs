@@ -230,25 +230,77 @@ pub(crate) async fn get_cluster_event(
         .json(&event))
 }
 
+/// Health of the cluster as a whole and of each of its services.
 #[derive(Debug, Clone, Serialize, PartialEq, ToSchema)]
 pub struct HealthStatus {
+    /// Whether every service is healthy.
     pub all_healthy: bool,
+    /// Health of the API server(s).
     pub api: ServiceStatus,
+    /// Health of the compiler server(s).
     pub compiler: ServiceStatus,
+    /// Health of the runner(s).
     pub runner: ServiceStatus,
 }
 
+/// Health of a single service derived from the retained cluster monitor events.
 #[derive(Debug, Clone, Serialize, PartialEq, ToSchema)]
 pub struct ServiceStatus {
+    /// Whether the service passed its most recent health check.
     pub healthy: bool,
+    /// Human-readable report from the most recent health check.
     pub message: String,
+    /// Approximate time the service last transitioned between healthy and unhealthy:
+    /// the timestamp of the oldest retained consecutive cluster monitor event with the
+    /// same `healthy` conclusion. Bounded by event retention (at most 72h / 1000 events).
     pub unchanged_since: DateTime<Utc>,
+    /// Timestamp of the most recent cluster monitor event.
     pub checked_at: DateTime<Utc>,
+}
+
+/// Timestamp of the oldest event in the run of consecutive events (newest first) that
+/// share the health conclusion that `service_status` extracts from the event with
+/// `latest_event_id`. The run is bounded by event retention. Returns `None` if that
+/// event is not in the list.
+///
+/// # Example
+///
+/// ```ignore
+/// // Newest first:      e1         e2         e3
+/// // recorded_at:       100        90         80
+/// // api_status:        Unhealthy  Unhealthy  Healthy
+/// let events = [e1, e2, e3];
+///
+/// // Anchored at e1, the unhealthy run spans e1..=e2: the api service
+/// // became unhealthy at t=90.
+/// let since = service_unchanged_since(&events, e1.id, |event| event.api_status);
+/// assert_eq!(since, Some(e2.recorded_at));
+/// ```
+fn service_unchanged_since(
+    events_newest_first: &[ClusterMonitorEvent],
+    latest_event_id: ClusterMonitorEventId,
+    service_status: fn(&ClusterMonitorEvent) -> MonitorStatus,
+) -> Option<DateTime<Utc>> {
+    let mut run = events_newest_first
+        .iter()
+        .skip_while(|event| event.id != latest_event_id);
+    let latest_event = run.next()?;
+    let latest_healthy = service_status(latest_event) == MonitorStatus::Healthy;
+    let mut unchanged_since = latest_event.recorded_at;
+    for event in run {
+        if (service_status(event) == MonitorStatus::Healthy) != latest_healthy {
+            break;
+        }
+        unchanged_since = event.recorded_at;
+    }
+    Some(unchanged_since)
 }
 
 /// Check Cluster Health
 ///
 /// Determine the latest cluster health via the latest cluster monitor event.
+/// Each service's `unchanged_since` reports the approximate time it last transitioned
+/// between healthy and unhealthy, bounded by event retention (at most 72h / 1000 events).
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -262,12 +314,18 @@ pub struct ServiceStatus {
 pub(crate) async fn get_cluster_health(
     state: WebData<ServerState>,
 ) -> Result<HttpResponse, ManagerError> {
-    let latest_event = state
-        .db
-        .lock()
-        .await
-        .get_latest_cluster_monitor_event_extended()
-        .await?;
+    let db = state.db.lock().await;
+    let latest_event = db.get_latest_cluster_monitor_event_extended().await?;
+    let events = db.list_cluster_monitor_events().await?;
+    drop(db);
+    let unchanged_since = |service_status| {
+        service_unchanged_since(&events, latest_event.id, service_status)
+            .unwrap_or(latest_event.recorded_at)
+    };
+    let api_unchanged_since = unchanged_since(|event: &ClusterMonitorEvent| event.api_status);
+    let compiler_unchanged_since =
+        unchanged_since(|event: &ClusterMonitorEvent| event.compiler_status);
+    let runner_unchanged_since = unchanged_since(|event: &ClusterMonitorEvent| event.runner_status);
     let health_status = HealthStatus {
         all_healthy: latest_event.api_status == MonitorStatus::Healthy
             && latest_event.compiler_status == MonitorStatus::Healthy
@@ -275,25 +333,84 @@ pub(crate) async fn get_cluster_health(
         api: ServiceStatus {
             healthy: latest_event.api_status == MonitorStatus::Healthy,
             message: latest_event.api_self_info,
-            unchanged_since: latest_event.recorded_at,
+            unchanged_since: api_unchanged_since,
             checked_at: latest_event.recorded_at,
         },
         compiler: ServiceStatus {
             healthy: latest_event.compiler_status == MonitorStatus::Healthy,
             message: latest_event.compiler_self_info,
-            unchanged_since: latest_event.recorded_at,
+            unchanged_since: compiler_unchanged_since,
             checked_at: latest_event.recorded_at,
         },
         runner: ServiceStatus {
             healthy: latest_event.runner_status == MonitorStatus::Healthy,
             message: latest_event.runner_self_info,
-            unchanged_since: latest_event.recorded_at,
+            unchanged_since: runner_unchanged_since,
             checked_at: latest_event.recorded_at,
         },
     };
-    if health_status.api.healthy && health_status.compiler.healthy && health_status.runner.healthy {
+    if health_status.all_healthy {
         Ok(HttpResponse::Ok().json(health_status))
     } else {
         Ok(HttpResponse::ServiceUnavailable().json(health_status))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn event(id: u128, seconds: i64, api_status: MonitorStatus) -> ClusterMonitorEvent {
+        ClusterMonitorEvent {
+            id: ClusterMonitorEventId(Uuid::from_u128(id)),
+            recorded_at: DateTime::from_timestamp(seconds, 0).unwrap(),
+            api_status,
+            compiler_status: MonitorStatus::Healthy,
+            runner_status: MonitorStatus::Healthy,
+        }
+    }
+
+    /// `service_unchanged_since` returns the start of the health run anchored at the
+    /// given latest event.
+    #[test]
+    fn unchanged_since_finds_run_start() {
+        let events = vec![
+            event(1, 100, MonitorStatus::Unhealthy),
+            event(2, 90, MonitorStatus::Unhealthy),
+            event(3, 80, MonitorStatus::InitialUnhealthy),
+            event(4, 70, MonitorStatus::Healthy),
+        ];
+        let at = |seconds| DateTime::from_timestamp(seconds, 0).unwrap();
+        let api_status = |event: &ClusterMonitorEvent| event.api_status;
+        let compiler_status = |event: &ClusterMonitorEvent| event.compiler_status;
+
+        // The unhealthy run spans events 1..=3 (`InitialUnhealthy` counts as unhealthy).
+        let since = service_unchanged_since(
+            &events,
+            ClusterMonitorEventId(Uuid::from_u128(1)),
+            api_status,
+        );
+        assert_eq!(since, Some(at(80)));
+        // Anchoring mid-list skips newer events; a single-element run yields its own timestamp.
+        let since = service_unchanged_since(
+            &events,
+            ClusterMonitorEventId(Uuid::from_u128(4)),
+            api_status,
+        );
+        assert_eq!(since, Some(at(70)));
+        // A run with no transition extends to the oldest retained event.
+        let since = service_unchanged_since(
+            &events,
+            ClusterMonitorEventId(Uuid::from_u128(1)),
+            compiler_status,
+        );
+        assert_eq!(since, Some(at(70)));
+        // An anchor absent from the list yields `None`.
+        let since = service_unchanged_since(
+            &events,
+            ClusterMonitorEventId(Uuid::from_u128(99)),
+            api_status,
+        );
+        assert_eq!(since, None);
     }
 }
