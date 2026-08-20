@@ -853,26 +853,23 @@ public class ConvertletTable extends ReflectiveConvertletTable {
             final SqlIntervalLiteral literal = call.operand(0);
             SqlIntervalLiteral.IntervalValue interval =
                     literal.getValueAs(SqlIntervalLiteral.IntervalValue.class);
-            BigDecimal val =
-                    interval.getIntervalQualifier().getStartUnit().multiplier;
+            final SqlIntervalQualifier qualifier = interval.getIntervalQualifier();
+            BigDecimal val = qualifier.getStartUnit().multiplier;
             RexNode rexInterval = cx.convertExpression(literal);
 
             final RexBuilder rexBuilder = cx.getRexBuilder();
             RexNode zero = rexBuilder.makeExactLiteral(BigDecimal.valueOf(0));
             RexNode cond = ge(pos, rexBuilder, rexInterval, zero);
 
-            RexNode pad =
-                    rexBuilder.makeExactLiteral(val.subtract(BigDecimal.ONE));
-            RexNode cast =
-                    rexBuilder.makeReinterpretCast(pos, rexInterval.getType(), pad,
-                            rexBuilder.makeLiteral(false));
+            RexNode pad = rexBuilder.makeIntervalLiteral(val.subtract(BigDecimal.ONE), qualifier);
             RexNode sum =
-                    floor ? minus(pos, rexBuilder, rexInterval, cast)
-                            : plus(pos, rexBuilder, rexInterval, cast);
+                    floor ? minus(pos, rexBuilder, rexInterval, pad)
+                            : plus(pos, rexBuilder, rexInterval, pad);
 
+            // CASE operands are (when, then, else)
             RexNode kase = floor
-                    ? case_(rexBuilder, rexInterval, cond, sum)
-                    : case_(rexBuilder, sum, cond, rexInterval);
+                    ? case_(rexBuilder, cond, rexInterval, sum)
+                    : case_(rexBuilder, cond, sum, rexInterval);
 
             RexNode factor = rexBuilder.makeExactLiteral(val);
             RexNode div = divideInt(pos, rexBuilder, kase, factor);

@@ -1116,13 +1116,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return makeBinaryExpressions(node, type, DBSPOpcode.BW_OR, ops);
             case BIT_XOR:
                 return makeBinaryExpressions(node, type, DBSPOpcode.XOR, ops);
-            case REINTERPRET:
-                // Calcite only seems to generate this for converting intervals to integers
-                if ((!type.is(DBSPTypeInteger.class) || type.to(DBSPTypeInteger.class).getWidth() != 64)
-                        && !ops.get(0).getType().is(IsIntervalType.class)) {
-                    throw new InternalCompilerError("Unexpected cast ", node);
-                }
-                return new DBSPUnaryExpression(node, type, DBSPOpcode.REINTERPRET, ops.get(0));
             case CAST:
             case SAFE_CAST:
                 if (!validateCast(ops.get(0).getType(), type, call.op.kind == SqlKind.SAFE_CAST)) {

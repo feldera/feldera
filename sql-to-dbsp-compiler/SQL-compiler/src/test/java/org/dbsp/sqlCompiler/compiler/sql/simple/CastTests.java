@@ -707,8 +707,7 @@ public class CastTests extends SqlIoTest {
         }
         // Disable Calcite optimizations so it doesn't do constant-folding
         // Despite this, this program still does not generate all possible cast com
-        // binations:
-        // for some interval casts it generates reinterpret casts.
+        // binations.
         CompilerOptions options = this.testOptions();
         options.languageOptions.optimizationLevel = 0;
         DBSPCompiler compiler = new DBSPCompiler(options);
