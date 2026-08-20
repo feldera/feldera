@@ -97,6 +97,13 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
             pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\\0";
             """;
 
+    /** Emitted only for circuits that register their streams in a Catalog.
+     * Handles mode (--handles) needs no Catalog, and omitting the import lets the
+     * generated crates drop dbsp_adapters and its dependencies entirely. */
+    public static final String CATALOG_PREAMBLE = """
+            use dbsp_adapters::{Catalog, CircuitCatalog};
+            """;
+
     public static final String STANDARD_PREAMBLE = """
             use dbsp::{
                 algebra::{ZSet, MulByRef, F32, F64, Semigroup, SemigroupValue, ZRingValue,
@@ -143,7 +150,6 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
                 dynamic::{DynData,DynDataTyped},
                 typed_batch::SpineSnapshot,
             };
-            use dbsp_adapters::{Catalog, CircuitCatalog};
             use feldera_types::{
                 program_schema::SqlIdentifier,
                 deserialize_table_record, serialize_table_record,

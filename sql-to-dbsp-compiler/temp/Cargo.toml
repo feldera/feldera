@@ -6,6 +6,12 @@ publish = false
 
 [features]
 default = []
+# Catalog-mode tests (CatalogTests) reference dbsp_adapters::Catalog; handles-mode
+# tests do not, and leaving adapters out of their build removes 220 crates from the
+# dependency graph.
+catalog = ["dbsp_adapters"]
+# A UDF that implements a pre- or postprocessor uses adapterlib directly
+adapterlib = ["feldera-adapterlib"]
 
 [dependencies]
 anyhow = { version = "1.0.91" }
@@ -13,7 +19,8 @@ arcstr = { version = "1.2.0" }
 paste = { version = "1.0.12" }
 derive_more = { version = "1.0.0", features = ["add", "not", "from"] }
 dbsp = { path = "../../crates/dbsp", features = ["backend-mode"] }
-dbsp_adapters = { path = "../../crates/adapters", default-features = false }
+dbsp_adapters = { path = "../../crates/adapters", default-features = false, optional = true }
+feldera-adapterlib = { path = "../../crates/adapterlib", optional = true }
 feldera-types = { path = "../../crates/feldera-types" }
 feldera-sqllib = { path = "../../crates/sqllib" }
 feldera-macros = { path = "../../crates/feldera-macros" }
@@ -40,3 +47,9 @@ sltsqlvalue = { path = "../lib/sltsqlvalue" }
 [lib]
 path = "src/lib.rs"
 doctest = false
+
+# The test profile inherits this one. Full debug info accounts for ~90% of the
+# bytes written per test class, mostly .debug_str filled with generated tuple
+# type names; line tables keep panic backtraces useful at a fraction of the size.
+[profile.dev]
+debug = "line-tables-only"

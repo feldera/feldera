@@ -515,7 +515,15 @@ public class Utilities {
     }
 
     /** Compile the rust code generated and check it using 'cargo check' */
-    public static void compileAndCheckRust(String directory, boolean quiet, String... packages)
+    public static void compileAndCheckRust(String directory, boolean quiet)
+            throws IOException, InterruptedException {
+        compileAndCheckRust(directory, quiet, "");
+    }
+
+    /** Compile the rust code generated and check it using 'cargo check'.
+     * @param features Comma-separated cargo features to enable; empty for none. */
+    public static void compileAndCheckRust(
+            String directory, boolean quiet, String features, String... packages)
             throws IOException, InterruptedException {
         List<String> args = new ArrayList<>();
         args.add("cargo");
@@ -526,6 +534,10 @@ public class Utilities {
         }
         if (quiet)
             args.add("--quiet");
+        if (!features.isEmpty()) {
+            args.add("--features");
+            args.add(features);
+        }
         addExtraArgs(args, packages);
         // 'cargo check' and 'cargo test' carry different per-profile fingerprints.
         // Sharing one target dir makes every switch between a checking test and a
