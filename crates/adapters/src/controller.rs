@@ -3641,6 +3641,11 @@ impl CircuitThread {
             None => return Ok(false),
         };
 
+        // Input whose endpoint was removed before `input_step` could collect
+        // its result reached the circuit all the same, so this step processes
+        // it. See `ControllerStatus::orphaned_input`.
+        let total_consumed = total_consumed + self.controller.status.take_orphaned_input();
+
         self.step += 1;
 
         // Wake up the backpressure thread to unpause endpoints blocked due to
@@ -4374,7 +4379,9 @@ impl CircuitThread {
             let mut failed = Vec::new();
             waiting.retain(|&endpoint_id, _| {
                 let Some(status) = statuses.get(&endpoint_id) else {
-                    // Input adapter was deleted without yielding any input.
+                    // Input adapter was deleted. Input that it had already
+                    // yielded is accounted for by
+                    // `ControllerStatus::orphaned_input`.
                     return false;
                 };
                 let Some(results) = mem::take(&mut *status.progress.lock().unwrap()) else {
@@ -7286,7 +7293,10 @@ impl ControllerInner {
     pub fn disconnect_input(self: &Arc<Self>, endpoint_id: &EndpointId) {
         debug!("Disconnecting input endpoint {endpoint_id}");
 
-        if let Some(ep) = self.status.remove_input(endpoint_id) {
+        if let Some(ep) = self
+            .status
+            .remove_input(endpoint_id, &self.circuit_thread_unparker)
+        {
             if let Some(reader) = ep.reader.as_ref() {
                 reader.disconnect()
             }
@@ -8946,6 +8956,7 @@ impl InputConsumer for InputProbe {
                 }),
             },
             vec![],
+            &self.controller.circuit_thread_unparker,
             &self.controller.backpressure_thread_unparker,
         );
         self.controller.unpark_circuit();
@@ -8966,6 +8977,7 @@ impl InputConsumer for InputProbe {
             self.endpoint_id,
             StepResults { amt, resume },
             watermarks,
+            &self.controller.circuit_thread_unparker,
             &self.controller.backpressure_thread_unparker,
         );
         self.controller.unpark_circuit();
