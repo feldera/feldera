@@ -946,7 +946,7 @@ export class CytographRendering {
      * traces with the colored edges. When it is not, the mark is the pointer's to move: neither an
      * expanded region nor the root node get marked, and neither has a report whose node
      * a graph update has removed.
-     * 
+     *
      * Asked of the mark itself, so the two can never disagree about who holds it. */
     private reportIsMarked(): boolean {
         if (this.currentTooltipNode === null) {
