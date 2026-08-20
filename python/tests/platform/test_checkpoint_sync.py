@@ -128,25 +128,36 @@ def storage_cfg(
     }
 
 
-def build_runtime_config(*args, **kwargs):
-    """Build a `RuntimeConfig`, with h2 frame-level tracing on by default.
+# Logging filter that turns on h2 frame-level tracing, for the tests chasing the
+# multihost completion hang.
+#
+# test_owner_lock_allows_renamed_pipeline and other tests in this file, plus
+# test_iceberg_ordered_resume_skips_ingested, have hung in CI waiting for
+# /completion_status or /checkpoint_status to report done on a multihost pipeline
+# that had, per /stats, already finished (feldera/cloud#1897 is the same shape).
+# The completion/checkpoint counters are updated correctly and published to the
+# coordinator's watch channel, but the coordinator's cached view of them can go
+# stale if the underlying h2 stream stalls without erroring.  Frame-level tracing
+# on both the pipeline (h2 0.3.x via actix-http) and the coordinator (h2 0.4.x
+# via reqwest/hyper) shows the window updates, send capacity and wakers for
+# whichever stream gets stuck.
+#
+# The trace outruns the pipeline log buffer within seconds -- a 35-minute CI run
+# discarded 559,942 lines and left 1.4s of history, which is not enough to
+# diagnose anything else that goes wrong -- so tests opt in individually rather
+# than all of them paying for it.  Remove once the hang is understood and fixed.
+H2_TRACE_LOGGING = (
+    "object_store=warn,buoyant_kernel=warn,info,h2=trace,actix_http::h2=trace"
+)
 
-    This test has twice hung in CI waiting for /completion_status or
-    /checkpoint_status to report done on a multihost pipeline that
-    had, per /stats, already finished (feldera/cloud#1897 is the same
-    shape). h2 frame-level tracing on both the pipeline (h2 0.3.x via
-    actix-http) and the coordinator (h2 0.4.x via reqwest/hyper)
-    should show whether a stream's send capacity/window update is
-    being lost.
 
-    The additional logging can be removed once the hang is understood
-    and fixed.
+def build_runtime_config(*args, h2_trace: bool = False, **kwargs):
+    """Build a `RuntimeConfig`, with h2 frame-level tracing if *h2_trace*.
 
+    See `H2_TRACE_LOGGING` for what the tracing is for and what it costs.
     """
-    kwargs.setdefault(
-        "logging",
-        "object_store=warn,buoyant_kernel=warn,info,h2=trace,actix_http::h2=trace",
-    )
+    if h2_trace:
+        kwargs.setdefault("logging", H2_TRACE_LOGGING)
     return RuntimeConfig(*args, **kwargs)
 
 
@@ -175,6 +186,7 @@ class TestCheckpointSync(SharedTestPipeline):
         ft_interval: int = 60,
         push_interval: Optional[int] = None,
         retention_min_age: int = 0,
+        h2_trace: bool = False,
     ):
         """Configure the pipeline with AtLeastOnce FT and start it."""
         storage_config = storage_cfg(
@@ -190,6 +202,7 @@ class TestCheckpointSync(SharedTestPipeline):
                 fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
                 storage=Storage(config=storage_config),
                 checkpoint_interval_secs=ft_interval,
+                h2_trace=h2_trace,
             )
         )
         self.pipeline.start()
@@ -625,6 +638,7 @@ class TestCheckpointSync(SharedTestPipeline):
                 storage=Storage(
                     config=storage_cfg(bucket_name, start_from_checkpoint="latest")
                 ),
+                h2_trace=True,
             )
         )
         self.pipeline.start()
