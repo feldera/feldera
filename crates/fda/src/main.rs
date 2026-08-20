@@ -3725,6 +3725,117 @@ async fn cluster(format: OutputFormat, action: ClusterAction, client: Client) {
                 }
             }
         }
+        ClusterAction::Health => {
+            // Both 200 (all healthy) and 503 (some service unhealthy) carry a
+            // `HealthStatus` body.
+            let health = match client.get_cluster_health().send().await {
+                Ok(response) => response.into_inner(),
+                Err(Error::ErrorResponse(response)) => response.into_inner(),
+                Err(e) => {
+                    eprintln!(
+                        "Unable to retrieve cluster health from {}: {e}",
+                        client.baseurl()
+                    );
+                    std::process::exit(1);
+                }
+            };
+            match format {
+                OutputFormat::Text => {
+                    let mut rows = vec![];
+                    rows.push([
+                        "service".to_string(),
+                        "healthy".to_string(),
+                        "unchanged_since".to_string(),
+                        "checked_at".to_string(),
+                        "message".to_string(),
+                    ]);
+                    for (service, status) in [
+                        ("api", &health.api),
+                        ("compiler", &health.compiler),
+                        ("runner", &health.runner),
+                    ] {
+                        rows.push([
+                            service.to_string(),
+                            status.healthy.to_string(),
+                            format!(
+                                "{} ({:.0}s ago)",
+                                status.unchanged_since,
+                                (Utc::now() - status.unchanged_since).as_seconds_f64()
+                            ),
+                            format!(
+                                "{} ({:.0}s ago)",
+                                status.checked_at,
+                                (Utc::now() - status.checked_at).as_seconds_f64()
+                            ),
+                            status.message.clone(),
+                        ]);
+                    }
+                    println!(
+                        "{}",
+                        Builder::from_iter(rows).build().with(Style::rounded())
+                    );
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&health)
+                            .expect("Failed to serialize cluster health")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+            if !health.all_healthy {
+                std::process::exit(1);
+            }
+        }
+        ClusterAction::Config => {
+            let response = client
+                .get_config()
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().to_string(),
+                    "Unable to retrieve platform configuration",
+                    1,
+                ))
+                .unwrap();
+            match format {
+                OutputFormat::Text => {
+                    // A summary without `build_info.cargo_dependencies`, which lists
+                    // every crate and dwarfs the table. JSON output has all fields.
+                    let value = json!({
+                        "edition": response.edition,
+                        "version": response.version,
+                        "revision": response.revision,
+                        "runtime_revision": response.runtime_revision,
+                        "build_source": response.build_source,
+                        "build_timestamp": response.build_info.build_timestamp,
+                        "rustc_version": response.build_info.rustc_version,
+                        "cargo_target_triple": response.build_info.cargo_target_triple,
+                        "license_validity": response.license_validity,
+                        "update_info": response.update_info,
+                        "unstable_features": response.unstable_features,
+                        "changelog_url": response.changelog_url,
+                    });
+                    let table = json_to_table(&value).collapse().to_string();
+                    println!("{}", table);
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize platform configuration")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
+                    std::process::exit(1);
+                }
+            }
+        }
     }
 }
 
