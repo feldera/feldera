@@ -210,6 +210,7 @@ export async function mountDiagram(
   const component = rendered.component as unknown as {
     search(query: string): void
     setTheme(theme: 'light' | 'dark'): void
+    showGlobalMetrics(isSticky?: boolean): void
   }
   await layout
   await settle()

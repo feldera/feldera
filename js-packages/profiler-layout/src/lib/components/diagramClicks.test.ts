@@ -312,3 +312,29 @@ describe('a click on an expanded region', () => {
     cleanup()
   })
 })
+
+describe('the overview report a profile opens with', () => {
+  it('leaves the pointer free to mark and trace the operators it crosses', async () => {
+    // The overview is a sticky report on the root node, which is invisible and so carries no mark. The
+    // application asks for it as soon as a profile is loaded, so a hover silenced by it would leave the
+    // whole diagram dead until the user dismissed a report they never asked for.
+    const { cy, diagram, reported, cleanup } = await mount(true)
+    diagram.showGlobalMetrics(true)
+    await settle()
+    expect(cy.nodes('.selected-node').length).toBe(0)
+
+    const node = cy.$id('n1')
+    node.emit('mouseover')
+    await settle()
+    expect(cy.nodes('.selected-node').map((n: { id(): string }) => n.id())).toEqual(['n1'])
+    expect(highlighted(cy).length).toBeGreaterThan(0)
+
+    // The mark goes with the pointer; the overview stays, being a report that was asked for.
+    node.emit('mouseout')
+    await settle()
+    expect(cy.nodes('.selected-node').length).toBe(0)
+    expect(highlighted(cy)).toEqual([])
+    expect(reported.attributes.at(-1)?.isSticky).toBe(true)
+    cleanup()
+  })
+})

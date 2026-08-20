@@ -38,12 +38,23 @@ describe('the minimap', () => {
 
     expect(ink.count).toBeGreaterThan(100)
     // The chain of operators runs the whole height, give or take the band the graph's box keeps above a
-    // node for the code chip that may be drawn there.
+    // node for the code chip that may be drawn there. The height and not the width: an operator's mark
+    // is a dash of a fixed length, so across a map this narrow the picture says where the chain runs
+    // rather than how wide the circuit is.
     expect(ink.y1).toBeLessThanOrEqual(4)
     expect(ink.y2).toBeGreaterThanOrEqual(map.size.h - 4)
-    // Across, where this circuit is a few marks wide: an operator's mark is a fixed ten pixels, so the
-    // picture reaches the sides without landing exactly on them.
-    expect(ink.x2 - ink.x1).toBeGreaterThanOrEqual(map.size.w * 0.75)
+    cleanup()
+  })
+
+  it('reaches the sides of the map where a region is what sets the width', async () => {
+    // The other axis, on a circuit wide enough to have one: a region is the one thing drawn at its own
+    // size, so it is what carries the picture out to the edges of a map that is its own box.
+    const { minimap, cleanup } = await mountDiagram('light', WITH_SOURCE.profile)
+    const map = minimap()
+    const ink = map.inked()
+
+    expect(ink.x1).toBeLessThanOrEqual(2)
+    expect(ink.x2).toBeGreaterThanOrEqual(map.size.w - 2)
     cleanup()
   })
 
@@ -87,7 +98,8 @@ describe('the minimap', () => {
     const map = minimap()
     const palette = DIAGRAM_PALETTES.light
 
-    expect(map.painted(hex(palette.navigatorInk))).toBeGreaterThan(20)
+    // A handful of pixels: three operators, each a dash of a fixed length.
+    expect(map.painted(hex(palette.navigatorInk))).toBeGreaterThan(10)
     expect(map.painted(hex(palette.navigatorViewport))).toBe(0)
     cleanup()
   })

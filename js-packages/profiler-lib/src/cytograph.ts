@@ -16,7 +16,7 @@ import { installNodeText } from './nodeText.js';
 import { nodeChips } from './chips.js';
 import { elkNodeLayoutOptions, regionMinWidth } from './regionSize.js';
 import { installChipButtons, refreshChips } from './chipButtons.js';
-import type { DiagramPlugin } from './diagramPlugin.js';
+import type { DiagramObserver } from './diagramObserver.js';
 import { Viewport } from './viewport.js';
 import { FrozenLayout } from './frozenLayout.js';
 
@@ -117,9 +117,6 @@ class GraphNode {
 
     /** Returns a data structure understood by cytoscape for a node. */
     getDefinition(theme: DiagramTheme): NodeDefinition {
-        // `nodeText.ts` draws this as two runs, which is why the operator name is carried on its own as
-        // well. The label is only ever measured, and measured here rather than by cytoscape, since the
-        // node also has to hold the counter chip beside its text.
         const label = this.label === '' ? this.id : `${this.id} ${this.label}`;
 
         let result = {
@@ -129,9 +126,7 @@ class GraphNode {
                 "id": this.id,
                 "label": label,
                 "text_width": labelWidth(label),
-                // Floor under the width of the region this node becomes while expanded, so its name
-                // fits the band along the top edge (`regionSize.ts`). Only a composite can be a region;
-                // an operator carries no floor.
+                // For an expanded node its min width depends on the title and the chip button
                 "min_width": this.hasChildren ? regionMinWidth(label, this.leafCount) : 0,
                 "operator": this.label,
                 "sources": this.sources,
@@ -467,11 +462,11 @@ export class CytographRendering {
     stickyInformation: boolean;
     // Current node that has tooltip displayed (for refreshing on metadata changes)
     private currentTooltipNode: NodeId | null = null;
-    /** Where the view is; also the one plugin this class asks things of directly. */
+    /** Where the view is; also the one observer this class asks things of directly. */
     private readonly viewport: Viewport;
     /** Everything that reacts to the diagram's lifecycle rather than driving it, in call order: the
      *  view settles before the picture held over the layout comes down. */
-    private readonly plugins: Array<DiagramPlugin>;
+    private readonly observers: Array<DiagramObserver>;
     // True between `initiateLayout` and its matching `layoutComplete`. Used so `dispose()`
     // can fire a final `onRenderingChange(false)` if the layout was still in flight when the
     // visualizer is torn down — otherwise a consumer's progress bar would stick on screen.
@@ -507,7 +502,7 @@ export class CytographRendering {
             navigatorContainer,
             () => this.currentGraph?.nodes.find((node) => node.getId() !== this.rootNodeId)?.getId(),
             this.theme);
-        this.plugins = [this.viewport, new FrozenLayout(this.cy)];
+        this.observers = [this.viewport, new FrozenLayout(this.cy)];
     }
 
     /** Redraw the diagram with a different palette. Restyling never moves a node, so this
@@ -518,8 +513,8 @@ export class CytographRendering {
         }
         this.theme = theme;
         this.cy.style(buildGraphStyle(theme));
-        for (const plugin of this.plugins) {
-            plugin.themeChanged?.(theme);
+        for (const observer of this.observers) {
+            observer.themeChanged?.(theme);
         }
         // Chip images carry the palette inside them, so they are the one piece of per-node data
         // that a theme change has to rewrite. The graph diff keys nodes by id alone, so this
@@ -589,8 +584,8 @@ export class CytographRendering {
 
     /** The graph has changed; adjust the display; this completes asynchronously */
     updateGraph(newGraph: Cytograph) {
-        for (const plugin of this.plugins) {
-            plugin.graphWillChange?.();
+        for (const observer of this.observers) {
+            observer.graphWillChange?.();
         }
         this.cy.startBatch();
         if (this.currentGraph === null) {
@@ -874,8 +869,8 @@ export class CytographRendering {
         // Not centered on afterwards: the layout that follows keeps the viewport (`layoutOptions.fit`
         // is false), so what the user was looking at stays where it was. The view pans to the node only
         // if that layout leaves it off screen.
-        for (const plugin of this.plugins) {
-            plugin.compositeToggled?.(id);
+        for (const observer of this.observers) {
+            observer.compositeToggled?.(id);
         }
         onNodeDoubleClick?.(id, 'group');
     }
@@ -886,8 +881,8 @@ export class CytographRendering {
         this.callbacks.onRenderingChange?.(false);
         // In order: the viewport settles zoom and pan, then the picture held over the layout comes down
         // onto the finished one.
-        for (const plugin of this.plugins) {
-            plugin.layoutSettled?.();
+        for (const observer of this.observers) {
+            observer.layoutSettled?.();
         }
     }
 
@@ -929,20 +924,17 @@ export class CytographRendering {
         return result;
     }
 
-    /** Report on the node the pointer moved onto: its attributes, the edges that reach it, and its
-     *  source position. The report goes away once the pointer leaves.
+    /** A callback that reports metrics of the node the pointer moved onto: its attributes, the edges that reach it,
+     * and its source position. `mouseOut` reports when the pointer leaves.
      *
-     *  Two things a hover leaves alone. An expanded region covers everything it holds, so following the
-     *  pointer into one would report the region on the way to whatever the user was heading for. And a
-     *  report asked for by a click stays until it is dismissed; only its mark and edge coloring are the
-     *  pointer's to take over, and only when the report holds none of its own. */
+     *  Two cases when a hover is ignored: an expanded node, and anything if a user selected a node with a click. */
     private hoverNode(event: EventObject) {
         const node: NodeSingular = event.target;
         if (node.isParent()) {
             return;
         }
         if (this.stickyInformation) {
-            if (!this.reportHoldsTheMark()) {
+            if (!this.reportIsMarked()) {
                 this.traceSelection(node);
             }
             return;
@@ -950,15 +942,17 @@ export class CytographRendering {
         this.displayNodeAttributes(node);
     }
 
-    /** Whether the report on screen holds the diagram's mark and edge trace. When it does not they are
-     *  the pointer's: a click on an expanded region reports without either (`traceSelection`), and so
-     *  does a report whose node a graph update has removed. */
-    private reportHoldsTheMark(): boolean {
+    /** Whether the node the metrics report is about is the node the diagram marks with the glow and
+     * traces with the colored edges. When it is not, the mark is the pointer's to move: neither an
+     * expanded region nor the root node get marked, and neither has a report whose node
+     * a graph update has removed.
+     * 
+     * Asked of the mark itself, so the two can never disagree about who holds it. */
+    private reportIsMarked(): boolean {
         if (this.currentTooltipNode === null) {
             return false;
         }
-        const reported = this.getRenderedNode(this.currentTooltipNode);
-        return Boolean(reported.inside()) && !reported.isParent();
+        return this.getRenderedNode(this.currentTooltipNode).hasClass(SELECTED_NODE_CLASS);
     }
 
     /** Mark `node` as the one the diagram reports on, whether reached by click, hover or search. At most
@@ -969,12 +963,11 @@ export class CytographRendering {
         node?.addClass(SELECTED_NODE_CLASS);
     }
 
-    /** Mark the node whose metrics are on display and color the edges reaching it. An expanded region
-     *  gets neither: it stands in for every node inside it, so the trace would color every edge in the
-     *  region, and a region casts no shadow for the mark to take the place of (`nodeShadow.ts`). */
+    /** Mark the node whose metrics are on display and color the edges reaching it.
+     * An expanded region and the root node can not be marked. */
     private traceSelection(node: NodeSingular) {
         this.clearTrace();
-        if (node.isParent()) {
+        if (node.isParent() || node.id() === this.rootNodeId) {
             return;
         }
         this.markSelected(node);
@@ -1077,7 +1070,8 @@ export class CytographRendering {
         this.callbacks.displayNodeAttributes(Option.some(tooltipData), this.stickyInformation);
     }
 
-    // hide the information shown when hovering
+    /** The other half of a hover (see `hoverNode`): a report the pointer brought with it goes when the
+     *  pointer does. */
     mouseOut(_event: EventObject) {
         if (!this.stickyInformation) {
             this.hideNodeInformation();
@@ -1085,7 +1079,7 @@ export class CytographRendering {
         }
         // What the pointer marked and traced goes with the pointer; the report itself was asked for,
         // and stays.
-        if (!this.reportHoldsTheMark()) {
+        if (!this.reportIsMarked()) {
             this.clearTrace();
         }
     }
@@ -1108,8 +1102,8 @@ export class CytographRendering {
             this.renderingInFlight = false;
             this.callbacks.onRenderingChange?.(false);
         }
-        for (const plugin of this.plugins) {
-            plugin.dispose?.();
+        for (const observer of this.observers) {
+            observer.dispose?.();
         }
 
         // Destroy the Cytoscape instance

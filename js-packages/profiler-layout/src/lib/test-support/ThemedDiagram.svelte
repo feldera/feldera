@@ -21,12 +21,15 @@
   /** The palette a suite switched to, standing in for the one it was mounted with. */
   let switched = $state<DiagramTheme | undefined>()
   const theme = $derived(switched ?? props.theme)
-  let diagram = $state<{ search(query: string): void } | undefined>()
+  let diagram = $state<
+    { search(query: string): void, showGlobalMetrics(isSticky?: boolean): void } | undefined
+  >()
 
   export const setTheme = (next: DiagramTheme) => {
     switched = next
   }
   export const search = (query: string) => diagram?.search(query)
+  export const showGlobalMetrics = (isSticky?: boolean) => diagram?.showGlobalMetrics(isSticky)
 </script>
 
 <ProfilerDiagram

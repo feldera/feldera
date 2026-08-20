@@ -1,17 +1,14 @@
 // What the user looks at while a layout is computed.
 //
-// A layout is not instant and the graph is rebuilt before it runs, so the diagram would blink out of
-// existence on every expand or collapse. This holds the last one on screen instead: the current
-// viewport is painted into an overlay above cytoscape's canvases, the canvases are hidden behind it,
-// and the overlay comes down once they hold the finished layout.
-//
-// A `DiagramPlugin` (see `diagramPlugin.ts`), which is all this needs to be: the two hooks it answers
-// bracket exactly the window it covers.
+// Calculating and rendering a layout is not instant and the graph is rebuilt before it runs,
+// so the diagram would go blank on every expand or collapse of a node. This holds the last rendered layout
+// on screen instead: the current viewport is painted into an overlay above cytoscape's canvases,
+// the canvases are hidden behind it, and the overlay comes down once they hold the finished layout.
 
 import type { Core } from 'cytoscape';
-import type { DiagramPlugin } from './diagramPlugin.js';
+import type { DiagramObserver } from './diagramObserver.js';
 
-export class FrozenLayout implements DiagramPlugin {
+export class FrozenLayout implements DiagramObserver {
     /** Picture of the layout that is on screen, held over the diagram while the next one is computed. */
     private picture: HTMLElement | null = null;
     /** False until a layout has been revealed; the first one has nothing to hold over. */
@@ -45,9 +42,9 @@ export class FrozenLayout implements DiagramPlugin {
         this.thaw();
     }
 
-    /** Paint the current viewport into an overlay above cytoscape's own canvases and hide those behind
-     *  it. A second freeze keeps the first picture: by then the graph behind it has already changed, so
-     *  painting it again would paint a half-updated diagram. */
+    /** Cover the diagram with a captured image of what is on screen, and hide the canvases behind it. The
+     *  screenshot stays up until `layoutSettled` takes it down. A graph change before that freezes
+     *  again; repeated calls to freeze() do not capture a new image. */
     private freeze(): void {
         const container = this.cy.container();
         // Cytoscape's own canvases live in a wrapper of its own making, the one element known to be

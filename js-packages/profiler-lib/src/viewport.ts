@@ -1,19 +1,20 @@
-// Where the view is: the zoom a node is read at, where a profile opens, what a search moves to, what
-// happens to a composite the layout moved off screen, and the minimap that reports all of it.
+// Logic related to where the view is: the zoom a node is read at, where a profile opens,
+// what a search moves to, what happens to a composite the layout moved off screen, and the minimap
+// that reports all of it.
 //
-// A `DiagramPlugin` (see `diagramPlugin.ts`), so the policy lives here rather than as four flags on
+// It's a `DiagramObserver` (see `diagramObserver.ts`), because its logic and state could be decoupled from
 // `CytographRendering`: the diagram tells it a layout finished, a composite was toggled or the palette
 // changed, and everything the view does follows from those three plus the two requests it takes
 // directly, `center` and `centerOnNextLayout`.
 
 import type { Core, NodeSingular, Position } from 'cytoscape';
-import type { DiagramPlugin } from './diagramPlugin.js';
+import type { DiagramObserver } from './diagramObserver.js';
 import { NODE_INNER_HEIGHT, type DiagramTheme } from './diagramTheme.js';
 import { ViewNavigator } from './navigator.js';
 import type { NodeId } from './profile.js';
 import { Option } from './util.js';
 
-export class Viewport implements DiagramPlugin {
+export class Viewport implements DiagramObserver {
     /** Rendered height a node's own box is brought to when the view moves to it. Measured on the box
      *  cytoscape's `renderedHeight` reports, which is the node without the padding around it. */
     private static readonly FOCUS_NODE_HEIGHT = 7.5;

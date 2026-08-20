@@ -1,4 +1,4 @@
-// The view's policy, reachable here because it lives in a plugin: the decisions it makes at
+// The view's policy, reachable here because it lives in an observer: the decisions it makes at
 // `layoutSettled` are arithmetic over a viewport and a node box, so they can be asked directly rather
 // than only through a mounted diagram. Where the view actually lands on screen, and that a search moves
 // there at the right zoom, stay in profiler-layout's `diagramView.test.ts` - those need a renderer.

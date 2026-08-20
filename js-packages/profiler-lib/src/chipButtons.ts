@@ -1,17 +1,16 @@
-// Chip buttons: the two corner chips are controls, not decoration. The code chip reveals the SQL
-// source of the node it sits on; the counter chip expands or collapses the composite it counts, and
-// shows the matching window control in place of the count while that composite is hovered.
+// The code chip reveals the SQL source of the node it sits on. The counter chip expands or collapses
+// the composite node it is on; it shows leaf child node count, and when the node is hovered it shows
+// the matching window control in place of the count.
 //
 // Chips are cytoscape background images, so cytoscape knows nothing about them: it hit-tests a node by
 // the node's own shape and ignores `bounds-expansion`, which leaves the code chip resting above the top
 // edge outside every hit region. So the boxes are computed here, with the arithmetic cytoscape places a
-// background image by, read off the resolved style rather than from a second copy of the stylesheet's
-// numbers.
+// background image by, read off the resolved chip style.
 //
 // The press belongs here too, for the same reason: a mouse press over a chip is stopped before cytoscape
-// can interpret it and answered when it is let go of, so nothing else in the diagram has to know that a
-// press may have been meant for a button drawn over something else. Touch and pen reach cytoscape, and
-// the chip they press is dispatched from the tap it reports.
+// can see it, and the button acts when the mouse is let go of. When clicking on a chip cytoscape
+// receives no click at all - the click is consumed by the chip. A touch is not consumed:
+// cytoscape registers the tap, and the chip under that tap is pressed.
 
 import type { Core, EventObject, NodeSingular } from 'cytoscape';
 import {
@@ -56,12 +55,12 @@ const slotValue = (node: NodeSingular, property: string, index: number): string 
 
 const pixels = (value: string): number => Number.parseFloat(value) || 0;
 
-/** Where an image `span` long lands along one axis of a node box `body` long, relative to that box's
- *  own left or top edge. Cytoscape reads a percentage as a share of the slack around the image and a
- *  length as absolute, with the offset adding to either. */
-const place = (body: number, span: number, position: string, offset: string): number => {
+/** How far the image sits from the left or top edge of the node box, along one axis. Cytoscape places
+ *  an image by a position plus an offset: in percent, a position is that share of the space the image
+ *  leaves free on the axis; in pixels, either one is that many pixels. */
+const imageInset = (boxSize: number, imageSize: number, position: string, offset: string): number => {
     const distance = (value: string) =>
-        value.endsWith('%') ? ((body - span) * pixels(value)) / 100 : pixels(value);
+        value.endsWith('%') ? ((boxSize - imageSize) * pixels(value)) / 100 : pixels(value);
     return distance(position) + distance(offset);
 };
 
@@ -88,11 +87,11 @@ export function chipBox(node: NodeSingular, slot: ChipSlot): ChipBox | null {
     const canvasHeight = pixels(slotValue(node, 'background-height', index));
     const position = node.position();
     const left = position.x - bodyWidth / 2
-        + place(bodyWidth, canvasWidth,
+        + imageInset(bodyWidth, canvasWidth,
             slotValue(node, 'background-position-x', index),
             slotValue(node, 'background-offset-x', index));
     const top = position.y - bodyHeight / 2
-        + place(bodyHeight, canvasHeight,
+        + imageInset(bodyHeight, canvasHeight,
             slotValue(node, 'background-position-y', index),
             slotValue(node, 'background-offset-y', index));
     // The pill is right-aligned in its canvas, and the rest of the canvas is transparent - no part of
@@ -106,27 +105,27 @@ export function chipBox(node: NodeSingular, slot: ChipSlot): ChipBox | null {
 const shown = (node: NodeSingular): boolean =>
     String(node.style('display')) !== 'none' && String(node.style('visibility')) === 'visible';
 
-const holds = (box: ChipBox, x: number, y: number): boolean =>
+const containsPoint = (box: ChipBox, x: number, y: number): boolean =>
     x >= box.x1 && x <= box.x2 && y >= box.y1 && y <= box.y2;
 
 /** Which chip of `node`, if any, is under a point in graph coordinates. */
 export function chipAt(node: NodeSingular, x: number, y: number): ChipSlot | null {
     for (const slot of SLOTS) {
         const box = chipBox(node, slot);
-        if (box !== null && holds(box, x, y)) {
+        if (box !== null && containsPoint(box, x, y)) {
             return slot;
         }
     }
     return null;
 }
 
-/** The chip under a point in graph coordinates, wherever on the graph it is. The bounding box rejects
- *  all but a handful of nodes before any style is read, widened to the left because a chip wider than the
- *  node carrying it reaches past that box - `bounds-expansion` covers the top only, since every pixel of
- *  it is also dead space the ELK layout spaces nodes by. A child wins over the region around it, matching
- *  the order the two are drawn in: a region's counter shares the padding band that the code chips of its
- *  topmost children reach into. */
-export function chipUnder(cy: Core, x: number, y: number): ChipHit | null {
+/** The chip at a point in graph coordinates, searched over every node on the graph. The bounding box
+ *  rejects all but a handful of nodes before any style is read, widened to the left because a chip wider
+ *  than the node carrying it reaches past that box - `bounds-expansion` covers the top only, since every
+ *  pixel of it is also dead space the ELK layout spaces nodes by. A child wins over the region around it,
+ *  matching the order the two are drawn in: a region's counter shares the padding band that the code chips
+ *  of its topmost children reach into. */
+export function hitTestChips(cy: Core, x: number, y: number): ChipHit | null {
     let region: ChipHit | null = null;
     for (const node of cy.nodes().toArray()) {
         const box = node.boundingBox();
@@ -164,7 +163,7 @@ const PRIMARY_BUTTON = 0;
  *  event cytoscape handles itself, so the container's border and the scale the page is drawn at are
  *  accounted for in one place. Not in cytoscape's type definitions, like the drawing hook in
  *  `nodeShadow.ts`; `null` on an instance with no renderer to ask. */
-const graphPosition = (cy: Core, event: MouseEvent): { x: number, y: number } | null => {
+const toGraphPoint = (cy: Core, event: MouseEvent): { x: number, y: number } | null => {
     const renderer = (cy as unknown as {
         renderer(): { projectIntoViewport?: (clientX: number, clientY: number) => [number, number] }
     }).renderer();
@@ -208,7 +207,7 @@ export function installChipButtons(cy: Core, theme: () => DiagramTheme, actions:
     cy.on('layoutstop', () => showCount());
 
     cy.on('mousemove', (event: EventObject) => {
-        pointer(chipUnder(cy, event.position.x, event.position.y) !== null);
+        pointer(hitTestChips(cy, event.position.x, event.position.y) !== null);
     });
 
     const dispatch = (hit: ChipHit) => {
@@ -221,7 +220,7 @@ export function installChipButtons(cy: Core, theme: () => DiagramTheme, actions:
     // Touch and pen only: cytoscape routes those through its own touch handling and reports a tap. A
     // mouse press never reaches here, being stopped below before cytoscape sees it.
     cy.on('tap', (event: EventObject) => {
-        const hit = chipUnder(cy, event.position.x, event.position.y);
+        const hit = hitTestChips(cy, event.position.x, event.position.y);
         if (hit !== null) {
             dispatch(hit);
         }
@@ -230,16 +229,16 @@ export function installChipButtons(cy: Core, theme: () => DiagramTheme, actions:
     if (container === null) {
         return;
     }
-    const chipUnderMouse = (event: MouseEvent): ChipHit | null => {
-        const position = graphPosition(cy, event);
-        return position === null ? null : chipUnder(cy, position.x, position.y);
+    const chipAtMouse = (event: MouseEvent): ChipHit | null => {
+        const point = toGraphPoint(cy, event);
+        return point === null ? null : hitTestChips(cy, point.x, point.y);
     };
     /** The chip a press is on, until it is let go of. */
     let pressed: ChipHit | null = null;
     // Both bound on the container in the capture phase, ahead of cytoscape's own press handling, which
     // is bound on that same container in the bubble phase.
     container.addEventListener('mousedown', (event) => {
-        pressed = event.button === PRIMARY_BUTTON ? chipUnderMouse(event) : null;
+        pressed = event.button === PRIMARY_BUTTON ? chipAtMouse(event) : null;
         if (pressed === null) {
             return;
         }
@@ -258,7 +257,7 @@ export function installChipButtons(cy: Core, theme: () => DiagramTheme, actions:
         if (from === null || event.button !== PRIMARY_BUTTON) {
             return;
         }
-        const to = chipUnderMouse(event);
+        const to = chipAtMouse(event);
         // Let go of anywhere but the chip it started on: a cancelled press, as with any other button.
         if (to !== null && to.node.id() === from.node.id() && to.slot === from.slot) {
             dispatch(to);

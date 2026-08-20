@@ -13,7 +13,6 @@ export {
     shadeOfRed
 } from './profiler.js';
 export { type DiagramTheme, type DiagramPalette, DIAGRAM_PALETTES } from './diagramTheme.js';
-export { HierarchicalTable, HierarchicalTableRow, HierarchicalTableCellValue } from "./hierarchical-table.js";
 export {
     measurementCategory,
     measurementDescription,

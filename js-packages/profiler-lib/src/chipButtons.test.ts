@@ -16,7 +16,7 @@ import {
     CODE_CHIP_WIDTH,
     nodeChips
 } from './chips.js'
-import { chipAt, chipBox, chipUnder, installChipButtons, refreshChips } from './chipButtons.js'
+import { chipAt, chipBox, hitTestChips, installChipButtons, refreshChips } from './chipButtons.js'
 import { buildGraphStyle, type DiagramTheme } from './diagramTheme.js'
 
 const COUNT = 7
@@ -87,10 +87,10 @@ const graph = (theme: DiagramTheme = 'light') => {
     return cy
 }
 
-/** Which node's chip is under a point, as plain strings: a failing `expect` prints what it received,
+/** Which node's chip is at a point, as plain strings: a failing `expect` prints what it received,
  *  and a cytoscape element carries the whole graph with it. */
 const under = (cy: Core, x: number, y: number): string => {
-    const hit = chipUnder(cy, x, y)
+    const hit = hitTestChips(cy, x, y)
     return hit === null ? 'nothing' : `${hit.node.id()}:${hit.slot}`
 }
 
@@ -183,7 +183,7 @@ describe('chipAt', () => {
     })
 })
 
-describe('chipUnder', () => {
+describe('hitTestChips', () => {
     it('finds the chip whatever node it belongs to', () => {
         const cy = graph()
         for (const [id, slot] of [['code', 'code'], ['collapsed', 'counter'], ['region', 'counter']] as const) {

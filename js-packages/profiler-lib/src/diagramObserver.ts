@@ -1,25 +1,18 @@
-// The diagram's lifecycle, for behaviour that reacts to it rather than drives it.
+// An interface for observers of the diagram's lifecycle, for behaviours that react to it.
 //
 // `CytographRendering` runs the diagram: it holds the graph, diffs it, lays it out, colors it and answers
 // questions about nodes. A few behaviours only need to be told when those things happen - where the view
 // belongs once a layout finishes, what covers the screen while one is computed. Each of those is a
-// `DiagramPlugin`: its own file, its own state, reached only through the hooks below.
+// `DiagramObserver`: its own file, its own state, reached only through the hooks below.
 //
-// Plugins are called in the order `CytographRendering` lists them, which is load bearing at
-// `layoutSettled`: the viewport moves before the frozen picture comes down, so the picture is never
-// lifted off a view that is about to jump.
-//
-// Not every collaborator belongs here. The render-side pieces (`installNodeShadows`,
-// `installNodeText`, `installChipButtons`) hook cytoscape's own renderer and events and need nothing
-// from this lifecycle. Anything that produces data the diagram or its consumers read back - node
-// tooltips, metric coloring, the graph diff itself - is not a plugin either: a one-way hook cannot
-// carry an answer.
+// Observers have one-way data flow: they are notified in the order `CytographRendering` lists them,
+// which matters at `layoutSettled`.
 
 import type { DiagramTheme } from './diagramTheme.js';
 import type { NodeId } from './profile.js';
 
-/** Every hook is optional; a plugin implements the ones it has an opinion about. */
-export interface DiagramPlugin {
+/** Every hook is optional; an observer implements the ones it has an opinion about. */
+export interface DiagramObserver {
     /** The graph is about to be rebuilt: elements added or removed, then a layout run over them. */
     graphWillChange?(): void;
     /** A layout has finished and every node is in its final position. */
