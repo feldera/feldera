@@ -334,6 +334,15 @@ async fn attempt_end_to_end_rust_compilation(
                     "Rust compilation failed due to Rust error (program version: {})",
                     pipeline.program_version
                 );
+                // The compilation output is otherwise only stored in the database.
+                if let Some(message) = sccache_message(&compilation_info) {
+                    error!(
+                        pipeline_id = %pipeline.id,
+                        pipeline = %pipeline.name,
+                        "Rust compilation failed due to an sccache problem (program version: {}):\n{message}",
+                        pipeline.program_version
+                    );
+                }
             }
             RustCompilationError::SystemError(internal_system_error) => {
                 db.lock()
@@ -375,6 +384,53 @@ async fn attempt_end_to_end_rust_compilation(
         },
     }
     Ok(true)
+}
+
+/// Returns what sccache reported in the compilation output, or `None` if the compilation
+/// failed for reasons of its own. Starts at sccache's own message, e.g.
+/// `sccache: error: Timed out waiting for server startup.`, and runs to the next cargo
+/// message, so it picks up the `Context:` and `Backtrace:` blocks sccache continues into
+/// while leaving out the diagnostics that quote the user's program.
+fn sccache_message(compilation_info: &RustCompilationInfo) -> Option<String> {
+    let lines: Vec<&str> = compilation_info.stderr.lines().collect();
+    let start = lines
+        .iter()
+        .position(|line| line.trim_start().starts_with("sccache: "))?;
+    // Cargo starts each of its own messages at the first column.
+    let message = lines[start..]
+        .iter()
+        .take_while(|line| !line.starts_with("error") && !line.starts_with("warning"))
+        .copied()
+        .collect::<Vec<&str>>()
+        .join("\n");
+    Some(redact_url_queries(message.trim_end()))
+}
+
+/// Strips the query string from every URL in `message`. sccache names the request it failed
+/// to sign, and under IRSA that is the `AssumeRoleWithWebIdentity` call whose query carries
+/// the web identity token: a credential for the compiler's role. Presigned S3 URLs put their
+/// signature there too, so drop the whole query rather than named parameters.
+fn redact_url_queries(message: &str) -> String {
+    let mut redacted = String::with_capacity(message.len());
+    let mut rest = message;
+    while let Some(scheme) = rest.find("://") {
+        let authority = scheme + "://".len();
+        // The URL ends where the surrounding prose resumes.
+        let url_end = rest[authority..]
+            .find(|c: char| c.is_whitespace() || matches!(c, ')' | '"' | '\''))
+            .map(|offset| authority + offset)
+            .unwrap_or(rest.len());
+        match rest[authority..url_end].find('?') {
+            Some(offset) => {
+                redacted.push_str(&rest[..authority + offset]);
+                redacted.push_str("?<redacted>");
+            }
+            None => redacted.push_str(&rest[..url_end]),
+        }
+        rest = &rest[url_end..];
+    }
+    redacted.push_str(rest);
+    redacted
 }
 
 /// Calculates sha256 checksum across the fields.
@@ -2426,15 +2482,143 @@ mod test {
     use crate::compiler::rust_compiler::prepare_workspace;
     use crate::compiler::rust_compiler::{
         STALE_TEMP_UPLOAD_MAX_AGE, calculate_source_checksum, decide_cleanup,
-        decide_pipeline_binary_cleanup, is_permanent_upload_rejection,
+        decide_pipeline_binary_cleanup, is_permanent_upload_rejection, sccache_message,
     };
     use crate::compiler::test::{CompilerTest, list_content_as_sorted_names};
     use crate::compiler::util::{
         CleanupDecision, crate_name_pipeline_globals, crate_name_pipeline_main, read_file_content,
     };
-    use crate::db::types::program::{CompilationProfile, ProgramStatus, RuntimeSelector};
+    use crate::db::types::program::{
+        CompilationProfile, ProgramStatus, RuntimeSelector, RustCompilationInfo,
+    };
     use crate::db::types::utils::validate_program_info;
     use std::collections::HashSet;
+
+    /// Tests that sccache's report is picked out of real `cargo build` output, that the
+    /// diagnostics quoting the user's program are left out of it, and that a compilation
+    /// failing for the user's own reasons yields nothing.
+    #[test]
+    fn extract_sccache_message() {
+        // Captured from `cargo build` with RUSTC_WRAPPER=sccache and a config sccache
+        // rejects. Cargo echoes the failing subprocess stderr below `--- stderr`.
+        let bad_config = RustCompilationInfo {
+            exit_code: 101,
+            stdout: "".to_string(),
+            stderr: indoc::indoc! {r#"
+                error: process didn't exit successfully: `sccache /rustc -vV` (exit status: 2)
+                --- stderr
+                sccache: error: Failed to load config file
+                sccache: caused by: TOML parse error at line 4, column 1
+                  |
+                4 | server_side_encryption_bogus = true
+                  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                unknown field `server_side_encryption_bogus`
+            "#}
+            .to_string(),
+        };
+        assert_eq!(
+            sccache_message(&bad_config).as_deref(),
+            Some(indoc::indoc! {r#"
+                sccache: error: Failed to load config file
+                sccache: caused by: TOML parse error at line 4, column 1
+                  |
+                4 | server_side_encryption_bogus = true
+                  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                unknown field `server_side_encryption_bogus`"#})
+        );
+
+        // Same, with an unreachable S3 endpoint: sccache checks the bucket at startup, so
+        // its message continues past a blank line into a context block.
+        let unreachable_bucket = RustCompilationInfo {
+            exit_code: 101,
+            stdout: "".to_string(),
+            stderr: indoc::indoc! {r#"
+                error: process didn't exit successfully: `sccache /rustc -vV` (exit status: 2)
+                --- stderr
+                sccache: error: Server startup failed: cache storage failed to read
+
+                Context:
+                   url: http://minio:9000/sccache-bucket/sccache/.sccache_check
+                   service: s3
+            "#}
+            .to_string(),
+        };
+        assert_eq!(
+            sccache_message(&unreachable_bucket).as_deref(),
+            Some(indoc::indoc! {r#"
+                sccache: error: Server startup failed: cache storage failed to read
+
+                Context:
+                   url: http://minio:9000/sccache-bucket/sccache/.sccache_check
+                   service: s3"#})
+        );
+
+        // The user's program must stay out of the compiler server log: cargo diagnostics
+        // quote its source, and they start where sccache's message ends.
+        let sccache_and_user_error = RustCompilationInfo {
+            exit_code: 101,
+            stdout: "".to_string(),
+            stderr: indoc::indoc! {r#"
+                sccache: warning: failed to read from cache
+                error[E0433]: failed to resolve: use of undeclared crate or module `chrnoo`
+                 --> src/udf.rs:3:5
+                  |
+                3 |     chrnoo::Utc::now();
+            "#}
+            .to_string(),
+        };
+        assert_eq!(
+            sccache_message(&sccache_and_user_error).as_deref(),
+            Some("sccache: warning: failed to read from cache")
+        );
+
+        // Under IRSA, sccache reports the STS request it could not sign, and the query string
+        // of that request holds the web identity token.
+        let irsa_failure = RustCompilationInfo {
+            exit_code: 101,
+            stdout: "".to_string(),
+            stderr: indoc::indoc! {"
+                error: process didn't exit successfully: `sccache /rustc -vV` (exit status: 2)
+                --- stderr
+                sccache: error: Server startup failed: cache storage failed to read: \
+                Unexpected (temporary) at read => loading credential to sign http request
+
+                Context:
+                   called: reqsign::LoadCredential
+                   service: s3
+                   path: .sccache_check
+                   range: 0-
+
+                Source:
+                   error sending request for url (https://sts.amazonaws.com/\
+                   ?Action=AssumeRoleWithWebIdentity\
+                   &RoleArn=arn:aws:iam::574503590302:role/compiler\
+                   &WebIdentityToken=TOKENLEAKCANARY123456\
+                   &Version=2011-06-15&RoleSessionName=reqsign\
+                   ): client error (Connect)
+            "}
+            .to_string(),
+        };
+        let message = sccache_message(&irsa_failure).expect("sccache message");
+        assert!(!message.contains("TOKENLEAKCANARY123456"), "{message}");
+        // The cause an operator needs survives the redaction.
+        assert!(message.contains("url (https://sts.amazonaws.com/?<redacted>): client error"));
+        assert!(message.contains(
+            "cache storage failed to read: Unexpected (temporary) at read => \
+             loading credential to sign http request"
+        ));
+
+        let user_error = RustCompilationInfo {
+            exit_code: 101,
+            stdout: "".to_string(),
+            stderr: indoc::indoc! {r#"
+                error[E0433]: failed to resolve: use of undeclared crate or module `chrnoo`
+                 --> src/udf.rs:3:5
+            "#}
+            .to_string(),
+        };
+        assert_eq!(sccache_message(&user_error), None);
+    }
 
     /// Tests the calculation of the source checksum based on the input.
     #[tokio::test]
