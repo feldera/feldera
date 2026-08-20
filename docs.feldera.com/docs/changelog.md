@@ -35,6 +35,26 @@ import TabItem from '@theme/TabItem';
         - Joining on `ROW` values is now supported, using
           `ON left.r IS NOT DISTINCT FROM right.r` (#3398).
 
+        - Breaking change (SQL): comparing a `UUID` with a character or binary value
+          now converts that value to a `UUID`, the same direction as comparing a
+          string with a number.  Previously the `UUID` was converted to the other
+          operand's type, so `u <> ''` was always `FALSE`.  A value that does not
+          denote a `UUID` is now a runtime error rather than a comparison that
+          silently fails (#6883).
+
+        - Breaking change (SQL): converting a string to a `UUID` now follows
+          PostgreSQL: 32 hexadecimal digits of either case, optionally enclosed in
+          braces, optionally separated by a hyphen after any complete group of four
+          digits.  Forms such as `123e4567e89b12d3a456426655440000` and
+          `{123e4567-e89b-12d3-a456-426655440000}` are now accepted, while the URN
+          form `urn:uuid:123e4567-e89b-12d3-a456-426655440000` is rejected, as are
+          strings with leading or trailing blanks.  Malformed strings are rejected
+          instead of denoting a different `UUID`: the literal `UUID '1-2-3-4-5'`
+          used to mean `00000001-0002-0003-0004-000000000005`.  `UUID` literals
+          follow the same rules as the cast.  Converting a binary value to a `UUID`
+          now requires exactly 16 bytes; a longer value used to be truncated.  See
+          [UUID operations](https://docs.feldera.com/sql/uuid).
+
         ## v0.330.0
 
         - Feldera's membership table now authorizes every login: a user acts

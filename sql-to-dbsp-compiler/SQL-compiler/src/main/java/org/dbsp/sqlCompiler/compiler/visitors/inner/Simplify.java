@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.apache.calcite.runtime.SqlFunctions;
 import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimeString;
 import org.apache.calcite.util.TimestampString;
@@ -72,6 +73,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVoidLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasZero;
@@ -87,6 +89,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUuid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -101,6 +104,7 @@ import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.UUID;
 
 /** Visitor which does some Rust-level expression simplifications. */
 public class Simplify extends ExpressionTranslator {
@@ -307,6 +311,16 @@ public class Simplify extends ExpressionTranslator {
                         this.compiler.reportWarning(expression.getSourcePosition(), "Not a number",
                                 " String " + Utilities.singleQuote(str.value) +
                                         " cannot be interpreted as a DECIMAL");
+                    }
+                } else if (type.is(DBSPTypeUuid.class)) {
+                    try {
+                        UUID value = SqlFunctions.stringToUuid(str.value);
+                        result = new DBSPUuidLiteral(value, expression.type.mayBeNull);
+                    } catch (IllegalArgumentException ex) {
+                        // Keep the cast; the runtime reports a parse error
+                        this.compiler.reportWarning(expression.getSourcePosition(), "Not a UUID",
+                                " String " + Utilities.singleQuote(str.value) +
+                                        " cannot be interpreted as a UUID");
                     }
                 } else if (type.is(DBSPTypeString.class)) {
                     DBSPTypeString typeString = type.to(DBSPTypeString.class);

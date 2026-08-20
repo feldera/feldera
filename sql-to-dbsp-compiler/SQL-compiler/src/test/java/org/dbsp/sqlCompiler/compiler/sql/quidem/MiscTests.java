@@ -60,14 +60,242 @@ public class MiscTests extends ScottBaseTests {
                 +--------+
                 | EXPR$0 |
                 +--------+
-                |        |
+                | NULL   |
                 +--------+
+                (1 row)
+
+                -- A literal accepts the same spellings as a cast from a string
+                SELECT UUID '123e4567e89b12d3a456426655440000';
+                +--------------------------------------+
+                | EXPR$0                               |
+                +--------------------------------------+
+                | 123e4567-e89b-12d3-a456-426655440000 |
+                +--------------------------------------+
+                (1 row)
+
+                -- Hyphens are optional separators, so this denotes the same UUID.
+                -- PostgreSQL accepts the same set of spellings.
+                SELECT CAST('123e4567e89b12d3a456426655440000' AS UUID);
+                +--------------------------------------+
+                | EXPR$0                               |
+                +--------------------------------------+
+                | 123e4567-e89b-12d3-a456-426655440000 |
+                +--------------------------------------+
+                (1 row)
+
+                SELECT CAST('{123e4567-e89b-12d3-a456-426655440000}' AS UUID);
+                +--------------------------------------+
+                | EXPR$0                               |
+                +--------------------------------------+
+                | 123e4567-e89b-12d3-a456-426655440000 |
+                +--------------------------------------+
+                (1 row)
+
+                SELECT CAST('123e-4567-e89b-12d3-a456-4266-5544-0000' AS UUID);
+                +--------------------------------------+
+                | EXPR$0                               |
+                +--------------------------------------+
+                | 123e4567-e89b-12d3-a456-426655440000 |
+                +--------------------------------------+
+                (1 row)
+
+                SELECT CAST('123e4567-e89b12d3-a4564266-55440000' AS UUID);
+                +--------------------------------------+
+                | EXPR$0                               |
+                +--------------------------------------+
+                | 123e4567-e89b-12d3-a456-426655440000 |
+                +--------------------------------------+
                 (1 row)""");
         this.qf("SELECT CAST('123e' AS UUID)",
-                "invalid length: expected length 32 for simple format, found 4", false);
+                "Invalid UUID string '123e'", false);
+        // A group is not four digits wide
+        this.qf("SELECT CAST('1-2-3-4-5' AS UUID)",
+                "Invalid UUID string '1-2-3-4-5'", false);
+        // As above, though 36 characters long
+        this.qf("SELECT CAST('123e456-7e89b-12d3-a456-426655440000' AS UUID)",
+                "Invalid UUID string '123e456-7e89b-12d3-a456-426655440000'", false);
+        // Empty group
+        this.qf("SELECT CAST('123e4567--e89b-12d3-a456-426655440000' AS UUID)",
+                "Invalid UUID string '123e4567--e89b-12d3-a456-426655440000'", false);
+        // Unbalanced brace
+        this.qf("SELECT CAST('{123e4567-e89b-12d3-a456-426655440000' AS UUID)",
+                "Invalid UUID string '{123e4567-e89b-12d3-a456-426655440000'", false);
+        // The URN form is not accepted; PostgreSQL rejects it too
+        this.qf("SELECT CAST('urn:uuid:123e4567-e89b-12d3-a456-426655440000' AS UUID)",
+                "Invalid UUID string 'urn:uuid:123e4567-e89b-12d3-a456-426655440000'", false);
+        // Blanks are never trimmed
+        this.qf("SELECT CAST('' AS UUID)", "Invalid UUID string ''", false);
+        this.qf("SELECT CAST('   ' AS UUID)", "Invalid UUID string '   '", false);
+        this.qf("SELECT CAST(' 123e4567-e89b-12d3-a456-426655440000' AS UUID)",
+                "Invalid UUID string ' 123e4567-e89b-12d3-a456-426655440000'", false);
         this.qf("SELECT CAST(x'00' AS UUID)",
-                "Need at least 16 bytes", false);
+                "Need exactly 16 bytes", false);
+        this.qf("SELECT CAST(x'123e4567e89b12d3a456426655440000ff' AS UUID)",
+                "Need exactly 16 bytes", false);
         this.queryFailingInCompilation("SELECT UUID NULL", "Incorrect syntax");
+    }
+
+    /** Comparing a UUID with a string converts the string to a UUID;
+     * a string that is not a UUID is a runtime error.
+     * Tests from [CALCITE-7727], reported as issue 6883. */
+    @Test
+    public void issue6883() {
+        this.qst("""
+                SELECT UUID '123e4567-e89b-12d3-a456-426655440000'
+                     = '123E4567-E89B-12D3-A456-426655440000' AS C;
+                +------+
+                | C    |
+                +------+
+                | true |
+                +------+
+                (1 row)
+
+                -- Hyphens are optional, so this string denotes the same UUID
+                SELECT UUID '123e4567-e89b-12d3-a456-426655440000'
+                     = '123e4567e89b12d3a456426655440000' AS C;
+                +------+
+                | C    |
+                +------+
+                | true |
+                +------+
+                (1 row)
+
+                -- CHAR(36) is exactly the width of the UUID, so there is no padding
+                SELECT UUID '123e4567-e89b-12d3-a456-426655440000'
+                     = CAST('123e4567-e89b-12d3-a456-426655440000' AS CHAR(36)) AS C;
+                +------+
+                | C    |
+                +------+
+                | true |
+                +------+
+                (1 row)
+
+                -- IN uses the comparison common type
+                SELECT UUID '123e4567-e89b-12d3-a456-426655440000'
+                     IN ('123e4567-e89b-12d3-a456-426655440000',
+                         '123E4567-E89B-12D3-A456-426655440001') AS C;
+                +------+
+                | C    |
+                +------+
+                | true |
+                +------+
+                (1 row)
+
+                -- Binary compared to UUID
+                SELECT UUID '123e4567-e89b-12d3-a456-426655440000'
+                     = x'123e4567e89b12d3a456426655440000' AS C;
+                +------+
+                | C    |
+                +------+
+                | true |
+                +------+
+                (1 row)
+
+                SELECT x'123e4567e89b12d3a456426655440000'
+                     = UUID '123e4567-e89b-12d3-a456-426655440000' AS C;
+                +------+
+                | C    |
+                +------+
+                | true |
+                +------+
+                (1 row)
+
+                -- A comparison with NULL is NULL, not an error
+                SELECT CAST(NULL AS UUID) <> '' AS C;
+                +------+
+                | C    |
+                +------+
+                | NULL |
+                +------+
+                (1 row)
+
+                SELECT u = f AS EQ_FULL, u = g AS EQ_UPPER, u = b AS EQ_BINARY
+                FROM (VALUES (CAST('123e4567-e89b-12d3-a456-426655440000' AS UUID),
+                              '123e4567-e89b-12d3-a456-426655440000',
+                              '123E4567-E89B-12D3-A456-426655440000',
+                              x'123e4567e89b12d3a456426655440000'),
+                             (CAST(NULL AS UUID),
+                              '123e4567-e89b-12d3-a456-426655440000',
+                              '123E4567-E89B-12D3-A456-426655440000',
+                              x'123e4567e89b12d3a456426655440000'))
+                  AS t(u, f, g, b);
+                +---------+----------+-----------+
+                | EQ_FULL | EQ_UPPER | EQ_BINARY |
+                +---------+----------+-----------+
+                | true    | true     | true      |
+                | NULL    | NULL     | NULL      |
+                +---------+----------+-----------+
+                (2 rows)
+
+                SELECT CAST(u AS VARCHAR) AS C
+                FROM (VALUES (CAST('123e4567-e89b-12d3-a456-426655440000' AS UUID)),
+                             (CAST(NULL AS UUID))) AS t(u);
+                +--------------------------------------+
+                | C                                    |
+                +--------------------------------------+
+                | 123e4567-e89b-12d3-a456-426655440000 |
+                |NULL                                  |
+                +--------------------------------------+
+                (2 rows)
+
+                SELECT CAST(u AS VARBINARY) AS B, u = u AS SELF
+                FROM (VALUES (CAST('123e4567-e89b-12d3-a456-426655440000' AS UUID)),
+                             (CAST(NULL AS UUID))) AS t(u);
+                +----------------------------------+------+
+                | B                                | SELF |
+                +----------------------------------+------+
+                | 123e4567e89b12d3a456426655440000 | true |
+                |NULL                              | NULL |
+                +----------------------------------+------+
+                (2 rows)
+
+                -- UUID columns as grouping and sorting keys
+                SELECT u, COUNT(*) AS C
+                FROM (VALUES (CAST('123e4567-e89b-12d3-a456-426655440000' AS UUID)),
+                             (CAST('123e4567-e89b-12d3-a456-426655440001' AS UUID)),
+                             (CAST('123e4567-e89b-12d3-a456-426655440000' AS UUID)),
+                             (CAST(NULL AS UUID))) AS t(u)
+                GROUP BY u ORDER BY u;
+                +--------------------------------------+---+
+                | U                                    | C |
+                +--------------------------------------+---+
+                | 123e4567-e89b-12d3-a456-426655440000 | 2 |
+                | 123e4567-e89b-12d3-a456-426655440001 | 1 |
+                | NULL                                 | 1 |
+                +--------------------------------------+---+
+                (3 rows)
+
+                -- UUID columns as join keys
+                SELECT t1.u AS U
+                FROM (VALUES (CAST('123e4567-e89b-12d3-a456-426655440000' AS UUID)),
+                             (CAST('123e4567-e89b-12d3-a456-426655440001' AS UUID))) AS t1(u)
+                JOIN (VALUES (CAST('123e4567-e89b-12d3-a456-426655440000' AS UUID)),
+                             (CAST('123e4567-e89b-12d3-a456-426655440001' AS UUID))) AS t2(u)
+                ON t1.u = t2.u
+                ORDER BY 1;
+                +--------------------------------------+
+                | U                                    |
+                +--------------------------------------+
+                | 123e4567-e89b-12d3-a456-426655440000 |
+                | 123e4567-e89b-12d3-a456-426655440001 |
+                +--------------------------------------+
+                (2 rows)""");
+        // The empty string is not a UUID; before the fix this comparison returned FALSE
+        this.qf("SELECT UUID '123e4567-e89b-12d3-a456-426655440000' <> ''",
+                "Invalid UUID string ''", false);
+        this.qf("SELECT UUID '123e4567-e89b-12d3-a456-426655440000' = '123e4567'",
+                "Invalid UUID string '123e4567'", false);
+        // A trailing blank does not denote a UUID either
+        this.qf("SELECT UUID '123e4567-e89b-12d3-a456-426655440000' = '123e4567-e89b-12d3-a456-426655440000 '",
+                "Invalid UUID string '123e4567-e89b-12d3-a456-426655440000 '", false);
+        // The CHAR(40) string is padded with blanks, so converting it to a UUID fails
+        this.qf("SELECT UUID '123e4567-e89b-12d3-a456-426655440000' = " +
+                        "CAST('123e4567-e89b-12d3-a456-426655440000' AS CHAR(40))",
+                "Invalid UUID string '123e4567-e89b-12d3-a456-426655440000    '", false);
+        this.qf("SELECT UUID '123e4567-e89b-12d3-a456-426655440000' = x'00'",
+                "Need exactly 16 bytes", false);
+        this.qf("SELECT UUID '123e4567-e89b-12d3-a456-426655440000' = x'123e4567e89b12d3a456426655440000ff'",
+                "Need exactly 16 bytes", false);
     }
 
     @Test

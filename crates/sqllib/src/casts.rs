@@ -3996,14 +3996,11 @@ cast_function!(Uuid, Uuid, s, SqlString);
 
 #[doc(hidden)]
 pub fn cast_to_Uuid_bytes(value: ByteArray) -> SqlResult<Uuid> {
-    if value.length() < 16 {
-        Err(SqlRuntimeError::from_strng(
-            "Need at least 16 bytes in BINARY value to create an UUID",
-        ))
-    } else {
-        let slice = value.as_slice();
-        let slice = unsafe { *(slice.as_ptr() as *const [u8; 16]) };
-        Ok(Uuid::from_bytes(slice))
+    match <[u8; 16]>::try_from(value.as_slice()) {
+        Ok(bytes) => Ok(Uuid::from_bytes(bytes)),
+        Err(_) => Err(SqlRuntimeError::from_strng(
+            "Need exactly 16 bytes in BINARY value to create an UUID",
+        )),
     }
 }
 
@@ -4036,6 +4033,29 @@ mod tests {
         interval::{LongInterval, ShortInterval},
         limit_or_size_string,
     };
+
+    #[test]
+    fn binary_to_uuid() {
+        use crate::{ByteArray, cast_to_Uuid_bytes};
+
+        let bytes: Vec<u8> = (0..16).collect();
+        assert_eq!(
+            cast_to_Uuid_bytes(ByteArray::new(&bytes)).unwrap(),
+            Uuid::try_from_ref("00010203-0405-0607-0809-0a0b0c0d0e0f").unwrap()
+        );
+
+        // A UUID is exactly 16 bytes; shorter and longer values are errors
+        for length in [0, 15, 17] {
+            let bytes: Vec<u8> = (0..length).collect();
+            let error = cast_to_Uuid_bytes(ByteArray::new(&bytes))
+                .err()
+                .unwrap_or_else(|| panic!("{length} bytes should be rejected"));
+            assert_eq!(
+                error.to_string(),
+                "Need exactly 16 bytes in BINARY value to create an UUID"
+            );
+        }
+    }
 
     #[test]
     fn string_casts() {

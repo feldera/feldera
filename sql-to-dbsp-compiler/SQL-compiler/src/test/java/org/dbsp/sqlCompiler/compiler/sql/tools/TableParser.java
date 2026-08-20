@@ -365,7 +365,8 @@ public class TableParser {
                 }
                 case BYTES -> {
                     if (!data.startsWith(" ")) {
-                        if (data.equals("NULL"))
+                        // Like a string, a NULL may be padded on the right to align the column
+                        if (data.startsWith("NULL"))
                             yield DBSPLiteral.none(fieldType);
                         else
                             throw new RuntimeException("Expected NULL or a space: " +
