@@ -4149,3 +4149,215 @@ fn delta_table_unity_people_2m() {
 
     forget(json_file);
 }
+
+/// A `filter` is a `where` clause over the Delta table, so it may name a column
+/// the SQL table does not declare; follow mode used to project those away first.
+async fn run_follow_filter_undeclared_column_test(filter_expr: &str) {
+    use crate::test::TestStruct;
+    use arrow::array::{Array, BooleanArray, Int64Array, RecordBatch, StringArray, StructArray};
+    use arrow::datatypes::{
+        DataType as ArrowDataType, Field as ArrowField, Fields as ArrowFields,
+        Schema as ArrowSchema,
+    };
+    use deltalake::kernel::{DataType as KernelDataType, PrimitiveType, StructField};
+
+    init_logging();
+
+    // `region` and `meta` exist only in the Delta table. `meta.tag` mirrors
+    // `region`, so both filter forms select the same rows.
+    let meta_fields: ArrowFields =
+        vec![Arc::new(ArrowField::new("tag", ArrowDataType::Utf8, false))].into();
+    let arrow_schema = Arc::new(ArrowSchema::new(vec![
+        ArrowField::new("id", ArrowDataType::Int64, false),
+        ArrowField::new("b", ArrowDataType::Boolean, false),
+        ArrowField::new("s", ArrowDataType::Utf8, false),
+        ArrowField::new("region", ArrowDataType::Utf8, false),
+        ArrowField::new("meta", ArrowDataType::Struct(meta_fields.clone()), false),
+    ]));
+    let struct_fields = vec![
+        StructField::new("id", KernelDataType::Primitive(PrimitiveType::Long), false),
+        StructField::new(
+            "b",
+            KernelDataType::Primitive(PrimitiveType::Boolean),
+            false,
+        ),
+        StructField::new("s", KernelDataType::Primitive(PrimitiveType::String), false),
+        StructField::new(
+            "region",
+            KernelDataType::Primitive(PrimitiveType::String),
+            false,
+        ),
+        StructField::new(
+            "meta",
+            KernelDataType::try_from_arrow(&ArrowDataType::Struct(meta_fields.clone())).unwrap(),
+            false,
+        ),
+    ];
+
+    // Even ids are in region 'us' (kept), odd ids in 'eu' (filtered out).
+    let region = |id: u32| if id.is_multiple_of(2) { "us" } else { "eu" };
+    let row = |id: u32| TestStruct {
+        id,
+        b: false,
+        i: None,
+        s: format!("row-{id}"),
+    };
+    let make_batch = |ids: &[u32]| -> RecordBatch {
+        RecordBatch::try_new(
+            arrow_schema.clone(),
+            vec![
+                Arc::new(Int64Array::from_iter_values(
+                    ids.iter().map(|id| *id as i64),
+                )) as Arc<dyn Array>,
+                Arc::new(ids.iter().map(|_| Some(false)).collect::<BooleanArray>()),
+                Arc::new(StringArray::from_iter_values(
+                    ids.iter().map(|id| format!("row-{id}")),
+                )),
+                Arc::new(StringArray::from_iter_values(
+                    ids.iter().map(|id| region(*id)),
+                )),
+                Arc::new(StructArray::new(
+                    meta_fields.clone(),
+                    vec![Arc::new(StringArray::from_iter_values(
+                        ids.iter().map(|id| region(*id)),
+                    ))],
+                    None,
+                )),
+            ],
+        )
+        .unwrap()
+    };
+
+    async fn append(delta: DeltaTable, batch: RecordBatch) -> DeltaTable {
+        delta
+            .write(vec![batch])
+            .with_save_mode(SaveMode::Append)
+            .await
+            .unwrap()
+    }
+
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let mut delta = create_table(&table_uri, &HashMap::new(), &struct_fields).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let read_pipeline = {
+        let table_uri = table_uri.clone();
+        let storage_dir = storage_dir.path().to_path_buf();
+        let filter_expr = filter_expr.to_string();
+        tokio::task::spawn_blocking(move || {
+            let pipeline_config: PipelineConfig = serde_json::from_value(json!({
+                "name": "test",
+                "workers": 4,
+                "storage_config": { "path": storage_dir },
+                "inputs": {
+                    "test_input1": {
+                        "stream": "test_input1",
+                        "transport": {
+                            "name": "delta_table_input",
+                            "config": {
+                                "uri": table_uri,
+                                "mode": "follow",
+                                "filter": filter_expr,
+                                "skip_unused_columns": true,
+                            }
+                        }
+                    }
+                }
+            }))
+            .unwrap();
+            Controller::with_test_config(
+                move |workers| {
+                    Ok(test_circuit::<TestStruct>(
+                        workers,
+                        &TestStruct::schema(),
+                        &[Some("output")],
+                    ))
+                },
+                &pipeline_config,
+                Box::new(move |e, _| panic!("follow filter over undeclared column: {e}")),
+            )
+            .unwrap()
+        })
+        .await
+        .unwrap()
+    };
+    read_pipeline.start();
+    let output = SqlIdentifier::from("test_output1");
+
+    let batch1: Vec<u32> = (0..6).collect();
+    delta = append(delta, make_batch(&batch1)).await;
+    let mut expected: Vec<TestStruct> = batch1
+        .iter()
+        .filter(|id| region(**id) == "us")
+        .map(|id| row(*id))
+        .collect();
+    wait_for_records_materialized(&read_pipeline, &output, &expected).await;
+
+    // A second commit: the filter must still resolve past the first log entry.
+    let batch2: Vec<u32> = (6..12).collect();
+    let _ = append(delta, make_batch(&batch2)).await;
+    expected.extend(
+        batch2
+            .iter()
+            .filter(|id| region(**id) == "us")
+            .map(|id| row(*id)),
+    );
+    wait_for_records_materialized(&read_pipeline, &output, &expected).await;
+
+    read_pipeline.stop().unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_follow_filter_undeclared_column_test() {
+    run_follow_filter_undeclared_column_test("region = 'us'").await;
+}
+
+/// Same, over a field of an undeclared struct column, the form reported in the
+/// issue: it parses as a compound identifier, so the read set must keep `meta`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_follow_filter_undeclared_struct_field_test() {
+    run_follow_filter_undeclared_column_test("meta.tag = 'us'").await;
+}
+
+/// Filtering before projecting must not widen the scan: DataFusion's projection
+/// pushdown collapses the two, so columns neither step names stay pruned.
+#[tokio::test]
+async fn follow_filter_before_projection_prunes_scan() {
+    use crate::integrated::delta_table::input::apply_filter;
+    use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField};
+    use datafusion::datasource::MemTable;
+    use datafusion::prelude::SessionContext;
+
+    // `region` is filtered on but not projected; `junk` is neither.
+    let arrow_schema = Arc::new(ArrowSchema::new(vec![
+        ArrowField::new("id", ArrowDataType::Int64, false),
+        ArrowField::new("b", ArrowDataType::Boolean, false),
+        ArrowField::new("s", ArrowDataType::Utf8, false),
+        ArrowField::new("region", ArrowDataType::Utf8, false),
+        ArrowField::new("junk", ArrowDataType::Utf8, false),
+    ]));
+
+    let ctx = SessionContext::new();
+    ctx.register_table(
+        "t",
+        Arc::new(MemTable::try_new(arrow_schema.clone(), vec![vec![]]).unwrap()),
+    )
+    .unwrap();
+
+    let df = apply_filter(
+        ctx.table("t").await.unwrap(),
+        Some("region = 'us'"),
+        "follow",
+        "unit-test",
+    )
+    .unwrap();
+    let df = df.select_columns(&["id", "b", "s"]).unwrap();
+
+    let plan = format!("{}", df.into_optimized_plan().unwrap().display_indent());
+    assert!(
+        plan.contains("projection=") && !plan.contains("junk"),
+        "the scan must read only the projected columns plus the filter's, so \
+         'junk' must be pruned; plan was:\n{plan}"
+    );
+}

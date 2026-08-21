@@ -358,3 +358,33 @@ def test_delta_input_cdc_with_deletion_vectors(pipeline_name):
         "only the single v3 insert event may arrive; a higher count "
         "means soft-deleted or restored events were re-ingested"
     )
+
+
+def test_delta_input_dv_follow_filter_undeclared_col(pipeline_name):
+    """A DV-masked follow read must still read the `filter`'s columns.
+
+    Masked files bypass the listing path and are read through a provider whose
+    schema is the read set, so an undeclared filter column resolves only if the
+    read set keeps it. `value` is `id * 1.5`, so the filter keeps ids 100..199,
+    the upper half; the DV commit then retracts the even ones.
+    """
+    kept_by_filter = TOTAL_ROWS // 2
+    expected_total = kept_by_filter // 2
+    result = _ingest_dv_fixture(
+        pipeline_name,
+        mode="snapshot_and_follow",
+        columns="id INT NOT NULL",
+        extra_config={
+            "version": 0,
+            "end_version": 1,
+            "filter": "value >= 150.0",
+        },
+    )
+    assert result.total == expected_total, (
+        "the snapshot must keep the filtered half and the DV commit must "
+        f"retract its even ids; got {result.total} rows, expected "
+        f"{expected_total}"
+    )
+    assert result.even_id_rows == 0, (
+        "the surviving rows must be the odd ids, not the deleted even ids"
+    )
