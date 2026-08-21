@@ -1,11 +1,17 @@
 //! Benchmark comparing two graph 2-coloring (bipartiteness) approaches:
 //!
-//! - **recursive**: `Circuit::recursive_dynamic`, which splices an implicit
-//!   `distinct` onto every recursive output stream.
+//! - **recursive**: `Circuit::recursive`, which splices an implicit `distinct`
+//!   onto every recursive output stream.
 //!   See [`build_recursive_variant`].
 //! - **iterate**: `Circuit::iterate` with a manual feedback loop that carries
 //!   only the per-iteration frontier and deduplicates with an explicit
 //!   `distinct`. See [`build_iterate_variant`].
+//! - **recursion**: `Circuit::recursion` (the `RecursionBuilder` API) over a
+//!   *tuple* of the two mutually recursive relations (`red`, `blue`).  Unlike
+//!   the transitive-closure benchmarks, the `distinct` is kept (both variants
+//!   need it here for termination), so this variant differs from `recursive`
+//!   only in the entry API, not the work performed.
+//!   See [`build_recursion_variant`].
 //!
 //! Unlike the transitive-closure benchmarks, both variants perform the same
 //! deduplication work (implicit vs. explicit `distinct`).  Hence, we should see
@@ -122,21 +128,28 @@ fn drive_once(mut circuit: BipartiteGraphCircuit, mut workload: Workload) -> (us
 fn assert_variants_agree(workload: &Workload) -> (usize, usize) {
     let recursive = build_recursive_variant().expect("build recursive circuit");
     let iterate = build_iterate_variant().expect("build iterate circuit");
+    let recursion = build_recursion_variant().expect("build recursion circuit");
 
     let mut recursive_circuit = recursive.handle;
     let mut iterate_circuit = iterate.handle;
+    let mut recursion_circuit = recursion.handle;
 
     recursive.init_input.append(&mut workload.init.clone());
     recursive.edges_input.append(&mut workload.edges.clone());
     iterate.init_input.append(&mut workload.init.clone());
     iterate.edges_input.append(&mut workload.edges.clone());
+    recursion.init_input.append(&mut workload.init.clone());
+    recursion.edges_input.append(&mut workload.edges.clone());
     recursive_circuit.transaction().unwrap();
     iterate_circuit.transaction().unwrap();
+    recursion_circuit.transaction().unwrap();
 
     let recursive_red = recursive.red_output.concat().consolidate();
     let recursive_blue = recursive.blue_output.concat().consolidate();
     let iterate_red = iterate.red_output.concat().consolidate();
     let iterate_blue = iterate.blue_output.concat().consolidate();
+    let recursion_red = recursion.red_output.concat().consolidate();
+    let recursion_blue = recursion.blue_output.concat().consolidate();
 
     assert_eq!(
         recursive_red, iterate_red,
@@ -145,6 +158,14 @@ fn assert_variants_agree(workload: &Workload) -> (usize, usize) {
     assert_eq!(
         recursive_blue, iterate_blue,
         "recursive and iterate variants must agree on the blue coloring"
+    );
+    assert_eq!(
+        recursive_red, recursion_red,
+        "recursive and recursion variants must agree on the red coloring"
+    );
+    assert_eq!(
+        recursive_blue, recursion_blue,
+        "recursive and recursion variants must agree on the blue coloring"
     );
 
     (
@@ -206,6 +227,23 @@ fn graph_coloring_benches(c: &mut Criterion) {
                 );
             },
         );
+
+        group.bench_with_input(
+            BenchmarkId::new("recursion", &shape),
+            &workload,
+            |b, workload| {
+                b.iter_batched(
+                    || {
+                        (
+                            build_recursion_variant().expect("build recursion circuit"),
+                            workload.clone(),
+                        )
+                    },
+                    |(circuit, workload)| drive_once(circuit, workload),
+                    BatchSize::PerIteration,
+                );
+            },
+        );
     }
 
     group.finish();
@@ -250,6 +288,59 @@ fn build_recursive_variant() -> anyhow::Result<BipartiteGraphCircuit> {
                     Ok((new_red, new_blue))
                 },
             )?;
+
+            let red_output = red_output.accumulate_output();
+            let blue_output = blue_output.accumulate_output();
+
+            Ok(((init_input, edges_input), (red_output, blue_output)))
+        })?;
+
+    Ok(BipartiteGraphCircuit {
+        handle,
+        init_input,
+        edges_input,
+        red_output,
+        blue_output,
+    })
+}
+
+/// Computes the red/blue graph coloring using DBSP's
+/// [`recursion` builder API](dbsp::circuit::ChildCircuit::recursion) over a
+/// tuple of the two mutually recursive relations.
+///
+/// This performs the same work as [`build_recursive_variant`] — the implicit
+/// `distinct` is kept, since it is what caps every node's weight at 1 and thus
+/// drives termination.  The only difference is the entry API: the two recursive
+/// relations are set up with [`recursive_var`](dbsp::circuit::ChildCircuit::recursive_var)
+/// and returned as a tuple, whose arity is inferred.
+fn build_recursion_variant() -> anyhow::Result<BipartiteGraphCircuit> {
+    let (handle, ((init_input, edges_input), (red_output, blue_output))) =
+        Runtime::init_circuit(WORKERS, move |root_circuit| {
+            let (edges, edges_input) = root_circuit.add_input_zset::<Edge>();
+            let (init, init_input) = root_circuit.add_input_zset::<NodeId>();
+
+            let (red_output, blue_output) = root_circuit
+                .recursion(
+                    // Two mutually recursive relations; the arity (2) is fixed
+                    // by the returned tuple's shape.
+                    |child_circuit| {
+                        Ok((
+                            child_circuit.recursive_var::<OrdZSet<NodeId>>(),
+                            child_circuit.recursive_var::<OrdZSet<NodeId>>(),
+                        ))
+                    },
+                    |child_circuit, (red, blue)| {
+                        let edges = edges.delta0(child_circuit);
+                        let init = init.delta0(child_circuit);
+                        let edges_indexed = edges.map_index(|Tup2(from, to)| (*from, *to));
+
+                        let new_red = init.plus(&hop(&blue, &edges_indexed));
+                        let new_blue = hop(&red, &edges_indexed);
+
+                        Ok((new_red, new_blue))
+                    },
+                )
+                .finish()?;
 
             let red_output = red_output.accumulate_output();
             let blue_output = blue_output.accumulate_output();
