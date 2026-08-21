@@ -142,6 +142,19 @@ class DeltaTestLocation:
             if k not in ("uri", "mode")
         }
 
+    def writer_storage_options(self) -> dict[str, str] | None:
+        """`storage_options` for `deltalake.write_deltalake`, or None for local.
+
+        S3 writes need the unsafe-rename opt-in: deltalake's default lock
+        provider is DynamoDB, which the test environment does not run.
+        """
+        opts = self.delta_storage_options()
+        if not opts:
+            return None
+        if self.uri.startswith("s3://"):
+            opts.setdefault("aws_s3_allow_unsafe_rename", "true")
+        return opts
+
     def _s3_filesystem(self):
         """Build a pyarrow ``S3FileSystem`` from the connector config.
 

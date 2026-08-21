@@ -257,23 +257,6 @@ def _row(idx: int) -> dict:
     }
 
 
-def _writer_storage_options(source: DeltaTestLocation) -> dict | None:
-    """Return ``storage_options`` for ``deltalake.write_deltalake``.
-
-    The base options come from the connector config. For S3/MinIO writes
-    we also enable ``aws_s3_allow_unsafe_rename`` because deltalake's
-    default lock provider is DynamoDB, which is not available in the
-    test environment.
-    """
-
-    opts = source.delta_storage_options()
-    if not opts:
-        return None
-    if source.uri.startswith("s3://"):
-        opts.setdefault("aws_s3_allow_unsafe_rename", "true")
-    return opts
-
-
 def _ensure_delta_source(source: DeltaTestLocation) -> None:
     """Generate the Delta source if the cache is missing or wrong-sized."""
 
@@ -300,7 +283,7 @@ def _ensure_delta_source(source: DeltaTestLocation) -> None:
         source.uri,
         table,
         mode="overwrite",
-        storage_options=_writer_storage_options(source),
+        storage_options=source.writer_storage_options(),
     )
 
 
