@@ -269,7 +269,8 @@ public class LatenessTests  extends StreamingTestBase {
     public void testMix() {
         var ccs = this.getCCS("""
                 CREATE TABLE T(ts INT, z VARCHAR, x INT LATENESS 2);
-                CREATE VIEW V AS SELECT ts, MIN(x), MAX(x), ARG_MAX(z, x), ARG_MIN(z, x), SUM(x) FROM t GROUP BY ts;""");
+                CREATE VIEW V AS SELECT ts, MIN(x), MAX(x), ARG_MAX(z, x), ARG_MIN(z, x), SUM(x) FROM t GROUP BY ts;""")
+                .compactAfterEachStep().withStringTrim();
         ccs.visit(new CircuitVisitor(ccs.compiler) {
             int retain = 0;
 
@@ -280,16 +281,38 @@ public class LatenessTests  extends StreamingTestBase {
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(4, this.retain);
+                // MIN and ARG_MIN need the same end of the range, and so do MAX and ARG_MAX,
+                // so two retains cover the four aggregates.
+                Assert.assertEquals(2, this.retain);
             }
         });
+        ccs.step("INSERT INTO T VALUES (1, 'a', 20), (1, 'b', 21);", """
+                 ts | min | max | argmax | argmin | sum | weight
+                -----------------------------------------------
+                  1 |  20 |  21 | b      | a      |  41 | 1""");
+        ccs.step("REMOVE FROM T VALUES (1, 'b', 21);", """
+                 ts | min | max | argmax | argmin | sum | weight
+                -----------------------------------------------
+                  1 |  20 |  21 | b      | a      |  41 | -1
+                  1 |  20 |  20 | a      | a      |  20 | 1""");
+        ccs.step("INSERT INTO T VALUES (1, 'c', 22);", """
+                 ts | min | max | argmax | argmin | sum | weight
+                -----------------------------------------------
+                  1 |  20 |  20 | a      | a      |  20 | -1
+                  1 |  20 |  22 | c      | a      |  42 | 1""");
+        // Emptying the table removes the group, so the view has no rows left
+        ccs.step("REMOVE FROM T VALUES (1, 'a', 20), (1, 'c', 22);", """
+                 ts | min | max | argmax | argmin | sum | weight
+                -----------------------------------------------
+                  1 |  20 |  22 | c      | a      |  42 | -1""");
     }
 
     @Test
     public void testMixNoGroup() {
         var ccs = this.getCCS("""
                 CREATE TABLE T(ts INT, z VARCHAR, x INT LATENESS 2);
-                CREATE VIEW V AS SELECT MIN(x), MAX(x), ARG_MAX(z, x), ARG_MIN(z, x), SUM(x) FROM t;""");
+                CREATE VIEW V AS SELECT MIN(x), MAX(x), ARG_MAX(z, x), ARG_MIN(z, x), SUM(x) FROM t;""")
+                .compactAfterEachStep().withStringTrim();
         ccs.visit(new CircuitVisitor(ccs.compiler) {
             int retain = 0;
 
@@ -300,9 +323,36 @@ public class LatenessTests  extends StreamingTestBase {
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(4, this.retain);
+                // MIN and ARG_MIN need the same end of the range, and so do MAX and ARG_MAX,
+                // so two retains cover the four aggregates.
+                Assert.assertEquals(2, this.retain);
             }
         });
+        // The aggregate of the empty table is a row of nulls
+        ccs.step("", """
+                 min | max | argmax | argmin | sum | weight
+                -------------------------------------------
+                NULL |NULL |NULL    |NULL    |NULL | 1""");
+        ccs.step("INSERT INTO T VALUES (1, 'a', 20), (1, 'b', 21);", """
+                 min | max | argmax | argmin | sum | weight
+                -------------------------------------------
+                NULL |NULL |NULL    |NULL    |NULL | -1
+                  20 |  21 | b      | a      |  41 | 1""");
+        ccs.step("REMOVE FROM T VALUES (1, 'b', 21);", """
+                 min | max | argmax | argmin | sum | weight
+                -------------------------------------------
+                  20 |  21 | b      | a      |  41 | -1
+                  20 |  20 | a      | a      |  20 | 1""");
+        ccs.step("INSERT INTO T VALUES (1, 'c', 22);", """
+                 min | max | argmax | argmin | sum | weight
+                -------------------------------------------
+                  20 |  20 | a      | a      |  20 | -1
+                  20 |  22 | c      | a      |  42 | 1""");
+        ccs.step("REMOVE FROM T VALUES (1, 'a', 20), (1, 'c', 22);", """
+                 min | max | argmax | argmin | sum | weight
+                -------------------------------------------
+                  20 |  22 | c      | a      |  42 | -1
+                NULL |NULL |NULL    |NULL    |NULL | 1""");
     }
 
     @Test

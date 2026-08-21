@@ -831,3 +831,9 @@ representations are not compatible: changing the option modifies the
 circuit and therefore forces the pipeline to rebuild its state from
 scratch, so switching back and forth is not recommended.
 
+`FELDERA_WINDOW_SHARING_THRESHOLD` how windows formed by temporal
+filters share inputs.  Two temporal filters that share an input keep
+a single copy of the data.  This settings is the number of temporal
+filters that are required to share a source in order to enable sharing.
+The default is 10; setting the option to 0
+disables the optimization.  This option is currently experimental.
