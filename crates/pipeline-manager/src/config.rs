@@ -1630,9 +1630,7 @@ mod tests {
 
     #[test]
     fn test_https_testing_mode_generates_cert_and_key() {
-        if crate::unstable_features().is_none() {
-            crate::platform_enable_unstable("testing");
-        }
+        crate::enable_test_unstable_features();
         let config = CommonConfig {
             enable_https: true,
             unstable_features: Some("testing".to_string()),

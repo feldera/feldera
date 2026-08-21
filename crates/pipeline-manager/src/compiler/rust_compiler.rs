@@ -472,11 +472,11 @@ fn calculate_source_checksum(
 
 /// Metadata for a compiler output file (binary or program info)
 #[derive(Debug, Clone)]
-struct FileUploadMetadata {
-    pipeline_id: PipelineId,
-    program_version: Version,
-    source_checksum: String,
-    integrity_checksum: String,
+pub(super) struct FileUploadMetadata {
+    pub(super) pipeline_id: PipelineId,
+    pub(super) program_version: Version,
+    pub(super) source_checksum: String,
+    pub(super) integrity_checksum: String,
 }
 
 impl FileUploadMetadata {
@@ -603,7 +603,7 @@ async fn deliver_binary(
     }
 }
 
-async fn deliver_program_info(
+pub(super) async fn deliver_program_info(
     common_config: &CommonConfig,
     delivery_mode: &FileDeliveryMode,
     program_info: &str,
@@ -1041,6 +1041,15 @@ pub async fn perform_rust_compilation(
     })?;
     let runtime_selector = program_config.runtime_version();
     assert!(has_unstable_feature("runtime_version") || runtime_selector.is_platform());
+    // Crucible needs no Rust compilation: the SQL compiler completes it, so it never
+    // enters the Rust compilation queue. Reaching here means the claim predicate is
+    // wrong; fail loudly rather than build a binary crucible does not use.
+    if runtime_selector.is_crucible() {
+        return Err(RustCompilationError::SystemError(
+            "crucible programs are completed by the SQL compiler and must not reach Rust compilation"
+                .to_string(),
+        ));
+    }
     let pipeline_name_for_log = pipeline_name.clone().unwrap_or_else(|| "N/A".to_string());
     info!(
         pipeline_id = %pipeline_id,
@@ -1126,7 +1135,7 @@ pub async fn perform_rust_compilation(
 
     Ok(RustCompilationResult {
         source_checksum,
-        binary_integrity_checksum: binary_integrity_checksum.clone(),
+        binary_integrity_checksum,
         binary_size,
         program_info_integrity_checksum,
         profile,
@@ -1334,6 +1343,9 @@ pub async fn resolve_runtime_sha(
     match runtime_version {
         RuntimeSelector::Sha(sha) => Ok(sha.clone()),
         RuntimeSelector::Platform(platform_sha) => Ok(platform_sha.clone()),
+        RuntimeSelector::Crucible => unreachable!(
+            "crucible compiles against the platform sources; no runtime SHA is resolved"
+        ),
         RuntimeSelector::Version(version) => {
             let repo_location = runtime_version.runtime_sources(config);
             match Command::new("git")
@@ -1547,7 +1559,7 @@ async fn prepare_workspace(
     // ---------------------
     // Make sure the runtime version is checked out.
     let runtime_sources = requested_runtime_version.runtime_sources(config);
-    if !requested_runtime_version.is_platform() {
+    if !requested_runtime_version.is_platform() && !requested_runtime_version.is_crucible() {
         let repo_location = PathBuf::from(&runtime_sources);
         checkout_runtime_version(
             &repo_location,
@@ -1566,7 +1578,7 @@ async fn prepare_workspace(
     // ---------------------
     // Contains all the (indirect and direct) dependencies of the crates besides UDF.
     // The original is copied over each time such that the starting point is the same.
-    if requested_runtime_version.is_platform() {
+    if requested_runtime_version.is_platform() || requested_runtime_version.is_crucible() {
         let cargo_lock_source_path = Path::new(&config.compilation_cargo_lock_path);
         let cargo_lock_target_path = workspace_dir.join("Cargo.lock");
         copy_file(cargo_lock_source_path, &cargo_lock_target_path).await?;
@@ -1622,6 +1634,7 @@ async fn call_compiler(
     // Create pipeline-binaries directory if it does not yet exist
     let pipeline_binaries_dir = workspace_dir.join("pipeline-binaries");
     create_dir_if_not_exists(&pipeline_binaries_dir).await?;
+
     let pipeline_name_for_log = pipeline_name.unwrap_or_else(|| "N/A".to_string());
 
     // Create file where stdout will be written to

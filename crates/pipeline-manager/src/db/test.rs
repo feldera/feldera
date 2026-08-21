@@ -19,7 +19,7 @@ use crate::db::types::pipeline::{
     PipelineDescr, PipelineId,
 };
 use crate::db::types::program::{
-    CompilationProfile, ProgramConfig, ProgramError, ProgramInfo, ProgramStatus,
+    CompilationProfile, ProgramConfig, ProgramError, ProgramInfo, ProgramStatus, RuntimeSelector,
     RustCompilationInfo, SqlCompilationInfo, generate_pipeline_config,
     validate_program_status_transition,
 };
@@ -299,7 +299,7 @@ struct RuntimeConfigPropVal {
     val20: usize,
     val21: Option<u64>,
 }
-type ProgramConfigPropVal = (u8, bool, bool, bool);
+type ProgramConfigPropVal = (u8, bool, bool, bool, u8);
 type ProgramInfoPropVal = (u8, u8, u8);
 
 /// Generates a limited pipeline name.
@@ -477,11 +477,31 @@ fn map_val_to_limited_program_config(val: ProgramConfigPropVal) -> serde_json::V
                 Some(CompilationProfile::Optimized)
             },
             cache: val.3,
-            runtime_version: None,
+            // Exercise setting and unsetting the crucible runtime across create and
+            // update transitions; a third of valid configs select it.
+            runtime_version: if val.4.is_multiple_of(3) {
+                Some(RuntimeSelector::Crucible)
+            } else {
+                None
+            },
             use_platform_compiler: false,
         })
         .unwrap()
     }
+}
+
+#[test]
+fn limited_program_config_exercises_crucible() {
+    // Guard against a silent no-op: the generator must actually emit a crucible
+    // runtime. A serialization slip would store null instead, and the harness
+    // would never exercise setting or unsetting crucible.
+    assert_eq!(
+        map_val_to_limited_program_config((1, true, false, true, 0))["runtime_version"],
+        json!("crucible")
+    );
+    assert!(
+        map_val_to_limited_program_config((1, true, false, true, 1))["runtime_version"].is_null()
+    );
 }
 
 /// Generates a limited program information (1/8 is invalid).
@@ -499,6 +519,7 @@ fn map_val_to_limited_program_info(val: ProgramInfoPropVal) -> serde_json::Value
             udf_stubs: format!("udf-stubs-{}", val.2),
             input_connectors: BTreeMap::new(),
             output_connectors: BTreeMap::new(),
+            circuit_ir: None,
             dataflow: None,
         })
         .unwrap()
@@ -666,6 +687,7 @@ fn limited_pipeline_config() -> impl Strategy<Value = serde_json::Value> {
                         .map(|dataflow| dataflow.mir.clone())
                         .unwrap_or_default(),
                     program_schema: program_info.schema.clone(),
+                    circuit_ir: None,
                 }),
             })
             .unwrap()
@@ -2634,6 +2656,7 @@ async fn pipeline_program_compilation() {
                 udf_stubs: "".to_string(),
                 input_connectors: BTreeMap::new(),
                 output_connectors: BTreeMap::new(),
+                circuit_ir: None,
                 dataflow: None,
             })
             .unwrap(),
@@ -2848,6 +2871,7 @@ async fn count_pipelines_needing_compilation() {
         udf_stubs: "".to_string(),
         input_connectors: BTreeMap::new(),
         output_connectors: BTreeMap::new(),
+        circuit_ir: None,
         dataflow: None,
     })
     .unwrap();
@@ -3038,6 +3062,7 @@ async fn pipeline_transition_after_quick_stop() {
                 udf_stubs: "".to_string(),
                 input_connectors: BTreeMap::new(),
                 output_connectors: BTreeMap::new(),
+                circuit_ir: None,
                 dataflow: None,
             })
             .unwrap(),
@@ -3260,6 +3285,7 @@ async fn pipeline_deployment() {
                 udf_stubs: "".to_string(),
                 input_connectors: BTreeMap::new(),
                 output_connectors: BTreeMap::new(),
+                circuit_ir: None,
                 dataflow: None,
             })
             .unwrap(),
@@ -3976,6 +4002,7 @@ async fn pipeline_provision_version_guard() {
                 udf_stubs: "".to_string(),
                 input_connectors: BTreeMap::new(),
                 output_connectors: BTreeMap::new(),
+                circuit_ir: None,
                 dataflow: None,
             })
             .unwrap(),
@@ -4231,6 +4258,7 @@ async fn pipeline_client_metadata_update_while_running() {
                 udf_stubs: "".to_string(),
                 input_connectors: BTreeMap::new(),
                 output_connectors: BTreeMap::new(),
+                circuit_ir: None,
                 dataflow: None,
             })
             .unwrap(),
@@ -5013,6 +5041,14 @@ enum StorageAction {
         #[proptest(strategy = "limited_program_binary_integrity_checksum()")] String,
         #[proptest(strategy = "limited_program_info_integrity_checksum()")] String,
     ),
+    TransitProgramStatusToSuccessNoBinary(
+        TenantId,
+        PipelineId,
+        Version,
+        #[proptest(strategy = "limited_sql_compilation_info()")] SqlCompilationInfo,
+        #[proptest(strategy = "limited_program_info()")] serde_json::Value,
+        #[proptest(strategy = "limited_program_info_integrity_checksum()")] String,
+    ),
     TransitProgramStatusToSqlError(
         TenantId,
         PipelineId,
@@ -5777,6 +5813,12 @@ fn db_impl_behaves_like_model() {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &rust_compilation, &program_binary_source_checksum, &program_binary_integrity_checksum, &program_info_integrity_checksum).await;
                                 let impl_response = handle.db.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &rust_compilation, &program_binary_source_checksum, &program_binary_integrity_checksum, &program_info_integrity_checksum).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::TransitProgramStatusToSuccessNoBinary(tenant_id, pipeline_id, program_version_guard, sql_compilation, program_info, program_info_integrity_checksum) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.transit_program_status_to_success_no_binary(tenant_id, pipeline_id, program_version_guard, &sql_compilation, &program_info, &program_info_integrity_checksum).await;
+                                let impl_response = handle.db.transit_program_status_to_success_no_binary(tenant_id, pipeline_id, program_version_guard, &sql_compilation, &program_info, &program_info_integrity_checksum).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::TransitProgramStatusToSqlError(tenant_id, pipeline_id, program_version_guard, sql_compilation) => {
@@ -7549,6 +7591,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_info = None;
         pipeline.program_binary_source_checksum = None;
         pipeline.program_binary_integrity_checksum = None;
+        pipeline.program_info_integrity_checksum = None;
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
             .await
@@ -7573,6 +7616,8 @@ impl Storage for Mutex<DbModel> {
         // Apply changes: update
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
+        // Only a Success program has a delivered-artifact checksum.
+        pipeline.program_info_integrity_checksum = None;
         self.lock()
             .await
             .pipelines
@@ -7608,6 +7653,7 @@ impl Storage for Mutex<DbModel> {
             system_error: None,
         };
         pipeline.program_info = Some(program_info.clone());
+        pipeline.program_info_integrity_checksum = None;
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
             .await
@@ -7632,6 +7678,8 @@ impl Storage for Mutex<DbModel> {
         // Apply changes: update
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
+        // Only a Success program has a delivered-artifact checksum.
+        pipeline.program_info_integrity_checksum = None;
         self.lock()
             .await
             .pipelines
@@ -7679,6 +7727,48 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
+    async fn transit_program_status_to_success_no_binary(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        program_version_guard: Version,
+        sql_compilation: &SqlCompilationInfo,
+        program_info: &serde_json::Value,
+        program_info_integrity_checksum: &str,
+    ) -> Result<(), DBError> {
+        // Validate
+        let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
+        let new_status = ProgramStatus::Success;
+        validate_new_program_status(&pipeline, program_version_guard, new_status)?;
+        validate_program_info(program_info).map_err(|e| DBError::InvalidProgramInfo {
+            value: program_info.clone(),
+            error: e,
+        })?;
+
+        // Crucible completes at the SQL stage: it carries its SQL log and program info
+        // (CompilingSql stored neither), delivers no binary, and stores no Rust log.
+        pipeline.program_status = new_status;
+        pipeline.program_status_since = Utc::now();
+        pipeline.program_error = ProgramError {
+            sql_compilation: Some(sql_compilation.clone()),
+            rust_compilation: None,
+            system_error: None,
+        };
+        pipeline.program_info = Some(program_info.clone());
+        pipeline.program_binary_source_checksum = None;
+        pipeline.program_binary_integrity_checksum = None;
+        pipeline.program_info_integrity_checksum =
+            Some(program_info_integrity_checksum.to_string());
+        pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.new_pipeline_monitor_event(tenant_id, pipeline_id)
+            .await?;
+        Ok(())
+    }
+
     async fn transit_program_status_to_sql_error(
         &self,
         tenant_id: TenantId,
@@ -7699,6 +7789,7 @@ impl Storage for Mutex<DbModel> {
             rust_compilation: None,
             system_error: None,
         };
+        pipeline.program_info_integrity_checksum = None;
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
             .await
@@ -7729,6 +7820,7 @@ impl Storage for Mutex<DbModel> {
             rust_compilation: Some(rust_compilation.clone()),
             system_error: None,
         };
+        pipeline.program_info_integrity_checksum = None;
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
             .await
@@ -7759,6 +7851,7 @@ impl Storage for Mutex<DbModel> {
             rust_compilation: pipeline.program_error.rust_compilation,
             system_error: Some(system_error.to_string()),
         };
+        pipeline.program_info_integrity_checksum = None;
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
             .await

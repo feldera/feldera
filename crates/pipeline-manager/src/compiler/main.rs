@@ -98,25 +98,34 @@ async fn check_compilation_artifacts(
         })
     })?;
 
-    validate_is_sha256_checksum(&binary_integrity_checksum).map_err(|e| {
-        ManagerError::from(ApiError::InvalidChecksumParam {
-            value: binary_integrity_checksum.to_string(),
-            error: e,
-        })
-    })?;
+    // A crucible program compiles no binary; the caller passes "none" for the
+    // binary integrity checksum to check only the program info artifact.
+    let binary_expected = binary_integrity_checksum != "none";
+    if binary_expected {
+        validate_is_sha256_checksum(&binary_integrity_checksum).map_err(|e| {
+            ManagerError::from(ApiError::InvalidChecksumParam {
+                value: binary_integrity_checksum.to_string(),
+                error: e,
+            })
+        })?;
+    }
 
     // Form file paths
-    let binary_file_path = config
-        .working_dir()
-        .join("rust-compilation")
-        .join("pipeline-binaries")
-        .join(pipeline_binary_filename(
-            &pipeline_id,
-            program_version,
-            &source_checksum,
-            &binary_integrity_checksum,
-        ));
-    let binary_exists = binary_file_path.exists();
+    let binary_exists = if binary_expected {
+        config
+            .working_dir()
+            .join("rust-compilation")
+            .join("pipeline-binaries")
+            .join(pipeline_binary_filename(
+                &pipeline_id,
+                program_version,
+                &source_checksum,
+                &binary_integrity_checksum,
+            ))
+            .exists()
+    } else {
+        false
+    };
 
     if program_info_integrity_checksum == "none" {
         let resp = if binary_exists {
@@ -152,7 +161,13 @@ async fn check_compilation_artifacts(
     // Check artifact existence and return status + headers indicating presence
     let program_info_exists = program_info_file_path.exists();
 
-    let resp = if binary_exists && program_info_exists {
+    // Crucible has no binary, so only the program info must be present.
+    let artifacts_present = if binary_expected {
+        binary_exists && program_info_exists
+    } else {
+        program_info_exists
+    };
+    let resp = if artifacts_present {
         HttpResponse::Ok().finish()
     } else {
         // return binary / program info not found as json body
@@ -1517,6 +1532,67 @@ mod test {
     }
 
     // Test helper functions and constants
+    /// A crucible pipeline delivers no binary, so the artifact check passes "none"
+    /// for the binary integrity checksum. The endpoint must then verify only the
+    /// program info: an absent binary is expected, not a missing artifact.
+    #[actix_web::test]
+    async fn artifacts_present_for_crucible_without_binary() {
+        use crate::compiler::util::program_info_filename;
+
+        let (_tempdir, config) = create_test_config("crucible_artifacts");
+        let pipeline_id = PipelineId(Uuid::now_v7());
+        let program_version = 1i64;
+        // Crucible names the program info artifact by its own integrity checksum and
+        // reuses that value as the source checksum.
+        let checksum = hex::encode(sha256(b"crucible-program-info"));
+
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(web::Data::new(config.clone()))
+                .service(super::check_compilation_artifacts),
+        )
+        .await;
+        let url = format!("/artifacts/{pipeline_id}/{program_version}/{checksum}/none/{checksum}");
+
+        // Program info not yet delivered: reported missing (drives a recompile),
+        // and not an error merely because there is no binary.
+        let resp =
+            actix_test::call_service(&app, actix_test::TestRequest::get().uri(&url).to_request())
+                .await;
+        assert_eq!(resp.status(), actix_web::http::StatusCode::NOT_FOUND);
+        let body: serde_json::Value = actix_test::read_body_json(resp).await;
+        assert_eq!(body["binary_exists"], serde_json::json!(false));
+        assert_eq!(body["program_info_exists"], serde_json::json!(false));
+
+        // Deliver the program info where the endpoint serves it from.
+        let pipeline_binaries_dir = std::path::PathBuf::from(&config.compiler_working_directory)
+            .join("rust-compilation")
+            .join("pipeline-binaries");
+        fs::create_dir_all(&pipeline_binaries_dir).await.unwrap();
+        fs::write(
+            pipeline_binaries_dir.join(program_info_filename(
+                &pipeline_id,
+                Version(program_version),
+                &checksum,
+                &checksum,
+            )),
+            b"{}",
+        )
+        .await
+        .unwrap();
+
+        // Program info present and no binary expected: artifacts are present even
+        // though binary_exists is false.
+        let resp =
+            actix_test::call_service(&app, actix_test::TestRequest::get().uri(&url).to_request())
+                .await;
+        assert_eq!(
+            resp.status(),
+            actix_web::http::StatusCode::OK,
+            "crucible artifacts are present with program info delivered and no binary"
+        );
+    }
+
     const SMALL_TEST_DATA: &[u8] = b"Hello, World! This is test binary data.";
     const VALID_SHA256: &str = "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234";
 

@@ -99,6 +99,15 @@ fn multihost_host_ip(ordinal: usize) -> Ipv4Addr {
     Ipv4Addr::new(127, MULTIHOST_LOOPBACK_OCTET, ordinal as u8, 1)
 }
 
+/// Path to the crucible engine executable, launched for a pipeline that delivers
+/// no binary. `CRUCIBLE_BINARY` overrides it; otherwise `crucible` is resolved on
+/// `PATH`.
+fn crucible_binary_path() -> PathBuf {
+    std::env::var_os("CRUCIBLE_BINARY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("crucible"))
+}
+
 /// Loopback IP the coordinator of a multihost deployment binds.  Uses third
 /// octet `255`, distinct from any host ordinal.
 fn multihost_coordinator_ip() -> Ipv4Addr {
@@ -693,6 +702,7 @@ impl LocalRunner {
         program_binary_url: &str,
         program_info_url: &str,
         program_version: Version,
+        is_crucible: bool,
     ) -> Result<(), ManagerError> {
         // The coordinator binary must be configured.
         let coordinator_binary = self.config.coordinator_binary.clone().ok_or_else(|| {
@@ -799,12 +809,19 @@ impl LocalRunner {
         );
 
         // Retrieve the pipeline binary once; every host process runs the same
-        // executable.
-        let binary_file_path = self
-            .config
-            .binary_file_path(self.pipeline_id, program_version);
-        self.retrieve_pipeline_file(program_binary_url, "binary", &binary_file_path, 0o760)
-            .await?;
+        // executable. A crucible pipeline compiled no binary: every host launches
+        // the crucible engine instead, reading the same config. The launch decision
+        // is the explicit crucible configuration, not the presence of a binary.
+        let executable = if is_crucible {
+            crucible_binary_path()
+        } else {
+            let binary_file_path = self
+                .config
+                .binary_file_path(self.pipeline_id, program_version);
+            self.retrieve_pipeline_file(program_binary_url, "binary", &binary_file_path, 0o760)
+                .await?;
+            binary_file_path
+        };
 
         let host_template = multihost_host_template();
         let tokio_worker_threads = base_config
@@ -866,7 +883,7 @@ impl LocalRunner {
 
             specs.push(MemberSpec {
                 name: format!("host-{ordinal}"),
-                program: binary_file_path.clone(),
+                program: executable.clone(),
                 cwd: host_dir,
                 args,
                 envs,
@@ -1019,6 +1036,7 @@ impl PipelineExecutor for LocalRunner {
         program_info_url: &str,
         program_version: Version,
         _runtime_config: &serde_json::Value,
+        is_crucible: bool,
     ) -> Result<(), ManagerError> {
         if let Err(e) = validate_pipeline_env(&deployment_config.global.env) {
             return Err(RunnerError::RunnerProvisionError { error: e }.into());
@@ -1037,6 +1055,7 @@ impl PipelineExecutor for LocalRunner {
                     program_binary_url,
                     program_info_url,
                     program_version,
+                    is_crucible,
                 )
                 .await;
         }
@@ -1139,17 +1158,25 @@ impl PipelineExecutor for LocalRunner {
         // checkpoint).
         let _ = remove_file(&self.config.port_file_path(self.pipeline_id)).await;
 
-        // Retrieve and store executable in pipeline working directory
-        let binary_file_path = self
-            .config
-            .binary_file_path(self.pipeline_id, program_version);
-        self.retrieve_pipeline_file(
-            program_binary_url,
-            "binary",
-            &binary_file_path,
-            0o760, // User: rwx, Group: rw, Others: /
-        )
-        .await?;
+        // Retrieve and store executable in pipeline working directory. A crucible
+        // pipeline compiled no binary: launch the crucible engine instead, which
+        // reads the same config.yaml (carrying the circuit IR). The launch decision
+        // is the explicit crucible configuration, not the presence of a binary.
+        let executable = if is_crucible {
+            crucible_binary_path()
+        } else {
+            let binary_file_path = self
+                .config
+                .binary_file_path(self.pipeline_id, program_version);
+            self.retrieve_pipeline_file(
+                program_binary_url,
+                "binary",
+                &binary_file_path,
+                0o760, // User: rwx, Group: rw, Others: /
+            )
+            .await?;
+            binary_file_path
+        };
 
         let mut retries = 0..3;
         let mut process = loop {
@@ -1157,7 +1184,7 @@ impl PipelineExecutor for LocalRunner {
             // - Current directory: pipeline working directory
             // - Configuration file: path to config.yaml
             // - Stdout/stderr are piped to follow logs
-            let mut command = Command::new(&binary_file_path);
+            let mut command = Command::new(&executable);
             command
                 .env(
                     "TOKIO_WORKER_THREADS",
