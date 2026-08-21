@@ -31,6 +31,12 @@ public class ContainsNow extends InnerVisitor {
         return name != null && name.equalsIgnoreCase("now") && node.arguments.length == 0;
     }
 
+    static boolean find(DBSPCompiler compiler, DBSPExpression expression) {
+        ContainsNow containsNow = new ContainsNow(compiler, true);
+        containsNow.apply(expression);
+        return containsNow.found();
+    }
+
     @Override
     public VisitDecision preorder(DBSPType type) {
         return VisitDecision.STOP;
