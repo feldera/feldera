@@ -1,0 +1,10 @@
+# Self-hosted and org-level runner labels, so actionlint does not flag
+# every runs-on in this repository as unknown.
+self-hosted-runner:
+  labels:
+    - gke-runners-amd64
+    - gke-runners-arm64
+    - k8s-dev-amd64
+    - macos-latest-arm64
+    - ubuntu-latest-amd64
+    - windows-latest-amd64

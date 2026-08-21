@@ -1,0 +1,253 @@
+name: fred-observe
+
+# Fires when a Merge Queue Tasks run finishes red. ci.yml's cancel sentinels
+# stop the run the moment a test job fails, so a test failure ends as
+# 'cancelled' nearly every time and a plain conclusion check would miss it;
+# the triage job tells real test failures from queue rebuilds by looking at
+# the jobs instead.
+on:
+  workflow_run:
+    workflows: ["Merge Queue Tasks"]
+    types: [completed]
+
+# one observation per failed run; different runs observe in parallel
+concurrency:
+  group: fred-observe-${{ github.event.workflow_run.id }}
+  cancel-in-progress: false
+
+env:
+  # the failed Merge Queue Tasks run everything below reports on
+  OBSERVED_RUN_ID: ${{ github.event.workflow_run.id }}
+  OBSERVED_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+  OBSERVE_DIR: /tmp/fred-observe
+  # The `name:` ci.yml gives each invoke-* job, which GitHub prepends to every
+  # job of the called workflow ("Integration Tests / Runtime Integration Tests
+  # (...)"), so one entry covers platform and runtime alike. Keep in step with
+  # ci.yml. Build, docs, docker, sbom and publish failures are the author's to
+  # read and stay off the list.
+  OBSERVE_WATCH_JOBS: |
+    Unit Tests
+    Adapter Tests
+    Integration Tests
+    Java Tests
+    Web Console Unit Tests
+    Web Console End-to-End Tests
+
+jobs:
+  # The trust gate of a public repository. Nothing PR-authored runs here:
+  # main-branch scripts and API calls. The observe job starts only when a
+  # watched test job failed, the PR is still open, its branch lives in this
+  # repo and its author is a feldera org member. A fork's test output is
+  # untrusted text and never reaches a job holding a write token.
+  triage:
+    name: Triage the failed run
+    # Merge-queue runs only: a workflow_dispatch of ci.yml has no PR to
+    # report to and is somebody's experiment.
+    # Set CI_SKIP_JOBS to 'fred-observe' to turn the observer off on its own.
+    if: >-
+      !contains(vars.CI_SKIP_JOBS, 'fred-observe') &&
+      github.event.workflow_run.event == 'merge_group' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      (github.event.workflow_run.conclusion == 'failure' ||
+       github.event.workflow_run.conclusion == 'cancelled' ||
+       github.event.workflow_run.conclusion == 'timed_out')
+    runs-on: ubuntu-latest-amd64
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      # reading the observed run's jobs and logs
+      actions: read
+      pull-requests: read
+    outputs:
+      should_observe: ${{ steps.pr.outputs.trusted == 'true' && steps.capture.outputs.reason == 'jobs-failed' }}
+      pr_number: ${{ steps.capture.outputs.pr_number }}
+      pr_head_ref: ${{ steps.pr.outputs.head_ref }}
+      failure_count: ${{ steps.capture.outputs.failure_count }}
+    steps:
+      # workflow_run checks out the default branch: the capture script is
+      # always main's copy, never the PR's
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+
+      - name: Capture the failed run
+        id: capture
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/fred-observe-capture.sh
+
+      - name: Upload observation archive
+        if: steps.capture.outputs.reason == 'jobs-failed'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: fred-observe-${{ github.event.workflow_run.id }}
+          path: /tmp/fred-observe
+          retention-days: 7
+
+      - name: Generate org membership lookup token
+        id: app-token-org
+        if: steps.capture.outputs.reason == 'jobs-failed' && steps.capture.outputs.pr_number != ''
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.MYTHICAL_FRED_OSS_CLIENT_ID }}
+          private-key: ${{ secrets.MYTHICAL_FRED_OSS_PEM }}
+          owner: ${{ github.repository_owner }}
+          # the only org-level permission the app holds; it sees private
+          # memberships, which the event payload does not
+          permission-members: read
+
+      - name: Check the PR branch and author
+        id: pr
+        if: steps.capture.outputs.reason == 'jobs-failed' && steps.capture.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ORG_TOKEN: ${{ steps.app-token-org.outputs.token }}
+          ORG: ${{ github.repository_owner }}
+          PR_NUMBER: ${{ steps.capture.outputs.pr_number }}
+        run: |
+          pr=$(gh pr view "$PR_NUMBER" --json author,headRefName,isCrossRepository,state)
+          author=$(jq -r .author.login <<<"$pr")
+          echo "head_ref=$(jq -r .headRefName <<<"$pr")" >> "$GITHUB_OUTPUT"
+          # a maintainer can enqueue a fork PR; its code must not reach the observe job
+          if [ "$(jq -r .isCrossRepository <<<"$pr")" != "false" ]; then
+            echo "PR #$PR_NUMBER comes from a fork; no observation"
+            echo "trusted=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # a merged or closed PR has no branch to fix and nobody reading comments
+          if [ "$(jq -r .state <<<"$pr")" != "OPEN" ]; then
+            echo "PR #$PR_NUMBER is no longer open; no observation"
+            echo "trusted=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # 204 for a member, public or private; 404 otherwise. An API failure
+          # lands in the same branch and fails closed.
+          if GH_TOKEN="$ORG_TOKEN" gh api --silent "orgs/$ORG/members/$author"; then
+            echo "$author is a member of $ORG"
+            echo "trusted=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "$author is not a member of $ORG; no observation"
+            echo "trusted=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  observe:
+    name: Debug the failure and report it
+    needs: triage
+    if: needs.triage.outputs.should_observe == 'true'
+    runs-on: k8s-dev-amd64
+    timeout-minutes: 90
+    container:
+      image: ghcr.io/feldera/feldera-dev:sha-6694c709e8a150203f56b80c5058286e4378e2ee
+    permissions:
+      # for the Anthropic WIF token exchange
+      id-token: write
+    env:
+      PR_NUMBER: ${{ needs.triage.outputs.pr_number }}
+      PR_HEAD_REF: ${{ needs.triage.outputs.pr_head_ref }}
+      FIX_BRANCH: fred/observe-${{ needs.triage.outputs.pr_number }}-${{ github.event.workflow_run.id }}
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.MYTHICAL_FRED_OSS_CLIENT_ID }}
+          private-key: ${{ secrets.MYTHICAL_FRED_OSS_PEM }}
+          # contents write lets Claude push the fix branch
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+          permission-checks: read
+          permission-actions: read
+
+      - name: Generate read-only clone token
+        id: app-token-ro
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.MYTHICAL_FRED_OSS_CLIENT_ID }}
+          private-key: ${{ secrets.MYTHICAL_FRED_OSS_PEM }}
+          repositories: |
+            internal-skills
+          permission-contents: read
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          # the PR's branch at its tip: where the author will take the fix from
+          ref: ${{ env.PR_HEAD_REF }}
+          token: ${{ steps.app-token.outputs.token }}
+          # not persisted: claude-code-action installs its own push credential
+          # (the same app token) right before Claude starts, so the token is
+          # in .git/config only while the fix is being made
+          persist-credentials: false
+          # full history: the diagnosis compares the branch with main and
+          # asks git who last touched the failing test
+          fetch-depth: 0
+
+      - name: Create the fix branch
+        # claude-code-action creates no branch for workflow_run events and
+        # leaves the current one alone, so this is where Claude starts
+        run: git checkout -b "$FIX_BRANCH"
+
+      - name: Install skills
+        # user-level: claude-code-action quarantines a repo-provided .claude/
+        env:
+          GH_TOKEN: ${{ steps.app-token-ro.outputs.token }}
+        run: |
+          for s in feldera-pr-checks good-code good-architecture good-english; do
+            gh skill install feldera/internal-skills "$s" --agent claude-code --scope user
+          done
+
+      - name: Download observation archive
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: fred-observe-${{ github.event.workflow_run.id }}
+          path: /tmp/fred-observe
+
+      - name: Check observe prompt is configured
+        # an unset variable expands to empty, leaving only the context lines below
+        env:
+          PROMPT: ${{ vars.FRED_OBSERVE_PROMPT }}
+        run: |
+          [ -n "$PROMPT" ] || { echo "vars.FRED_OBSERVE_PROMPT is unset or empty"; exit 1; }
+
+      # workflow_run runs the action in agent mode: it checks that the actor
+      # who enqueued the run is human and holds write access (a second layer
+      # behind the triage gate)
+      - name: Debug the failure and report it
+        timeout-minutes: 75
+        uses: anthropics/claude-code-action@239e3a730883eeb5c53db12b0fc9573b3024b126 # v1
+        with:
+          settings: ${{ vars.CLAUDE_SETTINGS_JSON }}
+          anthropic_federation_rule_id: fdrl_012Ldki1r2iLWz2gPUGJScLL
+          anthropic_service_account_id: ${{ secrets.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          anthropic_organization_id: ${{ secrets.ANTHROPIC_ORGANIZATION_ID }}
+          anthropic_workspace_id: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
+          github_token: ${{ steps.app-token.outputs.token }}
+          bot_name: mythical-fred-oss[bot]
+          bot_id: "319348225"
+          prompt: |
+            REPO: ${{ github.repository }}
+            FAILED RUN: ${{ github.event.workflow_run.html_url }}
+            FAILED RUN ID: ${{ github.event.workflow_run.id }}
+            PR NUMBER: ${{ env.PR_NUMBER }}
+            PR BRANCH: ${{ env.PR_HEAD_REF }}
+            FIX BRANCH: ${{ env.FIX_BRANCH }}
+            WHAT HAPPENED: conclusion=${{ github.event.workflow_run.conclusion }} failed_jobs=${{ needs.triage.outputs.failure_count }}
+
+            ${{ vars.FRED_OBSERVE_PROMPT }}
+
+          claude_args: |
+            --model ${{ vars.FRED_OBSERVE_MODEL || 'claude-sonnet-5' }}
+            --allowedTools "Bash,Read,Glob,Grep,Edit,Write"
+            --disallowedTools "Bash(git push --force:*),Bash(git push -f:*),Bash(gh pr create:*),Bash(gh pr edit:*),Bash(gh pr merge:*),Bash(gh pr close:*),Bash(gh pr review:*),Bash(gh issue close:*),Bash(gh run rerun:*),Bash(gh run cancel:*),Bash(gh workflow:*),Bash(cargo build --release:*),Bash(docker:*)"
+            --max-turns 250
+
+      - name: Report observe failure
+        # a silent red X looks like nothing was found; say so on the PR
+        if: failure() || cancelled()
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh pr comment "$PR_NUMBER" \
+            --body "fred-observe did not finish; see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            || echo "could not post failure comment"

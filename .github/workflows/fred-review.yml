@@ -1,0 +1,142 @@
+name: fred-review
+
+on:
+  pull_request:
+    # review once when the PR appears (drafts included) and once more when marked ready;
+    types: [opened, ready_for_review]
+
+# one review at a time per PR;
+concurrency:
+  group: fred-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  # The trust gate of a public repository.
+  # The review job starts only when this job has
+  # confirmed the author is a feldera org member.
+  gate:
+    name: Check the PR author
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !endsWith(github.event.pull_request.user.login, '[bot]')
+    runs-on: ubuntu-latest-amd64
+    timeout-minutes: 5
+    outputs:
+      author_is_member: ${{ steps.membership.outputs.is_member }}
+    steps:
+      - name: Generate org membership lookup token
+        id: app-token-org
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.MYTHICAL_FRED_OSS_CLIENT_ID }}
+          private-key: ${{ secrets.MYTHICAL_FRED_OSS_PEM }}
+          owner: ${{ github.repository_owner }}
+          permission-members: read
+
+      - name: Check the PR author is a feldera org member
+        id: membership
+        env:
+          GH_TOKEN: ${{ steps.app-token-org.outputs.token }}
+          ORG: ${{ github.repository_owner }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          if gh api --silent "orgs/$ORG/members/$AUTHOR"; then
+            echo "$AUTHOR is a member of $ORG"
+            echo "is_member=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "$AUTHOR is not a member of $ORG; no review"
+            echo "is_member=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  fred-review:
+    name: Review the PR
+    needs: gate
+    if: needs.gate.outputs.author_is_member == 'true'
+    runs-on: k8s-dev-amd64
+    # no build cache on this runner: crate-scoped checks only, see the prompt
+    timeout-minutes: 60
+    container:
+      image: ghcr.io/feldera/feldera-dev:sha-6694c709e8a150203f56b80c5058286e4378e2ee
+    permissions:
+      # only needed for the Anthropic WIF token exchange; all GitHub access goes through the app token
+      id-token: write
+    steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.MYTHICAL_FRED_OSS_CLIENT_ID }}
+          private-key: ${{ secrets.MYTHICAL_FRED_OSS_PEM }}
+          # owner/repositories omitted: write access stays scoped to this repo only;
+          # checks+actions read let the reviewer see CI results and read failing run logs
+          permission-contents: read
+          permission-issues: write
+          permission-pull-requests: write
+          permission-checks: read
+          permission-actions: read
+
+      - name: Generate read-only clone token
+        id: app-token-ro
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ secrets.MYTHICAL_FRED_OSS_CLIENT_ID }}
+          private-key: ${{ secrets.MYTHICAL_FRED_OSS_PEM }}
+          # clone-only token covering the repo and the review skills
+          repositories: |
+            ${{ github.event.repository.name }}
+            internal-skills
+          permission-contents: read
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          token: ${{ steps.app-token-ro.outputs.token }}
+          persist-credentials: false
+
+      - name: Install review skills
+        env:
+          GH_TOKEN: ${{ steps.app-token-ro.outputs.token }}
+        run: |
+          for s in feldera-pr-checks good-code good-architecture good-english; do
+            gh skill install feldera/internal-skills "$s" --agent claude-code --scope user
+          done
+
+      - name: Check review prompt is configured
+        env:
+          PROMPT: ${{ vars.FRED_REVIEW_PROMPT }}
+        run: |
+          [ -n "$PROMPT" ] || { echo "vars.FRED_REVIEW_PROMPT is unset or empty"; exit 1; }
+
+      - uses: anthropics/claude-code-action@239e3a730883eeb5c53db12b0fc9573b3024b126 # v1
+        with:
+          settings: ${{ vars.CLAUDE_SETTINGS_JSON }}
+          anthropic_federation_rule_id: fdrl_0174FBQ1qv4mn5FPEKjDyhea
+          anthropic_service_account_id: ${{ secrets.ANTHROPIC_SERVICE_ACCOUNT_ID }}
+          anthropic_organization_id: ${{ secrets.ANTHROPIC_ORGANIZATION_ID }}
+          anthropic_workspace_id: ${{ secrets.ANTHROPIC_WORKSPACE_ID }}
+          github_token: ${{ steps.app-token.outputs.token }}
+          # git identity for any local commit, same as fred-observe; nothing is
+          # pushed from here, comments are attributed by the token regardless
+          bot_name: mythical-fred-oss[bot]
+          bot_id: "319348225"
+          # expressions inside a variable value are not expanded, so the run context stays here
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            ${{ vars.FRED_REVIEW_PROMPT }}
+          # the deny list is a cost guard
+          claude_args: |
+            --model ${{ vars.FRED_REVIEW_MODEL || 'claude-opus-5' }}
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash,Edit,Write"
+            --disallowedTools "Bash(git push:*),Bash(gh pr merge:*),Bash(gh pr close:*),Bash(gh pr edit:*),Bash(gh pr ready:*),Bash(gh run:*),Bash(gh workflow:*),Bash(cargo build --release:*),Bash(docker:*)"
+            --max-turns 180
+
+      - name: Report review failure
+        # a silent red X is indistinguishable from "nothing found"; say so on the PR
+        if: failure() || cancelled()
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body "fred-review did not finish; see ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            || echo "could not post failure comment"
