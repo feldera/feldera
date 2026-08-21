@@ -2,7 +2,6 @@
 
 import base64
 import logging
-import math
 import os
 import urllib.error
 import urllib.parse
@@ -148,31 +147,6 @@ BASE_URL = os.environ.get("FELDERA_HOST") or "http://localhost:8080"
 FELDERA_REQUESTS_VERIFY = requests_verify_from_env()
 FELDERA_TEST_NUM_WORKERS = int(os.environ.get("FELDERA_TEST_NUM_WORKERS", "8"))
 FELDERA_TEST_NUM_HOSTS = int(os.environ.get("FELDERA_TEST_NUM_HOSTS", "1"))
-
-# Ad-hoc queries reserve 64 MiB per worker for sort spill before sorting a
-# single row (SORT_SPILL_RESERVATION_BYTES in
-# adapterlib/src/utils/datafusion.rs), so a `datafusion_memory_mb` pool
-# smaller than `workers * 64 MiB` fails any ORDER BY/EXCEPT/hash-join ad-hoc
-# query with "Resources exhausted", independent of data size. This holds
-# regardless of `hosts`: the reservation is sized from the *total* configured
-# `workers`, whether they all run on one host or are split across several
-# (the coordinator's own ad-hoc engine also uses the total worker count as
-# its partition count -- see crates/coord/src/adhoc.rs).
-_ADHOC_SORT_RESERVATION_MB_PER_WORKER = (64 * 1024 * 1024) / 1_000_000
-
-
-def min_datafusion_memory_mb(
-    workers: int = FELDERA_TEST_NUM_WORKERS,
-    hosts: int = FELDERA_TEST_NUM_HOSTS,
-    headroom_mb: int = 512,
-) -> int:
-    """Minimum `datafusion_memory_mb` for a sort-heavy ad-hoc query to avoid
-    "Resources exhausted" with the given number of workers, plus
-    `headroom_mb` for the query's actual data. `hosts` doesn't change the
-    result (see module comment above); it's accepted so callers can pass
-    both test parameters without worrying about which one matters.
-    """
-    return math.ceil(workers * _ADHOC_SORT_RESERVATION_MB_PER_WORKER) + headroom_mb
 
 
 class _LazyClient:
