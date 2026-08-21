@@ -180,20 +180,9 @@ pub struct DevTweaks {
     #[serde(default, deserialize_with = "crate::serde_via_value::deserialize")]
     pub balancer_key_distribution_refresh_threshold: Option<f64>,
 
-    /// False-positive rate for Bloom filters on batches on storage, as a
-    /// fraction f, where 0 < f < 1.
+    /// False-positive rate for Bloom filters on batches on storage.
     ///
-    /// The false-positive rate trades off between the amount of memory used by
-    /// Bloom filters and how frequently storage needs to be searched for keys
-    /// that are not actually present.  Typical false-positive rates and their
-    /// corresponding memory costs are:
-    ///
-    /// - 0.1: 4.8 bits per key
-    /// - 0.01: 9.6 bits per key
-    /// - 0.001: 14.4 bits per key
-    /// - 0.0001: 19.2 bits per key (default)
-    ///
-    /// Values outside the valid range, such as 0.0, disable Bloom filters.
+    /// Deprecated: use `storage.bloom_false_positive_rate` instead.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default, deserialize_with = "crate::serde_via_value::deserialize")]
     pub bloom_false_positive_rate: Option<f64>,
