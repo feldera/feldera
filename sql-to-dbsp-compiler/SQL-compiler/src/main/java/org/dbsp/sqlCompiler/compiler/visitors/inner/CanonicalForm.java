@@ -24,6 +24,11 @@ public class CanonicalForm extends InnerRewriteVisitor {
     final ResolveReferences resolver;
     int counter;
 
+    /** The canonical form of `node` as a string. */
+    public static String asString(DBSPCompiler compiler, IDBSPInnerNode node) {
+        return new CanonicalForm(compiler).apply(node).toString();
+    }
+
     public CanonicalForm(DBSPCompiler compiler) {
         super(compiler, false);
         this.newParam = new Substitution<>();

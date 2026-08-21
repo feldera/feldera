@@ -202,8 +202,7 @@ public class FuseExpensiveMaps extends Passes {
          * Comparing fingerprints for equality is a fast equivalence check for
          * closed closures. */
         String fingerprint(MapInfo info, DBSPExpression expression) {
-            CanonicalForm canonical = new CanonicalForm(this.compiler());
-            return canonical.apply(expression.closure(info.param())).toString();
+            return CanonicalForm.asString(this.compiler(), expression.closure(info.param()));
         }
 
         boolean hasDuplicatedExpensiveField(MapInfo info) {
