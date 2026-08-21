@@ -7,7 +7,7 @@ having to install anything yourself.
 The sandbox automatically shuts down a pipeline after 24 hours of
 runtime.  We will occasionally refresh the deployment, which may
 entirely delete pipelines.  Please talk to a Feldera employee in one
-of our [community channels](https://www.feldera.com/community) if
+of our [community channels](https://join.slack.com/t/felderacommunity/shared_invite/zt-3vf3n5dj5-HJuC1DFFY2wE1_AZUyNxqw) if
 you'd like to keep an experiment going for longer than that.
 
 Usage of the cloud sandbox is governed by Feldera [Terms of
