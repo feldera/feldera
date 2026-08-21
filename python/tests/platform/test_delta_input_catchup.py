@@ -30,19 +30,10 @@ INITIAL_VERSIONS = 10
 FOLLOW_ROUNDS = (3, 2, 4)
 
 
-def _writer_storage_options(loc: DeltaTestLocation) -> dict | None:
-    opts = loc.delta_storage_options()
-    if not opts:
-        return None
-    if loc.uri.startswith("s3://"):
-        opts.setdefault("aws_s3_allow_unsafe_rename", "true")
-    return opts
-
-
 def _delta_version(loc: DeltaTestLocation) -> int:
     from deltalake import DeltaTable
 
-    dt = DeltaTable(loc.uri, storage_options=_writer_storage_options(loc))
+    dt = DeltaTable(loc.uri, storage_options=loc.writer_storage_options())
     return dt.version()
 
 
@@ -55,7 +46,7 @@ def _append_version(loc: DeltaTestLocation, row_id: int) -> None:
         pa.Table.from_pylist([{"id": row_id}]),
         mode="append",
         schema_mode="merge",
-        storage_options=_writer_storage_options(loc),
+        storage_options=loc.writer_storage_options(),
     )
 
 
@@ -67,7 +58,7 @@ def _seed_delta_table(loc: DeltaTestLocation, num_versions: int) -> None:
         loc.uri,
         pa.Table.from_pylist([{"id": 0}]),
         mode="overwrite",
-        storage_options=_writer_storage_options(loc),
+        storage_options=loc.writer_storage_options(),
     )
     for version in range(1, num_versions):
         _append_version(loc, version * 2)
@@ -205,7 +196,7 @@ def _append_cdc_insert(
         ),
         mode=mode,
         schema_mode="merge",
-        storage_options=_writer_storage_options(loc),
+        storage_options=loc.writer_storage_options(),
     )
 
 
@@ -438,7 +429,7 @@ def test_delta_input_cdc_multi_key_order_by(pipeline_name):
             ),
             mode=mode,
             schema_mode="merge",
-            storage_options=_writer_storage_options(loc),
+            storage_options=loc.writer_storage_options(),
         )
 
     try:

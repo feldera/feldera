@@ -54,7 +54,7 @@ DV_DELETED_ROWS = TOTAL_ROWS - EXPECTED_ROWS_AFTER_DV
 FOLLOW_DV_DELETE_INPUT_RECORDS = TOTAL_ROWS + DV_DELETED_ROWS
 FOLLOW_RESTORE_INPUT_RECORDS = EXPECTED_ROWS_AFTER_DV + DV_DELETED_ROWS
 # Bump to invalidate cached MinIO copies when the fixture definition changes.
-FIXTURE_VERSION = "dv_snapshot_v1"
+FIXTURE_VERSION = "dv_snapshot_v2"
 # CDC-shaped fixture (see fixtures/deletion_vectors.py --cdc): v0 inserts
 # TOTAL_ROWS events, v1 DV-deletes the even ids, v2 restores them (shrinking
 # the DVs away), v3 appends one event.
@@ -358,3 +358,50 @@ def test_delta_input_cdc_with_deletion_vectors(pipeline_name):
         "only the single v3 insert event may arrive; a higher count "
         "means soft-deleted or restored events were re-ingested"
     )
+
+
+# `value` is `id * 1.5`, so `>= 150.0` keeps ids 100..=200; the DV commit
+# retracts the even ones, leaving the odd ids in that range.
+_FILTER_KEPT_IDS = [
+    i for i in range(1, TOTAL_ROWS + 1) if i * 1.5 >= 150.0 and i % 2 == 1
+]
+
+
+def _run_dv_follow_filter_test(pipeline_name: str, filter_expr: str) -> None:
+    """A DV-masked follow read must still read the `filter`'s columns.
+
+    Masked files bypass the listing path and are read through a provider whose
+    schema is the read set, so an undeclared filter column resolves only if the
+    read set keeps it.
+    """
+    result = _ingest_dv_fixture(
+        pipeline_name,
+        mode="snapshot_and_follow",
+        columns="id INT NOT NULL",
+        extra_config={
+            "version": 0,
+            "end_version": 1,
+            "filter": filter_expr,
+        },
+    )
+    assert result.total == len(_FILTER_KEPT_IDS), (
+        f"filter '{filter_expr}' must keep ids 100..=200 and the DV commit "
+        f"must retract the even ones; got {result.total} rows, expected "
+        f"{len(_FILTER_KEPT_IDS)}"
+    )
+    assert result.even_id_rows == 0, (
+        "the surviving rows must be the odd ids, not the deleted even ids"
+    )
+
+
+def test_delta_input_dv_follow_filter_undeclared_col(pipeline_name):
+    _run_dv_follow_filter_test(pipeline_name, "value >= 150.0")
+
+
+def test_delta_input_dv_follow_filter_struct_field(pipeline_name):
+    """A compound identifier: the read set must keep `meta`, not just `value`.
+
+    Separate function rather than a parametrized case so each gets its own
+    pipeline name (see `test_delta_input_column_mapping.py`).
+    """
+    _run_dv_follow_filter_test(pipeline_name, "meta.value >= 150.0")

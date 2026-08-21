@@ -15,7 +15,7 @@ invokes this file with::
 
 Without ``--cdc``, it writes a two-version table:
 
-* v0: ``total_rows`` rows (``id``, ``name``, ``value``) with DVs enabled.
+* v0: ``total_rows`` rows (``id``, ``name``, ``value``, ``meta``) with DVs enabled.
 * v1: ``DELETE`` of the even ``id`` rows, which produces deletion vectors.
 
 With ``--cdc``, it writes a four-version table shaped like a CDC event log
@@ -50,6 +50,8 @@ def _write_plain_fixture(spark, dest: str, total_rows: int) -> None:
             "cast(id as int) as id",
             "concat('user_', id) as name",
             "cast(id * 1.5 as double) as value",
+            # Mirrors `value`, so a filter can name it as a struct field.
+            "struct(cast(id * 1.5 as double) as value) as meta",
         )
         .write.format("delta")
         .option("delta.enableDeletionVectors", "true")
