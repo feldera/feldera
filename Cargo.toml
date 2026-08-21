@@ -133,9 +133,8 @@ dbsp = { path = "crates/dbsp", version = "0.337.0" }
 datafusion-functions-json = "0.53.1"
 dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.14.1"
-# Feldera fork of delta-rs: upstream tag `rust-v0.32.3` + 4 patches, on branch
-# `v0.32.3-feldera-unity-fix`. When bumping the pinned revision, preserve these
-# patches:
+# Feldera fork of delta-rs: upstream tag `rust-v0.32.3` + 6 patches, on branch
+# `dv-async-load`. When bumping the pinned revision, preserve these patches:
 #   - 7f8bb445 "Disable unsupported feature check." — relax the writer-side
 #     protocol-feature gate so we can write tables produced by newer clients.
 #   - 5b35c098 "delta-rs: round-robin pre-split unpartitioned scans into
@@ -147,10 +146,19 @@ deadpool-postgres = "0.14.1"
 #   - 4913d02f "catalog-unity: refresh Unity Catalog S3 credentials before they
 #     expire" — the vended temporary credentials last an hour, so a long-running
 #     `uc://` pipeline failed with `ExpiredToken` without this.
+#   - 943cf48b "delta-rs: load deletion vectors without the blocking pool":
+#     planning a scan spawned one blocking task per deletion-vector file, and
+#     each waited on a hand-off that needed a second thread from the same pool,
+#     so a table with enough vectors deadlocked Tokio's pool for good. Reported
+#     upstream with a standalone reproduction:
+#     https://github.com/ryzhyk/delta-rs-dv-deadlock
+#   - 78a5d066 "delta-rs: regression test for the deletion-vector blocking-pool
+#     deadlock": eight vectors against four blocking threads, which wedges
+#     without the patch above.
 # Diff vs. upstream:
-#   https://github.com/delta-io/delta-rs/compare/rust-v0.32.3...feldera:delta-rs:v0.32.3-feldera-unity-fix
-deltalake = { git = "https://github.com/feldera/delta-rs.git", rev = "4913d02fabc643bd898fcb72d5d2afb73c77ac29" }
-deltalake-catalog-unity = { git = "https://github.com/feldera/delta-rs.git", rev = "4913d02fabc643bd898fcb72d5d2afb73c77ac29" }
+#   https://github.com/delta-io/delta-rs/compare/rust-v0.32.3...feldera:delta-rs:dv-async-load
+deltalake = { git = "https://github.com/feldera/delta-rs.git", rev = "78a5d066d60feffcc7dcd9bae62d1c537dd9018c" }
+deltalake-catalog-unity = { git = "https://github.com/feldera/delta-rs.git", rev = "78a5d066d60feffcc7dcd9bae62d1c537dd9018c" }
 
 delta_kernel = { package = "buoyant_kernel", version = "0.22" }
 derive_more = { version = "1.0.0" }
