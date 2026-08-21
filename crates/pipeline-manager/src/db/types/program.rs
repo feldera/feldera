@@ -297,6 +297,9 @@ pub fn validate_program_status_transition(
             | (ProgramStatus::Pending, ProgramStatus::SystemError)
             | (ProgramStatus::CompilingSql, ProgramStatus::Pending)
             | (ProgramStatus::CompilingSql, ProgramStatus::SqlCompiled)
+            // Crucible needs no Rust compilation, so the SQL compiler completes it
+            // directly instead of routing it through the Rust compiler queue.
+            | (ProgramStatus::CompilingSql, ProgramStatus::Success)
             | (ProgramStatus::CompilingSql, ProgramStatus::SqlError)
             | (ProgramStatus::CompilingSql, ProgramStatus::SystemError)
             | (ProgramStatus::SqlCompiled, ProgramStatus::Pending)
@@ -336,6 +339,10 @@ pub enum RuntimeSelector {
     ///
     /// The string corresponds to the git SHA of feldera/feldera at the time of the build.
     Platform(String),
+    /// The crucible engine runs the pipeline. The SQL compiler captures the JIT
+    /// circuit IR into the program info; the Rust half compiles against the
+    /// platform sources, so no runtime commit is selected.
+    Crucible,
 }
 
 impl From<RuntimeSelector> for Option<String> {
@@ -344,6 +351,7 @@ impl From<RuntimeSelector> for Option<String> {
             RuntimeSelector::Sha(sha) => Some(sha),
             RuntimeSelector::Version(version) => Some(version),
             RuntimeSelector::Platform(_platform_sha) => None,
+            RuntimeSelector::Crucible => Some("crucible".to_string()),
         }
     }
 }
@@ -351,7 +359,7 @@ impl From<RuntimeSelector> for Option<String> {
 impl RuntimeSelector {
     /// Returns a path to sources of the runtime which the compilation should be using.
     pub fn runtime_sources(&self, config: &CompilerConfig) -> String {
-        if self.is_platform() {
+        if self.is_platform() || self.is_crucible() {
             config.dbsp_override_path.clone()
         } else {
             assert!(has_unstable_feature("runtime_version"));
@@ -366,12 +374,18 @@ impl RuntimeSelector {
         matches!(self, RuntimeSelector::Platform(_))
     }
 
+    /// Is the crucible engine selected?
+    pub fn is_crucible(&self) -> bool {
+        matches!(self, RuntimeSelector::Crucible)
+    }
+
     /// Bytes representation of the runtime selector (for hashing).
     pub fn as_bytes(&self) -> &[u8] {
         match self {
             RuntimeSelector::Sha(sha) => sha.as_bytes(),
             RuntimeSelector::Version(version) => version.as_bytes(),
             RuntimeSelector::Platform(platform_sha) => platform_sha.as_bytes(),
+            RuntimeSelector::Crucible => b"crucible",
         }
     }
 
@@ -381,6 +395,9 @@ impl RuntimeSelector {
             RuntimeSelector::Sha(sha) => sha,
             RuntimeSelector::Version(version) => version,
             RuntimeSelector::Platform(platform_sha) => platform_sha,
+            RuntimeSelector::Crucible => {
+                unreachable!("crucible selects no runtime commit; no git operation applies")
+            }
         }
     }
 }
@@ -391,6 +408,7 @@ impl Display for RuntimeSelector {
             RuntimeSelector::Sha(sha) => write!(f, "{sha}"),
             RuntimeSelector::Version(version) => write!(f, "{version}"),
             RuntimeSelector::Platform(platform_sha) => write!(f, "{platform_sha}"),
+            RuntimeSelector::Crucible => write!(f, "crucible"),
         }
     }
 }
@@ -415,7 +433,9 @@ impl TryFrom<String> for RuntimeSelector {
             version_regex.is_match(s)
         }
 
-        if is_valid_git_sha(&value) {
+        if value == "crucible" {
+            Ok(RuntimeSelector::Crucible)
+        } else if is_valid_git_sha(&value) {
             Ok(RuntimeSelector::Sha(value))
         } else if is_version_tag(&value) {
             Ok(RuntimeSelector::Version(value))
@@ -452,6 +472,10 @@ pub struct ProgramConfig {
     /// or SHA taken from the `feldera/feldera` repository main branch.
     ///
     /// Examples: `v0.96.0` or `f4dcac0989ca0fda7d2eb93602a49d007cb3b0ae`
+    ///
+    /// The value `crucible` names an engine rather than a runtime commit: the SQL
+    /// compiler captures the circuit IR and the runner launches the crucible
+    /// engine, so no pipeline binary is compiled.
     ///
     /// A platform of version `0.x.y` may be capable of running future and past
     /// runtimes with versions `>=0.x.y` and `<=0.x.y` until breaking API changes happen,
@@ -674,6 +698,14 @@ pub struct ProgramInfo {
     #[serde(default)]
     pub dataflow: Option<Dataflow>,
 
+    /// JIT circuit IR (`allOperators`) captured by the SQL compiler for crucible
+    /// programs; the crucible engine reads it to build the circuit.
+    ///
+    /// Not returned by the API. It runs to several MiB and reaches the pipeline
+    /// through the program info artifact, so a pipeline read never carries it.
+    #[serde(default)]
+    pub circuit_ir: Option<serde_json::Value>,
+
     /// Input connectors derived from the schema.
     pub input_connectors: BTreeMap<Cow<'static, str>, InputEndpointConfig>,
 
@@ -687,6 +719,7 @@ impl ProgramInfo {
         let program_ir = self.dataflow.as_ref().map(|d| ProgramIr {
             mir: d.mir.clone(),
             program_schema: self.schema.clone(),
+            circuit_ir: self.circuit_ir.clone(),
         });
 
         PipelineConfigProgramInfo {
@@ -704,6 +737,7 @@ pub fn generate_program_info(
     main_rust: String,
     udf_stubs: String,
     dataflow: Option<Dataflow>,
+    circuit_ir: Option<serde_json::Value>,
 ) -> Result<ProgramInfo, ConnectorGenerationError> {
     let program_schema_properties_only = ProgramSchemaPropertiesOnly::deserialize(&program_schema)
         .map_err(|e| ConnectorGenerationError::InvalidProgramSchema {
@@ -819,6 +853,7 @@ pub fn generate_program_info(
         udf_stubs,
         main_rust,
         dataflow,
+        circuit_ir,
         input_connectors: inputs,
         output_connectors: outputs,
     })
@@ -886,6 +921,23 @@ mod tests {
         );
         assert!(
             RuntimeSelector::try_from("d0b45d8f87056c9d2c-9c6f63b2531b0c5905f9b".to_string())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn crucible_sql_stage_reaches_success_directly() {
+        use super::{ProgramStatus, validate_program_status_transition};
+        // Crucible skips Rust compilation: the SQL compiler moves the program from
+        // CompilingSql straight to Success.
+        assert!(
+            validate_program_status_transition(ProgramStatus::CompilingSql, ProgramStatus::Success)
+                .is_ok()
+        );
+        // A Rust pipeline still reaches Success only through CompilingRust; the
+        // SqlCompiled stage cannot jump straight to Success.
+        assert!(
+            validate_program_status_transition(ProgramStatus::SqlCompiled, ProgramStatus::Success)
                 .is_err()
         );
     }

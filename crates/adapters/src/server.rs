@@ -4137,6 +4137,7 @@ outputs:
             }))
             .unwrap(),
             program_schema: serde_json::json!({ "inputs": [], "outputs": [] }),
+            circuit_ir: None,
         }
     }
 

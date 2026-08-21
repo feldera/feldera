@@ -11,7 +11,8 @@ use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{
-    validate_deployment_config, validate_program_info, validate_runtime_config,
+    validate_deployment_config, validate_program_config, validate_program_info,
+    validate_runtime_config,
 };
 use crate::error::source_error;
 use crate::is_supported_runtime;
@@ -97,6 +98,15 @@ impl<T: PipelineExecutor> Drop for PipelineAutomaton<T> {
             join_handle.abort();
         }
     }
+}
+
+/// Whether the program configuration selects the crucible engine, which runs the
+/// pipeline directly and so compiles no pipeline binary (only program info is
+/// delivered). A configuration that fails to parse is treated as not crucible.
+fn program_config_is_crucible(program_config: &serde_json::Value) -> bool {
+    validate_program_config(program_config, false)
+        .map(|config| config.runtime_version().is_crucible())
+        .unwrap_or(false)
 }
 
 /// Pipeline automaton monitors the runtime state of a single pipeline and continually reconciles
@@ -1023,28 +1033,48 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     ) -> Result<bool, DBError> {
         let program_version = pipeline.program_version;
 
-        // Cannot check for binary existence if source/integrity checksum is missing.
-        // Return Ok(false) to indicate binary is not present or cannot be verified.
-        let Some(source_checksum) = pipeline.program_binary_source_checksum.as_ref() else {
-            info!(
-                "Failed to perform binary existence check for pipeline {}: source checksum is missing. This may indicate that the program has not been compiled yet, will retry later.",
-                self.pipeline_id
-            );
-            return Ok(false);
-        };
-        let Some(binary_integrity_checksum) = pipeline.program_binary_integrity_checksum.as_ref()
-        else {
-            info!(
-                "Failed to perform binary existence check for pipeline {}: binary integrity checksum is missing. This may indicate that the program has not been compiled yet, will retry later.",
-                self.pipeline_id,
-            );
-            return Ok(false);
-        };
+        let engine_is_crucible = program_config_is_crucible(&pipeline.program_config);
 
+        // The program info integrity checksum names the delivered program info
+        // artifact and is checked for both engines.
         let program_info_integrity_checksum = pipeline
             .program_info_integrity_checksum
             .as_deref()
             .unwrap_or("none");
+
+        // A normal pipeline verifies the binary and the program info. A crucible
+        // pipeline compiles no binary, so it verifies only the program info (named
+        // by its own integrity checksum) and passes "none" for the binary.
+        let (source_checksum, binary_integrity_checksum): (&str, &str) = if engine_is_crucible {
+            if program_info_integrity_checksum == "none" {
+                info!(
+                    "Cannot verify artifacts for crucible pipeline {}: program info integrity checksum is missing. This may indicate that the program has not been compiled yet, will retry later.",
+                    self.pipeline_id
+                );
+                return Ok(false);
+            }
+            (program_info_integrity_checksum, "none")
+        } else {
+            // Cannot check for binary existence if source/integrity checksum is missing.
+            // Return Ok(false) to indicate binary is not present or cannot be verified.
+            let Some(source_checksum) = pipeline.program_binary_source_checksum.as_ref() else {
+                info!(
+                    "Failed to perform binary existence check for pipeline {}: source checksum is missing. This may indicate that the program has not been compiled yet, will retry later.",
+                    self.pipeline_id
+                );
+                return Ok(false);
+            };
+            let Some(binary_integrity_checksum) =
+                pipeline.program_binary_integrity_checksum.as_ref()
+            else {
+                info!(
+                    "Failed to perform binary existence check for pipeline {}: binary integrity checksum is missing. This may indicate that the program has not been compiled yet, will retry later.",
+                    self.pipeline_id,
+                );
+                return Ok(false);
+            };
+            (source_checksum.as_str(), binary_integrity_checksum.as_str())
+        };
 
         let binary_check_url = format!(
             "{}://{}:{}/artifacts/{}/{}/{}/{}/{}",
@@ -1251,46 +1281,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             },
         };
 
-        let Some(source_checksum) = pipeline.program_binary_source_checksum.as_ref() else {
-            return Action::TransitionToStopping {
-                error: Some(
-                    RunnerError::AutomatonCannotConstructProgramBinaryUrl {
-                        error: "source checksum is missing".to_string(),
-                    }
-                    .into(),
-                ),
-                storage_status_details: None,
-            };
-        };
-
-        // URL where the program binary can be downloaded from
-        let program_binary_url = format!(
-            "{}://{}:{}/binary/{}/{}/{}/{}",
-            if self.common_config.enable_https {
-                "https"
-            } else {
-                "http"
-            },
-            self.common_config.compiler_host,
-            self.common_config.compiler_port,
-            self.pipeline_id,
-            pipeline.program_version,
-            source_checksum,
-            if let Some(integrity_checksum) = pipeline.program_binary_integrity_checksum.as_ref() {
-                integrity_checksum
-            } else {
-                return Action::TransitionToStopping {
-                    error: Some(
-                        RunnerError::AutomatonCannotConstructProgramBinaryUrl {
-                            error: "integrity checksum is missing".to_string(),
-                        }
-                        .into(),
-                    ),
-                    storage_status_details: None,
-                };
-            },
-        );
-
+        // The program info integrity checksum names the delivered program info
+        // artifact and is required for both engines.
         let Some(program_info_integrity_checksum) =
             pipeline.program_info_integrity_checksum.as_ref()
         else {
@@ -1305,6 +1297,55 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             };
         };
 
+        // Crucible compiles no binary: pass an empty binary URL (the runner then
+        // launches the crucible engine) and name the program info artifact by its
+        // own integrity checksum. A normal pipeline builds a binary URL and names
+        // the program info by the binary source checksum.
+        let engine_is_crucible = program_config_is_crucible(&pipeline.program_config);
+        let (program_binary_url, program_info_source_checksum) = if engine_is_crucible {
+            (String::new(), program_info_integrity_checksum.clone())
+        } else {
+            let Some(source_checksum) = pipeline.program_binary_source_checksum.as_ref() else {
+                return Action::TransitionToStopping {
+                    error: Some(
+                        RunnerError::AutomatonCannotConstructProgramBinaryUrl {
+                            error: "source checksum is missing".to_string(),
+                        }
+                        .into(),
+                    ),
+                    storage_status_details: None,
+                };
+            };
+            let Some(integrity_checksum) = pipeline.program_binary_integrity_checksum.as_ref()
+            else {
+                return Action::TransitionToStopping {
+                    error: Some(
+                        RunnerError::AutomatonCannotConstructProgramBinaryUrl {
+                            error: "integrity checksum is missing".to_string(),
+                        }
+                        .into(),
+                    ),
+                    storage_status_details: None,
+                };
+            };
+            // URL where the program binary can be downloaded from
+            let program_binary_url = format!(
+                "{}://{}:{}/binary/{}/{}/{}/{}",
+                if self.common_config.enable_https {
+                    "https"
+                } else {
+                    "http"
+                },
+                self.common_config.compiler_host,
+                self.common_config.compiler_port,
+                self.pipeline_id,
+                pipeline.program_version,
+                source_checksum,
+                integrity_checksum,
+            );
+            (program_binary_url, source_checksum.clone())
+        };
+
         // URL where the program info can be downloaded from
         let program_info_url = format!(
             "{}://{}:{}/program_info/{}/{}/{}/{}",
@@ -1317,7 +1358,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             self.common_config.compiler_port,
             self.pipeline_id,
             pipeline.program_version,
-            source_checksum,
+            program_info_source_checksum,
             program_info_integrity_checksum,
         );
 
@@ -1350,6 +1391,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 &program_info_url,
                 pipeline.program_version,
                 &pipeline.runtime_config,
+                engine_is_crucible,
             )
             .await
         {
@@ -1930,6 +1972,7 @@ mod test {
             _: &str,
             _: Version,
             _: &serde_json::Value,
+            _is_crucible: bool,
         ) -> Result<(), ManagerError> {
             Ok(())
         }
@@ -2102,6 +2145,7 @@ mod test {
                     udf_stubs: "".to_string(),
                     input_connectors: Default::default(),
                     output_connectors: Default::default(),
+                    circuit_ir: None,
                     dataflow: None,
                 })
                 .unwrap(),

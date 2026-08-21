@@ -1,7 +1,9 @@
 use crate::common_error::CommonError;
+use crate::compiler::rust_compiler::{FileDeliveryMode, FileUploadMetadata, deliver_program_info};
 use crate::compiler::util::{
-    CleanupDecision, ProcessGroupTerminator, UtilError, cleanup_specific_directories,
-    cleanup_specific_files, crate_name_pipeline_base, crate_name_pipeline_globals, create_new_file,
+    CleanupDecision, ProcessGroupTerminator, UtilError, checksum_buffer,
+    cleanup_specific_directories, cleanup_specific_files, crate_name_pipeline_base,
+    crate_name_pipeline_globals, create_dir_if_not_exists, create_new_file,
     create_new_file_with_content, encode_dir_as_string, read_file_content, recreate_dir,
 };
 use crate::config::{CommonConfig, CompilerConfig};
@@ -13,7 +15,7 @@ use crate::db::types::program::{
     RuntimeSelector, SqlCompilationInfo, SqlCompilerMessage, generate_program_info,
 };
 use crate::db::types::tenant::TenantId;
-use crate::db::types::utils::validate_program_config;
+use crate::db::types::utils::{validate_program_config, validate_program_info};
 use crate::db::types::version::Version;
 use crate::error::source_error;
 use crate::has_unstable_feature;
@@ -154,7 +156,9 @@ pub async fn sql_compiler_task(
 /// 3. Updates pipeline database `program_status` to `CompilingSql`
 /// 4. Performs SQL compilation on `program_code`, configured with `program_config`
 /// 5. Upon completion, the compilation status is set to `SqlCompiled` with the `program_info`
-///    containing the output of the SQL compiler (inputs, outputs, `main.rs`, `stubs.rs`, etc.)
+///    containing the output of the SQL compiler (inputs, outputs, `main.rs`, `stubs.rs`, etc.).
+///    A crucible program needs no Rust compilation, so its program info is delivered here and
+///    it is set to `Success` directly, ready to run without entering the Rust compiler queue.
 ///
 /// Note that this function assumes it runs in isolation, and as such at the beginning resets
 /// any lingering pipelines that have `CompilingSql` status to `Pending`. This recovers from
@@ -230,16 +234,67 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
                 pipeline.program_version,
                 duration.as_secs_f64()
             );
-            db.lock()
-                .await
-                .transit_program_status_to_sql_compiled(
-                    tenant_id,
+
+            // Crucible needs no Rust compilation: deliver its program info (which
+            // carries the circuit IR) and mark the program ready to run, so it never
+            // enters the serialized Rust compilation queue. Every other runtime moves
+            // to SqlCompiled and waits for the Rust compiler.
+            let is_crucible = validate_program_config(&pipeline.program_config, true)
+                .map(|config| config.runtime_version().is_crucible())
+                .unwrap_or(false);
+            if is_crucible {
+                match deliver_crucible_program_info(
+                    common_config,
+                    config,
                     pipeline.id,
                     pipeline.program_version,
-                    &compilation_info,
                     &program_info,
                 )
-                .await?;
+                .await
+                {
+                    Ok(program_info_integrity_checksum) => {
+                        db.lock()
+                            .await
+                            .transit_program_status_to_success_no_binary(
+                                tenant_id,
+                                pipeline.id,
+                                pipeline.program_version,
+                                &compilation_info,
+                                &program_info,
+                                &program_info_integrity_checksum,
+                            )
+                            .await?;
+                    }
+                    Err(error) => {
+                        error!(
+                            pipeline_id = %pipeline.id,
+                            pipeline = %pipeline.name,
+                            "Crucible program info delivery failed (program version: {}): {error}",
+                            pipeline.program_version
+                        );
+                        db.lock()
+                            .await
+                            .transit_program_status_to_system_error(
+                                tenant_id,
+                                pipeline.id,
+                                pipeline.program_version,
+                                &error,
+                            )
+                            .await?;
+                    }
+                }
+            } else {
+                db.lock()
+                    .await
+                    .transit_program_status_to_sql_compiled(
+                        tenant_id,
+                        pipeline.id,
+                        pipeline.program_version,
+                        &compilation_info,
+                        &program_info,
+                    )
+                    .await?;
+            }
         }
         Err(e) => match e {
             SqlCompilationError::NoLongerExists => {
@@ -391,7 +446,11 @@ fn determine_sql_compiler_path(
     runtime_selector: &RuntimeSelector,
 ) -> PathBuf {
     match runtime_selector {
-        RuntimeSelector::Platform(_) => PathBuf::from(&config.sql_compiler_path),
+        // Crucible consumes the platform SQL compiler's program info; only the
+        // Rust half of the compilation differs.
+        RuntimeSelector::Platform(_) | RuntimeSelector::Crucible => {
+            PathBuf::from(&config.sql_compiler_path)
+        }
         RuntimeSelector::Sha(sha) => {
             jar_cache_dir(config).join(format!("sql2dbsp-jar-with-dependencies-{sha}.jar"))
         }
@@ -539,6 +598,54 @@ pub(crate) fn ephemeral_compilation_dir(config: &CompilerConfig) -> PathBuf {
         .join("ephemeral")
 }
 
+/// Delivers the crucible program info artifact so the runner can fetch its circuit
+/// IR. Crucible builds no binary, so the artifact is named by its own integrity
+/// checksum; the runner rebuilds the same name. Returns that checksum. The SQL
+/// compiler completes a crucible program without Rust compilation.
+async fn deliver_crucible_program_info(
+    common_config: &CommonConfig,
+    config: &CompilerConfig,
+    pipeline_id: PipelineId,
+    program_version: Version,
+    program_info_value: &serde_json::Value,
+) -> Result<String, String> {
+    let program_info = validate_program_info(program_info_value)
+        .map_err(|error| format!("crucible program info is not valid: {error}"))?
+        .to_pipeline_config_program_info();
+    let program_info_str = serde_json::to_string(&program_info)
+        .map_err(|e| format!("failed to serialize crucible program info: {e}"))?;
+    let program_info_integrity_checksum = checksum_buffer(program_info_str.as_bytes())
+        .await
+        .map_err(|e| format!("failed to checksum crucible program info: {e:?}"))?;
+
+    // The compiler's HTTP server serves program info artifacts from this directory,
+    // so deliver here for the runner's program_info_url to resolve.
+    let pipeline_binaries_dir = config
+        .working_dir()
+        .join("rust-compilation")
+        .join("pipeline-binaries");
+    create_dir_if_not_exists(&pipeline_binaries_dir)
+        .await
+        .map_err(|e| format!("failed to create pipeline-binaries directory: {e:?}"))?;
+
+    let program_info_metadata = FileUploadMetadata {
+        pipeline_id,
+        program_version,
+        source_checksum: program_info_integrity_checksum.clone(),
+        integrity_checksum: program_info_integrity_checksum.clone(),
+    };
+    deliver_program_info(
+        common_config,
+        &FileDeliveryMode::from_config(config),
+        &program_info_str,
+        &program_info_metadata,
+        &pipeline_binaries_dir,
+    )
+    .await
+    .map_err(|e| format!("failed to deliver crucible program info: {e:?}"))?;
+    Ok(program_info_integrity_checksum)
+}
+
 /// Performs the SQL compilation:
 /// - Prepares a working directory for input and output
 /// - Call the SQL-to-DBSP compiler executable via a process
@@ -635,10 +742,15 @@ pub(crate) async fn perform_sql_compilation(
     // Outputs
     let output_json_schema_file_path = working_dir.join("schema.json");
     let output_dataflow_file_path = working_dir.join("dataflow.json");
+    let output_jit_file_path = working_dir.join("jit.json");
     let output_rust_directory_path = working_dir.join("rust");
-    recreate_dir(&output_rust_directory_path.join("crates"))
-        .await
-        .map_err(|e| SqlCompilationError::SystemError(e.to_string()))?;
+    // Crucible runs the circuit from the JIT IR and skips the Rust half of
+    // compilation, so the Rust output tree is only prepared for other runtimes.
+    if !runtime_selector.is_crucible() {
+        recreate_dir(&output_rust_directory_path.join("crates"))
+            .await
+            .map_err(|e| SqlCompilationError::SystemError(e.to_string()))?;
+    }
     let output_rust_udf_stubs_file_path = working_dir
         .join("rust")
         .join("crates")
@@ -663,7 +775,6 @@ pub(crate) async fn perform_sql_compilation(
         assert!(sql_compiler_executable_file_path.exists());
     }
 
-    let runtime_crates_path = runtime_selector.runtime_sources(config);
     // Call executable with arguments
     //
     // In the future, it might be that flags can be passed to the SQL compiler through
@@ -675,23 +786,39 @@ pub(crate) async fn perform_sql_compilation(
         .arg(input_sql_file_path.as_os_str())
         .arg("-js")
         .arg(output_json_schema_file_path.as_os_str())
-        .arg("-o")
-        .arg(output_rust_directory_path.as_os_str())
         .arg("--dataflow")
         .arg(output_dataflow_file_path.as_os_str())
         .arg("-i")
         .arg("-je")
         .arg("--alltables")
-        .arg("--ignoreOrder")
-        .arg("--runtime")
-        .arg(runtime_crates_path)
-        .arg("--crates") // Generate multiple crates instead of a single main.rs
-        .arg(crate_name_pipeline_base(pipeline_id));
+        .arg("--ignoreOrder");
+    if runtime_selector.is_crucible() {
+        // Crucible consumes the JIT circuit IR and skips Rust codegen. `--jit`
+        // emits the circuit IR to stdout (it is incompatible with `--crates`),
+        // captured into jit.json below.
+        command.arg("--jit");
+    } else {
+        let runtime_crates_path = runtime_selector.runtime_sources(config);
+        command
+            .arg("-o")
+            .arg(output_rust_directory_path.as_os_str())
+            .arg("--runtime")
+            .arg(runtime_crates_path)
+            .arg("--crates") // Generate multiple crates instead of a single main.rs
+            .arg(crate_name_pipeline_base(pipeline_id));
+    }
     #[cfg(feature = "feldera-enterprise")]
     command.arg("--enterprise");
+    // Crucible captures the JIT circuit IR that `--jit` writes to stdout into
+    // jit.json; every other runtime sends stdout to stdout.log.
+    let stdout_sink = if runtime_selector.is_crucible() {
+        create_new_file(&output_jit_file_path).await?
+    } else {
+        output_stdout_file
+    };
     command
         .stdin(Stdio::null())
-        .stdout(Stdio::from(output_stdout_file.into_std().await))
+        .stdout(Stdio::from(stdout_sink.into_std().await))
         .stderr(Stdio::from(output_stderr_file.into_std().await))
         // Setting it to zero sets the process group ID to the PID.
         // This is done to be able to kill any subprocesses that are spawned.
@@ -846,19 +973,42 @@ pub(crate) async fn perform_sql_compilation(
 
         // For IR-only compilation (used to compute diffs), skip packaging the
         // generated Rust: only the schema, dataflow, and connectors are needed.
-        let (main_rust, stubs) = match output {
-            SqlCompilationOutput::Full => {
-                // The base64-encoded gzipped tar archive of the Rust output directory
-                let main_rust = encode_dir_as_string(&output_rust_directory_path)?;
-                // Read stubs.rs
-                let stubs = read_file_content(&output_rust_udf_stubs_file_path).await?;
-                (main_rust, stubs)
+        let (main_rust, stubs) = if runtime_selector.is_crucible() {
+            // Crucible skips Rust codegen, so there is no generated Rust to package.
+            (String::new(), String::new())
+        } else {
+            match output {
+                SqlCompilationOutput::Full => {
+                    // The base64-encoded gzipped tar archive of the Rust output directory
+                    let main_rust = encode_dir_as_string(&output_rust_directory_path)?;
+                    // Read stubs.rs
+                    let stubs = read_file_content(&output_rust_udf_stubs_file_path).await?;
+                    (main_rust, stubs)
+                }
+                SqlCompilationOutput::IrOnly => (String::new(), String::new()),
             }
-            SqlCompilationOutput::IrOnly => (String::new(), String::new()),
+        };
+
+        // For crucible, read back the JIT circuit IR the compiler emitted via
+        // `--jit`.
+        let circuit_ir = if runtime_selector.is_crucible() {
+            let jit_str = read_file_content(&output_jit_file_path).await?;
+            let jit: serde_json::Value = serde_json::from_str(&jit_str).map_err(|e| {
+                SqlCompilationError::SystemError(
+                    CommonError::json_deserialization_error(
+                        "jit.json from SQL compiler".to_string(),
+                        e,
+                    )
+                    .to_string(),
+                )
+            })?;
+            Some(jit)
+        } else {
+            None
         };
 
         // Generate the program information
-        match generate_program_info(schema, main_rust, stubs, Some(dataflow)) {
+        match generate_program_info(schema, main_rust, stubs, Some(dataflow), circuit_ir) {
             Ok(program_info) => {
                 let program_info = match serde_json::to_value(program_info) {
                     Ok(value) => value,

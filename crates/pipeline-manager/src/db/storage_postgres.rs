@@ -970,6 +970,36 @@ impl Storage for StoragePostgres {
         Ok(())
     }
 
+    async fn transit_program_status_to_success_no_binary(
+        &self,
+        tenant_id: TenantId,
+        pipeline_id: PipelineId,
+        program_version_guard: Version,
+        sql_compilation: &SqlCompilationInfo,
+        program_info: &serde_json::Value,
+        program_info_integrity_checksum: &str,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = transaction::begin(&mut client).await?;
+        operations::pipeline::set_program_status(
+            &txn,
+            tenant_id,
+            pipeline_id,
+            program_version_guard,
+            &ProgramStatus::Success,
+            &Some(sql_compilation.clone()),
+            &None,
+            &None,
+            &Some(program_info.clone()),
+            &None,
+            &None,
+            &Some(program_info_integrity_checksum.to_string()),
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
     async fn transit_program_status_to_sql_error(
         &self,
         tenant_id: TenantId,

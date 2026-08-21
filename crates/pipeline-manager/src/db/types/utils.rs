@@ -652,6 +652,7 @@ mod tests {
             udf_stubs: "".to_string(),
             input_connectors: Default::default(),
             output_connectors: Default::default(),
+            circuit_ir: None,
             dataflow: None,
         };
         let value = serde_json::to_value(program_info.clone()).unwrap();

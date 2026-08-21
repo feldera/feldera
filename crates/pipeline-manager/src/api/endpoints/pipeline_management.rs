@@ -67,13 +67,21 @@ pub struct PartialProgramInfo {
     pub output_connectors: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
 }
 
-/// Removes the `main_rust` field from the JSON of `program_info`.
+/// Removes the fields of `program_info` that are too large to return on every read
+/// of a pipeline: the generated Rust, the dataflow graph, and the circuit IR. Each
+/// runs to several MiB, and a pipeline is read often enough that carrying them costs
+/// real bandwidth and CPU.
+///
+/// Dropping them here does not withhold them from the pipeline: the runner fetches
+/// the program info artifact from the compiler and takes the circuit IR from there,
+/// and the dataflow graph is served on demand by `/pipelines/{name}/dataflow_graph`.
 fn remove_large_fields_from_program_info(
     mut program_info: Option<serde_json::Value>,
 ) -> Option<serde_json::Value> {
     if let Some(serde_json::Value::Object(m)) = &mut program_info {
         let _ = m.shift_remove("main_rust");
         let _ = m.shift_remove("dataflow");
+        let _ = m.shift_remove("circuit_ir");
     }
     program_info
 }
@@ -2159,9 +2167,48 @@ pub(crate) async fn post_pipeline_testing(
 
 #[cfg(test)]
 mod tests {
-    use crate::api::endpoints::pipeline_management::backward_compatible_runtime_status_details;
+    use crate::api::endpoints::pipeline_management::{
+        backward_compatible_runtime_status_details, remove_large_fields_from_program_info,
+    };
     use feldera_types::runtime_status::{ConnectorStats, RuntimeStatusDetails};
     use serde_json::json;
+
+    /// The API never returns the large program info fields. The circuit IR in
+    /// particular reaches the pipeline through the program info artifact, so
+    /// returning it here would be payload no client reads.
+    #[test]
+    fn large_program_info_fields_are_not_returned() {
+        let program_info = json!({
+            "schema": { "inputs": [], "outputs": [] },
+            "main_rust": "fn main() {}",
+            "udf_stubs": "",
+            "dataflow": { "mir": {} },
+            "circuit_ir": { "allOperators": [{ "operation": "Map" }] },
+            "input_connectors": {},
+            "output_connectors": {},
+        });
+        let returned = remove_large_fields_from_program_info(Some(program_info)).unwrap();
+        let returned = returned.as_object().unwrap();
+
+        for dropped in ["main_rust", "dataflow", "circuit_ir"] {
+            assert!(
+                !returned.contains_key(dropped),
+                "'{dropped}' must not be returned by the API"
+            );
+        }
+        // The fields clients do read survive.
+        for kept in [
+            "schema",
+            "udf_stubs",
+            "input_connectors",
+            "output_connectors",
+        ] {
+            assert!(
+                returned.contains_key(kept),
+                "'{kept}' must still be returned"
+            );
+        }
+    }
 
     #[test]
     fn test_backward_compatible_runtime_status_details() {

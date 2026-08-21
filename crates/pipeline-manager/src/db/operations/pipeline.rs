@@ -870,20 +870,27 @@ pub(crate) async fn set_program_status(
             )
         }
         ProgramStatus::Success => {
+            // Two shapes reach Success. A Rust pipeline arrives from CompilingRust,
+            // where its program info and SQL log are already stored, and delivers a
+            // binary plus a Rust log. A crucible pipeline arrives straight from
+            // CompilingSql, so it carries its program info and SQL log here and
+            // delivers no binary and no Rust log. The Rust log is therefore present
+            // exactly when a binary was built, and a half-delivered binary is a bug.
             assert!(
-                new_program_error_sql_compilation.is_none()
-                    && new_program_error_rust_compilation.is_some()
-                    && new_program_error_system_error.is_none()
-                    && new_program_info.is_none()
-                    && new_program_binary_source_checksum.is_some()
-                    && new_program_binary_integrity_checksum.is_some()
+                new_program_error_system_error.is_none()
                     && new_program_info_integrity_checksum.is_some()
+                    && (new_program_binary_source_checksum.is_some()
+                        == new_program_binary_integrity_checksum.is_some())
+                    && (new_program_error_rust_compilation.is_some()
+                        == new_program_binary_source_checksum.is_some())
             );
             (
-                current.program_error.sql_compilation,
+                new_program_error_sql_compilation
+                    .clone()
+                    .or(current.program_error.sql_compilation),
                 new_program_error_rust_compilation.clone(),
                 None,
-                current.program_info,
+                new_program_info.clone().or(current.program_info),
                 new_program_binary_source_checksum.clone(),
                 new_program_binary_integrity_checksum.clone(),
                 new_program_info_integrity_checksum.clone(),
