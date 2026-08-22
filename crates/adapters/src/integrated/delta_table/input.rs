@@ -327,6 +327,26 @@ fn relabel_nested_columns(
     .map_err(|e| anyhow!("relabeling column-mapped field names failed: {e}"))
 }
 
+/// Apply the connector's optional `filter` to `df`, or return `df` unchanged.
+/// The expression parses against `df`'s own schema, so `df` must still carry
+/// every column the filter names. `relation` labels the frame in errors.
+pub(super) fn apply_filter(
+    df: DataFrame,
+    filter: Option<&str>,
+    relation: &str,
+    description: &str,
+) -> AnyResult<DataFrame> {
+    let Some(filter) = filter else {
+        return Ok(df);
+    };
+    let expr = df
+        .parse_sql_expr(filter)
+        .map_err(|e| anyhow!("invalid 'filter' expression '{filter}': {e}"))?;
+    df.filter(expr).map_err(|e| {
+        anyhow!("internal error processing {description}; {REPORT_ERROR}; error applying 'filter' to '{relation}': {e}")
+    })
+}
+
 /// Build the `DataFrame` that streams a CDC transaction to the circuit.
 ///
 /// Equivalent (in SQL) to:
@@ -354,12 +374,10 @@ fn relabel_nested_columns(
 /// would have been ingested anyway. This also shrinks the inputs to
 /// `EXCEPT ALL`, which sorts both relations.
 ///
-/// The filter is parsed against each `DataFrame`'s own schema, so
-/// column references resolve against the correct relation. The two
-/// sides cannot share a single parsed `Expr` because column
-/// references would otherwise point at the wrong relation after
-/// `except`. (`cdc_adds` and `cdc_removes` are labels for the two
-/// sides, not registered tables.)
+/// Each side is filtered separately (see [`apply_filter`]): the two
+/// cannot share one parsed `Expr`, because its column references
+/// would point at the wrong relation after `except`. (`cdc_adds` and
+/// `cdc_removes` are labels for the two sides, not registered tables.)
 ///
 /// Caveat: `EXCEPT ALL` relies on `arrow_row::RowConverter`, which in
 /// the currently pinned `arrow-row` does not support `Map` columns.
@@ -380,24 +398,12 @@ pub(super) fn build_cdc_dataframe(
     order_by: &str,
     description: &str,
 ) -> AnyResult<DataFrame> {
-    let apply_filter = |df: DataFrame, side: &'static str| -> AnyResult<DataFrame> {
-        let Some(filter) = filter else {
-            return Ok(df);
-        };
-        let expr = df
-            .parse_sql_expr(filter)
-            .map_err(|e| anyhow!("invalid 'filter' expression '{filter}': {e}"))?;
-        df.filter(expr).map_err(|e| {
-            anyhow!("internal error processing {description}; {REPORT_ERROR}; error applying 'filter' to '{side}': {e}")
-        })
-    };
-
-    let adds_df = apply_filter(adds_df, "cdc_adds")?;
+    let adds_df = apply_filter(adds_df, filter, "cdc_adds", description)?;
 
     let result_df = match removes_df {
         None => adds_df,
         Some(removes_df) => {
-            let removes_df = apply_filter(removes_df, "cdc_removes")?;
+            let removes_df = apply_filter(removes_df, filter, "cdc_removes", description)?;
             adds_df.except(removes_df).map_err(|e| {
                 anyhow!("failed to build the CDC set difference for {description}: {e}. This typically means the Delta table contains a `Map` column, which the CDC deduplication step (`EXCEPT ALL`) does not yet support.")
             })?
@@ -1456,21 +1462,24 @@ impl DeltaTableInputEndpointInner {
                 .contains(&field.name.name())
     }
 
-    /// True if CDC keeps the column named `name`. When `skip_unused_columns`
-    /// is off, keep everything. When on, keep a column only if the circuit
-    /// reads it (`used_sql_columns`) or a connector expression names it
-    /// (`config_referenced_columns`, which also covers Delta metadata columns
-    /// like `__feldera_op` that the SQL schema omits).
+    /// True if the connector reads the column `name`: the circuit uses it, or a
+    /// connector expression names it -- including Delta columns the SQL table
+    /// never declares (`__feldera_op`, a filter-only column), which the
+    /// projection then drops.
+    fn needs_column(&self, name: &str) -> bool {
+        self.used_sql_columns().contains(name) || self.config_referenced_columns().contains(name)
+    }
+
+    /// True if CDC keeps the column named `name`: everything when
+    /// `skip_unused_columns` is off, otherwise the columns the connector needs.
     ///
     /// The plain and DV-masked CDC sides must apply this same rule, or their
     /// columns differ and the `UNION ALL` no longer lines up by position. The
-    /// off case needs the explicit `!skip_unused_columns()`: `used_sql_columns`
-    /// holds only SQL columns, but the unprojected frame also carries Delta
-    /// physical columns the SQL table never maps.
+    /// off case cannot defer to [`needs_column`](Self::needs_column):
+    /// `cdc_delete_filter` binds columns by index, so the unprojected frame
+    /// must keep every Delta column.
     fn keeps_cdc_column(&self, name: &str) -> bool {
-        !self.skip_unused_columns()
-            || self.used_sql_columns().contains(name)
-            || self.config_referenced_columns().contains(name)
+        !self.skip_unused_columns() || self.needs_column(name)
     }
 
     /// Project `df` to the columns the connector needs when `skip_unused_columns`
@@ -3333,7 +3342,7 @@ impl DeltaTableInputEndpointInner {
     /// projection (see [`filtered_parquet_table`]). It must match the columns
     /// any file it unions with keeps, so the providers line up in one query. It
     /// is a predicate rather than a fixed list because the callers differ:
-    /// follow keeps its `used_columns`, CDC keeps `keeps_cdc_column`.
+    /// follow keeps `needs_column`, CDC keeps `keeps_cdc_column`.
     async fn file_provider(
         &self,
         table: &DeltaTable,
@@ -3538,7 +3547,7 @@ impl DeltaTableInputEndpointInner {
                 None => RoaringTreemap::new(),
             };
             self.file_provider(table, path, bitmap, ReadMode::NotInBitmap, |name| {
-                used_columns.contains(&name)
+                self.needs_column(name)
             })
             .await?
         } else {
@@ -3586,7 +3595,7 @@ impl DeltaTableInputEndpointInner {
                 let description = format!("file '{path}'");
                 let provider = self
                     .file_provider(table, path, positions.clone(), ReadMode::InBitmap, |name| {
-                        used_columns.contains(&name)
+                        self.needs_column(name)
                     })
                     .await?;
                 self.emit_provider(
@@ -3618,9 +3627,11 @@ impl DeltaTableInputEndpointInner {
         }
     }
 
-    /// Read `provider` restricted to `used_columns`, apply the connector's
-    /// optional `filter` expression (`self.config.filter`), and push the rows to
-    /// the input stream with `polarity`.
+    /// Apply the connector's optional `filter` to `provider`, project to
+    /// `used_columns`, and push the rows to the input stream with `polarity`.
+    ///
+    /// The filter runs first because it may name Delta columns `used_columns`
+    /// does not carry, the ones the SQL table never declares.
     #[allow(clippy::too_many_arguments)]
     async fn emit_provider(
         &self,
@@ -3639,20 +3650,12 @@ impl DeltaTableInputEndpointInner {
         // Translate column-mapped physical names back to logical before any
         // logical-name projection or filter.
         let df = self.project_physical_to_logical(df)?;
+
+        let df = apply_filter(df, self.config.filter.as_deref(), "follow", description)?;
+
         let df = df.select_columns(used_columns).map_err(|e| {
             anyhow!("internal error processing {description}; {REPORT_ERROR}; error selecting columns: {e}")
         })?;
-
-        let df = if let Some(filter) = &self.config.filter {
-            let expr = df
-                .parse_sql_expr(filter)
-                .map_err(|e| anyhow!("invalid 'filter' expression '{filter}': {e}"))?;
-            df.filter(expr).map_err(|e| {
-                anyhow!("internal error processing {description}; {REPORT_ERROR}; error applying 'filter': {e}")
-            })?
-        } else {
-            df
-        };
 
         let _record_count = self
             .execute_df(

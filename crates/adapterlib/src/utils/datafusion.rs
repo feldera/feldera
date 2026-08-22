@@ -318,9 +318,9 @@ pub fn validate_sql_order_by(order_by: &str) -> Result<(), ParserError> {
 }
 
 /// Collect into `columns` every column name an expression's AST references,
-/// walking nested sub-expressions. For a compound reference such as `t.c` only
-/// the trailing part (`c`) is taken, since that is the column; leading parts are
-/// table qualifiers.
+/// walking nested sub-expressions. Every part of a compound reference `a.b.c` is
+/// kept: the AST cannot tell a table qualifier from a column from a struct
+/// field, so any part may be the column.
 ///
 /// Over-collecting is harmless for the callers here -- it merely keeps a column
 /// from being pruned -- but under-collecting would drop a column the connector
@@ -332,9 +332,7 @@ fn collect_referenced_columns(expr: &Expr, columns: &mut BTreeSet<String>) {
                 columns.insert(ident.value.clone());
             }
             Expr::CompoundIdentifier(parts) => {
-                if let Some(column) = parts.last() {
-                    columns.insert(column.value.clone());
-                }
+                columns.extend(parts.iter().map(|part| part.value.clone()));
             }
             _ => {}
         }
@@ -924,8 +922,15 @@ mod tests {
             ),
             // Function arguments are walked; the function name is not a column.
             ("lower(status) = 'gone'", columns(&["status"])),
-            // A compound reference resolves to its trailing (column) part.
-            ("t.deleted = true", columns(&["deleted"])),
+            // A compound reference is a qualified column (`t.deleted`) or a
+            // struct field access (`info.deleted`), so both parts are kept.
+            ("info.deleted = true", columns(&["info", "deleted"])),
+            // The column is the first part under struct nesting and the second
+            // under a qualifier, so deeper nesting keeps every part.
+            (
+                "t.info.flags.deleted",
+                columns(&["t", "info", "flags", "deleted"]),
+            ),
             // A predicate over no columns yields the empty set.
             ("1 = 1", columns(&[])),
         ] {
