@@ -4225,6 +4225,7 @@ dependencies = [
  "futures",
  "futures-timer",
  "futures-util",
+ "gcloud-auth",
  "gcloud-gax",
  "gcloud-googleapis",
  "gcloud-pubsub",

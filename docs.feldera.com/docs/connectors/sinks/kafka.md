@@ -142,6 +142,49 @@ WITH (
 ) AS SELECT * FROM input;
 ```
 
+Example of writing data to GCP Managed Service for Apache Kafka with OAUTHBEARER.
+
+:::important
+- Ensure that the defined output topic either exists in GCP Managed Service for Apache Kafka or automatic
+  topic creation is enabled.
+- `sasl.mechanism` must be set to `OAUTHBEARER`.
+- `security.protocol` must be set to `SASL_SSL`.
+- `oauth_provider` must be set to `gcp`.
+- Google credentials are resolved from Application Default Credentials: a service account key or user
+  credentials file (e.g., as set up by `gcloud auth application-default login`), or, on GKE with Workload
+  Identity configured, the metadata server.
+
+Other protocols and mechanisms aren't supported.
+:::
+
+```sql
+
+CREATE VIEW output
+WITH (
+   'connectors' = '[
+    {
+      "transport": {
+          "name": "kafka_output",
+          "config": {
+              "bootstrap.servers": "bootstrap.<CLUSTER>.<REGION>.managedkafka.<PROJECT>.cloud.goog:9092",
+              "sasl.mechanism": "OAUTHBEARER",
+              "security.protocol": "SASL_SSL",
+              "oauth_provider": "gcp",
+              "topic": "<TOPIC>"
+          }
+      },
+      "format": {
+          "name": "json",
+          "config": {
+              "update_format": "insert_delete",
+              "array": false
+          }
+      }
+   }
+   ]'
+) AS SELECT * FROM input;
+```
+
 ## Additional resources
 
 For more information, see:

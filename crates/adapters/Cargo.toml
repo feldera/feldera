@@ -216,6 +216,7 @@ tokio-postgres-rustls = { workspace = true }
 rustls-pemfile = { workspace = true }
 base64 = { workspace = true }
 aws-msk-iam-sasl-signer = "1.0.1"
+google-cloud-auth = { workspace = true }
 # No code here calls it; the AWS SDK pulls it transitively. The declaration
 # floors the version at 1.4.5, where SigV4a signing stopped using ring. A
 # lockfile regenerated during a rebase resolved it back below that twice; a
