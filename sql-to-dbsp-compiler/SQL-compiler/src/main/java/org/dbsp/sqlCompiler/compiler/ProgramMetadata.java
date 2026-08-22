@@ -19,6 +19,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.util.IJson;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.math.BigInteger;
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -48,7 +49,8 @@ public class ProgramMetadata implements IJson {
             DBSPCompiler.WARNINGS_ARE_ERRORS.toLowerCase(Locale.ENGLISH),
             ProgramMetadata.AVOID_STAR_JOINS.toLowerCase(Locale.ENGLISH),
             ProgramMetadata.ENFORCE_POSITIVE_INPUTS.toLowerCase(Locale.ENGLISH),
-            ProgramMetadata.USE_FLAT_VARIANT.toLowerCase(Locale.ENGLISH)
+            ProgramMetadata.USE_FLAT_VARIANT.toLowerCase(Locale.ENGLISH),
+            ProgramMetadata.WINDOW_SHARING_THRESHOLD.toLowerCase(Locale.ENGLISH)
     );
 
     private boolean known(String variable) {
@@ -72,6 +74,11 @@ public class ProgramMetadata implements IJson {
                     "Unknown setting", "Variable " + Utilities.singleQuote(variable) +
                             " does not control any known settings");
         }
+        if (variable.equals(WINDOW_SHARING_THRESHOLD.toLowerCase(Locale.ENGLISH))
+                && asInt(value) == null)
+            compiler.reportWarning(range, "Invalid setting",
+                    "Variable " + Utilities.singleQuote(variable) + " must be an integer; "
+                            + ToSqlVisitor.convert(compiler, value) + " is ignored");
         this.variables.put(variable, value);
         // The variant representation must be fixed before any expression of
         // the program is compiled to Rust names; SET statements precede other
@@ -110,6 +117,34 @@ public class ProgramMetadata implements IJson {
         }
     }
 
+    /** The value of  `expression` as an integer, or null if it's not an integer. */
+    @Nullable
+    static Integer asInt(DBSPExpression expression) {
+        if (expression.is(DBSPIntLiteral.class)) {
+            BigInteger value = expression.to(DBSPIntLiteral.class).getValue();
+            return value == null ? null : value.intValue();
+        }
+        if (expression.is(DBSPStringLiteral.class)) {
+            String value = expression.to(DBSPStringLiteral.class).value;
+            if (value == null)
+                return null;
+            try {
+                return Integer.parseInt(value.trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /** The integer value of `variable`, or `defaultValue` if it has none. */
+    public int intValue(String variable, int defaultValue) {
+        if (!this.hasValue(variable))
+            return defaultValue;
+        Integer value = asInt(Utilities.getExists(this.variables, canonicalVariableName(variable)));
+        return value == null ? defaultValue : value;
+    }
+
     /** True if a feature is set explicitly to 'true'. */
     public boolean isExplicitlyOn(String variable) {
         if (!this.hasValue(variable))
@@ -133,6 +168,21 @@ public class ProgramMetadata implements IJson {
      * Programs that cast or index VARIANT values cannot enable this yet:
      * the runtime cast/index function grid still operates on the enum. */
     public static final String USE_FLAT_VARIANT = "FELDERA_FLAT_VARIANT";
+    /** How many temporal filters need to share an input to for sharing an integral. */
+    public static final String WINDOW_SHARING_THRESHOLD = "FELDERA_WINDOW_SHARING_THRESHOLD";
+
+    /** A group of temporal filters must be larger than this before their windows share an
+     * input, unless {@link #WINDOW_SHARING_THRESHOLD} says otherwise. */
+    public static final int DEFAULT_WINDOW_SHARING_THRESHOLD = 10;
+
+    public int windowSharingThreshold() {
+        return this.intValue(WINDOW_SHARING_THRESHOLD, DEFAULT_WINDOW_SHARING_THRESHOLD);
+    }
+
+    /** True when no windows should share an input. */
+    public boolean windowSharingDisabled() {
+        return this.windowSharingThreshold() == 0;
+    }
 
     public boolean noStarJoins() {
         return this.isExplicitlyOn(AVOID_STAR_JOINS);

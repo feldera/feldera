@@ -1115,8 +1115,8 @@ public class StreamingTests extends StreamingTestBase {
     @Test
     public void sessionGc() {
         // LATENESS on the SESSION timestamp column with SESSION windows.
-        // Both RetainNValues operators attach to the same JoinIndex (the
-        // LAG); the steps below run with compaction to check that this works.
+        // The RetainNValues operator attaches to the JoinIndex of the LAG;
+        // the steps below run with compaction to check that this works.
         String sql = """
                 CREATE TABLE events(
                     ts  TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOURS,
@@ -1153,7 +1153,7 @@ public class StreamingTests extends StreamingTestBase {
             public void endVisit() {
                 Assert.assertEquals(1, this.rollingWithWaterline);
                 Assert.assertEquals(2, this.retainKeys);
-                Assert.assertEquals(2, this.retainNValues);
+                Assert.assertEquals(1, this.retainNValues);
             }
         });
         // The waterline is max over all data of (ts - 1 hour); each step is

@@ -126,9 +126,7 @@ public class RewriteNow extends CircuitCloneVisitor {
         @Override
         public VisitDecision preorder(DBSPClosureExpression closure) {
             if (!this.context.isEmpty()) {
-                ContainsNow cn = new ContainsNow(this.compiler, false);
-                cn.apply(closure.body);
-                if (cn.found)
+                if (ContainsNow.find(this.compiler, closure.body))
                     throw new CompilationError(
                             "NOW() is not supported inside a lambda expression", closure.getNode());
                 this.map(closure, closure);
@@ -435,16 +433,14 @@ public class RewriteNow extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPFilterOperator operator) {
-        ContainsNow cn = new ContainsNow(this.compiler(), true);
         DBSPClosureExpression function = operator.getClosureFunction();
-        cn.apply(function);
-        if (!cn.found) {
+        if (!ContainsNow.find(this.compiler, function)) {
             // Filter does not involve 'now'
             super.postorder(operator);
             return;
         }
 
-        function = function.ensureTree(compiler).to(DBSPClosureExpression.class);
+        function = function.ensureTree(this.compiler).to(DBSPClosureExpression.class);
         List<BooleanExpression> filters = this.findTemporalFilters(operator, function);
         filters = combineExpressions(filters);
         Utilities.enforce(!filters.isEmpty());
