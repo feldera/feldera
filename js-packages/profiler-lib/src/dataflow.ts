@@ -163,8 +163,17 @@ export class SourcePositionRange implements Comparable<SourcePositionRange> {
         return new SourcePosition(this.range.start_line_number, this.range.start_column);
     }
 
+    /** The last character of the range, inclusive - the convention the SQL compiler reports, coming
+     *  from Calcite's `SqlParserPos.getEndColumnNum()`. */
     public get end(): SourcePosition {
         return new SourcePosition(this.range.end_line_number, this.range.end_column);
+    }
+
+    /** The end of the range as a text editor addresses it: the caret position just past the last
+     *  character. Editors (Monaco among them) treat a range's end as exclusive, so a selection built
+     *  from `end` stops one character short of what the compiler pointed at. */
+    public get endExclusive(): SourcePosition {
+        return new SourcePosition(this.range.end_line_number, this.range.end_column + 1);
     }
 
     /** Compare two ranges; comparison is done lexicographically on start, end. */

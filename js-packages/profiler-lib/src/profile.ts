@@ -1286,6 +1286,8 @@ export class SimpleNode implements JsonSimpleCircuitNode {
 export class ComplexNode extends SimpleNode {
     children: Array<NodeId>;
     depth: number = 0;
+    // Number of primitive operators anywhere inside this region.
+    leafCount: number = 0;
     // Names of tables and views of descendant nodes.
     readonly containedNames: Array<string> = [];
 
@@ -1313,6 +1315,10 @@ export class ComplexNode extends SimpleNode {
 
     setDepth(depth: number) {
         this.depth = depth;
+    }
+
+    setLeafCount(count: number) {
+        this.leafCount = count;
     }
 
     override getChildren(): Array<NodeId> {
@@ -1392,7 +1398,8 @@ export class CircuitProfile {
         // This can happen for some Z nodes in recursive components
         if (profileNode.isNone()) return;
         let n = profileNode.unwrap();
-        const name = mir.table !== null ? mir.table : mir.view;
+        // Older dataflow graphs omit `table`/`view` instead of emitting nulls.
+        const name = mir.table ?? mir.view ?? null;
         if (name !== null) {
             n.operation += " " + name;
             this.byName.set(name.toLowerCase(), n);
@@ -1712,13 +1719,17 @@ export class CircuitProfile {
             node.setDepth(result.computeDepth(node.id));
         }
 
-        // Assign to every complex node the "sum" of the children's measurements.
-        // Process in order of increasing depth.
+        // Assign to every complex node the "sum" of the children's measurements,
+        // and the number of primitive operators inside it.
+        // Process in order of increasing depth, so that a region is visited after its subregions.
         for (const complex of result.getSortedComplexNodes()) {
+            let leaves = 0;
             for (const child of complex.children) {
-                let node = result.getNode(child);
-                complex.appendMeasurements(node.unwrap());
+                const node = result.getNode(child).unwrap();
+                complex.appendMeasurements(node);
+                leaves += node instanceof ComplexNode ? node.leafCount : 1;
             }
+            complex.setLeafCount(leaves);
         }
 
         result.computePropertyRanges();
