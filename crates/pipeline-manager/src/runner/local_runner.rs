@@ -99,13 +99,38 @@ fn multihost_host_ip(ordinal: usize) -> Ipv4Addr {
     Ipv4Addr::new(127, MULTIHOST_LOOPBACK_OCTET, ordinal as u8, 1)
 }
 
-/// Path to the crucible engine executable, launched for a pipeline that delivers
-/// no binary. `CRUCIBLE_BINARY` overrides it; otherwise `crucible` is resolved on
-/// `PATH`.
-fn crucible_binary_path() -> PathBuf {
-    std::env::var_os("CRUCIBLE_BINARY")
+/// Resolves the crucible engine executable, launched for a pipeline that delivers
+/// no binary. `CRUCIBLE_BINARY` overrides the default `crucible`. Returns a clear
+/// error when the executable is missing (crucible is not always installed), so the
+/// gap is reported rather than surfacing as an opaque process-spawn failure.
+fn resolve_crucible_binary() -> Result<PathBuf, ManagerError> {
+    let configured = std::env::var_os("CRUCIBLE_BINARY")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("crucible"))
+        .unwrap_or_else(|| PathBuf::from("crucible"));
+    resolve_executable(&configured, std::env::var_os("PATH"))
+        .map_err(|path| RunnerError::CrucibleBinaryNotFound { path }.into())
+}
+
+/// Resolves `configured` to an existing executable file, as the OS would on spawn:
+/// a value with a path separator must point at an existing file, a bare name is
+/// searched on `path_env`. Returns the offending name as the error when missing.
+fn resolve_executable(
+    configured: &Path,
+    path_env: Option<std::ffi::OsString>,
+) -> Result<PathBuf, String> {
+    if configured.is_absolute() || configured.components().count() > 1 {
+        if configured.is_file() {
+            return Ok(configured.to_path_buf());
+        }
+    } else if let Some(paths) = path_env {
+        for dir in std::env::split_paths(&paths) {
+            let candidate = dir.join(configured);
+            if candidate.is_file() {
+                return Ok(candidate);
+            }
+        }
+    }
+    Err(configured.display().to_string())
 }
 
 /// Loopback IP the coordinator of a multihost deployment binds.  Uses third
@@ -813,7 +838,7 @@ impl LocalRunner {
         // the crucible engine instead, reading the same config. The launch decision
         // is the explicit crucible configuration, not the presence of a binary.
         let executable = if is_crucible {
-            crucible_binary_path()
+            resolve_crucible_binary()?
         } else {
             let binary_file_path = self
                 .config
@@ -1163,7 +1188,7 @@ impl PipelineExecutor for LocalRunner {
         // reads the same config.yaml (carrying the circuit IR). The launch decision
         // is the explicit crucible configuration, not the presence of a binary.
         let executable = if is_crucible {
-            crucible_binary_path()
+            resolve_crucible_binary()?
         } else {
             let binary_file_path = self
                 .config
@@ -1522,5 +1547,38 @@ mod multihost_tests {
             // Last octet is never 0 (a `.0` host address).
             assert_ne!(ip.octets()[3], 0);
         }
+    }
+}
+
+#[cfg(test)]
+mod crucible_binary_tests {
+    use super::resolve_executable;
+    use std::path::Path;
+
+    /// A crucible executable given as a path must exist; a missing path errors.
+    #[test]
+    fn resolves_existing_path_and_rejects_missing() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        assert_eq!(
+            resolve_executable(tmp.path(), None).unwrap(),
+            tmp.path().to_path_buf()
+        );
+        assert!(resolve_executable(Path::new("/nonexistent/crucible-xyz"), None).is_err());
+    }
+
+    /// A bare name is resolved against PATH and errors when it is absent.
+    #[test]
+    fn resolves_bare_name_on_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("crucible");
+        std::fs::write(&exe, b"").unwrap();
+        let path_env = std::env::join_paths([dir.path()]).unwrap();
+        assert_eq!(
+            resolve_executable(Path::new("crucible"), Some(path_env)).unwrap(),
+            exe
+        );
+        assert!(resolve_executable(Path::new("crucible"), None).is_err());
+        let empty = std::env::join_paths(std::iter::empty::<&Path>()).unwrap();
+        assert!(resolve_executable(Path::new("crucible"), Some(empty)).is_err());
     }
 }

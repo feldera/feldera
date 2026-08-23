@@ -74,6 +74,9 @@ pub enum RunnerError {
     RunnerConfigError {
         error: String,
     },
+    CrucibleBinaryNotFound {
+        path: String,
+    },
 
     // Interaction with the pipeline runner
     RunnerInteractionUnreachable {
@@ -171,6 +174,7 @@ impl DetailedError for RunnerError {
             RunnerError::RunnerStopError { .. } => Cow::from("RunnerStopError"),
             RunnerError::RunnerClearError { .. } => Cow::from("RunnerClearError"),
             RunnerError::RunnerConfigError { .. } => Cow::from("RunnerConfigError"),
+            RunnerError::CrucibleBinaryNotFound { .. } => Cow::from("CrucibleBinaryNotFound"),
             RunnerError::RunnerInteractionUnreachable { .. } => {
                 Cow::from("RunnerInteractionUnreachable")
             }
@@ -345,6 +349,13 @@ impl Display for RunnerError {
             Self::RunnerConfigError { error } => {
                 write!(f, "Pipeline runner configuration error: {error}")
             }
+            Self::CrucibleBinaryNotFound { path } => {
+                write!(
+                    f,
+                    "Crucible executable '{path}' not found. Install the crucible engine on PATH, \
+                    or set the CRUCIBLE_BINARY environment variable to its location."
+                )
+            }
             Self::RunnerInteractionUnreachable { error } => {
                 write!(
                     f,
@@ -465,6 +476,7 @@ impl ResponseError for RunnerError {
             Self::RunnerStopError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerClearError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerConfigError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::CrucibleBinaryNotFound { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerInteractionUnreachable { .. } => StatusCode::SERVICE_UNAVAILABLE,
             Self::RunnerInteractionLogFollowRequestChannelFull { .. } => {
                 StatusCode::SERVICE_UNAVAILABLE
@@ -505,6 +517,21 @@ mod test {
         assert!(
             message.contains('3'),
             "should report the requested host count: {message}"
+        );
+    }
+
+    /// The missing-crucible-executable error is customer-facing; pin its wording.
+    #[test]
+    fn crucible_binary_not_found_wording() {
+        let message = RunnerError::CrucibleBinaryNotFound {
+            path: "crucible".to_string(),
+        }
+        .to_string();
+        assert!(message.contains("Crucible executable"), "{message}");
+        assert!(message.contains("not found"), "{message}");
+        assert!(
+            message.contains("CRUCIBLE_BINARY"),
+            "should point at the override env var: {message}"
         );
     }
 }
