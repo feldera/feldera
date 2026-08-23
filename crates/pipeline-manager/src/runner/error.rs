@@ -54,6 +54,9 @@ pub enum RunnerError {
         current_status: ResourcesStatus,
         desired_status: ResourcesDesiredStatus,
     },
+    AutomatonCrucibleMultihostUnsupported {
+        hosts: usize,
+    },
 
     // The pipeline runner implementation encounters an error
     RunnerProvisionError {
@@ -159,6 +162,9 @@ impl DetailedError for RunnerError {
             }
             RunnerError::AutomatonImpossibleDesiredStatus { .. } => {
                 Cow::from("AutomatonImpossibleDesiredStatus")
+            }
+            RunnerError::AutomatonCrucibleMultihostUnsupported { .. } => {
+                Cow::from("AutomatonCrucibleMultihostUnsupported")
             }
             RunnerError::RunnerProvisionError { .. } => Cow::from("RunnerProvisionError"),
             RunnerError::RunnerCheckError { .. } => Cow::from("RunnerCheckError"),
@@ -313,6 +319,14 @@ impl Display for RunnerError {
                     "
                 }
             }
+            Self::AutomatonCrucibleMultihostUnsupported { hosts } => {
+                write!(
+                    f,
+                    "The crucible runtime does not support multihost pipelines yet. \
+                    Set 'runtime_config.hosts' to 1 or select a different runtime version \
+                    to start this pipeline (requested {hosts} hosts)."
+                )
+            }
             Self::RunnerProvisionError { error } => {
                 write!(f, "Pipeline provision failed: {error}")
             }
@@ -445,6 +459,7 @@ impl ResponseError for RunnerError {
             Self::AutomatonSuspendingComputeTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonAfterInitializationBecameRunning => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonImpossibleDesiredStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::AutomatonCrucibleMultihostUnsupported { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerProvisionError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerCheckError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerStopError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
@@ -468,5 +483,28 @@ impl ResponseError for RunnerError {
 
     fn error_response(&self) -> HttpResponse<BoxBody> {
         crate::error::json_error_response(self)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::RunnerError;
+
+    /// The crucible-multihost refusal is customer-facing; pin its wording.
+    #[test]
+    fn crucible_multihost_error_wording() {
+        let message = RunnerError::AutomatonCrucibleMultihostUnsupported { hosts: 3 }.to_string();
+        assert!(
+            message.contains("crucible runtime does not support multihost pipelines"),
+            "unexpected wording: {message}"
+        );
+        assert!(
+            message.contains("runtime_config.hosts"),
+            "should name the field to change: {message}"
+        );
+        assert!(
+            message.contains('3'),
+            "should report the requested host count: {message}"
+        );
     }
 }

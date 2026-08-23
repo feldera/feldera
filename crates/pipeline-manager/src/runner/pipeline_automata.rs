@@ -966,6 +966,18 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             }
         };
 
+        // Crucible does not support multihost pipelines yet; refuse before provisioning
+        // rather than attempting a launch that cannot succeed. The multihost start path
+        // stays intact for other runtimes.
+        if runtime_config.hosts > 1 && program_config_is_crucible(&pipeline.program_config) {
+            return Action::RemainStoppedUpdateError {
+                error: RunnerError::AutomatonCrucibleMultihostUnsupported {
+                    hosts: runtime_config.hosts,
+                }
+                .into(),
+            };
+        }
+
         // Validate the required program_info which includes input and output connectors
         let _program_info = match &pipeline.program_info {
             None => {
@@ -1915,6 +1927,7 @@ mod test {
     use crate::runner::pipeline_logs::{LogMessage, LogsSender};
     use async_trait::async_trait;
     use feldera_types::config::{PipelineConfig, StorageConfig};
+    use feldera_types::error::ErrorResponse;
     use feldera_types::program_schema::ProgramSchema;
     use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus, RuntimeStatus};
     use serde_json::json;
@@ -2086,12 +2099,28 @@ mod test {
                 .program_status
         }
 
+        async fn deployment_error(&self) -> Option<ErrorResponse> {
+            let automaton = &self.automaton;
+            self.db
+                .lock()
+                .await
+                .get_pipeline_by_id(automaton.tenant_id, automaton.pipeline_id)
+                .await
+                .unwrap()
+                .deployment_error
+        }
+
         async fn tick(&mut self) {
             self.automaton.do_run().await.unwrap();
         }
     }
 
-    async fn setup(db: Arc<Mutex<StoragePostgres>>, deployment_location: String) -> AutomatonTest {
+    async fn setup(
+        db: Arc<Mutex<StoragePostgres>>,
+        deployment_location: String,
+        runtime_config: serde_json::Value,
+        program_config: serde_json::Value,
+    ) -> AutomatonTest {
         // Create a pipeline and a corresponding automaton
         let tenant_id = TenantRecord::default().id;
         let pipeline_id = PipelineId(Uuid::now_v7());
@@ -2106,14 +2135,11 @@ mod test {
                     name: "example1".to_string(),
                     description: "Description of example1".to_string(),
                     tags: vec![],
-                    runtime_config: json!({}),
+                    runtime_config,
                     program_code: "CREATE TABLE example1 ( col1 INT );".to_string(),
                     udf_rust: "".to_string(),
                     udf_toml: "".to_string(),
-                    program_config: json!({
-                        "profile": "unoptimized",
-                        "cache": false
-                    }),
+                    program_config,
                 },
             )
             .await
@@ -2279,13 +2305,28 @@ mod test {
     type SetupResult = (MockServer, tokio_postgres::Config, AutomatonTest);
 
     async fn setup_complete() -> SetupResult {
+        setup_complete_with(
+            json!({}),
+            json!({ "profile": "unoptimized", "cache": false }),
+        )
+        .await
+    }
+
+    async fn setup_complete_with(
+        runtime_config: serde_json::Value,
+        program_config: serde_json::Value,
+    ) -> SetupResult {
         logging::init_logging("foo".into());
         let (db, temp_dir) = crate::db::test::setup_pg().await;
         let db = Arc::new(Mutex::new(db));
         // Start a background HTTP server on a random local port
         let mock_server = MockServer::start().await;
         let addr = mock_server.address().to_string();
-        (mock_server, temp_dir, setup(db.clone(), addr).await)
+        (
+            mock_server,
+            temp_dir,
+            setup(db.clone(), addr, runtime_config, program_config).await,
+        )
     }
 
     fn artifacts_path(pipeline_id: PipelineId) -> String {
@@ -2297,6 +2338,45 @@ mod test {
             "not-used-program-binary-integrity-checksum",
             "not-used-program-info-integrity-checksum",
         )
+    }
+
+    /// Crucible does not support multihost pipelines yet: a pipeline with
+    /// `runtime_config.hosts > 1` and the crucible runtime is refused at the
+    /// provisioning gate, staying Stopped with a clear error rather than launching.
+    #[tokio::test]
+    #[rustfmt::skip]
+    async fn crucible_multihost_refused_before_provisioning() {
+        // Without the gate the runtime selector falls back to the platform runtime,
+        // the pipeline is not a crucible pipeline, and there is nothing to refuse.
+        crate::enable_test_unstable_features();
+        assert!(crate::has_unstable_feature("runtime_version"));
+
+        let (mut server, _temp, mut test) = setup_complete_with(
+            json!({ "hosts": 2 }),
+            json!({ "runtime_version": "crucible", "profile": "unoptimized", "cache": false }),
+        ).await;
+
+        // Artifacts present so the flow reaches the provisioning gate. Crucible names
+        // the program info artifact by its own checksum and passes "none" for the binary.
+        let artifacts_path = format!(
+            "/artifacts/{}/1/{}/none/{}",
+            test.automaton.pipeline_id,
+            "not-used-program-info-integrity-checksum",
+            "not-used-program-info-integrity-checksum",
+        );
+        mock_endpoints(&mut server, vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))]).await;
+
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
+        test.tick().await;
+
+        // Refused: stays Stopped with the crucible-multihost error instead of provisioning.
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
+        let error = test.deployment_error().await.expect("a deployment error is set");
+        assert!(
+            error.message.contains("crucible runtime does not support multihost pipelines"),
+            "unexpected error: {}", error.message
+        );
     }
 
     #[tokio::test]
