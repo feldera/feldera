@@ -1,14 +1,4 @@
-import { page } from '$app/state'
+import { useIsEnterprise } from '$lib/compositions/useEdition.svelte'
 
-export const usePremiumFeatures = () => {
-  const isAdvanced: boolean = $derived(
-    !!page.data.feldera &&
-      (page.data.feldera.edition.startsWith('Enterprise') ||
-        page.data.feldera.edition.startsWith('Premium'))
-  )
-  return {
-    get value() {
-      return isAdvanced
-    }
-  }
-}
+/** Premium features are the ones the enterprise and premium editions carry. */
+export const usePremiumFeatures = useIsEnterprise
