@@ -8297,7 +8297,21 @@ impl ControllerInner {
             controller
                 .status
                 .update_output_memory(endpoint_id, encoder.consumer().memory());
-            if output_buffer.flush_needed(&output_buffer_config) {
+
+            // A paused endpoint receives no more output, so nothing will ever
+            // satisfy the buffer's size condition, and its time condition may
+            // not be configured at all. Flush what the buffer holds instead of
+            // stranding it there: those updates were produced before the pause
+            // and are still owed to the sink, and the pipeline's progress waits
+            // on them.
+            let paused = controller
+                .status
+                .is_output_endpoint_paused(&endpoint_id)
+                .unwrap_or(false);
+
+            if output_buffer.flush_needed(&output_buffer_config)
+                || (paused && !output_buffer.is_empty())
+            {
                 // One of the triggering conditions for flushing the output buffer is satisfied:
                 // go ahead and flush the buffer; we will check for more messages at the next iteration
                 // of the loop.
@@ -8498,16 +8512,23 @@ impl ControllerInner {
         }
 
         // The circuit thread reads the flag in `push_output`, so the change
-        // takes effect on the next step. Two things need one to happen even on
-        // an idle pipeline: journaling the change, and delivering the initial
-        // snapshot to an endpoint that was started before it received one.
-        let snapshot_pending = !paused
-            && self
-                .outputs
-                .read()
-                .unwrap()
-                .lookup_by_id(&endpoint_id)
-                .is_some_and(|endpoint| endpoint.control.is_snapshot_pending());
+        // takes effect on the next step.  Two things still need a nudge.
+        //
+        // The endpoint's own thread: a paused endpoint receives nothing more,
+        // so it has to flush what its output buffer already holds rather than
+        // park on a flush condition that nothing can satisfy any more.
+        let snapshot_pending = {
+            let outputs = self.outputs.read().unwrap();
+            let Some(endpoint) = outputs.lookup_by_id(&endpoint_id) else {
+                return Ok(());
+            };
+            endpoint.unparker.unpark();
+            !paused && endpoint.control.is_snapshot_pending()
+        };
+
+        // And a step, which an idle pipeline would not otherwise take: it
+        // journals the change, and delivers the initial snapshot to an endpoint
+        // that was started before it received one.
         if snapshot_pending || self.fault_tolerance == Some(FtModel::ExactlyOnce) {
             self.request_step();
         }
