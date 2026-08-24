@@ -93,8 +93,12 @@ The following attributes are common to all connectors:
   By default, it will be named `unnamed-{index}`, with the zero-based index
   within the list of connectors of its table/view.
 
-* `paused` - If set to to true the connector will not fetch or push data to the pipeline when started
-   unless [explicitly enabled through the API](/api/control-input-connector).
+* `paused` - If set to true the connector is created in the Paused state:
+   an input connector does not fetch data from its source, and an output
+   connector discards the output of its view instead of writing it to its sink.
+   The connector stays in that state until it is started through the API
+   ([input](/api/control-input-connector), [output](/api/control-output-connector)).
+   See [connector orchestration](/connectors/orchestration).
    By default this is set to false.
 
 * `labels` - An optional list of text labels associated with the connector.
@@ -348,7 +352,7 @@ For more information, see:
 * [Tutorial on using input and output connectors](/tutorials/basics/part3)
 * [Tutorial on using HTTP-based input and output](/tutorials/basics/part2)
 * [Tables and views with uniqueness constraints](/connectors/unique_keys)
-* [Input connector orchestration](/connectors/orchestration)
+* [Connector orchestration](/connectors/orchestration)
 * [Synchronous processing with completion tokens](/connectors/completion-tokens)
 * [Configuring connectors with secrets](/connectors/secret-references)
 * [Supported source transports](/connectors/sources)
