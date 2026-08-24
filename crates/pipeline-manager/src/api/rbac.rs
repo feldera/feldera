@@ -92,6 +92,7 @@ static ROUTE_MIN_ROLE: &[(&str, &str, Role)] = &[
     ("POST", "/v0/validate_program", Role::Write), // post_validate_program (submits a program to the shared compiler)
     ("POST", "/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/command", Role::Write), // post_pipeline_output_connector_command
     ("GET", "/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats", Role::Read), // get_pipeline_output_connector_status
+    ("POST", "/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/{action}", Role::Write), // post_pipeline_output_connector_action
     // RBAC tenant/user management
     ("GET", "/v0/tenant/users", Role::Admin), // list_tenant_users
     ("POST", "/v0/tenant/users", Role::Admin), // add_tenant_user (pre-provision)
@@ -388,6 +389,24 @@ mod test {
         );
         // The method is part of the match: no GET entry has that shape.
         assert_eq!(classify("GET", &format!("{base}/start")), None);
+
+        // The output connector routes overlap the same way, with `command` as
+        // the literal sibling of the action placeholder.
+        let view_base = "/v0/pipelines/p/views/v/connectors/c";
+        assert_eq!(
+            classify("POST", &format!("{view_base}/command")),
+            Some((
+                "/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/command",
+                Role::Write
+            ))
+        );
+        assert_eq!(
+            classify("POST", &format!("{view_base}/pause")),
+            Some((
+                "/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/{action}",
+                Role::Write
+            ))
+        );
     }
 
     /// Systematic matrix: for every classified route and every role, a request

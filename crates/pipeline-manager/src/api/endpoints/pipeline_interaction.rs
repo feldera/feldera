@@ -476,6 +476,111 @@ pub(crate) async fn get_pipeline_output_connector_status(
     Ok(response)
 }
 
+/// Control Output Connector
+///
+/// Start (resume) or pause the output connector.
+///
+/// The following values of the `action` argument are accepted: `start` and `pause`.
+///
+/// Output connectors can be in either the `Running` or `Paused` state. By default,
+/// connectors are initialized in the `Running` state when a pipeline is deployed.
+/// In this state, the connector forwards the output of its view to the configured
+/// sink. A connector can be created in the `Paused` state by setting its
+/// [`paused`](https://docs.feldera.com/connectors/#generic-attributes) property
+/// to `true`.
+///
+/// A paused output connector discards the output it receives instead of sending
+/// it to its sink; output produced while the connector is paused is gone for
+/// good.  The `start` command resumes the connector with the output the
+/// pipeline produces from that point on.
+///
+/// The current connector state can be retrieved via the
+/// `GET /v0/pipelines/{pipeline_name}/stats` endpoint.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        ("view_name" = String, Path, description = "SQL view name"),
+        ("connector_name" = String, Path, description = "Output connector name"),
+    ),
+    responses(
+        (status = OK
+            , description = "Action has been processed"),
+        (status = NOT_FOUND
+            , body = ErrorResponse
+            , description = "Pipeline, view and/or output connector with that name does not exist"
+            , examples(
+                ("Pipeline with that name does not exist" = (value = json!(examples::error_unknown_pipeline_name()))),
+            )
+        ),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Output Connectors"
+)]
+#[post("/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/{action}")]
+pub(crate) async fn post_pipeline_output_connector_action(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<(String, String, String, String)>,
+) -> Result<HttpResponse, ManagerError> {
+    // Parse the URL path parameters
+    let (pipeline_name, view_name, connector_name, action) = path.into_inner();
+
+    // Validate action
+    let verb = match action.as_str() {
+        "start" => "starting",
+        "pause" => "pausing",
+        _ => {
+            return Err(ApiError::InvalidConnectorAction { action }.into());
+        }
+    };
+
+    // The view name provided by the user is interpreted as
+    // a SQL identifier to account for case (in-)sensitivity
+    let actual_view_name = SqlIdentifier::from(&view_name).name();
+    let endpoint_name = format!("{actual_view_name}.{connector_name}");
+
+    // URL encode endpoint name to account for special characters
+    let encoded_endpoint_name = urlencoding::encode(&endpoint_name).to_string();
+
+    // Forward the action request to the pipeline
+    let response = state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::GET,
+            &format!("output_endpoints/{encoded_endpoint_name}/{action}"),
+            "",
+            None,
+            None,
+        )
+        .await?;
+
+    // Log only if the response indicates success
+    if response.status() == StatusCode::OK {
+        info!(
+            pipeline = %pipeline_name,
+            pipeline_id = "N/A",
+            tenant = %tenant_id.0,
+            "Connector action: {verb} on view '{view_name}' on connector '{connector_name}'"
+        );
+    }
+    Ok(response)
+}
+
 /// Send command to an output connector.
 #[utoipa::path(
     context_path = "/v0",
