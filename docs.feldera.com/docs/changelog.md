@@ -60,6 +60,13 @@ import TabItem from '@theme/TabItem';
           the pipeline restarts.  If it does, the operation itself must be restarted
           (the most common use of the Python API does this automatically).
 
+        - Python: `Pipeline.pause_input_connector` and
+          `Pipeline.start_input_connector` (and their `FelderaClient`
+          counterparts) name the kind of connector they act on, matching the new
+          `pause_output_connector` and `start_output_connector`.
+          `pause_connector` and `resume_connector` still work but are
+          deprecated and now raise a `DeprecationWarning`.
+
         ## v0.330.0
 
         - Feldera's membership table now authorizes every login: a user acts

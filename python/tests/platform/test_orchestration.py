@@ -1,9 +1,12 @@
+import uuid
+
 from feldera.enums import PipelineStatus
 from http import HTTPStatus
 
 from .helper import (
     create_pipeline,
     post_no_body,
+    post_json,
     api_url,
     start_pipeline,
     start_pipeline_as_paused,
@@ -14,8 +17,11 @@ from .helper import (
     stop_pipeline,
     reset_pipeline,
     connector_action,
+    output_connector_action,
     pipeline_stats,
     connector_paused,
+    output_connector_stats,
+    output_connector_paused,
     wait_for_condition,
     wait_for_pipeline_reachable,
     get,
@@ -356,3 +362,175 @@ def test_pipeline_orchestration_scenarios(pipeline_name):
         assert actual == expected, f"Steps {steps} => {actual} expected {expected}"
 
         reset_pipeline(pipeline_name)
+
+
+@gen_pipeline_name
+def test_output_connector_orchestration(pipeline_name):
+    """
+    A paused output connector stops writing to its sink while the pipeline runs
+    on, and picks up again when it is started.
+    """
+    # A real file: the file connector fsyncs after every write, and fsync fails
+    # on /dev/null.
+    sink_path = f"/tmp/feldera_output_pause_{uuid.uuid4().hex}.json"
+    sql = f"""
+    CREATE TABLE numbers (
+        num DOUBLE
+    ) WITH (
+        'connectors' = '[{{
+            "name": "gen",
+            "transport": {{
+                "name": "datagen",
+                "config": {{"plan": [{{ "rate": 100, "fields": {{ "num": {{ "range": [0, 1000], "strategy": "uniform" }} }} }}]}}
+            }}
+        }}]'
+    );
+
+    CREATE MATERIALIZED VIEW v
+    WITH (
+        'connectors' = '[{{
+            "name": "sink",
+            "transport": {{ "name": "file_output", "config": {{ "path": "{sink_path}" }} }},
+            "format": {{ "name": "json" }}
+        }}]'
+    )
+    AS SELECT * FROM numbers;
+    """.strip()
+
+    create_pipeline(pipeline_name, sql)
+    start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
+
+    def transmitted() -> int:
+        return output_connector_stats(pipeline_name, "v", "sink")["metrics"][
+            "transmitted_records"
+        ]
+
+    def transmitting() -> bool:
+        metrics = output_connector_stats(pipeline_name, "v", "sink")["metrics"]
+        # Without this the test would just time out if the sink rejected every
+        # write, which says nothing about why.
+        assert metrics["num_transport_errors"] == 0, (
+            f"sink is failing writes: {output_connector_stats(pipeline_name, 'v', 'sink')}"
+        )
+        return metrics["transmitted_records"] > 0
+
+    # The connector starts out running and writing.
+    assert not output_connector_paused(pipeline_name, "v", "sink")
+    wait_for_condition(
+        "output connector transmits records",
+        transmitting,
+        timeout_s=30.0,
+        poll_interval_s=0.5,
+    )
+
+    # Pause it: the records the pipeline keeps producing no longer reach the
+    # sink, but it does report them as processed.
+    resp = output_connector_action(pipeline_name, "v", "sink", "pause")
+    assert resp.status_code == HTTPStatus.OK, (resp.status_code, resp.text)
+    wait_for_condition(
+        "output connector pause observed",
+        lambda: output_connector_paused(pipeline_name, "v", "sink"),
+        timeout_s=10.0,
+        poll_interval_s=0.5,
+    )
+
+    # Let the pipeline run long enough that a connector that kept writing would
+    # be caught: wait until it has processed more input than the connector had
+    # transmitted when it was paused.
+    paused_at = transmitted()
+    wait_for_condition(
+        "pipeline processes more input while the connector is paused",
+        lambda: (
+            pipeline_stats(pipeline_name)["global_metrics"]["total_processed_records"]
+            > paused_at
+        ),
+        timeout_s=30.0,
+        poll_interval_s=0.5,
+    )
+    assert transmitted() == paused_at
+
+    # A paused connector does not hold the pipeline back: it reports the output
+    # it discards as processed.
+    metrics = output_connector_stats(pipeline_name, "v", "sink")["metrics"]
+    assert metrics["queued_records"] == 0
+    assert (
+        metrics["total_processed_input_records"]
+        > pipeline_stats(pipeline_name)["global_metrics"]["total_processed_records"] / 2
+    )
+
+    # Start it again: it resumes with the output produced from now on.
+    resp = output_connector_action(pipeline_name, "v", "sink", "start")
+    assert resp.status_code == HTTPStatus.OK, (resp.status_code, resp.text)
+    wait_for_condition(
+        "output connector transmits again",
+        lambda: transmitted() > paused_at,
+        timeout_s=30.0,
+        poll_interval_s=0.5,
+    )
+    assert not output_connector_paused(pipeline_name, "v", "sink")
+
+    reset_pipeline(pipeline_name)
+
+
+@gen_pipeline_name
+def test_output_connector_orchestration_errors(pipeline_name):
+    """
+    Return codes of the output connector action endpoint, and the `command`
+    endpoint that shares its URL shape.
+    """
+    sql = """
+    CREATE TABLE numbers (
+        num DOUBLE
+    );
+
+    CREATE MATERIALIZED VIEW v
+    WITH (
+        'connectors' = '[{
+            "name": "sink",
+            "transport": { "name": "file_output", "config": { "path": "/dev/null" } },
+            "format": { "name": "json" }
+        }]'
+    )
+    AS SELECT * FROM numbers;
+    """.strip()
+
+    create_pipeline(pipeline_name, sql)
+    start_pipeline_as_paused(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
+
+    for view_name in ["v", "V", "%22v%22"]:
+        for action in ["start", "pause"]:
+            resp = post_no_body(
+                api_url(
+                    f"/pipelines/{pipeline_name}/views/{view_name}/connectors/sink/{action}"
+                )
+            )
+            assert resp.status_code == HTTPStatus.OK, (view_name, action, resp.text)
+
+    for endpoint in [
+        f"/pipelines/{pipeline_name}/views/v/connectors/sink/action2",  # Invalid action
+        f"/pipelines/{pipeline_name}/views/v/connectors/sink/START",  # Case-sensitive
+    ]:
+        resp = post_no_body(api_url(endpoint))
+        assert resp.status_code == HTTPStatus.BAD_REQUEST, (endpoint, resp.status_code)
+
+    for endpoint in [
+        f"/pipelines/{pipeline_name}X/views/v/connectors/sink/start",  # Pipeline not found
+        f"/pipelines/{pipeline_name}/views/v/connectors/sink2/start",  # Connector not found
+        f"/pipelines/{pipeline_name}/views/v2/connectors/sink/start",  # View not found
+        f"/pipelines/{pipeline_name}/views/%22V%22/connectors/sink/pause",  # View not found (case-sensitive due to double quotes)
+    ]:
+        resp = post_no_body(api_url(endpoint))
+        assert resp.status_code == HTTPStatus.NOT_FOUND, (endpoint, resp.status_code)
+
+    # `command` is a literal path segment, so it must still reach the command
+    # endpoint rather than being read as an action. The file connector does not
+    # support commands, which is a different error than an invalid action.
+    resp = post_json(
+        api_url(f"/pipelines/{pipeline_name}/views/v/connectors/sink/command"),
+        {"command": "flush"},
+    )
+    assert resp.json()["error_code"] == "CommandError", (resp.status_code, resp.text)
+
+    reset_pipeline(pipeline_name)

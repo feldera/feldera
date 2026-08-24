@@ -223,7 +223,7 @@ def _run_catchup_rounds(
 ) -> tuple[int, int, int]:
     """Pause, append, resume for each round; return final version, row id, and ts."""
     for round_idx, num_versions in enumerate(FOLLOW_ROUNDS):
-        pipeline.pause_connector(TABLE, CONNECTOR)
+        pipeline.pause_input_connector(TABLE, CONNECTOR)
         _wait_for_connector_paused(pipeline, paused=True)
 
         follow_at_round_start = _delta_counter(
@@ -246,7 +246,7 @@ def _run_catchup_rounds(
             or _completed_version(pipeline) < table_version
         ), f"round {round_idx}: connector must not ingest commits written while paused"
 
-        pipeline.resume_connector(TABLE, CONNECTOR)
+        pipeline.start_input_connector(TABLE, CONNECTOR)
         _wait_for_connector_paused(pipeline, paused=False)
         _wait_for_completed_version(pipeline, table_version)
 

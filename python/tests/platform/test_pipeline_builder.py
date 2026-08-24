@@ -60,7 +60,7 @@ class TestPipelineBuilder(PipelineTestCase):
         ).create_or_replace()
         pipeline.start()
 
-        pipeline.resume_connector("numbers", "c1")
+        pipeline.start_input_connector("numbers", "c1")
         stats = TEST_CLIENT.get_pipeline_stats(pipeline_name)
         c1_status = next(
             item["paused"]
@@ -69,7 +69,7 @@ class TestPipelineBuilder(PipelineTestCase):
         )
         assert not c1_status
 
-        pipeline.pause_connector("numbers", "c1")
+        pipeline.pause_input_connector("numbers", "c1")
         stats = TEST_CLIENT.get_pipeline_stats(pipeline_name)
         c2_status = next(
             item["paused"]

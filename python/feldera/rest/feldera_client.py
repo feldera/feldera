@@ -1665,16 +1665,17 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             path=f"/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats"
         )
 
-    def pause_connector(self, pipeline_name, table_name, connector_name):
+    def pause_input_connector(
+        self, pipeline_name: str, table_name: str, connector_name: str
+    ):
         """
         Pause the specified input connector.
 
-        Connectors allow feldera to fetch data from a source or write data to a sink.
-        This method allows users to **PAUSE** a specific **INPUT** connector.
-        All connectors are RUNNING by default.
+        A paused input connector stops fetching data from its source. All
+        connectors are RUNNING by default.
 
         Refer to the connector documentation for more information:
-        <https://docs.feldera.com/connectors/#input-connector-orchestration>
+        <https://docs.feldera.com/connectors/orchestration#input-connectors>
 
         :param pipeline_name: The name of the pipeline.
         :param table_name: The name of the table associated with this connector.
@@ -1688,18 +1689,14 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             idempotent=True,
         )
 
-    def resume_connector(
+    def start_input_connector(
         self, pipeline_name: str, table_name: str, connector_name: str
     ):
         """
-        Resume the specified connector.
-
-        Connectors allow feldera to fetch data from a source or write data to a sink.
-        This method allows users to **RESUME / START** a specific **INPUT** connector.
-        All connectors are RUNNING by default.
+        Start (resume) the specified input connector.
 
         Refer to the connector documentation for more information:
-        <https://docs.feldera.com/connectors/#input-connector-orchestration>
+        <https://docs.feldera.com/connectors/orchestration#input-connectors>
 
         :param pipeline_name: The name of the pipeline.
         :param table_name: The name of the table associated with this connector.
@@ -1710,6 +1707,87 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         self.http.post(
             path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/start",
+            idempotent=True,
+        )
+
+    def pause_connector(self, pipeline_name, table_name, connector_name):
+        """
+        Pause the specified input connector.
+
+        .. deprecated::
+            Use :meth:`.pause_input_connector`, which names the kind of
+            connector it acts on, like :meth:`.pause_output_connector`.
+        """
+        warnings.warn(
+            "pause_connector is deprecated; use pause_input_connector.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.pause_input_connector(pipeline_name, table_name, connector_name)
+
+    def resume_connector(
+        self, pipeline_name: str, table_name: str, connector_name: str
+    ):
+        """
+        Start (resume) the specified input connector.
+
+        .. deprecated::
+            Use :meth:`.start_input_connector`, which names the kind of
+            connector it acts on, like :meth:`.start_output_connector`.
+        """
+        warnings.warn(
+            "resume_connector is deprecated; use start_input_connector.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.start_input_connector(pipeline_name, table_name, connector_name)
+
+    def pause_output_connector(
+        self, pipeline_name: str, view_name: str, connector_name: str
+    ):
+        """
+        Pause the specified output connector.
+
+        A paused output connector discards the output it receives instead of
+        writing it to its sink. Output produced while the connector is paused is
+        gone for good. All connectors are RUNNING by default.
+
+        Refer to the connector documentation for more information:
+        <https://docs.feldera.com/connectors/orchestration#output-connectors>
+
+        :param pipeline_name: The name of the pipeline.
+        :param view_name: The name of the view associated with this connector.
+        :param connector_name: The name of the connector.
+
+        :raises FelderaAPIError: If the connector cannot be found, or if the pipeline is not running.
+        """
+
+        self.http.post(
+            path=f"/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/pause",
+            idempotent=True,
+        )
+
+    def start_output_connector(
+        self, pipeline_name: str, view_name: str, connector_name: str
+    ):
+        """
+        Start (resume) the specified output connector.
+
+        The connector resumes with the output the pipeline produces from this
+        point on; output produced while it was paused is not replayed.
+
+        Refer to the connector documentation for more information:
+        <https://docs.feldera.com/connectors/orchestration#output-connectors>
+
+        :param pipeline_name: The name of the pipeline.
+        :param view_name: The name of the view associated with this connector.
+        :param connector_name: The name of the connector.
+
+        :raises FelderaAPIError: If the connector cannot be found, or if the pipeline is not running.
+        """
+
+        self.http.post(
+            path=f"/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/start",
             idempotent=True,
         )
 

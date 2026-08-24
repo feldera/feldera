@@ -206,6 +206,16 @@ def connector_action(pipeline: str, table: str, connector: str, action: str):
     return r
 
 
+def output_connector_action(pipeline: str, view: str, connector: str, action: str):
+    view_enc = quote(view, safe="")
+    r = post_no_body(
+        api_url(
+            f"/pipelines/{pipeline}/views/{view_enc}/connectors/{connector}/{action}"
+        )
+    )
+    return r
+
+
 def adhoc_query_json(pipeline: str, sql: str):
     "Runs a SQL query, returns results as list of dicts (JSON lines format)."
     path = api_url(f"/pipelines/{pipeline}/query?sql={quote_plus(sql)}&format=json")
@@ -289,6 +299,19 @@ def connector_stats(pipeline: str, table: str, connector: str):
 
 def connector_paused(pipeline, table: str, connector: str) -> bool:
     return connector_stats(pipeline, table, connector)["paused"]
+
+
+def output_connector_stats(pipeline: str, view: str, connector: str):
+    view_enc = quote(view, safe="")
+    res = get(
+        api_url(f"/pipelines/{pipeline}/views/{view_enc}/connectors/{connector}/stats")
+    )
+    assert res.status_code == HTTPStatus.OK, (res.status_code, res.text)
+    return res.json()
+
+
+def output_connector_paused(pipeline: str, view: str, connector: str) -> bool:
+    return output_connector_stats(pipeline, view, connector)["paused"]
 
 
 def wait_for_program_success(

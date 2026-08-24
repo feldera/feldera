@@ -274,6 +274,7 @@ class OutputEndpointStatus:
         self.encode_errors: Optional[list[ConnectorError]] = None
         self.transport_errors: Optional[list[ConnectorError]] = None
         self.health: Optional[ConnectorHealth] = None
+        self.paused: Optional[bool] = None
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]):
@@ -281,6 +282,9 @@ class OutputEndpointStatus:
         status.endpoint_name = expect_str(d, "endpoint_name")
         status.config = expect_mapping(d, "config")
         status.metrics = OutputEndpointMetrics.from_dict(expect_mapping(d, "metrics"))
+        # Pipelines that predate pausable output connectors omit this field.
+        paused = d.get("paused")
+        status.paused = paused if isinstance(paused, bool) else False
         fatal_error = d.get("fatal_error")
         if fatal_error is not None and not isinstance(fatal_error, str):
             raise ValueError(
