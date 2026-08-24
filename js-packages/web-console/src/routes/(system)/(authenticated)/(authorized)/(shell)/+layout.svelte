@@ -18,11 +18,13 @@
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
   import { useContextDrawer } from '$lib/compositions/layout/useContextDrawer.svelte'
   import { useRefreshPipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { useIsEnterprise } from '$lib/compositions/useEdition.svelte'
   import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { closedIntervalAction } from '$lib/functions/common/promise'
+  import { clusterHealthMessage } from '$lib/functions/pipelines/health'
   import type { Snippet } from '$lib/types/svelte'
   import type { LayoutData } from './$types'
 
@@ -106,19 +108,11 @@
       return { ...message, text }
     })
   )
-  const healthMessage = $derived.by(() => {
-    const health = clusterHealth.current
-    if (!health) {
-      return null
-    }
-    return health.api !== 'healthy'
-      ? 'There is an issue with the API server.'
-      : health.compiler !== 'healthy'
-        ? 'There is an issue with the compiler server.'
-        : health.runner !== 'healthy'
-          ? 'There is an issue with the runner.'
-          : null
-  })
+  const isEnterprise = useIsEnterprise()
+  // No poll has answered yet, or the poller is gone: nothing to report either way.
+  const healthMessage = $derived(
+    clusterHealth.current ? clusterHealthMessage(clusterHealth.current, isEnterprise.value) : null
+  )
 
   const api = usePipelineManager()
   const { toastMain, dismissMain } = useToast()

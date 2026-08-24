@@ -38,6 +38,11 @@
     selectedBars?: { from: Date; to: Date } | null
     /** When the timeline data was last refreshed, used to show "updated X ago" */
     updatedAt?: Date | null
+    /**
+     * The newest event is too old to describe the current state, so the header reports no
+     * data instead of repeating that event's status.
+     */
+    stale?: boolean
     /** Maps a status to its sort priority; higher wins when a bucket has mixed statuses */
     getSeverity: (status: S) => number
     /** Returns the SVG fill class for a bar given its status and highlight state */
@@ -57,6 +62,7 @@
     legend,
     selectedBars = null,
     updatedAt = null,
+    stale = false,
     getSeverity,
     getBarColor,
     getStatusStyle
@@ -129,7 +135,12 @@
   const resolveStyle = (status: S | 'no_data') =>
     status === 'no_data' ? noDataStyle : getStatusStyle(status)
 
-  const healthStatus = $derived(events.at(0)?.type)
+  const latestStatus = $derived(events.at(0)?.type)
+  const healthStatus = $derived(stale ? undefined : latestStatus)
+  // "No data" must not hide a recorded problem, so the header keeps naming it.
+  const staleIssue = $derived(
+    stale && latestStatus !== undefined && getSeverity(latestStatus) > 0 ? latestStatus : undefined
+  )
 
   function getBarX(index: number): number {
     return index * (barWidth + gapWidth)
@@ -325,6 +336,15 @@
     {label}
     {#if healthStatus}
       {@const style = getStatusStyle(healthStatus)} — <span class={style.text}>{style.label}</span>
+    {:else if stale}
+      <!-- The bar fill colour of `noDataStyle` is too faint to read as text; the legend
+           renders its label in this colour instead. -->
+      — <span class="text-surface-600-300">{noDataStyle.label}</span>
+      {#if staleIssue}
+        {@const style = getStatusStyle(staleIssue)}
+        <span class="text-surface-600-400">(last recorded:</span>
+        <span class={style.text}>{style.label}</span><span class="text-surface-600-400">)</span>
+      {/if}
     {/if}
     {#if updatedAgoText !== null}
       <span class="text-surface-600-400"> — {updatedAgoText}</span>

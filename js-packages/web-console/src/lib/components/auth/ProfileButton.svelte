@@ -10,7 +10,7 @@
   import VersionDisplay from '$lib/components/version/VersionDisplay.svelte'
   import type { ClusterHealthStatus } from '$lib/compositions/health/useClusterHealth.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import type { ClusterEventType } from '$lib/functions/pipelines/health'
+  import { type ClusterEventType, worstClusterStatus } from '$lib/functions/pipelines/health'
   import { resolve } from '$lib/functions/svelte'
   import type { AuthDetails } from '$lib/types/auth'
   import type { Snippet } from '$lib/types/svelte'
@@ -24,16 +24,13 @@
   const globalDialog = useGlobalDialog()
 
   // Undefined while no poll has answered; the dot then shows no verdict.
-  let combinedStatus: ClusterEventType | undefined = $derived.by(() => {
+  // Stale data cannot claim health, but a recorded issue keeps its own colour.
+  let combinedStatus: ClusterEventType | 'stale' | undefined = $derived.by(() => {
     if (!healthStatus) {
       return undefined
     }
-    const all = Object.values(healthStatus)
-    return all.some((e) => e === 'major_issue')
-      ? 'major_issue'
-      : all.some((e) => e === 'unhealthy')
-        ? 'unhealthy'
-        : 'healthy'
+    const worst = worstClusterStatus([healthStatus.api, healthStatus.compiler, healthStatus.runner])
+    return healthStatus.stale && worst === 'healthy' ? 'stale' : worst
   })
 </script>
 
@@ -95,7 +92,7 @@
               ? 'border-2 border-surface-400'
               : combinedStatus === 'healthy'
                 ? 'bg-success-500'
-                : combinedStatus === 'unhealthy'
+                : combinedStatus === 'unhealthy' || combinedStatus === 'stale'
                   ? 'bg-warning-500'
                   : 'bg-error-500'}"
           ></div>

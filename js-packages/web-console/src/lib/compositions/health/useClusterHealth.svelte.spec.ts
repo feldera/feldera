@@ -25,13 +25,23 @@ vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
 // Imported AFTER vi.mock so the mock takes effect.
 import { useClusterHealth, useRefreshClusterHealth } from './useClusterHealth.svelte'
 
+const recordedAt = '2026-05-01T12:00:00Z'
+
 const healthyEvent = {
   api_status: 'Healthy',
   compiler_status: 'Healthy',
-  runner_status: 'Healthy'
+  runner_status: 'Healthy',
+  stale: false,
+  recorded_at: recordedAt
 }
 
-const healthy = { api: 'healthy', compiler: 'healthy', runner: 'healthy' }
+const healthy = {
+  api: 'healthy',
+  compiler: 'healthy',
+  runner: 'healthy',
+  stale: false,
+  recordedAt: new Date(recordedAt)
+}
 
 /**
  * Mounts the poller the way the `(shell)` layout does; the result unmounts it. The flush runs
