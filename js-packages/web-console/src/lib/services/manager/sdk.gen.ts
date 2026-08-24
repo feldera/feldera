@@ -190,6 +190,9 @@ import type {
   PostPipelineInputConnectorActionData,
   PostPipelineInputConnectorActionErrors,
   PostPipelineInputConnectorActionResponses,
+  PostPipelineOutputConnectorActionData,
+  PostPipelineOutputConnectorActionErrors,
+  PostPipelineOutputConnectorActionResponses,
   PostPipelinePauseData,
   PostPipelinePauseErrors,
   PostPipelinePauseResponses,
@@ -416,6 +419,8 @@ export const getClusterEvent = <ThrowOnError extends boolean = true>(
  * Required role: `read` or higher.
  *
  * Determine the latest cluster health via the latest cluster monitor event.
+ * Each service's `unchanged_since` reports the approximate time it last transitioned
+ * between healthy and unhealthy, bounded by event retention.
  */
 export const getClusterHealth = <ThrowOnError extends boolean = true>(
   options?: Options<GetClusterHealthData, ThrowOnError>
@@ -1990,6 +1995,50 @@ export const getPipelineOutputConnectorStatus = <ThrowOnError extends boolean = 
     responseStyle: 'data',
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats',
+    ...options
+  })
+
+/**
+ * Control Output Connector
+ *
+ * Required role: `write` or higher.
+ *
+ * Start (resume) or pause the output connector.
+ *
+ * The following values of the `action` argument are accepted: `start` and `pause`.
+ *
+ * Output connectors can be in either the `Running` or `Paused` state. By default,
+ * connectors are initialized in the `Running` state when a pipeline is deployed.
+ * In this state, the connector forwards the output of its view to the configured
+ * sink. If needed, a connector can be created in the `Paused` state by setting its
+ * [`paused`](https://docs.feldera.com/connectors/#generic-attributes) property
+ * to `true`.
+ *
+ * A paused output connector discards the output it receives instead of sending
+ * it to its sink; output produced while the connector is paused is gone for
+ * good.  The `start` command resumes the connector with the output the
+ * pipeline produces from that point on.
+ *
+ * The current connector state can be retrieved via the
+ * `GET /v0/pipelines/{pipeline_name}/stats` endpoint.
+ */
+export const postPipelineOutputConnectorAction = <ThrowOnError extends boolean = true>(
+  options: Options<PostPipelineOutputConnectorActionData, ThrowOnError>
+): RequestResult<
+  PostPipelineOutputConnectorActionResponses,
+  PostPipelineOutputConnectorActionErrors,
+  ThrowOnError,
+  'data'
+> =>
+  (options.client ?? client).post<
+    PostPipelineOutputConnectorActionResponses,
+    PostPipelineOutputConnectorActionErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/{action}',
     ...options
   })
 

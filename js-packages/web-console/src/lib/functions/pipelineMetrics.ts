@@ -34,7 +34,7 @@ export type AggregatedInputEndpointMetrics = AggregatedMetrics<
 
 export type AggregatedOutputEndpointMetrics = AggregatedMetrics<
   OutputEndpointMetrics,
-  Pick<OutputEndpointStatus, 'health' | 'fatal_error'> & { io_active: boolean }
+  Pick<OutputEndpointStatus, 'paused' | 'health' | 'fatal_error'> & { io_active: boolean }
 >
 
 export const emptyPipelineMetrics = {
@@ -170,6 +170,7 @@ export const accumulatePipelineMetrics =
                     (nonNull(cur.metrics.batch_records_written) &&
                       (!nonNull(prev.metrics.batch_records_written) ||
                         cur.metrics.batch_records_written !== prev.metrics.batch_records_written))),
+                paused: cur.paused,
                 health: cur.health,
                 fatal_error: cur.fatal_error
               }
