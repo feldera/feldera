@@ -3467,17 +3467,38 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         DBSPTypeStruct keyStruct = TypeCompiler.asStruct(ci.getCalciteObject(), ci.indexName, keyColumns, false);
 
+        // Under --jit the index value drops the index-key columns, so key ++ value holds each
+        // column once (matching the deduped source); otherwise the value is the whole row.
+        boolean dedupKeys = this.compiler.options.ioOptions.interpreterJson;
+        List<Integer> valueColumnIndexes = new ArrayList<>();
+        List<ViewColumnMetadata> valueColumns = new ArrayList<>();
+        if (dedupKeys) {
+            for (int c = 0; c < struct.fields.size(); c++) {
+                if (!keyColumnIndexes.contains(c)) {
+                    valueColumnIndexes.add(c);
+                    valueColumns.add(view.metadata.columns.get(c));
+                }
+            }
+        }
+
+        DBSPExpression valueTuple = dedupKeys
+                ? new DBSPTupleExpression(Linq.map(
+                        valueColumnIndexes, c -> var.deref().field(c).applyCloneIfNeeded()), false)
+                : DBSPTupleExpression.flatten(var.deref());
         DBSPExpression index = new DBSPRawTupleExpression(
                 new DBSPTupleExpression(Linq.map(
                         keyColumnIndexes, c -> var.deref().field(c).applyCloneIfNeeded()), false),
-                DBSPTupleExpression.flatten(var.deref()));
+                valueTuple);
         DBSPMapIndexOperator indexOp = new DBSPMapIndexOperator(CalciteEmptyRel.INSTANCE,
                 index.closure(var), view.outputPort());
         this.addOperator(indexOp);
 
+        DBSPTypeStruct valueStruct = dedupKeys
+                ? TypeCompiler.asStruct(ci.getCalciteObject(), ci.indexName, valueColumns, false)
+                : struct;
         DBSPSimpleOperator result = new DBSPSinkOperator(
                 CalciteEmptyRel.INSTANCE, ci.indexName,
-                ci.refersTo.toString(), new DBSPTypeRawTuple(keyStruct, struct),
+                ci.refersTo.toString(), new DBSPTypeRawTuple(keyStruct, valueStruct),
                 view.metadata, indexOp.outputPort());
         this.addOperator(result);
         return result;

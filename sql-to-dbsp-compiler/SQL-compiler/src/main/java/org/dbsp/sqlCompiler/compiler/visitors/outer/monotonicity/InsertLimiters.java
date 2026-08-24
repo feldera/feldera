@@ -1625,6 +1625,15 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPSourceMultisetOperator multisetInput = operator.as(DBSPSourceMultisetOperator.class);
         final DBSPTypeIndexedZSet indexedOutputType = (multisetInput != null) ?
                 ExpandIndexedInputs.getIndexedType(multisetInput) : null;
+        if (indexedOutputType != null && this.compiler.options.ioOptions.interpreterJson) {
+            // --jit dedups the primary-key columns out of the source value, but the waterline
+            // machinery below still assembles the whole row, which would emit an indexed z-set
+            // whose value duplicates the key. Fail rather than generate that incorrect IR.
+            throw new UnimplementedException(
+                    "LATENESS on the primary-key table " + viewOrTable.singleQuote() +
+                            " is not yet supported with --jit",
+                    operator.getRelNode());
+        }
 
         List<DBSPExpression> timestamps = new ArrayList<>();
         int index = 0;
