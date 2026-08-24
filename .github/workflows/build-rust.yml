@@ -182,16 +182,18 @@ jobs:
       - name: Add Rust target
         run: rustup target add ${{ matrix.target }}
 
+      - name: Resolve CARGO_HOME
+        shell: bash
+        run: echo "CARGO_HOME=${CARGO_HOME:-$HOME/.cargo}" >> "$GITHUB_ENV"
+
       - name: Cache Cargo registry and index
         uses: ./.github/actions/feldera-gcs-cache
         with:
           # registry/src excluded — cargo regenerates it from registry/cache.
-          # These are native (non-container) runners, so CARGO_HOME is the
-          # default ~/.cargo and tilde paths resolve correctly per-OS.
           path: |
-            ~/.cargo/registry/cache
-            ~/.cargo/registry/index
-            ~/.cargo/git/db
+            ${{ env.CARGO_HOME }}/registry/cache
+            ${{ env.CARGO_HOME }}/registry/index
+            ${{ env.CARGO_HOME }}/git/db
           key: build-rust-fda-native-cargo-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             build-rust-fda-native-cargo-${{ runner.os }}-${{ matrix.target }}-
