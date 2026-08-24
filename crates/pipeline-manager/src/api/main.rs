@@ -206,6 +206,7 @@ It contains the following fields:
         endpoints::pipeline_interaction::post_pipeline_input_connector_action,
         endpoints::pipeline_interaction::get_pipeline_input_connector_status,
         endpoints::pipeline_interaction::get_pipeline_output_connector_status,
+        endpoints::pipeline_interaction::post_pipeline_output_connector_action,
         endpoints::pipeline_interaction::get_pipeline_stats,
         endpoints::pipeline_interaction::get_pipeline_metrics,
         endpoints::pipeline_interaction::get_pipeline_circuit_profile,
@@ -735,6 +736,9 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::get_pipeline_input_connector_status)
         .service(endpoints::pipeline_interaction::get_pipeline_output_connector_status)
         .service(endpoints::pipeline_interaction::post_pipeline_output_connector_command)
+        // Registered after `/command`, whose path this route's `{action}`
+        // placeholder would otherwise claim.
+        .service(endpoints::pipeline_interaction::post_pipeline_output_connector_action)
         .service(endpoints::pipeline_interaction::get_pipeline_stats)
         .service(endpoints::pipeline_interaction::get_pipeline_metrics)
         .service(endpoints::pipeline_interaction::get_pipeline_time_series)
