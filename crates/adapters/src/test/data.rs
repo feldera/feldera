@@ -185,6 +185,48 @@ serialize_struct!(KeyStruct()[1]{
     id["id"]: u32
 });
 
+/// One row of a `group by` count: the group key and the number of records in
+/// the group.  Used by [`crate::test::test_circuit_with_aggregate`].
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    serde::Deserialize,
+    Clone,
+    Hash,
+    SizeOf,
+    Arbitrary,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    IsNone,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+pub struct CountRow {
+    pub key: i64,
+    pub n: i64,
+}
+
+impl CountRow {
+    pub fn schema() -> Vec<Field> {
+        vec![
+            Field::new("key".into(), ColumnType::bigint(false)),
+            Field::new("n".into(), ColumnType::bigint(false)),
+        ]
+    }
+}
+
+deserialize_without_context!(CountRow);
+
+serialize_struct!(CountRow()[2]{
+    key["key"]: i64,
+    n["n"]: i64
+});
+
 /// Generate a batch of records no larger that `size`.
 ///
 /// Makes sure all elements in the vector are unique and ordered.

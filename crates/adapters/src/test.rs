@@ -61,9 +61,10 @@ use crate::catalog::InputCollectionHandle;
 use crate::format::get_input_format;
 use crate::transport::input_transport_config_to_endpoint;
 pub use data::{
-    DatabricksPeople, DeltaTestStruct, EmbeddedStruct, IcebergSubsetTestStruct, IcebergTestStruct,
-    KeyStruct, S3TablesTestStruct, TestStruct, TestStruct2, TestStructSoftDelete,
-    generate_test_batch, generate_test_batches, generate_test_batches_with_weights,
+    CountRow, DatabricksPeople, DeltaTestStruct, EmbeddedStruct, IcebergSubsetTestStruct,
+    IcebergTestStruct, KeyStruct, S3TablesTestStruct, TestStruct, TestStruct2,
+    TestStructSoftDelete, generate_test_batch, generate_test_batches,
+    generate_test_batches_with_weights,
 };
 use dbsp::circuit::{CircuitConfig, NodeId};
 use dbsp::utils::Tup2;
@@ -368,6 +369,87 @@ where
                 &output_schema,
             );
         }
+        Ok(catalog)
+    })
+    .unwrap();
+    (circuit, Box::new(catalog))
+}
+
+/// Maps a record id onto one of `n_keys` groups with roughly the JSONBench
+/// event distribution: 45% of records in the first group, 36% in the second,
+/// then a long tail down to single-digit groups.  The skew is the point: it
+/// puts most of the aggregate's input through one or two workers.
+fn skewed_key(id: i64, n_keys: i64) -> i64 {
+    // Above the number of event types there is no distribution to imitate, so
+    // spread the keys out instead: a high-cardinality aggregate builds a large
+    // trace and makes the circuit merge and spill during the transaction.
+    if n_keys > 64 {
+        return id.rem_euclid(n_keys);
+    }
+
+    // Cumulative percentages of the 15 bluesky event types, scaled to 10,000.
+    const CUMULATIVE: [i64; 15] = [
+        4489, 8093, 9001, 9587, 9727, 9845, 9926, 9979, 9988, 9992, 9996, 9998, 9999, 10000, 10000,
+    ];
+    let bucket = (id * 7919).rem_euclid(10_000);
+    let key = CUMULATIVE.iter().position(|c| bucket < *c).unwrap_or(14) as i64;
+    key % n_keys
+}
+
+/// A circuit shaped like the JSONBench pipeline that fails in cloud#1934: one
+/// input feeding two materialized views, one of them behind a `group by`.
+///
+/// ```text
+/// test_input1 ──┬─────────────────────────► passthrough
+///               └─► group by id % n_keys ──► counts
+/// ```
+///
+/// All three relations are materialized, so an ad-hoc query can read each of
+/// them out of the same snapshot.  `sum(n)` over `counts` must equal the row
+/// count of `passthrough` and of `test_input1`, whatever the step and
+/// transaction boundaries turn out to be.
+pub fn test_circuit_with_aggregate(
+    config: CircuitConfig,
+    n_keys: i64,
+) -> (DBSPHandle, Box<dyn CircuitCatalog>) {
+    let (circuit, catalog) = Runtime::init_circuit(config, move |circuit| {
+        let mut catalog = Catalog::new();
+
+        let (input, hinput) = circuit.add_input_zset::<TestStruct>();
+        input.set_persistent_mir_id("input");
+
+        let relation = |name: &str, fields: Vec<Field>| {
+            serde_json::to_string(&Relation::new(name.into(), fields, false, BTreeMap::new()))
+                .unwrap()
+        };
+
+        catalog.register_materialized_input_zset::<OrdZSet<TestStruct>, TestStruct>(
+            input.clone(),
+            hinput,
+            &relation("test_input1", TestStruct::schema()),
+        );
+
+        // Stands in for the JSONBench `bluesky` view: a map over the table,
+        // materialized, with the aggregate reading it rather than the table.
+        let view = input.map(|record| record.clone());
+
+        catalog.register_materialized_output_zset_persistent::<OrdZSet<TestStruct>, TestStruct>(
+            Some("passthrough"),
+            view.clone(),
+            &relation("passthrough", TestStruct::schema()),
+        );
+
+        let counts = view
+            .map_index(move |record| (skewed_key(record.id as i64, n_keys), ()))
+            .weighted_count()
+            .map(|(key, n)| CountRow { key: *key, n: *n });
+
+        catalog.register_materialized_output_zset_persistent::<OrdZSet<CountRow>, CountRow>(
+            Some("counts"),
+            counts,
+            &relation("counts", CountRow::schema()),
+        );
+
         Ok(catalog)
     })
     .unwrap();
