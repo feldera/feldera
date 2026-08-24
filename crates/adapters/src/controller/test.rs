@@ -2,10 +2,11 @@ use super::{OutputEndpointControl, stats::BufferedInput};
 use crate::{
     Controller, InputConsumer, InputEndpoint, OutputEndpoint, PipelineConfig,
     TransportInputEndpoint,
-    controller::{ControllerStatusContext, TransactionInfo},
+    controller::{ControllerStatusContext, TransactionInfo, TransactionState},
     preprocess::{DecryptionPreprocessorFactory, PassthroughPreprocessorFactory},
     test::{
-        DEFAULT_TIMEOUT_MS, TestStruct, generate_test_batch, init_test_logger, test_circuit, wait,
+        DEFAULT_TIMEOUT_MS, TestStruct, generate_test_batch, init_test_logger, test_circuit,
+        test_circuit_with_aggregate, wait,
     },
     transport::{
         InputQueue, InputReader, InputReaderCommand, input_transport_config_to_endpoint,
@@ -40,13 +41,15 @@ use std::{
         mpsc,
     },
     thread::sleep,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use tempfile::{NamedTempFile, TempDir};
 use tokio::sync::oneshot;
 use tracing::info;
 
+use arrow::array::{Array, Int64Array};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use dbsp::circuit::tokio::TOKIO;
 use proptest::prelude::*;
 
 #[test]
@@ -6348,4 +6351,486 @@ fn test_bootstrapped_output_endpoints_ignores_connector_changes() {
 
     // Without a diff nothing is re-emitted, so every endpoint starts caught up.
     assert!(bootstrapped_output_endpoints(&outputs, None).is_empty());
+}
+
+/// Every materialized view must land on the same input prefix when a
+/// transaction commits.
+///
+/// Shape of the failure in feldera/cloud#1934: an ad-hoc read of a `group by`
+/// view returned the count over the first 839,785 of 1,000,000 ingested
+/// records, while the view feeding it returned all 1,000,000, in a pipeline
+/// that had committed its transaction and reported completion.  Here
+/// `passthrough` stands in for the complete view and `counts` for the short
+/// one.
+///
+/// The ingest deliberately runs many small steps with the connector racing
+/// ahead of the circuit, so that the commit boundary falls while records are
+/// still queued.
+#[test]
+fn transaction_leaves_views_on_the_same_input_prefix() {
+    // The circuit keeps up with the connector: nothing is queued when the
+    // commit starts.
+    transaction_view_consistency(200_000, 5_000, true, 0);
+}
+
+/// The shape of the CI failure: the commit lands when nearly everything has
+/// been fed into the transaction and only a couple of batches are still
+/// queued.  In the failing run the aggregate view was short by 160,215
+/// records, two of that pipeline's 80,000-record batches.
+#[test]
+fn transaction_committing_on_a_short_tail_leaves_views_on_the_same_input_prefix() {
+    transaction_view_consistency(200_000, 5_000, true, 10_000);
+}
+
+/// Same, with the circuit far behind the connector, so that end of input (and
+/// therefore the commit) arrives while a large backlog is still queued.  That
+/// is the state the CI pipeline was in: at the last progress sample it had
+/// received 830,486 records and processed 814,623 of them.
+#[test]
+fn transaction_with_a_backlog_leaves_views_on_the_same_input_prefix() {
+    transaction_view_consistency(200_000, 100, true, 0);
+}
+
+/// How long to keep repeating a reproduction test, in seconds.
+///
+/// One pass by default, so the suite's cost is unchanged.  The failure in
+/// feldera/cloud#1934 is a rare race that has only ever been seen on arm64, and
+/// one pass is one sample; set `FELDERA_REPRO_SECONDS` to spend a CI job
+/// hunting it on real arm64 hardware instead.
+fn repro_budget() -> Option<Duration> {
+    std::env::var("FELDERA_REPRO_SECONDS")
+        .ok()
+        .and_then(|seconds| seconds.parse::<u64>().ok())
+        .filter(|seconds| *seconds > 0)
+        .map(Duration::from_secs)
+}
+
+/// Runs `body` once, or repeatedly until `FELDERA_REPRO_SECONDS` is spent.
+fn repeat_for_budget(name: &str, mut body: impl FnMut()) {
+    let Some(budget) = repro_budget() else {
+        body();
+        return;
+    };
+    let start = Instant::now();
+    let mut passes = 0;
+    while start.elapsed() < budget {
+        body();
+        passes += 1;
+    }
+    info!(
+        "{name}: {passes} passes in {:.1}s",
+        start.elapsed().as_secs_f64()
+    );
+}
+
+/// Like [`wait`], but polls every 100us instead of every 10ms.  Used around
+/// transaction boundaries, where a 10ms gap lets the circuit drain thousands of
+/// records outside any transaction.
+fn wait_fast<P>(mut predicate: P, timeout_ms: u128) -> Result<(), ()>
+where
+    P: FnMut() -> bool,
+{
+    let start = Instant::now();
+    while !predicate() {
+        if start.elapsed().as_millis() >= timeout_ms {
+            return Err(());
+        }
+        sleep(Duration::from_micros(100));
+    }
+    Ok(())
+}
+
+/// The same invariant across many transactions instead of one.
+///
+/// The single-transaction tests observe only one or two distinct snapshots per
+/// run, because the pipeline goes idle as soon as the ingest is over, so they
+/// barely sample the window where the failure would show.  Here the connector
+/// queue is filled up front and drained a slice at a time, one transaction per
+/// slice: a run produces dozens of commits, and every one of them lands while
+/// a large backlog is still queued, which is the state the CI pipeline
+/// committed in.
+///
+/// Two invariants are checked over every snapshot the run produces:
+///
+/// * `passthrough` and `counts` agree, so no snapshot is internally torn.
+/// * neither view ever goes backwards from one snapshot to the next.
+#[test]
+fn many_transactions_leave_views_on_the_same_input_prefix() {
+    repeat_for_budget("many_transactions", || {
+        transaction_rounds(200_000, 500, 4_000, 16, 0)
+    });
+}
+
+/// Same, with one group per record instead of sixteen, so the aggregate carries
+/// a large trace and the circuit merges and spills while the transaction runs.
+#[test]
+fn many_transactions_with_a_high_cardinality_aggregate() {
+    repeat_for_budget("high_cardinality", || {
+        transaction_rounds(200_000, 500, 4_000, 200_000, 0)
+    });
+}
+
+/// Same, with kilobyte records, so each step carries far more bytes and spends
+/// far longer in parse, exchange, and spill.
+#[test]
+fn many_transactions_with_large_records() {
+    repeat_for_budget("large_records", || {
+        transaction_rounds(50_000, 500, 4_000, 16, 1_024)
+    });
+}
+
+/// Ingests `records` in slices of `per_transaction`, one transaction each,
+/// grouping into `keys` groups with `payload_bytes` of filler per record.
+fn transaction_rounds(
+    records: u64,
+    max_batch_size: u64,
+    per_transaction: u64,
+    keys: i64,
+    payload_bytes: usize,
+) {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+
+    let payload = "x".repeat(payload_bytes);
+
+    let mut file = NamedTempFile::new().unwrap();
+    {
+        let mut out = std::io::BufWriter::new(file.as_file_mut());
+        for id in 0..records {
+            writeln!(
+                out,
+                r#"{{"id": {id}, "b": true, "i": {id}, "s": "record-{id}{payload}"}}"#
+            )
+            .unwrap();
+        }
+        out.flush().unwrap();
+    }
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 8,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "inputs": {
+            "test_input1.file": {
+                "stream": "test_input1",
+                "max_batch_size": max_batch_size,
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": file.path(), "buffer_size_bytes": 1_000_000 }
+                },
+                "format": {
+                    "name": "json",
+                    "config": { "array": false, "update_format": "raw" }
+                }
+            }
+        },
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        move |circuit_config| Ok(test_circuit_with_aggregate(circuit_config, keys)),
+        &config,
+        Box::new(|e, _| panic!("controller error: {e}")),
+    )
+    .unwrap();
+
+    let done = AtomicBool::new(false);
+    let mut torn: Vec<Sample> = Vec::new();
+    let mut regressions: Vec<(Sample, Sample)> = Vec::new();
+    let mut rounds = 0u64;
+    let mut snapshots = 0usize;
+
+    let processed = || {
+        controller
+            .status()
+            .global_metrics
+            .num_total_processed_records()
+    };
+    let end_of_input = || {
+        controller
+            .status()
+            .input_status()
+            .values()
+            .all(|status| status.metrics.end_of_input.load(Ordering::Acquire))
+    };
+    let drained = || end_of_input() && controller.status().num_buffered_input_records() == 0;
+
+    std::thread::scope(|scope| {
+        let samplers: Vec<_> = (0..4)
+            .map(|_| {
+                scope.spawn(|| {
+                    let mut samples = Vec::new();
+                    let mut last = None;
+                    while !done.load(Ordering::Acquire) {
+                        if let Some(sample) = sample_views(&controller) {
+                            if Some(sample) != last {
+                                samples.push(sample);
+                                last = Some(sample);
+                            }
+                        }
+                    }
+                    samples
+                })
+            })
+            .collect();
+
+        controller.start();
+
+        while processed() < records && !drained() {
+            let target = std::cmp::min(processed() + per_transaction, records);
+
+            controller.start_transaction().unwrap();
+            wait_fast(|| processed() >= target || drained(), DEFAULT_TIMEOUT_MS)
+                .expect("timed out waiting for a transaction to ingest its slice");
+
+            // Every commit lands with the rest of the input still queued.
+            controller.start_commit_transaction().unwrap();
+            wait_fast(
+                || controller.inner.get_transaction_state() == TransactionState::None,
+                DEFAULT_TIMEOUT_MS,
+            )
+            .expect("timed out waiting for a commit to finish");
+
+            rounds += 1;
+        }
+
+        wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS)
+            .expect("timed out waiting for the pipeline to complete");
+
+        done.store(true, Ordering::Release);
+        // Each sampler's own sequence is ordered in time, so a view going
+        // backwards within one sequence is a real regression.  Across
+        // samplers the interleaving is arbitrary, so they are checked
+        // separately.
+        for sampler in samplers {
+            let samples = sampler.join().unwrap();
+            snapshots += samples.len();
+            torn.extend(
+                samples
+                    .iter()
+                    .copied()
+                    .filter(|sample| sample.passthrough != sample.counts),
+            );
+            regressions.extend(
+                samples
+                    .windows(2)
+                    .filter(|pair| {
+                        pair[1].passthrough < pair[0].passthrough || pair[1].counts < pair[0].counts
+                    })
+                    .map(|pair| (pair[0], pair[1])),
+            );
+        }
+    });
+
+    let final_sample = sample_views(&controller).expect("no final snapshot");
+    info!("{rounds} transactions, {snapshots} distinct snapshots, final {final_sample:?}");
+
+    assert!(
+        torn.is_empty(),
+        "views disagree within a single snapshot: {torn:?}"
+    );
+    assert!(
+        regressions.is_empty(),
+        "a view went backwards between snapshots: {regressions:?}"
+    );
+    assert!(rounds > 1, "expected many transactions, got {rounds}");
+    assert_eq!(
+        final_sample.passthrough, records as i64,
+        "passthrough view is short"
+    );
+    assert_eq!(
+        final_sample.counts, records as i64,
+        "aggregate view is short"
+    );
+
+    controller.stop().unwrap();
+}
+
+/// `commit_tail` delays the commit until the connector queue has drained to
+/// that many records, so the transaction covers everything except a known
+/// tail.  Zero commits as soon as the connector reports end of input.
+fn transaction_view_consistency(
+    records: u64,
+    max_batch_size: u64,
+    storage: bool,
+    commit_tail: u64,
+) {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+
+    #[allow(dead_code)]
+    const KEYS: i64 = 16;
+
+    // One JSON record per line, written up front, so the connector can fill
+    // its queue much faster than the circuit drains it.
+    let mut file = NamedTempFile::new().unwrap();
+    {
+        let mut out = std::io::BufWriter::new(file.as_file_mut());
+        for id in 0..records {
+            writeln!(
+                out,
+                r#"{{"id": {id}, "b": true, "i": {id}, "s": "record-{id}"}}"#
+            )
+            .unwrap();
+        }
+        out.flush().unwrap();
+    }
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 8,
+        "storage_config": { "path": storage_dir },
+        "storage": storage,
+        "inputs": {
+            "test_input1.file": {
+                "stream": "test_input1",
+                "max_batch_size": max_batch_size,
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": file.path(), "buffer_size_bytes": 1_000_000 }
+                },
+                "format": {
+                    "name": "json",
+                    "config": { "array": false, "update_format": "raw" }
+                }
+            }
+        },
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| Ok(test_circuit_with_aggregate(circuit_config, KEYS)),
+        &config,
+        Box::new(|e, _| panic!("controller error: {e}")),
+    )
+    .unwrap();
+
+    // Open the transaction before any record can be ingested, so the whole
+    // ingest belongs to it.
+    controller.start_transaction().unwrap();
+
+    let done = AtomicBool::new(false);
+    let mut torn: Vec<Sample> = Vec::new();
+
+    std::thread::scope(|scope| {
+        // Sample every view out of one snapshot, over and over, for as long as
+        // the pipeline runs.  Each sample is a single SQL statement, so all
+        // three counts come from the same snapshot and any disagreement
+        // between them is an inconsistency within that snapshot, not a race
+        // between two reads.
+        let sampler = scope.spawn(|| {
+            let mut samples = Vec::new();
+            let mut last = None;
+            while !done.load(Ordering::Acquire) {
+                if let Some(sample) = sample_views(&controller) {
+                    if Some(sample) != last {
+                        samples.push(sample);
+                        last = Some(sample);
+                    }
+                }
+            }
+            samples
+        });
+
+        controller.start();
+
+        wait(
+            || {
+                controller
+                    .status()
+                    .input_status()
+                    .values()
+                    .all(|status| status.metrics.end_of_input.load(Ordering::Acquire))
+            },
+            DEFAULT_TIMEOUT_MS,
+        )
+        .expect("timed out waiting for end of input");
+
+        if commit_tail > 0 {
+            wait(
+                || controller.status().num_buffered_input_records() <= commit_tail,
+                DEFAULT_TIMEOUT_MS,
+            )
+            .expect("timed out waiting for the queue to drain to the commit tail");
+        }
+
+        info!(
+            "end of input: {} processed, {} still queued",
+            controller
+                .status()
+                .global_metrics
+                .num_total_processed_records(),
+            controller.status().num_buffered_input_records()
+        );
+
+        controller.start_commit_transaction().unwrap();
+        wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS)
+            .expect("timed out waiting for the pipeline to complete");
+
+        done.store(true, Ordering::Release);
+        let samples = sampler.join().unwrap();
+        info!("{} distinct snapshots observed", samples.len());
+        torn = samples
+            .into_iter()
+            .filter(|sample| sample.passthrough != sample.counts)
+            .collect();
+    });
+
+    let final_sample = sample_views(&controller).expect("no final snapshot");
+    info!("final snapshot: {final_sample:?}");
+
+    assert!(
+        torn.is_empty(),
+        "views disagree within a single snapshot: {torn:?}"
+    );
+    assert_eq!(
+        final_sample.passthrough, records as i64,
+        "passthrough view is short"
+    );
+    assert_eq!(
+        final_sample.counts, records as i64,
+        "aggregate view is short"
+    );
+
+    controller.stop().unwrap();
+}
+
+/// One ad-hoc snapshot, read through a single query so that every count comes
+/// from the same snapshot.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct Sample {
+    /// `count(*)` over the view that mirrors the input.
+    passthrough: i64,
+    /// `sum(n)` over the `group by` view, which must equal `passthrough`.
+    counts: i64,
+}
+
+fn sample_views(controller: &Controller) -> Option<Sample> {
+    let sql = "select \
+         (select count(*) from passthrough) as passthrough_rows, \
+         (select coalesce(sum(n), 0) from counts) as counted";
+    TOKIO.block_on(async {
+        let df = crate::adhoc::execute_sql(controller, sql).await.ok()?;
+        let batches = df.collect().await.ok()?;
+        let batch = batches.iter().find(|batch| batch.num_rows() > 0)?;
+        let column = |i: usize| -> i64 {
+            batch
+                .column(i)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap_or_else(|| panic!("column {i} is not a BIGINT"))
+                .value(0)
+        };
+        Some(Sample {
+            passthrough: column(0),
+            counts: column(1),
+        })
+    })
 }
