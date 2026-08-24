@@ -285,12 +285,16 @@ mod tests {
     /// the visit for the overwhelming majority of key types.
     #[test]
     fn may_intern_propagates_through_compounds() {
-        assert!(!<(u32, String)>::MAY_INTERN);
-        assert!(<(u32, Leaf)>::MAY_INTERN);
-        assert!(<Option<Leaf>>::MAY_INTERN);
-        assert!(<Vec<Option<Leaf>>>::MAY_INTERN);
-        assert!(!<Vec<Option<u32>>>::MAY_INTERN);
-        assert!(<(u8, (u8, Vec<Leaf>))>::MAY_INTERN);
+        // Const blocks, because the whole point of `MAY_INTERN` being a
+        // constant is that a builder can branch on it without a value in hand.
+        const {
+            assert!(!<(u32, String)>::MAY_INTERN);
+            assert!(<(u32, Leaf)>::MAY_INTERN);
+            assert!(<Option<Leaf>>::MAY_INTERN);
+            assert!(<Vec<Option<Leaf>>>::MAY_INTERN);
+            assert!(!<Vec<Option<u32>>>::MAY_INTERN);
+            assert!(<(u8, (u8, Vec<Leaf>))>::MAY_INTERN);
+        }
     }
 
     /// Every leaf of a row must be reached, and all of them must share the one
