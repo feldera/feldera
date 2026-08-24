@@ -3744,6 +3744,9 @@ async fn cluster(format: OutputFormat, action: ClusterAction, client: Client) {
                             (Utc::now() - response.recorded_at).as_seconds_f64()
                         ),
                     ]);
+                    if let Some(stale) = response.stale {
+                        rows.push(["stale".to_string(), stale.to_string()]);
+                    }
                     rows.push(["all_healthy".to_string(), response.all_healthy.to_string()]);
                     rows.push(["api_status".to_string(), response.api_status.to_string()]);
                     if let Some(value) = &response.api_self_info {
@@ -3807,6 +3810,17 @@ async fn cluster(format: OutputFormat, action: ClusterAction, client: Client) {
             match format {
                 OutputFormat::Text => {
                     let now = Utc::now();
+                    if health.stale {
+                        // The runner is a separate process only in the enterprise edition,
+                        // hence the conditional phrasing rather than an edition lookup.
+                        eprintln!(
+                            "Warning: no cluster monitor event for over {} minutes, so the \
+                             statuses below are the last recorded ones, not current ones. On \
+                             Feldera Enterprise, the cluster monitor runs inside the Kubernetes \
+                             runner, which may be down.",
+                            health.stale_after_seconds / 60
+                        );
+                    }
                     let mut rows = vec![];
                     rows.push([
                         "service".to_string(),
