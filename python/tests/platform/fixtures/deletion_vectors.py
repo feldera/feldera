@@ -11,11 +11,12 @@ JARs download at runtime either way). ``tests.utils.ensure_delta_spark_fixture``
 invokes this file with::
 
     uv run --with "delta-spark>=4.2,<5" python deletion_vectors.py \\
-        <dest> <total_rows> <expected_active> [--cdc]
+        <dest> <total_rows> <expected_active> [--cdc] [--partitioned]
 
 Without ``--cdc``, it writes a two-version table:
 
-* v0: ``total_rows`` rows (``id``, ``name``, ``value``, ``meta``) with DVs enabled.
+* v0: ``total_rows`` rows (``id``, ``name``, ``value``, ``meta``) with DVs
+  enabled; ``--partitioned`` adds a ``grp`` column and partitions by it.
 * v1: ``DELETE`` of the even ``id`` rows, which produces deletion vectors.
 
 With ``--cdc``, it writes a four-version table shaped like a CDC event log
@@ -42,21 +43,31 @@ readable, then exits.
 import sys
 
 
-def _write_plain_fixture(spark, dest: str, total_rows: int) -> None:
-    """v0: `total_rows` rows; v1: DV `DELETE` of the even ids."""
-    (
+def _write_plain_fixture(spark, dest: str, total_rows: int, partitioned=False) -> None:
+    """v0: `total_rows` rows; v1: DV `DELETE` of the even ids.
+
+    When `partitioned`, the table is partitioned by `grp` = id % 3. That is
+    orthogonal to the delete predicate, so every partition keeps a mix of even
+    and odd ids and every file ends up carrying a deletion vector.
+    """
+    columns = [
+        "cast(id as int) as id",
+        "concat('user_', id) as name",
+        "cast(id * 1.5 as double) as value",
+        # Mirrors `value`, so a filter can name it as a struct field.
+        "struct(cast(id * 1.5 as double) as value) as meta",
+    ]
+    if partitioned:
+        columns.append("cast(id % 3 as string) as grp")
+    writer = (
         spark.range(1, total_rows + 1)
-        .selectExpr(
-            "cast(id as int) as id",
-            "concat('user_', id) as name",
-            "cast(id * 1.5 as double) as value",
-            # Mirrors `value`, so a filter can name it as a struct field.
-            "struct(cast(id * 1.5 as double) as value) as meta",
-        )
+        .selectExpr(*columns)
         .write.format("delta")
         .option("delta.enableDeletionVectors", "true")
-        .save(dest)
     )
+    if partitioned:
+        writer = writer.partitionBy("grp")
+    writer.save(dest)
     spark.sql("DELETE FROM delta.`" + dest + "` WHERE id % 2 = 0")
 
 
@@ -132,6 +143,7 @@ def main() -> None:
     expected_active = int(sys.argv[3])
     cdc = "--cdc" in sys.argv[4:]
     overwrite = "--overwrite" in sys.argv[4:]
+    partitioned = "--partitioned" in sys.argv[4:]
 
     builder = (
         SparkSession.builder.appName("feldera_dv_fixture")
@@ -155,7 +167,7 @@ def main() -> None:
         elif cdc:
             _write_cdc_fixture(spark, dest, total_rows)
         else:
-            _write_plain_fixture(spark, dest, total_rows)
+            _write_plain_fixture(spark, dest, total_rows, partitioned)
         active = spark.read.format("delta").load(dest).count()
         assert active == expected_active, (
             f"builder expected {expected_active} active rows after the "

@@ -13,8 +13,8 @@ use arrow::datatypes::{
 };
 use chrono::{DateTime, Utc};
 use datafusion::catalog::TableProvider;
-use datafusion::common::DataFusionError;
 use datafusion::common::arrow::array::RecordBatch;
+use datafusion::common::{DFSchema, DataFusionError, ScalarValue};
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
@@ -26,8 +26,8 @@ use dbsp::circuit::tokio::TOKIO;
 use delta_kernel::schema::{ColumnMetadataKey, MetadataValue};
 use deltalake::datafusion::dataframe::DataFrame;
 use deltalake::datafusion::execution::context::SQLOptions;
-use deltalake::datafusion::logical_expr::SortExpr;
-use deltalake::datafusion::prelude::{Expr, SessionContext, col};
+use deltalake::datafusion::logical_expr::{ExprSchemable, SortExpr};
+use deltalake::datafusion::prelude::{Expr, SessionContext, col, lit};
 use deltalake::datafusion::sql::sqlparser::dialect::GenericDialect;
 use deltalake::datafusion::sql::sqlparser::parser::Parser;
 use deltalake::datafusion::sql::sqlparser::tokenizer::Token;
@@ -164,17 +164,21 @@ fn requires_direct_object_store_read(table: &DeltaTable) -> bool {
     table.log_store().root_url().scheme() == "uc"
 }
 
-/// The table root as a base URL guaranteed to end in `/`, so string-joining a
-/// relative `Add.path` yields a well-formed URL. delta-rs normalizes the location
-/// to a trailing slash only when it has a path, so a root with none (`uc://cat.db.tbl`,
-/// or a table at a bucket root) would otherwise collapse into the joined file name.
-fn table_root_base(table: &DeltaTable) -> String {
-    let root = table.log_store().root_url().to_string();
-    if root.ends_with('/') {
-        root
-    } else {
-        format!("{root}/")
-    }
+/// A [`ListingTableUrl`] for one data file of `table`.
+///
+/// delta-rs percent-decodes an action's path when it reads the log, so `path` is
+/// already the object-store key. Appending it as URL segments re-encodes it, which
+/// [`ListingTableUrl::try_new`] then undoes exactly once; string-joining it and
+/// calling [`ListingTableUrl::parse`] instead would decode a second time (and read
+/// a `*` or `[` in a partition value as a glob), silently listing no file at all.
+fn file_listing_url(table: &DeltaTable, path: &str) -> AnyResult<ListingTableUrl> {
+    let mut url = table.log_store().root_url().clone();
+    url.path_segments_mut()
+        .map_err(|_| anyhow!("Delta table root cannot be extended with a file path"))?
+        .pop_if_empty()
+        .extend(path.split('/'));
+    ListingTableUrl::try_new(url, None)
+        .map_err(|e| anyhow!("invalid file path '{path}' in Delta log action: {e}"))
 }
 
 /// A field's physical (on-disk) name under column mapping, or its logical name
@@ -1078,6 +1082,43 @@ struct CatchupFollowState {
     transaction: Option<Option<String>>,
 }
 
+/// One data file of a CDC transaction, as the log describes it.
+struct CdcFile<'a> {
+    path: &'a str,
+    partition_values: Option<&'a HashMap<String, Option<String>>>,
+    deletion_vector: Option<&'a DeletionVectorDescriptor>,
+}
+
+/// Evaluate a compiled `cdc_delete_filter` against `batch`; returns one polarity
+/// per row.
+fn eval_delete_filter(expr: &dyn PhysicalExpr, batch: &RecordBatch) -> AnyResult<Vec<bool>> {
+    let deletions = expr.evaluate(batch).map_err(|e| {
+        anyhow!("internal error evaluating the delete filter expression; {REPORT_ERROR}: {e}")
+    })?;
+
+    let array = deletions
+        .into_array(batch.num_rows())
+        .map_err(|e| {
+            anyhow!(
+                "internal error converting the result of the delete filter expressions to array; {REPORT_ERROR}: {e}"
+            )
+        })?;
+    let bitmask = array
+        .as_any()
+        .downcast_ref::<BooleanArray>()
+        .ok_or_else(|| {
+            anyhow!(
+                "internal error converting the result of the delete filter expression to BooleanArray; {REPORT_ERROR}: expected Boolean, found {:?}", array.data_type()
+            )
+        })?;
+
+    Ok(bitmask
+        .into_iter()
+        // treat NULLs as inserts.
+        .map(|b| !b.unwrap_or(false))
+        .collect())
+}
+
 struct DeltaTableInputEndpointInner {
     endpoint_name: String,
     schema: Relation,
@@ -1433,9 +1474,8 @@ impl DeltaTableInputEndpointInner {
     /// `snapshot_filter`, `cdc_delete_filter`, `cdc_order_by`), case-folded for
     /// matching. Derived once and cached.
     ///
-    /// These strings are validated during configuration, so they parse here; a
-    /// parse error is therefore unreachable and contributes no columns rather
-    /// than failing the connector a second time.
+    /// Endpoint initialization parses these strings first, in every mode, so a
+    /// parse error is unreachable here.
     fn config_referenced_columns(&self) -> &ColumnNameSet {
         self.config_referenced_columns.get_or_init(|| {
             let mut columns = BTreeSet::new();
@@ -1454,6 +1494,15 @@ impl DeltaTableInputEndpointInner {
             }
             ColumnNameSet::from_names(columns)
         })
+    }
+
+    /// Validate the filter expressions that apply in every mode: 'filter' and
+    /// 'snapshot_filter'. The CDC expressions are validated by
+    /// [`validate_cdc_config`](Self::validate_cdc_config) and
+    /// [`validate_cdc_delete_filter`](Self::validate_cdc_delete_filter).
+    fn validate_config_expressions(&self) -> Result<(), ControllerError> {
+        self.validate_snapshot_filter()?;
+        self.validate_filter()
     }
 
     /// True if a column may actually be skipped: its shape permits omitting it
@@ -1508,11 +1557,8 @@ impl DeltaTableInputEndpointInner {
 
         // Filter `df`'s own field list (not the SQL schema) so the projection
         // tracks the read schema if column mapping ever varies it across
-        // versions, and preserves on-disk column order: the order the
-        // `cdc_delete_filter` `PhysicalExpr` binds by index in
-        // `extract_delete_filter_expr`. Own the kept names before consuming `df`;
-        // `select_columns` takes `df` by value, so the `df.schema()` borrow must
-        // end first.
+        // versions. Own the kept names before consuming `df`; `select_columns`
+        // takes `df` by value, so the `df.schema()` borrow must end first.
         let kept: Vec<String> = df
             .schema()
             .fields()
@@ -1844,6 +1890,14 @@ impl DeltaTableInputEndpointInner {
         mut receiver: Receiver<PipelineState>,
         init_status_sender: mpsc::Sender<Result<(), ControllerError>>,
     ) {
+        // Validate before opening the table: 'filter' applies to follow reads
+        // too, so an invalid expression must fail startup rather than the first
+        // commit.
+        if let Err(e) = self.validate_config_expressions() {
+            let _ = init_status_sender.send(Err(e)).await;
+            return;
+        }
+
         let table = match self.open_table().await {
             Err(e) => {
                 let _ = init_status_sender.send(Err(e)).await;
@@ -1863,13 +1917,10 @@ impl DeltaTableInputEndpointInner {
             return;
         };
 
-        let cdc_delete_filter = match self.prepare_cdc().await {
-            Err(e) => {
-                let _ = init_status_sender.send(Err(e)).await;
-                return;
-            }
-            Ok(cdc_delete_filter) => cdc_delete_filter,
-        };
+        if let Err(e) = self.prepare_cdc().await {
+            let _ = init_status_sender.send(Err(e)).await;
+            return;
+        }
 
         // Code before this point is part of endpoint initialization.
         // After this point, the thread should continue running until it receives a
@@ -2060,7 +2111,6 @@ impl DeltaTableInputEndpointInner {
                                 new_version,
                                 &actions,
                                 &table,
-                                cdc_delete_filter.clone(),
                                 input_stream.as_mut(),
                                 &mut receiver,
                                 start_transaction,
@@ -2386,115 +2436,64 @@ impl DeltaTableInputEndpointInner {
 
     /// Convert the delete filter SQL expression into a Datafusion PhysicalExpr.
     ///
-    /// Parses `cdc_delete_filter` directly against the snapshot schema and
-    /// lowers the resulting logical expression to a physical expression.
-    async fn extract_delete_filter_expr(
-        &self,
-    ) -> Result<Option<Arc<dyn PhysicalExpr>>, ControllerError> {
-        let Some(delete_filter) = &self.config.cdc_delete_filter else {
+    /// Compile `cdc_delete_filter`, if configured, against `schema`: the schema of
+    /// the frame the filter will evaluate.
+    fn compile_delete_filter(&self, schema: &DFSchema) -> AnyResult<Option<Arc<dyn PhysicalExpr>>> {
+        let Some(delete_filter) = self.config.cdc_delete_filter.as_deref() else {
             return Ok(None);
         };
 
-        let snapshot_df = self
-            .datafusion
-            .table("snapshot")
-            .await
-            .map_err(|_e| {
-                ControllerError::invalid_transport_configuration(
-                    &self.endpoint_name,
-                    &format!(
-                        "internal error compiling 'cdc_delete_filter' expression '{delete_filter}'; {REPORT_ERROR}: table 'snapshot' not found"
-                    ),
-                )
-            })?;
-
-        // The compiled `PhysicalExpr` binds columns by index, so it must see the
-        // same schema as the batches it will evaluate. When `skip_unused_columns`
-        // is set, `process_cdc_transaction` projects those batches to the CDC
-        // read set via `project_cdc_columns`, so project here through the same
-        // helper. Both derive the read set from the same Delta snapshot (this
-        // `snapshot` table is registered from it), so the column order matches.
-        let snapshot_df = self.project_cdc_columns(snapshot_df).map_err(|e| {
-            ControllerError::invalid_transport_configuration(
-                &self.endpoint_name,
-                &format!(
-                    "internal error compiling 'cdc_delete_filter' expression '{delete_filter}'; {REPORT_ERROR}: {e}"
-                ),
-            )
-        })?;
-
-        let schema = snapshot_df.schema().clone();
-
         let filter_expr = self
             .datafusion
-            .parse_sql_expr(delete_filter, &schema)
+            .parse_sql_expr(delete_filter, schema)
             .map_err(|e| {
-                ControllerError::invalid_transport_configuration(
-                    &self.endpoint_name,
-                    &format!("invalid 'cdc_delete_filter' expression '{delete_filter}': {e}"),
-                )
+                anyhow!("invalid 'cdc_delete_filter' expression '{delete_filter}': {e}")
             })?;
 
         let physical_expr = DefaultPhysicalPlanner::default()
-            .create_physical_expr(&filter_expr, &schema, &self.datafusion.state())
+            .create_physical_expr(&filter_expr, schema, &self.datafusion.state())
             .map_err(|e| {
-                ControllerError::invalid_transport_configuration(
-                    &self.endpoint_name,
-                    &format!(
-                        "internal error compiling 'cdc_delete_filter' expression '{delete_filter}'; {REPORT_ERROR}: {e}"
-                    ),
-                )
+                anyhow!("cannot compile 'cdc_delete_filter' expression '{delete_filter}': {e}")
             })?;
 
         Ok(Some(physical_expr))
     }
 
-    /// Evaluate delete filter expression against a batch of updates; returns a vector of polarities.
-    async fn eval_delete_filter(
-        delete_filter: &dyn PhysicalExpr,
-        batch: &RecordBatch,
-    ) -> AnyResult<Vec<bool>> {
-        let deletions = delete_filter.evaluate(batch).map_err(|e| {
-            anyhow!("internal error evaluating the delete filter expression; {REPORT_ERROR}: {e}")
+    /// Validate the filter expression specified in the 'cdc_delete_filter'
+    /// parameter by compiling it against the snapshot schema. Each transaction
+    /// compiles the expression again, against the frame it reads.
+    async fn validate_cdc_delete_filter(&self) -> Result<(), ControllerError> {
+        if self.config.cdc_delete_filter.is_none() {
+            return Ok(());
+        }
+
+        let invalid_config =
+            |e: String| ControllerError::invalid_transport_configuration(&self.endpoint_name, &e);
+
+        let snapshot_df = self.datafusion.table("snapshot").await.map_err(|_e| {
+            invalid_config(format!(
+                "internal error validating 'cdc_delete_filter'; {REPORT_ERROR}: table 'snapshot' not found"
+            ))
         })?;
+        let snapshot_df = self
+            .project_cdc_columns(snapshot_df)
+            .map_err(|e| invalid_config(e.to_string()))?;
 
-        let array = deletions
-            .into_array(batch.num_rows())
-            .map_err(|e| {
-                anyhow!(
-                    "internal error converting the result of the delete filter expressions to array; {REPORT_ERROR}: {e}"
-                )
-            })?;
-        let bitmask = array
-            .as_any()
-            .downcast_ref::<BooleanArray>()
-            .ok_or_else(|| {
-                anyhow!(
-                    "internal error converting the result of the delete filter expression to BooleanArray; {REPORT_ERROR}: expected Boolean, found {:?}", array.data_type()
-                )
-            })?;
-
-        let polarities = bitmask
-            .into_iter()
-            // treat NULLs as inserts.
-            .map(|b| !b.unwrap_or(false))
-            .collect::<Vec<bool>>();
-
-        Ok(polarities)
+        self.compile_delete_filter(snapshot_df.schema())
+            .map(|_| ())
+            .map_err(|e| invalid_config(e.to_string()))
     }
 
     /// Prepare to read initial snapshot, if required by endpoint configuration.
     ///
     /// * register snapshot as a datafusion table
-    /// * validate snapshot config: filter condition and timestamp column
+    /// * validate the timestamp column against the registered snapshot
     async fn prepare_snapshot_query(&self, table: &Arc<DeltaTable>) -> Result<(), ControllerError> {
         if !self.config.snapshot() && !self.config.is_cdc() {
             return Ok(());
         }
 
         self.register_snapshot_table(table).await?;
-        self.validate_snapshot_filter()?;
-        self.validate_filter()?;
 
         if let Some(timestamp_column) = &self.config.timestamp_column {
             validate_timestamp_column(
@@ -2511,11 +2510,10 @@ impl DeltaTableInputEndpointInner {
     }
 
     /// Prepare to process CDC stream.
-    async fn prepare_cdc(&self) -> Result<Option<Arc<dyn PhysicalExpr>>, ControllerError> {
+    async fn prepare_cdc(&self) -> Result<(), ControllerError> {
         self.validate_cdc_config()?;
 
-        let delete_expr = self.extract_delete_filter_expr().await?;
-        Ok(delete_expr)
+        self.validate_cdc_delete_filter().await
     }
 
     /// Execute a SQL query to load a complete or partial snapshot of the DeltaTable.
@@ -2826,16 +2824,15 @@ impl DeltaTableInputEndpointInner {
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         let result = if polarity {
             if let Some(delete_filter_expr) = cdc_delete_filter {
-                let polarities =
-                    match Self::eval_delete_filter(delete_filter_expr.as_ref(), &batch).await {
-                        Ok(polarities) => polarities,
-                        Err(e) => {
-                            return (
-                                None,
-                                vec![ParseError::bin_envelope_error(e.to_string(), &[], None)],
-                            );
-                        }
-                    };
+                let polarities = match eval_delete_filter(delete_filter_expr.as_ref(), &batch) {
+                    Ok(polarities) => polarities,
+                    Err(e) => {
+                        return (
+                            None,
+                            vec![ParseError::bin_envelope_error(e.to_string(), &[], None)],
+                        );
+                    }
+                };
                 // println!(
                 //     "insert_with_polarities: {} updates, {} insertions",
                 //     polarities.len(),
@@ -2881,7 +2878,6 @@ impl DeltaTableInputEndpointInner {
         new_version: i64,
         actions: &[Action],
         table: &DeltaTable,
-        cdc_delete_filter: Option<Arc<dyn PhysicalExpr>>,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
         start_transaction: Option<Option<String>>,
@@ -2920,15 +2916,8 @@ impl DeltaTableInputEndpointInner {
         let timestamp = Utc::now();
 
         if self.config.is_cdc() {
-            self.process_cdc_transaction(
-                actions,
-                table,
-                cdc_delete_filter,
-                input_stream,
-                receiver,
-                start_transaction,
-            )
-            .await?;
+            self.process_cdc_transaction(actions, table, input_stream, receiver, start_transaction)
+                .await?;
         } else {
             // Compute the projected read set once for the whole transaction; each
             // `process_action` borrows the `&str` view rather than re-collecting it
@@ -2999,6 +2988,7 @@ impl DeltaTableInputEndpointInner {
                     self.process_follow_action(
                         action,
                         &remove.path,
+                        remove.partition_values.as_ref(),
                         newly_deleted,
                         false,
                         table,
@@ -3019,6 +3009,7 @@ impl DeltaTableInputEndpointInner {
                     self.process_follow_action(
                         action,
                         &add.path,
+                        Some(&add.partition_values),
                         restored,
                         true,
                         table,
@@ -3063,7 +3054,6 @@ impl DeltaTableInputEndpointInner {
         &self,
         actions: &[Action],
         table: &DeltaTable,
-        cdc_delete_filter: Option<Arc<dyn PhysicalExpr>>,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
         start_transaction: Option<Option<String>>,
@@ -3115,12 +3105,16 @@ impl DeltaTableInputEndpointInner {
         // This loop must run before the removes side is built below: it
         // drains `removes_by_path` of every matched path, leaving only the
         // unpaired removes there.
-        let mut add_files: Vec<(&str, Option<&DeletionVectorDescriptor>)> = Vec::new();
+        let mut add_files: Vec<CdcFile<'_>> = Vec::new();
         for add in &adds {
             if removes_by_path.remove(add.path.as_str()).is_some() {
                 continue;
             }
-            add_files.push((add.path.as_str(), add.deletion_vector.as_ref()));
+            add_files.push(CdcFile {
+                path: add.path.as_str(),
+                partition_values: Some(&add.partition_values),
+                deletion_vector: add.deletion_vector.as_ref(),
+            });
         }
 
         let Some(adds_df) = self
@@ -3135,9 +3129,13 @@ impl DeltaTableInputEndpointInner {
         // The removes left unpaired by the loop above feed the `EXCEPT ALL`;
         // `cdc_side_dataframe` masks any with an active DV so only live rows
         // subtract.
-        let remove_files: Vec<(&str, Option<&DeletionVectorDescriptor>)> = removes_by_path
-            .iter()
-            .map(|(path, remove)| (*path, remove.deletion_vector.as_ref()))
+        let remove_files: Vec<CdcFile<'_>> = removes_by_path
+            .values()
+            .map(|remove| CdcFile {
+                path: remove.path.as_str(),
+                partition_values: remove.partition_values.as_ref(),
+                deletion_vector: remove.deletion_vector.as_ref(),
+            })
             .collect();
         let removes_df = self
             .cdc_side_dataframe(table, &remove_files, &description)
@@ -3154,11 +3152,15 @@ impl DeltaTableInputEndpointInner {
             &description,
         )?;
 
+        // Compile against this transaction's frame: a schema change between
+        // commits moves the columns the expression binds by index.
+        let delete_filter = self.compile_delete_filter(df.schema())?;
+
         let _record_count = self
             .execute_df(
                 df,
                 true,
-                cdc_delete_filter,
+                delete_filter,
                 &description,
                 input_stream,
                 receiver,
@@ -3259,24 +3261,118 @@ impl DeltaTableInputEndpointInner {
             .collect())
     }
 
+    /// Names of the table's partition columns.
+    ///
+    /// Delta keeps a partition column's value in the log action, never in the
+    /// data file, so the reader must add it back (see
+    /// [`add_partition_columns`](Self::add_partition_columns)).
+    fn partition_columns(&self) -> AnyResult<Vec<String>> {
+        Ok(self
+            .schema_snapshot()
+            .snapshot()
+            .map_err(|e| anyhow!("error accessing Delta table snapshot: {e}"))?
+            .metadata()
+            .partition_columns()
+            .to_vec())
+    }
+
+    /// The key the Delta log uses for each partition column: its physical name
+    /// under column mapping, its logical name otherwise.
+    fn partition_value_keys(&self) -> AnyResult<Vec<String>> {
+        let partition_columns = self.partition_columns()?;
+        Ok(self
+            .logical_schema()?
+            .fields()
+            .iter()
+            .filter(|field| partition_columns.contains(field.name()))
+            .map(|field| physical_name(field))
+            .collect())
+    }
+
+    /// Reproject `df` in table column order, supplying each partition column as
+    /// a constant from the file's log action. Every read side lays its columns
+    /// out the same way, so `UNION ALL` and `EXCEPT ALL` line up.
+    fn add_partition_columns(
+        &self,
+        df: DataFrame,
+        partition_values: Option<&HashMap<String, Option<String>>>,
+        description: &str,
+    ) -> AnyResult<DataFrame> {
+        let partition_columns = self.partition_columns()?;
+        if partition_columns.is_empty() {
+            return Ok(df);
+        }
+
+        let schema = df.schema().clone();
+        let mut projection: Vec<Expr> = Vec::new();
+        for field in self.logical_schema()?.fields() {
+            if partition_columns.contains(field.name()) {
+                // The log keys partition values by physical name. The Hive
+                // `key=value` directory layout is convention, not protocol, so
+                // a missing key is an error rather than a guess from the path.
+                let key = physical_name(field);
+                let value = partition_values
+                    .and_then(|values| values.get(&key))
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "error processing {description}: the Delta log action records no value for partition column '{}' (log key '{key}'); a partition column is not stored in the data file, so 'partitionValues' is the only source.",
+                            field.name()
+                        )
+                    })?;
+                // The log stores partition values as strings.
+                let literal = match value {
+                    Some(value) => lit(value.clone()),
+                    None => lit(ScalarValue::Null),
+                };
+                projection.push(
+                    literal
+                        .cast_to(field.data_type(), &schema)
+                        .map_err(|e| {
+                            anyhow!(
+                                "error processing {description}: cannot read partition column '{}' as {}: {e}",
+                                field.name(),
+                                field.data_type()
+                            )
+                        })?
+                        .alias(field.name()),
+                );
+            } else if schema.has_column_with_unqualified_name(field.name()) {
+                projection.push(col(field.name()));
+            }
+        }
+
+        df.select(projection).map_err(|e| {
+            anyhow!("internal error processing {description}; {REPORT_ERROR}; error adding partition columns: {e}")
+        })
+    }
+
+    /// The Delta table's logical Arrow schema at the version being read.
+    fn logical_schema(&self) -> AnyResult<SchemaRef> {
+        Ok(self
+            .schema_snapshot()
+            .snapshot()
+            .map_err(|e| anyhow!("error accessing Delta table snapshot: {e}"))?
+            .snapshot()
+            .arrow_schema())
+    }
+
     /// Arrow schema for reading the raw data files, named as they appear on disk:
     /// the logical schema restricted to columns `keep` accepts (in schema order,
     /// so read sides line up), with each column-mapped field renamed to its
     /// physical (`col-<uuid>`) name so DataFusion matches by name. It recurses
     /// into nested struct, list, and map fields. Logical names are restored afterwards:
     /// top level in `project_physical_to_logical`, nested in `relabel_nested_columns`.
-    /// The kept logical schema when column mapping is off.
+    /// With column mapping off this is just the kept logical schema.
+    ///
+    /// Partition columns are always excluded: Delta never stores them in the data
+    /// file.
     fn physical_read_schema(&self, keep: impl Fn(&str) -> bool) -> AnyResult<SchemaRef> {
-        let schema_table = self.schema_snapshot();
-        let logical = schema_table
-            .snapshot()
-            .map_err(|e| anyhow!("error accessing Delta table snapshot: {e}"))?
-            .snapshot()
-            .arrow_schema();
+        let logical = self.logical_schema()?;
+        let partition_columns = self.partition_columns()?;
         let fields: Vec<FieldRef> = logical
             .fields()
             .iter()
-            .filter(|f| keep(f.name()))
+            .filter(|f| keep(f.name()) && !partition_columns.contains(f.name()))
             .map(field_to_physical)
             .collect();
         Ok(Arc::new(
@@ -3315,17 +3411,12 @@ impl DeltaTableInputEndpointInner {
 
     async fn create_parquet_table(
         &self,
-        files: Vec<String>,
+        urls: Vec<ListingTableUrl>,
         description: &str,
     ) -> AnyResult<ListingTable> {
         // Use the on-disk (physical) schema so the reader matches each file's
         // columns; `project_physical_to_logical` renames them back afterwards.
         let schema = self.physical_read_schema(|_| true)?;
-
-        let mut urls = Vec::with_capacity(files.len());
-        for file in files.iter() {
-            urls.push(ListingTableUrl::parse(file).map_err(|e| anyhow!("internal error processing {description}; {REPORT_ERROR}; error converting file path '{file}' to table URL: {e}"))?);
-        }
 
         let listing_options = ListingOptions::new(Arc::new(ParquetFormat::default()))
             .with_file_extension_opt(Some(".parquet"));
@@ -3339,8 +3430,9 @@ impl DeltaTableInputEndpointInner {
         })
     }
 
-    /// Build a streaming [`TableProvider`] over the data file at `path`
-    /// (relative and URL-encoded, as the Delta log stores it) that reads the
+    /// Build a streaming [`TableProvider`] over the data file at `path` (the
+    /// object-store key relative to the table root, which delta-rs decoded when
+    /// it read the log) that reads the
     /// rows `mode` picks out of `bitmap`: the file's live rows when applying a
     /// deletion vector ([`ReadMode::NotInBitmap`]), or a deletion-vector delta
     /// when following a same-path rewrite ([`ReadMode::InBitmap`]). The caller
@@ -3366,9 +3458,9 @@ impl DeltaTableInputEndpointInner {
         // back to logical.
         let read_schema = self.physical_read_schema(keep_column)?;
 
-        // Decode the URL-encoded Delta log path (per the spec) into an
-        // object-store key.
-        let file_path = Path::from_url_path(path)
+        // delta-rs already decoded the log's URL-encoded path, so `path` is the
+        // object-store key as written.
+        let file_path = Path::parse(path)
             .map_err(|e| anyhow!("invalid file path '{path}' in Delta log action: {e}"))?;
 
         filtered_parquet_table(
@@ -3415,7 +3507,7 @@ impl DeltaTableInputEndpointInner {
     /// [`Self::project_cdc_columns`] keeps), so they line up by position for the
     /// `EXCEPT ALL` in `build_cdc_dataframe` and never decode unused columns.
     ///
-    /// Plain files are addressed under the table root (see [`table_root_base`]),
+    /// Plain files are addressed under the table root (see [`file_listing_url`]),
     /// not the synthetic `delta-rs://` URL from `object_store_url()`. The latter
     /// folds the table path into the URL host (slashes become dashes), which
     /// routes DataFusion's object store but is malformed once joined with
@@ -3423,30 +3515,50 @@ impl DeltaTableInputEndpointInner {
     async fn cdc_side_dataframe(
         &self,
         table: &DeltaTable,
-        files: &[(&str, Option<&DeletionVectorDescriptor>)],
+        files: &[CdcFile<'_>],
         description: &str,
     ) -> AnyResult<Option<DataFrame>> {
         // Split by read strategy: files with an active DV are masked one by
-        // one; the rest are read together in one listing.
-        let mut plain: Vec<&str> = Vec::new();
-        let mut masked: Vec<(&str, &DeletionVectorDescriptor)> = Vec::new();
-        for &(path, dv) in files {
-            match dv.filter(|d| is_active_dv(d)) {
-                Some(dv) => masked.push((path, dv)),
-                None => plain.push(path),
+        // one; the rest are read together in one listing, grouped by partition
+        // so each group's constant partition columns apply to all its files.
+        // The key keeps the outer `Option`: a log that omits a partition column
+        // is not a log that records it as NULL, and grouping the two together
+        // would let whichever file the log listed first decide for both.
+        let mut plain: BTreeMap<Vec<Option<Option<String>>>, Vec<&CdcFile<'_>>> = BTreeMap::new();
+        let mut masked: Vec<(&CdcFile<'_>, &DeletionVectorDescriptor)> = Vec::new();
+        let partition_keys = self.partition_value_keys()?;
+        for file in files {
+            match file.deletion_vector.filter(|d| is_active_dv(d)) {
+                Some(dv) => masked.push((file, dv)),
+                None => plain
+                    .entry(
+                        partition_keys
+                            .iter()
+                            .map(|key| {
+                                file.partition_values
+                                    .and_then(|values| values.get(key))
+                                    .cloned()
+                            })
+                            .collect(),
+                    )
+                    .or_default()
+                    .push(file),
             }
         }
 
         let mut dfs: Vec<DataFrame> = Vec::new();
 
-        if !plain.is_empty() {
-            let base = table_root_base(table);
-            let files = plain.iter().map(|p| format!("{base}{p}")).collect();
-            let listing_table = Arc::new(self.create_parquet_table(files, description).await?);
+        for group in plain.values() {
+            let urls = group
+                .iter()
+                .map(|f| file_listing_url(table, f.path))
+                .collect::<AnyResult<Vec<_>>>()?;
+            let listing_table = Arc::new(self.create_parquet_table(urls, description).await?);
             let df = self.datafusion.read_table(listing_table).map_err(|e| {
                 anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading Parquet files: {e}")
             })?;
             let df = self.project_physical_to_logical(df)?;
+            let df = self.add_partition_columns(df, group[0].partition_values, description)?;
             // Drop unused columns when `skip_unused_columns` is set, so
             // DataFusion never reads them off disk.
             dfs.push(self.project_cdc_columns(df).map_err(|e| {
@@ -3454,10 +3566,10 @@ impl DeltaTableInputEndpointInner {
             })?);
         }
 
-        for (path, dv) in masked {
-            // Keep the same CDC read set as `project_cdc_columns` applies on the
-            // plain side (via `keeps_cdc_column`), so the two providers union
-            // cleanly.
+        for (file, dv) in masked {
+            let path = file.path;
+            // Read the same column set as the plain side; both are projected
+            // again below, after the partition columns go back in.
             let bitmap = self.decode_dv(table, Some(dv), description).await?;
             let provider = self
                 .file_provider(table, path, bitmap, ReadMode::NotInBitmap, |name| {
@@ -3467,7 +3579,11 @@ impl DeltaTableInputEndpointInner {
             let df = self.datafusion.read_table(provider).map_err(|e| {
                 anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading masked file '{path}': {e}")
             })?;
-            dfs.push(self.project_physical_to_logical(df)?);
+            let df = self.project_physical_to_logical(df)?;
+            let df = self.add_partition_columns(df, file.partition_values, description)?;
+            dfs.push(self.project_cdc_columns(df).map_err(|e| {
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; {e}")
+            })?);
         }
 
         let mut dfs = dfs.into_iter();
@@ -3498,6 +3614,7 @@ impl DeltaTableInputEndpointInner {
                     &add.path,
                     true,
                     add.deletion_vector.as_ref(),
+                    Some(&add.partition_values),
                     table,
                     used_columns,
                     input_stream,
@@ -3513,6 +3630,7 @@ impl DeltaTableInputEndpointInner {
                     &remove.path,
                     false,
                     remove.deletion_vector.as_ref(),
+                    remove.partition_values.as_ref(),
                     table,
                     used_columns,
                     input_stream,
@@ -3538,6 +3656,7 @@ impl DeltaTableInputEndpointInner {
         path: &str,
         polarity: bool,
         deletion_vector: Option<&DeletionVectorDescriptor>,
+        partition_values: Option<&HashMap<String, Option<String>>>,
         table: &DeltaTable,
         used_columns: &[&str],
         input_stream: &mut dyn ArrowStream,
@@ -3561,9 +3680,8 @@ impl DeltaTableInputEndpointInner {
             })
             .await?
         } else {
-            let full_path = format!("{}{}", table_root_base(table), path);
             Arc::new(
-                self.create_parquet_table(vec![full_path], &description)
+                self.create_parquet_table(vec![file_listing_url(table, path)?], &description)
                     .await?,
             )
         };
@@ -3572,6 +3690,7 @@ impl DeltaTableInputEndpointInner {
             provider,
             polarity,
             used_columns,
+            partition_values,
             &description,
             table,
             input_stream,
@@ -3589,6 +3708,7 @@ impl DeltaTableInputEndpointInner {
         &self,
         action: &Action,
         path: &str,
+        partition_values: Option<&HashMap<String, Option<String>>>,
         dv_delta: Option<&RoaringTreemap>,
         polarity: bool,
         table: &DeltaTable,
@@ -3612,6 +3732,7 @@ impl DeltaTableInputEndpointInner {
                     provider,
                     polarity,
                     used_columns,
+                    partition_values,
                     &description,
                     table,
                     input_stream,
@@ -3648,6 +3769,7 @@ impl DeltaTableInputEndpointInner {
         provider: Arc<dyn TableProvider>,
         polarity: bool,
         used_columns: &[&str],
+        partition_values: Option<&HashMap<String, Option<String>>>,
         description: &str,
         table: &DeltaTable,
         input_stream: &mut dyn ArrowStream,
@@ -3660,6 +3782,7 @@ impl DeltaTableInputEndpointInner {
         // Translate column-mapped physical names back to logical before any
         // logical-name projection or filter.
         let df = self.project_physical_to_logical(df)?;
+        let df = self.add_partition_columns(df, partition_values, description)?;
 
         let df = apply_filter(df, self.config.filter.as_deref(), description, None)?;
 

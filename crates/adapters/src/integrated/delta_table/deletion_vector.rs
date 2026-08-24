@@ -282,8 +282,8 @@ fn realign_array(
 /// columns the file lacks. Field-id matching handles `columnMapping.mode=id`
 /// tables, whose files name columns logically rather than by physical `col-<id>`.
 ///
-/// Partition columns come out NULL (Delta stores them in `partitionValues`, not
-/// in the file), a pre-existing limitation of the connector's Parquet reader.
+/// Partition columns are absent here (Delta stores them in `partitionValues`,
+/// not in the file); the caller adds them back as constants.
 fn project_to_logical(
     batch: &RecordBatch,
     logical_schema: &SchemaRef,
