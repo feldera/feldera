@@ -183,16 +183,15 @@ jobs:
         run: rustup target add ${{ matrix.target }}
 
       - name: Cache Cargo registry and index
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5
+        uses: ./.github/actions/feldera-gcs-cache
         with:
           # registry/src excluded — cargo regenerates it from registry/cache.
+          # These are native (non-container) runners, so CARGO_HOME is the
+          # default ~/.cargo and tilde paths resolve correctly per-OS.
           path: |
-            # Absolute paths: CARGO_HOME is /home/ubuntu/.cargo (feldera-dev image
-            # env), while ~ expands to the runner's HOME (/github/home in container
-            # jobs), so tilde paths would cache a directory cargo never writes.
-            /home/ubuntu/.cargo/registry/cache
-            /home/ubuntu/.cargo/registry/index
-            /home/ubuntu/.cargo/git/db
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/git/db
           key: build-rust-fda-native-cargo-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             build-rust-fda-native-cargo-${{ runner.os }}-${{ matrix.target }}-
