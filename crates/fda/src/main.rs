@@ -3130,6 +3130,55 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
     }
 }
 
+/// Starts or pauses a connector, which is attached to a table when
+/// `relation_is_table` and to a view otherwise.
+///
+/// `action` is the action to request (`start` or `pause`), `past` its past
+/// tense, for the message printed on success.
+async fn connector_action(
+    client: &Client,
+    pipeline_name: String,
+    relation: &str,
+    connector: &str,
+    relation_is_table: bool,
+    action: &'static str,
+    past: &'static str,
+) {
+    if relation_is_table {
+        client
+            .post_pipeline_input_connector_action()
+            .pipeline_name(pipeline_name)
+            .table_name(relation)
+            .connector_name(connector)
+            .action(action)
+            .send()
+            .await
+            .map_err(handle_errors_fatal(
+                client.baseurl().to_string(),
+                "Failed to start or pause table connector",
+                1,
+            ))
+            .unwrap();
+        println!("Table {relation} connector {connector} {past} successfully.");
+    } else {
+        client
+            .post_pipeline_output_connector_action()
+            .pipeline_name(pipeline_name)
+            .view_name(relation)
+            .connector_name(connector)
+            .action(action)
+            .send()
+            .await
+            .map_err(handle_errors_fatal(
+                client.baseurl().to_string(),
+                "Failed to start or pause view connector",
+                1,
+            ))
+            .unwrap();
+        println!("View {relation} connector {connector} {past} successfully.");
+    }
+}
+
 async fn connector(
     format: OutputFormat,
     pipeline_name: String,
@@ -3170,50 +3219,28 @@ async fn connector(
 
     match action {
         ConnectorAction::Start => {
-            if !relation_is_table {
-                eprintln!(
-                    "Can not start the output connector '{connector}'. Only input connectors (connectors attached to a table) can be started."
-                );
-                std::process::exit(1);
-            }
-            client
-                .post_pipeline_input_connector_action()
-                .pipeline_name(pipeline_name)
-                .table_name(relation)
-                .connector_name(connector)
-                .action("start")
-                .send()
-                .await
-                .map_err(handle_errors_fatal(
-                    client.baseurl().to_string(),
-                    "Failed to start table connector",
-                    1,
-                ))
-                .unwrap();
-            println!("Table {relation} connector {connector} started successfully.");
+            connector_action(
+                &client,
+                pipeline_name,
+                relation,
+                connector,
+                relation_is_table,
+                "start",
+                "started",
+            )
+            .await;
         }
         ConnectorAction::Pause => {
-            if !relation_is_table {
-                eprintln!(
-                    "Can not pause the output connector '{connector}'. Only input connectors (connectors attached to a table) can be paused."
-                );
-                std::process::exit(1);
-            }
-            client
-                .post_pipeline_input_connector_action()
-                .pipeline_name(pipeline_name)
-                .table_name(relation)
-                .connector_name(connector)
-                .action("pause")
-                .send()
-                .await
-                .map_err(handle_errors_fatal(
-                    client.baseurl().to_string(),
-                    "Failed to pause table connector",
-                    1,
-                ))
-                .unwrap();
-            println!("Table {relation} connector {connector} paused successfully.");
+            connector_action(
+                &client,
+                pipeline_name,
+                relation,
+                connector,
+                relation_is_table,
+                "pause",
+                "paused",
+            )
+            .await;
         }
         ConnectorAction::Stats if relation_is_table => {
             let response = client
