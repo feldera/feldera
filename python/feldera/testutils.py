@@ -1,16 +1,14 @@
 "Utility functions for writing tests against a Feldera instance."
 
-import base64
 import logging
 import os
-import urllib.error
-import urllib.parse
-import urllib.request
 import platform
 import re
+import subprocess
 import time
 import json
 import unittest
+from pathlib import Path
 from typing import List, Optional, cast
 from datetime import datetime
 
@@ -47,99 +45,33 @@ def _get_effective_api_key():
     return oidc_token if oidc_token else API_KEY
 
 
-# Audience -> (token, seconds since the epoch after which it is re-minted).
-_oidc_token_cache: dict[str, tuple[str, float]] = {}
-
-# Re-mint a token this many seconds before its own expiry, so a request issued
-# just before the check cannot arrive after it.
-_OIDC_REFRESH_MARGIN_SECONDS = 120.0
-
-# GitHub's own token endpoint occasionally 503s or drops the connection; these
-# are as transient as the pipeline-side errors FelderaClient already retries,
-# so retry the same way rather than letting one blip fail the whole run.
-_OIDC_MINT_RETRYABLE_STATUS_CODES = frozenset({429, 502, 503, 504})
-_OIDC_MINT_MAX_RETRIES = 3
-_OIDC_MINT_INITIAL_BACKOFF_SECONDS = 1.0
-_OIDC_MINT_BACKOFF_MULTIPLIER = 2.0
-
-
-def _mint_github_oidc_token(request: urllib.request.Request) -> str:
-    """Issue the token-mint request, retrying transient failures."""
-    backoff = _OIDC_MINT_INITIAL_BACKOFF_SECONDS
-    for attempt in range(_OIDC_MINT_MAX_RETRIES + 1):
-        try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                return json.load(response)["value"]
-        except urllib.error.HTTPError as e:
-            if (
-                e.code not in _OIDC_MINT_RETRYABLE_STATUS_CODES
-                or attempt == _OIDC_MINT_MAX_RETRIES
-            ):
-                raise
-        except urllib.error.URLError:
-            if attempt == _OIDC_MINT_MAX_RETRIES:
-                raise
-        time.sleep(backoff)
-        backoff *= _OIDC_MINT_BACKOFF_MULTIPLIER
-    raise AssertionError("unreachable")  # loop always returns or raises
-
-
-def _github_oidc_token() -> str:
-    """A GitHub Actions ID token, re-minted shortly before it expires.
-
-    The SDK resolves this before every request, so the implementation has to be
-    cheap. Minting per request adds a round trip to GitHub each time, and a
-    suite that polls in loops across parallel workers sends enough of them to be
-    throttled, which results in a connection timeout rather than an error.
-    """
-    audience = os.environ.get("FELDERA_OIDC_AUDIENCE", "")
-    cached = _oidc_token_cache.get(audience)
-    if cached is not None and time.time() < cached[1]:
-        return cached[0]
-
-    request_url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
-    if audience:
-        request_url += "&audience=" + urllib.parse.quote(audience, safe="")
-    request = urllib.request.Request(request_url)
-    request.add_header(
-        "Authorization", f"bearer {os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']}"
-    )
-    token = _mint_github_oidc_token(request)
-
-    _oidc_token_cache[audience] = (
-        token,
-        _token_expiry(token) - _OIDC_REFRESH_MARGIN_SECONDS,
-    )
-    return token
-
-
-def _token_expiry(token: str) -> float:
-    """`exp` from a JWT payload, in seconds since the epoch.
-
-    Returns the current time if the payload cannot be read, which re-mints on
-    every call rather than serving a token past its expiry.
-    """
-    try:
-        payload = token.split(".")[1]
-        payload += "=" * (-len(payload) % 4)
-        return float(json.loads(base64.urlsafe_b64decode(payload))["exp"])
-    except Exception:
-        return time.time()
-
-
 def feldera_bearer_token() -> Optional[str]:
     """The bearer token to send with a request issued now.
 
-    A configured OIDC login flow wins, then a GitHub Actions ID token, then the
-    static API key. None when nothing is configured, which is how a local
-    instance without authentication runs. Callers that build their own requests
-    resolve this per request: under Actions the token expires well inside a test
-    run, and one read at import time starts returning 401 partway through.
+    A configured OIDC login flow wins, then whatever CI exports: a token file
+    that feldera/oidc-auth-action keeps current for the life of the job, or a
+    command that prints one. Then the static API key, and None when nothing is
+    configured, which is how a local instance without authentication runs.
+
+    Callers that build their own requests resolve this per request: a CI token
+    expires well inside a test run, and one read at import time starts
+    returning 401 partway through.
     """
     if os.environ.get("OIDC_TEST_ISSUER"):
         return _get_effective_api_key()
-    if os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL"):
-        return _github_oidc_token()
+    token_file = os.environ.get("FELDERA_OIDC_TOKEN_FILE")
+    if token_file:
+        return Path(token_file).read_text().strip()
+    token_command = os.environ.get("FELDERA_AUTH_TOKEN_COMMAND")
+    if token_command:
+        return subprocess.run(
+            token_command,
+            shell=True,
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=30,
+        ).stdout.strip()
     return API_KEY
 
 
@@ -159,9 +91,9 @@ class _LazyClient:
 
     def _ensure(self):
         if self._client is None:
-            # Under Actions the token expires inside a run, so the SDK gets the
-            # resolver itself: it re-resolves per request and retries once on
-            # 401. Elsewhere the credential is fixed for the process.
+            # A CI token expires inside a run, so where one refreshes the SDK
+            # gets the resolver itself: it re-resolves per request and retries
+            # once on 401. Elsewhere the credential is fixed for the process.
             self._client = FelderaClient(
                 connection_timeout=10,
                 # Shared CI instances see infrastructure churn (node
@@ -178,7 +110,8 @@ class _LazyClient:
                 ),
                 api_key=(
                     feldera_bearer_token
-                    if os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL")
+                    if os.environ.get("FELDERA_OIDC_TOKEN_FILE")
+                    or os.environ.get("FELDERA_AUTH_TOKEN_COMMAND")
                     else feldera_bearer_token()
                 ),
             )
