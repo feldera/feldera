@@ -952,7 +952,7 @@ class TestPipeline(SharedTestPipeline):
     # Give this test a different name than the one in platform/test_completion_tokens.
     def test_completion_tokens_sdk(self):
         self.pipeline.start()
-        self.pipeline.resume_connector("tbl", "d1")
+        self.pipeline.start_input_connector("tbl", "d1")
         token = self.pipeline.generate_completion_token("tbl", "d1")
         self.pipeline.wait_for_token(token)
         assert (
