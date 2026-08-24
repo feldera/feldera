@@ -282,6 +282,12 @@ along with the UUID of the pipeline process that accepted the request:
 Pass `incarnation_uuid` to `sync_status` while waiting for the sync, as described
 under [detecting a pipeline restart](#detecting-a-pipeline-restart).
 
+Requesting a sync for a checkpoint that is already syncing joins the sync in
+progress rather than starting a second one.  The response is `202 Accepted`
+either way, so treat it as "a sync for this checkpoint is under way", not as
+proof that a fresh one started; watch `running` in
+[sync status](#checking-sync-status) to follow it.
+
 ## Checking sync status
 
 The status of the sync operation can be checked with:
@@ -297,18 +303,46 @@ curl 'http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status'
 | `success`  | `uuid \| null`   | UUID of the most recently successful manually triggered checkpoint sync (`POST /checkpoint/sync`).          |
 | `failure`  | `object \| null` | Details of the most recently failed manually triggered checkpoint sync. Contains `uuid` and `error` fields. |
 | `periodic` | `uuid \| null`   | UUID of the most recently successful automatic periodic checkpoint sync (configured via `push_interval`).   |
+| `running`  | `uuid[]`         | UUIDs of the checkpoint syncs running right now.  Empty when none is in progress.                           |
 
 `success` and `periodic` track different sync mechanisms:
 
 - `success` is updated only by manual syncs triggered via `POST /checkpoint/sync`.
 - `periodic` is updated only by automatic syncs configured via `push_interval`.
 
+`success`, `failure` and `periodic` are sticky: each keeps naming the last sync
+to reach that outcome, long after it finished.  `running` is the field that says
+what is happening now, so a UUID that appears in both `running` and `failure` is
+a sync in progress that failed on an earlier attempt.
+
+If `success` and `failure` would otherwise name the same UUID, then
+the most recent result is kept and the other is set to `null`.
+
+`running` lists only manual syncs.  Automatic periodic syncs do not pass through
+the endpoint that records it, so an in-flight periodic sync leaves `running`
+empty; watch `periodic` for its result instead.
+
+A pipeline older than the release that introduced `running` omits the field
+entirely.  Absent means "this pipeline cannot report progress", which is not the
+same as the empty list.
+
 ### Response examples
 
 **No syncs yet:**
 
 ```json
-{ "success": null, "failure": null, "periodic": null }
+{ "success": null, "failure": null, "periodic": null, "running": [] }
+```
+
+**Manual sync in progress:**
+
+```json
+{
+    "success": null,
+    "failure": null,
+    "periodic": null,
+    "running": ["019779b4-8760-75f2-bdf0-71b825e63610"]
+}
 ```
 
 **Successful manual sync:**
@@ -317,7 +351,8 @@ curl 'http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status'
 {
     "success": "019779b4-8760-75f2-bdf0-71b825e63610",
     "failure": null,
-    "periodic": null
+    "periodic": null,
+    "running": []
 }
 ```
 
@@ -330,7 +365,8 @@ curl 'http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status'
         "uuid": "019779c1-8317-7a71-bd78-7b971f4a3c43",
         "error": "Error pushing checkpoint to object store: ... SignatureDoesNotMatch ..."
     },
-    "periodic": null
+    "periodic": null,
+    "running": []
 }
 ```
 
@@ -340,7 +376,8 @@ curl 'http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status'
 {
     "success": null,
     "failure": null,
-    "periodic": "019779c1-8317-7a71-bd78-7b971f4a3c43"
+    "periodic": "019779c1-8317-7a71-bd78-7b971f4a3c43",
+    "running": []
 }
 ```
 
@@ -350,7 +387,8 @@ curl 'http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status'
 {
     "success": "019779b4-8760-75f2-bdf0-71b825e63610",
     "failure": null,
-    "periodic": "019779c1-8317-7a71-bd78-7b971f4a3c43"
+    "periodic": "019779c1-8317-7a71-bd78-7b971f4a3c43",
+    "running": []
 }
 ```
 

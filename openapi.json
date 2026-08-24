@@ -8643,18 +8643,31 @@
                 "$ref": "#/components/schemas/CheckpointSyncFailure"
               }
             ],
+            "default": null,
             "nullable": true
           },
           "periodic": {
             "type": "string",
             "format": "uuid",
             "description": "Most recently successful automated periodic checkpoint sync.",
+            "default": null,
             "nullable": true
+          },
+          "running": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Checkpoint syncs running right now.\n\nA UUID leaves `running` and lands in `success` or `failure` at the same\nmoment.\n\nPeriodic syncs do not appear here.",
+            "default": [],
+            "uniqueItems": true
           },
           "success": {
             "type": "string",
             "format": "uuid",
-            "description": "Most recently successful checkpoint sync.",
+            "description": "Most recently successful checkpoint sync.\n\nIf `success` and `failure` would otherwise name the same UUID, then the\nmost recent result is set and the other is cleared.",
+            "default": null,
             "nullable": true
           }
         }
