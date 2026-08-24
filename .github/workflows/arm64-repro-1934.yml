@@ -1,0 +1,27 @@
+# Experiment for feldera/cloud#1934, not meant to merge.
+#
+# The adapter suite only runs on arm64 inside the merge queue, and the failure
+# under investigation has only ever been seen there. This dispatches the pieces
+# needed to run it on an arm64 runner on demand: build the test binaries, then
+# run the adapter suite with a repetition budget, so one job makes thousands of
+# attempts at the race instead of one.
+name: ARM64 Repro (cloud#1934)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  build:
+    name: Build Rust
+    uses: ./.github/workflows/build-rust.yml
+    secrets: inherit
+
+  adapters:
+    name: Adapters
+    needs: build
+    uses: ./.github/workflows/test-adapters.yml
+    secrets: inherit

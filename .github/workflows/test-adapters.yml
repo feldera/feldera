@@ -112,6 +112,10 @@ jobs:
         shell: bash
         env:
           RUST_BACKTRACE: 1
+          # Experiment for feldera/cloud#1934, drop before merging: spend this
+          # many seconds repeating each reproduction test. The failure has only
+          # been seen on arm64, and one pass is one sample.
+          FELDERA_REPRO_SECONDS: 420
           # Cap libtest parallelism at the runner core budget. Adapter tests
           # share the pod with postgres/redpanda/redis sidecars; if those start
           # starving we can lower CI_RUNNER_CORES or switch this to its own var.
