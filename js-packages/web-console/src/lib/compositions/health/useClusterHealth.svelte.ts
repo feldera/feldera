@@ -6,6 +6,13 @@ export type ClusterHealthStatus = {
   api: ClusterEventType
   compiler: ClusterEventType
   runner: ClusterEventType
+  /**
+   * The cluster monitor stopped writing events, so the statuses above are the last
+   * recorded ones rather than current ones. The monitor runs within the Kubernetes runner.
+   */
+  stale: boolean
+  /** When the newest cluster monitor event was recorded. */
+  recordedAt: Date
 }
 
 // Unknown until the first poll answers, and unknown again once the poller unmounts: a page
@@ -39,7 +46,10 @@ export const useRefreshClusterHealth = () => {
     status = {
       api: toEventType(event.api_status),
       compiler: toEventType(event.compiler_status),
-      runner: toEventType(event.runner_status)
+      runner: toEventType(event.runner_status),
+      // Absent on anything but the latest event, which is what this polls.
+      stale: event.stale ?? false,
+      recordedAt: new Date(event.recorded_at)
     }
   }, 10000)
 }

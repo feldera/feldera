@@ -10,6 +10,15 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Cluster monitoring data that has gone stale is now reported as such
+  instead of being served as current. The cluster monitor is the only
+  writer of cluster monitor events and runs within the runner, so when
+  the runner dies, its last write kept reporting every service healthy
+  indefinitely. Once the latest event is older than 30 minutes it carries
+  `stale: true`, `GET /v0/cluster_healthz` reports `all_healthy: false`
+  and answers `503`, and the web console shows a banner instead of an
+  "Operational" status.
+
 ## v0.351.0
 
 - Incompatible change (PostgreSQL CDC input connector): an unqualified

@@ -40,6 +40,66 @@ export type HealthEventBucket<S extends string, T extends string> = {
   }[]
 }
 
+/**
+ * What to tell the operator when the cluster monitor has stopped writing events. The
+ * runner is named only in the enterprise edition, where it is a separate process that can
+ * die on its own; in the open-source edition the monitor is a task within the process
+ * that just answered, so pointing at the runner would misdirect.
+ *
+ * @param isEnterprise - Whether the services run as separate processes.
+ * @param since - When the newest event was recorded; omitted for the shorter global banner.
+ */
+export const staleMonitoringMessage = (isEnterprise: boolean, since?: Date) =>
+  [
+    since
+      ? `No cluster monitoring data since ${since.toLocaleString()}.`
+      : 'No new cluster monitoring data.',
+    isEnterprise
+      ? 'The cluster monitor runs inside the Kubernetes runner, which may be down.'
+      : 'The cluster monitor has stopped recording events.',
+    'The statuses shown are the last recorded ones, not current ones.'
+  ].join(' ')
+
+/** The cluster's per-service statuses as the console holds them. */
+type ServiceStatuses = {
+  stale: boolean
+  api: ClusterEventType
+  compiler: ClusterEventType
+  runner: ClusterEventType
+}
+
+/** The service to name in a message, or `null` when every one of them is healthy. */
+const troubledService = (status: ServiceStatuses) =>
+  status.api !== 'healthy'
+    ? 'the API server'
+    : status.compiler !== 'healthy'
+      ? 'the compiler server'
+      : status.runner !== 'healthy'
+        ? 'the runner'
+        : null
+
+/**
+ * What to tell the operator about the cluster, or `null` when there is nothing to say.
+ * Stale data cannot report a current issue, so it names the last recorded one instead.
+ */
+export const clusterHealthMessage = (status: ServiceStatuses, isEnterprise: boolean) => {
+  const service = troubledService(status)
+  if (status.stale) {
+    return service
+      ? `${staleMonitoringMessage(isEnterprise)} The last recorded statuses already showed an issue with ${service}.`
+      : staleMonitoringMessage(isEnterprise)
+  }
+  return service ? `There is an issue with ${service}.` : null
+}
+
+/** The worst of several service statuses; `healthy` only when every one of them is. */
+export const worstClusterStatus = (statuses: ClusterEventType[]): ClusterEventType =>
+  statuses.includes('major_issue')
+    ? 'major_issue'
+    : statuses.includes('unhealthy')
+      ? 'unhealthy'
+      : 'healthy'
+
 /** Health status reported by the cluster monitor for a single service component. */
 export type ClusterEventType = 'healthy' | 'unhealthy' | 'major_issue'
 
