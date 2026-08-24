@@ -60,6 +60,17 @@ import TabItem from '@theme/TabItem';
           the pipeline restarts.  If it does, the operation itself must be restarted
           (the most common use of the Python API does this automatically).
 
+        - Output connectors can be paused, like input connectors: a paused
+          output connector discards the output of its view instead of writing it
+          to its sink, which lets a pipeline run on while a sink is unavailable.
+          Set `paused` in the connector configuration to create it paused, and
+          use `POST /v0/pipelines/{pipeline}/views/{view}/connectors/{connector}/{start,pause}`
+          or `fda connector <pipeline> <view> <connector> start|pause` at
+          runtime. The connector status reports a `paused` field, the web console
+          shows it, and the paused state survives a restart. Output produced
+          while a connector is paused is not replayed when it is started. See
+          [connector orchestration](/connectors/orchestration#output-connectors).
+
         - Python: `Pipeline.pause_input_connector` and
           `Pipeline.start_input_connector` (and their `FelderaClient`
           counterparts) name the kind of connector they act on, matching the new

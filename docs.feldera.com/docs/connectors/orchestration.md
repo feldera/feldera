@@ -1,10 +1,13 @@
-# Input connector orchestration
+# Connector orchestration
 
-Connector Orchestration enables users to activate or deactivate input connectors
-on demand, giving them control over the timing and order of data ingestion from
-multiple sources. It can, for example, be used to backfill a pipeline with
-historical data from a database or data lake before switching over to real-time
-ingestion from a streaming source like Kafka.
+Connector orchestration enables users to activate or deactivate connectors on
+demand, giving them control over the timing and order of data ingestion from
+multiple sources, and over which sinks receive the output of a pipeline. It can,
+for example, be used to backfill a pipeline with historical data from a database
+or data lake before switching over to real-time ingestion from a streaming
+source like Kafka.
+
+## Input connectors
 
 Input connectors can be in either the `Running` or `Paused` state. By default,
 connectors are initialized in the `Running` state when a pipeline is deployed.
@@ -196,3 +199,62 @@ CREATE TABLE price (
     }
 }]');
 ```
+
+## Output connectors
+
+Output connectors can be paused too, which is useful when a sink is unavailable
+or must not receive updates for a while: a paused output connector lets the
+pipeline run on without waiting for its sink.
+
+An output connector can be in either the `Running` or `Paused` state. In the
+`Running` state, the connector writes the output of its view to the configured
+sink. A paused connector discards the output it receives instead. Like an input
+connector, it can be created in the `Paused` state by setting its
+[`paused`](/connectors/#generic-attributes) property to `true`, and it is paused
+and started at runtime with its
+[start/pause endpoint](/api/control-output-connector):
+
+```bash
+fda connector my_pipeline my_view my_connector pause
+fda connector my_pipeline my_view my_connector start
+```
+
+The current connector state is reported as the `paused` field of the
+[connector status endpoint](/api/get-output-status) and of the
+[pipeline statistics endpoint](/api/get-pipeline-metrics).
+
+A few consequences are worth spelling out:
+
+* Output produced while the connector is paused is gone for good. Starting the
+  connector resumes it with the output the pipeline produces from that point on;
+  it does not replay what it missed, so its sink can be missing updates that its
+  view has already applied.
+
+* The pipeline does not wait for a paused connector: the connector reports the
+  output it discards as processed, so
+  [completion tokens](/connectors/completion-tokens) and other progress
+  indicators keep advancing. It does not, however, transmit any records, so its
+  `transmitted_records` counter stops advancing.
+
+* Only output the pipeline produces after the pause is discarded. Output the
+  connector has already been handed still reaches the sink: the batch it is
+  writing, the updates already queued for it (bounded by `max_queued_records`),
+  and the contents of its output buffer, which pausing flushes. Records can
+  therefore keep arriving at the sink for a while after the connector reports
+  itself paused, and a connector that has already filled its queue keeps the
+  pipeline waiting until that queue drains.
+
+* A connector that is paused while the pipeline
+  [bootstraps](/pipelines/modifying#bootstrapping) a new or modified view
+  discards the contents that the bootstrap emits for it, and starting it again
+  does not re-send them. To have a connector receive the full state of its view
+  after a pause, configure it with
+  [`send_snapshot`](/connectors/#generic-attributes) and recreate it, or start
+  it before the bootstrap runs.
+
+* The paused state survives a restart: it is stored in the pipeline's
+  checkpoint, so a pipeline that resumes from a checkpoint comes back with the
+  connectors the user left paused still paused. The checkpointed state wins
+  over the `paused` property in the configuration, so editing that property
+  alone has no effect on a pipeline resuming from a checkpoint; modifying the
+  connector or its view resets the connector to its configured state.
