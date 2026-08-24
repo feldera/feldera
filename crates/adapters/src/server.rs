@@ -107,6 +107,7 @@ use std::hash::{BuildHasherDefault, DefaultHasher, Hash, Hasher};
 use std::io::ErrorKind;
 use std::mem::take;
 use std::path::{Path, PathBuf};
+use std::sync::MutexGuard;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::{
@@ -185,35 +186,12 @@ impl PipelinePhase {
 }
 
 #[derive(Clone, Debug, Default)]
-struct CheckpointSyncState {
-    status: CheckpointSyncStatus,
-}
-
-impl CheckpointSyncState {
-    fn completed(&mut self, uuid: uuid::Uuid, result: Result<(), Arc<ControllerError>>) {
-        match result {
-            Ok(_) => self.status.success = Some(uuid),
-            Err(e) => {
-                self.status.failure = Some(CheckpointSyncFailure {
-                    uuid,
-                    error: e.to_string(),
-                })
-            }
-        }
-    }
-
-    fn completed_periodic(&mut self, uuid: uuid::Uuid) {
-        self.status.periodic = Some(uuid);
-    }
-}
-
-#[derive(Clone, Debug, Default)]
 struct CheckpointState {
     /// Sequence number for the next checkpoint request.
     next_seq: u64,
 
     /// The UUID of the last checkpoint.
-    last_checkpoint: Option<uuid::Uuid>,
+    last_checkpoint: Option<Uuid>,
 
     /// Status to report to user (success/failure only; `activity` is computed
     /// live from the watch channel).
@@ -283,7 +261,7 @@ pub(crate) struct ServerState {
     checkpoint_state: Mutex<CheckpointState>,
 
     /// Leaf lock.
-    sync_checkpoint_state: Mutex<CheckpointSyncState>,
+    sync_checkpoint_status: Mutex<CheckpointSyncStatus>,
 
     /// Leaf lock.
     /// Samply profiling state.
@@ -406,7 +384,7 @@ impl ServerState {
             desired_status_change: Arc::default(),
             metadata: md,
             checkpoint_state: Default::default(),
-            sync_checkpoint_state: Default::default(),
+            sync_checkpoint_status: Default::default(),
             desired_status: Mutex::new(desired_status),
             bootstrap_config: Mutex::new(bootstrap_config),
             deployment_id,
@@ -595,6 +573,10 @@ impl ServerState {
         if recorded {
             self.desired_status_change.notify_waiters();
         }
+    }
+
+    fn sync_checkpoint_status(&self) -> MutexGuard<'_, CheckpointSyncStatus> {
+        self.sync_checkpoint_status.lock().unwrap()
     }
 }
 
@@ -2230,6 +2212,91 @@ fn get_checkpoints(state: &ServerState) -> Result<VecDeque<CheckpointMetadata>, 
     })
 }
 
+/// Starts syncing the checkpoint named by `uuid` to object storage, in the
+/// background.
+///
+/// A sync already running for `uuid` coalesces with it: this starts no second
+/// sync and reports no error, because the sync the caller asked for is under
+/// way.  Both callers answer `202 Accepted` either way, so a retried request
+/// means "the sync is in progress", not "a fresh sync started".
+fn sync_checkpoint(state: WebData<ServerState>, controller: Controller, uuid: Uuid) {
+    /// Tracks state for an ongoing checkpoint sync.
+    struct CheckpointSyncGuard {
+        state: WebData<ServerState>,
+        uuid: Option<Uuid>,
+    }
+
+    impl CheckpointSyncGuard {
+        /// Tries to create a new `CheckpointSyncGuard` for `uuid`, and succeeds if
+        /// there is not already one for that UUID.
+        fn try_new(state: &WebData<ServerState>, uuid: Uuid) -> Option<Self> {
+            state
+                .sync_checkpoint_status()
+                .running
+                .insert(uuid)
+                .then(|| Self {
+                    state: state.clone(),
+                    uuid: Some(uuid),
+                })
+        }
+
+        /// Records the checkpoint sync of `uuid` as complete.
+        fn completed(mut self, result: Result<(), Arc<ControllerError>>) {
+            // Prevent the `Drop` implementation from trying to delete the UUID
+            // again.
+            let uuid = self
+                .uuid
+                .take()
+                .expect("CheckpointSyncGuard has not yet been dropped");
+
+            let mut status = self.state.sync_checkpoint_status();
+
+            // Remove `uuid` from the running sync.
+            if !status.running.remove(&uuid) {
+                error!("checkpoint sync for {uuid} unexpectedly already completed");
+            }
+
+            // Record the outcome.
+            //
+            // `success` and `failure` each name the last sync to reach that
+            // outcome, so re-syncing a checkpoint would otherwise leave the same
+            // UUID in both with nothing to say which came last.  Recording an
+            // outcome therefore clears the opposite one when it names `uuid`: the
+            // newer result replaces the stale one.
+            match result {
+                Ok(()) => {
+                    status.success = Some(uuid);
+                    status.failure.take_if(|failure| failure.uuid == uuid);
+                }
+                Err(e) => {
+                    status.failure = Some(CheckpointSyncFailure {
+                        uuid,
+                        error: e.to_string(),
+                    });
+                    if status.success == Some(uuid) {
+                        status.success = None;
+                    }
+                }
+            }
+        }
+    }
+
+    impl Drop for CheckpointSyncGuard {
+        fn drop(&mut self) {
+            if let Some(uuid) = self.uuid.take() {
+                self.state.sync_checkpoint_status().running.remove(&uuid);
+            }
+        }
+    }
+
+    if let Some(guard) = CheckpointSyncGuard::try_new(&state, uuid) {
+        spawn(async move {
+            let result = controller.async_sync_checkpoint(uuid).await;
+            guard.completed(result);
+        });
+    }
+}
+
 #[post("/checkpoint/sync")]
 async fn checkpoint_sync(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     let controller = state.controller()?;
@@ -2254,14 +2321,7 @@ async fn checkpoint_sync(state: WebData<ServerState>) -> Result<HttpResponse, Pi
     };
 
     let incarnation_uuid = state.incarnation_uuid;
-    spawn(async move {
-        let result = controller.async_sync_checkpoint(last_checkpoint).await;
-        state
-            .sync_checkpoint_state
-            .lock()
-            .unwrap()
-            .completed(last_checkpoint, result);
-    });
+    sync_checkpoint(state, controller, last_checkpoint);
 
     Ok(HttpResponse::Accepted().json(CheckpointSyncResponse::new(
         last_checkpoint,
@@ -2299,14 +2359,7 @@ async fn coordination_checkpoint_push(
     }
 
     let incarnation_uuid = state.incarnation_uuid;
-    spawn(async move {
-        let result = controller.async_sync_checkpoint(uuid).await;
-        state
-            .sync_checkpoint_state
-            .lock()
-            .unwrap()
-            .completed(uuid, result);
-    });
+    sync_checkpoint(state, controller, uuid);
 
     Ok(HttpResponse::Accepted().json(CheckpointSyncResponse::new(uuid, incarnation_uuid)))
 }
@@ -2390,15 +2443,14 @@ async fn sync_checkpoint_status(
     params: web::Query<CheckpointStatusQuery>,
 ) -> Result<HttpResponse, PipelineError> {
     check_incarnation_uuid(&state, params.incarnation_uuid)?;
-
-    let mut sync_state = state.sync_checkpoint_state.lock().unwrap();
+    let mut sync_status = state.sync_checkpoint_status();
 
     let controller = state.controller()?;
     if let Some(chk) = controller.last_checkpoint_sync().id {
-        sync_state.completed_periodic(chk);
+        sync_status.periodic = Some(chk);
     }
 
-    Ok(HttpResponse::Ok().json(sync_state.status.clone()))
+    Ok(HttpResponse::Ok().json(sync_status.clone()))
 }
 
 /// Suspends the pipeline and terminate the circuit.

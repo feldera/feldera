@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{collections::BTreeSet, time::Duration};
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -110,8 +110,12 @@ pub struct CheckpointStatusQuery {
 
 /// Checkpoint status returned by the `/checkpoint/sync_status` endpoint.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
 pub struct CheckpointSyncStatus {
     /// Most recently successful checkpoint sync.
+    ///
+    /// If `success` and `failure` would otherwise name the same UUID, then the
+    /// most recent result is set and the other is cleared.
     pub success: Option<Uuid>,
 
     /// Most recently failed checkpoint sync, and the associated error.
@@ -119,6 +123,14 @@ pub struct CheckpointSyncStatus {
 
     /// Most recently successful automated periodic checkpoint sync.
     pub periodic: Option<Uuid>,
+
+    /// Checkpoint syncs running right now.
+    ///
+    /// A UUID leaves `running` and lands in `success` or `failure` at the same
+    /// moment.
+    ///
+    /// Periodic syncs do not appear here.
+    pub running: BTreeSet<Uuid>,
 }
 
 /// Information about a failed checkpoint sync.
