@@ -212,10 +212,12 @@
 {/snippet}
 
 {#snippet outputConnectorIcons({
+  paused,
   hasErrors,
   hasFatalError,
   onErrorClick
 }: {
+  paused: boolean | undefined
   hasErrors: boolean
   hasFatalError: boolean
   onErrorClick?: (e: Event) => void
@@ -245,6 +247,19 @@
           : `Fatal error occurred in one of the connectors`
         : `Encode or transport errors occurred${onErrorClick ? ' — click to view' : ''}`}</Tooltip
     >
+  {/if}
+  {#if paused}
+    <span
+      data-testid="box-icon-output-paused"
+      class="fd fd-circle-pause text-[16px] text-surface-700-300"
+    ></span>
+    <Tooltip placement="top">Paused — output is discarded</Tooltip>
+  {:else}
+    <span
+      data-testid="box-icon-output-running"
+      class="fd fd-circle-play text-[16px] text-success-500"
+    ></span>
+    <Tooltip placement="top">Running</Tooltip>
   {/if}
 {/snippet}
 
@@ -313,6 +328,7 @@
     <div class="flex min-w-0 flex-nowrap items-center">
       <span class="flex w-10 shrink-0 flex-nowrap justify-end gap-1">
         {@render outputConnectorIcons({
+          paused: connector.paused,
           hasErrors: outputHasErrors(connector),
           hasFatalError: connector.fatal_error != null,
           onErrorClick: () => onConnectorSelect(relation, connector.endpointName, 'output', 'all')
@@ -581,17 +597,21 @@
 {#snippet viewMultiConnectorCell(data: AggregatedOutputEndpointMetrics, isExpanded: boolean)}
   {@const anyUnhealthy = data.connectors.some(isUnhealthy)}
   {@const anyFatalError = data.connectors.some((c) => c.fatal_error != null)}
+  <!-- A pipeline that predates pausable output connectors reports no `paused`
+       field; such a connector is running. -->
+  {@const runningCount = data.connectors.filter((c) => !c.paused).length}
   <td>
     <div data-testid="box-multi-connector-summary" class="flex flex-nowrap items-center">
       <span class="mr-1 flex w-10 flex-nowrap justify-end gap-1">
         {#if !isExpanded}
           {@render outputConnectorIcons({
+            paused: runningCount === 0,
             hasErrors: data.connectors.some(outputHasErrors),
             hasFatalError: anyFatalError
           })}
         {/if}
       </span>
-      {data.connectors.length} connectors
+      {runningCount} / {data.connectors.length} running
       {#if !isExpanded && anyUnhealthy}
         {@render unhealthyChip(
           data.connectors

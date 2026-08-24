@@ -71,6 +71,7 @@ function makeOutputStatus(
     config: { stream },
     endpoint_name: 'output-connector-1',
     metrics: makeOutputMetrics(),
+    paused: false,
     health: null,
     fatal_error: null,
     ...overrides
@@ -367,6 +368,18 @@ describe('MetricsTables.svelte', () => {
       await renderComponent(buildMetrics(makeStatus([makeOutputStatus('v1')])))
       await expect.element(page.getByTestId('btn-icon-output-errors')).not.toBeInTheDocument()
     })
+
+    it('shows running icon for output connector', async () => {
+      await renderComponent(buildMetrics(makeStatus([makeOutputStatus('v1')])))
+      await expect.element(page.getByTestId('box-icon-output-running')).toBeInTheDocument()
+      await expect.element(page.getByTestId('box-icon-output-paused')).not.toBeInTheDocument()
+    })
+
+    it('shows paused icon for paused output connector', async () => {
+      await renderComponent(buildMetrics(makeStatus([makeOutputStatus('v1', { paused: true })])))
+      await expect.element(page.getByTestId('box-icon-output-paused')).toBeInTheDocument()
+      await expect.element(page.getByTestId('box-icon-output-running')).not.toBeInTheDocument()
+    })
   })
 
   describe('E. Multi-connector rows', () => {
@@ -423,14 +436,26 @@ describe('MetricsTables.svelte', () => {
       await expect.element(page.getByTestId('box-connector-row-alpha')).not.toBeInTheDocument()
     })
 
-    it('shows "N connectors" text for multi-connector output views', async () => {
+    it('shows the running connector count for multi-connector output views', async () => {
       const status = makeStatus([
         makeOutputStatus('v1', { endpoint_name: 'o1' }),
         makeOutputStatus('v1', { endpoint_name: 'o2' }),
-        makeOutputStatus('v1', { endpoint_name: 'o3' })
+        makeOutputStatus('v1', { endpoint_name: 'o3', paused: true })
       ])
       await renderComponent(buildMetrics(status))
-      await expect.element(page.getByText('3 connectors')).toBeInTheDocument()
+      await expect.element(page.getByText('2 / 3 running')).toBeInTheDocument()
+      await expect.element(page.getByTestId('box-icon-output-running')).toBeInTheDocument()
+    })
+
+    it('combined output row shows the paused icon when every connector is paused', async () => {
+      const status = makeStatus([
+        makeOutputStatus('v1', { endpoint_name: 'o1', paused: true }),
+        makeOutputStatus('v1', { endpoint_name: 'o2', paused: true })
+      ])
+      await renderComponent(buildMetrics(status))
+      await expect.element(page.getByText('0 / 2 running')).toBeInTheDocument()
+      await expect.element(page.getByTestId('box-icon-output-paused')).toBeInTheDocument()
+      await expect.element(page.getByTestId('box-icon-output-running')).not.toBeInTheDocument()
     })
 
     it('combined row shows paused icon (not running) when one connector is end-of-input and the other is paused', async () => {
