@@ -28,16 +28,24 @@ from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
 
 from tests import TEST_CLIENT
 from tests.platform.fixtures.column_mapping import EXPECTED_ROWS
+from tests.platform.fixtures.column_mapping_partitioned import (
+    EXPECTED_ROWS as PARTITIONED_EXPECTED_ROWS,
+)
 from tests.utils import DeltaTestLocation, ensure_delta_spark_fixture
 
 TABLE = "t"
 CONNECTOR = "delta_in"
 # Bump to invalidate cached MinIO copies when the fixture definition changes.
 FIXTURE_VERSION = "v2"
+# Separate fixture: column-mapped and partitioned, no schema evolution.
+PARTITIONED_FIXTURE_VERSION = "partitioned_v1"
 
 # Spark builder that writes the column-mapped, schema-evolved table. It runs in
 # a subprocess (see ensure_delta_spark_fixture) rather than being imported here.
 _FIXTURE_BUILDER = Path(__file__).parent / "fixtures" / "column_mapping.py"
+_PARTITIONED_FIXTURE_BUILDER = (
+    Path(__file__).parent / "fixtures" / "column_mapping_partitioned.py"
+)
 
 
 # The final, post-evolution logical columns. Used unless a test reads only part
@@ -281,6 +289,62 @@ def test_delta_input_column_mapping_follow_end_version(pipeline_name):
             "replay up to v4 must read each commit against its own schema: "
             "'amount' present (dropped only at v5), 'full_name' NULL for the "
             f"pre-rename v1 rows; got {rows}"
+        )
+
+        pipeline.stop(force=True)
+    finally:
+        loc.cleanup()
+
+
+def test_delta_input_column_mapping_partitioned_follow(pipeline_name):
+    """Follow a column-mapped table partitioned by ``region``.
+
+    Delta keeps a partition column's value in the log, never in the data file,
+    and under column mapping it keys ``partitionValues`` by the physical
+    (``col-<uuid>``) name. A read that looks the value up by logical name finds
+    no entry, so every commit fails; column mapping also replaces the Hive
+    ``region=<value>`` directory with an opaque prefix, leaving the path with
+    nothing to fall back on.
+    """
+    loc = DeltaTestLocation.create(
+        pipeline_name,
+        mode="snapshot_and_follow",
+        stable_subpath=f"column_mapping_partitioned_{PARTITIONED_FIXTURE_VERSION}",
+    )
+    try:
+        ensure_delta_spark_fixture(loc, _PARTITIONED_FIXTURE_BUILDER)
+
+        pipeline = PipelineBuilder(
+            TEST_CLIENT,
+            pipeline_name,
+            sql=_build_sql(
+                loc,
+                extra_config={"version": 0, "end_version": 1},
+                columns="id BIGINT NOT NULL, full_name VARCHAR, region VARCHAR",
+            ),
+            runtime_config=RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                logging="debug",
+            ),
+        ).create_or_replace()
+        pipeline.start()
+        pipeline.wait_for_completion(force_stop=False, timeout_s=600)
+
+        rows = sorted(
+            (
+                {
+                    "id": r["id"],
+                    "full_name": r["full_name"],
+                    "region": r["region"],
+                }
+                for r in pipeline.query(f"SELECT id, full_name, region FROM {TABLE}")
+            ),
+            key=lambda r: r["id"],
+        )
+        assert rows == PARTITIONED_EXPECTED_ROWS, (
+            "a follow read must reconstruct the partition column from the "
+            f"log action's physical-name key; got {rows}"
         )
 
         pipeline.stop(force=True)

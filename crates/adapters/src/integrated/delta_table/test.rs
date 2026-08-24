@@ -22,6 +22,7 @@ use deltalake::kernel::{DataType, StructField};
 use deltalake::operations::create::CreateBuilder;
 use deltalake::protocol::SaveMode;
 use deltalake::{DeltaTable, DeltaTableBuilder, ensure_table_uri};
+use feldera_adapterlib::errors::controller::ControllerError;
 use feldera_sqllib::Variant;
 use feldera_types::config::PipelineConfig;
 use feldera_types::format::json::JsonFlavor;
@@ -4324,6 +4325,280 @@ async fn run_follow_filter_undeclared_column_test(filter_expr: &str) {
     read_pipeline.stop().unwrap();
 }
 
+/// A Delta table with `arrow_schema`'s columns, partitioned by `partition_columns`.
+async fn create_table_from_arrow(
+    table_uri: &str,
+    arrow_schema: &ArrowSchema,
+    partition_columns: &[&str],
+) -> DeltaTable {
+    let struct_fields: Vec<StructField> = arrow_schema
+        .fields()
+        .iter()
+        .map(|f| {
+            StructField::new(
+                f.name(),
+                DataType::try_from_arrow(f.data_type()).unwrap(),
+                f.is_nullable(),
+            )
+        })
+        .collect();
+
+    CreateBuilder::new()
+        .with_location(table_uri)
+        .with_save_mode(SaveMode::Ignore)
+        .with_columns(struct_fields)
+        .with_partition_columns(partition_columns.iter().copied())
+        .await
+        .unwrap()
+}
+
+/// Start a pipeline whose only input reads `table_uri` with `transport_config`.
+///
+/// The error callback runs on a worker thread, where a panic is swallowed, so
+/// errors go to `errors` for [`wait_or_connector_error`] to report.
+async fn delta_input_controller<T>(
+    table_uri: &str,
+    mut transport_config: Value,
+    relation: &[Field],
+    storage_dir: &Path,
+    errors: &Arc<Mutex<Vec<String>>>,
+) -> Result<Controller, ControllerError>
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+{
+    transport_config["uri"] = table_uri.into();
+    let pipeline_config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "delta_table_input",
+                    "config": transport_config,
+                }
+            }
+        }
+    }))
+    .unwrap();
+
+    let relation = relation.to_vec();
+    let errors = errors.clone();
+    tokio::task::spawn_blocking(move || {
+        Controller::with_test_config(
+            move |workers| Ok(test_circuit::<T>(workers, &relation, &[Some("output")])),
+            &pipeline_config,
+            Box::new(move |e, _| errors.lock().unwrap().push(e.to_string())),
+        )
+    })
+    .await
+    .unwrap()
+}
+
+/// Write `rows` to a table partitioned by `partition_columns` and check that a
+/// follow read gets every column back.
+async fn run_follow_partition_test<T>(relation: &[Field], rows: &[T], partition_columns: &[&str])
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+{
+    init_logging();
+
+    let arrow_schema = ArrowSchema::new(relation_to_arrow_fields(relation, true));
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let table = create_table_from_arrow(&table_uri, &arrow_schema, partition_columns).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let read_pipeline = delta_input_controller::<T>(
+        &table_uri,
+        json!({ "mode": "follow" }),
+        relation,
+        storage_dir.path(),
+        &errors,
+    )
+    .await
+    .unwrap();
+    read_pipeline.start();
+
+    write_data_to_table(table, &arrow_schema, rows).await;
+    wait_or_connector_error(
+        &read_pipeline,
+        &SqlIdentifier::from("test_output1"),
+        rows,
+        &errors,
+    )
+    .await;
+
+    read_pipeline.stop().unwrap();
+}
+
+/// Delta keeps a partition column's value in the file path and the log, never in
+/// the data file, so follow mode must reconstruct it the way the snapshot read
+/// (which delegates to delta-rs) already does.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_follow_partition_column_test() {
+    use crate::test::TestStruct;
+
+    // `s` is the partition column. Its values need escaping in the file path, so
+    // this also covers the encoding round trip: Delta escapes the value into the
+    // directory name and the log stores that name URL-encoded again.
+    let rows: Vec<TestStruct> = (0..6)
+        .map(|id| TestStruct {
+            id,
+            b: false,
+            i: None,
+            s: if id.is_multiple_of(2) {
+                "us east"
+            } else {
+                "us/west"
+            }
+            .to_string(),
+        })
+        .collect();
+
+    run_follow_partition_test(&TestStruct::schema(), &rows, &["s"]).await;
+}
+
+/// A partition value reaches the connector as the string Delta wrote into the
+/// path, so every SQL type Delta can partition on must survive the cast back.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_follow_partition_column_types_test() {
+    // Every scalar type in `DeltaTestStruct` except `binary`: delta-rs writes
+    // such a partition value as literal `\uXXXX` text (the byte 0xFE becomes
+    // six characters), which does not read back as the original bytes.
+    // `unused` is nullable and covers the NULL partition value.
+    const PARTITION_COLUMNS: &[&str] = &[
+        "bigint",
+        "boolean",
+        "date",
+        "decimal_10_3",
+        "double",
+        "float",
+        "int",
+        "smallint",
+        "string",
+        "timestamp_ntz",
+        "tinyint",
+        "unused",
+        "uuid",
+    ];
+
+    let mut rows: Vec<DeltaTestStruct> = (0..2).map(delta_test_record).collect();
+    rows[0].unused = None;
+    rows[1].unused = Some("present".to_string());
+
+    run_follow_partition_test(&DeltaTestStruct::schema(), &rows, PARTITION_COLUMNS).await;
+}
+
+/// CDC mode over a partitioned table: the adds side reads files that span two
+/// partitions, so each file's value must come back with its own rows.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_cdc_partition_column_test() {
+    use crate::test::TestStruct;
+    use arrow::array::{
+        Array, BooleanArray, Int64Array, RecordBatch, StringArray, TimestampMicrosecondArray,
+    };
+    use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, TimeUnit};
+
+    init_logging();
+
+    let expect = |id: u32, s: &str| TestStruct {
+        id,
+        b: false,
+        i: None,
+        s: s.to_string(),
+    };
+
+    // The CDC marker columns are not part of the SQL relation, so the table's
+    // schema is built by hand rather than from `TestStruct::schema()`.
+    let arrow_schema = Arc::new(ArrowSchema::new(vec![
+        ArrowField::new("id", ArrowDataType::Int64, false),
+        ArrowField::new("b", ArrowDataType::Boolean, false),
+        ArrowField::new("s", ArrowDataType::Utf8, false),
+        ArrowField::new("__feldera_op", ArrowDataType::Utf8, false),
+        ArrowField::new(
+            "__feldera_ts",
+            ArrowDataType::Timestamp(TimeUnit::Microsecond, None),
+            false,
+        ),
+    ]));
+
+    // Each tuple is (id, op, ts, s); `s` is the partition column.
+    let make_batch = |rows: &[(i64, &str, i64, &str)]| -> RecordBatch {
+        RecordBatch::try_new(
+            arrow_schema.clone(),
+            vec![
+                Arc::new(Int64Array::from_iter_values(rows.iter().map(|r| r.0))) as Arc<dyn Array>,
+                Arc::new(rows.iter().map(|_| Some(false)).collect::<BooleanArray>()),
+                Arc::new(StringArray::from_iter_values(rows.iter().map(|r| r.3))),
+                Arc::new(StringArray::from_iter_values(rows.iter().map(|r| r.1))),
+                Arc::new(TimestampMicrosecondArray::from_iter_values(
+                    rows.iter().map(|r| r.2),
+                )),
+            ],
+        )
+        .unwrap()
+    };
+
+    async fn append(delta: DeltaTable, batch: RecordBatch) -> DeltaTable {
+        delta
+            .write(vec![batch])
+            .with_save_mode(SaveMode::Append)
+            .await
+            .unwrap()
+    }
+
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let mut delta = create_table_from_arrow(&table_uri, &arrow_schema, &["s"]).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let read_pipeline = delta_input_controller::<TestStruct>(
+        &table_uri,
+        json!({
+            "mode": "cdc",
+            "cdc_delete_filter": "__feldera_op = 'd'",
+            "cdc_order_by": "__feldera_ts asc",
+        }),
+        &TestStruct::schema(),
+        storage_dir.path(),
+        &errors,
+    )
+    .await
+    .unwrap();
+    read_pipeline.start();
+    let output = SqlIdentifier::from("test_output1");
+
+    // One commit, two partitions.
+    delta = append(
+        delta,
+        make_batch(&[(0, "i", 1_000, "a"), (1, "i", 1_000, "b")]),
+    )
+    .await;
+    wait_or_connector_error(
+        &read_pipeline,
+        &output,
+        &[expect(0, "a"), expect(1, "b")],
+        &errors,
+    )
+    .await;
+
+    // Deleting id 0 must match the row ingested from partition "a".
+    let _ = append(delta, make_batch(&[(0, "d", 2_000, "a")])).await;
+    wait_or_connector_error(&read_pipeline, &output, &[expect(1, "b")], &errors).await;
+
+    read_pipeline.stop().unwrap();
+}
+
 /// [`wait_for_records_materialized`], but report a connector error as soon as
 /// one arrives rather than waiting out the materialization timeout.
 async fn wait_or_connector_error<T>(
@@ -4358,6 +4633,43 @@ async fn delta_table_follow_filter_undeclared_column_test() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delta_table_follow_filter_undeclared_struct_field_test() {
     run_follow_filter_undeclared_column_test("meta.tag = 'us'").await;
+}
+
+/// A `filter` that does not parse must fail the connector at startup, not on the
+/// first Delta commit: pure follow mode skipped validation entirely.
+///
+/// The directory holds no Delta table, so reaching it at all would fail with a
+/// different error: validation has to happen before the connector opens it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_follow_invalid_filter_test() {
+    use crate::test::TestStruct;
+
+    init_logging();
+
+    let relation = TestStruct::schema();
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+
+    let storage_dir = TempDir::new().unwrap();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let result = delta_input_controller::<TestStruct>(
+        &table_uri,
+        json!({ "mode": "follow", "filter": "s =" }),
+        &relation,
+        storage_dir.path(),
+        &errors,
+    )
+    .await;
+
+    let error = match result {
+        Ok(_) => panic!("the controller must not start with an invalid filter"),
+        Err(e) => e.to_string(),
+    };
+
+    assert!(
+        error.contains("'filter'"),
+        "expected the error to name 'filter', got: {error}"
+    );
 }
 
 /// Filtering before projecting must not widen the scan: DataFusion's projection

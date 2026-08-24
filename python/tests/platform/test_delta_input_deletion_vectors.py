@@ -55,6 +55,8 @@ FOLLOW_DV_DELETE_INPUT_RECORDS = TOTAL_ROWS + DV_DELETED_ROWS
 FOLLOW_RESTORE_INPUT_RECORDS = EXPECTED_ROWS_AFTER_DV + DV_DELETED_ROWS
 # Bump to invalidate cached MinIO copies when the fixture definition changes.
 FIXTURE_VERSION = "dv_snapshot_v2"
+# Separate fixture: partitioned by `grp`, otherwise the same two commits.
+PARTITIONED_FIXTURE_VERSION = "dv_partitioned_v1"
 # CDC-shaped fixture (see fixtures/deletion_vectors.py --cdc): v0 inserts
 # TOTAL_ROWS events, v1 DV-deletes the even ids, v2 restores them (shrinking
 # the DVs away), v3 appends one event.
@@ -177,6 +179,7 @@ def _ingest_dv_fixture(
     expected_active: int = EXPECTED_ROWS_AFTER_DV,
     cdc: bool = False,
     overwrite: bool = False,
+    partitioned: bool = False,
     columns: str = "id INT NOT NULL, name VARCHAR, value DOUBLE",
     extra_config: dict | None = None,
 ) -> DvIngest:
@@ -185,7 +188,11 @@ def _ingest_dv_fixture(
     Owns the location's lifecycle (create/cleanup); the tests reduce to a
     call plus their assertions. Returns ``_run_to_completion``'s [`DvIngest`].
     """
-    builder_flags = (["--cdc"] if cdc else []) + (["--overwrite"] if overwrite else [])
+    builder_flags = (
+        (["--cdc"] if cdc else [])
+        + (["--overwrite"] if overwrite else [])
+        + (["--partitioned"] if partitioned else [])
+    )
     loc = DeltaTestLocation.create(
         pipeline_name,
         mode=mode,
@@ -247,6 +254,34 @@ def test_delta_input_follow_with_deletion_vectors(pipeline_name):
         f"{FOLLOW_DV_DELETE_INPUT_RECORDS} (snapshot {TOTAL_ROWS} + "
         f"{DV_DELETED_ROWS} deleted). A far larger count means the connector "
         "re-read the whole rewritten file instead of just the DV delta"
+    )
+
+
+def test_delta_input_follow_partitioned_with_dv(pipeline_name):
+    """Follow a DV commit on a partitioned table, filtering on the partition.
+
+    Delta keeps `grp` in the file path and the log, never in the data file, so
+    the DV-masked read has to add it back. The filter names it, so a partition
+    value that came back NULL would drop every row rather than fail loudly.
+    """
+    in_partition = [i for i in range(1, TOTAL_ROWS + 1) if i % 3 == 1]
+    kept = [i for i in in_partition if i % 2]
+    result = _ingest_dv_fixture(
+        pipeline_name,
+        mode="snapshot_and_follow",
+        fixture_version=PARTITIONED_FIXTURE_VERSION,
+        partitioned=True,
+        columns="id INT NOT NULL, name VARCHAR, value DOUBLE, grp VARCHAR",
+        extra_config={"version": 0, "end_version": 1, "filter": "grp = '1'"},
+    )
+    assert result.total == len(kept), (
+        f"expected the {len(kept)} DV survivors in partition '1'; got "
+        f"{result.total}. The snapshot count ({len(in_partition)}) means the "
+        "follow side read the partition column as NULL, so the filter dropped "
+        "its retractions"
+    )
+    assert result.even_id_rows == 0, (
+        "the survivors must be the odd ids, not the deleted even ids"
     )
 
 
