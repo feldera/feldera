@@ -2022,6 +2022,72 @@ fn output_connector_paused_on_startup() {
     check_file_contents(&output2_path, 0..200);
 }
 
+/// Pausing a connector flushes what its output buffer already holds. Those
+/// updates were produced before the pause, so they are still owed to the sink,
+/// and the pipeline's progress counter for the endpoint waits on them.
+///
+/// Nothing else would flush them: a paused connector receives no more output to
+/// grow the buffer past its size limit, and the time limit is not configured
+/// here (nor by default).
+#[test]
+fn output_connector_pause_flushes_the_output_buffer() {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let tempdir_path = tempdir.path();
+    let storage_dir = tempdir_path.join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_path = tempdir_path.join("input.csv");
+    let output1_path = tempdir_path.join("output1.csv");
+    let output2_path = tempdir_path.join("output2.csv");
+    File::create_new(&input_path).unwrap();
+
+    let mut config = output_pause_config(
+        &input_path,
+        &output1_path,
+        &output2_path,
+        &storage_dir,
+        false,
+    );
+    config
+        .outputs
+        .get_mut("test_output1")
+        .unwrap()
+        .connector_config
+        .output_buffer_config
+        .enable_output_buffer = true;
+
+    // The buffered connector holds its output; the unbuffered one shows that
+    // the pipeline produced it.
+    append_input(&input_path, 0..100);
+    let controller = start_output_pause_controller(&config);
+    wait_for_records(&controller, &[0, 100]);
+
+    // Pausing flushes the buffer.
+    controller.pause_output_endpoint("test_output1").unwrap();
+    wait_for_records(&controller, &[100, 100]);
+
+    // Output produced from now on is dropped, and the endpoint keeps up with
+    // the pipeline instead of stalling behind a buffer that never flushes.
+    append_input(&input_path, 100..200);
+    wait_for_records(&controller, &[100, 200]);
+    let processed = controller
+        .status()
+        .global_metrics
+        .num_total_processed_records();
+    wait(
+        || {
+            let paused = output_endpoint_metrics(&controller, "test_output1");
+            paused.total_processed_input_records == processed && paused.buffered_records == 0
+        },
+        10_000,
+    )
+    .unwrap();
+
+    controller.stop().unwrap();
+    check_file_contents(&output1_path, 0..100);
+    check_file_contents(&output2_path, 0..200);
+}
+
 /// An output endpoint that blocks in `push_buffer` until the test releases it,
 /// standing in for a sink that has stopped accepting data.
 struct BlockedOutputEndpoint {
