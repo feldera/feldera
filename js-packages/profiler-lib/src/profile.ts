@@ -77,7 +77,8 @@ interface StatsMetricValue extends MetricValue {
 }
 
 interface MergesMetricValue extends MetricValue {
-    avg_step_time: DurationMetricValue;
+    avg_step_seconds: DurationMetricValue;
+    avg_step_cpu_seconds: DurationMetricValue;
     batches: CountMetricValue;
     merges: CountMetricValue;
     steps: CountMetricValue;
@@ -210,6 +211,24 @@ function formatValue(val: number, base: number, prefixes: Array<string>): string
     return val.toLocaleString('en-US', opts) + prefixes[index];
 }
 
+/** How multiple metric measurements are combined for a node from the children measurements. */
+export enum AggregationMode {
+    /** Magnitudes add: counts, bytes, durations. */
+    Sum,
+    /** sum(numerator) / sum(denominator). */
+    WeightedRatio,
+    /** sum(numerator)/ denominator */
+    CommonDenominator,
+    /** Minimum value */
+    Min,
+    /** Maximum value */
+    Max,
+    /** Boolean OR */
+    Or,
+    /** Common value or "<multiple values>". */
+    CommonValue,
+}
+
 /** Base class for (numeric) property values; representation which abstracts away from the
  * JSON Serialization. */
 export abstract class PropertyValue implements Comparable<PropertyValue> {
@@ -233,12 +252,42 @@ export abstract class PropertyValue implements Comparable<PropertyValue> {
         }
     }
 
+    // A missing value compares below any reading, so it never wins.
     max(other: PropertyValue): PropertyValue {
         if (this.compareTo(other) >= 0) {
             return this;
         } else {
             return other;
         }
+    }
+
+    min(other: PropertyValue): PropertyValue {
+        if (other instanceof MissingValue) {
+            return this;
+        }
+        if (this instanceof MissingValue) {
+            return other;
+        }
+        return this.compareTo(other) <= 0 ? this : other;
+    }
+
+    /** Fold this value with the same metric's value from another node, as specified by `mode`. */
+    aggregate(other: PropertyValue, mode: AggregationMode): PropertyValue {
+        // One metric holds one kind, so folding two kinds is a mistake whichever mode is asked
+        // for.  Each kind checks this for the modes it implements; Min and Max are implemented
+        // here for every kind, and so is their check.
+        const sameKind = other instanceof MissingValue
+            || other.constructor === this.constructor;
+        if (sameKind && this.isComparable()) {
+            if (mode === AggregationMode.Min) {
+                return this.min(other);
+            }
+            if (mode === AggregationMode.Max) {
+                return this.max(other);
+            }
+        }
+        fail("Cannot fold " + this.constructor.name + " with " + other.constructor.name +
+            " using " + AggregationMode[mode]);
     }
 
     toString(): string {
@@ -260,11 +309,12 @@ export abstract class PropertyValue implements Comparable<PropertyValue> {
         return true;
     }
 
-    /** Combine values from multiple operators; the semantics depends on the value kind. */
-    abstract combine(other: PropertyValue): PropertyValue;
+    /** This value multiplied by `factor`.  Used to render a ratio,
+     * e.g. 2000 records over 101 batches as a count of 19.8. */
+    abstract scale(factor: number): PropertyValue;
 
-    /** Average this value and `others` across workers. Distinct from `combine` because the
-     * per-kind semantics differ:
+    /** Average this value and `others` across workers.  Distinct from folding across nodes
+     * (`aggregate`) because the per-kind semantics differ:
      *   - counts/bytes/seconds: arithmetic mean of the underlying numbers.
      *   - percents: arithmetic mean of per-worker percents (not weighted — see PercentValue).
      *   - booleans / enum strings: the most common value across workers (the mode), so the
@@ -314,18 +364,33 @@ export class PercentValue extends PropertyValue {
         return value.toFixed(1) + "%";
     }
 
-    override combine(other: PropertyValue): PropertyValue {
+    override aggregate(other: PropertyValue, mode: AggregationMode): PropertyValue {
         if (other instanceof MissingValue) {
             return this;
         }
         if (other instanceof PercentValue) {
-            if (this.denominator === other.denominator)
-                return new PercentValue(this.numerator + other.numerator, this.denominator);
-            return new PercentValue(
-                this.numerator * other.denominator + other.numerator * this.denominator,
-                this.denominator * other.denominator)
+            switch (mode) {
+                case AggregationMode.WeightedRatio:
+                    return PercentValue.pool(this, other);
+                case AggregationMode.CommonDenominator:
+                    if (this.denominator === other.denominator) {
+                        return new PercentValue(this.numerator + other.numerator, this.denominator);
+                    }
+                    // Nodes that disagree about the total do not divide by a common denominator
+                    // after all; pooling the terms is the reading that stays interpretable.
+                    return this.aggregate(other, AggregationMode.WeightedRatio);
+            }
         }
-        throw new Error("Cannot add PercentValue to " + other);
+        return super.aggregate(other, mode);
+    }
+
+    /** Pool two ratios: pool(a/b, c/d) = (a+c) / (b+d) */
+    private static pool(a: PercentValue, b: PercentValue): PercentValue {
+        return new PercentValue(a.numerator + b.numerator, a.denominator + b.denominator);
+    }
+
+    override scale(factor: number): PropertyValue {
+        return new PercentValue(this.numerator * factor, this.denominator);
     }
 
     // Weighted mean across workers: sum(numerator) / sum(denominator). A worker that observed
@@ -371,14 +436,18 @@ export class CountValue extends PropertyValue {
         return Option.some(this.value);
     }
 
-    override combine(other: PropertyValue): PropertyValue {
+    override aggregate(other: PropertyValue, mode: AggregationMode): PropertyValue {
         if (other instanceof MissingValue) {
             return this;
         }
-        if (other instanceof CountValue) {
+        if (other instanceof CountValue && mode === AggregationMode.Sum) {
             return new CountValue(this.value + other.value);
         }
-        throw new Error("Cannot add CountValue to " + other);
+        return super.aggregate(other, mode);
+    }
+
+    override scale(factor: number): PropertyValue {
+        return new CountValue(this.value * factor);
     }
 
     override average(others: PropertyValue[]): PropertyValue {
@@ -415,14 +484,18 @@ export class BytesValue extends PropertyValue {
         return Option.some(this.value);
     }
 
-    override combine(other: PropertyValue): PropertyValue {
+    override aggregate(other: PropertyValue, mode: AggregationMode): PropertyValue {
         if (other instanceof MissingValue) {
             return this;
         }
-        if (other instanceof BytesValue) {
+        if (other instanceof BytesValue && mode === AggregationMode.Sum) {
             return new BytesValue(this.value + other.value);
         }
-        throw new Error("Cannot add BytesValue to " + other);
+        return super.aggregate(other, mode);
+    }
+
+    override scale(factor: number): PropertyValue {
+        return new BytesValue(this.value * factor);
     }
 
     override average(others: PropertyValue[]): PropertyValue {
@@ -470,14 +543,19 @@ export class BooleanValue extends PropertyValue {
         return this.value ? Option.some(1) : Option.some(0);
     }
 
-    override combine(other: PropertyValue): PropertyValue {
+    override aggregate(other: PropertyValue, mode: AggregationMode): PropertyValue {
         if (other instanceof MissingValue) {
             return this;
         }
-        if (other instanceof BooleanValue) {
+        if (other instanceof BooleanValue && mode === AggregationMode.Or) {
             return new BooleanValue(this.value || other.value);
         }
-        throw new Error("Cannot add BooleanValue to " + other);
+        return super.aggregate(other, mode);
+    }
+
+    // A flag has no magnitude to scale.
+    override scale(_factor: number): PropertyValue {
+        return this;
     }
 
     // The "average" of a set of booleans is the most common value (the mode), so the Avg
@@ -537,17 +615,22 @@ export class StringValue extends PropertyValue {
         return Option.none();
     }
 
-    override combine(other: PropertyValue): PropertyValue {
+    override aggregate(other: PropertyValue, mode: AggregationMode): PropertyValue {
         if (other instanceof MissingValue) {
             return this;
         }
-        if (other instanceof StringValue) {
+        if (other instanceof StringValue && mode === AggregationMode.CommonValue) {
             if (this.value === other.value) {
                 return this;
             }
             return new StringValue("<multiple values>");
         }
-        throw new Error("Cannot add StringValue to " + other);
+        return super.aggregate(other, mode);
+    }
+
+    // A string has no magnitude to scale.
+    override scale(_factor: number): PropertyValue {
+        return this;
     }
 
     // The "average" of a set of enum-like strings is the most common value (the mode), so the
@@ -604,8 +687,14 @@ export class MissingValue extends PropertyValue {
         return Option.none();
     }
 
-    override combine(other: PropertyValue): PropertyValue {
+    // A node that reported nothing contributes nothing, whatever the metric folds like.
+    override aggregate(other: PropertyValue, _mode: AggregationMode): PropertyValue {
         return other;
+    }
+
+    // Nothing to scale; the result is still missing.
+    override scale(_factor: number): PropertyValue {
+        return this;
     }
 
     // If any neighbour is non-missing, delegate to it so the result inherits the right kind;
@@ -640,14 +729,18 @@ export class TimeValue extends PropertyValue {
         return Option.some(this.seconds);
     }
 
-    override combine(other: PropertyValue): PropertyValue {
+    override aggregate(other: PropertyValue, mode: AggregationMode): PropertyValue {
         if (other instanceof MissingValue) {
             return this;
         }
-        if (other instanceof TimeValue) {
+        if (other instanceof TimeValue && mode === AggregationMode.Sum) {
             return new TimeValue(this.seconds + other.seconds);
         }
-        throw new Error("Cannot add TimeValue to " + other);
+        return super.aggregate(other, mode);
+    }
+
+    override scale(factor: number): PropertyValue {
+        return new TimeValue(this.seconds * factor);
     }
 
     override average(others: PropertyValue[]): PropertyValue {
@@ -698,6 +791,71 @@ export class TimeValue extends PropertyValue {
                 String(secs).padStart(2, "0");
         }
         return value.toLocaleString('en-US', { maximumFractionDigits: 2 }) + "s";
+    }
+}
+
+/** An average kept as the two terms it was computed from. */
+export class RatioValue extends PropertyValue {
+    readonly numerator: PropertyValue;
+    readonly denominator: number;
+
+    constructor(numerator: PropertyValue, denominator: any) {
+        super();
+        this.numerator = numerator;
+        this.denominator = enforceNumber(denominator);
+    }
+
+    /** The quotient, as a value of the numerator's kind, so that a ratio of durations reads as a
+     * duration and a ratio of counts as a count. */
+    private quotient(): PropertyValue {
+        // Nothing was observed: read as zero.
+        if (this.denominator === 0) {
+            return this.numerator.scale(0);
+        }
+        return this.numerator.scale(1 / this.denominator);
+    }
+
+    getNumericValue(): Option<number> {
+        return this.quotient().getNumericValue();
+    }
+
+    override toString(): string {
+        return this.quotient().toString();
+    }
+
+    override aggregate(other: PropertyValue, mode: AggregationMode): PropertyValue {
+        if (other instanceof MissingValue) {
+            return this;
+        }
+        if (other instanceof RatioValue && mode === AggregationMode.WeightedRatio) {
+            return RatioValue.pool(this, other);
+        }
+        return super.aggregate(other, mode);
+    }
+
+    /** Pool two ratios pool(a/b, c/d) = (a+c)/(b+d). */
+    private static pool(a: RatioValue, b: RatioValue): RatioValue {
+        return new RatioValue(
+            a.numerator.aggregate(b.numerator, AggregationMode.Sum),
+            a.denominator + b.denominator);
+    }
+
+    // Weighted mean
+    override average(others: PropertyValue[]): PropertyValue {
+        // `this` is a ratio, so there is always something to average.
+        let numerator: PropertyValue = MissingValue.INSTANCE;
+        let denominator = 0;
+        for (const v of [this, ...others]) {
+            if (v instanceof RatioValue) {
+                numerator = numerator.aggregate(v.numerator, AggregationMode.Sum);
+                denominator += v.denominator;
+            }
+        }
+        return new RatioValue(numerator, denominator);
+    }
+
+    override scale(factor: number): PropertyValue {
+        return new RatioValue(this.numerator.scale(factor), this.denominator);
     }
 }
 
@@ -858,18 +1016,44 @@ export function measurementDescription(prop: string): { description: string, adv
     return { description: "", advanced: false };
 }
 
+/** A parsed legacy value together with the way its metric folds over a region.
+ * TODO: remove together with the rest of the legacy parsing path. */
+interface LegacyReading {
+    readonly value: PropertyValue;
+    readonly aggregation: AggregationMode;
+}
+
 // Decoded measurement value.
 export class Measurement {
+    /** Metric holding a node's part of the circuit's runtime: the profile divides every node's
+     * runtime by the same circuit-wide total.  Named "time%" in legacy profiles. */
+    public static readonly RUNTIME_PERCENT = "runtime_percent";
+
+    /** Metric holding the circuit's elapsed wall-clock time, which the profile reports again
+     * for every node and every worker.  Named "runtime_elapsed" in legacy profiles. */
+    public static readonly RUNTIME_ELAPSED = "circuit_runtime_elapsed_seconds";
+
     constructor(
         readonly property: string,
-        readonly value: Option<PropertyValue>) { };
+        readonly value: Option<PropertyValue>,
+        /** How the metric folds over the nodes of a region.  Stated where the measurement is
+         * parsed, since that is where the meaning of the metric is known. */
+        readonly aggregation: AggregationMode) { };
 
     public static fromJson(prefix: string, json: JsonMeasurement): Measurement {
         let name = prefix + (json[0] as string);
+        const reading = Measurement.parseLegacyPropertyValue(name, json.slice(1));
         return new Measurement(
             name,
-            Measurement.parseLegacyPropertyValue(name, json.slice(1))
+            reading.map(r => r.value),
+            // A value that did not parse is dropped, so its mode is never used.
+            reading.map(r => r.aggregation).unwrapOr(AggregationMode.Sum)
         );
+    }
+
+    private static tagged(value: PropertyValue, aggregation: AggregationMode):
+        Option<LegacyReading> {
+        return Option.some({ value, aggregation });
     }
 
     toString(): string {
@@ -889,17 +1073,17 @@ export class Measurement {
             case "bool": {
                 let m = metric.value as BoolMetricValue;
                 let value = BooleanValue.fromBoolMetric(m);
-                return [new Measurement(metric_id, Option.some(value))];
+                return [new Measurement(metric_id, Option.some(value), AggregationMode.Or)];
             }
             case "bytes": {
                 let m = metric.value as BytesMetricValue;
                 let bytes = BytesValue.fromBytesMetric(m);
-                return [new Measurement(metric_id, Option.some(bytes))];
+                return [new Measurement(metric_id, Option.some(bytes), AggregationMode.Sum)];
             }
             case "count": {
                 let m = metric.value as CountMetricValue;
                 let count = CountValue.fromCountMetric(m);
-                return [new Measurement(metric_id, Option.some(count))];
+                return [new Measurement(metric_id, Option.some(count), AggregationMode.Sum)];
             }
             case "hits":
             case "misses": {
@@ -907,38 +1091,44 @@ export class Measurement {
                 let count = new CountValue(s.value.count);
                 let bytes = new BytesValue(s.value.bytes);
                 let elapsed = TimeValue.fromSecondsNanos(s.value.elapsed.secs, s.value.elapsed.nanos);
-                let avg_latency = new TimeValue(count.value === 0 ? 0 : elapsed.seconds / count.value);
+                // Kept as elapsed/count so that a region's latency weighs each node by the
+                // number of accesses it served.
+                let avg_latency = new RatioValue(elapsed, count.value);
                 return [
-                    new Measurement(metric_id + ".count", Option.some(count)),
-                    new Measurement(metric_id + ".bytes", Option.some(bytes)),
-                    new Measurement(metric_id + ".elapsed", Option.some(elapsed)),
-                    new Measurement(metric_id + ".avg_latency", Option.some(avg_latency))
+                    new Measurement(metric_id + ".count", Option.some(count), AggregationMode.Sum),
+                    new Measurement(metric_id + ".bytes", Option.some(bytes), AggregationMode.Sum),
+                    new Measurement(metric_id + ".elapsed", Option.some(elapsed), AggregationMode.Sum),
+                    new Measurement(metric_id + ".avg_latency", Option.some(avg_latency), AggregationMode.WeightedRatio)
                 ];
             }
             case "stats": {
                 let s = metric.value as StatsMetricValue;
                 let count = CountValue.fromCountMetric(s.batches_count);
-                let avg_size = CountValue.fromCountMetric(s.avg_records_count);
                 let max_size = CountValue.fromCountMetric(s.max_records_count);
                 let min_size = CountValue.fromCountMetric(s.min_records_count);
                 let record_count = CountValue.fromCountMetric(s.total_records_count);
+                // The profile reports the average too, but as records/batches we can aggregate it correctly
+                let avg_size = new RatioValue(record_count, count.value);
                 return [
-                    new Measurement(metric_id + ".count", Option.some(count)),
-                    new Measurement(metric_id + ".avg_size", Option.some(avg_size)),
-                    new Measurement(metric_id + ".max_size", Option.some(max_size)),
-                    new Measurement(metric_id + ".min_size", Option.some(min_size)),
-                    new Measurement(metric_id + ".record_count", Option.some(record_count))
+                    new Measurement(metric_id + ".count", Option.some(count), AggregationMode.Sum),
+                    new Measurement(metric_id + ".avg_size", Option.some(avg_size), AggregationMode.WeightedRatio),
+                    new Measurement(metric_id + ".max_size", Option.some(max_size), AggregationMode.Max),
+                    new Measurement(metric_id + ".min_size", Option.some(min_size), AggregationMode.Min),
+                    new Measurement(metric_id + ".record_count", Option.some(record_count), AggregationMode.Sum)
                 ];
             }
             case "id": { // persistent_id
                 let s = metric.value as StringMetricValue;
                 let str = StringValue.fromString(s.value);
-                return [new Measurement(metric_id, Option.some(str))];
+                return [new Measurement(metric_id, Option.some(str), AggregationMode.CommonValue)];
             }
             case "percent": {
                 let s = metric.value as PercentMetricValue;
                 let perc = PercentValue.fromPercentMetric(s);
-                return [new Measurement(metric_id, Option.some(perc))];
+                const mode = metric.metric_id === Measurement.RUNTIME_PERCENT
+                    ? AggregationMode.CommonDenominator
+                    : AggregationMode.WeightedRatio;
+                return [new Measurement(metric_id, Option.some(perc), mode)];
             }
             case "seconds": {
                 if (metric.value === undefined) {
@@ -946,15 +1136,21 @@ export class Measurement {
                 }
                 let s = metric.value as DurationMetricValue;
                 let duration = TimeValue.fromDurationMetric(s);
-                return [new Measurement(metric_id, Option.some(duration))];
+                // Durations measure a node's own work on a worker's thread and add up, except
+                // for the circuit's elapsed time, which is one wall clock the profile repeats
+                // for every node and worker.
+                const mode = metric.metric_id === Measurement.RUNTIME_ELAPSED
+                    ? AggregationMode.Max
+                    : AggregationMode.Sum;
+                return [new Measurement(metric_id, Option.some(duration), mode)];
             }
             case "occupancy": {
                 let s = metric.value as OccupancyValue;
                 let max = BytesValue.fromBytesMetric(s.max);
                 let used = BytesValue.fromBytesMetric(s.used);
                 return [
-                    new Measurement(metric_id + ".max", Option.some(max)),
-                    new Measurement(metric_id + ".used", Option.some(used))
+                    new Measurement(metric_id + ".max", Option.some(max), AggregationMode.Max),
+                    new Measurement(metric_id + ".used", Option.some(used), AggregationMode.Max)
                 ];
             }
             case "bounds": {
@@ -976,7 +1172,8 @@ export class Measurement {
                 }
                 if (object.length !== 0) {
                     let str = object.join();
-                    result.push(new Measurement(metric_id + ".key_bounds", Option.some(new StringValue(str))));
+                    result.push(new Measurement(metric_id + ".key_bounds",
+                        Option.some(new StringValue(str)), AggregationMode.CommonValue));
                 }
 
                 object = [];
@@ -994,33 +1191,43 @@ export class Measurement {
                 }
                 if (object.length !== 0) {
                     let str = object.join();
-                    result.push(new Measurement(metric_id + ".value_bounds", Option.some(new StringValue(str))));
+                    result.push(new Measurement(metric_id + ".value_bounds",
+                        Option.some(new StringValue(str)), AggregationMode.CommonValue));
                 }
 
                 return result;
             }
             case "merges": {
                 let s = metric.value as MergesMetricValue;
-                let avg_step_time = undefined;
-                let result = [];
-                if (s.avg_step_time !== undefined) {
-                    avg_step_time = TimeValue.fromDurationMetric(s.avg_step_time);
-                    result.push(new Measurement(metric_id + ".avg_step_time", Option.some(avg_step_time)));
-                }
                 let batches = CountValue.fromCountMetric(s.batches);
                 let merges = CountValue.fromCountMetric(s.merges);
                 let steps = CountValue.fromCountMetric(s.steps);
+                let result = [];
+                // The profile reports the per-step averages already divided, so multiplying by
+                // the step count recovers the totals; a region then weighs each node by the
+                // steps it took.
+                for (const [field, average] of [
+                    ["avg_step_seconds", s.avg_step_seconds],
+                    ["avg_step_cpu_seconds", s.avg_step_cpu_seconds]] as const) {
+                    if (average === undefined) {
+                        continue;
+                    }
+                    const total = TimeValue.fromDurationMetric(average).scale(steps.value);
+                    result.push(new Measurement(metric_id + "." + field,
+                        Option.some(new RatioValue(total, steps.value)),
+                        AggregationMode.WeightedRatio));
+                }
                 result.push(
-                    new Measurement(metric_id + ".batches", Option.some(batches)),
-                    new Measurement(metric_id + ".merges", Option.some(merges)),
-                    new Measurement(metric_id + ".steps", Option.some(steps)),
+                    new Measurement(metric_id + ".batches", Option.some(batches), AggregationMode.Sum),
+                    new Measurement(metric_id + ".merges", Option.some(merges), AggregationMode.Sum),
+                    new Measurement(metric_id + ".steps", Option.some(steps), AggregationMode.Sum),
                 );
                 return result;
             }
             case "policy": {
                 let s = metric.value as StringMetricValue;
                 let str = StringValue.fromString(s.value);
-                return [new Measurement(metric_id, Option.some(str))];
+                return [new Measurement(metric_id, Option.some(str), AggregationMode.CommonValue)];
             }
         }
         return [];
@@ -1041,7 +1248,10 @@ export class Measurement {
                 }
                 let entries = value[0].entries;
                 for (const e of entries) {
-                    result.push(Measurement.fromJson(prefix + ".", e));
+                    // A slash, which is how these metrics are spelled in
+                    // `parseLegacyPropertyValue` and in `legacyMeasurementCategory`.  A dot
+                    // here left every one of them unparsed and uncategorized.
+                    result.push(Measurement.fromJson(prefix + "/", e));
                 }
                 break;
             case "foreground cache misses":
@@ -1049,15 +1259,12 @@ export class Measurement {
             case "background cache misses":
             case "background cache hits":
                 let count = value[0].count;
-                result.push(
-                    new Measurement(prefix + ".count", Option.some(new CountValue(count))));
+                result.push(new Measurement(prefix + ".count", Option.some(new CountValue(count)), AggregationMode.Sum));
                 let bytes = value[0].bytes;
-                result.push(
-                    new Measurement(prefix + ".bytes", Option.some(new CountValue(bytes))));
+                result.push(new Measurement(prefix + ".bytes", Option.some(new CountValue(bytes)), AggregationMode.Sum));
                 let elapsed = value[0].elapsed;
-                result.push(
-                    new Measurement(prefix + ".elapsed", Option.some(TimeValue.fromSecondsNanos(
-                        elapsed.secs, elapsed.nanos))));
+                result.push(new Measurement(prefix + ".elapsed",
+                    Option.some(TimeValue.fromSecondsNanos(elapsed.secs, elapsed.nanos)), AggregationMode.Sum));
                 break;
             default:
                 result.push(Measurement.fromJson("", json));
@@ -1068,15 +1275,32 @@ export class Measurement {
 
     static unknownProperties: Set<string> = new Set();
 
-    private static parseLegacyPropertyValue(prop: string, value: Array<any>): Option<PropertyValue> {
+    private static parseLegacyPropertyValue(prop: string, value: Array<any>): Option<LegacyReading> {
         switch (prop) {
             case "time%":
+                // Every node divides its own runtime by the same circuit-wide total.
+                return Measurement.tagged(new PercentValue(value[0][0], value[0][1]),
+                    AggregationMode.CommonDenominator);
             case "merge reduction":
             case "output redundancy":
             case "background cache hit rate":
             case "foreground cache hit rate":
             case "Bloom filter hit rate":
-                return Option.some(new PercentValue(value[0][0], value[0][1]));
+                return Measurement.tagged(new PercentValue(value[0][0], value[0][1]),
+                    AggregationMode.WeightedRatio);
+            case "input batches/avg size":
+            case "output batches/avg size":
+                // The legacy format reports the average pre-divided and does not say over how
+                // many batches, so each node counts once: a region reads as the mean of the
+                // averages of the nodes it contains.
+                return Measurement.tagged(new RatioValue(new CountValue(value[0]), 1),
+                    AggregationMode.WeightedRatio);
+            case "input batches/min size":
+            case "output batches/min size":
+                return Measurement.tagged(new CountValue(value[0]), AggregationMode.Min);
+            case "input batches/max size":
+            case "output batches/max size":
+                return Measurement.tagged(new CountValue(value[0]), AggregationMode.Max);
             case "Bloom filter size":
             case "Bloom filter bits/key":
             case "Bloom filter hits":
@@ -1097,30 +1321,29 @@ export class Measurement {
             case "inputs":
             case "steps":
             case "input batches/batches":
-            case "input batches/min size":
-            case "input batches/max size":
-            case "input batches/avg size":
             case "input batches/total records":
             case "output batches/batches":
-            case "output batches/min size":
-            case "output batches/max size":
-            case "output batches/avg size":
             case "output batches/total records":
             case "integral records to repartition":
             case "rebalancings":
             case "local shard size":
             case "accumulator records to repartition":
-                return Option.some(new CountValue(value[0]));
+                return Measurement.tagged(new CountValue(value[0]), AggregationMode.Sum);
+            case "runtime_elapsed":
+                // The legacy name of Measurement.RUNTIME_ELAPSED: one wall clock, repeated.
+                return Measurement.tagged(
+                    TimeValue.fromSecondsNanos(value[0].secs, value[0].nanos),
+                    AggregationMode.Max);
             case "wait_time":
             case "exchange_wait_time":
             case "merge backpressure wait":
             case "time":
             case "total_idle_time":
-            case "runtime_elapsed":
             case "total_runtime":
             case "total rebalancing time":
             case "in-progress rebalancing time":
-                return Option.some(TimeValue.fromSecondsNanos(value[0].secs, value[0].nanos));
+                return Measurement.tagged(
+                    TimeValue.fromSecondsNanos(value[0].secs, value[0].nanos), AggregationMode.Sum);
             case "persistent_id":
             case "foreground cache occupancy":
             case "background cache occupancy":
@@ -1141,9 +1364,9 @@ export class Measurement {
             case "slot 3 merging":
             case "slot 4 merging":
             case "balancer.policy":
-                return Option.some(new StringValue(value[0]));
+                return Measurement.tagged(new StringValue(value[0]), AggregationMode.CommonValue);
             case "rebalancing in progress":
-                return Option.some(new BooleanValue(value[0]));
+                return Measurement.tagged(new BooleanValue(value[0]), AggregationMode.Or);
             case "bounds":
             case "mir_node":
             case "key distribution":
@@ -1175,6 +1398,8 @@ export class NodeAndMetric {
  * Only stores numeric values! */
 class Measurements {
     readonly measurements: OMap<string, Array<PropertyValue>> = new OMap();
+    // How each metric folds over the nodes of a region; see `append`.
+    private readonly aggregations: OMap<string, AggregationMode> = new OMap();
 
     constructor(private worker_count: number) { }
 
@@ -1183,6 +1408,7 @@ class Measurements {
         if (m.property === "persistent_id") {
             return;
         }
+        this.aggregations.set(m.property, m.aggregation);
         let meas = this.measurements.get(m.property);
         let arr: Array<PropertyValue>;
         if (meas.isNone()) {
@@ -1206,20 +1432,33 @@ class Measurements {
         return result;
     }
 
+    /** How the metric named `key` is aggregated, if this set holds a reading for it. */
+    aggregationFor(key: string): Option<AggregationMode> {
+        return this.aggregations.get(key);
+    }
+
+    /** How the metric named `key` is aggregated. */
+    private aggregationOf(key: string): AggregationMode {
+        const mode = this.aggregationFor(key);
+        if (mode.isNone()) {
+            fail("No aggregation mode recorded for metric " + key);
+        }
+        return mode.unwrap();
+    }
+
+    /** Add all of `other`'s values to this set. */
     append(other: Measurements) {
         for (const [key, values] of other.measurements.entries()) {
             let existing = this.measurements.get(key);
             if (existing.isNone()) {
                 this.measurements.set(key, [...values]);
+                this.aggregations.set(key, other.aggregationOf(key));
             } else {
                 let arr = existing.unwrap();
                 assert(arr.length === values.length, "Mismatched measurement lengths");
+                const mode = this.aggregationOf(key);
                 for (let i = 0; i < values.length; i++) {
-                    if (key.includes("avg") || key.includes("min") || key.includes("percent") || key.includes("max"))
-                        // Heuristic
-                        arr[i] = arr[i]!.max(values[i]!);
-                    else
-                        arr[i] = arr[i]!.combine(values[i]!);
+                    arr[i] = arr[i]!.aggregate(values[i]!, mode);
                 }
             }
         }
@@ -1270,6 +1509,22 @@ export class SimpleNode implements JsonSimpleCircuitNode {
 
     getMeasurements(property: string): Array<PropertyValue> {
         return this.measurements.measurements.get(property).unwrapOr([]);
+    }
+
+    /** The metric's readings from `values` added up, for metrics that add up: counts, byte
+     * sizes and durations.  None for the others -- a total of ratios, of minima, of maxima, of
+     * flags or of settings states nothing.  `values` are this node's readings for the workers
+     * the caller is showing, so the total covers the same workers as the display. */
+    totalOf(property: string, values: Array<PropertyValue>): Option<PropertyValue> {
+        const mode = this.measurements.aggregationFor(property);
+        if (mode.isNone() || mode.unwrap() !== AggregationMode.Sum) {
+            return Option.none();
+        }
+        let total: PropertyValue = MissingValue.INSTANCE;
+        for (const value of values) {
+            total = total.aggregate(value, AggregationMode.Sum);
+        }
+        return total instanceof MissingValue ? Option.none() : Option.some(total);
     }
 
     // Add all the values from `measurements` into this node's measurements.
@@ -1425,6 +1680,54 @@ export class CircuitProfile {
             }
         }
         return Option.none();
+    }
+
+    /** The given nodes ranked by `metric`, largest first.
+     * A node is judged by the metric's total over its workers where the metric adds up, and by
+     * its largest worker reading otherwise: a node busy on every worker outranks one busy on a
+     * single worker, which ranking by the largest reading alone cannot express.  Nodes with no
+     * reading for the metric are left out. */
+    rankNodes(metric: string, nodes: Array<{ id: NodeId, label: string }>): Array<NodeAndMetric> {
+        // The range to normalize against depends on which of the two measures was used, which is
+        // only known once every node has been visited, so collect the readings first.
+        let ranked: Array<{ id: NodeId, label: string, value: PropertyValue, numeric: number }> = [];
+        let usedTotals = false;
+        for (const node of nodes) {
+            const profileNode = this.getNode(node.id);
+            if (profileNode.isNone()) { continue; }
+            const values = profileNode.unwrap().getMeasurements(metric);
+            const total = profileNode.unwrap().totalOf(metric, values);
+            let chosen: PropertyValue | null = null;
+            let numeric: number | null = null;
+            if (total.isSome()) {
+                usedTotals = true;
+                chosen = total.unwrap();
+                numeric = chosen.getNumericValue().unwrapOr(0);
+            } else {
+                for (const value of values) {
+                    const num = value.getNumericValue();
+                    if (num.isNone()) { continue; }
+                    if (numeric === null || num.unwrap() > numeric) {
+                        numeric = num.unwrap();
+                        chosen = value;
+                    }
+                }
+            }
+            if (numeric === null) { continue; }
+            ranked.push({ id: node.id, label: node.label, value: chosen!, numeric });
+        }
+        // A total is larger than any single worker's reading, so it does not belong to the
+        // metric's per-worker range; totals are placed against each other instead.
+        const range = usedTotals
+            ? NumericRange.getRange(ranked.map(r => r.numeric))
+            : this.propertyRange(metric);
+        if (range.isEmpty()) {
+            return [];
+        }
+        const result = ranked.map(r => new NodeAndMetric(
+            r.id, r.value.toString(), r.label, range.isPoint() ? 0 : range.percents(r.numeric)));
+        result.sort((a, b) => b.normalizedValue - a.normalizedValue);
+        return result;
     }
 
     // Get the topmost parent of a node which is not the toplevel graph node.

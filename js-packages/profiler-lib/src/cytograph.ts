@@ -32,7 +32,9 @@ class MeasurementMatrix {
         // Order that the metrics should be displayed in
         readonly metricOrder: Array<string>,
         // Keys are measurement names, arrays contain one element per column name.
-        readonly attributes: Map<string, Array<SerializedMeasurement>>) {
+        readonly attributes: Map<string, Array<SerializedMeasurement>>,
+        // Values added up over the columns, for the metrics that add up.
+        readonly totals: Map<string, PropertyValue> = new Map()) {
         for (const a of attributes.entries()) {
             assert(columnNames.length == a[1].length,
                 "Measurement count mismatch for '" + a[0] + "':" + columnNames.length + " vs " + a.length);
@@ -245,40 +247,10 @@ export class Cytograph {
 
     /** Given a metric, return the displayed nodes that have the top values for the metric. */
     topNodes(profile: CircuitProfile, metric: string): Array<NodeAndMetric> {
-        let result: Array<NodeAndMetric> = [];
-        let range = profile.propertyRange(metric);
-        if (range.isEmpty()) {
-            return result;
-        }
-        for (const node of this.nodes) {
-            if (node.expanded) { continue; }
-            let id = node.getId();
-            let profileNode = profile.getNode(id);
-            if (profileNode.isNone()) { continue; }
-            let values = profileNode.unwrap().getMeasurements(metric);
-            let maxValue: number | null = null;
-            let max: PropertyValue | null = null;
-            for (const pv of values) {
-                const num = pv.getNumericValue();
-                if (num.isNone()) { continue; }
-                if (maxValue === null) {
-                    maxValue = num.unwrap();
-                    max = pv;
-                } else if (num.unwrap() > maxValue) {
-                    maxValue = num.unwrap();
-                    max = pv;
-                }
-            }
-            if (maxValue === null) { continue; }
-            let normalized = range.percents(maxValue);
-            if (range.isPoint()) {
-                normalized = 0;
-            }
-            result.push(new NodeAndMetric(id, max!.toString(), node.label, normalized));
-        }
-        // Sort in decreasing order
-        result.sort((a, b) => b.normalizedValue - a.normalizedValue);
-        return result;
+        const displayed = this.nodes
+            .filter(node => !node.expanded)
+            .map(node => ({ id: node.getId(), label: node.label }));
+        return profile.rankNodes(metric, displayed);
     }
 
     // Create a Cytograph from a CircuitProfile filtered by the specified selection.
@@ -691,6 +663,7 @@ export class CytographRendering {
         for (const node of this.currentGraph!.nodes) {
             let profileNode = profile.getNode(node.getId()).unwrap();
             let data = new Map<string, Array<SerializedMeasurement>>();
+            let totals = new Map<string, PropertyValue>();
             // Select just the visible metrics
             // Compute per-worker attributes
             for (let metric of profileNode.measurements.getMetrics()) {
@@ -702,6 +675,11 @@ export class CytographRendering {
                     measurements.push(CytographRendering.toMeasurement(m, range));
                 }
                 data.set(metric, measurements);
+                // Over the same workers the cells show, so the total matches what is displayed.
+                let total = profileNode.totalOf(metric, selected);
+                if (total.isSome()) {
+                    totals.set(metric, total.unwrap());
+                }
             }
             // additional key-value per node attributes
             let kv = new Map();
@@ -716,7 +694,8 @@ export class CytographRendering {
                 const p = parent.unwrap();
                 kv.set("parent", p);
             }
-            let matrix = new MeasurementMatrix(columnNames, [...profileNode.measurements.getMetrics()], data);
+            let matrix = new MeasurementMatrix(
+                columnNames, [...profileNode.measurements.getMetrics()], data, totals);
             let attributes = new Attributes(matrix, kv);
             let rendered = this.getRenderedNode(node.getId());
             rendered.data("expanded", node.expanded);
@@ -1060,7 +1039,8 @@ export class CytographRendering {
                 tooltipData.rows.push({
                     metric: key,
                     isCurrentMetric: key === this.getCurrentMetric(),
-                    cells
+                    cells,
+                    total: attributes.matrix.totals.get(key)
                 });
             }
         }

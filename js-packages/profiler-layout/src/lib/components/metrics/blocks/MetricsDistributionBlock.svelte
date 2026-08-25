@@ -34,13 +34,14 @@
 <div class="metrics-block rounded-container bg-white-dark px-4 py-2 shadow-sm" data-block-id={id}>
   <div class="scrollbar overflow-x-auto overflow-y-visible">
   <div
-    class="grid min-w-96 items-baseline gap-x-3 gap-y-0 pb-2"
-    style="grid-template-columns: minmax(8rem, 1fr) 4rem 4rem 4rem 4.5rem;"
+    class="grid min-w-120 items-baseline gap-x-3 gap-y-0 pb-2"
+    style="grid-template-columns: minmax(8rem, 1fr) 4rem 4rem 4rem 4.5rem 4.5rem;"
   >
-    <!-- Header row: title + Avg / Min / Max headers. The rightmost (skew) column has no header
-         so the right edge is reserved for the per-row skew toggle. Sticky so it stays visible
-         while the block's rows scroll. The negative top/horizontal margins + padding extend
-         the white background out to cover the card's own padding when sticking. -->
+    <!-- Header row: title + Avg / Min / Max / Total headers. Total is blank for metrics that cannot
+         be added. The rightmost (skew) column has no header so the right edge is reserved for
+         the per-row skew toggle. Sticky so it stays visible while the block's rows scroll. The
+         negative top/horizontal margins + padding extend the white background out to cover the
+         card's own padding when sticking. -->
     {#if title}
       <h3 class={`${blockHeader} bg-white-dark text-base font-semibold text-surface-900-100`}>{title}</h3>
     {:else}
@@ -49,6 +50,7 @@
     <div class={`${blockHeader} bg-white-dark text-right font-medium`}>Avg</div>
     <div class={`${blockHeader} bg-white-dark text-right font-medium`}>Min</div>
     <div class={`${blockHeader} bg-white-dark text-right font-medium`}>Max</div>
+    <div class={`${blockHeader} bg-white-dark text-right font-medium`}>Total</div>
     <div class={`${blockHeader} bg-white-dark`}></div>
 
     {#each entries as entry, i (i)}
@@ -56,6 +58,7 @@
         label={entry.label}
         metricId={entry.row.metric}
         cells={entry.row.cells}
+        total={entry.row.total}
         expanded={isExpanded(entry)}
         onToggle={() => toggle(entry)}
       />
