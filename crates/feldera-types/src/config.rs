@@ -1807,6 +1807,13 @@ pub struct ConnectorConfig {
 
     /// Create connector in paused state.
     ///
+    /// A paused input connector does not fetch data from its source. A paused
+    /// output connector discards the output it receives instead of sending it
+    /// to its sink.
+    ///
+    /// A connector is started at runtime with the `start` action of the
+    /// connector API and paused again with `pause`.
+    ///
     /// The default is `false`.
     #[serde(default)]
     pub paused: bool,
