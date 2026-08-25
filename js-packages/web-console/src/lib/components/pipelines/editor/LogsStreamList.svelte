@@ -1,11 +1,5 @@
 <script lang="ts">
-  import {
-    type CopySlice,
-    emptySearchState,
-    LogList,
-    type SearchState,
-    sliceLinesForCopy
-  } from 'common-ui'
+  import { emptySearchState, LogView, type SearchState } from 'common-ui'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
   import { humanSize } from '$lib/functions/common/string'
 
@@ -18,23 +12,18 @@
     logs: { rows: string[]; totalSkippedBytes: number; firstRowIndex: number }
     /** Current search state (see {@link SearchState}), advanced by the host. */
     search?: SearchState
-    /** Forwarded to {@link LogList}; fires when stick-to-bottom toggles. */
+    /** Forwarded to {@link LogView}; fires when stick-to-bottom toggles. */
     onStickToBottomChange?: (stickToBottom: boolean) => void
-    /** Forwarded to {@link LogList}; reports the current search match count. */
+    /** Forwarded to {@link LogView}; reports the current search match count. */
     onMatchCountChange?: (count: number) => void
   } = $props()
-
-  const getCopyContent = (slice: CopySlice) =>
-    // Manager rows already carry trailing newlines; join with '' so copy doesn't double them.
-    sliceLinesForCopy(logs.rows, slice, '')
 </script>
 
-<LogList
+<LogView
   lines={logs.rows}
   firstLineIndex={logs.firstRowIndex}
   {search}
   streaming
-  {getCopyContent}
   {onStickToBottomChange}
   {onMatchCountChange}
   class="bg-white-dark rounded pl-2"
@@ -48,4 +37,4 @@
       </WarningBanner>
     {/if}
   {/snippet}
-</LogList>
+</LogView>

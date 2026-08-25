@@ -3,9 +3,9 @@
     advanceSearch,
     countOccurrences,
     emptySearchState,
-    LogList,
-    type SearchState,
-    positiveMod
+    LogView,
+    positiveMod,
+    type SearchState
   } from 'common-ui'
   import type { LookupCoordinator } from '../functions/lookup'
 
@@ -23,10 +23,10 @@
 
   // SearchState lives here so any host that uses BundleLogsView
   // gets the search-on-tab behaviour through LookupCoordinator.
-  // LogList is purely the renderer; it accepts the state as a prop.
+  // LogView is purely the renderer; it accepts the state as a prop.
   let search: SearchState = $state(emptySearchState)
 
-  // LogList expects pre-split lines — the bundle view's source is a single string blob.
+  // LogView expects pre-split lines — the bundle view's source is a single string blob.
   const lines = $derived(logText ? logText.split('\n') : [])
 
   $effect(() => {
@@ -48,5 +48,5 @@
     No logs available in this bundle
   </div>
 {:else}
-  <LogList {lines} {search} showLineNumbers class="bg-white-dark rounded" />
+  <LogView {lines} {search} showLineNumbers class="bg-white-dark rounded" />
 {/if}

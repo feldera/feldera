@@ -39,7 +39,7 @@
   import SqlColumnHeader from '$lib/components/relationData/SQLColumnHeader.svelte'
   import { usePopoverTooltip } from '$lib/compositions/common/usePopoverTooltip.svelte'
   import List from '$lib/components/common/virtualList/HeadlessVirtualList.svelte'
-  import { ScrollDownFab, selectScope, useReverseScrollContainer } from 'common-ui'
+  import { ScrollDownFab, selectScope, useStickToBottom } from 'common-ui'
   import type { Snippet } from '$lib/types/svelte'
   import type { UIEventHandler } from 'svelte/elements'
   import { Progress } from '@skeletonlabs/skeleton-svelte'
@@ -86,7 +86,7 @@
   $effect(() => {
     rows = result?.rows() ?? []
   })
-  const reverseScroll = useReverseScrollContainer({ observeContentSize: () => rows.length })
+  const stickToBottom = useStickToBottom({ observeSize: () => rows.length })
 </script>
 
 <SQLValueTooltip bind:popupRef tooltipData={tooltip.data}></SQLValueTooltip>
@@ -177,7 +177,7 @@
               }}
               <div
                 class="relative scrollbar h-full max-h-64 w-fit max-w-full overflow-auto rounded pb-3"
-                use:reverseScroll.action
+                use:stickToBottom.action
                 {onscroll}
                 bind:clientHeight={_.clientHeight}
               >
@@ -257,7 +257,7 @@
                 {/snippet}
               </List>
             {/if}
-            <ScrollDownFab class="mr-7" {reverseScroll}></ScrollDownFab>
+            <ScrollDownFab class="mr-7" {stickToBottom}></ScrollDownFab>
             <ClipboardCopyButton class="-mr-4 mb-4" value={() => tableToCSJV(result)}
             ></ClipboardCopyButton>
           </div>
