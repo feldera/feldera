@@ -1,6 +1,6 @@
 // A cytograph is a graph representation suitable for the cytoscape graph layout and rendering tool
 
-import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeDefinition, type NodeSingular, type StylesheetJson } from 'cytoscape';
+import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeDefinition, type NodeSingular } from 'cytoscape';
 import dblclick from 'cytoscape-dblclick';
 import { assert, Graph, OMap, Option, type EncodableAsString, NumericRange, Edge } from './util.js';
 import { categoryShares, CircuitProfile, ComplexNode, NodeAndMetric, PropertyValue, totalShare, type DisplayScales, type NodeId } from './profile.js';
@@ -12,6 +12,9 @@ import { ViewNavigator } from './navigator.js';
 import { ZSet } from "./zset.js";
 import { MetadataSelection } from './metadataSelection.js';
 import { type NodeAttributes, type TooltipCell, type ProfilerCallbacks } from './profiler.js';
+import { buildGraphStyle, type DiagramTheme, labelWidth } from './diagramTheme.js';
+import { nodeChips } from './chips.js';
+import { elkNodeLayoutOptions, regionMinWidth } from './regionSize.js';
 
 /** A measurement together with a normalized [0, 100] percentile for color scaling. The original
  * `PropertyValue` is preserved so consumers can format on demand (via `.toString()`) or compute
@@ -90,7 +93,9 @@ class GraphNode {
         readonly expanded: boolean,
         readonly parent: Option<string>,
         // Source position information
-        readonly sources: string) {
+        readonly sources: string,
+        // Number of primitive operators inside this node; 0 for a primitive operator itself
+        readonly leafCount: number = 0) {
     }
 
     asString(): string {
@@ -109,11 +114,8 @@ class GraphNode {
     }
 
     /** Returns a data structure understood by cytoscape for a node. */
-    getDefinition(): NodeDefinition {
-        // Add a small SQL prefix for nodes with source positions
-        // TODO: To improve the design we can use https://github.com/kaluginserg/cytoscape-node-html-label
-        // to implement the badge that indicates that a node has the source position available
-        const label = `${this.hasSourcePosition ? "◆ " : ""}${this.id} ${this.label}`;
+    getDefinition(theme: DiagramTheme): NodeDefinition {
+        const label = this.label === '' ? this.id : `${this.id} ${this.label}`;
 
         let result = {
             // These data attributes can be used in cytoscape.StylesheetJson to conditionally style the nodes.
@@ -121,8 +123,18 @@ class GraphNode {
             "data": {
                 "id": this.id,
                 "label": label,
+                "text_width": labelWidth(label),
+                // For an expanded node its min width depends on the title and the chip button
+                "min_width": this.hasChildren ? regionMinWidth(label, this.leafCount) : 0,
+                "operator": this.label,
                 "sources": this.sources,
-                "has_source": this.hasSourcePosition
+                "has_source": this.hasSourcePosition,
+                "has_children": this.hasChildren,
+                // What the counter chip reports, and what `chipButtons.ts` needs to size the pill it
+                // hit-tests.
+                "leaf_count": this.leafCount,
+                // Corner chips; the stylesheet maps this to `background-image`.
+                "chips": nodeChips(this.hasSourcePosition, this.leafCount, theme)
             }
         };
         let data = result["data"] as any;
@@ -215,9 +227,9 @@ export class Cytograph {
     }
 
     /** Used to convert nodes and edges to a representation understood by cytoscape. */
-    getGraphElements(): ElementsDefinition {
+    getGraphElements(theme: DiagramTheme): ElementsDefinition {
         return {
-            "nodes": this.nodes.map(n => n.getDefinition()),
+            "nodes": this.nodes.map(n => n.getDefinition(theme)),
             "edges": this.edges.map(e => e.getDefinition())
         }
     }
@@ -299,7 +311,8 @@ export class Cytograph {
             if (operation === CircuitProfile.Z1_TRACE_OUTPUT)
                 // These nodes were modified in the profile.fixZ1Nodes() function.
                 operation = CircuitProfile.Z1_TRACE;
-            let graphNode = new GraphNode(nodeId, node.persistentId, operation, hasChildren, expand && hasChildren, parent, src);
+            const leafCount = node instanceof ComplexNode ? node.leafCount : 0;
+            let graphNode = new GraphNode(nodeId, node.persistentId, operation, hasChildren, expand && hasChildren, parent, src, leafCount);
             result.addNode(graphNode);
             inserted.set(nodeId, graphNode);
         }
@@ -311,7 +324,7 @@ export class Cytograph {
                 visibleParents.has(nodeId)) {
                 let positions = complex.sourcePositions;
                 let src = sources.toString(positions);
-                let node = new GraphNode(nodeId, complex.persistentId, complex.operation, true, true, parent, src);
+                let node = new GraphNode(nodeId, complex.persistentId, complex.operation, true, true, parent, src, complex.leafCount);
                 result.addNode(node);
             }
         }
@@ -405,108 +418,6 @@ export class CytographRendering {
     // visualizer is torn down — otherwise a consumer's progress bar would stick on screen.
     private renderingInFlight = false;
 
-    readonly graph_style: StylesheetJson = [
-        {
-            // How to display nodes
-            selector: 'node',
-            css: {
-                'shape': 'rectangle',
-                'content': 'data(label)',
-                'text-valign': 'center',
-                'text-halign': 'center',
-                "font-size": "12px",
-                'height': '14px',
-                'line-color': "black",
-                'border-color': 'black',
-                'border-width': '1px',
-                'border-style': 'solid',
-                'padding': '2px',
-                'width': 'label',
-            }
-        },
-        {
-            // How to color nodes based on the 'value' attribute
-            selector: 'node[value]',
-            css: {
-                'background-color': "mapData(value, 0, 100, white, red)",
-            }
-        },
-        {
-            // how to display "invisible" node, only used for the root node
-            selector: 'node[invisible]',
-            style: {
-                'display': 'none'
-            }
-        },
-        {
-            // How to display "hidden" nodes; currently unused
-            selector: 'node[hidden]',
-            style: {
-                'border-style': 'dotted',
-                'border-color': 'black',
-                'border-width': '1px',
-                'width': 'label',
-            }
-        },
-        {
-            // How to display nodes which have children
-            selector: 'node[?has_children]',
-            style: {
-                'shape': 'round-rectangle',
-            }
-        },
-        {
-            // How to color nodes that have children.
-            selector: 'node[depth]:parent',
-            style: {
-                'label': '',
-                'text-opacity': 0,
-                'text-events': 'no',
-                'background-color': 'mapData(depth, 0, 5, #f5f5f5, #d0d0d0)',
-            }
-        },
-        {
-            // How to display nodes which have children
-            selector: ':parent',
-            css: {
-                'text-valign': 'top',
-                'text-halign': 'center',
-                'shape': 'round-rectangle',
-                'corner-radius': "10",
-                'padding': "10"
-            }
-        },
-        {
-            // How to style edges
-            selector: 'edge',
-            css: {
-                'curve-style': 'bezier',
-                'target-arrow-shape': 'triangle',
-                'line-color': 'black',
-                'target-arrow-color': 'black',
-                'width': 2
-            }
-        },
-        {
-            // How to display forward edges that are highlighted
-            selector: 'edge.highlight-backward',
-            style: {
-                'line-color': 'blue',
-                'target-arrow-color': 'blue',
-                'width': 3
-            }
-        },
-        {
-            // How to display backward edges that are highlighted
-            selector: 'edge.highlight-forward',
-            style: {
-                'line-color': 'red',
-                'target-arrow-color': 'red',
-                'width': 3
-            }
-        },
-    ];
-
     constructor(
         graphContainer: HTMLElement,
         navigatorContainer: HTMLElement,
@@ -517,7 +428,8 @@ export class CytographRendering {
         private metadataSelection: MetadataSelection,
         private message: (msg: string) => void,
         private clearMessage: () => void,
-        private onTooltipContextChanged: () => void) {
+        private onTooltipContextChanged: () => void,
+        private theme: DiagramTheme = 'light') {
         cytoscape.use(elk);
         cytoscape.use(dblclick);
 
@@ -531,7 +443,7 @@ export class CytographRendering {
         });
         // double-clicking on the navigator will adjust the graph to fit
         this.navigator.setOnDoubleClick(() => this.cy.fit());
-        this.cy.style(this.graph_style);
+        this.cy.style(buildGraphStyle(this.theme));
         this.lastNode = Option.none();
     }
 
@@ -559,6 +471,7 @@ export class CytographRendering {
     // Layout to use for the first graph rendering
     readonly initialLayout = {
         animate: false,
+        nodeLayoutOptions: elkNodeLayoutOptions,
         fit: true,
         nodeDimensionsIncludeLabels: true,
         name: 'elk',
@@ -574,6 +487,7 @@ export class CytographRendering {
     // Layout to use for subsequent renderings
     readonly layoutOptions = {
         animate: false,
+        nodeLayoutOptions: elkNodeLayoutOptions,
         fit: false,
         nodeDimensionsIncludeLabels: true,
         name: 'elk',
@@ -593,7 +507,7 @@ export class CytographRendering {
         if (this.currentGraph === null) {
             // This is the first graph displayed.
             this.currentGraph = newGraph;
-            this.cy.add(newGraph.getGraphElements());
+            this.cy.add(newGraph.getGraphElements(this.theme));
             this.cy.endBatch();
             return this.initiateLayout(this.initialLayout);
         } else {
@@ -601,10 +515,6 @@ export class CytographRendering {
             let graphDiff = newGraph.diff(this.currentGraph);
             this.currentGraph = newGraph;
             this.applyDiff(this.cy, graphDiff);
-            this.cy.nodes().forEach(n => {
-                const depth = n.ancestors().filter(n => n.isNode()).length;
-                n.data('depth', depth);
-            });
             this.cy.endBatch();
             return this.initiateLayout(this.layoutOptions);
         }
@@ -840,7 +750,7 @@ export class CytographRendering {
 
         // Now add then to the graph in the right order
         for (const node of toInsert) {
-            cy.add(node.getDefinition());
+            cy.add(node.getDefinition(this.theme));
         }
 
         for (const [edge, weight] of diff.edges.entries()) {
