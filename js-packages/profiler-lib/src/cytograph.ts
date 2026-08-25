@@ -7,7 +7,6 @@ import { categoryShares, CircuitProfile, ComplexNode, NodeAndMetric, PropertyVal
 import { CircuitSelection } from './selection.js';
 import elk from 'cytoscape-elk';
 import { Sources } from './dataflow.js';
-import { Point, Size } from "./planar.js";
 import { ViewNavigator } from './navigator.js';
 import { ZSet } from "./zset.js";
 import { MetadataSelection } from './metadataSelection.js';
@@ -455,7 +454,7 @@ export class CytographRendering {
         cytoscape.use(elk);
         cytoscape.use(dblclick);
 
-        this.navigator = new ViewNavigator(navigatorContainer);
+        this.navigator = new ViewNavigator(navigatorContainer, this.theme);
         this.currentGraph = null;
         this.stickyInformation = false;
         // Start with an empty graph
@@ -465,6 +464,8 @@ export class CytographRendering {
         });
         // double-clicking on the navigator will adjust the graph to fit
         this.navigator.setOnDoubleClick(() => this.cy.fit());
+        // a press or a drag on it moves the view to where it points
+        this.navigator.setOnMoveTo((point) => this.panTo(point));
         installNodeShadows(this.cy);
         installNodeText(this.cy, () => this.theme);
         this.cy.style(buildGraphStyle(this.theme));
@@ -846,6 +847,7 @@ export class CytographRendering {
         this.renderingInFlight = false;
         this.callbacks.onRenderingChange?.(false);
         this.cy.container()!.style.visibility = "visible";
+        this.navigator.showGraph(this.cy);
         this.updateNavigator(this.navigator);
         if (this.lastNode.isSome()) {
             this.center(this.lastNode);
@@ -865,22 +867,22 @@ export class CytographRendering {
 
     // The user has panned/zoomed => tell the navigator about it.
     updateNavigator(navigator: ViewNavigator) {
-        if (this.cy === null) {
+        // Cytoscape's resize observer is debounced, so a `resize` fired on the way out arrives after
+        // the instance has been destroyed - and a destroyed instance has no renderer left to answer
+        // `extent()`.
+        if (this.cy.destroyed()) {
             return;
         }
-        const container = this.cy.container();
-        if (container === null) {
-            return;
-        }
+        navigator.showView(this.cy.extent());
+    }
 
-        let rect = container.getBoundingClientRect();
+    /** Pan so that this model point is the center of the view. */
+    private panTo(point: { x: number, y: number }) {
         const zoom = this.cy.zoom();
-        const pan = this.cy.pan();
-        const bb = this.cy.elements().boundingBox();
-        navigator.setViewParameters(
-            new Size(rect.width, rect.height),
-            new Point(pan.x, pan.y),
-            new Size(bb.w * zoom, bb.h * zoom));
+        this.cy.pan({
+            x: this.cy.width() / 2 - point.x * zoom,
+            y: this.cy.height() / 2 - point.y * zoom
+        });
     }
 
     getActualEdgeId(e: Edge<NodeId>): string {
