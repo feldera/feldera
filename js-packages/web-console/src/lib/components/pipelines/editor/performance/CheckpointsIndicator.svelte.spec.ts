@@ -9,7 +9,7 @@ import { permissionsOf } from '$lib/services/rbac'
 // `exec:checkpoint` permission. Both are driven by hoisted vars so a test can
 // select them before rendering.
 const roleState = vi.hoisted(() => ({ current: 'write' as 'read' | 'write' | 'admin' | 'owner' }))
-const premiumState = vi.hoisted(() => ({ enabled: false }))
+const editionState = vi.hoisted(() => ({ isEnterprise: false }))
 
 vi.mock('$app/state', () => ({
   page: {
@@ -25,10 +25,10 @@ vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
   usePipelineManager: () => ({ checkpointPipeline: vi.fn() })
 }))
 
-vi.mock('$lib/compositions/usePremiumFeatures.svelte', () => ({
-  usePremiumFeatures: () => ({
+vi.mock('$lib/compositions/useEdition.svelte', () => ({
+  useIsEnterprise: () => ({
     get value() {
-      return premiumState.enabled
+      return editionState.isEnterprise
     }
   })
 }))
@@ -65,7 +65,7 @@ function makeCheckpoint(): CheckpointMetadata {
 
 afterEach(() => {
   roleState.current = 'write'
-  premiumState.enabled = false
+  editionState.isEnterprise = false
 })
 
 describe('CheckpointsIndicator.svelte', () => {
@@ -91,14 +91,14 @@ describe('CheckpointsIndicator.svelte', () => {
       })
 
     it('shows the button for a write caller on enterprise', async () => {
-      premiumState.enabled = true
+      editionState.isEnterprise = true
       roleState.current = 'write'
       await renderEnterpriseNoCheckpoints()
       await expect.element(page.getByText('Create first checkpoint')).toBeInTheDocument()
     })
 
     it('hides the button for a read-only caller on enterprise', async () => {
-      premiumState.enabled = true
+      editionState.isEnterprise = true
       roleState.current = 'read'
       await renderEnterpriseNoCheckpoints()
       // Reverting the gate renders the button for `read`, failing this.

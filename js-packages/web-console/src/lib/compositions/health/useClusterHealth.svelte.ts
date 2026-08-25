@@ -1,29 +1,40 @@
 import { useInterval } from '$lib/compositions/common/useInterval.svelte'
 import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-import { type ClusterEventType, toEventType } from '$lib/functions/pipelines/health'
+import { type ClusterEventType, toClusterStatus } from '$lib/functions/pipelines/health'
 
+/**
+ * The newest cluster monitor event the console has seen, and whether the API server still
+ * vouched for it when it answered.
+ */
 export type ClusterHealthStatus = {
   api: ClusterEventType
   compiler: ClusterEventType
   runner: ClusterEventType
+  /** When the event was recorded. */
+  recordedAt: Date
   /**
    * The cluster monitor stopped writing events, so the statuses above are the last
    * recorded ones rather than current ones. The monitor runs within the Kubernetes runner.
    */
   stale: boolean
-  /** When the newest cluster monitor event was recorded. */
-  recordedAt: Date
 }
 
 // Unknown until the first poll answers, and unknown again once the poller unmounts: a page
 // that never polls, such as the profile viewer, must not present the cluster as healthy.
 let status = $state<ClusterHealthStatus | undefined>(undefined)
 
+const POLL_INTERVAL_MS = 10_000
+
 /**
- * Poll cluster health every 10 seconds (with an immediate first call) and
- * publish the result to the module-level `status` store. A single instance of
- * this hook should be mounted at one time (the `(shell)` layout owns it);
- * consumers read the state via {@link useClusterHealth}.
+ * Poll cluster health every 10 seconds, with an immediate first call.
+ *
+ * The verdict comes from the server, which owns both the clock and the threshold, and it
+ * describes the moment the response was sent. That holds for as long as the responses keep
+ * arriving; an API server that stops answering leaves this state untouched and the console
+ * reports it through `isNetworkHealthy` instead.
+ *
+ * A single instance of this hook should be mounted at one time (the `(shell)` layout owns
+ * it); consumers read the state via {@link useClusterHealth}.
  *
  * The verdict lasts as long as the polling does. Unmounting means the user left the app
  * shell, for the profile viewer or the tenant picker, and no poller is left to correct what
@@ -43,15 +54,8 @@ export const useRefreshClusterHealth = () => {
     if (!isPolling) {
       return
     }
-    status = {
-      api: toEventType(event.api_status),
-      compiler: toEventType(event.compiler_status),
-      runner: toEventType(event.runner_status),
-      // Absent on anything but the latest event, which is what this polls.
-      stale: event.stale ?? false,
-      recordedAt: new Date(event.recorded_at)
-    }
-  }, 10000)
+    status = toClusterStatus(event)
+  }, POLL_INTERVAL_MS)
 }
 
 export const useClusterHealth = () => ({

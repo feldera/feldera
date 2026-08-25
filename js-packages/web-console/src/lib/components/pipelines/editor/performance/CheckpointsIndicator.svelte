@@ -3,9 +3,9 @@
   import ClickFeedback from '$lib/components/common/ClickFeedback.svelte'
   import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
+  import { useIsEnterprise } from '$lib/compositions/useEdition.svelte'
   import { usePermission } from '$lib/compositions/usePermission.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
   import { uuidV7Timestamp } from '$lib/functions/common/date'
   import { humanSize } from '$lib/functions/common/string'
   import { formatQty } from '$lib/functions/format'
@@ -33,7 +33,7 @@
   )
 
   const api = usePipelineManager()
-  const isEnterprise = usePremiumFeatures()
+  const isEnterprise = useIsEnterprise()
   const canCheckpoint = usePermission('exec:checkpoint')
   const { formatElapsedTime } = useElapsedTime()
   const globalDialog = useGlobalDialog()
