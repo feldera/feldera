@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Popover, Tooltip } from 'common-ui'
-  import { MissingValue, type TooltipCell } from 'profiler-lib'
+  import { MissingValue, type PropertyValue, type TooltipCell } from 'profiler-lib'
   import { barColor, logScale01, skewTextColor } from '../colors'
 
   interface Props {
@@ -10,10 +10,13 @@
      * statistics). `percentile` (0-100) is normalized against the metric's range across all nodes,
      * so bar height and color express magnitude relative to the whole circuit. */
     cells: TooltipCell[]
+    /** The cells added up, for metrics that add up. Absent for rates, reported minima and
+     * maxima, flags and settings, whose column stays blank. */
+    total?: PropertyValue | undefined
     expanded: boolean
     onToggle: () => void
   }
-  const { label, metricId, cells, expanded, onToggle }: Props = $props()
+  const { label, metricId, cells, total, expanded, onToggle }: Props = $props()
 
   /**
    * Collapsed-view preview style (avg/min/max numbers show in both):
@@ -116,14 +119,15 @@
     <div class="text-sm text-surface-700-300">{metricId}</div>
   </Popover>
 </div>
-<!-- Cols 2-4: avg / min / max. Always rendered (same grid slots), opacity-driven visibility so
-     collapse/expand doesn't reflow the grid mid-transition. -->
-{#each [display.avg, display.min, display.max] as stat}
+<!-- Cols 2-5: avg / min / max / total. Always rendered (same grid slots), opacity-driven
+     visibility so collapse/expand doesn't reflow the grid mid-transition. The total is blank for
+     metrics that do not add up. -->
+{#each [display.avg, display.min, display.max, total] as stat}
 <div
   class="value-cell text-right text-sm tabular-nums text-surface-700-300 {showValues ? 'opacity-100' : 'opacity-0'}"
   aria-hidden={!showValues}
 >
-  {stat.toString()}
+  {stat ? stat.toString() : ''}
 </div>
 {/each}
 <!-- Col 5: skew toggle — always present, always pinned to the top-right -->
@@ -145,9 +149,10 @@
 </div>
 
 <!-- Bar chart row spans full block width; container height + each bar height animate.
+     NOTE: keep the column span in step with the header in MetricsDistributionBlock.
      Each bar gets a hover tooltip showing the worker index and the formatted reading. -->
 <div
-  class="bar-chart col-span-5 flex items-end gap-0.5 mb-2"
+  class="bar-chart col-span-6 flex items-end gap-0.5 mb-2"
   style:min-height="{chartHeight}px"
   style:margin-top="{expanded ? "8px" : "2px"}"
 >

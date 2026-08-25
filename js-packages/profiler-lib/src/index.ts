@@ -23,6 +23,8 @@ export {
     CountValue,
     TimeValue,
     BooleanValue,
+    PercentValue,
+    RatioValue,
     type JsonProfiles
 } from './profile.js';
 export { type Dataflow, type SourcePositionRange } from './dataflow.js';

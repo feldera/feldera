@@ -36,6 +36,9 @@ export interface TooltipRow {
     metric: string;
     isCurrentMetric: boolean;
     cells: TooltipCell[];
+    /** The cells added up, for metrics that add up: counts, byte sizes, durations.  Absent for
+     * ratios, minima, maxima, flags and settings, where a total states nothing. */
+    total?: PropertyValue | undefined;
 }
 
 /** Tooltip data structure */
