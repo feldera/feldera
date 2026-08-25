@@ -12,7 +12,6 @@ export {
     NodeAndMetric,
     shadeOfRed
 } from './profiler.js';
-export { HierarchicalTable, HierarchicalTableRow, HierarchicalTableCellValue } from "./hierarchical-table.js";
 export {
     measurementCategory,
     measurementDescription,
