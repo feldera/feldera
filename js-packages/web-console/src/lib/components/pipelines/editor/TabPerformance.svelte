@@ -38,10 +38,10 @@
   /**
    * Time span of samples kept in `timeSeries`.
    *
-   * Slightly wider than the plotted window so the line still reaches the left
-   * edge of the axis in between samples; the surplus is clipped by the axis.
+   * One second wider than the plotted window, because the throughput series
+   * derives a rate from each pair of samples and so cannot plot the oldest one.
    */
-  const RETAIN_MS = GRAPH_WINDOW_MS + 3 * 1000
+  const RETAIN_MS = GRAPH_WINDOW_MS + 1000
 
   const {
     pipeline,
