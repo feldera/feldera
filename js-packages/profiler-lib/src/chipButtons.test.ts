@@ -257,7 +257,7 @@ describe('hitTestChips', () => {
 })
 
 describe('isToggleable', () => {
-    it('is true only for a top-level circuit region', () => {
+    it('holds for every composite, nested or not, and for nothing else', () => {
         const cy = graph()
         expect(isToggleable(cy.$id('collapsed'))).toBe(true)
         expect(isToggleable(cy.$id('region'))).toBe(true)
@@ -265,7 +265,7 @@ describe('isToggleable', () => {
         expect(isToggleable(cy.$id('code'))).toBe(false)
         const nested = nestedGraph()
         expect(isToggleable(nested.$id('outer'))).toBe(true)
-        expect(isToggleable(nested.$id('sub'))).toBe(false)
+        expect(isToggleable(nested.$id('sub'))).toBe(true)
     })
 })
 
@@ -287,10 +287,10 @@ describe('refreshChips', () => {
         expect(cy.$id('collapsed').data('chips')[1]).not.toBe(cy.$id('region').data('chips')[1])
     })
 
-    it('keeps the count on a nested region, because only its parent collapses', () => {
+    it('offers a hovered nested region the collapse control, as its parent is offered', () => {
         const cy = nestedGraph()
         refreshChips(cy.$id('sub'), 'light', true)
-        expect(cy.$id('sub').data('chips')).toEqual(nodeChips(false, 1, 'light'))
+        expect(cy.$id('sub').data('chips')[1]).toBe(nodeChips(false, 1, 'light', 'collapse')[1])
         refreshChips(cy.$id('outer'), 'light', true)
         expect(cy.$id('outer').data('chips')[1]).toBe(nodeChips(false, 1, 'light', 'collapse')[1])
     })
@@ -471,24 +471,23 @@ describe('installChipButtons', () => {
         expect(node.data('chips')[1]).toBe(nodeChips(false, COUNT, 'light')[1])
     })
 
-    it('does not make the counter of a nested region a button, and always shows its count', () => {
+    it('makes the counter of a nested region a button, with the control on it alone while hovered', () => {
         const cy = nestedGraph()
         const { core, container, fire, mouse } = harness(cy)
         const handlers = actions()
         installChipButtons(core, () => 'light', handlers)
         const counter = at(cy, 'sub', 'counter').position
 
-        expect(under(cy, counter.x, counter.y)).not.toBe('sub:counter')
+        expect(under(cy, counter.x, counter.y)).toBe('sub:counter')
         fire('mousemove', { position: counter })
-        expect(container.style.cursor).toBe('')
-        expect(mouse('mousedown', counter).stopped).toBe(false)
+        expect(container.style.cursor).toBe('pointer')
+        expect(mouse('mousedown', counter).stopped).toBe(true)
         mouse('mouseup', counter)
-        fire('tap', { position: counter })
-        expect(handlers.onToggle).not.toHaveBeenCalled()
+        expect(handlers.onToggle).toHaveBeenCalledWith('sub')
 
-        // A pointer on the nested region shows no icon on it, and no icon on the region around it.
+        // A pointer on the nested region shows the icon on it only. The region around it keeps its count.
         fire('mouseover', { target: cy.$id('sub') })
-        expect(cy.$id('sub').data('chips')[1]).toBe(nodeChips(false, 1, 'light')[1])
+        expect(cy.$id('sub').data('chips')[1]).toBe(nodeChips(false, 1, 'light', 'collapse')[1])
         expect(cy.$id('outer').data('chips')[1]).toBe(nodeChips(false, 1, 'light')[1])
         fire('mouseover', { target: cy.$id('outer') })
         expect(cy.$id('outer').data('chips')[1]).toBe(nodeChips(false, 1, 'light', 'collapse')[1])

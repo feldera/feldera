@@ -7,8 +7,7 @@
 //   counter   the number of operators in the region;     expand or collapse the circuit region
 //             on hover, an expand or collapse icon
 //
-// Only a top-level circuit region can be expanded or collapsed. A nested region is always expanded
-// when its parent is, so its counter chip is not a button.
+// Every circuit region can be expanded or collapsed, nested or not.
 //
 // Chips are cytoscape background images. Cytoscape's default behavior of finding the node
 // under the pointer cannot be used because it depends on the pointer hit testing the node's shape,
@@ -88,9 +87,8 @@ const imageInset = (boxSize: number, imageSize: number, position: string, offset
 /** The number of operators inside `node`, or 0. */
 const leafCount = (node: NodeSingular): number => Number(node.data('leaf_count')) || 0;
 
-/** True if `node` is a top-level circuit region. Only these can be expanded and collapsed. */
-export const isToggleable = (node: NodeSingular): boolean =>
-    Boolean(node.data('has_children')) && !node.isChild();
+/** True if `node` is a circuit region, nested or not. Only these can be expanded and collapsed. */
+export const isToggleable = (node: NodeSingular): boolean => Boolean(node.data('has_children'));
 
 /** The width of the visible pill of a chip. The counter image is wide enough for the longest count,
  *  but its pill is only as wide as the count it shows. */
@@ -155,7 +153,6 @@ export function hitTestChips(cy: Core, x: number, y: number): ChipHit | null {
             continue;
         }
         const slot = chipAt(node, x, y);
-        // The counter of a nested region is not a button.
         if (slot === null || (slot === 'counter' && !isToggleable(node))) {
             continue;
         }
