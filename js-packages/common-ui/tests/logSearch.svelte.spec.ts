@@ -1,8 +1,9 @@
 /**
- * Tests for the shared log-search algorithm (common-ui/logSearch). Runs in the browser
- * project: `applySearchHighlight` drives the CSS Custom Highlight API (needs a real DOM,
- * `Range`, and `CSS.highlights`), and importing the `common-ui` barrel pulls in Monaco, which
- * touches `window` — so the pure functions ride along here rather than in a node project.
+ * Tests for the shared log-search algorithm.
+ *
+ * In the browser because `applySearchHighlight` drives the CSS Custom Highlight API, which needs a
+ * real DOM, `Range` and `CSS.highlights`. The pure functions ride along rather than getting a node
+ * project of their own.
  */
 
 import {
@@ -17,7 +18,7 @@ import {
   type SearchPattern,
   searchPatternsEqual,
   positiveMod
-} from 'common-ui'
+} from '$lib/logSearch'
 import { afterEach, describe, expect, it } from 'vitest'
 
 const substr = (query: string, caseSensitive = false): SearchPattern => ({
