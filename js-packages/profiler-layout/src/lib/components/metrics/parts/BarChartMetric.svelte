@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Popover, Tooltip } from 'common-ui'
   import { MissingValue, type PropertyValue, type TooltipCell } from 'profiler-lib'
-  import { barColor, heatColor, logScale01, skewTextColor } from '../colors'
+  import { barColor, heatColor, heatTextColor, logScale01, skewTextColor } from '../colors'
 
   interface Props {
     label: string
@@ -132,10 +132,12 @@
 {/each}
 <!-- Col 5: total, blank for metrics that do not add up. Its background is a heat map over the
      standing `profiler-lib` computed: the largest saturates to `--bar-high`, the smallest stays
-     at `--bar-low`. -->
+     at `--bar-low`. Past the top of that range the fill is dark enough that the text turns
+     white to stay readable. -->
 <div
   class="value-cell rounded-sm px-1 text-right text-sm tabular-nums text-surface-900-100 {showValues ? 'opacity-100' : 'opacity-0'}"
   style:background-color={total ? heatColor(total.percentile / 100) : 'transparent'}
+  style:color={total ? heatTextColor(total.percentile / 100) : undefined}
   aria-hidden={!showValues}
 >
   {total ? total.value.toString() : ''}

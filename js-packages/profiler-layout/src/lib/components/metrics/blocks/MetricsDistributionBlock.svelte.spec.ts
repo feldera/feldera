@@ -129,6 +129,41 @@ describe('MetricsDistributionBlock total column', () => {
     expect(getComputedStyle(cell).backgroundColor).toBe('rgba(0, 0, 0, 0)')
   })
 
+  const textColors = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.value-cell'))
+      .filter((_, i) => i % 4 === 3)
+      .map((c) => (c as HTMLElement).style.color)
+
+  // Past 70% of the way to `--bar-high` the fill is dark enough that the default dark text
+  // disappears into it, so the text turns white. Below that the cell keeps its inherited color.
+  it('turns a deeply colored total white', async () => {
+    const straddling = [
+      entry('above', {
+        cells: cells([new CountValue(1)]),
+        total: { value: new CountValue(9), percentile: 71 }
+      }),
+      entry('at', {
+        cells: cells([new CountValue(1)]),
+        total: { value: new CountValue(7), percentile: 70 }
+      }),
+      entry('below', {
+        cells: cells([new CountValue(1)]),
+        total: { value: new CountValue(5), percentile: 69 }
+      }),
+      doesNotAdd
+    ]
+    const { container } = render(MetricsDistributionBlock, {
+      props: { id: 'b', title: 'State', entries: straddling }
+    })
+    const shown = textColors(container)
+    expect(shown[0]).toBe('white')
+    // The threshold is exclusive: 70% is still light enough to read dark text against.
+    expect(shown[1]).toBe('')
+    expect(shown[2]).toBe('')
+    // A row with no total has no fill to read against, so it is left alone.
+    expect(shown[3]).toBe('')
+  })
+
   it('keeps each row independent of the others', async () => {
     const { container } = render(MetricsDistributionBlock, {
       props: { id: 'b', title: 'Mixed', entries: [adds, doesNotAdd] }

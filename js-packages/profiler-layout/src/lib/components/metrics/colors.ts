@@ -40,6 +40,16 @@ export function heatColor(t: number): string {
   return `color-mix(in oklab, transparent ${(100 - p).toFixed(2)}%, var(--bar-high) ${p.toFixed(2)}%)`
 }
 
+/** Fraction of `--bar-high` past which a `heatColor` fill is too saturated to read dark text
+ *  against. */
+const heatTextThreshold = 0.7
+
+/** Text color over a `heatColor` fill: white once the fill passes `heatTextThreshold`,
+ *  `undefined` below it so the cell keeps its inherited color. */
+export function heatTextColor(t: number): string | undefined {
+  return clamp01(t) > heatTextThreshold ? 'white' : undefined
+}
+
 /** Skew text color: neutral up to ~0%, then interpolates to error. 50% skew saturates. */
 export function skewTextColor(skewPct: number): string {
   if (!Number.isFinite(skewPct) || skewPct <= 0) {
