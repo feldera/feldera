@@ -1240,6 +1240,47 @@ describe('CircuitProfile.consumerCount', () => {
     })
 })
 
+describe('ComplexNode.leafCount', () => {
+    // A region's badge reports the primitive operators hidden inside it, at any nesting depth -
+    // counting immediate children instead would report 2 for `outer` below.
+    const simple = (id: string, label: string) => ({ Simple: { id, label } })
+    const cluster = (id: string, label: string, nodes: unknown[]) => ({ Cluster: { id, label, nodes } })
+
+    const parse = () =>
+        CircuitProfile.fromJson({
+            metrics: [],
+            worker_profiles: [{ metadata: {} }],
+            graph: {
+                nodes: {
+                    id: 'n',
+                    label: 'circuit',
+                    nodes: [
+                        simple('n1', 'source'),
+                        cluster('outer', 'region', [
+                            simple('n2', 'map'),
+                            cluster('inner', 'subregion', [simple('n3', 'join'), simple('n4', 'filter')])
+                        ])
+                    ]
+                },
+                edges: []
+            }
+        } as never).profile
+
+    it('counts primitive operators at any depth, not immediate children', () => {
+        const profile = parse()
+        expect(profile.complexNodes.get('inner').unwrap().leafCount).toBe(2)
+        expect(profile.complexNodes.get('outer').unwrap().leafCount).toBe(3)
+    })
+
+    it('leaves primitive operators and the toplevel graph node without a count', () => {
+        const profile = parse()
+        // Primitive operators carry no count, so they get no badge...
+        expect(profile.simpleNodes.get('n1').unwrap()).not.toHaveProperty('leafCount')
+        // ...and neither does the toplevel node, which is never drawn.
+        expect(profile.complexNodes.get('n').unwrap().leafCount).toBe(0)
+    })
+})
+
 describe('CircuitProfile.byName', () => {
     const mirNode = (persistent_id: string, table: string | null, view: string | null) => ({
         operation: 'op', table, view, inputs: [], calcite: {}, positions: [], persistent_id
@@ -1272,6 +1313,36 @@ describe('CircuitProfile.byName', () => {
         expect(profile.byName.get('customers').unwrap()).toBe(source)
         expect(profile.byName.get('report').unwrap()).toBe(sink)
         expect(profile.byName.get('missing').isNone()).toBe(true)
+    })
+
+    /** A node as older dataflow graphs write it: a field it has no value for is absent, not null. */
+    const sparseMirNode = (persistent_id: string, named: { table?: string; view?: string }) =>
+        ({ operation: 'op', inputs: [], calcite: {}, positions: [], persistent_id, ...named }) as never
+
+    it('reads the name of a node whose dataflow omits the field it does not use', () => {
+        const profile = new CircuitProfile(1, 'n')
+        const sink = new SimpleNode('n1', 'sink', 1)
+        const anonymous = new SimpleNode('n2', 'map', 1)
+        for (const [pid, node] of [['def456', sink], ['789fed', anonymous]] as const) {
+            profile.simpleNodes.set(node.id, node)
+            profile.byPersistentId.set(pid, node)
+        }
+
+        profile.setDataflow({
+            calcite_plan: {},
+            mir: {
+                s1: sparseMirNode('def456', { view: 'report' }),
+                s2: sparseMirNode('789fed', {})
+            }
+        })
+
+        // An absent `table` must not pass for the name: that hides the view and labels the node
+        // 'sink undefined'.
+        expect(profile.byName.get('report').unwrap()).toBe(sink)
+        expect(sink.operation).toBe('sink report')
+        // A node naming neither a table nor a view stays unnamed.
+        expect(profile.byName.get('undefined').isNone()).toBe(true)
+        expect(anonymous.operation).toBe('map')
     })
 
     it('findByName falls back to a substring match', () => {
