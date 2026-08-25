@@ -12,6 +12,7 @@ export {
     NodeAndMetric,
     shadeOfRed
 } from './profiler.js';
+export { type DiagramTheme, type DiagramPalette, DIAGRAM_PALETTES } from './diagramTheme.js';
 export {
     measurementCategory,
     measurementDescription,
