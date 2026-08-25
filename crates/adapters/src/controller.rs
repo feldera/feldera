@@ -998,6 +998,35 @@ impl Controller {
         self.inner.output_endpoint_status(endpoint_name)
     }
 
+    /// Pause specified output endpoint.
+    ///
+    /// Sets `paused_by_user` flag of the endpoint to `true`. The endpoint
+    /// discards the output the circuit produces from this point on.
+    ///
+    /// Output the endpoint has already been handed still goes to the sink: the
+    /// batch it is writing, whatever is queued for it (up to
+    /// `max_queued_records`), and the contents of its output buffer, which
+    /// pausing flushes. An endpoint that has already reached the backpressure
+    /// threshold therefore keeps the pipeline parked until that queue drains;
+    /// pausing bounds the queue rather than emptying it.
+    pub fn pause_output_endpoint(&self, endpoint_name: &str) -> Result<(), ControllerError> {
+        self.inner.pause_output_endpoint(endpoint_name)
+    }
+
+    /// Start or resume specified output endpoint.
+    ///
+    /// Sets `paused_by_user` flag of the endpoint to `false`.  Output produced
+    /// while the endpoint was paused is gone; the endpoint resumes with the
+    /// next output the pipeline produces.
+    pub fn start_output_endpoint(&self, endpoint_name: &str) -> Result<(), ControllerError> {
+        self.inner.start_output_endpoint(endpoint_name)
+    }
+
+    /// Returns whether the specified output endpoint is paused by the user.
+    pub fn is_output_endpoint_paused(&self, endpoint_name: &str) -> Result<bool, ControllerError> {
+        self.inner.is_output_endpoint_paused(endpoint_name)
+    }
+
     /// Invoke a command on the output endpoint.
     pub fn output_endpoint_command(
         &self,
@@ -3653,13 +3682,19 @@ impl CircuitThread {
         self.controller.unpark_backpressure();
         self.step_circuit();
 
+        // This step's view of which output connectors are paused. The journal
+        // entry below and `push_output` further down both read it, so a
+        // connector paused or started in between cannot make the step do one
+        // thing and record another.
+        let paused_outputs = self.controller.status.paused_output_endpoints();
+
         // Journal the step we just executed, stamped with the
         // transaction id it belonged to.  Needs to be done after
         // `step_circuit`, because the transaction id is only assigned there.
         if let Some(step_metadata) = self.pending_step_metadata.take() {
             let transaction_id = self.controller.get_transaction_number() as TransactionId;
             if let Some(ft) = self.ft.as_mut() {
-                ft.write_step(step_metadata, journal_step, transaction_id)?;
+                ft.write_step(step_metadata, journal_step, transaction_id, &paused_outputs)?;
             }
         }
 
@@ -3730,7 +3765,7 @@ impl CircuitThread {
             ft.sync_step()?;
         }
         // Push output batches to output pipelines.
-        self.push_output(processed_records);
+        self.push_output(processed_records, &paused_outputs);
         let replay_consumed = self.replay_consumed;
         if let Some(ft) = self.ft.as_mut() {
             let was_replaying = ft.is_replaying();
@@ -4522,7 +4557,11 @@ impl CircuitThread {
     /// * `processed_records` is the records processed by the pipeline *before*
     ///   this step. If `processed_records` is `None`, we're in the middle of a
     ///   transaction and the records are not fully processed yet.
-    fn push_output(&mut self, processed_records: Option<ProcessedRecords>) {
+    fn push_output(
+        &mut self,
+        processed_records: Option<ProcessedRecords>,
+        paused_outputs: &HashSet<EndpointId>,
+    ) {
         let silent_bootstrap =
             self.silent_bootstrap && self.controller.status.bootstrap_in_progress();
 
@@ -4579,17 +4618,34 @@ impl CircuitThread {
                     processed_records
                 };
 
+                // A paused endpoint drops this step's output on the floor.
+                // The empty entry marks it processed all the same: the endpoint
+                // owes the pipeline nothing once it has discarded the batch.
+                //
+                // An endpoint that still owes its initial snapshot keeps owing
+                // it: dropping the snapshot would leave the endpoint with no
+                // way to ever learn the state it is supposed to start from, so
+                // the snapshot waits here until the endpoint is started.
+                if paused_outputs.contains(endpoint_id) {
+                    self.controller.enqueue_empty_batch(
+                        *endpoint_id,
+                        endpoint,
+                        self.step,
+                        transaction,
+                        processed_records,
+                    );
+                    continue;
+                }
+
                 // Silent bootstrap: send empty batch for progress tracking only.
                 if silent_bootstrap {
-                    self.controller.status.enqueue_batch(*endpoint_id, 0);
-                    endpoint.queue.push(BatchQueueEntry {
-                        step: self.step,
+                    self.controller.enqueue_empty_batch(
+                        *endpoint_id,
+                        endpoint,
+                        self.step,
                         transaction,
-                        batch_type: OutputBatchType::Delta,
-                        data: None,
                         processed_records,
-                    });
-                    endpoint.unparker.unpark();
+                    );
                     continue;
                 }
 
@@ -4600,17 +4656,14 @@ impl CircuitThread {
                         "Output endpoint '{}' was created during the current transaction (seq. number {}) and will not receive any outputs until the next transaction.",
                         endpoint.endpoint_name, endpoint.created_during_transaction_number
                     );
-                    self.controller.status.enqueue_batch(*endpoint_id, 0);
-
                     // We need to propagate processed_records to the connector for progress tracking.
-                    endpoint.queue.push(BatchQueueEntry {
-                        step: self.step,
+                    self.controller.enqueue_empty_batch(
+                        *endpoint_id,
+                        endpoint,
+                        self.step,
                         transaction,
-                        batch_type: OutputBatchType::Delta,
-                        data: None,
                         processed_records,
-                    });
-                    endpoint.unparker.unpark();
+                    );
                     continue;
                 }
 
@@ -4866,6 +4919,10 @@ struct FtState {
     /// time we wrote the last step, so that we can log changes for the replay
     /// log.
     input_endpoints: HashMap<EndpointId, (String, bool)>,
+
+    /// The same for the output endpoints, so that replay drops the output of a
+    /// paused endpoint exactly as the recorded run did.
+    output_endpoints: HashMap<EndpointId, (String, bool)>,
 }
 
 impl FtState {
@@ -4893,6 +4950,7 @@ impl FtState {
         Ok(Self {
             enabled: true,
             input_endpoints: Self::initial_input_endpoints(&controller),
+            output_endpoints: Self::initial_output_endpoints(&controller),
             controller,
             replay_step,
             replay_steps,
@@ -4914,6 +4972,7 @@ impl FtState {
         Ok(Self {
             enabled: true,
             input_endpoints: Self::initial_input_endpoints(&controller),
+            output_endpoints: Self::initial_output_endpoints(&controller),
             controller,
             replay_step: None,
             replay_steps: Vec::new(),
@@ -4957,6 +5016,7 @@ impl FtState {
         Ok(Self {
             enabled: true,
             input_endpoints: Self::initial_input_endpoints(&controller),
+            output_endpoints: Self::initial_output_endpoints(&controller),
             controller,
             replay_step: None,
             replay_steps: Vec::new(),
@@ -4980,6 +5040,22 @@ impl FtState {
         controller
             .status
             .input_status()
+            .iter()
+            .map(|(id, status)| {
+                (
+                    *id,
+                    (status.endpoint_name.clone(), status.is_paused_by_user()),
+                )
+            })
+            .collect()
+    }
+
+    fn initial_output_endpoints(
+        controller: &ControllerInner,
+    ) -> HashMap<EndpointId, (String, bool)> {
+        controller
+            .status
+            .output_status()
             .iter()
             .map(|(id, status)| {
                 (
@@ -5016,6 +5092,27 @@ impl FtState {
                 controller.start_input_endpoint(endpoint_name)?;
             }
         }
+        for (endpoint_name, pause) in &metadata.changed_outputs {
+            let result = if *pause {
+                controller.pause_output_endpoint(endpoint_name)
+            } else {
+                controller.start_output_endpoint(endpoint_name)
+            };
+            // Unlike the input endpoints, which `add_inputs`/`remove_inputs`
+            // reconstruct exactly as the recorded run had them, output
+            // endpoints are rebuilt from the pipeline configuration. An
+            // endpoint that only ever existed outside it, such as an `/egress`
+            // stream the API created, is legitimately gone by now, and the
+            // state recorded for it is moot. Failing the replay over it would
+            // leave the pipeline unable to start at all.
+            if let Err(ControllerError::UnknownOutputEndpoint { .. }) = &result {
+                warn!(
+                    "ignoring the recorded paused state of output endpoint '{endpoint_name}', which no longer exists"
+                );
+            } else {
+                result?;
+            }
+        }
         for (endpoint_name, log) in &metadata.input_logs {
             let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
             if let Some(reader) = controller.status.input_status()[&endpoint_id]
@@ -5034,6 +5131,7 @@ impl FtState {
         step_metadata: HashMap<u64, (String, StepResults)>,
         step: Step,
         transaction_id: TransactionId,
+        paused_outputs: &HashSet<EndpointId>,
     ) -> Result<(), ControllerError> {
         if !self.enabled {
             return Ok(());
@@ -5078,6 +5176,8 @@ impl FtState {
                 }
                 drop(inputs);
 
+                let changed_outputs = self.changed_outputs(paused_outputs);
+
                 let input_logs = step_metadata
                     .into_values()
                     .map(|(name, result)| (name, result.try_into().unwrap()))
@@ -5089,6 +5189,7 @@ impl FtState {
                     add_inputs,
                     changed_inputs,
                     input_logs,
+                    changed_outputs,
                 };
                 self.journal.write(&step_metadata)?;
             }
@@ -5104,6 +5205,49 @@ impl FtState {
             }
         };
         Ok(())
+    }
+
+    /// Output endpoints whose paused state changed since the previous step,
+    /// and their new state.  Updates the recorded state to match.
+    ///
+    /// Only the paused state is journaled: unlike an input endpoint, an output
+    /// endpoint added or removed during the recorded run does not change what
+    /// the circuit computes, and replay reconstructs the endpoints from the
+    /// pipeline configuration.
+    fn changed_outputs(&mut self, paused_outputs: &HashSet<EndpointId>) -> HashMap<String, bool> {
+        let mut changed_outputs = HashMap::new();
+
+        // Skip while the controller is shutting down, for the same reason the
+        // input diff above does.
+        if self.controller.state() == PipelineState::Terminated {
+            return changed_outputs;
+        }
+
+        let outputs = self.controller.status.output_status();
+        self.output_endpoints
+            .retain(|endpoint_id, (endpoint_name, paused)| {
+                if !outputs.contains_key(endpoint_id) {
+                    return false;
+                }
+                let now_paused = paused_outputs.contains(endpoint_id);
+                if *paused != now_paused {
+                    changed_outputs.insert(endpoint_name.clone(), now_paused);
+                    *paused = now_paused;
+                }
+                true
+            });
+        for (endpoint_id, status) in outputs.iter() {
+            self.output_endpoints
+                .entry(*endpoint_id)
+                .or_insert_with(|| {
+                    (
+                        status.endpoint_name.clone(),
+                        paused_outputs.contains(endpoint_id),
+                    )
+                });
+        }
+
+        changed_outputs
     }
 
     /// Accumulates one replayed step's recorded and re-ingested input checksums
@@ -5643,6 +5787,26 @@ impl ControllerInit {
                     .is_none_or(|diff| !diff.is_affected_relation(&connector_config.stream))
                 && let Some(checkpointed_connector_config) =
                     checkpoint_config.inputs.get(connector_name.as_str())
+            {
+                connector_config.connector_config.paused =
+                    checkpointed_connector_config.connector_config.paused;
+            }
+        }
+
+        // Same for the output connectors: a connector whose definition and
+        // whose view both survived the restart unchanged resumes in the state
+        // the user left it in.  A modified connector starts from its
+        // configuration instead, like a connector the pipeline has never seen.
+        //
+        // A checkpoint written before output connectors could be paused has no
+        // `paused` field in its output connector configurations; it
+        // deserializes as `false`, which is how those pipelines behaved.
+        for (connector_name, connector_config) in config.outputs.iter_mut() {
+            let connector_name = connector_name.to_string();
+            if !pipeline_diff.is_affected_connector(connector_name.as_str())
+                && !pipeline_diff.is_affected_relation(&connector_config.stream)
+                && let Some(checkpointed_connector_config) =
+                    checkpoint_config.outputs.get(connector_name.as_str())
             {
                 connector_config.connector_config.paused =
                     checkpointed_connector_config.connector_config.paused;
@@ -8064,6 +8228,31 @@ impl ControllerInner {
         self.request_step();
     }
 
+    /// Hands `endpoint` an entry that carries no data.
+    ///
+    /// The endpoint has nothing to send for this step, but the entry still
+    /// carries `processed_records`, so that the endpoint's progress counter
+    /// keeps up with the pipeline, and it does so in order, behind whatever the
+    /// endpoint has yet to transmit.
+    fn enqueue_empty_batch(
+        &self,
+        endpoint_id: EndpointId,
+        endpoint: &OutputEndpointDescr,
+        step: Step,
+        transaction: u64,
+        processed_records: Option<ProcessedRecords>,
+    ) {
+        self.status.enqueue_batch(endpoint_id, 0);
+        endpoint.queue.push(BatchQueueEntry {
+            step,
+            transaction,
+            batch_type: OutputBatchType::Delta,
+            data: None,
+            processed_records,
+        });
+        endpoint.unparker.unpark();
+    }
+
     fn push_batch_to_encoder(
         batch: Arc<dyn SerBatchReader>,
         batch_type: OutputBatchType,
@@ -8291,6 +8480,53 @@ impl ControllerInner {
         self.status
             .is_input_endpoint_paused(&self.input_endpoint_id_by_name(endpoint_name)?)
             .ok_or_else(|| ControllerError::unknown_input_endpoint(endpoint_name))
+    }
+
+    fn set_output_endpoint_paused(
+        &self,
+        endpoint_name: &str,
+        paused: bool,
+    ) -> Result<(), ControllerError> {
+        let endpoint_id = self.output_endpoint_id_by_name(endpoint_name)?;
+        let was_paused = self
+            .status
+            .set_output_endpoint_paused(&endpoint_id, paused)
+            .ok_or_else(|| ControllerError::unknown_output_endpoint(endpoint_name))?;
+
+        if paused == was_paused {
+            return Ok(());
+        }
+
+        // The circuit thread reads the flag in `push_output`, so the change
+        // takes effect on the next step. Two things need one to happen even on
+        // an idle pipeline: journaling the change, and delivering the initial
+        // snapshot to an endpoint that was started before it received one.
+        let snapshot_pending = !paused
+            && self
+                .outputs
+                .read()
+                .unwrap()
+                .lookup_by_id(&endpoint_id)
+                .is_some_and(|endpoint| endpoint.control.is_snapshot_pending());
+        if snapshot_pending || self.fault_tolerance == Some(FtModel::ExactlyOnce) {
+            self.request_step();
+        }
+
+        Ok(())
+    }
+
+    fn pause_output_endpoint(&self, endpoint_name: &str) -> Result<(), ControllerError> {
+        self.set_output_endpoint_paused(endpoint_name, true)
+    }
+
+    fn start_output_endpoint(&self, endpoint_name: &str) -> Result<(), ControllerError> {
+        self.set_output_endpoint_paused(endpoint_name, false)
+    }
+
+    fn is_output_endpoint_paused(&self, endpoint_name: &str) -> Result<bool, ControllerError> {
+        self.status
+            .is_output_endpoint_paused(&self.output_endpoint_id_by_name(endpoint_name)?)
+            .ok_or_else(|| ControllerError::unknown_output_endpoint(endpoint_name))
     }
 
     fn input_endpoint_status(
@@ -9226,14 +9462,15 @@ impl RunningCheckpoint {
             .can_suspend()
             .map_err(ControllerError::SuspendError)?;
 
+        // Build both connector maps before the pipeline configuration, so that
+        // neither status lock is held while the other is taken.
+
         // Replace the input connector configuration in the pipeline
         // configuration by the current inputs.  (HTTP input connectors might
         // have been added or removed.)
-        let config = PipelineConfig {
-            inputs: circuit
-                .controller
-                .status
-                .input_status()
+        let inputs = {
+            let input_status = circuit.controller.status.input_status();
+            input_status
                 .values()
                 .map(|status| {
                     (Cow::from(status.endpoint_name.clone()), {
@@ -9242,7 +9479,41 @@ impl RunningCheckpoint {
                         config
                     })
                 })
-                .collect(),
+                .collect()
+        };
+
+        // Unlike the inputs, the outputs are taken from the pipeline
+        // configuration rather than from the live endpoints, so that an output
+        // endpoint created through the API (an `/egress` stream) is not written
+        // into the checkpoint and resurrected by a restart. The live endpoints
+        // supply only the paused state, so that the checkpoint restores the
+        // state the user left each connector in.
+        let outputs = {
+            let output_status = circuit.controller.status.output_status();
+            let output_paused: HashMap<&str, bool> = output_status
+                .values()
+                .map(|status| (status.endpoint_name.as_str(), status.is_paused_by_user()))
+                .collect();
+
+            circuit
+                .controller
+                .status
+                .pipeline_config
+                .outputs
+                .iter()
+                .map(|(endpoint_name, config)| {
+                    let mut config = config.clone();
+                    if let Some(paused) = output_paused.get(endpoint_name.as_ref()) {
+                        config.connector_config.paused = *paused;
+                    }
+                    (endpoint_name.clone(), config)
+                })
+                .collect()
+        };
+
+        let config = PipelineConfig {
+            inputs,
+            outputs,
             ..circuit.controller.status.pipeline_config.clone()
         };
 

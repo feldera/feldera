@@ -183,6 +183,18 @@ pub struct StepMetadata {
     /// A given endpoint is included if it existed before the step and is not in
     /// `remove_inputs`, or if it is included in `add_inputs`.
     pub input_logs: HashMap<String, InputLog>,
+
+    /// Changes to existing output endpoints within the step.
+    ///
+    /// Currently we only log changes to the endpoint's paused state, so that
+    /// replay drops the output of a paused endpoint exactly as the recorded
+    /// run did.
+    ///
+    /// This field must stay last: records are encoded as arrays, so a journal
+    /// written before this field existed is one element short, and only a
+    /// trailing field can be defaulted.
+    #[serde(default)]
+    pub changed_outputs: HashMap<String, bool>,
 }
 
 /// A journal record for a single endpoint for a single step.
@@ -260,8 +272,11 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::{controller::journal::Journal, test::init_test_logger};
+    use feldera_adapterlib::transport::Step;
+    use feldera_types::{config::InputEndpointConfig, transaction::TransactionId};
+    use serde::Serialize;
 
-    use super::StepMetadata;
+    use super::{InputLog, StepMetadata};
 
     /// Create and write a steps file and then read it back.
     #[test]
@@ -284,6 +299,7 @@ mod tests {
                 add_inputs: HashMap::new(),
                 changed_inputs: HashMap::new(),
                 input_logs: HashMap::new(),
+                changed_outputs: HashMap::new(),
             })
             .collect::<Vec<_>>();
 
@@ -299,5 +315,39 @@ mod tests {
 
         let last_record = records.last().unwrap();
         assert_eq!(journal.read(last_record.step + 1).unwrap(), None);
+    }
+
+    /// A record written before [StepMetadata::changed_outputs] existed is one
+    /// element short of the current struct.  It must still decode, with no
+    /// output endpoint changes to replay.
+    #[test]
+    fn test_read_record_without_changed_outputs() {
+        /// [StepMetadata] as it was before `changed_outputs` was added.
+        #[derive(Serialize)]
+        struct OldStepMetadata {
+            step: Step,
+            transaction_id: TransactionId,
+            remove_inputs: HashSet<String>,
+            add_inputs: HashMap<String, InputEndpointConfig>,
+            changed_inputs: HashMap<String, bool>,
+            input_logs: HashMap<String, InputLog>,
+        }
+
+        let old = OldStepMetadata {
+            step: 7,
+            transaction_id: 3,
+            remove_inputs: HashSet::from(["gone".into()]),
+            add_inputs: HashMap::new(),
+            changed_inputs: HashMap::from([("paused_input".to_string(), true)]),
+            input_logs: HashMap::new(),
+        };
+
+        let mut encoded = Vec::new();
+        rmp_serde::encode::write(&mut encoded, &old).unwrap();
+        let decoded = rmp_serde::decode::from_slice::<StepMetadata>(&encoded).unwrap();
+
+        assert_eq!(decoded.step, 7);
+        assert_eq!(decoded.changed_inputs, old.changed_inputs);
+        assert!(decoded.changed_outputs.is_empty());
     }
 }

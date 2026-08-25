@@ -302,7 +302,7 @@ impl Checkpoint {
 
 #[cfg(test)]
 mod tests {
-    use super::{CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics};
+    use super::{Checkpoint, CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics};
     use crate::controller::stats::{ConnectorErrorList, MAX_CONNECTOR_ERRORS};
     use chrono::{TimeZone, Utc};
     use feldera_types::adapter_stats::ConnectorError;
@@ -393,6 +393,34 @@ mod tests {
                 .to_api_type()
                 .is_empty()
         );
+    }
+
+    /// A checkpoint written before output connectors could be paused has no
+    /// `paused` field in its output connector configurations.  It must still
+    /// open, with the connectors coming back running, which is how those
+    /// pipelines behaved.
+    #[test]
+    fn checkpoint_backcompat_defaults_output_connector_to_running() {
+        let old_format = serde_json::json!({
+            "circuit": null,
+            "step": 3,
+            "config": {
+                "workers": 4,
+                "outputs": {
+                    "v.c": {
+                        "stream": "v",
+                        "transport": { "name": "file_output", "config": { "path": "/dev/null" } },
+                    },
+                },
+            },
+            "processed_records": 100,
+            "input_metadata": {},
+        });
+
+        let checkpoint: Checkpoint = serde_json::from_value(old_format).unwrap();
+        let connector = &checkpoint.config.outputs["v.c"];
+
+        assert!(!connector.connector_config.paused);
     }
 
     #[test]

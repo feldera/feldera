@@ -348,6 +348,12 @@ pub struct ExternalOutputEndpointStatus {
     /// Health status of the connector.
     #[serde(default)]
     pub health: Option<ConnectorHealth>,
+    /// Endpoint has been paused by the user.
+    ///
+    /// A paused output endpoint discards the output it receives instead of
+    /// sending it to its sink.
+    #[serde(default)]
+    pub paused: bool,
 }
 
 /// Global controller metrics.

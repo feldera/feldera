@@ -1440,6 +1440,8 @@ where
         .service(input_endpoint_status)
         .service(output_endpoint_status)
         .service(output_endpoint_command)
+        .service(pause_output_endpoint)
+        .service(start_output_endpoint)
         .service(rebalance)
         .service(start_compaction)
         .service(coordination_activate_handler)
@@ -2903,6 +2905,28 @@ async fn output_endpoint_status(
     path: web::Path<String>,
 ) -> Result<HttpResponse, PipelineError> {
     Ok(HttpResponse::Ok().json(state.controller()?.output_endpoint_status(&path)?))
+}
+
+/// Pause the output endpoint: it discards the output it receives from now on.
+/// Output it has already received is still transmitted.
+#[get("/output_endpoints/{endpoint_name}/pause")]
+async fn pause_output_endpoint(
+    state: WebData<ServerState>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, PipelineError> {
+    state.controller()?.pause_output_endpoint(&path)?;
+    Ok(HttpResponse::Ok().into())
+}
+
+/// Resume the output endpoint.  Output produced while it was paused is gone;
+/// the endpoint resumes with the next output the pipeline produces.
+#[get("/output_endpoints/{endpoint_name}/start")]
+async fn start_output_endpoint(
+    state: WebData<ServerState>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, PipelineError> {
+    state.controller()?.start_output_endpoint(&path)?;
+    Ok(HttpResponse::Ok().into())
 }
 
 #[post("/output_endpoints/{endpoint_name}/command")]

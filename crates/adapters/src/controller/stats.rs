@@ -74,7 +74,7 @@ use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Serialize};
 use size_of::HumanBytes;
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque},
     fmt::Display,
     sync::{
         Arc, Mutex,
@@ -688,6 +688,35 @@ impl ControllerStatus {
 
     pub fn is_input_endpoint_paused(&self, endpoint: &EndpointId) -> Option<bool> {
         Some(self.input_status().get(endpoint)?.is_paused_by_user())
+    }
+
+    /// Sets `endpoint`'s paused state to `paused` and returns whether it was
+    /// previously paused.
+    pub fn set_output_endpoint_paused(&self, endpoint: &EndpointId, paused: bool) -> Option<bool> {
+        Some(
+            self.output_status()
+                .get(endpoint)?
+                .set_paused_by_user(paused),
+        )
+    }
+
+    pub fn is_output_endpoint_paused(&self, endpoint: &EndpointId) -> Option<bool> {
+        Some(self.output_status().get(endpoint)?.is_paused_by_user())
+    }
+
+    /// The output endpoints that are paused right now.
+    ///
+    /// The user can pause or start a connector at any moment, including
+    /// between the point where a step records what its connectors were doing
+    /// and the point where it acts on them. The circuit thread therefore reads
+    /// this once per step and both use the result, so that what a step records
+    /// and what it does cannot disagree.
+    pub fn paused_output_endpoints(&self) -> HashSet<EndpointId> {
+        self.output_status()
+            .iter()
+            .filter(|(_, endpoint_stats)| endpoint_stats.is_paused_by_user())
+            .map(|(endpoint_id, _)| *endpoint_id)
+            .collect()
     }
 
     /// Invoked when one of the input endpoints has finished processing
@@ -2824,6 +2853,17 @@ pub struct OutputEndpointStatus {
     /// Connector-specific metrics for Prometheus export.
     pub custom_metrics: Option<Arc<dyn ConnectorMetrics>>,
 
+    /// Endpoint has been paused by the user.
+    ///
+    /// When `true`, the endpoint discards the output it receives instead of
+    /// sending it to its sink, even when the pipeline is running.
+    ///
+    /// This flag is set to `true` on startup if the `paused` flag in the
+    /// endpoint configuration is `true`. At runtime, the value of the flag is
+    /// controlled via the `/views/<view_name>/connectors/<connector_name>/start`
+    /// and `/views/<view_name>/connectors/<connector_name>/pause` endpoints.
+    pub paused: AtomicBool,
+
     /// The checkpoint waiting on this endpoint, if one is in progress.
     ///
     /// A checkpoint needs each endpoint's [`Self::transmitted_records`] as of
@@ -2890,6 +2930,7 @@ impl OutputEndpointStatus {
                 None
             },
             health: self.health.lock().unwrap().clone(),
+            paused: self.is_paused_by_user(),
         }
     }
 
@@ -2987,8 +3028,19 @@ impl OutputEndpointStatus {
             transport_errors: Mutex::new(transport_errors),
             health: Mutex::new(None),
             custom_metrics: None,
+            paused: AtomicBool::new(config.connector_config.paused),
             checkpoint_latch: Mutex::new(None),
         }
+    }
+
+    /// True if the endpoint's `paused_by_user` flag is set to `true`.
+    pub fn is_paused_by_user(&self) -> bool {
+        self.paused.load(Ordering::Acquire)
+    }
+
+    /// Sets the paused-by-user flag to `paused` and returns the previous value.
+    pub fn set_paused_by_user(&self, paused: bool) -> bool {
+        self.paused.swap(paused, Ordering::Release)
     }
 
     fn enqueue_batch(&self, num_records: usize) {
