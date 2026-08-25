@@ -860,6 +860,26 @@ public class OuterJoinTests extends SqlIoTest {
     }
 
     @Test
+    public void nonNullableKeyExpression() {
+        // The join widens the key to the common type of the two sides, so the key of S is
+        // nullable, while TRIM(S.w) is not.  Calcite types the TRIM call itself as nullable;
+        // the call must be wrapped, or the generated Rust does not compile.
+        var ccs = this.getCCS("""
+                CREATE TABLE T(v VARCHAR);
+                CREATE TABLE S(w VARCHAR NOT NULL);
+                CREATE VIEW V AS SELECT T.v, S.w FROM T LEFT JOIN S ON TRIM(T.v) = TRIM(S.w);""")
+                .withStringTrim();
+        ccs.step("""
+                INSERT INTO T VALUES('a'), ('b'), (NULL);
+                INSERT INTO S VALUES('a');""", """
+                 v    | w    | weight
+                ----------------------
+                 a    | a    | 1
+                 b    |NULL  | 1
+                NULL  |NULL  | 1""");
+    }
+
+    @Test
     public void internal178() {
         var ccs = this.getCCS("""
                 CREATE TABLE T(x int not null, y int);
