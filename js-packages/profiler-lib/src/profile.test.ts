@@ -1162,6 +1162,84 @@ describe('CircuitProfile.rankNodes', () => {
     })
 })
 
+// A node's consumer count. A consumer fed twice counts as 2.
+// For a region count out-edges originating within the region that end in a different region.
+describe('CircuitProfile.consumerCount', () => {
+    // A region `r` holding `a` and `b`, a nested region `r2` holding `c`, and two operators
+    // outside. `a` feeds `b` (inside), `b` feeds `c` (into the nested region) and `out1`, `c`
+    // feeds `out1` as well, and `out1` feeds `out2` twice.
+    //
+    //   r [ a -> b -> r2 [ c ] ]
+    //          b -> out1 <- c
+    //          out1 => out2 (two edges)
+    const edge = (from: string, to: string) =>
+        ({ from_node: from, to_node: to, from_cluster: false, to_cluster: false })
+
+    const profile = (() => {
+        const json = {
+            metrics: [],
+            worker_profiles: [{ metadata: {} }],
+            graph: {
+                nodes: {
+                    id: 'n', label: 'root', nodes: [
+                        {
+                            Cluster: {
+                                id: 'r', label: 'region', nodes: [
+                                    { Simple: { id: 'a', label: 'a' } },
+                                    { Simple: { id: 'b', label: 'b' } },
+                                    {
+                                        Cluster: {
+                                            id: 'r2', label: 'nested',
+                                            nodes: [{ Simple: { id: 'c', label: 'c' } }]
+                                        }
+                                    }
+                                ]
+                            }
+                        },
+                        { Simple: { id: 'out1', label: 'out1' } },
+                        { Simple: { id: 'out2', label: 'out2' } }
+                    ]
+                },
+                edges: [
+                    edge('a', 'b'), edge('b', 'c'), edge('b', 'out1'), edge('c', 'out1'),
+                    edge('out1', 'out2'), edge('out1', 'out2')
+                ]
+            }
+        }
+        return CircuitProfile.fromJson(json as unknown as JsonProfiles).profile
+    })()
+
+    it('counts an operator\'s successors', () => {
+        expect(profile.consumerCount('a')).toBe(1)
+        // `b` feeds `c` inside the nested region and `out1` outside it.
+        expect(profile.consumerCount('b')).toBe(2)
+        expect(profile.consumerCount('c')).toBe(1)
+    })
+
+    it('counts every edge, so a destination fed twice counts twice', () => {
+        // Two edges out1 -> out2; the profile graph is a multigraph.
+        expect(profile.consumerCount('out1')).toBe(2)
+    })
+
+    it('is zero for a node that feeds nothing', () => {
+        expect(profile.consumerCount('out2')).toBe(0)
+        // A node the profile never mentions feeds nothing either.
+        expect(profile.consumerCount('absent')).toBe(0)
+    })
+
+    it('counts only what leaves a region, not what moves inside it', () => {
+        // `r` contains a, b and r2: of its four internal edges only b -> out1 and c -> out1
+        // leave, and both count even though they share a destination.
+        expect(profile.consumerCount('r')).toBe(2)
+        // The nested region feeds out1 as well; b -> c enters it and does not count.
+        expect(profile.consumerCount('r2')).toBe(1)
+    })
+
+    it('is zero for the toplevel node, which contains everything', () => {
+        expect(profile.consumerCount('n')).toBe(0)
+    })
+})
+
 describe('CircuitProfile.byName', () => {
     const mirNode = (persistent_id: string, table: string | null, view: string | null) => ({
         operation: 'op', table, view, inputs: [], calcite: {}, positions: [], persistent_id

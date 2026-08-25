@@ -3,8 +3,16 @@
 
   export type MetricsMode = 'overview' | 'node' | 'top-nodes'
 
-  /** Node identity attributes shown beside the node title, in display order. */
-  const idAttributes = [
+  /** Node identity attributes shown beside the node title, in display order. `hint` is shown on hover. */
+  const idAttributes: { key: string; label: string; hint?: (isRegion: boolean) => string }[] = [
+    {
+      key: 'consumers',
+      label: 'consumers',
+      hint: (isRegion) =>
+        isRegion
+          ? 'Count of edges from this region to consumers outside the region.'
+          : 'Count of edges to the operators consuming this operator\'s output.'
+    },
     { key: 'parent', label: 'parent ID' },
     { key: 'persistentId', label: 'persistent ID' }
   ]
@@ -34,7 +42,7 @@
   import { buildGlobalMetrics, type GlobalMetrics } from '../functions/globalMetrics'
   import type { LookupCoordinator, SearchProgress } from '../functions/lookup'
   import { buildSearchTargets, matchTargets } from '../functions/metricsSearch'
-  import { positiveMod, type SearchDirection } from 'common-ui'
+  import { positiveMod, Tooltip, type SearchDirection } from 'common-ui'
 
   interface Props {
     mode: MetricsMode
@@ -80,7 +88,7 @@
     nodeAttributes && isNodeView
       ? idAttributes.flatMap((r) => {
           const value = nodeAttributes.attributes.get(r.key)
-          return value ? [{ ...r, value }] : []
+          return value ? [{ ...r, value, hint: r.hint?.(nodeAttributes.isRegion) }] : []
         })
       : []
   )
@@ -178,7 +186,10 @@
         >{nodeAttributes.title}</button>
         {#each identityRows as row (row.key)}
           <span class="text-surface-800-200">
-            <span class="font-medium">{row.label}:</span>
+            <span class="font-medium" class:cursor-help={row.hint}>{row.label}:</span>
+            {#if row.hint}
+              <Tooltip class="max-w-80" placement="bottom">{row.hint}</Tooltip>
+            {/if}
             <span class="break-all font-mono">{row.value}</span>
           </span>
         {/each}

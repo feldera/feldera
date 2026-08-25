@@ -700,6 +700,11 @@ export class CytographRendering {
                 kv.set("persistentId", node.persistentId.unwrap());
             }
             kv.set("operation", node.getLabel());
+            kv.set("kind", profile.complexNodes.has(node.getId()) ? "region" : "operator");
+            if (!profile.isTop(node.getId())) {
+                // Not shown for the toplevel node
+                kv.set("consumers", profile.consumerCount(node.getId()).toString());
+            }
 
             let parent = profile.parents.get(node.id);
             if (parent.isSome()) {
@@ -1024,6 +1029,7 @@ export class CytographRendering {
         const tooltipData: NodeAttributes = {
             nodeId,
             title: "",
+            isRegion: false,
             columns: [],
             rows: [],
             attributes: new Map()
@@ -1083,6 +1089,8 @@ export class CytographRendering {
                     tooltipData.title = value + tooltipData.title;
                 } else if (key == "operation") {
                     tooltipData.title = tooltipData.title + " " + value;
+                } else if (key == "kind") {
+                    tooltipData.isRegion = value === "region";
                 } else {
                     tooltipData.attributes.set(key, value);
                 }
