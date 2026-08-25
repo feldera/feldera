@@ -39,8 +39,9 @@
     /** When the timeline data was last refreshed, used to show "updated X ago" */
     updatedAt?: Date | null
     /**
-     * The newest event is too old to describe the current state, so the header reports no
-     * data instead of repeating that event's status.
+     * Whether the newest event no longer describes the present, so the header reports no
+     * data instead of repeating that event's status. What makes data stale is the caller's
+     * to decide: an event's own age says so only for a source that writes on a heartbeat.
      */
     stale?: boolean
     /** Maps a status to its sort priority; higher wins when a bucket has mixed statuses */

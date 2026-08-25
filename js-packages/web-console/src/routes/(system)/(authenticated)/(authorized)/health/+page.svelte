@@ -282,7 +282,7 @@
     {#snippet main()}
       <div class="flex h-full flex-1 flex-col gap-8 rounded-container">
         {#if staleSince}
-          <WarningBanner class="rounded-container">
+          <WarningBanner>
             {staleMonitoringMessage(isEnterprise.value, staleSince)}
           </WarningBanner>
         {/if}

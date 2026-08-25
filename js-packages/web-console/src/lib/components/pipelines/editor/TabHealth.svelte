@@ -42,7 +42,7 @@
     const fetched = await api.getPipelineEvents(name)
     if (name === pipelineName) {
       events = fetched
-      lastUpdated = new Date()
+      lastUpdated = new ServerDate()
     }
   }
 

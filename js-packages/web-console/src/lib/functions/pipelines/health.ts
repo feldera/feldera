@@ -41,10 +41,7 @@ export type HealthEventBucket<S extends string, T extends string> = {
 }
 
 /**
- * What to tell the operator when the cluster monitor has stopped writing events. The
- * runner is named only in the enterprise edition, where it is a separate process that can
- * die on its own; in the open-source edition the monitor is a task within the process
- * that just answered, so pointing at the runner would misdirect.
+ * What to tell the user when the cluster monitor has stopped writing events.
  *
  * @param isEnterprise - Whether the services run as separate processes.
  * @param since - When the newest event was recorded; omitted for the shorter global banner.
@@ -110,6 +107,20 @@ export const toEventType = (status: MonitorStatus) =>
     .with('InitialUnhealthy', () => 'unhealthy' as const)
     .with('Unhealthy', () => 'major_issue' as const)
     .exhaustive()
+
+/**
+ * The cluster's status as the newest monitor event reports it.
+ *
+ * `stale` is the API server's own verdict, and only the `latest` event carries it. A server
+ * too old to send the field was not withholding data either, so its absence claims nothing.
+ */
+export const toClusterStatus = (event: ClusterMonitorEventSelectedInfo) => ({
+  api: toEventType(event.api_status),
+  compiler: toEventType(event.compiler_status),
+  runner: toEventType(event.runner_status),
+  recordedAt: new Date(event.recorded_at),
+  stale: event.stale ?? false
+})
 
 /** Convenience aliases for the cluster-specific health event and bucket types. */
 export type ClusterRawEvent = RawHealthEvent<ClusterEventType, ClusterEventTag>
