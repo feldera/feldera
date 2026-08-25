@@ -5,6 +5,7 @@ import { formatDuration } from './format'
 import {
   accumulatePipelineMetrics,
   multihostMemoryLimitMb,
+  staleSampleCount,
   timeSeriesAxisMax
 } from './pipelineMetrics'
 
@@ -24,6 +25,53 @@ describe('timeSeriesAxisMax', () => {
 
   it('falls back to the supplied time source when there are no samples', () => {
     expect(timeSeriesAxisMax([], () => 4242)).toBe(4242)
+  })
+})
+
+describe('staleSampleCount', () => {
+  /** `hosts` samples per second, as a multihost coordinator reports them. */
+  const seriesAt = (hosts: number, seconds: number, firstMs = 0) =>
+    Array.from({ length: hosts * seconds }, (_, i) =>
+      // Hosts report at a fixed phase offset within each second.
+      sampleAt(firstMs + Math.floor(i / hosts) * 1000 + (i % hosts) * 50)
+    )
+
+  it('keeps a series that fits the window', () => {
+    expect(staleSampleCount([sampleAt(1000), sampleAt(2000), sampleAt(3000)], 5000)).toBe(0)
+  })
+
+  it('drops samples older than the window', () => {
+    const samples = [sampleAt(1000), sampleAt(2000), sampleAt(3000), sampleAt(4000)]
+    // Measured from the newest sample: 1000 is 3000ms old, 2000 is exactly at the edge.
+    expect(staleSampleCount(samples, 2000)).toBe(1)
+  })
+
+  it('keeps a sample sitting exactly on the window edge', () => {
+    expect(staleSampleCount([sampleAt(1000), sampleAt(3000)], 2000)).toBe(0)
+  })
+
+  it('retains the same time span whatever the sample rate', () => {
+    // A multihost pipeline reports one sample per host per tick, so a count-based
+    // buffer would shrink the retained span in proportion to the host count.
+    const spanOf = (hosts: number) => {
+      const samples = seriesAt(hosts, 90)
+      const kept = samples.slice(staleSampleCount(samples, 60_000))
+      return kept.at(-1)!.t - kept[0]!.t
+    }
+    expect(spanOf(1)).toBe(60_000)
+    expect(spanOf(2)).toBe(60_000)
+    expect(spanOf(4)).toBe(60_000)
+  })
+
+  it('drops a stale sample that arrived behind fresher ones', () => {
+    // The scan walks back from the newest sample, so an out-of-order straggler
+    // takes everything older than itself with it.
+    const samples = [sampleAt(9000), sampleAt(1000), sampleAt(9500), sampleAt(10_000)]
+    expect(staleSampleCount(samples, 2000)).toBe(2)
+  })
+
+  it('has nothing to drop in an empty series', () => {
+    expect(staleSampleCount([], 60_000)).toBe(0)
   })
 })
 

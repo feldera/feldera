@@ -19,8 +19,7 @@
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { formatDateTime, formatQty } from '$lib/functions/format'
   import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
-  import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
-  import { pushAsCircularBuffer } from '$lib/functions/pipelines/changeStream'
+  import { staleSampleCount, type PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import { JSONParser } from '@streamparser/json-whatwg'
   import type { ParsedElementInfo } from '@streamparser/json/utils/types/parsedElementInfo.js'
   import { getDeploymentStatusLabel, isMetricsAvailable } from '$lib/functions/pipelines/status'
@@ -34,6 +33,15 @@
   import { sleep } from '$lib/functions/common/promise'
 
   const RECONNECT_BACKOFF_MS = 1000
+  /** Time span the graphs plot. */
+  const GRAPH_WINDOW_MS = 60 * 1000
+  /**
+   * Time span of samples kept in `timeSeries`.
+   *
+   * Slightly wider than the plotted window so the line still reaches the left
+   * edge of the axis in between samples; the surplus is clipped by the axis.
+   */
+  const RETAIN_MS = GRAPH_WINDOW_MS + 3 * 1000
 
   const {
     pipeline,
@@ -121,11 +129,15 @@
 
     const runMetricsStream = async () => {
       // Not routed through `parseStream`: the load shedding is unnecessary for the metrics stream.
-      const appendRow = pushAsCircularBuffer(
-        () => timeSeries,
-        63,
-        (v: TimeSeriesEntry) => v
-      )
+      // Retention goes by sample age, not by sample count: a multihost pipeline
+      // reports one sample per host per tick, so the sample rate is unknown here.
+      const appendSample = (sample: TimeSeriesEntry) => {
+        timeSeries.push(sample)
+        const stale = staleSampleCount(timeSeries, RETAIN_MS)
+        if (stale > 0) {
+          timeSeries.splice(0, stale)
+        }
+      }
       while (!cancelled) {
         if (!metricsAvailable) {
           await sleep(RECONNECT_BACKOFF_MS)
@@ -163,7 +175,7 @@
                   pendingReplace = false
                   return
                 }
-                appendRow([entry])
+                appendSample(entry)
               }
             }),
             { signal: abortCtrl.signal }
@@ -332,7 +344,7 @@
                   {pipeline}
                   metrics={timeSeries}
                   refetchMs={1000}
-                  keepMs={60 * 1000}
+                  keepMs={GRAPH_WINDOW_MS}
                 ></PipelineThroughputGraph>
               </div>
               <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
@@ -340,7 +352,7 @@
                   {pipeline}
                   metrics={timeSeries}
                   refetchMs={1000}
-                  keepMs={60 * 1000}
+                  keepMs={GRAPH_WINDOW_MS}
                   memoryPressure={global.memory_pressure}
                 ></PipelineMemoryGraph>
               </div>
@@ -349,7 +361,7 @@
                   {pipeline}
                   metrics={timeSeries}
                   refetchMs={1000}
-                  keepMs={60 * 1000}
+                  keepMs={GRAPH_WINDOW_MS}
                 ></PipelineStorageGraph>
               </div>
             </div>
