@@ -1,5 +1,41 @@
 import { describe, expect, it } from 'vitest'
-import { clusterHealthMessage, staleMonitoringMessage, worstClusterStatus } from './health'
+import type { ClusterMonitorEventSelectedInfo } from '$lib/services/manager'
+import {
+  clusterHealthMessage,
+  staleMonitoringMessage,
+  toClusterStatus,
+  worstClusterStatus
+} from './health'
+
+describe('toClusterStatus', () => {
+  const event: ClusterMonitorEventSelectedInfo = {
+    id: '019afe45-ec1f-7de0-9cd1-3a6a4350b5e9',
+    recorded_at: '2026-05-01T12:00:00Z',
+    all_healthy: false,
+    api_status: 'Healthy',
+    compiler_status: 'InitialUnhealthy',
+    runner_status: 'Unhealthy'
+  }
+
+  it('grades each service by how long it has been failing', () => {
+    const { api, compiler, runner } = toClusterStatus(event)
+    expect([api, compiler, runner]).toEqual(['healthy', 'unhealthy', 'major_issue'])
+  })
+
+  it('carries the verdict the server sent', () => {
+    expect(toClusterStatus({ ...event, stale: true }).stale).toBe(true)
+    expect(toClusterStatus({ ...event, stale: false }).stale).toBe(false)
+  })
+
+  it('claims nothing when the server sends no verdict', () => {
+    // A server too old to know the field is not a server withholding data.
+    expect(toClusterStatus(event).stale).toBe(false)
+  })
+
+  it('reads the recording time as a date', () => {
+    expect(toClusterStatus(event).recordedAt).toEqual(new Date('2026-05-01T12:00:00Z'))
+  })
+})
 
 describe('staleMonitoringMessage', () => {
   const since = new Date('2026-05-01T12:00:00Z')

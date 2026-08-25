@@ -56,10 +56,10 @@ groups related actions into multi-action dropdowns when multiple options are ava
     useUpdatePipelineList
   } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { useConceptualHq } from '$lib/compositions/useConceptualHq.svelte'
+  import { useIsEnterprise } from '$lib/compositions/useEdition.svelte'
   import { usePermission } from '$lib/compositions/usePermission.svelte'
   import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
   import {
@@ -154,7 +154,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     _storage_indicator
   }
 
-  const isPremium = usePremiumFeatures()
+  const isEnterprise = useIsEnterprise()
 
   const canExec = usePermission('exec:pipeline')
   const canWrite = usePermission('write:pipeline')
@@ -193,7 +193,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         (CODE_ACTIONS.has(action) ? canWriteCode.allowed : true)
     )
 
-  const stopButtons = isPremium.value
+  const stopButtons = isEnterprise.value
     ? (['_stop', '_kill'] as const)
     : (['_kill', '_stop'] as const)
 
@@ -490,7 +490,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
       label: 'Stop',
       description: 'Stop the pipeline after taking a checkpoint',
       onclick: () => (globalDialog.dialog = stopDialog),
-      disabled: () => !isPremium.value,
+      disabled: () => !isEnterprise.value,
       disabledText: 'Enterprise Only',
       standaloneButton: _stop
     },
@@ -871,7 +871,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
 {#snippet _stop()}
   <div>
     <button
-      disabled={!isPremium.value}
+      disabled={!isEnterprise.value}
       class="hidden sm:flex {buttonClass} {longClass} {basicBtnColor}"
       onclick={() => {
         globalDialog.dialog = stopDialog
@@ -887,7 +887,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     >
     </button>
   </div>
-  {#if !isPremium.value}
+  {#if !isEnterprise.value}
     <Popover class="w-max max-w-[90vw]" placement="bottom">
       Stopping pipelines gracefully is only available in the Enterprise edition.<br />
       <a
