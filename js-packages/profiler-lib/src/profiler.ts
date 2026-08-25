@@ -47,6 +47,9 @@ export interface NodeAttributes {
     /** The operator's graph node id, carried as a first-class field so consumers need not
      *  parse it back out of `title`. */
     nodeId: string;
+    /** True when the node contains other nodes, so its metrics and its consumer count describe
+     *  what is inside it rather than one operator. */
+    isRegion: boolean;
     title: string;
     /** Column headers */
     columns: string[];

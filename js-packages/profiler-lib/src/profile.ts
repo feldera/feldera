@@ -1642,6 +1642,8 @@ export class CircuitProfile {
     public readonly parents: OMap<NodeId, NodeId> = new OMap();
     // Names of all worker threads
     private workerNames: Array<number> = new Array();
+    // For each node, how many consumers it feeds; see `computeConsumers`.
+    private readonly consumers: Map<NodeId, number> = new Map();
     // Index nodes by their persistent IDs
     readonly byPersistentId: OMap<string, SimpleNode> = new OMap();
     // Index nodes by table or view name (lowercase); filled from the dataflow graph.
@@ -1769,6 +1771,39 @@ export class CircuitProfile {
             r.id, r.value.toString(), r.label, range.isPoint() ? 0 : range.percents(r.numeric)));
         result.sort((a, b) => b.normalizedValue - a.normalizedValue);
         return result;
+    }
+
+    /** The node itself, then the regions containing it, innermost first. */
+    private enclosing(node: NodeId): Array<NodeId> {
+        const chain = [node];
+        let parent = this.parents.get(node);
+        while (parent.isSome()) {
+            chain.push(parent.unwrap());
+            parent = this.parents.get(parent.unwrap());
+        }
+        return chain;
+    }
+
+    /** How many edges are leaving `node`.  Since this is a multi-graph, there
+      * can be multiple edges between a pair of nodes. */
+    consumerCount(node: NodeId): number {
+        return this.consumers.get(node) ?? 0;
+    }
+
+    /** Fill in `consumers`. */
+    private computeConsumers() {
+        this.consumers.clear();
+        for (const edge of this.edges) {
+            const targetRegions = this.enclosing(edge.target);
+            // Account the edge for its source node AND all its ancestors
+            for (const ancestor of this.enclosing(edge.source)) {
+                // An edge that has both source and destination in the same region is not counted.
+                if (targetRegions.includes(ancestor)) {
+                    break;
+                }
+                this.consumers.set(ancestor, this.consumerCount(ancestor) + 1);
+            }
+        }
     }
 
     // Get the topmost parent of a node which is not the toplevel graph node.
@@ -2057,6 +2092,8 @@ export class CircuitProfile {
         result.workerNames = Array.from({ length: json.worker_profiles.length }, (_, i) => i);
         // Merge Z1 (trace) nodes; they are artificially split in the profile into two halves each.
         result.fixZ1Nodes();
+        // After fixZ1Nodes, which rewrites edges and deletes the nodes it merges.
+        result.computeConsumers();
 
         // Register children
         for (const node of [...result.simpleNodes.values(), ...result.complexNodes.values()]) {
