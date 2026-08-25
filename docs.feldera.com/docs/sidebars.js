@@ -131,6 +131,11 @@ const guides = {
             label: 'Real-time Fraud Detection',
         },
         {
+            type: 'doc',
+            id: 'use_cases/model_scoring/model_scoring',
+            label: 'Keeping an ML Model in the Loop',
+        },
+        {
             type: 'category',
             label: 'Real-time Web Applications',
             items: [
