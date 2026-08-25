@@ -3,11 +3,12 @@ import {
     AggregationMode,
     BooleanValue,
     BytesValue,
+    categoryShares,
     CircuitProfile,
+    measurementCategory,
     ComplexNode,
     CountValue,
     Measurement,
-    measurementCategory,
     MissingValue,
     PercentValue,
     PropertyValue,
@@ -15,6 +16,7 @@ import {
     SimpleNode,
     StringValue,
     TimeValue,
+    totalShare,
     type JsonProfiles
 } from './profile.js'
 import type { Dataflow } from './dataflow.js'
@@ -561,12 +563,12 @@ describe('PropertyValue contract', () => {
     })
 })
 
-// The profiler colors per-worker bars against the metric's range across ALL nodes
-// (`CircuitProfile.dataRange`, built by unioning each node's per-worker values), not against the
-// current node's local spread. `computePropertyRanges` composes `NumericRange.union` + `percents`;
-// these tests pin that composition so a value's color depends on the whole circuit.
+// The profiler colors per-worker bars against the metric's range over the nodes on display, not
+// against the current node's own spread: `CircuitProfile.displayScales` unions each drawn node's
+// per-worker values and the rendering calls `percents` on the result. These tests pin that
+// composition, so a value's color depends on the other nodes it is shown beside.
 describe('NumericRange cross-node normalization', () => {
-    // Two nodes: A workers [10, 20], B workers [100, 200]. The global range unions to [10, 200].
+    // Two nodes: A workers [10, 20], B workers [100, 200]. The range over both is [10, 200].
     const nodeA = NumericRange.getRange([10, 20])
     const nodeB = NumericRange.getRange([100, 200])
     const global = nodeA.union(nodeB)
@@ -959,6 +961,146 @@ describe('SimpleNode.totalOf', () => {
     })
 })
 
+// In the per-node view the Total column shades a node's total against the largest total any node
+// reports for that metric, so the node holding the most is the reddest. The scale needs its own
+// maximum: a total is larger than any single worker reading, and a region holds more than any
+// node inside it, so a scale built from leaf worker readings pins every region at full red.
+// The toplevel node holds the whole circuit, so it reports the largest total of every metric and
+// `totalShare` would place all of them at 100 -- the bug where the overview came out uniformly
+// red. Its totals are placed against the others of their category instead.
+describe('categoryShares', () => {
+    // 'total size', 'allocated bytes' and 'batches' are all in the memory category; 'time' is in
+    // CPU, so it is scaled on its own.
+    const totals = new Map<string, PropertyValue>([
+        ['total size', new BytesValue(13_260_000_000)],
+        ['allocated bytes', new CountValue(5_930_000)],
+        ['batches', new CountValue(366)],
+        ['time', new TimeValue(170)]
+    ])
+
+    it('spreads totals that span orders of magnitude', () => {
+        const shares = categoryShares(totals)
+        // Log scale: the largest saturates and the smallest stays well clear of it, where a
+        // linear scale would put 366 out of 13 billion at 0.
+        expect(shares.get('total size')).toBe(100)
+        expect(shares.get('allocated bytes')!).toBeGreaterThan(60)
+        expect(shares.get('batches')!).toBeGreaterThan(20)
+        expect(shares.get('batches')!).toBeLessThan(30)
+    })
+
+    it('scales each category on its own', () => {
+        // The only CPU total, so it is that category's maximum however small it looks beside
+        // the byte counts.
+        expect(measurementCategory('time')).not.toBe(measurementCategory('total size'))
+        expect(categoryShares(totals).get('time')).toBe(100)
+    })
+
+    it('shades nothing when a category measured nothing', () => {
+        const shares = categoryShares(new Map([['total size', new BytesValue(0)]]))
+        expect(shares.get('total size')).toBe(0)
+    })
+})
+
+describe('CircuitProfile.displayScales', () => {
+    const readings = (bytes: number) =>
+        [{ metric_id: 'used_memory_bytes', value: { type: 'bytes', value: bytes } },
+        {
+            metric_id: 'input_batches_stats',
+            value: {
+                batches_count: { type: 'count', value: 2 },
+                min_records_count: { type: 'count', value: 1 },
+                max_records_count: { type: 'count', value: 9 },
+                avg_records_count: { type: 'count', value: 5 },
+                total_records_count: { type: 'count', value: 10 }
+            }
+        }]
+
+    // Two operators over two workers each, inside a region: totals are 2 and 100 bytes for the
+    // leaves, 102 for the region that holds them.
+    const profile = (() => {
+        const metadata = { small: readings(1), large: readings(50) }
+        const json = {
+            metrics: [],
+            worker_profiles: [{ metadata }, { metadata }],
+            graph: {
+                nodes: {
+                    id: 'n', label: 'root', nodes: [{
+                        Cluster: {
+                            id: 'r', label: 'region', nodes: [
+                                { Simple: { id: 'small', label: 'small' } },
+                                { Simple: { id: 'large', label: 'large' } }
+                            ]
+                        }
+                    }]
+                },
+                edges: []
+            }
+        }
+        return CircuitProfile.fromJson(json as unknown as JsonProfiles).profile
+    })()
+
+    const all = (values: PropertyValue[]) => values
+    const memory = (nodes: string[]) =>
+        profile.displayScales(nodes, all).get('used_memory_bytes')?.maximum
+
+    it('takes the largest total among the nodes it is given', () => {
+        expect(memory(['small', 'large'])).toBe(100)
+        expect(memory(['small'])).toBe(2)
+    })
+
+    it('scales by the region when it is collapsed and by its nodes when it is expanded', () => {
+        // Collapsed, the region stands for everything inside it and sets the scale itself.
+        expect(memory(['r'])).toBe(102)
+        // Expanded, the nodes inside it are what is drawn, so they set the scale instead.
+        expect(memory(['small', 'large'])).toBe(100)
+    })
+
+    it('ranges over worker readings and maxes over totals, from the same pass', () => {
+        const scales = profile.displayScales(['small', 'large'], all)
+        // Worker readings run 1 to 50; the largest node total is 100. Coloring a worker cell
+        // against the totals scale would leave every bar in the bottom half of the range.
+        expect(scales.get('used_memory_bytes')!.range.min).toBe(1)
+        expect(scales.get('used_memory_bytes')!.range.max).toBe(50)
+        expect(scales.get('used_memory_bytes')!.maximum).toBe(100)
+    })
+
+    it('covers only the workers on display', () => {
+        const firstWorker = (values: PropertyValue[]) => values.slice(0, 1)
+        const scales = profile.displayScales(['small', 'large'], firstWorker)
+        expect(scales.get('used_memory_bytes')!.maximum).toBe(50)
+        expect(scales.get('used_memory_bytes')!.range.max).toBe(50)
+    })
+
+    it('has no maximum for a metric that does not add up, but still ranges it', () => {
+        const scales = profile.displayScales(['small', 'large', 'absent'], all)
+        expect(scales.get('input_batches_stats.min_size')!.maximum).toBeUndefined()
+        // The bars still need a scale for the metrics that have no total.
+        expect(scales.get('input_batches_stats.min_size')!.range.max).toBe(1)
+        // Two batches per worker over two workers: 4 per node, and the maximum is per node.
+        expect(scales.get('input_batches_stats.count')!.maximum).toBe(4)
+    })
+})
+
+describe('totalShare', () => {
+    it('is the total as a percentage of the largest on display', () => {
+        expect(totalShare(new BytesValue(100), 100)).toBe(100)
+        expect(totalShare(new BytesValue(50), 100)).toBe(50)
+        expect(totalShare(new BytesValue(2), 100)).toBe(2)
+        expect(totalShare(new BytesValue(0), 100)).toBe(0)
+    })
+
+    it('shades nothing when there is nothing to compare against', () => {
+        expect(totalShare(new BytesValue(10), undefined)).toBe(0)
+        expect(totalShare(new BytesValue(10), 0)).toBe(0)
+        expect(totalShare(MissingValue.INSTANCE, 100)).toBe(0)
+    })
+
+    it('clamps a total that exceeds the largest on display', () => {
+        // An expanded region is left out of the scale, yet its own row still has to render.
+        expect(totalShare(new BytesValue(500), 100)).toBe(100)
+    })
+})
+
 // The "top nodes" list ranks by the metric's total over a node's workers where the metric adds
 // up. Ranking by the largest single reading, as it did before, cannot tell a node that is busy on
 // every worker from one that is busy on a single worker.
@@ -966,20 +1108,15 @@ describe('CircuitProfile.rankNodes', () => {
     // Four workers. `spread` works on all of them, `hot` only on the first, harder.
     const profile = (property: string, mode: AggregationMode) => {
         const p = new CircuitProfile(4, 'n')
-        const seen: number[] = []
         const add = (id: string, values: number[]) => {
             const node = new SimpleNode(id, id, 4)
             values.forEach((v, worker) =>
                 node.addMeasurement(
                     new Measurement(property, Option.some(new CountValue(v)), mode), worker))
             p.simpleNodes.set(id, node)
-            seen.push(...values)
         }
         add('spread', [30, 30, 30, 30])
         add('hot', [50, 0, 0, 0])
-        // `computePropertyRanges` walks the metrics seen while parsing JSON; these nodes were
-        // built directly, so the per-worker range is stated here instead.
-        p.dataRange.set(property, NumericRange.getRange(seen))
         return p
     }
 
@@ -1019,7 +1156,6 @@ describe('CircuitProfile.rankNodes', () => {
             }
             p.simpleNodes.set(id, node)
         }
-        p.dataRange.set('records', NumericRange.getRange([7, 7]))
         const ranked = p.rankNodes('records', [{ id: 'a', label: 'a' }, { id: 'b', label: 'b' }])
         // A single distinct total is a point range, which carries no standing to show.
         expect(ranked.map((r) => r.normalizedValue)).toEqual([0, 0])

@@ -37,8 +37,9 @@ export interface TooltipRow {
     isCurrentMetric: boolean;
     cells: TooltipCell[];
     /** The cells added up, for metrics that add up: counts, byte sizes, durations.  Absent for
-     * ratios, minima, maxima, flags and settings, where a total states nothing. */
-    total?: PropertyValue | undefined;
+     * ratios, minima, maxima, flags and settings, where a total states nothing.  Its
+     * `percentile` is the share of the largest total any node reports for the metric. */
+    total?: TooltipCell | undefined;
 }
 
 /** Tooltip data structure */

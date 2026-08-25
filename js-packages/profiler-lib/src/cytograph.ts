@@ -3,7 +3,7 @@
 import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeDefinition, type NodeSingular, type StylesheetJson } from 'cytoscape';
 import dblclick from 'cytoscape-dblclick';
 import { assert, Graph, OMap, Option, type EncodableAsString, NumericRange, Edge } from './util.js';
-import { CircuitProfile, ComplexNode, NodeAndMetric, PropertyValue, type NodeId } from './profile.js';
+import { categoryShares, CircuitProfile, ComplexNode, NodeAndMetric, PropertyValue, totalShare, type DisplayScales, type NodeId } from './profile.js';
 import { CircuitSelection } from './selection.js';
 import elk from 'cytoscape-elk';
 import { Sources } from './dataflow.js';
@@ -34,7 +34,7 @@ class MeasurementMatrix {
         // Keys are measurement names, arrays contain one element per column name.
         readonly attributes: Map<string, Array<SerializedMeasurement>>,
         // Values added up over the columns, for the metrics that add up.
-        readonly totals: Map<string, PropertyValue> = new Map()) {
+        readonly totals: Map<string, SerializedMeasurement> = new Map()) {
         for (const a of attributes.entries()) {
             assert(columnNames.length == a[1].length,
                 "Measurement count mismatch for '" + a[0] + "':" + columnNames.length + " vs " + a.length);
@@ -655,7 +655,8 @@ export class CytographRendering {
     }
 
     /** Compute the attributes for all cytograph nodes based on the circuit profile and current selection. */
-    computeAttributes(profile: CircuitProfile, selection: MetadataSelection) {
+    computeAttributes(profile: CircuitProfile, selection: MetadataSelection,
+        scales: DisplayScales) {
         let workers = selection.workersVisible.getSelectedElements(profile.getWorkerNames());
         // One column per visible worker. Aggregates such as min/max are not produced here:
         // consumers that want them compute them from the per-worker values themselves.
@@ -663,11 +664,12 @@ export class CytographRendering {
         for (const node of this.currentGraph!.nodes) {
             let profileNode = profile.getNode(node.getId()).unwrap();
             let data = new Map<string, Array<SerializedMeasurement>>();
-            let totals = new Map<string, PropertyValue>();
+            // Totals over the same workers the cells show, so they match what is displayed.
+            let values = new Map<string, PropertyValue>();
             // Select just the visible metrics
             // Compute per-worker attributes
             for (let metric of profileNode.measurements.getMetrics()) {
-                let range = profile.propertyRange(metric);
+                let range = scales.get(metric)?.range ?? NumericRange.empty();
                 let metrics = profileNode.getMeasurements(metric);
                 let selected = selection.workersVisible.getSelectedElements(metrics);
                 let measurements: Array<SerializedMeasurement> = [];
@@ -675,11 +677,21 @@ export class CytographRendering {
                     measurements.push(CytographRendering.toMeasurement(m, range));
                 }
                 data.set(metric, measurements);
-                // Over the same workers the cells show, so the total matches what is displayed.
                 let total = profileNode.totalOf(metric, selected);
                 if (total.isSome()) {
-                    totals.set(metric, total.unwrap());
+                    values.set(metric, total.unwrap());
                 }
+            }
+            // The toplevel node stands for the whole circuit, so it holds the largest total of
+            // every metric and has to be shaded against the metrics beside it instead.
+            const overview = node.getId() === this.rootNodeId;
+            const shares = overview ? categoryShares(values) : undefined;
+            let totals = new Map<string, SerializedMeasurement>();
+            for (const [metric, total] of values) {
+                const share = overview
+                    ? shares!.get(metric) ?? 0
+                    : totalShare(total, scales.get(metric)?.maximum);
+                totals.set(metric, new SerializedMeasurement(total, share));
             }
             // additional key-value per node attributes
             let kv = new Map();
@@ -709,24 +721,31 @@ export class CytographRendering {
     }
 
     /** Compute the "importance" of each node given a selection, i.e., the way it's highlighted in the rendering. */
-    computeImportance(profile: CircuitProfile, selection: MetadataSelection) {
-        let rangeO = profile.dataRange.get(selection.metric);
+    computeImportance(profile: CircuitProfile, selection: MetadataSelection,
+        scales: DisplayScales) {
+        let range = scales.get(selection.metric)?.range;
         for (const node of this.currentGraph!.nodes) {
             if (node.expanded) { continue; }
             let profileNode = profile.getNode(node.getId()).unwrap();
             let percents = 0;
-            if (rangeO.isSome()) {
-                let range = rangeO.unwrap();
-                if (!range.isEmpty() && !range.isPoint()) {
-                    let m = profileNode.getMeasurements(selection.metric);
-                    let values = m.map(v => v.getNumericValue()).filter(v => v.isSome()).map(v => v.unwrap());
-                    let max = Math.max(...values, 0);
-                    percents = range.percents(max);
-                }
+            if (range !== undefined && !range.isEmpty() && !range.isPoint()) {
+                let m = profileNode.getMeasurements(selection.metric);
+                let values = m.map(v => v.getNumericValue()).filter(v => v.isSome()).map(v => v.unwrap());
+                let max = Math.max(...values, 0);
+                percents = range.percents(max);
             }
             let rendered = this.getRenderedNode(node.getId());
             rendered.data("value", percents);
         }
+    }
+
+    /** The nodes whose readings set the scales: the ones actually drawn.  An expanded region is
+     * drawn as the nodes inside it, so those set the scale and it does not; a collapsed one
+     * stands for everything inside it.  The root is never drawn. */
+    private drawnNodes(): Array<NodeId> {
+        return this.currentGraph!.nodes
+            .filter(node => !node.expanded && node.getId() !== this.rootNodeId)
+            .map(node => node.getId());
     }
 
     /** The user has changed something in the way they want to visualize metadata; update the rendered graph. */
@@ -734,8 +753,12 @@ export class CytographRendering {
         if (this.currentGraph === null)
             return;
         this.metadataSelection = selection;
-        this.computeImportance(profile, selection);
-        this.computeAttributes(profile, selection);
+        // One pass over the drawn nodes feeds the node highlighting, the per-worker bars and the
+        // totals, so all three describe the same population.
+        const scales = profile.displayScales(this.drawnNodes(),
+            values => selection.workersVisible.getSelectedElements(values));
+        this.computeImportance(profile, selection, scales);
+        this.computeAttributes(profile, selection, scales);
         this.cy.style().update();
 
         // Refresh the tooltip if there's a node currently displayed
@@ -1036,11 +1059,12 @@ export class CytographRendering {
                     }
                 }
 
+                const total = attributes.matrix.totals.get(key);
                 tooltipData.rows.push({
                     metric: key,
                     isCurrentMetric: key === this.getCurrentMetric(),
                     cells,
-                    total: attributes.matrix.totals.get(key)
+                    total: total && { value: total.value, percentile: total.percentile }
                 });
             }
         }

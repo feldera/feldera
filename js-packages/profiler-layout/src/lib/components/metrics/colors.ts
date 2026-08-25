@@ -33,6 +33,13 @@ export function barColor(t: number): string {
   return lerpThemeColor(t, '--bar-low', '--bar-high')
 }
 
+/** Heat-map fill for a table cell: transparent at 0, saturating to `--bar-high`. Unlike
+ *  `barColor` there is no floor color. */
+export function heatColor(t: number): string {
+  const p = clamp01(t) * 100
+  return `color-mix(in oklab, transparent ${(100 - p).toFixed(2)}%, var(--bar-high) ${p.toFixed(2)}%)`
+}
+
 /** Skew text color: neutral up to ~0%, then interpolates to error. 50% skew saturates. */
 export function skewTextColor(skewPct: number): string {
   if (!Number.isFinite(skewPct) || skewPct <= 0) {
