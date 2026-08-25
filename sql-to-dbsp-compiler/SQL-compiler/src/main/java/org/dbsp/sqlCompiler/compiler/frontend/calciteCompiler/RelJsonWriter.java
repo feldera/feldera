@@ -63,12 +63,18 @@ public class RelJsonWriter implements RelWriter {
 
     final Set<String> highVerbosity = Set.of("exprs", "aggs", "condition", "tuples");
 
+    /** Attributes that the dataflow graph does not describe, and that
+     * {@link RelJson} cannot serialize. */
+    static final Set<String> skipped = Set.of("hints");
+
     protected void explain_(RelNode rel, List<Pair<String, Object>> values) {
         Map<String, Object> map = this.jsonBuilder.map();
         map.put("id", null);
         map.put("relOp", this.relJson.classToTypeName(rel.getClass()));
 
         for(Pair<String, Object> value : values) {
+            if (skipped.contains(value.left))
+                continue;
             if (this.verbosity < 1 && highVerbosity.contains(value.left))
                 continue;
             if (!(value.right instanceof RelNode)) {
