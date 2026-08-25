@@ -4,14 +4,15 @@ import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
 import { formatDuration } from './format'
 import {
   accumulatePipelineMetrics,
+  calcPipelineThroughput,
   multihostMemoryLimitMb,
   staleSampleCount,
   timeSeriesAxisMax
 } from './pipelineMetrics'
 
-const sampleAt = (timeMs: number): TimeSeriesEntry => ({
+const sampleAt = (timeMs: number, records = 0): TimeSeriesEntry => ({
   t: timeMs,
-  r: 0,
+  r: records,
   m: 0,
   s: 0
 })
@@ -72,6 +73,39 @@ describe('staleSampleCount', () => {
 
   it('has nothing to drop in an empty series', () => {
     expect(staleSampleCount([], 60_000)).toBe(0)
+  })
+})
+
+describe('calcPipelineThroughput', () => {
+  it('reports the records added since the preceding sample', () => {
+    const { series } = calcPipelineThroughput([
+      sampleAt(1000, 0),
+      sampleAt(2000, 30),
+      sampleAt(3000, 100)
+    ])
+    expect(series.map((p) => p.value)).toEqual([
+      [2000, 30],
+      [3000, 70]
+    ])
+  })
+
+  it('covers the plotted window once one extra sample interval is retained', () => {
+    // Why `RETAIN_MS` exceeds the plotted window: the oldest sample yields no
+    // point, so retaining exactly the window would leave the line short of it.
+    const samples = Array.from({ length: 62 }, (_, i) => sampleAt(i * 1000, i))
+    const { series } = calcPipelineThroughput(samples)
+    expect(series.length).toBe(samples.length - 1)
+    expect(series.at(-1)!.value[0] - series[0]!.value[0]).toBe(60_000)
+  })
+
+  it('reports the newest rate as the current one', () => {
+    expect(calcPipelineThroughput([sampleAt(1000, 0), sampleAt(2000, 5)]).current).toBe(5)
+  })
+
+  it('has no rate to report for fewer than two samples', () => {
+    expect(calcPipelineThroughput([]).series).toEqual([])
+    expect(calcPipelineThroughput([sampleAt(1000, 7)]).series).toEqual([])
+    expect(calcPipelineThroughput([sampleAt(1000, 7)]).current).toBe(0)
   })
 })
 

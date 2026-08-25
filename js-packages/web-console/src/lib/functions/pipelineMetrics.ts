@@ -278,7 +278,14 @@ export const multihostMemoryLimitMb = (
 ): number | undefined => (perHostMemoryMb ? perHostMemoryMb * Math.max(hosts ?? 1, 1) : undefined)
 
 /**
- * @returns Time series of throughput with smoothing window over 3 data intervals
+ * Throughput time series: records added between consecutive samples, stamped
+ * with the newer sample of each pair.
+ *
+ * A rate needs two samples, so the series holds one point fewer than `metrics`
+ * and starts one sample interval after the oldest sample.
+ *
+ * @returns Series of `[timestamp, records]`, plus the latest and mean rate and
+ * the y-axis bounds.
  */
 export const calcPipelineThroughput = (metrics: TimeSeriesEntry[]) => {
   const series = discreteDerivative(metrics, (n1, n0) => ({
