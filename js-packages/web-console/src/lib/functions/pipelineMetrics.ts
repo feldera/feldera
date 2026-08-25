@@ -238,6 +238,29 @@ export const timeSeriesAxisMax = (metrics: TimeSeriesEntry[], now: () => number 
   metrics.at(-1)?.t ?? now()
 
 /**
+ * Number of oldest samples to drop so that the series spans at most `windowMs`.
+ *
+ * The scan starts at the newest sample and walks back to the first sample that
+ * falls outside the window; that sample and every older one are dropped.
+ *
+ * @param samples - Series ordered oldest first.
+ * @param windowMs - How far back from the newest sample to retain.
+ */
+export const staleSampleCount = (samples: TimeSeriesEntry[], windowMs: number): number => {
+  const newest = samples.at(-1)?.t
+  if (newest === undefined) {
+    return 0
+  }
+  const oldestKept = newest - windowMs
+  for (let i = samples.length - 1; i >= 0; i--) {
+    if (samples[i].t < oldestKept) {
+      return i + 1
+    }
+  }
+  return 0
+}
+
+/**
  * Memory limit on a multi-host deployment, in MB.
  *
  * `memory_mb_max` is the individual host's limit, but the reported memory metric
