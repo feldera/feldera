@@ -8,6 +8,11 @@ export { default as ANSIDecoratedText } from './ANSIDecoratedText.svelte'
 export { default as LogList } from './LogList.svelte'
 export { default as ScrollDownFab } from './ScrollDownFab.svelte'
 export { useReverseScrollContainer } from './useReverseScrollContainer.svelte'
+export {
+  useStickToBottom,
+  type StickToBottom,
+  type StickToBottomOptions
+} from './stickToBottom.svelte'
 export { selectScope, virtualSelect } from './userSelect'
 export { stripAnsi } from 'fancy-ansi'
 export {
