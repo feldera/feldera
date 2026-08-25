@@ -62,6 +62,8 @@
     loadProfileControl?: Snippet
     /** Optional slot for a richer SQL panel; receives current highlight ranges */
     sqlPanel?: Snippet<[highlightRanges: SourcePositionRange[]]>
+    /** Ranges of the SQL that the selected node came from. Their `end` is the last character of the
+     *  range, so an editor selection has to be built from `endExclusive`. */
     onHighlightSourceRanges?: (ranges: SourcePositionRange[]) => void
     /** Fired when the graph rendering enters or leaves its asynchronous layout phase.
      */
