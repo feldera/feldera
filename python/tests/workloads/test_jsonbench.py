@@ -425,26 +425,78 @@ EXPECTED_1M = {
 }
 
 
+def query_rows(pipeline, sql: str):
+    """Run an ad-hoc query, rejecting an error payload posing as a result row.
+
+    A failed ad-hoc query comes back as a single row carrying an `error` key,
+    which the SDK hands over as data (feldera/cloud#1830). Reading it as a
+    result turns a query failure into a `KeyError` on the next column access.
+    """
+    rows = list(pipeline.query(sql))
+    for row in rows:
+        if isinstance(row, dict) and "error" in row:
+            raise AssertionError(f"ad-hoc query failed: {sql}: {row['error']}")
+    return rows
+
+
+def log_transaction_lines(pipeline, max_lines: int = 5000, budget_s: float = 30.0):
+    """Echo the pipeline's transaction lines.
+
+    `Transaction N: Starting commit of M records` reports how many records the
+    transaction covered. When a view comes back short (feldera/cloud#1934),
+    that number says whether the missing records were ever in the transaction.
+    """
+    deadline = time.monotonic() + budget_s
+    shown = 0
+    try:
+        for index, line in enumerate(pipeline.logs()):
+            if index >= max_lines or time.monotonic() > deadline:
+                break
+            if "Transaction" in line or "commit" in line or "snapshot" in line:
+                log(f"  pipeline: {line}")
+                shown += 1
+    except Exception as e:
+        log(f"  could not read the pipeline log: {e}")
+    if not shown:
+        log("  no transaction lines in the pipeline log")
+
+
 def validate_views(pipeline, views: List[ViewSpec], num_files: int):
     """q1 must partition the input; q4/q5 must match the known 1M outputs."""
-    table_rows = next(pipeline.query("select count(*) as cnt from bluesky"))["cnt"]
-    q1_rows = list(pipeline.query("select * from q1 order by count desc"))
+    table_rows = query_rows(pipeline, "select count(*) as cnt from bluesky")[0]["cnt"]
+    q1_rows = query_rows(pipeline, "select * from q1 order by count desc")
     log(f"q1 (event distribution over {table_rows} rows):")
     for row in q1_rows:
         log(f"  {row}")
     q1_total = sum(row["count"] for row in q1_rows)
     if q1_total != table_rows:
+        # Read both relations again before failing. A stale snapshot converges
+        # on a later read; an aggregate that lost data does not. Carry both
+        # readings into the failure message so the distinction survives in CI,
+        # where the pipeline is gone by the time anyone looks.
+        rereads = []
+        for _ in range(3):
+            time.sleep(2)
+            rows = query_rows(pipeline, "select * from q1 order by count desc")
+            rereads.append(sum(row["count"] for row in rows))
+        bluesky_reread = query_rows(pipeline, "select count(*) as cnt from bluesky")[0][
+            "cnt"
+        ]
+        log(f"q1 re-reads: {rereads}, bluesky re-read: {bluesky_reread}")
+        log_transaction_lines(pipeline)
         raise AssertionError(
-            f"q1 counts sum to {q1_total}, but bluesky has {table_rows} rows"
+            f"q1 counts sum to {q1_total}, but bluesky has {table_rows} rows "
+            f"(q1 re-reads {rereads}, bluesky re-read {bluesky_reread})"
         )
 
     for view in views:
-        rows = list(pipeline.query(f"select count(*) as cnt from {view.name}"))
+        rows = query_rows(pipeline, f"select count(*) as cnt from {view.name}")
         log(f"View {view.name}: {rows[0]['cnt']} rows")
 
     for name in ("q4", "q5"):
         rows = sorted(
-            pipeline.query(f"select * from {name}"), key=lambda row: row["user_id"]
+            query_rows(pipeline, f"select * from {name}"),
+            key=lambda row: row["user_id"],
         )
         log(f"{name}: {rows}")
         if num_files == 1:
