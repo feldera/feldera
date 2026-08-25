@@ -1615,6 +1615,8 @@ export class SimpleNode implements JsonSimpleCircuitNode {
 export class ComplexNode extends SimpleNode {
     children: Array<NodeId>;
     depth: number = 0;
+    // Number of primitive operators anywhere inside this region.
+    leafCount: number = 0;
     // Names of tables and views of descendant nodes.
     readonly containedNames: Array<string> = [];
 
@@ -1642,6 +1644,10 @@ export class ComplexNode extends SimpleNode {
 
     setDepth(depth: number) {
         this.depth = depth;
+    }
+
+    setLeafCount(count: number) {
+        this.leafCount = count;
     }
 
     override getChildren(): Array<NodeId> {
@@ -2136,13 +2142,18 @@ export class CircuitProfile {
             node.setDepth(result.computeDepth(node.id));
         }
 
-        // Assign to every complex node the "sum" of the children's measurements.
-        // Process in order of increasing depth.
+        // Assign to every complex node the "sum" of the children's measurements,
+        // and the number of primitive operators inside it.
+        // `depth` is the height above the leaves, so increasing depth visits a
+        // region after its subregions, and their counts are final when it reads them.
         for (const complex of result.getSortedComplexNodes()) {
+            let leaves = 0;
             for (const child of complex.children) {
-                let node = result.getNode(child);
-                complex.appendMeasurements(node.unwrap());
+                const node = result.getNode(child).unwrap();
+                complex.appendMeasurements(node);
+                leaves += node instanceof ComplexNode ? node.leafCount : 1;
             }
+            complex.setLeafCount(leaves);
         }
 
         return {
