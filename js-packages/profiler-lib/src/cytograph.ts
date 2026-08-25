@@ -15,6 +15,7 @@ import { installNodeShadows, SELECTED_NODE_CLASS } from './nodeShadow.js';
 import { installNodeText } from './nodeText.js';
 import { nodeChips } from './chips.js';
 import { elkNodeLayoutOptions, regionMinWidth } from './regionSize.js';
+import { installChipButtons } from './chipButtons.js';
 import type { DiagramObserver } from './diagramObserver.js';
 import { Viewport } from './viewport.js';
 import { FrozenLayout } from './frozenLayout.js';
@@ -788,9 +789,22 @@ export class CytographRendering {
     }
 
     setEvents(callbacks: {
-        onNodeDoubleClick?: ((node: NodeId, type: 'group' | 'leaf') => void) | undefined
+        onNodeDoubleClick?: ((node: NodeId, type: 'group' | 'leaf') => void) | undefined,
+        onShowSource?: ((node: NodeId) => void) | undefined
     }) {
         document.addEventListener('keyup', (e) => this.keyup(e));
+        // Called here rather than in the constructor because this is where the chips' actions arrive;
+        // `setEvents` runs once per instance.
+        installChipButtons(this.cy, () => this.theme, {
+            // A code chip press is also a click on the node it belongs to: report on that node, then
+            // show its source. The counter is a toggle instead, and `toggleComposite` clears the
+            // report, the graph being about to change under it.
+            onSource: (id) => {
+                this.reportOn(id);
+                callbacks.onShowSource?.(id);
+            },
+            onToggle: (id) => this.toggleComposite(id, callbacks.onNodeDoubleClick)
+        });
         this.cy
             //.on('render', () => console.log("rendering"))
             //.on('layoutstart', () => console.log("start layout"))
@@ -813,7 +827,7 @@ export class CytographRendering {
             });
     }
 
-    /** Report on a node: what a click on it comes down to. */
+    /** Report on a node: what a click on it, or a press of its code chip, comes down to. */
     private reportOn(id: NodeId) {
         // Whatever was reported before goes first, so nothing of it survives into this node's report.
         this.hideNodeInformation();
@@ -825,7 +839,8 @@ export class CytographRendering {
         this.displayNodeAttributes(this.getRenderedNode(id));
     }
 
-    /** Expand or collapse a composite: what a double click on it comes down to. */
+    /** Expand or collapse a composite: what a double click on it, or a press of its counter chip,
+     *  comes down to. */
     private toggleComposite(
         id: NodeId,
         onNodeDoubleClick?: ((node: NodeId, type: 'group' | 'leaf') => void) | undefined
