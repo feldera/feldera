@@ -28,6 +28,7 @@ import {
     REGION_OPACITY,
     REGION_PADDING
 } from './diagramTheme.js'
+import { regionMinWidth } from './regionSize.js'
 
 const graph = (theme: DiagramTheme) =>
     cytoscape({
@@ -255,6 +256,79 @@ describe('expanded regions', () => {
     it('leaves the operators inside a region opaque', () => {
         const cy = graph('light')
         expect(Number(cy.$id('inside').style('background-opacity'))).toBe(1)
+    })
+})
+
+describe('the width of an expanded region', () => {
+    /** A region named `label` that holds one operator `child` pixels wide, sized the way the diagram
+     *  sizes it: `min_width` comes from the node definition, everything else from the stylesheet. */
+    const region = (label: string, leafCount: number, child: number) =>
+        cytoscape({
+            headless: true,
+            styleEnabled: true,
+            style: buildGraphStyle('light'),
+            elements: {
+                nodes: [
+                    {
+                        data: {
+                            id: 'region',
+                            label,
+                            operator: label,
+                            has_children: true,
+                            text_width: labelWidth(label),
+                            min_width: regionMinWidth(label, leafCount),
+                            chips: nodeChips(false, leafCount, 'light')
+                        }
+                    },
+                    {
+                        data: {
+                            id: 'inside',
+                            label: 'inside',
+                            text_width: child,
+                            parent: 'region',
+                            chips: nodeChips(false, 0, 'light')
+                        },
+                        position: { x: 0, y: 0 }
+                    }
+                ]
+            }
+        }).$id('region')
+
+    const LONG = 'region shard_by_index_and_key'
+    const COUNT = 12
+
+    it('pads a narrow region out to what its own name needs', () => {
+        // Cytoscape sizes a parent from its children and ignores the parent's own label, so a region
+        // around one short operator would come out narrower than the name in its top band, and the name
+        // would overflow both borders and run under the counter chip.
+        const node = region(LONG, COUNT, 30)
+        expect(node.children().boundingBox().w).toBeLessThan(labelWidth(LONG))
+        expect(node.outerWidth())
+            .toBeGreaterThanOrEqual(labelWidth(LONG) + 2 * badgePillWidth(formatLeafCount(COUNT)))
+        // The floor is measured against the children, so the region adds its padding around it. That
+        // padding lies inside the band holding the name, which is why `regionMinWidth` subtracts it.
+        expect(node.numericStyle('padding')).toBe(REGION_PADDING)
+    })
+
+    it('leaves a region sized by the nodes inside it when those are the wider ones', () => {
+        // The name of this region fits within the operator it holds, so the floor never applies and the
+        // region stays exactly as wide as that operator.
+        const node = region('region r', 1, 600)
+        // `width()` is the node's body, which for a parent is the box around its children. The padding
+        // drawn outside that box is covered by `node geometry` above.
+        expect(node.width()).toBeCloseTo(node.children().boundingBox().w, 0)
+    })
+
+    it('adds every extra pixel on the right, the side ELK reserves it on', () => {
+        // By default cytoscape splits the extra width evenly between the two sides, which would push
+        // the region into whatever the layout placed to its left.
+        const node = region(LONG, COUNT, 30)
+        const inside = node.children().boundingBox()
+        // Both distances are measured from the body rather than the padded box, so that they are
+        // comparable: the left edge stays on the nodes inside, and the whole widening is on the right.
+        expect(inside.x1 - (node.position().x - node.width() / 2)).toBeCloseTo(0, 0)
+        expect(node.position().x + node.width() / 2 - inside.x2)
+            .toBeCloseTo(regionMinWidth(LONG, COUNT) - inside.w, 0)
     })
 })
 
