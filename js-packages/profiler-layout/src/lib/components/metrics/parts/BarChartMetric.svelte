@@ -1,7 +1,7 @@
 <script lang="ts">
   import { Popover, Tooltip } from 'common-ui'
   import { MissingValue, type PropertyValue, type TooltipCell } from 'profiler-lib'
-  import { barColor, logScale01, skewTextColor } from '../colors'
+  import { barColor, heatColor, logScale01, skewTextColor } from '../colors'
 
   interface Props {
     label: string
@@ -11,8 +11,9 @@
      * so bar height and color express magnitude relative to the whole circuit. */
     cells: TooltipCell[]
     /** The cells added up, for metrics that add up. Absent for rates, reported minima and
-     * maxima, flags and settings, whose column stays blank. */
-    total?: PropertyValue | undefined
+     * maxima, flags and settings, whose column stays blank. `percentile` is where the total
+     * stands, which `profiler-lib` computes; it drives the cell's heat-map background. */
+    total?: TooltipCell | undefined
     expanded: boolean
     onToggle: () => void
   }
@@ -119,17 +120,26 @@
     <div class="text-sm text-surface-700-300">{metricId}</div>
   </Popover>
 </div>
-<!-- Cols 2-5: avg / min / max / total. Always rendered (same grid slots), opacity-driven
-     visibility so collapse/expand doesn't reflow the grid mid-transition. The total is blank for
-     metrics that do not add up. -->
-{#each [display.avg, display.min, display.max, total] as stat}
+<!-- Cols 2-4: avg / min / max. Always rendered (same grid slots), opacity-driven visibility so
+     collapse/expand doesn't reflow the grid mid-transition. -->
+{#each [display.avg, display.min, display.max] as stat}
 <div
-  class="value-cell text-right text-sm tabular-nums text-surface-700-300 {showValues ? 'opacity-100' : 'opacity-0'}"
+  class="value-cell text-right text-sm tabular-nums text-surface-900-100 {showValues ? 'opacity-100' : 'opacity-0'}"
   aria-hidden={!showValues}
 >
-  {stat ? stat.toString() : ''}
+  {stat.toString()}
 </div>
 {/each}
+<!-- Col 5: total, blank for metrics that do not add up. Its background is a heat map over the
+     standing `profiler-lib` computed: the largest saturates to `--bar-high`, the smallest stays
+     at `--bar-low`. -->
+<div
+  class="value-cell rounded-sm px-1 text-right text-sm tabular-nums text-surface-900-100 {showValues ? 'opacity-100' : 'opacity-0'}"
+  style:background-color={total ? heatColor(total.percentile / 100) : 'transparent'}
+  aria-hidden={!showValues}
+>
+  {total ? total.value.toString() : ''}
+</div>
 <!-- Col 5: skew toggle — always present, always pinned to the top-right -->
 <div class="flex items-center justify-end">
   <button

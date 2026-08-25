@@ -1248,9 +1248,9 @@ export class Measurement {
                 }
                 let entries = value[0].entries;
                 for (const e of entries) {
-                    // A slash, which is how these metrics are spelled in
-                    // `parseLegacyPropertyValue` and in `legacyMeasurementCategory`.  A dot
-                    // here left every one of them unparsed and uncategorized.
+                    // A slash, which is how these metrics are spelled in `parseLegacyPropertyValue`
+                    // and in `legacyMeasurementCategory`.  A dot here left every one of them
+                    // unparsed and uncategorized.
                     result.push(Measurement.fromJson(prefix + "/", e));
                 }
                 break;
@@ -1381,6 +1381,56 @@ export class Measurement {
                 return Option.none();
         }
     }
+}
+
+/** How one metric's readings are placed on screen. */
+export interface MetricScale {
+    /** Range of the individual worker readings, which colors the per-worker bars and the node
+     * highlighting. */
+    readonly range: NumericRange;
+    /** Largest total a drawn node reports, which shades the totals.  Absent for the metrics that
+     * do not add up, which have no total to shade. */
+    readonly maximum?: number;
+}
+
+/** The scales the rendering colors against, by metric, over the nodes currently drawn. */
+export type DisplayScales = Map<string, MetricScale>;
+
+/** A total as a percentage of the largest total on display, clamped to [0, 100]: 100 for the
+ * node holding the most, near zero for one holding a negligible share.  Zero when there is
+ * nothing on display to compare against. */
+export function totalShare(total: PropertyValue, largest: number | undefined): number {
+    const value = total.getNumericValue();
+    if (largest === undefined || largest <= 0 || value.isNone()) {
+        return 0;
+    }
+    return Math.max(0, Math.min(100, 100 * value.unwrap() / largest));
+}
+
+/** Shares for the totals of the toplevel node, which stands for the whole circuit.  It holds the
+ * largest total of every metric by construction, so `totalShare` would place all of them at 100.
+ * These place each total against the others of its category -- the group it is displayed
+ * alongside -- on a log scale, since a category's totals routinely span a byte count in the
+ * billions beside a batch count in the hundreds. */
+export function categoryShares(totals: Map<string, PropertyValue>): Map<string, number> {
+    const magnitudes = new Map<string, number>();
+    const largest = new Map<string, number>();
+    for (const [metric, total] of totals) {
+        const value = total.getNumericValue();
+        if (value.isNone()) {
+            continue;
+        }
+        const magnitude = Math.max(0, value.unwrap());
+        magnitudes.set(metric, magnitude);
+        const category = measurementCategory(metric);
+        largest.set(category, Math.max(largest.get(category) ?? 0, magnitude));
+    }
+    const shares = new Map<string, number>();
+    for (const [metric, magnitude] of magnitudes) {
+        const top = largest.get(measurementCategory(metric))!;
+        shares.set(metric, top > 0 ? 100 * Math.log1p(magnitude) / Math.log1p(top) : 0);
+    }
+    return shares;
 }
 
 /** A node, its operation, and the (maximum) value of a metric for that node.  The actual metric
@@ -1590,12 +1640,8 @@ export class CircuitProfile {
     public readonly complexNodes: OMap<NodeId, ComplexNode> = new OMap();
     // Maps each node id to it's immediate parent id.
     public readonly parents: OMap<NodeId, NodeId> = new OMap();
-    // Set of all metrics found in the profile.
-    private allMetrics: Set<string> = new Set();
     // Names of all worker threads
     private workerNames: Array<number> = new Array();
-    // For each measurement the aggregate range of values across all nodes.
-    readonly dataRange: OMap<string, NumericRange> = new OMap();
     // Index nodes by their persistent IDs
     readonly byPersistentId: OMap<string, SimpleNode> = new OMap();
     // Index nodes by table or view name (lowercase); filled from the dataflow graph.
@@ -1688,10 +1734,8 @@ export class CircuitProfile {
      * single worker, which ranking by the largest reading alone cannot express.  Nodes with no
      * reading for the metric are left out. */
     rankNodes(metric: string, nodes: Array<{ id: NodeId, label: string }>): Array<NodeAndMetric> {
-        // The range to normalize against depends on which of the two measures was used, which is
-        // only known once every node has been visited, so collect the readings first.
+        // The nodes are placed against each other, so collect the readings before scaling them.
         let ranked: Array<{ id: NodeId, label: string, value: PropertyValue, numeric: number }> = [];
-        let usedTotals = false;
         for (const node of nodes) {
             const profileNode = this.getNode(node.id);
             if (profileNode.isNone()) { continue; }
@@ -1700,7 +1744,6 @@ export class CircuitProfile {
             let chosen: PropertyValue | null = null;
             let numeric: number | null = null;
             if (total.isSome()) {
-                usedTotals = true;
                 chosen = total.unwrap();
                 numeric = chosen.getNumericValue().unwrapOr(0);
             } else {
@@ -1716,11 +1759,9 @@ export class CircuitProfile {
             if (numeric === null) { continue; }
             ranked.push({ id: node.id, label: node.label, value: chosen!, numeric });
         }
-        // A total is larger than any single worker's reading, so it does not belong to the
-        // metric's per-worker range; totals are placed against each other instead.
-        const range = usedTotals
-            ? NumericRange.getRange(ranked.map(r => r.numeric))
-            : this.propertyRange(metric);
+        // Each node is placed against the others in the list, whichever measure was used: a
+        // total is larger than any single worker's reading, so the two do not share a scale.
+        const range = NumericRange.getRange(ranked.map(r => r.numeric));
         if (range.isEmpty()) {
             return [];
         }
@@ -1881,22 +1922,41 @@ export class CircuitProfile {
     /** @param rootNodeId Id of the toplevel graph node, taken from the parsed profile. */
     constructor(readonly worker_count: number, readonly rootNodeId: NodeId) { }
 
-    // Scan the nodes and compute the range of each property
-    computePropertyRanges() {
-        for (const metric of this.allMetrics) {
-            let range = NumericRange.empty();
-            for (const node of this.simpleNodes.values()) {
-                let m = node.getMeasurements(metric);
-                let values = m.map(v => v.getNumericValue()).filter(v => v.isSome()).map(v => v.unwrap());
-                range = range.union(NumericRange.getRange(values));
+    /** The scales the display colors against, taken over the nodes it draws: an expanded region
+     * is drawn as the nodes inside it, so those count and the region does not, while a collapsed
+     * region stands for everything inside it and counts in their place.  `visible` selects the
+     * workers on display, so the scales cover the readings that are actually shown.
+     *
+     * Both scales come from one pass, since they walk the same readings. */
+    displayScales(nodes: Array<NodeId>,
+        visible: (values: Array<PropertyValue>) => Array<PropertyValue>): DisplayScales {
+        const scales: DisplayScales = new Map();
+        for (const id of nodes) {
+            const found = this.getNode(id);
+            if (found.isNone()) {
+                continue;
             }
-            this.dataRange.set(metric, range);
-        }
-    }
+            const node = found.unwrap();
+            for (const metric of node.measurements.getMetrics()) {
+                const shown = visible(node.getMeasurements(metric));
+                const numbers = shown.map(v => v.getNumericValue())
+                    .filter(v => v.isSome()).map(v => v.unwrap());
+                const previous = scales.get(metric);
+                const readings = NumericRange.getRange(numbers);
+                const range = previous === undefined
+                    ? readings
+                    : previous.range.union(readings);
 
-    // Given a property, compute the range of values across all nodes.
-    propertyRange(property: string): NumericRange {
-        return this.dataRange.get(property).unwrap();
+                let maximum = previous?.maximum;
+                const total = node.totalOf(metric, shown).map(t => t.getNumericValue());
+                if (total.isSome() && total.unwrap().isSome()) {
+                    const value = total.unwrap().unwrap();
+                    maximum = maximum === undefined ? value : Math.max(maximum, value);
+                }
+                scales.set(metric, maximum === undefined ? { range } : { range, maximum });
+            }
+        }
+        return scales;
     }
 
     // Decode the data in a worker profile; return a map from nodeId to an array of measurements for that node
@@ -1908,7 +1968,6 @@ export class CircuitProfile {
                 let measurements = Measurement.parseValues(datum);
                 for (const m of measurements) {
                     parsed.push(m);
-                    this.allMetrics.add(m.property);
                 }
             }
             metadata.set(nodeId, parsed);
@@ -1925,7 +1984,6 @@ export class CircuitProfile {
                 let measurements = Measurement.parseLegacyValues(datum);
                 for (const m of measurements) {
                     parsed.push(m);
-                    this.allMetrics.add(m.property);
                 }
             }
             metadata.set(nodeId, parsed);
@@ -2024,7 +2082,6 @@ export class CircuitProfile {
             }
         }
 
-        result.computePropertyRanges();
         return {
             profile: result,
             rootNodeId
