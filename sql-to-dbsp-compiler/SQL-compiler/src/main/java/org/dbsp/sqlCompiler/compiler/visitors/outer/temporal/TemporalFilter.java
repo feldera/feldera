@@ -37,9 +37,10 @@ record TemporalFilter(DBSPParameter parameter, DBSPExpression noNow,
         EquivalenceContext context = new EquivalenceContext();
         context.leftDeclaration.newContext();
         context.rightDeclaration.newContext();
+        // The two filters may come from different closures, so their parameters may differ.
         context.leftDeclaration.substitute(this.parameter.name, this.parameter);
-        context.rightDeclaration.substitute(this.parameter.name, this.parameter);
-        context.leftToRight.put(this.parameter, this.parameter);
+        context.rightDeclaration.substitute(o.parameter.name, o.parameter);
+        context.leftToRight.put(this.parameter, o.parameter);
         return context.equivalent(this.noNow, o.noNow);
     }
 

@@ -8,7 +8,9 @@ import org.dbsp.util.Utilities;
 record WindowBound(boolean inclusive, DBSPExpression expression) {
     WindowBound combine(WindowBound with, boolean lower) {
         Utilities.enforce(this.inclusive == with.inclusive);
-        DBSPOpcode opcode = lower ? DBSPOpcode.MIN : DBSPOpcode.MAX;
+        // Two bounds on the same side fold into the tighter one: the larger lower bound,
+        // the smaller upper bound.
+        DBSPOpcode opcode = lower ? DBSPOpcode.MAX : DBSPOpcode.MIN;
         DBSPExpression expression = ExpressionCompiler.makeBinaryExpression(this.expression.getNode(),
                 this.expression.getType(), opcode, this.expression, with.expression);
         return new WindowBound(this.inclusive, expression);
