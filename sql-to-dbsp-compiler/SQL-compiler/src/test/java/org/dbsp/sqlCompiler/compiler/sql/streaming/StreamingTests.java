@@ -2295,6 +2295,127 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void twoLowerNowBounds() {
+        // The window's lower bound must be the tighter of the two.
+        String sql = """
+                CREATE TABLE t (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP
+                );
+                CREATE VIEW v AS
+                SELECT id FROM t
+                WHERE ts >= now() - INTERVAL 10 MINUTES
+                  AND ts >= now() - INTERVAL 100 MINUTES""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        // At now() = 12:00 the bounds are ts >= 11:50 and ts >= 10:20; only id 1 satisfies both.
+        ccs.step("""
+                 INSERT INTO t VALUES (1, '2024-01-01 11:55:00');
+                 INSERT INTO t VALUES (2, '2024-01-01 10:30:00');
+                 INSERT INTO now VALUES ('2024-01-01 12:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 1  | 1""");
+    }
+
+    @Test
+    public void twoUpperNowBounds() {
+        // The mirror image: two upper bounds fold into the tighter one, the minimum.
+        String sql = """
+                CREATE TABLE t (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP
+                );
+                CREATE VIEW v AS
+                SELECT id FROM t
+                WHERE ts <= now() - INTERVAL 10 MINUTES
+                  AND ts <= now() - INTERVAL 100 MINUTES""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        // At now() = 12:00 the bounds are ts <= 11:50 and ts <= 10:20; only id 2 satisfies both.
+        ccs.step("""
+                 INSERT INTO t VALUES (1, '2024-01-01 11:00:00');
+                 INSERT INTO t VALUES (2, '2024-01-01 10:00:00');
+                 INSERT INTO now VALUES ('2024-01-01 12:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 2  | 1""");
+    }
+
+    @Test
+    public void twoLowerAndTwoUpperNowBounds() {
+        // Both sides fold: the window is [now() - 50 MINUTES, now() - 20 MINUTES], the
+        // tighter bound on each side.  The bounds are interleaved.
+        String sql = """
+                CREATE TABLE t (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP
+                );
+                CREATE VIEW v AS
+                SELECT id FROM t
+                WHERE ts >= now() - INTERVAL 100 MINUTES
+                  AND ts <= now() - INTERVAL 10 MINUTES
+                  AND ts >= now() - INTERVAL 50 MINUTES
+                  AND ts <= now() - INTERVAL 20 MINUTES""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        ccs.visit(new Inspector(ccs.compiler, 1, 1, 1));
+        // At 12:00 the window is [11:10, 11:40].  Ids 2 and 3 are inside the looser
+        // bounds only; ids 4 and 5 should be selected.
+        ccs.step("""
+                 INSERT INTO t VALUES (1, '2024-01-01 11:30:00');
+                 INSERT INTO t VALUES (2, '2024-01-01 11:00:00');
+                 INSERT INTO t VALUES (3, '2024-01-01 11:45:00');
+                 INSERT INTO t VALUES (4, '2024-01-01 11:10:00');
+                 INSERT INTO t VALUES (5, '2024-01-01 11:40:00');
+                 INSERT INTO now VALUES ('2024-01-01 12:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 1  | 1
+                 4  | 1
+                 5  | 1""");
+        // At 12:30 the window is [11:40, 12:10]: ids 1 and 4 leave, id 3 enters, id 5 stays.
+        ccs.step("""
+                 INSERT INTO now VALUES ('2024-01-01 12:30:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 1  | -1
+                 4  | -1
+                 3  | 1""");
+    }
+
+    @Test
+    public void nowBoundsBroughtTogetherByReordering() {
+        String sql = """
+                CREATE TABLE t (
+                  id INT NOT NULL PRIMARY KEY,
+                  x  INT,
+                  ts TIMESTAMP
+                );
+                CREATE VIEW v AS
+                SELECT id FROM t
+                WHERE ts >= now() - INTERVAL 10 MINUTES
+                  AND x > 5
+                  AND ts >= now() - INTERVAL 100 MINUTES""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        // At now() = 12:00 the bounds are ts >= 11:50 and ts >= 10:20; only id 1 satisfies both.
+        ccs.step("""
+                 INSERT INTO t VALUES (1, 6, '2024-01-01 11:55:00');
+                 INSERT INTO t VALUES (2, 6, '2024-01-01 10:30:00');
+                 INSERT INTO now VALUES ('2024-01-01 12:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 1  | 1""");
+    }
+
+    @Test
     public void issue2003() {
         String sql = """
                 CREATE TABLE event(

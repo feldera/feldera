@@ -29,13 +29,17 @@ public class MergeFilters extends CircuitCloneVisitor {
                 source.getClosureFunction().ensureTree(this.compiler).to(DBSPClosureExpression.class));
         var f = FindComparisons.decomposeIntoTemporalFilters(this.compiler, filter,
                 filter.getClosureFunction().ensureTree(this.compiler).to(DBSPClosureExpression.class));
-        if (s.size() != 1 || f.size() != 1)
+        if (s.isEmpty() || f.size() != 1)
             return false;
-        BooleanExpression se = s.get(0);
         BooleanExpression fe = f.get(0);
-        if (!se.is(TemporalFilter.class) || !fe.is(TemporalFilter.class))
+        if (!fe.is(TemporalFilter.class))
             return false;
-        return se.compatible(fe);
+        // The source may hold several such bounds.
+        for (BooleanExpression se : s) {
+            if (!se.is(TemporalFilter.class) || !se.compatible(fe))
+                return false;
+        }
+        return true;
     }
 
     @Override
