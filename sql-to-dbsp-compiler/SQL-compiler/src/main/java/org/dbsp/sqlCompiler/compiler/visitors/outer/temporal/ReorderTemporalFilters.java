@@ -121,16 +121,53 @@ public class ReorderTemporalFilters extends Passes {
     @Nullable
     public static DBSPExpression timestampExpression(DBSPCompiler compiler, DBSPFilterOperator filter,
                                                      DBSPParameter parameter, DBSPExpression conjunct) {
+        TemporalFilter only = temporalFilter(compiler, filter, parameter, conjunct);
+        if (only == null)
+            return null;
+        return only.noNow();
+    }
+
+    /** The temporal filter implementing `conjunct`, or null if no window can implement it.
+     * This returns a result only if the conjunct contains exactly 1 temporal filter.
+     *
+     * @param filter    Parent operator
+     * @param parameter Parameter of the closure containing the conjunct
+     * @param conjunct  A single conjunct of the filter's condition. */
+    @Nullable
+    static TemporalFilter temporalFilter(DBSPCompiler compiler, DBSPFilterOperator filter,
+                                         DBSPParameter parameter, DBSPExpression conjunct) {
         DBSPClosureExpression single = conjunct.deepCopy().wrapBoolIfNeeded().closure(parameter)
                 .ensureTree(compiler).to(DBSPClosureExpression.class);
         List<BooleanExpression> classified =
                 FindComparisons.decomposeIntoTemporalFilters(compiler, filter, single);
         if (classified.size() != 1)
             return null;
-        BooleanExpression only = classified.get(0);
-        if (!only.is(TemporalFilter.class))
-            return null;
-        return only.to(TemporalFilter.class).noNow();
+        return classified.get(0).as(TemporalFilter.class);
+    }
+
+    /**
+     * Among `conjuncts`, the fingerprints of the timestamp groups whose window has no lower bound.
+     *
+     * @param filter    Parent operator
+     * @param parameter Parameter of the closure containing the conjuncts.
+     * @param conjuncts Top-level conjuncts of the filter's condition. */
+    static Set<String> unboundedLowerGroups(
+            DBSPCompiler compiler, DBSPFilterOperator filter, DBSPParameter parameter,
+            List<DBSPExpression> conjuncts) {
+        Map<String, Boolean> groupHasLowerBound = new LinkedHashMap<>();
+        for (DBSPExpression conjunct : conjuncts) {
+            String fingerprint = timestampFingerprint(compiler, filter, parameter, conjunct);
+            if (fingerprint == null)
+                continue;
+            TemporalFilter temporal = temporalFilter(compiler, filter, parameter, conjunct);
+            boolean lower = temporal != null && RewriteNow.isGreater(temporal.opcode());
+            groupHasLowerBound.merge(fingerprint, lower, Boolean::logicalOr);
+        }
+        Set<String> result = new LinkedHashSet<>();
+        for (Map.Entry<String, Boolean> group : groupHasLowerBound.entrySet())
+            if (!group.getValue())
+                result.add(group.getKey());
+        return result;
     }
 
     /**
@@ -464,20 +501,32 @@ public class ReorderTemporalFilters extends Passes {
             DBSPParameter parameter = condition.parameters[0];
             Predicate<DBSPExpression> temporal = conjunct ->
                     timestampExpression(this.compiler(), filter, parameter, conjunct) != null;
+            Function<DBSPExpression, String> fingerprint = conjunct ->
+                    timestampFingerprint(this.compiler(), filter, parameter, conjunct);
             Integer chosen = this.chosenConjunct.get(filter);
+            List<DBSPExpression> conjuncts = topLevelConjuncts(condition);
 
             // If the input will NOT be shared, move all temporal filters last.
             // If the input will be shared, hoist only the conjuncts on the shared timestamp.
             DBSPExpression result;
+            String sharedFingerprint = null;
             if (chosen == null) {
                 result = reorder(condition.body, FilterOrderPolicy.LAST, temporal);
             } else {
+                DBSPExpression sharedConjunct = conjuncts.get(chosen);
+                sharedFingerprint = fingerprint.apply(sharedConjunct);
                 result = reorderAroundSharedTimestamp(
-                        condition.body,
-                        conjunct -> timestampFingerprint(
-                                this.compiler(), filter, parameter, conjunct),
-                        topLevelConjuncts(condition).get(chosen));
+                        condition.body, fingerprint, sharedConjunct);
             }
+
+            // Among the windows, one without a lower bound runs last.
+            // A shared window stays first: its integral is shared, not narrowed.
+            Set<String> unboundedLower = unboundedLowerGroups(
+                    this.compiler(), filter, parameter, conjuncts);
+            unboundedLower.remove(sharedFingerprint);
+            if (!unboundedLower.isEmpty())
+                result = reorder(result, FilterOrderPolicy.LAST,
+                        conjunct -> unboundedLower.contains(fingerprint.apply(conjunct)));
             if (result == condition.body) {
                 super.postorder(filter);
                 return;

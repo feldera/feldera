@@ -250,12 +250,13 @@ public class RewriteNow extends CircuitCloneVisitor {
         return opcode == DBSPOpcode.GTE || opcode == DBSPOpcode.GT;
     }
 
-    static DBSPOpcode inverse(DBSPOpcode opcode) {
+    /** The opcode comparing the swapped operands: 'a OP b' iff 'b swappedOpcode(OP) a'. */
+    static DBSPOpcode swappedOpcode(DBSPOpcode opcode) {
         return switch (opcode) {
-            case LT -> DBSPOpcode.GTE;
-            case GTE -> DBSPOpcode.LT;
-            case LTE -> DBSPOpcode.GT;
-            case GT -> DBSPOpcode.LTE;
+            case LT -> DBSPOpcode.GT;
+            case GTE -> DBSPOpcode.LTE;
+            case LTE -> DBSPOpcode.GTE;
+            case GT -> DBSPOpcode.LT;
             case EQ -> DBSPOpcode.EQ;
             default -> throw new InternalCompilerError(opcode.toString());
         };

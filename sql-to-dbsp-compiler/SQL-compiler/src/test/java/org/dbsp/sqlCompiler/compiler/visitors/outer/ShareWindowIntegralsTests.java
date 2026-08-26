@@ -61,6 +61,26 @@ public class ShareWindowIntegralsTests extends SqlIoTest {
     }
 
     @Test
+    public void equalityHoistedToShare() {
+        // ts = NOW() decomposes into its two bounds
+        WindowInputStats windows = WindowInputStats.windows(this.getCC(PREAMBLE + """
+                CREATE VIEW V1 AS SELECT b FROM T WHERE a > 2 AND ts = NOW();
+                CREATE VIEW V2 AS SELECT c FROM T WHERE a < 9 AND ts = NOW() - INTERVAL 1 HOURS;"""));
+        Assert.assertEquals(2, windows.leftInputIds.size());
+        Assert.assertEquals(1, windows.distinctInputCount());
+    }
+
+    @Test
+    public void equalitySharesWithInequality() {
+        // The same, mixing an equality with a one-sided window on the same timestamp.
+        WindowInputStats windows = WindowInputStats.windows(this.getCC(PREAMBLE + """
+                CREATE VIEW V1 AS SELECT b FROM T WHERE a > 2 AND ts = NOW();
+                CREATE VIEW V2 AS SELECT c FROM T WHERE a < 9 AND ts >= NOW() - INTERVAL 2 HOURS;"""));
+        Assert.assertEquals(2, windows.leftInputIds.size());
+        Assert.assertEquals(1, windows.distinctInputCount());
+    }
+
+    @Test
     public void resultsSurviveSharing() {
         // Checks that non-temporal filters are not lost
         String sql = PREAMBLE + """

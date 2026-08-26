@@ -23,6 +23,7 @@ public class ImplementNow extends Passes {
         CircuitTransform mergeFilters = new MergeFilters(compiler);
         // Check if there is any operator containing NOW
         this.passes.add(cn);
+        this.passes.add(new Conditional(compiler, new DesugarNowEquality(compiler), cn::found));
         this.passes.add(new Conditional(compiler, new ReorderTemporalFilters(compiler), cn::found));
         // Break filters that contain NOW into simpler filters
         this.passes.add(new Conditional(compiler, breakFilters, cn::found));

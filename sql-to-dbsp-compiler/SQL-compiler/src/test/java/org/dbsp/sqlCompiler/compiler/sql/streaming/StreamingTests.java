@@ -2416,6 +2416,286 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void nowEquality() {
+        // `ts = NOW()` is a documented temporal filter (docs/sql/datetime.md, "inequality
+        // or equality comparisons"), but it compiles into the window [MIN, now()), so the
+        // view holds every row strictly before now() and drops the row that equals it.
+        String sql = """
+                CREATE TABLE t (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP
+                );
+                CREATE VIEW v AS
+                SELECT id FROM t
+                WHERE ts = now()""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        // Only id 2 has ts = 12:00.
+        ccs.step("""
+                 INSERT INTO t VALUES (1, '2024-01-01 11:00:00');
+                 INSERT INTO t VALUES (2, '2024-01-01 12:00:00');
+                 INSERT INTO t VALUES (3, '2024-01-01 13:00:00');
+                 INSERT INTO now VALUES ('2024-01-01 12:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 2  | 1""");
+        // The clock moves to 13:00: id 2 leaves the view and id 3 enters.
+        ccs.step("""
+                 INSERT INTO now VALUES ('2024-01-01 13:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 2  | -1
+                 3  | 1""");
+    }
+
+    @Test
+    public void nowEqualityReversed() {
+        // now() on the left
+        String sql = """
+                CREATE TABLE t (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP
+                );
+                CREATE VIEW v AS
+                SELECT id FROM t
+                WHERE now() = ts AND id > 1""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        // id 1 also has ts = 12:00, but is excluded by id > 1.
+        ccs.step("""
+                 INSERT INTO t VALUES (1, '2024-01-01 12:00:00');
+                 INSERT INTO t VALUES (2, '2024-01-01 12:00:00');
+                 INSERT INTO t VALUES (3, '2024-01-01 13:00:00');
+                 INSERT INTO now VALUES ('2024-01-01 12:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 2  | 1""");
+        ccs.step("""
+                 INSERT INTO now VALUES ('2024-01-01 13:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 2  | -1
+                 3  | 1""");
+    }
+
+    @Test
+    public void nowEqualityOffset() {
+        // Equality against a monotone expression of now()
+        String sql = """
+                CREATE TABLE t (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP
+                );
+                CREATE VIEW v AS
+                SELECT id FROM t
+                WHERE ts = NOW() - INTERVAL 1 HOUR""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        // At 12:00 the window is [11:00, 11:00], so only id 2 qualifies.
+        ccs.step("""
+                 INSERT INTO t VALUES (1, '2024-01-01 10:00:00');
+                 INSERT INTO t VALUES (2, '2024-01-01 11:00:00');
+                 INSERT INTO t VALUES (3, '2024-01-01 12:00:00');
+                 INSERT INTO now VALUES ('2024-01-01 12:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 2  | 1""");
+        ccs.step("""
+                 INSERT INTO now VALUES ('2024-01-01 13:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 2  | -1
+                 3  | 1""");
+    }
+
+    @Test
+    public void nowEqualityNonMonotone() {
+        // MINUTE(now()) is not monotone
+        String sql = """
+                CREATE TABLE t (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts INT
+                );
+                CREATE VIEW v AS
+                SELECT id FROM t
+                WHERE ts = MINUTE(NOW())""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        // No window
+        ccs.visit(new Inspector(ccs.compiler, 0, 1, 0));
+        ccs.step("""
+                 INSERT INTO t VALUES (1, 0);
+                 INSERT INTO t VALUES (2, 30);
+                 INSERT INTO now VALUES ('2024-01-01 12:30:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 2  | 1""");
+    }
+
+    @Test
+    public void separatedBoundsMakeOneWindow() {
+        // The two bounds are separated by a non-temporal conjunct.  Reordering moves the
+        // temporal conjuncts into an adjacent block and filter merging reunites them, so a
+        // single window carries both bounds.
+        String sql = """
+                CREATE TABLE t (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP,
+                  a INT
+                );
+                CREATE VIEW v AS
+                SELECT id FROM t
+                WHERE ts >= now() - INTERVAL 1 HOUR AND a > 2 AND ts <= now()""";
+        CompilerCircuit cc = this.getCC(sql);
+        cc.visit(new Inspector(cc.compiler, 1, 1, 1));
+    }
+
+    @Test
+    public void unboundedLowerWindowLast() {
+        // ts2's window has no lower bound, so it should be applied after ts's bounded window
+        String sql = """
+                CREATE TABLE t (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP,
+                  ts2 TIMESTAMP
+                );
+                CREATE VIEW v AS
+                SELECT id FROM t
+                WHERE ts2 <= now() AND ts >= now() - INTERVAL 1 HOUR""";
+        CompilerCircuit cc = this.getCC(sql);
+        cc.visit(new CircuitVisitor(cc.compiler) {
+            final List<DBSPWindowOperator> windows = new ArrayList<>();
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.windows.add(operator);
+            }
+
+            @Override
+            public void endVisit() {
+                // Postorder is topological, so the bounded window must be visited first.
+                Assert.assertEquals(2, this.windows.size());
+                Assert.assertFalse(this.windows.get(0).lowerUnbounded);
+                Assert.assertTrue(this.windows.get(1).lowerUnbounded);
+            }
+        });
+    }
+
+    @Test
+    public void unboundedLowerWindowLastData() {
+        // Same query; the reordering must not change the results.
+        String sql = """
+                CREATE TABLE t (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP,
+                  ts2 TIMESTAMP
+                );
+                CREATE VIEW v AS
+                SELECT id FROM t
+                WHERE ts2 <= now() AND ts >= now() - INTERVAL 1 HOUR""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        ccs.step("""
+                 INSERT INTO t VALUES (1, '2024-01-01 11:30:00', '2024-01-01 11:00:00');
+                 INSERT INTO t VALUES (2, '2024-01-01 10:00:00', '2024-01-01 11:00:00');
+                 INSERT INTO t VALUES (3, '2024-01-01 11:30:00', '2024-01-01 13:00:00');
+                 INSERT INTO now VALUES ('2024-01-01 12:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 1  | 1""");
+        // At 13:00 id 1 ages out of the bounded window; id 3's ts is now too old as well.
+        ccs.step("""
+                 INSERT INTO now VALUES ('2024-01-01 13:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 1  | -1""");
+    }
+
+    @Test
+    public void nowReversedComparisonBoundary() {
+        // now() on the left of a plain inequality.  Swapping the operands must preserve
+        // inclusivity: the boundary row (ts equal to now()) is included by <=.
+        String sql = """
+                CREATE TABLE t (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP
+                );
+                CREATE VIEW v AS
+                SELECT id FROM t
+                WHERE now() <= ts""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        ccs.step("""
+                 INSERT INTO t VALUES (1, '2024-01-01 11:00:00');
+                 INSERT INTO t VALUES (2, '2024-01-01 12:00:00');
+                 INSERT INTO t VALUES (3, '2024-01-01 13:00:00');
+                 INSERT INTO now VALUES ('2024-01-01 12:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 2  | 1
+                 3  | 1""");
+        // At 13:00 the boundary moves: id 2 leaves, id 3 sits on the new boundary and stays.
+        ccs.step("""
+                 INSERT INTO now VALUES ('2024-01-01 13:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 2  | -1""");
+    }
+
+    @Test
+    public void nowInequality() {
+        // ts <> now() is not a temporal filter
+        String sql = """
+                CREATE TABLE t (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP
+                );
+                CREATE VIEW v AS
+                SELECT id FROM t
+                WHERE ts <> NOW()""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        // No window
+        ccs.visit(new Inspector(ccs.compiler, 0, 1, 0));
+        // At 12:00 every row except id 2 qualifies.
+        ccs.step("""
+                 INSERT INTO t VALUES (1, '2024-01-01 11:00:00');
+                 INSERT INTO t VALUES (2, '2024-01-01 12:00:00');
+                 INSERT INTO t VALUES (3, '2024-01-01 13:00:00');
+                 INSERT INTO now VALUES ('2024-01-01 12:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 1  | 1
+                 3  | 1""");
+        // At 13:00 id 2 enters and id 3 leaves.
+        ccs.step("""
+                 INSERT INTO now VALUES ('2024-01-01 13:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 2  | 1
+                 3  | -1""");
+    }
+
+    @Test
     public void issue2003() {
         String sql = """
                 CREATE TABLE event(
