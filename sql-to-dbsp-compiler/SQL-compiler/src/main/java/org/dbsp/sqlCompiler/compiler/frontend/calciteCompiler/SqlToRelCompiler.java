@@ -806,11 +806,12 @@ public class SqlToRelCompiler implements IWritesLogs {
     /** Given a SQL statement returns a SqlNode - a calcite AST
      * representation of the query.
      * @param sql  SQL query to compile
-     * @param saveLines  True if the lines "take space": are accounted as part of the input program */
-    public SqlNode parse(String sql, boolean saveLines) throws SqlParseException {
+     * @param saveLines  True if the lines "take space": are accounted as part of the input program
+     * @param postprocess  If false, skip {@link #postParsingProcess(ParsedStatement)} */
+    public SqlNode parse(String sql, boolean saveLines, boolean postprocess) throws SqlParseException {
         SqlParser sqlParser = this.createSqlParser(sql, saveLines);
         SqlNode result = sqlParser.parseStmt();
-        return this.postParsingProcess(result, saveLines);
+        return postprocess ? this.postParsingProcess(result, saveLines) : result;
     }
 
     /** Remove calls to unary plus */
@@ -869,26 +870,32 @@ public class SqlToRelCompiler implements IWritesLogs {
     }
 
     public SqlNode parse(String sql) throws SqlParseException {
-        SqlNode result = this.parse(sql, true);
-        return this.postParsingProcess(result, true);
+        return this.parse(sql, true, true);
     }
 
     /** Given a list of statements separated by semicolons, parse all of them.
-     * @param saveLines True if the lines are from the user program; false if they are internally generated. */
-    public List<ParsedStatement> parseStatements(String statements, boolean saveLines) throws SqlParseException {
+     * @param saveLines True if the lines are from the user program; false if they are internally generated.
+     * @param postprocess If false, skip {@link #postParsingProcess(ParsedStatement)}. */
+    public List<ParsedStatement> parseStatements(String statements, boolean saveLines, boolean postprocess)
+            throws SqlParseException {
         SqlParser sqlParser = this.createSqlParser(statements, saveLines);
         List<ParsedStatement> result = new ArrayList<>();
         SqlNodeList sqlNodes = sqlParser.parseStmtList();
         for (SqlNode node: sqlNodes) {
-            SqlNode sqlNode = this.postParsingProcess(node, saveLines);
-            ParsedStatement stat = new ParsedStatement(sqlNode, saveLines);
-            result.add(stat);
+            ParsedStatement stat = new ParsedStatement(node, saveLines);
+            result.add(postprocess ? this.postParsingProcess(stat) : stat);
         }
         return result;
     }
 
+    /** Validate a freshly parsed statement, and apply some rewrites. */
+    public ParsedStatement postParsingProcess(ParsedStatement statement) {
+        SqlNode node = this.postParsingProcess(statement.statement(), statement.visible());
+        return new ParsedStatement(node, statement.visible());
+    }
+
     public List<ParsedStatement> parseStatements(String statements) throws SqlParseException {
-        return this.parseStatements(statements, true);
+        return this.parseStatements(statements, true, true);
     }
 
     RelNode optimize(RelNode rel, boolean visible, RelBuilder relBuilder) {
@@ -1165,7 +1172,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     .append(sql)
                     .newline();
             SqlToRelCompiler clone = new SqlToRelCompiler(this);
-            List<ParsedStatement> list = clone.parseStatements(sql, false);
+            List<ParsedStatement> list = clone.parseStatements(sql, false, true);
             RelStatement lastStatement = null;
             for (ParsedStatement node : list) {
                 lastStatement = clone.compile(node, sources);
@@ -1224,7 +1231,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     .append(sql)
                     .newline();
             SqlToRelCompiler clone = new SqlToRelCompiler(this);
-            List<ParsedStatement> list = clone.parseStatements(sql, false);
+            List<ParsedStatement> list = clone.parseStatements(sql, false, true);
             RelStatement lastStatement = null;
             for (ParsedStatement node : list) {
                 lastStatement = clone.compile(node, sources);
@@ -1600,7 +1607,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     .append(sql)
                     .newline();
             SqlToRelCompiler clone = new SqlToRelCompiler(this);
-            List<ParsedStatement> list = clone.parseStatements(sql, true);
+            List<ParsedStatement> list = clone.parseStatements(sql, true, true);
             RelStatement statement = null;
             for (ParsedStatement node : list) {
                 statement = clone.compile(node, sources);
