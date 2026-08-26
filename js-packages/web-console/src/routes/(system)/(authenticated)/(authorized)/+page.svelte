@@ -12,6 +12,7 @@
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
   import Footer from '$lib/components/layout/Footer.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
+  import PinnedSections from '$lib/components/layout/PinnedSections.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import DemoTile from '$lib/components/other/DemoTile.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
@@ -78,7 +79,10 @@
     {/if}
   {/snippet}
 </AppHeader>
-<div class="scrollbar flex h-full flex-col justify-between overflow-y-auto">
+<div
+  class="scrollbar flex h-full flex-col justify-between overflow-y-auto"
+  data-testid="box-home-scroll-area"
+>
   <div class="@container">
     <div class="flex flex-col gap-8 pb-2 md:pb-8" style="width: max-content; min-width: 100%;">
       {#if !welcomed.value}
@@ -122,7 +126,7 @@
           </div>
         </div>
       {/if}
-      <div class="flex flex-col">
+      <div class="flex flex-col" data-testid="box-pipelines-section">
         {#snippet header()}
           <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
             <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
@@ -167,57 +171,60 @@
           </div>
         {/if}
       </div>
-      {#if demos.current.length}
-        <div class="sticky left-0 max-w-[100cqi] px-2 md:px-8">
-          <InlineDropdown bind:open={showSuggestedDemos.value}>
-            {#snippet header(open, toggle)}
-              <div
-                class="flex w-fit cursor-pointer items-center gap-2 py-2"
-                onclick={(e) => {
-                  // Prevent clicks on "View all" trigger the dropdown.
-                  // Swallowing them with stopPropagation here
-                  // lets them reach `document`, where they get
-                  // intercepted and handled by the SvelteKit's router.
-                  if ((e.target as HTMLElement).closest('a')) {
-                    return
-                  }
-                  toggle()
-                }}
-                role="presentation"
-              >
+      <!-- Sections in here pin over the tail of the pipelines table until the table
+           is scrolled through; a click brings the pinned section into view. -->
+      <PinnedSections class="max-w-[100cqi] gap-8">
+        {#if demos.current.length}
+          <div class="px-2 md:px-8">
+            <InlineDropdown bind:open={showSuggestedDemos.value}>
+              {#snippet header(open, toggle)}
                 <div
-                  class={'fd fd-chevron-down text-[20px] transition-transform ' +
-                    (open ? 'rotate-180' : '')}
-                ></div>
+                  class="flex w-fit cursor-pointer items-center gap-4 py-2"
+                  onclick={(e) => {
+                    // A click on "View all" must not toggle the dropdown. The click
+                    // is left to propagate to `document`, where SvelteKit's router
+                    // handles the navigation.
+                    if ((e.target as HTMLElement).closest('a')) {
+                      return
+                    }
+                    toggle()
+                  }}
+                  role="presentation"
+                >
+                  <div
+                    class={'fd fd-chevron-down text-xl transition-transform ' +
+                      (open ? 'rotate-180' : '')}
+                  ></div>
 
-                <div class="flex flex-nowrap items-center gap-4">
-                  <div class="text-xl font-semibold">Explore use cases and tutorials</div>
-                  <a class="whitespace-nowrap text-primary-500" href={resolve('/demos/')}
-                    >View all</a
-                  >
+                  <div class="flex flex-nowrap items-center gap-4">
+                    <div class="text-xl font-semibold">Explore use cases and tutorials</div>
+                    <a class="whitespace-nowrap text-primary-500" href={resolve('/demos/')}
+                      >View all</a
+                    >
+                  </div>
                 </div>
-              </div>
-            {/snippet}
-            {#snippet content()}
-              <div
-                transition:slide={{ duration: 150 }}
-                class="grid grid-cols-1 gap-x-6 gap-y-5 py-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5"
-              >
-                {#each demos.current.slice(0, maxShownDemos) as demo}
-                  <DemoTile {demo} placement="home"></DemoTile>
-                {/each}
-                <div class="flex flex-col card p-4">
-                  <div class="text-sm text-surface-500"></div>
-                  <a class="text-left text-primary-500" href={resolve('/demos/')}>
-                    <span class="py-2">Discover More Examples and Tutorials</span>
-                    <!-- <span class="fd fd-arrow-right inline-block w-2 text-[20px]"></span> -->
-                  </a>
+              {/snippet}
+              {#snippet content()}
+                <div
+                  transition:slide={{ duration: 150 }}
+                  class="grid grid-cols-1 gap-x-6 gap-y-5 py-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5"
+                >
+                  {#each demos.current.slice(0, maxShownDemos) as demo}
+                    <DemoTile {demo} placement="home"></DemoTile>
+                  {/each}
+                  <div class="flex flex-col card p-4">
+                    <div class="text-sm text-surface-500"></div>
+                    <a class="text-left text-primary-500" href={resolve('/demos/')}>
+                      <span class="py-2">Discover More Examples and Tutorials</span>
+                      <!-- <span class="fd fd-arrow-right inline-block w-2 text-[20px]"></span> -->
+                    </a>
+                  </div>
                 </div>
-              </div>
-            {/snippet}
-          </InlineDropdown>
-        </div>
-      {/if}
+              {/snippet}
+            </InlineDropdown>
+          </div>
+        {/if}
+      </PinnedSections>
     </div>
   </div>
   <div class="sticky left-0"><Footer></Footer></div>
