@@ -598,6 +598,20 @@ public final class ExpressionOracleHarvest {
             String element = base.substring("Array<".length(), base.length() - 1).trim();
             return isSupportedLeaf(element);
         }
+        // A waterline bound `TypedBox<T, DynData>` samples and encodes as its inner T.
+        if (base.startsWith("TypedBox<") && base.endsWith(">")) {
+            String args = base.substring("TypedBox<".length(), base.length() - 1);
+            int depth = 0;
+            for (int i = 0; i < args.length(); i++) {
+                char c = args.charAt(i);
+                if (c == '<') depth++;
+                else if (c == '>') depth--;
+                else if (c == ',' && depth == 0) {
+                    return isSupportedLeaf(args.substring(0, i).trim());
+                }
+            }
+            return false;
+        }
         return SUPPORTED_LEAF.contains(base) || base.startsWith("SqlDecimal");
     }
 
