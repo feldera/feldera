@@ -3189,6 +3189,120 @@ fn test_pg_input_tls() {
         .unwrap();
 }
 
+/// A runtime failure of the connector's query must be reported to the
+/// controller as a fatal input error.
+///
+/// Regression test: initialization succeeds because the connection to
+/// PostgreSQL can be established, so by the time the query executes, the
+/// init-status channel has been consumed. The query error used to be sent on
+/// that channel and silently dropped, so the connector terminated without
+/// notifying the controller and the pipeline stalled forever.
+#[test]
+#[serial]
+fn test_pg_input_query_error() {
+    let url = postgres_url();
+
+    let output_file = NamedTempFile::new().unwrap();
+    let output_path = output_file.path().to_owned();
+
+    let config = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 1,
+        "inputs": {
+            "pg_in": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "postgres_input",
+                    "config": {
+                        "uri": url,
+                        "query": "SELECT * FROM feldera_missing_table_regression",
+                    },
+                },
+            },
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "file_output",
+                    "config": {
+                        "path": output_path,
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "insert_delete",
+                        "array": false,
+                    }
+                }
+            }
+        }
+    }))
+    .unwrap();
+
+    let (err_sender, err_receiver) = crossbeam::channel::unbounded();
+    let controller = Controller::with_test_config(
+        move |workers| {
+            Ok({
+                let (circuit, catalog) = Runtime::init_circuit(workers, move |circuit| {
+                    let mut catalog = Catalog::new();
+                    let (input, hinput) = circuit.add_input_zset::<TestStruct>();
+
+                    let input_schema = serde_json::to_string(&Relation::new(
+                        "test_input1".into(),
+                        TestStruct::schema(),
+                        false,
+                        BTreeMap::new(),
+                    ))
+                    .unwrap();
+
+                    let output_schema = serde_json::to_string(&Relation::new(
+                        "test_output1".into(),
+                        TestStruct::schema(),
+                        false,
+                        BTreeMap::new(),
+                    ))
+                    .unwrap();
+
+                    catalog.register_materialized_input_zset::<_, TestStruct>(
+                        input.clone(),
+                        hinput,
+                        &input_schema,
+                    );
+
+                    catalog
+                        .register_materialized_output_zset::<_, TestStruct>(input, &output_schema);
+
+                    Ok(catalog)
+                })
+                .unwrap();
+                (circuit, Box::new(catalog))
+            })
+        },
+        &config,
+        Box::new(move |e, _| {
+            err_sender
+                .send(format!("test_pg_input_query_error: {e}"))
+                .unwrap()
+        }),
+    )
+    .unwrap();
+
+    controller.start();
+
+    wait(|| !err_receiver.is_empty(), 10_000)
+        .expect("timeout: postgres input query error was not reported to the controller");
+
+    let error = err_receiver.recv().unwrap();
+    assert!(
+        error.contains("error executing query"),
+        "unexpected error: {error}"
+    );
+
+    controller.stop().unwrap();
+}
+
 /// Build an output circuit identical to [`PostgresTestStruct::test_circuit`]'s
 /// inner circuit, but without a baked-in error callback so that callers can
 /// supply their own.  Used by the non-unique-key test below.
