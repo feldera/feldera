@@ -1125,8 +1125,11 @@ public class MetadataTests extends BaseSQLTests {
     @Test
     public void testDefaultConnectorMetadata() throws IOException, InterruptedException, SQLException {
         String sql = """
-                CREATE TABLE T (KAFKA_TOPIC VARCHAR DEFAULT CAST(CONNECTOR_METADATA()['kafka_topic'] AS VARCHAR));
-                CREATE VIEW V AS SELECT KAFKA_TOPIC FROM T;""";
+                CREATE TABLE T (
+                    KAFKA_TOPIC VARCHAR DEFAULT CAST(CONNECTOR_METADATA()['kafka_topic'] AS VARCHAR),
+                    TOPIC_OR_EMPTY VARCHAR NOT NULL DEFAULT COALESCE(CAST(CONNECTOR_METADATA()['topic'] AS VARCHAR), '')
+                );
+                CREATE VIEW V AS SELECT KAFKA_TOPIC, TOPIC_OR_EMPTY FROM T;""";
         File file = createInputScript(sql);
         CompilerMessages messages = CompilerMain.execute("-q", "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
         messages.print();

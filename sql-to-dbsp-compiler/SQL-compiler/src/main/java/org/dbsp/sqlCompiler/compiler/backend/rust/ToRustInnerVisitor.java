@@ -1115,6 +1115,12 @@ public class ToRustInnerVisitor extends InnerVisitor {
         }
 
         @Override
+        protected void set(IDBSPInnerNode node, IDBSPInnerNode translation) {
+            if (this.maybeGet(node) == null)
+                super.set(node, translation);
+        }
+
+        @Override
         public void postorder(DBSPHandleErrorExpression expression) {
             // Strip source positions from these initializers for now
             DBSPExpression source = this.getE(expression.source);

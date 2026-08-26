@@ -78,6 +78,16 @@ public class CatalogTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue6957() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(
+                  W VARCHAR NOT NULL DEFAULT COALESCE(CAST(CONNECTOR_METADATA()['topic'] AS VARCHAR), '')
+                );""");
+        String rust = ccs.getRustSources();
+        Assert.assertTrue(rust.contains("connector_metadata: &Option<Variant>"));
+    }
+
+    @Test
     public void issue4019a() {
         this.getCCS("""
                 CREATE TABLE row_tbl(
