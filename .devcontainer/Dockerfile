@@ -22,18 +22,31 @@ RUN apt-get update --fix-missing && \
    gnupg2 \
    sudo \
    build-essential \
-   # Go is required to build aws-lc-fips-sys when rustls is built with FIPS
+   # Go builds AWS-LC in scripts/install-librdkafka.sh, and aws-lc-fips-sys
+   # when rustls is built with FIPS
    golang-go \
    openssl \
    cmake \
    pkg-config \
    libssl-dev \
+   # librdkafka links these; scripts/install-librdkafka.sh needs their headers
+   # to enable SASL, zlib and zstd support
    libsasl2-dev \
+   zlib1g-dev \
+   libzstd-dev \
    ca-certificates \
    gnupg \
    protobuf-compiler \
    git \
    jq
+
+# postCreate.sh installs certain packages as root from a shell with no terminal to type the
+# password set above into. sudo owns /etc/sudoers.d, so this has to follow the
+# install. visudo -c fails the build on a syntax error here, which would
+# otherwise leave sudo refusing to run at all, and only at postCreate time.
+RUN echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME && \
+   chmod 0440 /etc/sudoers.d/$USERNAME && \
+   visudo -cf /etc/sudoers.d/$USERNAME
 
 ## Setup Java and Python
 
@@ -62,9 +75,14 @@ RUN ARCH=`dpkg --print-architecture`; \
 RUN pip3 install --break-system-packages gdown kafka-python-ng
 
 ## Prepare directories for non-root user (for Claude Code)
-RUN mkdir -p /home/$USERNAME/.local/share/claude && chown -R $USERNAME /home/$USERNAME/.local/share/claude
-RUN mkdir -p /home/$USERNAME/.local/state/claude && chown -R $USERNAME /home/$USERNAME/.local/state/claude
-RUN mkdir -p /home/$USERNAME/.local/bin/ && chown -R $USERNAME /home/$USERNAME/.local/bin/
+# The installers above ran as root with HOME set to this directory, so they left
+# root-owned dotfiles behind: uv writes ~/.config and ~/.zshrc. Hand the whole
+# home directory over, or anything the user later runs that wants a new dotfile
+# fails, as the samply installer does on ~/.config/samply.
+RUN mkdir -p /home/$USERNAME/.local/share/claude \
+   /home/$USERNAME/.local/state/claude \
+   /home/$USERNAME/.local/bin && \
+   chown -R $USERNAME /home/$USERNAME
 
 ## Switch to non-root user
 
@@ -90,6 +108,6 @@ RUN \
    cargo install cargo-make
 
 ## Install Samply
-RUN echo "pass" | sudo curl --proto '=https' --tlsv1.2 -LsSf https://github.com/feldera/samply/releases/download/v0.13.2/samply-installer.sh | sh
+RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/feldera/samply/releases/download/v0.13.2/samply-installer.sh | sh
 
 ENV PATH="$HOME/.local/bin:$PATH"
