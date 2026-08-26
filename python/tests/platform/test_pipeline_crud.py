@@ -70,6 +70,7 @@ PIPELINE_FIELD_SELECTOR_STATUS_FIELDS = [
     "created_at",
     "version",
     "platform_version",
+    "runtime_config",
     "program_config",
     "program_version",
     "program_status",

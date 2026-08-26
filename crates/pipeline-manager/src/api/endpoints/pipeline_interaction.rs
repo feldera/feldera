@@ -248,10 +248,18 @@ pub(crate) async fn http_output(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
         ("table_name" = String, Path, description = "SQL table name"),
         ("connector_name" = String, Path, description = "Input connector name"),
+        ("action" = String, Path, description = "Input connector action (one of: start, pause)"),
     ),
     responses(
         (status = OK
             , description = "Action has been processed"),
+        (status = BAD_REQUEST
+            , body = ErrorResponse
+            , description = "Action is not one of: start, pause"
+            , examples(
+                ("Invalid connector action" = (value = json!(examples::error_invalid_connector_action()))),
+            )
+        ),
         (status = NOT_FOUND
             , body = ErrorResponse
             , description = "Pipeline, table and/or input connector with that name does not exist"
