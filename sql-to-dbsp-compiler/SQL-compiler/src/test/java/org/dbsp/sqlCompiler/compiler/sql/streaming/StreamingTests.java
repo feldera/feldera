@@ -2221,6 +2221,42 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void nowEquality() {
+        // `ts = NOW()` is a documented temporal filter (docs/sql/datetime.md, "inequality
+        // or equality comparisons"), but it compiles into the window [MIN, now()), so the
+        // view holds every row strictly before now() and drops the row that equals it.
+        String sql = """
+                CREATE TABLE t (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP
+                );
+                CREATE VIEW v AS
+                SELECT id FROM t
+                WHERE ts = now()""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        // Only id 2 has ts = 12:00.
+        ccs.step("""
+                 INSERT INTO t VALUES (1, '2024-01-01 11:00:00');
+                 INSERT INTO t VALUES (2, '2024-01-01 12:00:00');
+                 INSERT INTO t VALUES (3, '2024-01-01 13:00:00');
+                 INSERT INTO now VALUES ('2024-01-01 12:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 2  | 1""");
+        // The clock moves to 13:00: id 2 leaves the view and id 3 enters.
+        ccs.step("""
+                 INSERT INTO now VALUES ('2024-01-01 13:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 2  | -1
+                 3  | 1""");
+    }
+
+    @Test
     public void testNow6() {
         // now() used in WHERE with complex monotone function
         String sql = """
