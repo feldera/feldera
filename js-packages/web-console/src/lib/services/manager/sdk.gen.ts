@@ -2010,7 +2010,7 @@ export const getPipelineOutputConnectorStatus = <ThrowOnError extends boolean = 
  * Output connectors can be in either the `Running` or `Paused` state. By default,
  * connectors are initialized in the `Running` state when a pipeline is deployed.
  * In this state, the connector forwards the output of its view to the configured
- * sink. If needed, a connector can be created in the `Paused` state by setting its
+ * sink. A connector can be created in the `Paused` state by setting its
  * [`paused`](https://docs.feldera.com/connectors/#generic-attributes) property
  * to `true`.
  *
