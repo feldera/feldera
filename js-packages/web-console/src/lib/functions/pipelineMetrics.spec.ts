@@ -29,50 +29,103 @@ describe('timeSeriesAxisMax', () => {
   })
 })
 
+const WINDOW_MS = 60 * 1000
+/** No cap in tests that exercise retention by age alone. */
+const NO_CAP = Number.MAX_SAFE_INTEGER
+
 describe('staleSampleCount', () => {
-  /** `hosts` samples per second, as a multihost coordinator reports them. */
-  const seriesAt = (hosts: number, seconds: number, firstMs = 0) =>
+  /** `hosts` samples per tick, as a multihost coordinator reports them. */
+  const seriesAt = (hosts: number, seconds: number, intervalMs = 1000) =>
     Array.from({ length: hosts * seconds }, (_, i) =>
-      // Hosts report at a fixed phase offset within each second.
-      sampleAt(firstMs + Math.floor(i / hosts) * 1000 + (i % hosts) * 50)
+      // Hosts report at a fixed phase offset within each tick.
+      sampleAt(Math.round(Math.floor(i / hosts) * intervalMs + (i % hosts) * 50), i)
     )
 
+  /**
+   * How much of the left edge of the plotted window the rate series misses
+   * after retention has trimmed `samples`.
+   */
+  const windowGapMs = (samples: TimeSeriesEntry[]) => {
+    const kept = samples.slice(staleSampleCount(samples, WINDOW_MS, NO_CAP))
+    const { series } = calcPipelineThroughput(kept)
+    return series[0]!.value[0] - (kept.at(-1)!.t - WINDOW_MS)
+  }
+
+  /** Widest interval between consecutive samples, the granularity of the plot. */
+  const widestIntervalMs = (samples: TimeSeriesEntry[]) =>
+    Math.max(...samples.slice(1).map((sample, i) => sample.t - samples[i]!.t))
+
   it('keeps a series that fits the window', () => {
-    expect(staleSampleCount([sampleAt(1000), sampleAt(2000), sampleAt(3000)], 5000)).toBe(0)
+    expect(staleSampleCount([sampleAt(1000), sampleAt(2000), sampleAt(3000)], 5000, NO_CAP)).toBe(0)
   })
 
   it('drops samples older than the window', () => {
+    const samples = [sampleAt(0), sampleAt(1000), sampleAt(2000), sampleAt(3000), sampleAt(4000)]
+    // Measured from the newest sample, the window starts at 2000; 1000 is kept
+    // as the rate anchor, so only 0 is stale.
+    expect(staleSampleCount(samples, 2000, NO_CAP)).toBe(1)
+  })
+
+  it('keeps the newest sample outside the window as the rate anchor', () => {
     const samples = [sampleAt(1000), sampleAt(2000), sampleAt(3000), sampleAt(4000)]
-    // Measured from the newest sample: 1000 is 3000ms old, 2000 is exactly at the edge.
-    expect(staleSampleCount(samples, 2000)).toBe(1)
+    expect(staleSampleCount(samples, 2000, NO_CAP)).toBe(0)
   })
 
   it('keeps a sample sitting exactly on the window edge', () => {
-    expect(staleSampleCount([sampleAt(1000), sampleAt(3000)], 2000)).toBe(0)
+    expect(staleSampleCount([sampleAt(1000), sampleAt(3000)], 2000, NO_CAP)).toBe(0)
   })
 
-  it('retains the same time span whatever the sample rate', () => {
+  it('retains the plotted window whatever the host count', () => {
     // A multihost pipeline reports one sample per host per tick, so a count-based
     // buffer would shrink the retained span in proportion to the host count.
-    const spanOf = (hosts: number) => {
+    for (const hosts of [1, 2, 4]) {
       const samples = seriesAt(hosts, 90)
-      const kept = samples.slice(staleSampleCount(samples, 60_000))
-      return kept.at(-1)!.t - kept[0]!.t
+      expect(windowGapMs(samples)).toBe(0)
     }
-    expect(spanOf(1)).toBe(60_000)
-    expect(spanOf(2)).toBe(60_000)
-    expect(spanOf(4)).toBe(60_000)
+  })
+
+  it('retains the plotted window whatever the sample interval', () => {
+    // The retained span is derived from the samples themselves, so a stats
+    // thread lagging to 2s, or jittering off 1s, still fills the graph.
+    for (const intervalMs of [1000, 1050, 2000, 5000]) {
+      const samples = seriesAt(1, 90, intervalMs)
+      const gap = windowGapMs(samples)
+      // Nothing can be plotted between the window edge and the first sample
+      // after it, so a gap below one sample interval is all the plot can do.
+      expect(gap).toBeGreaterThanOrEqual(0)
+      expect(gap).toBeLessThan(widestIntervalMs(samples))
+    }
   })
 
   it('drops a stale sample that arrived behind fresher ones', () => {
     // The scan walks back from the newest sample, so an out-of-order straggler
-    // takes everything older than itself with it.
-    const samples = [sampleAt(9000), sampleAt(1000), sampleAt(9500), sampleAt(10_000)]
-    expect(staleSampleCount(samples, 2000)).toBe(2)
+    // anchors the window and the samples before it are dropped, even the ones
+    // that fall inside it.
+    const samples = [
+      sampleAt(8000),
+      sampleAt(1000),
+      sampleAt(9000),
+      sampleAt(9500),
+      sampleAt(10_000)
+    ]
+    expect(staleSampleCount(samples, 2000, NO_CAP)).toBe(1)
   })
 
   it('has nothing to drop in an empty series', () => {
-    expect(staleSampleCount([], 60_000)).toBe(0)
+    expect(staleSampleCount([], WINDOW_MS, NO_CAP)).toBe(0)
+  })
+
+  it('caps a series whose timestamps stopped advancing', () => {
+    // Every sample sits inside the window, so only the cap bounds the series.
+    const samples = Array.from({ length: 500 }, () => sampleAt(1000))
+    expect(staleSampleCount(samples, WINDOW_MS, 100)).toBe(400)
+  })
+
+  it('leaves a series under the cap to the window', () => {
+    const samples = seriesAt(4, 90)
+    expect(staleSampleCount(samples, WINDOW_MS, 10_000)).toBe(
+      staleSampleCount(samples, WINDOW_MS, NO_CAP)
+    )
   })
 })
 
@@ -87,15 +140,6 @@ describe('calcPipelineThroughput', () => {
       [2000, 30],
       [3000, 70]
     ])
-  })
-
-  it('covers the plotted window once one extra sample interval is retained', () => {
-    // Why `RETAIN_MS` exceeds the plotted window: the oldest sample yields no
-    // point, so retaining exactly the window would leave the line short of it.
-    const samples = Array.from({ length: 62 }, (_, i) => sampleAt(i * 1000, i))
-    const { series } = calcPipelineThroughput(samples)
-    expect(series.length).toBe(samples.length - 1)
-    expect(series.at(-1)!.value[0] - series[0]!.value[0]).toBe(60_000)
   })
 
   it('reports the newest rate as the current one', () => {
