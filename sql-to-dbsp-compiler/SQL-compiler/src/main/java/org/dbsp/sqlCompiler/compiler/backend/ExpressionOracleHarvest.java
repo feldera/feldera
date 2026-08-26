@@ -7,35 +7,40 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.statement.DBSPComparatorItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
 import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.JsonStream;
 
+import javax.annotation.Nullable;
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -47,25 +52,29 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Harvests stateless scalar closures from compiled test circuits into per-closure
- * JSON records, the raw material for the standalone expression oracle.
+ * Harvests the expression IR of compiled test circuits into per-expression JSON
+ * records, the raw material for the standalone expression oracle.
  *
  * <p>Gated on the {@code FELDERA_EXPR_ORACLE_DIR} environment variable, so it runs
  * only when explicitly collecting a corpus and never perturbs a normal test run.
  * Every failure is swallowed: harvesting must not break the test that triggered it.
  *
- * <p>Harvested shapes:
+ * <p>Every operator (top-level and nested) is visited, and every public
+ * {@code DBSPExpression}-typed field on it is a harvest candidate. Four record kinds:
  * <ul>
- *   <li>{@code Map}/{@code Filter} (one parameter, {@code &Tup<leaves>}): a projection
- *       or predicate over one row;</li>
- *   <li>equi-join projections ({@code Join}/{@code StreamJoin}/{@code LeftJoin}, three
- *       parameters {@code &key, &left, &right}, each a {@code &Tup<leaves>}).</li>
+ *   <li>{@code closure}: a plain {@code DBSPClosureExpression} of any arity whose
+ *       parameters are sampleable (tuples of scalar leaves, by reference or value,
+ *       unit tuples, the fold {@code Weight});</li>
+ *   <li>{@code fold}: a {@code DBSPFold} aggregate, decomposed into its zero,
+ *       increment, and postProcess pieces;</li>
+ *   <li>{@code minmax}: a {@code DBSPMinMax} aggregate (the aggregation kind plus the
+ *       optional postProcessing closure);</li>
+ *   <li>{@code const}: a constant Z-set relation ({@code DBSPZSetExpression}).</li>
  * </ul>
- * Every leaf column must be a scalar the oracle runtime can sample, and each tuple at
- * most ten wide. Closures may reference interned-string and decimal STATIC constants;
- * the referenced declarations travel with the record so the generated crate can emit
- * them. Indexed (raw-tuple) parameters and unsupported result shapes are skipped, so
- * the generated crate always compiles.
+ * Closures may reference interned-string and decimal STATIC constants and generated
+ * comparator structs; the referenced declarations travel with the record so the
+ * generated crate can emit them. Unsupported shapes are skipped and counted, so the
+ * generated crate always compiles.
  */
 public final class ExpressionOracleHarvest {
     private ExpressionOracleHarvest() {}
@@ -75,6 +84,9 @@ public final class ExpressionOracleHarvest {
             "bool", "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128", "F32",
             "F64", "SqlString", "Date", "Time", "Timestamp", "TimestampTz", "ShortInterval",
             "LongInterval", "ByteArray", "Uuid", "Variant", "GeoPoint");
+
+    /** The most leaf columns a single sampled parameter may contribute. */
+    private static final int MAX_PARAM_LEAVES = 10;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -105,63 +117,414 @@ public final class ExpressionOracleHarvest {
         Files.createDirectories(dir);
         Map<DBSPOperator, Set<String>> provenance = sqlProvenance(circuit);
 
-        for (DBSPOperator operator : circuit.getAllOperators()) {
-            if (!(operator instanceof DBSPSimpleOperator simple) || !isHarvestable(operator)) {
-                continue;
+        for (DBSPOperator operator : allOperators(circuit)) {
+            for (NamedExpression named : expressionFields(operator)) {
+                candidates.incrementAndGet();
+                try {
+                    harvestExpression(circuit, compiler, dir, operator, named, provenance);
+                } catch (Throwable t) {
+                    // One bad expression must not lose the rest of the circuit.
+                    skip("harvest_error_" + t.getClass().getSimpleName());
+                }
             }
-            DBSPExpression function = simple.function;
-            if (!(function instanceof DBSPClosureExpression closure)) {
-                continue;
-            }
-            int arity = closure.parameters.length;
-            if (arity != 1 && arity != 3) {
-                continue;
-            }
-            candidates.incrementAndGet();
-            // A closure over an indexed input takes a borrowed key/value pair
-            // `&(&key, &value)`; everything else takes plain `&Tup` rows.
-            boolean index = arity == 1 && isIndexedParam(closure.parameters[0].getType());
-            ArrayNode params = index ? indexParams(compiler, closure) : scalarParams(compiler, closure);
-            if (params == null) {
-                skip("unsupported_parameter");
-                continue;
-            }
-            if (!isSupportedResult(compiler, closure.getResultType())) {
-                skip("unsupported_result");
-                continue;
-            }
-
-            String rustClosure = ToRustInnerVisitor.toRustString(compiler, closure, null, false);
-            List<DBSPDeclaration> declarations = referencedDeclarations(circuit, rustClosure);
-            if (declarations == null) {
-                // References a declaration that is not a STATIC constant (a function or
-                // struct); emitting those is out of scope.
-                skip("non_static_declaration");
-                continue;
-            }
-
-            String hash = sha1(rustClosure);
-            Path file = dir.resolve(hash + ".json");
-            ObjectNode record = MAPPER.createObjectNode();
-            record.put("name", "case_" + hash);
-            record.put("operator", operator.getClass().getSimpleName());
-            record.put("index", index);
-            record.set("params", params);
-            attachStatics(compiler, declarations, record);
-            record.put("rust_closure", rustClosure);
-            record.set("ir", buildIr(compiler, closure, declarations));
-            // Provenance: the SQL view(s) this closure feeds, unioned with whatever a prior
-            // run recorded under the same dedup file, so a case can be traced to its query.
-            record.set("generating_sql",
-                    mergeGeneratingSql(file, provenance.getOrDefault(operator, Set.of())));
-
-            // Filename is the dedup key: identical closures from different tests and
-            // JVMs converge on one file rather than racing an append.
-            MAPPER.writeValue(file.toFile(), record);
-            emitted.incrementAndGet();
         }
         writeStats(dir);
     }
+
+    /** Every operator in the circuit, recursing into nested (recursive-CTE) operators. */
+    private static List<DBSPOperator> allOperators(DBSPCircuit circuit) {
+        List<DBSPOperator> all = new ArrayList<>();
+        Deque<DBSPOperator> work = new ArrayDeque<>();
+        circuit.getAllOperators().forEach(work::add);
+        while (!work.isEmpty()) {
+            DBSPOperator operator = work.removeFirst();
+            all.add(operator);
+            if (operator instanceof DBSPNestedOperator nested) {
+                nested.getAllOperators().forEach(work::add);
+            }
+        }
+        return all;
+    }
+
+    private record NamedExpression(String field, DBSPExpression expression) {}
+
+    /**
+     * Every public non-static {@code DBSPExpression}-typed field of the operator that
+     * holds a value: {@code function}, {@code postProcess}, {@code init},
+     * {@code extractTs}, {@code error}, and so on. Reflection keeps this complete as
+     * operator classes grow fields; non-harvestable expression kinds are skipped (and
+     * counted) downstream.
+     */
+    private static List<NamedExpression> expressionFields(DBSPOperator operator) {
+        List<NamedExpression> result = new ArrayList<>();
+        Field[] fields = operator.getClass().getFields();
+        Arrays.sort(fields, Comparator.comparing(Field::getName));
+        for (Field field : fields) {
+            if (Modifier.isStatic(field.getModifiers())
+                    || !DBSPExpression.class.isAssignableFrom(field.getType())) {
+                continue;
+            }
+            try {
+                Object value = field.get(operator);
+                if (value != null) {
+                    result.add(new NamedExpression(field.getName(), (DBSPExpression) value));
+                }
+            } catch (IllegalAccessException ignored) {
+                // A non-accessible field is not part of the harvestable surface.
+            }
+        }
+        return result;
+    }
+
+    /** Dispatch one (operator, field, expression) candidate on the expression kind. */
+    private static void harvestExpression(
+            DBSPCircuit circuit, DBSPCompiler compiler, Path dir, DBSPOperator operator,
+            NamedExpression named, Map<DBSPOperator, Set<String>> provenance) throws Exception {
+        ObjectNode record;
+        if (named.expression instanceof DBSPClosureExpression closure) {
+            record = closureRecord(compiler, closure);
+        } else if (named.expression instanceof DBSPFold fold) {
+            record = foldRecord(compiler, fold);
+        } else if (named.expression instanceof DBSPMinMax minMax) {
+            record = minMaxRecord(compiler, minMax);
+        } else if (named.expression instanceof DBSPZSetExpression zset) {
+            record = constRecord(compiler, zset);
+        } else {
+            skip("unsupported_expression_" + named.expression.getClass().getSimpleName());
+            return;
+        }
+        if (record == null) {
+            return; // the builder counted the specific skip reason
+        }
+
+        // The Rust text of every piece is both the dedup key and the declaration probe.
+        StringBuilder allRust = new StringBuilder();
+        record.fields().forEachRemaining(entry -> {
+            if (entry.getKey().startsWith("rust_") && entry.getValue().isTextual()) {
+                allRust.append(entry.getValue().asText()).append('\n');
+            }
+        });
+        List<DBSPDeclaration> declarations = referencedDeclarations(circuit, allRust.toString());
+        if (declarations == null) {
+            // References a declaration that is neither a STATIC constant nor a generated
+            // comparator (a user-defined function or struct); emitting those is out of scope.
+            skip("non_static_declaration");
+            return;
+        }
+
+        record.put("operator", operator.getClass().getSimpleName());
+        record.put("field", named.field);
+        attachDeclarations(compiler, declarations, record);
+        attachComparators(compiler, named.expression, allRust.toString(), record);
+        record.set("ir", buildIr(compiler, irRoot(named.expression), declarations));
+
+        String hash = sha1(allRust.toString());
+        record.put("name", "case_" + hash);
+        Path file = dir.resolve(hash + ".json");
+        // Provenance: the SQL view(s) this expression feeds, unioned with whatever a prior
+        // run recorded under the same dedup file, so a case can be traced to its query.
+        record.set("generating_sql",
+                mergeGeneratingSql(file, provenance.getOrDefault(operator, Set.of())));
+
+        // Filename is the dedup key: identical expressions from different tests and
+        // JVMs converge on one file rather than racing an append.
+        MAPPER.writeValue(file.toFile(), record);
+        emitted.incrementAndGet();
+    }
+
+    /** The node serialized as the record's `ir.function`. */
+    private static IDBSPInnerNode irRoot(DBSPExpression expression) {
+        return expression;
+    }
+
+    // ------------------------------------------------------------------
+    // closure records
+    // ------------------------------------------------------------------
+
+    /**
+     * A plain closure of any arity. Each parameter must be sampleable: a tuple of
+     * scalar leaves (by reference or by value, possibly the nullable left-join
+     * `&Option<Tup>`), a bare supported leaf, a unit tuple, or the fold `Weight`.
+     * The legacy map-index shape (one `&(&key, &value)` parameter) is kept as its
+     * own representation.
+     */
+    @Nullable
+    private static ObjectNode closureRecord(DBSPCompiler compiler, DBSPClosureExpression closure) {
+        ObjectNode record = MAPPER.createObjectNode();
+        record.put("kind", "closure");
+        int arity = closure.parameters.length;
+        boolean index = arity == 1 && isIndexedParam(closure.parameters[0].getType());
+        record.put("index", index);
+        ArrayNode params = index
+                ? indexParams(compiler, closure)
+                : closureParams(compiler, closure);
+        if (params == null) {
+            skip("unsupported_parameter");
+            return null;
+        }
+        if (!isSupportedResult(compiler, closure.getResultType())) {
+            skip("unsupported_result");
+            return null;
+        }
+        record.set("params", params);
+        record.put("rust_closure", ToRustInnerVisitor.toRustString(compiler, closure, null, false));
+        return record;
+    }
+
+    @Nullable
+    private static ArrayNode closureParams(DBSPCompiler compiler, DBSPClosureExpression closure) {
+        ArrayNode params = MAPPER.createArrayNode();
+        for (var parameter : closure.parameters) {
+            ObjectNode param = paramSpec(compiler, parameter.getType());
+            if (param == null) {
+                return null;
+            }
+            params.add(param);
+        }
+        return params;
+    }
+
+    /**
+     * Classify one closure parameter and describe how to build a probe value for it:
+     * a `ctor` template over `{i}` leaf placeholders plus the leaf types, or a unit /
+     * weight marker. Null if the parameter is not sampleable.
+     */
+    @Nullable
+    private static ObjectNode paramSpec(DBSPCompiler compiler, DBSPType type) {
+        boolean ref = false;
+        if (type instanceof DBSPTypeRef refType) {
+            ref = true;
+            type = refType.type;
+        }
+        ObjectNode param = MAPPER.createObjectNode();
+        param.put("mode", ref ? "ref" : "value");
+        if (type instanceof DBSPTypeWeight) {
+            param.put("kind", "weight");
+            return param;
+        }
+        if (type instanceof DBSPTypeTupleBase tuple && tuple.tupFields.length == 0) {
+            param.put("kind", "unit");
+            param.put("ctor", tuple instanceof DBSPTypeRawTuple ? "()" : "Tup0::new()");
+            return param;
+        }
+        boolean nullable = type.mayBeNull && type instanceof DBSPTypeTuple;
+        Shape shape = shape(compiler, nullable ? type.withMayBeNull(false) : type);
+        if (shape == null || shape.leaves.size() > MAX_PARAM_LEAVES) {
+            return null;
+        }
+        // A nullable by-value tuple would need Option construction the adapters do not
+        // do; the nullable case is the left join's borrowed `&Option<Tup>` only.
+        if (nullable && !ref) {
+            return null;
+        }
+        param.put("kind", "tuple");
+        param.put("nullable", nullable);
+        param.put("ctor", shape.ctor);
+        ArrayNode leaves = param.putArray("leaves");
+        shape.leaves.forEach(leaves::add);
+        return param;
+    }
+
+    private record Shape(String ctor, List<String> leaves) {}
+
+    /**
+     * A constructor template for one sampled value: tuples become `TupN::new(..)`,
+     * raw tuples become native `(..)` tuples, and each supported leaf becomes a
+     * `{i}` placeholder. Null if any leaf is unsupported or a nested tuple is
+     * nullable (Option construction is not generated for inner tuples).
+     */
+    @Nullable
+    private static Shape shape(DBSPCompiler compiler, DBSPType type) {
+        if (type instanceof DBSPTypeTupleBase tuple) {
+            if (type.mayBeNull) {
+                return null;
+            }
+            List<String> leaves = new ArrayList<>();
+            List<String> parts = new ArrayList<>();
+            for (DBSPType field : tuple.tupFields) {
+                Shape child = shape(compiler, field);
+                if (child == null) {
+                    return null;
+                }
+                // Re-number the child's placeholders after the leaves already collected.
+                String ctor = child.ctor;
+                for (int i = child.leaves.size() - 1; i >= 0; i--) {
+                    ctor = ctor.replace("{" + i + "}", "{" + (leaves.size() + i) + "}");
+                }
+                leaves.addAll(child.leaves);
+                parts.add(ctor);
+            }
+            String joined = String.join(", ", parts);
+            String ctor = tuple instanceof DBSPTypeRawTuple
+                    ? "(" + joined + ")"
+                    : "Tup" + tuple.tupFields.length + "::new(" + joined + ")";
+            return new Shape(ctor, leaves);
+        }
+        String rust = ToRustInnerVisitor.toRustString(compiler, type, null, false);
+        if (!isSupportedLeaf(rust)) {
+            return null;
+        }
+        return new Shape("{0}", List.of(rust));
+    }
+
+    /** Whether the parameter is a borrowed key/value pair `&(&keyTuple, &valueTuple)`. */
+    private static boolean isIndexedParam(DBSPType type) {
+        return type instanceof DBSPTypeRef ref
+                && ref.type instanceof DBSPTypeRawTuple pair
+                && pair.tupFields.length == 2
+                && pair.tupFields[0] instanceof DBSPTypeRef;
+    }
+
+    /**
+     * A closure over an indexed input takes one parameter, a borrowed key/value pair
+     * {@code &(&keyTuple, &valueTuple)}. The two tuples become the parameter list.
+     */
+    @Nullable
+    private static ArrayNode indexParams(DBSPCompiler compiler, DBSPClosureExpression closure) {
+        DBSPTypeRawTuple pair =
+                (DBSPTypeRawTuple) ((DBSPTypeRef) closure.parameters[0].getType()).type;
+        ArrayNode params = MAPPER.createArrayNode();
+        for (DBSPType field : pair.tupFields) {
+            if (!(field instanceof DBSPTypeRef inner) || inner.type.mayBeNull) {
+                return null;
+            }
+            ObjectNode param = paramSpec(compiler, inner.type);
+            if (param == null || !"tuple".equals(param.get("kind").asText())) {
+                return null;
+            }
+            params.add(param);
+        }
+        return params;
+    }
+
+    // ------------------------------------------------------------------
+    // fold records
+    // ------------------------------------------------------------------
+
+    /**
+     * A GROUP BY aggregate: zero, increment `|acc: &mut A, row: &V, w: Weight|`, and
+     * postProcess `|acc: A| -> O`. The pieces are recorded separately; the oracle
+     * driver replays the fold over sampled (row, weight) sequences and records the
+     * post-processed running output per prefix. The accumulator type only has to
+     * compile (a `Vec` accumulator is fine), never to be sampled or encoded.
+     */
+    @Nullable
+    private static ObjectNode foldRecord(DBSPCompiler compiler, DBSPFold fold) {
+        DBSPClosureExpression increment = fold.increment;
+        if (increment.parameters.length != 3) {
+            skip("fold_increment_arity");
+            return null;
+        }
+        if (!(increment.parameters[0].getType() instanceof DBSPTypeRef accRef)
+                || !accRef.mutable) {
+            skip("fold_acc_shape");
+            return null;
+        }
+        if (!(increment.parameters[2].getType() instanceof DBSPTypeWeight)) {
+            // Rewrites can replace the weight parameter with another type; the driver
+            // only knows how to feed a real Weight.
+            skip("fold_weight_shape");
+            return null;
+        }
+        ObjectNode row = paramSpec(compiler, increment.parameters[1].getType());
+        if (row == null || !"tuple".equals(row.get("kind").asText())
+                || row.get("nullable").asBoolean()) {
+            skip("unsupported_parameter");
+            return null;
+        }
+        DBSPClosureExpression post = fold.postProcess;
+        if (post.parameters.length != 1
+                || !isSupportedResult(compiler, post.getResultType())) {
+            skip("unsupported_result");
+            return null;
+        }
+        ObjectNode record = MAPPER.createObjectNode();
+        record.put("kind", "fold");
+        ArrayNode params = record.putArray("params");
+        params.add(row);
+        record.put("acc_type", ToRustInnerVisitor.toRustString(compiler, accRef.type, null, false));
+        record.put("post_mode",
+                post.parameters[0].getType() instanceof DBSPTypeRef ? "ref" : "value");
+        record.put("rust_zero", ToRustInnerVisitor.toRustString(compiler, fold.zero, null, false));
+        record.put("rust_increment", ToRustInnerVisitor.toRustString(compiler, increment, null, false));
+        record.put("rust_post", ToRustInnerVisitor.toRustString(compiler, post, null, false));
+        return record;
+    }
+
+    // ------------------------------------------------------------------
+    // minmax records
+    // ------------------------------------------------------------------
+
+    /**
+     * A MIN/MAX aggregate: the DBSP aggregation kind (`Min`, `Max`, `MinSome1`,
+     * `ArgMinSome`) plus the optional postProcessing closure. The oracle driver
+     * mirrors the aggregator contract over sampled (value, weight) sequences.
+     */
+    @Nullable
+    private static ObjectNode minMaxRecord(DBSPCompiler compiler, DBSPMinMax minMax) {
+        if (!(minMax.getType() instanceof DBSPTypeFunction function)
+                || function.parameterTypes.length != 1) {
+            skip("minmax_type_shape");
+            return null;
+        }
+        ObjectNode row = paramSpec(compiler, function.parameterTypes[0]);
+        if (row == null || !"tuple".equals(row.get("kind").asText())
+                || row.get("nullable").asBoolean()) {
+            skip("unsupported_parameter");
+            return null;
+        }
+        if (!isSupportedResult(compiler, function.resultType)) {
+            skip("unsupported_result");
+            return null;
+        }
+        ObjectNode record = MAPPER.createObjectNode();
+        record.put("kind", "minmax");
+        record.put("aggregation", minMax.aggregation.name());
+        ArrayNode params = record.putArray("params");
+        params.add(row);
+        if (minMax.postProcessing != null) {
+            if (minMax.postProcessing.parameters.length != 1) {
+                skip("minmax_post_arity");
+                return null;
+            }
+            record.put("post_mode",
+                    minMax.postProcessing.parameters[0].getType() instanceof DBSPTypeRef
+                            ? "ref" : "value");
+            record.put("rust_post",
+                    ToRustInnerVisitor.toRustString(compiler, minMax.postProcessing, null, false));
+        }
+        // The aggregation kind and value type participate in dedup even though they are
+        // not Rust text; without them, MinSome1 over INT and over VARCHAR would collide.
+        record.put("rust_aggregation", minMax.aggregation.name() + " over "
+                + ToRustInnerVisitor.toRustString(compiler, function.parameterTypes[0], null, false));
+        return record;
+    }
+
+    // ------------------------------------------------------------------
+    // const records
+    // ------------------------------------------------------------------
+
+    /** A constant relation: the Z-set literal, recorded as rows plus weights. */
+    @Nullable
+    private static ObjectNode constRecord(DBSPCompiler compiler, DBSPZSetExpression zset) {
+        Shape element = shape(compiler, zset.elementType);
+        if (element == null) {
+            skip("unsupported_const_element");
+            return null;
+        }
+        ObjectNode record = MAPPER.createObjectNode();
+        record.put("kind", "const");
+        record.put("rust_value", ToRustInnerVisitor.toRustString(compiler, zset, null, false));
+        // The element type participates in dedup: every empty constant renders as
+        // `zset!()` regardless of its schema.
+        record.put("rust_elem_type",
+                ToRustInnerVisitor.toRustString(compiler, zset.elementType, null, false));
+        return record;
+    }
+
+    // ------------------------------------------------------------------
+    // shared plumbing
+    // ------------------------------------------------------------------
 
     /**
      * Map each operator to the SQL of the view(s) it feeds, by walking upstream from every
@@ -191,8 +554,8 @@ public final class ExpressionOracleHarvest {
     }
 
     /**
-     * Union this closure's view SQL with whatever a prior run already recorded under the same
-     * dedup file, so re-harvesting accumulates provenance rather than overwriting it.
+     * Union this expression's view SQL with whatever a prior run already recorded under the
+     * same dedup file, so re-harvesting accumulates provenance rather than overwriting it.
      */
     private static ArrayNode mergeGeneratingSql(Path file, Set<String> fresh) {
         LinkedHashSet<String> all = new LinkedHashSet<>();
@@ -213,9 +576,9 @@ public final class ExpressionOracleHarvest {
     }
 
     /**
-     * Coverage so far, rewritten after every circuit. `candidates` counts the
-     * stateless scalar closures of a harvestable shape; `emitted` counts those that
-     * passed every filter (before dedup); the unique total is the record-file count.
+     * Coverage so far, rewritten after every circuit. `candidates` counts the operator
+     * expression fields visited; `emitted` counts those that passed every filter (before
+     * dedup); the unique total is the record-file count.
      */
     private static void writeStats(Path dir) throws Exception {
         ObjectNode stats = MAPPER.createObjectNode();
@@ -224,94 +587,6 @@ public final class ExpressionOracleHarvest {
         ObjectNode bySkip = stats.putObject("skipped");
         skipped.forEach((reason, count) -> bySkip.put(reason, count.get()));
         MAPPER.writeValue(dir.resolve("_stats.json").toFile(), stats);
-    }
-
-    /** The operator kinds whose closure is a stateless scalar projection or predicate. */
-    private static boolean isHarvestable(DBSPOperator operator) {
-        return operator instanceof DBSPMapOperator
-                || operator instanceof DBSPMapIndexOperator
-                || operator instanceof DBSPFilterOperator
-                || operator instanceof DBSPJoinOperator
-                || operator instanceof DBSPStreamJoinOperator
-                || operator instanceof DBSPLeftJoinOperator;
-    }
-
-    /**
-     * One entry per closure parameter, each `&Tup<scalar leaves>`; null if any parameter
-     * is not that shape or a leaf is not sampleable.
-     */
-    private static ArrayNode scalarParams(DBSPCompiler compiler, DBSPClosureExpression closure) {
-        ArrayNode params = MAPPER.createArrayNode();
-        for (var parameter : closure.parameters) {
-            if (!(parameter.getType() instanceof DBSPTypeRef ref)
-                    || !(ref.type instanceof DBSPTypeTuple tuple)) {
-                return null;
-            }
-            ObjectNode param = tupleParam(compiler, tuple, true);
-            if (param == null) {
-                return null;
-            }
-            params.add(param);
-        }
-        return params;
-    }
-
-    /** Whether the parameter is a borrowed key/value pair `&(&keyTuple, &valueTuple)`. */
-    private static boolean isIndexedParam(DBSPType type) {
-        return type instanceof DBSPTypeRef ref
-                && ref.type instanceof DBSPTypeRawTuple pair
-                && pair.tupFields.length == 2;
-    }
-
-    /**
-     * A closure over an indexed input takes one parameter, a borrowed key/value pair
-     * {@code &(&keyTuple, &valueTuple)}. The two tuples become the parameter list.
-     */
-    private static ArrayNode indexParams(DBSPCompiler compiler, DBSPClosureExpression closure) {
-        if (!(closure.parameters[0].getType() instanceof DBSPTypeRef ref)
-                || !(ref.type instanceof DBSPTypeRawTuple pair)
-                || pair.tupFields.length != 2) {
-            return null;
-        }
-        ArrayNode params = MAPPER.createArrayNode();
-        for (DBSPType field : pair.tupFields) {
-            if (!(field instanceof DBSPTypeRef inner)
-                    || !(inner.type instanceof DBSPTypeTuple tuple)) {
-                return null;
-            }
-            // A nullable key or value tuple would need Option construction the index
-            // driver does not do; skip it.
-            ObjectNode param = tupleParam(compiler, tuple, false);
-            if (param == null) {
-                return null;
-            }
-            params.add(param);
-        }
-        return params;
-    }
-
-    /** A parameter descriptor for one tuple of scalar leaves, or null if unsupported. */
-    private static ObjectNode tupleParam(DBSPCompiler compiler, DBSPTypeTuple tuple, boolean allowNull) {
-        if (tuple.mayBeNull && !allowNull) {
-            return null;
-        }
-        DBSPType[] fields = tuple.tupFields;
-        if (fields.length < 1 || fields.length > 10) {
-            return null;
-        }
-        ObjectNode param = MAPPER.createObjectNode();
-        // A nullable parameter tuple is a left join's absent right row (`&Option<Tup>`);
-        // the generator samples it as Some/None.
-        param.put("nullable", tuple.mayBeNull);
-        ArrayNode leaves = param.putArray("leaves");
-        for (DBSPType field : fields) {
-            String rust = ToRustInnerVisitor.toRustString(compiler, field, null, false);
-            if (!isSupportedLeaf(rust)) {
-                return null;
-            }
-            leaves.add(rust);
-        }
-        return param;
     }
 
     private static boolean isSupportedLeaf(String rustType) {
@@ -327,8 +602,8 @@ public final class ExpressionOracleHarvest {
     }
 
     /**
-     * The result type the generated crate will JSON-encode: a scalar (predicate), or a
-     * tuple / raw tuple of supported values (a projection or an indexed key/value pair).
+     * The result type the generated crate will Arrow-encode: a scalar (predicate), or a
+     * tuple / raw tuple of supported values (possibly nested, a weighable accumulator).
      */
     private static boolean isSupportedResult(DBSPCompiler compiler, DBSPType type) {
         if (type instanceof DBSPTypeRef ref) {
@@ -353,18 +628,21 @@ public final class ExpressionOracleHarvest {
     }
 
     /**
-     * The circuit declarations the closure references (by name). Null if it references a
-     * declaration that is not a STATIC constant, which the generator cannot emit.
+     * The circuit declarations the harvested Rust references (by name). STATIC constants
+     * and generated comparator structs are allowed; null if it references anything else
+     * (a user-defined function or struct), which the generator cannot emit.
      */
+    @Nullable
     private static List<DBSPDeclaration> referencedDeclarations(
-            DBSPCircuit circuit, String rustClosure) {
+            DBSPCircuit circuit, String rust) {
         List<DBSPDeclaration> referenced = new ArrayList<>();
         for (DBSPDeclaration declaration : circuit.declarations) {
             String name = declaration.getName();
-            if (name.isBlank() || !rustClosure.contains(name)) {
+            if (name.isBlank() || !rust.contains(name)) {
                 continue;
             }
-            if (!(declaration.item instanceof DBSPStaticItem)) {
+            if (!(declaration.item instanceof DBSPStaticItem)
+                    && !(declaration.item instanceof DBSPComparatorItem)) {
                 return null;
             }
             referenced.add(declaration);
@@ -373,27 +651,62 @@ public final class ExpressionOracleHarvest {
     }
 
     /**
-     * Render each referenced STATIC as a function-local declaration plus its initializer.
-     * The generated crate emits all declarations first, then all initializers (init is
-     * idempotent and the value is computed lazily), then the closure that reads them.
+     * Render each referenced declaration for the generated crate: a STATIC becomes a
+     * function-local declaration plus its initializer; a comparator item becomes a
+     * module-level `struct CmpX; impl CmpFunc<..> for CmpX { .. }` item.
      */
-    private static void attachStatics(
+    private static void attachDeclarations(
             DBSPCompiler compiler, List<DBSPDeclaration> declarations, ObjectNode record) {
         ArrayNode decls = record.putArray("static_decls");
         ArrayNode inits = record.putArray("static_inits");
+        ArrayNode items = record.putArray("item_decls");
         for (DBSPDeclaration declaration : declarations) {
-            var stat = ((DBSPStaticItem) declaration.item).expression;
-            String name = stat.getName();
-            String type = ToRustInnerVisitor.toRustString(compiler, stat.getType(), null, false);
-            String init = ToRustInnerVisitor.toRustString(compiler, stat.initializer, null, false);
-            decls.add("static " + name + ": StaticLazy<" + type + "> = StaticLazy::new();");
-            inits.add(name + ".init(move || " + init + ");");
+            if (declaration.item instanceof DBSPStaticItem staticItem) {
+                var stat = staticItem.expression;
+                String name = stat.getName();
+                String type = ToRustInnerVisitor.toRustString(compiler, stat.getType(), null, false);
+                String init = ToRustInnerVisitor.toRustString(compiler, stat.initializer, null, false);
+                decls.add("static " + name + ": StaticLazy<" + type + "> = StaticLazy::new();");
+                inits.add(name + ".init(move || " + init + ");");
+            } else {
+                items.add(ToRustInnerVisitor.toRustString(compiler, declaration.item, null, false));
+            }
         }
     }
 
-    /** The closure IR plus the STATIC declarations it references, self-contained. */
+    /**
+     * Emit a `struct CmpX; impl CmpFunc<..> for CmpX { .. }` item for every comparator
+     * the harvested Rust references by name (`ARRAY_AGG .. ORDER BY` sorts through a
+     * generated struct). At harvest time the comparators are still inline expressions;
+     * the Rust backend would materialize the items later, so the record does it here.
+     */
+    private static void attachComparators(
+            DBSPCompiler compiler, DBSPExpression root, String rust, ObjectNode record) {
+        List<org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression> comparators =
+                new ArrayList<>();
+        var collector = new org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor(compiler) {
+            @Override
+            public void postorder(
+                    org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression comparator) {
+                comparators.add(comparator);
+            }
+        };
+        root.accept(collector);
+        ArrayNode items = (ArrayNode) record.get("item_decls");
+        Set<String> emittedStructs = new HashSet<>();
+        for (var comparator : comparators) {
+            String structName = comparator.getComparatorStructName();
+            if (!rust.contains(structName) || !emittedStructs.add(structName)) {
+                continue;
+            }
+            items.add(ToRustInnerVisitor.toRustString(
+                    compiler, new DBSPComparatorItem(comparator), null, false));
+        }
+    }
+
+    /** The expression IR plus the declarations it references, self-contained. */
     private static ObjectNode buildIr(
-            DBSPCompiler compiler, DBSPClosureExpression closure, List<DBSPDeclaration> declarations)
+            DBSPCompiler compiler, IDBSPInnerNode root, List<DBSPDeclaration> declarations)
             throws Exception {
         ArrayNode irDeclarations = MAPPER.createArrayNode();
         for (DBSPDeclaration declaration : declarations) {
@@ -403,7 +716,7 @@ public final class ExpressionOracleHarvest {
         }
         ObjectNode ir = MAPPER.createObjectNode();
         ir.set("declarations", irDeclarations);
-        ir.set("function", MAPPER.readTree(innerJson(compiler, closure)));
+        ir.set("function", MAPPER.readTree(innerJson(compiler, root)));
         return ir;
     }
 
