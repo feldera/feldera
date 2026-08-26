@@ -962,37 +962,37 @@ public class VariantTests extends SqlIoTest {
                 ---
                  1
                 (1 row)
-                
+
                 SELECT CAST(CAST('a' AS VARIANT) AS VARCHAR);
                  r
                 ---
                  a
                 (1 row)
-                
+
                 SELECT CAST(CAST(1.5 AS VARIANT) AS VARCHAR);
                  r
                 ---
                  1.5
                 (1 row)
-                
+
                  SELECT CAST(CAST(1.5e0 AS VARIANT) AS VARCHAR);
                  r
                 ---
                  1.5
                 (1 row)
-                
+
                 SELECT CAST(CAST(TRUE AS VARIANT) AS VARCHAR);
                  r
                 ---
                  true
                 (1 row)
-                
+
                 SELECT CAST(CAST(UUID '123e4567-e89b-12d3-a456-426655440000' AS VARIANT) AS VARCHAR);
                  r
                 ---
                  123e4567-e89b-12d3-a456-426655440000
                 (1 row)
-                
+
                 SELECT CAST(CAST(INTERVAL '+1 10:10:10.123' DAYS TO SECONDS AS VARIANT) AS VARCHAR);
                  r
                 ---
@@ -1004,13 +1004,13 @@ public class VariantTests extends SqlIoTest {
                 ---
                  0abc
                 (1 row)
-                
+
                 SELECT CAST(CAST(TIME '10:00:00.123' AS VARIANT) AS VARCHAR);
                  r
                 ---
                  10:00:00.123000000
                 (1 row)
-                
+
                 SELECT CAST(CAST(TIMESTAMP '2024-02-02 10:00:00.123' AS VARIANT) AS VARCHAR);
                  r
                 ---
@@ -1034,31 +1034,31 @@ public class VariantTests extends SqlIoTest {
                 ---
                  1
                 (1 row)
-                
+
                 SELECT CAST(CAST('1.5' AS VARIANT) AS DECIMAL(10, 1));
                  r
                 ---
                  1.5
                 (1 row)
-                
+
                 SELECT CAST(CAST('1.5e0' AS VARIANT) AS DOUBLE);
                  r
                 ---
                  1.5
                 (1 row)
-                
+
                 SELECT CAST(CAST('TRUE' AS VARIANT) AS BOOLEAN);
                  r
                 ---
                  true
                 (1 row)
-                
+
                 SELECT CAST(CAST('123e4567-e89b-12d3-a456-426655440000' AS VARIANT) AS UUID);
                  r
                 ---
                  123e4567-e89b-12d3-a456-426655440000
                 (1 row)
-                
+
                 SELECT CAST(CAST('+1 10:10:10.123' AS VARIANT) AS INTERVAL DAYS TO SECONDS);
                  r
                 ---
@@ -1070,7 +1070,7 @@ public class VariantTests extends SqlIoTest {
                 ---
                  10:00:00.123000000
                 (1 row)
-                
+
                 SELECT CAST(CAST('2024-02-02 10:00:00.123' AS VARIANT) AS TIMESTAMP);
                  r
                 ---
@@ -1081,6 +1081,41 @@ public class VariantTests extends SqlIoTest {
                  r
                 ---
                  2024-02-02
+                (1 row)""");
+    }
+
+    /** GeoPoint converted to VARIANT. */
+    @Test
+    public void testVariantGeoPoint() {
+        this.qst("""
+                SELECT TYPEOF(CAST(ST_POINT(1, 2) AS VARIANT));
+                 r
+                ---
+                 GEOPOINT
+                (1 row)
+
+                SELECT CAST(ST_POINT(1, 2) AS VARIANT) = CAST(ST_POINT(1, 2) AS VARIANT);
+                 r
+                ---
+                 true
+                (1 row)
+
+                SELECT CAST(ST_POINT(1, 2) AS VARIANT) = CAST(ST_POINT(2, 1) AS VARIANT);
+                 r
+                ---
+                 false
+                (1 row)
+
+                SELECT CAST(CAST(ST_POINT(1, 2) AS VARIANT) AS GEOMETRY) = ST_POINT(1, 2);
+                 r
+                ---
+                 true
+                (1 row)
+
+                SELECT CAST(PARSE_JSON('5') AS GEOMETRY) IS NULL;
+                 r
+                ---
+                 true
                 (1 row)""");
     }
 }

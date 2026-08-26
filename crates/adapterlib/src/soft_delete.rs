@@ -13,6 +13,9 @@
 //! transport → parser → SoftDeleteStream → table
 //! ```
 
+// The connector layer still builds record metadata as the enum `Variant`.
+#![allow(deprecated)]
+
 use std::collections::BTreeMap;
 use std::hash::Hasher;
 use std::sync::Arc;

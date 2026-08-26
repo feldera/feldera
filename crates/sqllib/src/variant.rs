@@ -1,5 +1,9 @@
 //! Variant is a dynamically-typed object that can represent
 //! the values in a SQL program.
+//!
+//! Deprecated: [`crate::FlatVariant`] is the SQL VARIANT type now.  This
+//! module implements the type it replaces, so it allows its own use of it.
+#![allow(deprecated)]
 
 use crate::{
     Date, GeoPoint, LongInterval, ShortInterval, SqlDecimal, SqlString, Time, Timestamp,
@@ -26,7 +30,18 @@ use std::fmt::Display;
 use std::sync::Arc;
 use std::{fmt::Debug, hash::Hash};
 
+/// The legacy enum under a name that is not itself deprecated.
+///
+/// A `#[allow(deprecated)]` attribute covers an item's body, not the tokens
+/// of a macro invocation, so the few in-crate spots that pass the enum to a
+/// macro name it through this alias instead.
+pub(crate) type LegacyVariant = Variant;
+
 /// Represents a Sql value with a VARIANT type.
+#[deprecated(
+    since = "0.340.0",
+    note = "the SQL VARIANT type is implemented using `SqlVariant`; `Variant` still works but will be removed"
+)]
 #[derive(
     Debug,
     Default,

@@ -1,11 +1,11 @@
-use feldera_sqllib::{SqlString, Variant};
+use feldera_sqllib::{SqlString, SqlVariant};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 pub fn check_condition(
     condition: Option<SqlString>,
-    subject_properties: Option<Variant>,
-    resource_properties: Option<Variant>,
+    subject_properties: Option<SqlVariant>,
+    resource_properties: Option<SqlVariant>,
 ) -> Result<Option<bool>, Box<dyn std::error::Error>> {
     Ok(do_check_condition(
         condition,
@@ -16,8 +16,8 @@ pub fn check_condition(
 
 pub fn do_check_condition(
     condition: Option<SqlString>,
-    subject_properties: Option<Variant>,
-    resource_properties: Option<Variant>,
+    subject_properties: Option<SqlVariant>,
+    resource_properties: Option<SqlVariant>,
 ) -> Option<bool> {
     let condition = condition?;
     let subject_properties = subject_properties?;
@@ -29,9 +29,15 @@ pub fn do_check_condition(
     let expr = jmespath::compile(condition.str())
         .map_err(|e| println!("invalid jmes expression: {e}"))
         .ok()?;
-    let all_properties = Variant::Map(Arc::new(BTreeMap::from([
-        (Variant::String(SqlString::from_ref("subject")), subject_properties),
-        (Variant::String(SqlString::from_ref("resource")), resource_properties),
+    let all_properties = SqlVariant::from(Arc::new(BTreeMap::from([
+        (
+            SqlVariant::from(SqlString::from_ref("subject")),
+            subject_properties,
+        ),
+        (
+            SqlVariant::from(SqlString::from_ref("resource")),
+            resource_properties,
+        ),
     ])));
 
     let result = expr

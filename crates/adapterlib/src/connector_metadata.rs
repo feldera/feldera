@@ -1,3 +1,6 @@
+// The connector layer still builds record metadata as the enum `Variant`.
+#![allow(deprecated)]
+
 use std::{collections::BTreeMap, sync::Arc};
 
 use feldera_sqllib::{SqlString, Variant};
