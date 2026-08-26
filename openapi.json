@@ -11580,6 +11580,14 @@
             ],
             "nullable": true
           },
+          "oauth_provider": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KafkaOauthProvider"
+              }
+            ],
+            "nullable": true
+          },
           "partitions": {
             "type": "array",
             "items": {
@@ -11635,6 +11643,14 @@
           "debug"
         ]
       },
+      "KafkaOauthProvider": {
+        "type": "string",
+        "description": "Identity provider used to mint SASL/OAUTHBEARER tokens for the Kafka\nbroker.",
+        "enum": [
+          "aws",
+          "gcp"
+        ]
+      },
       "KafkaOutputConfig": {
         "type": "object",
         "description": "Configuration for writing data to a Kafka topic with `OutputTransport`.",
@@ -11672,6 +11688,14 @@
             "allOf": [
               {
                 "$ref": "#/components/schemas/KafkaLogLevel"
+              }
+            ],
+            "nullable": true
+          },
+          "oauth_provider": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/KafkaOauthProvider"
               }
             ],
             "nullable": true

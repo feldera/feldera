@@ -426,6 +426,7 @@ It contains the following fields:
         feldera_types::transport::kafka::KafkaHeader,
         feldera_types::transport::kafka::KafkaHeaderValue,
         feldera_types::transport::kafka::KafkaLogLevel,
+        feldera_types::transport::kafka::KafkaOauthProvider,
         feldera_types::transport::kafka::KafkaInputConfig,
         feldera_types::transport::kafka::KafkaOutputConfig,
         feldera_types::transport::kafka::KafkaOutputFtConfig,
