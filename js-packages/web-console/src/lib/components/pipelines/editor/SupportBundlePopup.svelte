@@ -1,10 +1,16 @@
 <script lang="ts">
   /**
-   * The support bundle dropdown: the download entry, the "collect new data" toggle,
-   * and the entry that opens a bundle from disk in the profile viewer.
+   * Opens a support bundle from disk in the profile viewer.
    *
-   * Confirming a pick takes a second click: the browser treats `window.open` as a
-   * popup unless it runs synchronously inside a click handler, and picking a file is
+   * Two shapes, one flow:
+   *   - `mode="menu"` (the pipeline editor's split button): the trigger opens a
+   *     dropdown offering the download, the "collect new data" toggle and the entry
+   *     that picks a bundle.
+   *   - `mode="pick"` (the "Open support bundle" dialog's button): the trigger picks
+   *     a bundle straight away, and the dropdown holds the confirmation alone.
+   *
+   * Confirming takes a second click: the browser treats `window.open` as a popup
+   * unless it runs synchronously inside a click handler, and picking a file is
    * asynchronous. So picking shows the confirmation, and the click on it opens the
    * tab.
    *
@@ -25,7 +31,18 @@
 
   type Props = {
     trigger: Snippet<[toggle: () => void, isOpen: boolean]>
-    /** When omitted the menu offers no download. */
+    /** Whether the trigger opens the bundle menu or picks a bundle right away. */
+    mode?: 'menu' | 'pick'
+    /** Which edge of the trigger the dropdown hangs from. */
+    align?: 'left' | 'right'
+    /**
+     * Which way the dropdown opens. Use `'up'` for a trigger near the bottom edge of
+     * its container, where a downward dropdown would hang off.
+     */
+    drop?: 'down' | 'up'
+    /** Runs once the viewer tab is open, so a caller such as a dialog can close itself. */
+    onOpened?: () => void
+    /** Menu mode only; when omitted the menu offers no download. */
     onDownload?: () => void
     collectNewData?: boolean
     downloadLabel?: string
@@ -37,6 +54,10 @@
 
   let {
     trigger,
+    mode = 'menu',
+    align = 'right',
+    drop = 'down',
+    onOpened,
     onDownload,
     collectNewData = $bindable(false),
     downloadLabel,
@@ -79,9 +100,12 @@
     }
   }
 
-  /** Drops the pick and goes back to the menu. */
+  /** Drops the pick: back to the menu in menu mode, otherwise closes the dropdown. */
   function dismissPicked() {
     picked = null
+    if (mode === 'pick') {
+      showDropdown = false
+    }
   }
 
   /**
@@ -103,6 +127,7 @@
       } catch (e) {
         reportError('Opening support bundle viewer')(e)
       }
+      onOpened?.()
       return
     }
 
@@ -113,6 +138,9 @@
       reportError('Opening support bundle viewer')(e)
       return
     }
+    // The transfer below outlives this component if `onOpened` unmounts it: the
+    // handoff is a closure over the opened window, not component state.
+    onOpened?.()
     ;(async () => {
       try {
         const bytes = await bundle.read()
@@ -125,8 +153,8 @@
   }
 </script>
 
-<!-- The input sits outside the dropdown: the dropdown closes the moment the input is
-     clicked, and an unmounted input reports no file. -->
+<!-- The input sits outside the dropdown: in menu mode the dropdown closes the
+     moment the input is clicked, and an unmounted input reports no file. -->
 <input
   type="file"
   accept=".zip"
@@ -142,21 +170,39 @@
   data-testid="input-upload-support-bundle"
 />
 
-<Popup {wrapperClass} bind:open={showDropdown} {trigger} content={dropdown} />
+<Popup
+  {wrapperClass}
+  bind:open={showDropdown}
+  trigger={mode === 'pick' ? pickTrigger : trigger}
+  content={dropdown}
+/>
+
+<!-- In pick mode the trigger picks instead of toggling, and the dropdown opens by
+     itself once there is something to confirm. -->
+{#snippet pickTrigger(_toggle: () => void, isOpen: boolean)}
+  {@render trigger(pickBundle, isOpen)}
+{/snippet}
 
 {#snippet dropdown(close: () => void)}
   <div
     transition:slide={{ duration: 100 }}
-    class="bg-white-dark absolute top-10 right-0 z-30 flex min-w-[220px] flex-col overflow-hidden rounded shadow-md"
+    class="bg-white-dark absolute z-30 flex min-w-[220px] flex-col overflow-hidden rounded shadow-md {align ===
+    'right'
+      ? 'right-0'
+      : 'left-0'} {drop === 'up' ? 'bottom-10' : 'top-10'}"
     data-testid="box-support-bundle-menu"
   >
-    <SlidingPanels
-      current={picked ? 'confirm' : 'menu'}
-      pages={[
-        { key: 'menu', content: menuPage },
-        { key: 'confirm', content: confirmPage }
-      ]}
-    />
+    {#if mode === 'pick'}
+      {@render confirmPage()}
+    {:else}
+      <SlidingPanels
+        current={picked ? 'confirm' : 'menu'}
+        pages={[
+          { key: 'menu', content: menuPage },
+          { key: 'confirm', content: confirmPage }
+        ]}
+      />
+    {/if}
   </div>
 
   {#snippet menuPage()}
