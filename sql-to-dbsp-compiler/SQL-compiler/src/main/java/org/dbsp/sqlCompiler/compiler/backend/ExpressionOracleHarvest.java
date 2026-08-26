@@ -186,7 +186,7 @@ public final class ExpressionOracleHarvest {
         } else if (named.expression instanceof DBSPFold fold) {
             record = foldRecord(compiler, fold);
         } else if (named.expression instanceof DBSPMinMax minMax) {
-            record = minMaxRecord(compiler, minMax);
+            record = minMaxRecord(compiler, operator, minMax);
         } else if (named.expression instanceof DBSPZSetExpression zset) {
             record = constRecord(compiler, zset);
         } else {
@@ -459,21 +459,29 @@ public final class ExpressionOracleHarvest {
      * A MIN/MAX aggregate: the DBSP aggregation kind (`Min`, `Max`, `MinSome1`,
      * `ArgMinSome`) plus the optional postProcessing closure. The oracle driver
      * mirrors the aggregator contract over sampled (value, weight) sequences.
+     *
+     * <p>The sampled row type is the operator input's indexed Z-set value type: with a
+     * postProcessing closure the DBSPMinMax function type describes the SQL output, not
+     * the value the aggregator scans.
      */
     @Nullable
-    private static ObjectNode minMaxRecord(DBSPCompiler compiler, DBSPMinMax minMax) {
-        if (!(minMax.getType() instanceof DBSPTypeFunction function)
-                || function.parameterTypes.length != 1) {
-            skip("minmax_type_shape");
+    private static ObjectNode minMaxRecord(
+            DBSPCompiler compiler, DBSPOperator operator, DBSPMinMax minMax) {
+        DBSPType valueType;
+        try {
+            valueType = operator.inputs.get(0).getOutputIndexedZSetType().elementType;
+        } catch (RuntimeException shape) {
+            skip("minmax_input_shape");
             return null;
         }
-        ObjectNode row = paramSpec(compiler, function.parameterTypes[0]);
+        ObjectNode row = paramSpec(compiler, valueType);
         if (row == null || !"tuple".equals(row.get("kind").asText())
                 || row.get("nullable").asBoolean()) {
             skip("unsupported_parameter");
             return null;
         }
-        if (!isSupportedResult(compiler, function.resultType)) {
+        if (!(minMax.getType() instanceof DBSPTypeFunction function)
+                || !isSupportedResult(compiler, function.resultType)) {
             skip("unsupported_result");
             return null;
         }
@@ -496,7 +504,7 @@ public final class ExpressionOracleHarvest {
         // The aggregation kind and value type participate in dedup even though they are
         // not Rust text; without them, MinSome1 over INT and over VARCHAR would collide.
         record.put("rust_aggregation", minMax.aggregation.name() + " over "
-                + ToRustInnerVisitor.toRustString(compiler, function.parameterTypes[0], null, false));
+                + ToRustInnerVisitor.toRustString(compiler, valueType, null, false));
         return record;
     }
 
