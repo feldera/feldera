@@ -11,30 +11,40 @@
   } from 'profiler-layout'
   import type { Dataflow, JsonProfiles } from 'profiler-lib'
   import { fade } from 'svelte/transition'
+  import { replaceState } from '$app/navigation'
   import Popup from '$lib/components/common/Popup.svelte'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
   import PipelineBreadcrumbs from '$lib/components/layout/PipelineBreadcrumbs.svelte'
+  import SupportBundleConfirm from '$lib/components/pipelines/editor/SupportBundleConfirm.svelte'
   import SupportBundleMenu from '$lib/components/pipelines/editor/SupportBundleMenu.svelte'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import { receiveUploadedBundle } from '$lib/compositions/profileBundleHandoff'
+  import { type PickedBundle, useBundlePicker } from '$lib/compositions/useBundlePicker.svelte'
   import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { enclosure, nonNull } from '$lib/functions/common/function'
   import { resolve } from '$lib/functions/svelte'
+  import {
+    readStoredBundle,
+    requestBundleReadPermission,
+    resolveStoredBundle,
+    type StoredSupportBundle
+  } from '$lib/services/supportBundleHistory'
 
   const { data } = $props()
-  const { pipelineName, source, collect, channel } = data
+  const { pipelineName, source, collect, channel, bundle: storedBundleId } = data
 
   const api = usePipelineManager()
   const toast = useToast()
   const layoutSettings = useLayoutSettings()
+  const picker = useBundlePicker()
 
   let downloadProgress = useDownloadProgress()
   // If the URL provides no pipelineName, the remote-download path has no
   // target. Surface the empty state immediately instead of issuing a request
   // that would 404 — the user can still upload a bundle from disk.
-  let isLoading = $state(source !== 'upload' ? !!pipelineName : true)
+  let isLoading = $state(source === 'remote' ? !!pipelineName : true)
   let errorMessage = $state('')
   // Pipeline name from the loaded bundle's pipeline_config.json. Used as a
   // fallback in the breadcrumb when the URL didn't supply one.
@@ -60,6 +70,10 @@
 
   let collectNewData = $state(collect)
   let fileInput: HTMLInputElement | null = $state(null)
+  // Set when the URL names a bundle in the history: where to read the file is known,
+  // but reading it may need the user to grant access, since browsers drop file grants
+  // between sessions.
+  let pendingBundle: StoredSupportBundle | null = $state(null)
 
   const withLoadGuard = createLoadGuard({
     setLoading: (loading) => {
@@ -123,6 +137,20 @@
   if (source === 'upload' || pipelineName) {
     withLoadGuard(async () => {
       if (source === 'upload') {
+        if (storedBundleId) {
+          // The viewer reads the bundle from the history itself, which is what makes
+          // this tab reloadable.
+          const { bundle, needsPermission } = await resolveStoredBundle(storedBundleId)
+          pendingBundle = bundle
+          if (needsPermission) {
+            // Granting read access needs a click, so the empty state offers one.
+            return
+          }
+          await loadStoredBundle(bundle)
+          return
+        }
+        // No history entry: the tab that picked the bundle hands the bytes over. The
+        // last resort, for an archive too big to keep a copy of.
         const buffer = await receiveUploadedBundle(channel)
         await processZipBundle(
           new Uint8Array(buffer),
@@ -174,17 +202,63 @@
     }, onLoadError('Failed to download the profile bundle.'))
   }
 
-  async function handleUpload(file: File) {
+  /**
+   * Loads a bundle the user picked in this tab. A bundle in the history is named in
+   * the URL, so reloading this tab reopens that bundle.
+   */
+  async function handlePickedBundle(bundle: PickedBundle) {
     getProfileData = null
     errorMessage = ''
+    pendingBundle = null
+    if (bundle.bundleId !== undefined) {
+      replaceState(`${resolve('/profile-viewer')}?source=upload&bundle=${bundle.bundleId}`, {})
+    }
     await withLoadGuard(async () => {
       downloadProgress.onProgress(0, 1)
-      const buffer = await file.arrayBuffer()
       await processZipBundle(
-        new Uint8Array(buffer),
-        'No suitable profiles found in the uploaded bundle.'
+        await bundle.read(),
+        'No suitable profiles found in the selected bundle.'
       )
-    }, onLoadError('Failed to load the uploaded bundle.'))
+    }, onLoadError('Failed to load the selected bundle.'))
+  }
+
+  /** Picks a bundle from disk, through the file picker or the input fallback. */
+  async function pickBundle() {
+    if (!picker.isSupported) {
+      fileInput?.click()
+      return
+    }
+    try {
+      const bundle = await picker.pick()
+      if (bundle) {
+        await handlePickedBundle(bundle)
+      }
+    } catch (e) {
+      toast.toastError('Opening support bundle')(
+        e instanceof Error ? e : new Error(String(e)),
+        8000
+      )
+    }
+  }
+
+  async function loadStoredBundle(stored: StoredSupportBundle) {
+    getProfileData = null
+    downloadProgress.onProgress(0, 1)
+    await processZipBundle(
+      await readStoredBundle(stored),
+      'No suitable profiles found in the stored bundle.'
+    )
+  }
+
+  /** Asks for read access from within the click, then loads the bundle. */
+  async function grantAndLoadStoredBundle(stored: StoredSupportBundle) {
+    errorMessage = ''
+    await withLoadGuard(async () => {
+      if (!(await requestBundleReadPermission(stored))) {
+        throw new Error(`Reading ${stored.name} needs access to the file.`)
+      }
+      await loadStoredBundle(stored)
+    }, onLoadError('Failed to open the support bundle.'))
   }
 
   async function handleSelectTimestamp(timestamp: Date) {
@@ -193,10 +267,6 @@
       () => loadProfile(timestamp),
       onLoadError('Failed to load the selected profile snapshot.')
     )
-  }
-
-  function triggerFileUpload() {
-    fileInput?.click()
   }
 </script>
 
@@ -208,14 +278,15 @@
   type="file"
   accept=".zip"
   bind:this={fileInput}
-  onchange={(e) => {
+  onchange={async (e) => {
     const file = (e.currentTarget as HTMLInputElement).files?.[0]
     if (file) {
       ;(e.currentTarget as HTMLInputElement).value = ''
-      handleUpload(file)
+      handlePickedBundle(await picker.fromFile(file))
     }
   }}
   class="hidden"
+  data-testid="input-open-support-bundle"
 />
 
 <div
@@ -321,8 +392,8 @@
                       handleLoadRemote()
                       close()
                     }}
-                    onFilePicked={(file) => {
-                      handleUpload(file)
+                    onPickBundle={() => {
+                      pickBundle()
                       close()
                     }}
                     disabled={isLoading}
@@ -343,13 +414,27 @@
           {errorMessage}
         </div>
       {/if}
+      {#if pendingBundle}
+        {@const stored = pendingBundle}
+        <!-- Shown when the browser holds no grant for the file, which is the case for
+             this URL opened directly, e.g. after reloading the page. Coming from the
+             home page the grant is given there, so the profile is already loading and
+             there is nothing to confirm. -->
+        <SupportBundleConfirm
+          name={stored.name}
+          confirmLabel="Open from disk"
+          onConfirm={() => grantAndLoadStoredBundle(stored)}
+          variant="page"
+          data-testid="btn-open-stored-bundle"
+        />
+      {/if}
       {#if pipelineName}
         <button class="btn preset-filled-primary-500" onclick={handleLoadRemote}>
           Download profile
         </button>
       {/if}
-      <button class="link p-2 hover:underline" onclick={triggerFileUpload}>
-        Upload a support bundle zip
+      <button class="link p-2 hover:underline" onclick={pickBundle}>
+        or open another support bundle
       </button>
     </div>
   {/if}
