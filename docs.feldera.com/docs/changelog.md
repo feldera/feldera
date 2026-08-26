@@ -14,6 +14,34 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - `VARIANT` values are implemented by the `SqlVariant` Rust
+          struct.  This feature previously required
+          `SET FELDERA_FLAT_VARIANT = 'ON'`.
+
+          Breaking change (Rust UDFs): a user-defined function that takes or
+          returns a `VARIANT` now receives `feldera_sqllib::SqlVariant`, which
+          names whichever representation `VARIANT` uses, rather than the enum
+          `feldera_sqllib::Variant`.  `SqlVariant` is not an enum, so code that
+          matched on `Variant::String(..)` and the other arms needs rewriting.
+          The enum is deprecated and will be removed.
+
+          Because connectors still report record metadata as the enum, building
+          a pipeline reports one deprecation warning per table and view, naming
+          `Variant` in code the compiler generates rather than in anything you
+          wrote.  Those warnings are harmless and go away with the enum.
+
+          The storage formats of the two representations are not compatible, so
+          a pipeline with a `VARIANT` column rebuilds its state from scratch on
+          upgrade: a view is recomputed from its inputs, and a table re-ingests
+          from its connector.
+
+          Setting
+          [`FELDERA_FLAT_VARIANT`](https://docs.feldera.com/sql/grammar#experimental-options)
+          to `OFF` keeps the previous behavior on both counts: the program's
+          user-defined functions continue using the legacy representation and need no changes,
+          and the pipeline resumes from its existing checkpoint instead of
+          rebuilding.
+
         - Breaking change (SQL): `=`, `<>` and `!=` are no longer allowed between
           `ROW` values, so some programs that used to compile are now rejected.
           The previous implementation of these operations did not follow the

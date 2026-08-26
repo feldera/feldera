@@ -53,7 +53,7 @@ pub use variant::*;
 pub mod flat_variant;
 pub use flat_variant::casts::*;
 pub use flat_variant::functions::*;
-pub use flat_variant::{FlatVariant, variant_to_fv, variant_to_fvN};
+pub use flat_variant::{FlatVariant, SqlVariant, variant_to_fv, variant_to_fvN};
 #[doc(hidden)]
 pub mod rfc3339;
 #[doc(hidden)]

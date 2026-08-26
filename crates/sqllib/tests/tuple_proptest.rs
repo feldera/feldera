@@ -1,3 +1,7 @@
+// Covers the enum `Variant` alongside the other SQL types until the
+// enum is removed.
+#![allow(deprecated)]
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 

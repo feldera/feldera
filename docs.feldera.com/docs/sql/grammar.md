@@ -820,16 +820,22 @@ generate code using the new feature of "star joins", which are a
 simple form of multi-joins.  We expect that option will be removed in
 the near future.
 
-`FELDERA_FLAT_VARIANT` if set to `ON`, the pipeline uses a new, faster
-runtime representation for values of type
-[`VARIANT`](/sql/json/#the-variant-type): a flat, contiguous buffer instead of
-a tree of nested allocations, which speeds up parsing JSON into
-`VARIANT` values and most `VARIANT` operations.  This option is
-currently experimental; the plan is to make the new representation the
-default in a future release.  The storage formats of the two
-representations are not compatible: changing the option modifies the
-circuit and therefore forces the pipeline to rebuild its state from
-scratch, so switching back and forth is not recommended.
+If `FELDERA_FLAT_VARIANT` is set to `OFF`, the pipeline reverts to the
+previous runtime representation for values of type
+[`VARIANT`](/sql/json/#the-variant-type).
+The previous representation will be
+removed in a future release.  A user-defined
+function that takes or returns a `VARIANT` must be written against the
+representation the option selects; see
+[`feldera_sqllib::SqlVariant`](/sql/udf).
+
+The storage formats of the two representations are not compatible.
+
+To continue running a pipeline created with the legacy format
+from an old checkpoint, add the setting `SET FELDERA_FLAT_VARIANT = OFF;`
+to the SQL program before restarting.  This will enable the program to correctly
+read the old checkpoint representation.
+
 
 `FELDERA_WINDOW_SHARING_THRESHOLD` how windows formed by temporal
 filters share inputs.  Two temporal filters that share an input keep

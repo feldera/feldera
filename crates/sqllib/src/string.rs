@@ -5,8 +5,11 @@
 // The module contains various string operations.
 
 #![allow(non_snake_case)]
+#[allow(deprecated)]
+use crate::Variant;
+use crate::variant::LegacyVariant;
 use crate::{
-    Variant, array::Array, some_function1, some_function2, some_function3, some_function4,
+    array::Array, some_function1, some_function2, some_function3, some_function4,
     some_polymorphic_function1, some_polymorphic_function2, some_polymorphic_null_function1,
     string_interner::*,
 };
@@ -684,6 +687,7 @@ pub fn writelog<T: std::fmt::Display>(format: SqlString, argument: T) -> T {
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn parse_json_s(value: SqlString) -> Variant {
     let var = serde_json::from_str::<Variant>(value.str());
     match var {
@@ -693,13 +697,15 @@ pub fn parse_json_s(value: SqlString) -> Variant {
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn parse_json_nullN(_value: Option<()>) -> Option<Variant> {
     None
 }
 
-some_polymorphic_function1!(parse_json, s, SqlString, Variant);
+some_polymorphic_function1!(parse_json, s, SqlString, LegacyVariant);
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn to_json_V(value: Variant) -> Option<SqlString> {
     match value.to_json_string() {
         Ok(s) => Some(SqlString::from(s)),
@@ -707,7 +713,7 @@ pub fn to_json_V(value: Variant) -> Option<SqlString> {
     }
 }
 
-some_polymorphic_null_function1!(to_json, V, Variant, SqlString);
+some_polymorphic_null_function1!(to_json, V, LegacyVariant, SqlString);
 
 #[doc(hidden)]
 pub fn to_json_nullN(_value: Option<()>) -> Option<SqlString> {

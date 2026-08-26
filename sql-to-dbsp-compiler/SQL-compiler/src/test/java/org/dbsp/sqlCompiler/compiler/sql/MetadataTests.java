@@ -40,8 +40,14 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.sql.SQLException;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /** Tests about table and view metadata */
@@ -2340,5 +2346,102 @@ public class MetadataTests extends BaseSQLTests {
         ObjectMapper mapper = Utilities.deterministicObjectMapper();
         JsonNode parsed = mapper.readTree(json);
         Assert.assertNotNull(parsed);
+    }
+
+    /** The Rust type of a VARIANT column, from the generated code. */
+    private String variantColumnType(String setStatement) throws IOException, SQLException {
+        File file = createInputScript(setStatement + """
+                CREATE TABLE T(V VARIANT);
+                CREATE VIEW P AS SELECT V FROM T;""");
+        CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+        // Every generated file names the enum in deserialize_table_record!,
+        // which passes connector metadata; only the column type varies.
+        String rust = Utilities.readFile(Paths.get(BaseSQLTests.TEST_FILE_PATH));
+        return rust.contains("SqlVariant") ? "SqlVariant" : "Variant";
+    }
+
+
+
+    /** Maps each persistent id in the generated Rust to the operator declaration
+     * that follows it. */
+    private Map<String, String> persistentIds(String setStatement)
+            throws IOException, SQLException {
+        File file = createInputScript(setStatement + """
+                CREATE TABLE T(V VARIANT, K INT);
+                CREATE TABLE U(W VARIANT, K INT);
+                CREATE MATERIALIZED VIEW J AS
+                    SELECT T.V AS A, U.W AS B FROM T JOIN U ON T.K = U.K;
+                CREATE MATERIALIZED VIEW G AS
+                    SELECT V, COUNT(*) AS N FROM T GROUP BY V;
+                CREATE MATERIALIZED VIEW D AS SELECT DISTINCT V FROM T;""");
+        CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+        String rust = Utilities.readFile(Paths.get(BaseSQLTests.TEST_FILE_PATH));
+        Map<String, String> result = new HashMap<>();
+        Matcher m = Pattern.compile(
+                "let hash = Some\\((?:concat!\\()?\"([0-9a-f]+)\"[^;]*;\\s*\\n(.*)")
+                .matcher(rust);
+        while (m.find())
+            result.put(m.group(1), m.group(2));
+        return result;
+    }
+
+    /** Every operator that holds VARIANT-typed state gets a different persistent
+     * id under the two representations.  Persistent ids are hashes of the
+     * generated Rust, and the representation appears in the type of any operator
+     * that stores VARIANT values, so a pipeline resumed after the switch does not
+     * find, and therefore cannot misread, state written in the other format. */
+    @Test
+    public void variantStateIsNotSharedAcrossRepresentations()
+            throws IOException, SQLException {
+        Map<String, String> flat = this.persistentIds("");
+        Map<String, String> legacy = this.persistentIds("SET FELDERA_FLAT_VARIANT = 'off';\n");
+        // Without VARIANT-typed operators the loop below would prove nothing.
+        long variantOperators = flat.values().stream()
+                .filter(declaration -> declaration.contains("SqlVariant")).count();
+        Assert.assertTrue("no VARIANT operators in the program", variantOperators > 0);
+
+        Set<String> shared = new HashSet<>(flat.keySet());
+        shared.retainAll(legacy.keySet());
+        for (String id : shared)
+            Assert.assertFalse(
+                    "operator holding VARIANT state kept its persistent id: " + flat.get(id),
+                    flat.get(id).contains("SqlVariant"));
+
+        // Some ids must move, or the check above proves nothing.
+        Assert.assertNotEquals(flat.keySet(), legacy.keySet());
+    }
+
+    @Test
+    public void flatVariantIsTheDefault() throws IOException, SQLException {
+        Assert.assertEquals("SqlVariant", this.variantColumnType(""));
+    }
+
+    /** FELDERA_FLAT_VARIANT = 'off' still selects the enum representation. */
+    @Test
+    public void flatVariantCanBeTurnedOff() throws IOException, SQLException {
+        Assert.assertEquals("Variant",
+                this.variantColumnType("SET FELDERA_FLAT_VARIANT = 'off';\n"));
+        // The setting must not leak into the next compilation.
+        Assert.assertEquals("SqlVariant", this.variantColumnType(""));
+    }
+
+    /** A VARIANT column defaulted from connector metadata uses the
+     * legacy representation. */
+    @Test
+    public void variantColumnFromConnectorMetadata()
+            throws IOException, InterruptedException, SQLException {
+        File file = createInputScript("""
+                CREATE TABLE T(
+                    V VARIANT DEFAULT CONNECTOR_METADATA()['headers'],
+                    S VARCHAR DEFAULT CAST(CONNECTOR_METADATA()['topic'] AS VARCHAR)
+                );
+                CREATE VIEW P AS SELECT * FROM T;""");
+        CompilerMessages messages = CompilerMain.execute(
+                "-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+        if (messages.errorCount() > 0)
+            throw new RuntimeException(messages.toString());
+        String rust = Utilities.readFile(Paths.get(BaseSQLTests.TEST_FILE_PATH));
+        Assert.assertTrue(rust.contains("variant_to_fvN("));
+        BaseSQLTests.compileAndTestRust(false);
     }
 }
