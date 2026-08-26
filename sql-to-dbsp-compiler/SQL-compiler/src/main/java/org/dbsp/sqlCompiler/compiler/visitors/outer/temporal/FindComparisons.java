@@ -42,7 +42,7 @@ class FindComparisons {
             add(DBSPOpcode.LTE);
             add(DBSPOpcode.GTE);
             add(DBSPOpcode.GT);
-            add(DBSPOpcode.EQ);
+            // EQ is desugared by DesugarNowEquality
         }};
 
         DBSPClosureExpression clo = closure.to(DBSPClosureExpression.class);
@@ -151,7 +151,7 @@ class FindComparisons {
         if (me == null || !me.mayBeMonotone())
             return false;
 
-        DBSPOpcode opcode = leftHasNow ? RewriteNow.inverse(binary.opcode) : binary.opcode;
+        DBSPOpcode opcode = leftHasNow ? RewriteNow.swappedOpcode(binary.opcode) : binary.opcode;
         TemporalFilter comp = new TemporalFilter(this.parameter, withoutNow, withNow, opcode);
         this.comparisons.add(comp);
         return true;

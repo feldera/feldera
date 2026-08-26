@@ -162,7 +162,7 @@ public class TemporalFilterTests extends SqlIoTest {
         this.test(sql, Linq.list("TemporalFilter[" + param +
                         ", noNow=((*p0).3), withNow=(now() - (ShortInterval(MINUTES))300000000), opcode=>]",
                 "TemporalFilter[" + param +
-                        ", noNow=(2020-01-01 00:00:00 +? ((ShortInterval?(DAYS))((*p0).0))), withNow=now(), opcode=>=]"));
+                        ", noNow=(2020-01-01 00:00:00 +? ((ShortInterval?(DAYS))((*p0).0))), withNow=now(), opcode=>]"));
 
         sql = "CREATE VIEW V AS SELECT * FROM T WHERE EXTRACT(DAY FROM ts) > EXTRACT(DAY FROM NOW());";
         this.test(sql, Linq.list("NonTemporalFilter[expression=(extract_day_TimestampN(((*p0).3)) ?> extract_day_Timestamp(now()))]"));

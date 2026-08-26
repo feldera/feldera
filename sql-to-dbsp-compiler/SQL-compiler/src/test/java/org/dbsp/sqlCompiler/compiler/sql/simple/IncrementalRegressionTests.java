@@ -1813,24 +1813,171 @@ public class IncrementalRegressionTests extends SqlIoTest {
 
     @Test
     public void windowErrorTest() {
-        this.getCCS("""
+        var ccs = this.getCCS("""
                 CREATE TABLE T (
                     ts TIMESTAMP NOT NULL LATENESS INTERVAL 24 HOURS,
                     p VARCHAR,
                     m DECIMAL(38, 7)
                 );
-                
-                CREATE VIEW V0 AS
+
+                CREATE LOCAL VIEW V0 AS
                 SELECT *
                 FROM T
                 WHERE ts >= NOW() - INTERVAL 1 MINUTE
                 AND p IS NOT NULL
                 AND m > 0;
-                
+
                 CREATE VIEW V1 AS
                 SELECT COUNT(*)
                 FROM V0
                 GROUP BY p;""");
+        ccs.step("""
+                INSERT INTO now VALUES('2024-01-01 12:00:00');
+                INSERT INTO T VALUES('2024-01-01 11:59:30', 'a', 1.0);
+                INSERT INTO T VALUES('2024-01-01 11:59:40', 'a', 2.0);
+                -- outside the 1 minute window
+                INSERT INTO T VALUES('2024-01-01 11:58:00', 'a', 3.0);
+                -- p is NULL
+                INSERT INTO T VALUES('2024-01-01 11:59:50', NULL, 4.0);
+                -- m is not positive
+                INSERT INTO T VALUES('2024-01-01 11:59:50', 'b', 0.0);
+                INSERT INTO T VALUES('2024-01-01 11:59:55', 'b', 5.0);""",
+                """
+                 count | weight
+                ----------------
+                 2     | 1
+                 1     | 1""");
+        // Time advances past the window, so all rows expire.
+        ccs.step("INSERT INTO now VALUES('2024-01-01 12:01:00');",
+                """
+                 count | weight
+                ----------------
+                 2     | -1
+                 1     | -1""");
+        // A row that arrives after the window has moved, but is still inside it.
+        // The second row precedes the window yet is within the 24 hour lateness bound.
+        ccs.step("""
+                INSERT INTO T VALUES('2024-01-01 12:00:50', 'a', 1.0);
+                INSERT INTO T VALUES('2024-01-01 06:00:00', 'a', 1.0);""",
+                """
+                 count | weight
+                ----------------
+                 1     | 1""");
+        ccs.step("REMOVE FROM T VALUES('2024-01-01 12:00:50', 'a', 1.0);",
+                """
+                 count | weight
+                ----------------
+                 1     | -1""");
+    }
+
+    @Test
+    public void windowErrorNullTimestampTest() {
+        // Same as windowErrorTest, but 'ts' is nullable and some rows have a NULL timestamp.
+        var ccs = this.getCCS("""
+                CREATE TABLE T (
+                    ts TIMESTAMP LATENESS INTERVAL 24 HOURS,
+                    p VARCHAR,
+                    m DECIMAL(38, 7)
+                );
+
+                CREATE LOCAL VIEW V0 AS
+                SELECT *
+                FROM T
+                WHERE ts >= NOW() - INTERVAL 1 MINUTE
+                AND p IS NOT NULL
+                AND m > 0;
+
+                CREATE VIEW V1 AS
+                SELECT COUNT(*)
+                FROM V0
+                GROUP BY p;""");
+        // NULL >= NOW() - INTERVAL 1 MINUTE is NULL, so rows with a NULL timestamp never
+        // reach V1, no matter what the other columns hold.
+        ccs.step("""
+                INSERT INTO now VALUES('2024-01-01 12:00:00');
+                INSERT INTO T VALUES('2024-01-01 11:59:30', 'a', 1.0);
+                INSERT INTO T VALUES(NULL, 'a', 2.0);
+                INSERT INTO T VALUES(NULL, NULL, 3.0);
+                INSERT INTO T VALUES(NULL, 'b', 0.0);
+                INSERT INTO T VALUES('2024-01-01 11:59:55', 'b', 5.0);""",
+                """
+                 count | weight
+                ----------------
+                 1     | 2""");
+        // Group 'a' grows to two rows; the new NULL timestamp changes nothing.
+        ccs.step("""
+                INSERT INTO T VALUES('2024-01-01 11:59:59', 'a', 7.0);
+                INSERT INTO T VALUES(NULL, 'c', 9.0);""",
+                """
+                 count | weight
+                ----------------
+                 1     | -1
+                 2     | 1""");
+        // Deleting a NULL timestamp row changes nothing either.
+        ccs.step("REMOVE FROM T VALUES(NULL, 'a', 2.0);",
+                """
+                 count | weight
+                ----------------""");
+        // The window slides to 11:59:45, so 'a's oldest row expires.
+        ccs.step("INSERT INTO now VALUES('2024-01-01 12:00:45');",
+                """
+                 count | weight
+                ----------------
+                 2     | -1
+                 1     | 1""");
+        // The window slides past every timestamp, so both groups disappear.
+        ccs.step("INSERT INTO now VALUES('2024-01-01 12:01:00');",
+                """
+                 count | weight
+                ----------------
+                 1     | -2""");
+    }
+
+    @Test
+    public void windowNullGroupKeyTest() {
+        // A nullable column narrowed by IS NOT NULL, combined with a NOW() filter, and then
+        // used both as a GROUP BY key and as an output column.  The key must stay nullable:
+        // narrowing it would make the aggregate unwrap a NULL key and panic the worker.
+        var ccs = this.getCCS("""
+                CREATE TABLE t (
+                    ts  TIMESTAMP NOT NULL LATENESS INTERVAL 24 HOURS,
+                    k   VARCHAR,
+                    v   DECIMAL(38,7)
+                );
+
+                CREATE LOCAL VIEW filtered AS
+                SELECT * FROM t
+                WHERE ts >= NOW() - INTERVAL 1 MINUTE
+                  AND k IS NOT NULL;
+
+                CREATE VIEW agg AS
+                SELECT k, COUNT(*) FROM filtered GROUP BY k;""").withStringTrim();
+        ccs.step("""
+                INSERT INTO now VALUES('2024-01-01 12:00:00');
+                INSERT INTO t VALUES('2024-01-01 11:59:30', 'a', 1.0);
+                INSERT INTO t VALUES('2024-01-01 11:59:40', NULL, 2.0);""",
+                """
+                 k | count | weight
+                --------------------
+                 a | 1     | 1""");
+        // Retracting a NULL key, as a CDC before-image does.
+        ccs.step("REMOVE FROM t VALUES('2024-01-01 11:59:40', NULL, 2.0);",
+                """
+                 k | count | weight
+                --------------------""");
+        // The window slides past the surviving row.
+        ccs.step("INSERT INTO now VALUES('2024-01-01 12:01:00');",
+                """
+                 k | count | weight
+                --------------------
+                 a | 1     | -1""");
+        // Only NULL keys, so no group ever forms.
+        ccs.step("""
+                INSERT INTO t VALUES('2024-01-01 12:00:50', NULL, 3.0);
+                INSERT INTO t VALUES('2024-01-01 12:00:55', NULL, 4.0);""",
+                """
+                 k | count | weight
+                --------------------""");
     }
 
     // Check that the maximum width in a circuit (except inputs) is less than the specified one.
