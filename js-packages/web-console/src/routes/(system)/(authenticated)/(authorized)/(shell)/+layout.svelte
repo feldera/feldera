@@ -8,6 +8,7 @@
   import OverlayDrawer from '$lib/components/layout/OverlayDrawer.svelte'
   import AuthErrorToast from '$lib/components/other/AuthErrorToast.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
+  import OpenSupportBundleButton from '$lib/components/other/OpenSupportBundleButton.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
   import { fetchConfigs } from '$lib/compositions/configCache'
@@ -241,6 +242,12 @@
         }}
       ></CreatePipelineButton>
     </div>
+    <OpenSupportBundleButton
+      btnClass="self-center"
+      onOpen={() => {
+        rightDrawer.value = false
+      }}
+    ></OpenSupportBundleButton>
     <BookADemo class="btn self-center preset-filled-primary-500" placement="nav_drawer"
       >Book a demo</BookADemo
     >
