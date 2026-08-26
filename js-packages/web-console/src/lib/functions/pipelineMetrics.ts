@@ -239,26 +239,41 @@ export const timeSeriesAxisMax = (metrics: TimeSeriesEntry[], now: () => number 
   metrics.at(-1)?.t ?? now()
 
 /**
- * Number of oldest samples to drop so that the series spans at most `windowMs`.
+ * Number of oldest samples to drop to keep the series within its bounds.
  *
- * The scan starts at the newest sample and walks back to the first sample that
- * falls outside the window; that sample and every older one are dropped.
+ * Every sample within `windowMs` of the newest one is kept, and so is the
+ * newest sample that falls outside it. That one extra sample is what lets a
+ * rate series, which needs a pair of samples per point, cover the whole window:
+ * keeping its age rather than a fixed cushion holds at any sample interval.
+ *
+ * `maxSamples` bounds the series should the timestamps stop advancing, which
+ * leaves every sample inside the window; set it well above the sample rate any
+ * deployment reports.
  *
  * @param samples - Series ordered oldest first.
  * @param windowMs - How far back from the newest sample to retain.
+ * @param maxSamples - Ceiling on the retained sample count.
  */
-export const staleSampleCount = (samples: TimeSeriesEntry[], windowMs: number): number => {
+export const staleSampleCount = (
+  samples: TimeSeriesEntry[],
+  windowMs: number,
+  maxSamples: number
+): number => {
   const newest = samples.at(-1)?.t
   if (newest === undefined) {
     return 0
   }
   const oldestKept = newest - windowMs
+  let stale = 0
   for (let i = samples.length - 1; i >= 0; i--) {
     if (samples[i].t < oldestKept) {
-      return i + 1
+      // Sample `i` is the newest one outside the window: it anchors the first
+      // rate that the window can plot, so only samples older than it are stale.
+      stale = i
+      break
     }
   }
-  return 0
+  return Math.max(stale, samples.length - maxSamples)
 }
 
 /**
@@ -282,7 +297,9 @@ export const multihostMemoryLimitMb = (
  * with the newer sample of each pair.
  *
  * A rate needs two samples, so the series holds one point fewer than `metrics`
- * and starts one sample interval after the oldest sample.
+ * and starts at the second-oldest sample. Retaining one sample older than the
+ * plotted window is therefore what makes the rate cover that window; see
+ * `staleSampleCount`.
  *
  * @returns Series of `[timestamp, records]`, plus the latest and mean rate and
  * the y-axis bounds.

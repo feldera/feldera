@@ -35,13 +35,13 @@
   const RECONNECT_BACKOFF_MS = 1000
   /** Time span the graphs plot. */
   const GRAPH_WINDOW_MS = 60 * 1000
+  const RETAIN_MS = GRAPH_WINDOW_MS + 2000
   /**
-   * Time span of samples kept in `timeSeries`.
-   *
-   * One second wider than the plotted window, because the throughput series
-   * derives a rate from each pair of samples and so cannot plot the oldest one.
+   * Ceiling on samples kept in `timeSeries`, reached only if their timestamps
+   * stop advancing. Well above the rate any deployment reports: a 16-host
+   * pipeline sampling every second fills a fifth of it.
    */
-  const RETAIN_MS = GRAPH_WINDOW_MS + 1000
+  const MAX_SAMPLES = 5000
 
   const {
     pipeline,
@@ -130,10 +130,12 @@
     const runMetricsStream = async () => {
       // Not routed through `parseStream`: the load shedding is unnecessary for the metrics stream.
       // Retention goes by sample age, not by sample count: a multihost pipeline
-      // reports one sample per host per tick, so the sample rate is unknown here.
+      // reports one sample per host per tick, so the sample rate depends on the
+      // deployment and a count-based buffer plots a shorter span the more hosts
+      // the pipeline runs on.
       const appendSample = (sample: TimeSeriesEntry) => {
         timeSeries.push(sample)
-        const stale = staleSampleCount(timeSeries, RETAIN_MS)
+        const stale = staleSampleCount(timeSeries, RETAIN_MS, MAX_SAMPLES)
         if (stale > 0) {
           timeSeries.splice(0, stale)
         }
