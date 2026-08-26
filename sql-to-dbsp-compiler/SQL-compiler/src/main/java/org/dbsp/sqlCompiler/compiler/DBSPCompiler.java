@@ -290,6 +290,26 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.messages.setErrorContext(range);
     }
 
+    /** Point error messages at {@code node}, unless the compiler synthesized it. */
+    void setErrorContext(ParsedStatement node) {
+        this.setErrorContext(node.visible()
+                ? new SourcePositionRange(node.statement().getParserPosition())
+                : SourcePositionRange.INVALID);
+    }
+
+    /** Compile the SET statements in {@code parsed}, ignoring all other statements. */
+    void compileSqlSettings(List<ParsedStatement> parsed) {
+        for (ParsedStatement node : parsed) {
+            if (node.statement().getKind() != SqlKind.SET_OPTION)
+                continue;
+            this.setErrorContext(node);
+            RelStatement set = this.sqlToRelCompiler.compile(node, this.sources);
+            if (set != null)
+                this.relToDBSPCompiler.compile(set);
+        }
+        this.setErrorContext(SourcePositionRange.INVALID);
+    }
+
     static final String WARNINGS_ARE_ERRORS = "FELDERA_WARNINGS_ARE_ERRORS";
 
     boolean warningsAreErrors() {
@@ -457,8 +477,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         System.err.println(this.messages);
     }
 
+    /** Parse using Calcite. */
     List<ParsedStatement> runParser() {
-        // Parse using Calcite
         List<ParsedStatement> parsed = new ArrayList<>();
         for (SqlStatements stat : this.toCompile) {
             try {
@@ -467,9 +487,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                         this.sqlToRelCompiler.emptyStatement();
                         continue;
                     }
-                    parsed.addAll(this.sqlToRelCompiler.parseStatements(stat.statement, stat.visible));
+                    parsed.addAll(this.sqlToRelCompiler.parseStatements(stat.statement, stat.visible, false));
                 } else {
-                    SqlNode node = this.sqlToRelCompiler.parse(stat.statement, stat.visible);
+                    SqlNode node = this.sqlToRelCompiler.parse(stat.statement, stat.visible, false);
                     parsed.add(new ParsedStatement(node, stat.visible));
                 }
                 if (this.hasErrors())
@@ -629,12 +649,20 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         if (this.hasErrors())
             return null;
 
-        if (this.options.ioOptions.anonymize || this.options.ioOptions.format) {
-            this.emitSql(parsed);
-            return null;
-        }
-
         try {
+            // SET statements apply to the whole program irrespective of their position,
+            // so they are compiled before the other statements are even validated:
+            // validation emits warnings which the settings may silence or turn into errors.
+            this.compileSqlSettings(parsed);
+            parsed = Linq.map(parsed, this.sqlToRelCompiler::postParsingProcess);
+            if (this.hasErrors())
+                return null;
+
+            if (this.options.ioOptions.anonymize || this.options.ioOptions.format) {
+                this.emitSql(parsed);
+                return null;
+            }
+
             // across all tables
             List<ForeignKey> foreignKeys = new ArrayList<>();
             // All UDFs which have no bodies in SQL
@@ -716,17 +744,11 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 this.sqlToRelCompiler.addOperatorTable(newAggregates);
             }
 
-            // Compile all statements which do not define functions or types
+            // Compile all statements which do not define functions, types, or settings
             for (ParsedStatement node : parsed) {
-                if (node.visible()) {
-                    this.setErrorContext(
-                            new SourcePositionRange(node.statement()
-                                    .getParserPosition()));
-                } else {
-                    this.setErrorContext(SourcePositionRange.INVALID);
-                }
+                this.setErrorContext(node);
                 SqlKind kind = node.statement().getKind();
-                if (kind == SqlKind.CREATE_FUNCTION || kind == SqlKind.CREATE_TYPE)
+                if (kind == SqlKind.CREATE_FUNCTION || kind == SqlKind.CREATE_TYPE || kind == SqlKind.SET_OPTION)
                     continue;
                 if (node.statement() instanceof SqlLateness)
                     continue;

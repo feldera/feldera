@@ -2330,6 +2330,17 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void testSetAfterOtherStatements() {
+        // SET applies to the whole program: the warning emitted while validating
+        // the table is an error even though the SET statement follows the table.
+        this.statementsFailingInCompilation("""
+            CREATE TABLE T(x DECIMAL);
+            CREATE VIEW V AS SELECT x FROM T;
+            SET FELDERA_WARNINGS_ARE_ERRORS = ON;""",
+                "DECIMAL precision and scale unspecified");
+    }
+
+    @Test
     public void issue5896() throws IOException, SQLException {
         String sql = "CREATE VIEW v AS select cot(0)";
         File file = createInputScript(sql);
