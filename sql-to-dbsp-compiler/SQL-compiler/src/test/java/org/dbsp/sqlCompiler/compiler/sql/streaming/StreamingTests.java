@@ -2221,6 +2221,91 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void twoLowerNowBounds() {
+        // https://github.com/feldera/feldera-qa/issues/395
+        // Two NOW()-relative lower bounds on the same column become a single window.
+        // The window's lower bound must be the tighter of the two.
+        String sql = """
+                CREATE TABLE t (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP
+                );
+                CREATE VIEW v AS
+                SELECT id FROM t
+                WHERE ts >= now() - INTERVAL 10 MINUTES
+                  AND ts >= now() - INTERVAL 100 MINUTES""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        // At now() = 12:00 the bounds are ts >= 11:50 and ts >= 10:20; only id 1 satisfies both.
+        ccs.step("""
+                 INSERT INTO t VALUES (1, '2024-01-01 11:55:00');
+                 INSERT INTO t VALUES (2, '2024-01-01 10:30:00');
+                 INSERT INTO now VALUES ('2024-01-01 12:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 1  | 1""");
+    }
+
+    @Test
+    public void twoUpperNowBounds() {
+        // https://github.com/feldera/feldera-qa/issues/395
+        // The mirror image of twoLowerNowBounds: the window's upper bound must be
+        // the tighter of the two NOW()-relative upper bounds.
+        String sql = """
+                CREATE TABLE t (
+                  id INT NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP
+                );
+                CREATE VIEW v AS
+                SELECT id FROM t
+                WHERE ts <= now() - INTERVAL 10 MINUTES
+                  AND ts <= now() - INTERVAL 100 MINUTES""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        // At now() = 12:00 the bounds are ts <= 11:50 and ts <= 10:20; only id 3 satisfies both.
+        ccs.step("""
+                 INSERT INTO t VALUES (1, '2024-01-01 11:55:00');
+                 INSERT INTO t VALUES (2, '2024-01-01 10:30:00');
+                 INSERT INTO t VALUES (3, '2024-01-01 10:00:00');
+                 INSERT INTO now VALUES ('2024-01-01 12:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 3  | 1""");
+    }
+
+    @Test
+    public void nowBoundsBroughtTogetherByReordering() {
+        // https://github.com/feldera/feldera-qa/issues/395
+        // The shape that failed in CI: the two NOW()-relative bounds on `ts` are written
+        // apart, and the conjunct reordering that prepares windows for sharing brings them
+        // together.  The window they merge into must still carry the tighter bound.
+        String sql = """
+                CREATE TABLE t (
+                  id INT NOT NULL PRIMARY KEY,
+                  x  INT,
+                  ts TIMESTAMP
+                );
+                CREATE VIEW v AS
+                SELECT id FROM t
+                WHERE ts >= now() - INTERVAL 10 MINUTES
+                  AND x > 5
+                  AND ts >= now() - INTERVAL 100 MINUTES""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        // At now() = 12:00 the bounds are ts >= 11:50 and ts >= 10:20; only id 1 satisfies both.
+        ccs.step("""
+                 INSERT INTO t VALUES (1, 6, '2024-01-01 11:55:00');
+                 INSERT INTO t VALUES (2, 6, '2024-01-01 10:30:00');
+                 INSERT INTO now VALUES ('2024-01-01 12:00:00');
+                 """,
+                """
+                 id | weight
+                -------------
+                 1  | 1""");
+    }
+
+    @Test
     public void testNow6() {
         // now() used in WHERE with complex monotone function
         String sql = """
