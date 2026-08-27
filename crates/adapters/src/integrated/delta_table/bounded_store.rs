@@ -1,14 +1,26 @@
 //! Bound in-flight Delta object-store GETs so a slow HTTP body cannot OOM the pipeline.
 //!
-//! `object_store` copies each GET into an unbounded channel. Hold a global reader
-//! slot until the body stream is dropped so TPC-H snapshot fan-out stays finite.
+//! `object_store` copies each GET body across the runtime boundary through a
+//! deliberately unbounded channel (`client/http/spawn.rs`: "We use an unbounded
+//! channel to prevent backpressure across the runtime boundary"). On a slow link
+//! the bodies accumulate faster than the pipeline drains them. Hold a reader slot
+//! for the whole life of the body stream so snapshot fan-out stays finite.
+//!
+//! Why not `object_store::limit::LimitStore`, which also permit-gates GETs: it
+//! builds a private semaphore per store instance, so every Delta connector would
+//! get its own budget and the process-wide bound this needs would not hold. The
+//! semaphore here is shared by every wrapped store (see
+//! `separately_wrapped_stores_share_one_global_budget`). This wrapper also gates
+//! reads only, leaving list/put paths untouched.
 
 use anyhow::{Result as AnyResult, bail};
 use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::{BoxStream, Stream, StreamExt};
-use object_store::path::Path;
-use object_store::{
+// Use the `object_store` that `deltalake` re-exports: the wrapper is handed back
+// to delta-rs and DataFusion, so it must implement *their* `ObjectStore` trait.
+use deltalake::logstore::object_store::path::Path;
+use deltalake::logstore::object_store::{
     CopyOptions, GetOptions, GetResult, GetResultPayload, ListResult, MultipartUpload, ObjectMeta,
     ObjectStore, PutMultipartOptions, PutOptions, PutPayload, PutResult, RenameOptions, Result,
 };
@@ -274,8 +286,8 @@ impl ObjectStore for BoundedObjectStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use object_store::memory::InMemory;
-    use object_store::{ObjectStoreExt, PutPayload};
+    use deltalake::logstore::object_store::memory::InMemory;
+    use deltalake::logstore::object_store::{ObjectStoreExt, PutPayload};
     use std::time::Duration;
     use tokio::sync::watch;
     use tokio::time::timeout;
@@ -418,6 +430,66 @@ mod tests {
         }
         assert_eq!(bounded.peak_in_flight(), cap);
         assert_eq!(bounded.in_flight(), 0);
+    }
+
+    /// Two independently wrapped stores must contend for ONE process-wide budget.
+    ///
+    /// This is the property `object_store::limit::LimitStore` cannot provide: it
+    /// builds a private semaphore per store, so N Delta connectors would get N
+    /// separate budgets and the process-wide bound would not hold. The test goes
+    /// through `bound_delta_reads`, the same entry point `input.rs` uses at both
+    /// registration sites, so it also fails if that wiring is ever dropped.
+    #[tokio::test]
+    async fn separately_wrapped_stores_share_one_global_budget() {
+        let cap = DELTA_READER_SEMAPHORE.available_permits();
+        assert!(cap > 0, "global semaphore must start with permits");
+
+        let started = Arc::new(AtomicUsize::new(0));
+        let (gate_tx, gate_rx) = watch::channel(false);
+
+        let mut stores = Vec::new();
+        for _ in 0..2 {
+            stores.push(bound_delta_reads(Arc::new(GatedStore {
+                inner: seeded_memory().await,
+                started: Arc::clone(&started),
+                gate: gate_rx.clone(),
+            })));
+        }
+
+        // 2 * cap callers race for cap global slots.
+        let path = Path::from(FILE);
+        let mut joins = Vec::new();
+        for store in &stores {
+            for _ in 0..cap {
+                let store = Arc::clone(store);
+                let path = path.clone();
+                joins.push(tokio::spawn(async move { store.get(&path).await }));
+            }
+        }
+
+        timeout(Duration::from_secs(5), async {
+            loop {
+                if started.load(Ordering::SeqCst) >= cap {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("inner GETs should start");
+
+        // Let any unbounded extra GETs slip through before asserting.
+        for _ in 0..256 {
+            tokio::task::yield_now().await;
+        }
+
+        // With a per-store semaphore this would be 2 * cap.
+        assert_eq!(started.load(Ordering::SeqCst), cap);
+
+        gate_tx.send(true).unwrap();
+        for join in joins {
+            join.await.unwrap().unwrap();
+        }
     }
 
     #[tokio::test]

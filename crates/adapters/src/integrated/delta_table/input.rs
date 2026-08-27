@@ -644,13 +644,13 @@ impl DeltaTableInputReader {
         }
 
         // Shared GET semaphore; connectors initialize in parallel, so only the first setter adjusts tokens.
-        if let Some(max_concurrent_readers) = config.max_concurrent_readers {
-            if apply_max_concurrent_readers(max_concurrent_readers as usize)? {
-                info!(
-                    "delta_table {endpoint_name}: adjusting the number of concurrent readers to {max_concurrent_readers}"
-                );
-            }
-        };
+        if let Some(max_concurrent_readers) = config.max_concurrent_readers
+            && apply_max_concurrent_readers(max_concurrent_readers as usize)?
+        {
+            info!(
+                "delta_table {endpoint_name}: adjusting the number of concurrent readers to {max_concurrent_readers}"
+            );
+        }
 
         if !config.object_store_config.contains_key("timeout") {
             config.object_store_config.insert(

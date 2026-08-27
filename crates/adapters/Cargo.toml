@@ -37,7 +37,6 @@ with-deltalake = [
     "roaring",
     "parquet/async",
     "parquet/object_store",
-    "dep:object_store",
 ]
 with-iceberg = ["feldera-iceberg"]
 with-pubsub = ["google-cloud-pubsub", "google-cloud-gax"]
@@ -154,9 +153,6 @@ parquet = { workspace = true, features = ["json"] }
 serde_arrow = { workspace = true }
 arrow-json = { workspace = true }
 bytes = { workspace = true }
-# Direct dep so the Delta input connector can wrap `ObjectStore` and bound
-# in-flight parquet/HTTP GETs (feldera/feldera#6372).
-object_store = { workspace = true, optional = true }
 # `datafusion` must be enabled for the writer to implement the `Invariant` feature.
 deltalake = { workspace = true, features = [
     "datafusion",
