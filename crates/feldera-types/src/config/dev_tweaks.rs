@@ -123,8 +123,9 @@ pub struct DevTweaks {
     /// benefits.
     ///
     /// A rebalancing is considered significant if the relative estimated
-    /// improvement for the cluster of joins where the rebalancing is applied is
-    /// at least this threshold.
+    /// improvement across the collections whose partitioning policy the
+    /// rebalancing changes is at least this threshold. Collections that keep
+    /// their policy are excluded, since they cost the same either way.
     ///
     /// A rebalancing is applied if both this threshold and
     /// `balancer_min_absolute_improvement_threshold` are met.
@@ -144,9 +145,10 @@ pub struct DevTweaks {
     /// benefits.
     ///
     /// A rebalancing is considered significant if the absolute estimated
-    /// improvement for the cluster of joins where the rebalancing is applied is
-    /// at least this threshold. The cost model used by the balancer is based on
-    /// the number of records in the largest partition of a collection.
+    /// improvement across the collections whose partitioning policy the
+    /// rebalancing changes is at least this threshold. The cost model used by the
+    /// balancer is based on the number of records in the largest partition of a
+    /// collection.
     ///
     /// A rebalancing is applied if both this threshold and
     /// `balancer_min_relative_improvement_threshold` are met.
