@@ -15,7 +15,7 @@ use crate::db::types::pipeline::{
     runtime_desired_status_to_string, runtime_status_to_string,
 };
 use crate::db::types::program::{
-    ProgramError, ProgramStatus, RustCompilationInfo, SqlCompilationInfo,
+    PipelineProgramArtifacts, ProgramError, ProgramStatus, RustCompilationInfo, SqlCompilationInfo,
     validate_program_status_transition,
 };
 use crate::db::types::resources_status::{
@@ -2062,19 +2062,10 @@ pub(crate) async fn count_pipelines_needing_compilation(
 /// are currently being compiled (pipeline identifier, program version) across all tenants.
 pub(crate) async fn list_pipeline_programs_across_all_tenants(
     txn: &Transaction<'_>,
-) -> Result<
-    Vec<(
-        PipelineId,
-        Version,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-    )>,
-    DBError,
-> {
+) -> Result<Vec<PipelineProgramArtifacts>, DBError> {
     let stmt = txn
         .prepare_cached(
-            "SELECT p.id, p.program_version, p.program_binary_source_checksum, p.program_binary_integrity_checksum, p.program_info_integrity_checksum
+            "SELECT p.id, p.program_version, p.program_binary_source_checksum, p.program_binary_integrity_checksum, p.program_info_integrity_checksum, p.program_config
              FROM pipeline AS p
              WHERE p.program_status = 'success' OR p.program_status = 'compiling_rust'
              ORDER BY p.id ASC
@@ -2084,14 +2075,21 @@ pub(crate) async fn list_pipeline_programs_across_all_tenants(
     let rows = txn.query(&stmt, &[]).await?;
     Ok(rows
         .iter()
-        .map(|row| {
-            (
-                PipelineId(row.get(0)),
-                Version(row.get(1)),
-                row.get::<_, Option<String>>(2),
-                row.get::<_, Option<String>>(3),
-                row.get::<_, Option<String>>(4),
-            )
+        .map(|row| PipelineProgramArtifacts {
+            pipeline_id: PipelineId(row.get(0)),
+            program_version: Version(row.get(1)),
+            program_binary_source_checksum: row.get::<_, Option<String>>(2),
+            program_binary_integrity_checksum: row.get::<_, Option<String>>(3),
+            program_info_integrity_checksum: row.get::<_, Option<String>>(4),
+            // Derived from the parsed configuration rather than a SQL comparison against the
+            // literal `gen2`, so what selects the engine stays defined in one place.
+            // `program_config` is a VARCHAR holding JSON text, as the other readers of this
+            // column treat it.
+            is_gen2: serde_json::from_str::<serde_json::Value>(row.get::<_, &str>(5))
+                .ok()
+                .and_then(|config| validate_program_config(&config, true).ok())
+                .map(|config| config.runtime_version().is_gen2())
+                .unwrap_or(false),
         })
         .collect())
 }

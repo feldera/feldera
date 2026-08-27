@@ -842,6 +842,8 @@ pub async fn compiler_precompile(
         program_version,
         &program_config,
         program_code,
+        udf_rust,
+        udf_toml,
         SqlCompilationOutput::Full,
     )
     .await

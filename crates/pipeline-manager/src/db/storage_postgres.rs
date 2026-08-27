@@ -19,7 +19,8 @@ use crate::db::types::pipeline::{
     PipelineId,
 };
 use crate::db::types::program::{
-    ProgramConfig, ProgramInfo, ProgramStatus, RustCompilationInfo, SqlCompilationInfo,
+    PipelineProgramArtifacts, ProgramConfig, ProgramInfo, ProgramStatus, RustCompilationInfo,
+    SqlCompilationInfo,
 };
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::role::{MintableKeyRole, Role};
@@ -1674,16 +1675,7 @@ impl Storage for StoragePostgres {
 
     async fn list_pipeline_programs_across_all_tenants(
         &self,
-    ) -> Result<
-        Vec<(
-            PipelineId,
-            Version,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-        )>,
-        DBError,
-    > {
+    ) -> Result<Vec<PipelineProgramArtifacts>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = transaction::begin(&mut client).await?;
         let pipeline_programs =

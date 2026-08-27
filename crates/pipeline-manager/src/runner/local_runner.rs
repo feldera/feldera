@@ -137,18 +137,38 @@ fn resolve_executable(
     path_env: Option<std::ffi::OsString>,
 ) -> Result<PathBuf, String> {
     if configured.is_absolute() || configured.components().count() > 1 {
-        if configured.is_file() {
+        if is_executable_file(configured) {
             return Ok(configured.to_path_buf());
         }
     } else if let Some(paths) = path_env {
         for dir in std::env::split_paths(&paths) {
             let candidate = dir.join(configured);
-            if candidate.is_file() {
+            if is_executable_file(&candidate) {
                 return Ok(candidate);
             }
         }
     }
     Err(configured.display().to_string())
+}
+
+/// Whether `path` is a file the OS would agree to execute.
+///
+/// A plain existence check is weaker than that: a file whose execute bit is not set passes
+/// it and then fails at spawn with the opaque `EACCES` that resolving up front exists to
+/// avoid. Since the path is operator-supplied, a forgotten `chmod +x` is the likely way
+/// this goes wrong.
+fn is_executable_file(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        path.metadata()
+            .is_ok_and(|metadata| metadata.permissions().mode() & 0o111 != 0)
+    }
+    #[cfg(not(unix))]
+    true
 }
 
 /// Loopback IP the coordinator of a multihost deployment binds.  Uses third
@@ -1574,14 +1594,23 @@ mod gen2_binary_tests {
     use crate::runner::error::RunnerError;
     use std::path::Path;
 
+    /// Writes an executable file at `path`.
+    fn write_executable(path: &Path) {
+        std::fs::write(path, b"").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+    }
+
     /// A Gen-2 engine executable given as a path must exist; a missing path errors.
     #[test]
     fn resolves_existing_path_and_rejects_missing() {
-        let tmp = tempfile::NamedTempFile::new().unwrap();
-        assert_eq!(
-            resolve_executable(tmp.path(), None).unwrap(),
-            tmp.path().to_path_buf()
-        );
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("gen2-engine");
+        write_executable(&exe);
+        assert_eq!(resolve_executable(&exe, None).unwrap(), exe);
         assert!(resolve_executable(Path::new("/nonexistent/gen2-engine-xyz"), None).is_err());
     }
 
@@ -1590,7 +1619,7 @@ mod gen2_binary_tests {
     fn resolves_bare_name_on_path() {
         let dir = tempfile::tempdir().unwrap();
         let exe = dir.path().join("gen2-engine");
-        std::fs::write(&exe, b"").unwrap();
+        write_executable(&exe);
         let path_env = std::env::join_paths([dir.path()]).unwrap();
         assert_eq!(
             resolve_executable(Path::new("gen2-engine"), Some(path_env)).unwrap(),
@@ -1599,6 +1628,33 @@ mod gen2_binary_tests {
         assert!(resolve_executable(Path::new("gen2-engine"), None).is_err());
         let empty = std::env::join_paths(std::iter::empty::<&Path>()).unwrap();
         assert!(resolve_executable(Path::new("gen2-engine"), Some(empty)).is_err());
+    }
+
+    /// A file without the execute bit is rejected here rather than at spawn, where it would
+    /// surface as the opaque `EACCES` that resolving up front exists to avoid. Both the
+    /// explicit-path and the PATH-search branch check it.
+    #[cfg(unix)]
+    #[test]
+    fn a_non_executable_file_is_rejected() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let not_exec = dir.path().join("gen2-engine");
+        std::fs::write(&not_exec, b"").unwrap();
+        std::fs::set_permissions(&not_exec, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        assert!(
+            resolve_executable(&not_exec, None).is_err(),
+            "an explicit path without the execute bit is not an executable"
+        );
+        let path_env = std::env::join_paths([dir.path()]).unwrap();
+        assert!(
+            resolve_executable(Path::new("gen2-engine"), Some(path_env)).is_err(),
+            "a PATH hit without the execute bit is not an executable"
+        );
+
+        // The same name becomes resolvable once it is executable.
+        std::fs::set_permissions(&not_exec, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(resolve_executable(&not_exec, None).unwrap(), not_exec);
     }
 
     /// `GEN2_BINARY` is required: unset and empty both report the configuration error
@@ -1620,10 +1676,12 @@ mod gen2_binary_tests {
     /// nothing reports the value that failed.
     #[test]
     fn a_configured_variable_resolves_or_reports_its_value() {
-        let tmp = tempfile::NamedTempFile::new().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("gen2-engine");
+        write_executable(&exe);
         assert_eq!(
-            gen2_binary_from(Some(tmp.path().as_os_str().to_owned()), None).unwrap(),
-            tmp.path().to_path_buf()
+            gen2_binary_from(Some(exe.as_os_str().to_owned()), None).unwrap(),
+            exe
         );
         let missing = "/nonexistent/gen2-engine-xyz";
         assert!(matches!(

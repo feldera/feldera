@@ -52,11 +52,13 @@ pub fn unstable_features() -> Option<&'static HashSet<&'static str>> {
 /// Enables the unstable features the test suite depends on. `UNSTABLE_FEATURES` is a
 /// process-wide `OnceLock`, so every test that needs a gate must request the same set:
 /// whichever test runs first then enables it for the whole binary, whatever the order.
+///
+/// The set is installed with a discarded `set`, not a check-then-act: cargo runs tests on
+/// parallel threads, so two callers can both observe an empty lock and the loser of the
+/// race would panic on the second `set`.
 #[cfg(test)]
 pub(crate) fn enable_test_unstable_features() {
-    if unstable_features().is_none() {
-        platform_enable_unstable("runtime_version,testing");
-    }
+    let _ = UNSTABLE_FEATURES.set(HashSet::from_iter(["runtime_version", "testing"]));
 }
 
 /// To query whether the platform enabled a certain unstable feature.

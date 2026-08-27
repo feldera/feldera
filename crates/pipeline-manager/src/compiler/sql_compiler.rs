@@ -220,6 +220,8 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
         pipeline.program_version,
         &pipeline.program_config,
         &pipeline.program_code,
+        &pipeline.udf_rust,
+        &pipeline.udf_toml,
         SqlCompilationOutput::Full,
     )
     .await;
@@ -646,6 +648,31 @@ async fn deliver_gen2_program_info(
     Ok(program_info_integrity_checksum)
 }
 
+/// Refuses a program the selected runtime cannot run, before any compilation happens.
+///
+/// A Rust UDF is built by the Rust half of compilation, which the Gen-2 engine skips
+/// entirely: the implementation would never reach a compiler and the pipeline would run with
+/// its UDFs silently absent. Reported as a program error rather than a system error, since
+/// what to change is in the program.
+fn check_runtime_supports_program(
+    runtime_selector: &RuntimeSelector,
+    udf_rust: &str,
+    udf_toml: &str,
+) -> Result<(), SqlCompilationError> {
+    let has_udfs = !udf_rust.trim().is_empty() || !udf_toml.trim().is_empty();
+    if runtime_selector.is_gen2() && has_udfs {
+        return Err(SqlCompilationError::SqlError(
+            SqlCompilationInfo::from_error(
+                "UnsupportedRuntimeFeature",
+                "The Gen-2 engine does not support Rust UDFs. Remove the 'udf_rust' and \
+                 'udf_toml' program fields, or select a different runtime version."
+                    .to_string(),
+            ),
+        ));
+    }
+    Ok(())
+}
+
 /// Performs the SQL compilation:
 /// - Prepares a working directory for input and output
 /// - Call the SQL-to-DBSP compiler executable via a process
@@ -662,6 +689,8 @@ pub(crate) async fn perform_sql_compilation(
     program_version: Version,
     program_config: &serde_json::Value,
     program_code: &str,
+    udf_rust: &str,
+    udf_toml: &str,
     output: SqlCompilationOutput,
 ) -> Result<(serde_json::Value, Duration, SqlCompilationInfo), SqlCompilationError> {
     let start = Instant::now();
@@ -690,6 +719,9 @@ pub(crate) async fn perform_sql_compilation(
     })?;
 
     let runtime_selector = program_config.runtime_version();
+
+    check_runtime_supports_program(&runtime_selector, udf_rust, udf_toml)?;
+
     let use_platform_compiler =
         program_config.use_platform_compiler && !runtime_selector.is_platform();
     assert!(has_unstable_feature("runtime_version") || runtime_selector.is_platform());
@@ -793,10 +825,14 @@ pub(crate) async fn perform_sql_compilation(
         .arg("--alltables")
         .arg("--ignoreOrder");
     if runtime_selector.is_gen2() {
-        // The Gen-2 engine consumes the JIT circuit IR and skips Rust codegen. `--jit`
-        // emits the circuit IR to stdout (it is incompatible with `--crates`),
-        // captured into jit.json below.
-        command.arg("--jit");
+        // The Gen-2 engine consumes the circuit IR and skips Rust codegen. `--gen2` emits
+        // the IR and drops the primary-key columns from an indexed source's value; `--jit`
+        // would emit the IR without that dedup. `-o` names the file the IR goes to, which
+        // `--crates` would conflict with, so the Rust output arguments stay in the else arm.
+        command
+            .arg("--gen2")
+            .arg("-o")
+            .arg(output_jit_file_path.as_os_str());
     } else {
         let runtime_crates_path = runtime_selector.runtime_sources(config);
         command
@@ -809,16 +845,13 @@ pub(crate) async fn perform_sql_compilation(
     }
     #[cfg(feature = "feldera-enterprise")]
     command.arg("--enterprise");
-    // The Gen-2 engine captures the JIT circuit IR that `--jit` writes to stdout into
-    // jit.json; every other runtime sends stdout to stdout.log.
-    let stdout_sink = if runtime_selector.is_gen2() {
-        create_new_file(&output_jit_file_path).await?
-    } else {
-        output_stdout_file
-    };
+    // Every runtime sends stdout to stdout.log. The Gen-2 IR goes to its own file through
+    // `-o` rather than by hijacking stdout, so a stray byte from the JVM (a warning, an
+    // `-XX` message) cannot land inside the IR and turn into an unrelated deserialization
+    // error, and the diagnostics file keeps its contents.
     command
         .stdin(Stdio::null())
-        .stdout(Stdio::from(stdout_sink.into_std().await))
+        .stdout(Stdio::from(output_stdout_file.into_std().await))
         .stderr(Stdio::from(output_stderr_file.into_std().await))
         // Setting it to zero sets the process group ID to the PID.
         // This is done to be able to kill any subprocesses that are spawned.
@@ -1111,6 +1144,8 @@ pub(crate) async fn validate_program(
         Version(1),
         program_config,
         program_code,
+        "",
+        "",
         SqlCompilationOutput::IrOnly,
     )
     .await;
@@ -1244,6 +1279,41 @@ pub(crate) async fn cleanup_sql_compilation(
 #[cfg(test)]
 mod test {
     use crate::auth::TenantRecord;
+
+    /// The Gen-2 engine compiles no Rust, so a Rust UDF would silently do nothing. The
+    /// refusal is a program error naming both fields, and it does not fire for a runtime
+    /// that does compile Rust, nor for a Gen-2 program without UDFs.
+    #[test]
+    fn gen2_refuses_rust_udfs() {
+        use crate::compiler::sql_compiler::{SqlCompilationError, check_runtime_supports_program};
+        use crate::db::types::program::RuntimeSelector;
+
+        let gen2 = RuntimeSelector::Gen2;
+        let platform = RuntimeSelector::Platform("0".repeat(40));
+
+        // No UDFs: nothing to refuse under either runtime.
+        assert!(check_runtime_supports_program(&gen2, "", "").is_ok());
+        assert!(check_runtime_supports_program(&gen2, "   ", "\n").is_ok());
+        assert!(check_runtime_supports_program(&platform, "fn f() {}", "[deps]").is_ok());
+
+        for (udf_rust, udf_toml) in [("fn f() {}", ""), ("", "[dependencies]")] {
+            let error = check_runtime_supports_program(&gen2, udf_rust, udf_toml)
+                .expect_err("a Gen-2 program with Rust UDFs must be refused");
+            let SqlCompilationError::SqlError(info) = error else {
+                panic!("a UDF refusal is a program error, not a system error");
+            };
+            assert_eq!(info.exit_code, 1);
+            // `Display` carries the message; the field itself is private.
+            let message = info.messages[0].to_string();
+            assert!(message.contains("does not support Rust UDFs"), "{message}");
+            assert!(message.contains("udf_rust"), "names the field: {message}");
+            assert!(message.contains("udf_toml"), "names the field: {message}");
+            assert!(
+                message.contains("UnsupportedRuntimeFeature"),
+                "carries the error type: {message}"
+            );
+        }
+    }
 
     /// A jar unaccessed past the retention window is removed, a recently
     /// accessed one is kept, and missing metadata never removes.
