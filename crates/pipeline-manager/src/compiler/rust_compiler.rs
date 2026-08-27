@@ -2974,6 +2974,49 @@ mod test {
         );
     }
 
+    /// A Gen-2 program delivers its program info while its row is still `CompilingSql`, so
+    /// the checksum naming the file is not in the row yet. The relaxed prefix must cover that
+    /// window, or the janitor deletes the artifact of a program that is about to be `Success`
+    /// and nothing recompiles it.
+    #[test]
+    fn a_gen2_program_info_delivered_before_success_is_retained() {
+        let pipeline_id = PipelineId(uuid::Uuid::nil());
+        let checksum = "c0ffee";
+        // The name `deliver_gen2_program_info` writes, before the row learns the checksum.
+        let delivered = program_info_filename(&pipeline_id, Version(3), checksum, checksum);
+
+        let compiling_sql = PipelineProgramArtifacts {
+            pipeline_id,
+            program_version: Version(3),
+            program_binary_source_checksum: None,
+            program_binary_integrity_checksum: None,
+            // Not recorded until the row moves to Success.
+            program_info_integrity_checksum: None,
+            is_gen2: true,
+        };
+        let valid = valid_program_info_filenames(std::slice::from_ref(&compiling_sql));
+        assert_eq!(
+            valid,
+            vec![format!("program_info_{pipeline_id}_v3_")],
+            "with no checksum to name the file, the window is covered by the prefix"
+        );
+        assert_eq!(
+            decide_pipeline_binary_cleanup(&delivered, None, &[], &valid),
+            CleanupDecision::Keep {
+                motivation: delivered.clone()
+            },
+            "the delivered artifact survives a janitor pass inside the window"
+        );
+
+        // A different version of the same pipeline is still collected: the prefix is relaxed
+        // about the checksum, not about the version.
+        let other_version = program_info_filename(&pipeline_id, Version(2), checksum, checksum);
+        assert_eq!(
+            decide_pipeline_binary_cleanup(&other_version, None, &[], &valid),
+            CleanupDecision::Remove
+        );
+    }
+
     /// Stale `.tmp-` uploads are removed, fresh or unstat-able ones are kept,
     /// and prefix matching decides the rest.
     #[test]

@@ -2057,9 +2057,14 @@ pub(crate) async fn count_pipelines_needing_compilation(
     Ok(count as u64)
 }
 
-/// Retrieves the list of successfully compiled pipeline programs (pipeline identifier, program version,
-/// program binary source checksum, program binary integrity checksum, program info integrity checksum) AND pipeline programs that
-/// are currently being compiled (pipeline identifier, program version) across all tenants.
+/// Retrieves every pipeline program whose artifacts must be retained, across all tenants:
+/// those fully compiled, and those still compiling.
+///
+/// Both compiling statuses are included because each one covers a window in which an
+/// artifact is already on disk while the checksum naming it is not yet in the row.
+/// `CompilingRust` covers the binary and program info a legacy program delivers;
+/// `CompilingSql` covers the program info a Gen-2 program delivers, which is its only
+/// artifact and is written before the row moves to `Success`.
 pub(crate) async fn list_pipeline_programs_across_all_tenants(
     txn: &Transaction<'_>,
 ) -> Result<Vec<PipelineProgramArtifacts>, DBError> {
@@ -2067,7 +2072,7 @@ pub(crate) async fn list_pipeline_programs_across_all_tenants(
         .prepare_cached(
             "SELECT p.id, p.program_version, p.program_binary_source_checksum, p.program_binary_integrity_checksum, p.program_info_integrity_checksum, p.program_config
              FROM pipeline AS p
-             WHERE p.program_status = 'success' OR p.program_status = 'compiling_rust'
+             WHERE p.program_status = 'success' OR p.program_status = 'compiling_rust' OR p.program_status = 'compiling_sql'
              ORDER BY p.id ASC
             ",
         )
