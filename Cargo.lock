@@ -4240,6 +4240,7 @@ dependencies = [
  "nix 0.29.0",
  "nonzero_ext",
  "num-bigint",
+ "object_store 0.14.1",
  "once_cell",
  "parking_lot 0.12.4",
  "parquet",
