@@ -35,6 +35,7 @@ use actix_web::{
     get,
     http::StatusCode,
     http::header,
+    middleware::Compress,
     post, rt,
     web::{self, Data as WebData, Payload, Query},
 };
@@ -46,6 +47,7 @@ use clap::Parser;
 use colored::Colorize;
 use dbsp::circuit::Layout;
 use dbsp::circuit::checkpointer::Checkpointer;
+use dbsp::profile::{DbspProfile, ProfileJsonWriter};
 use dbsp::{DBSPHandle, circuit::CircuitConfig};
 use dbsp::{RootCircuit, Runtime};
 use dyn_clone::DynClone;
@@ -1422,7 +1424,15 @@ where
         .service(metadata)
         .service(heap_profile)
         .service(dump_profile)
-        .service(dump_json_profile)
+        // Compressed when the client's `Accept-Encoding` admits it. `Compress` is
+        // only used for profiles; the other live streams (`/egress`,
+        // `/ingress`, `/time_series_stream`) are uncompressed, because gzip
+        // frame buffering stalls their readers (see PR #5626).
+        .service(
+            web::resource("/dump_json_profile")
+                .wrap(Compress::default())
+                .route(web::get().to(dump_json_profile)),
+        )
         .service(samply_profile)
         .service(get_samply_profile)
         .service(lir)
@@ -2057,21 +2067,166 @@ async fn heap_profile() -> impl Responder {
     }
 }
 
+// Profile downloads.
+//
+// `/dump_json_profile` delivers a circuit profile.
+// The profile size is O(workers x operators).
+// The data flow is:
+//
+//   pipeline process:  [1] workers --> [2] circuit thread --> [3] blocking pool --> [4] actix worker
+//   coordinator:       --> [5] (multihost only) combines the hosts' profiles
+//   manager service:   --> [6] streaming proxy, or support-data collector
+//   client:            --> [7] REST client, or the profiler UI reading a support bundle
+//
+// [1] Profiler (`dbsp::profile::Profiler`)
+//     - runs on: every worker thread of the pipeline process
+//     - what it does: walks the circuit and collects each operator's metadata
+//     - produces: a `WorkerProfile`, i.e., `Map<operatorId, OperatorMeta>`
+//
+// [2] Circuit thread (`controller.rs`, `run_commands`)
+//     - runs on: the controller's circuit thread, between circuit steps
+//     - what it does: `DBSPHandle::retrieve_profile` assembles worker replies
+//     - produces: a `DbspProfile` (every worker's `WorkerProfile` plus the
+//       circuit `Graph`)
+//
+// [3] Serializer (`json_profile_body`, this file)
+//     - runs on: a Tokio blocking-pool thread, one `spawn_blocking` call per worker
+//     - what it does: `ProfileJsonWriter` serializes one worker's profile into a `Vec<u8>`
+//     - produces: one JSON chunk per worker
+//
+// [4] HTTP handler (`dump_json_profile`, this file)
+//     - runs on: an actix worker thread
+//     - what it does: yields each chunk as the client reads; the `Compress`
+//       middleware gzips them when the client's `Accept-Encoding` requires it
+//     - produces: a chunked HTTP response (never whole in memory), `application/json`,
+//       with `Content-Encoding: gzip` when negotiated
+//
+// [5] Coordinator (`feldera-coordinator`, `crates/coord` in the cloud repository)
+//     - runs on: its own process, in multihost pipelines only
+//     - what it does: fetches each host's profile and combines them
+//     - produces: one JSON response with the hosts' `worker_profiles`
+//       concatenated
+//
+// [6] Pipeline manager, one of two variants
+//     - runs on: the manager service
+//     - what it does:
+//         - the streaming proxy (`runner/interaction.rs`) serves the
+//            public `circuit_profile`, `circuit_json_profile` and
+//            `heap_profile` endpoints;
+//          - the support-data collector (`api/support_data_collector.rs`)
+//            fetches the profile on request, or every few minutes for
+//            running pipelines
+//     - produces:
+//          - the proxy: the body unchanged, headers included;
+//          - the collector: a database row holding the gzip-compressed JSON,
+//            inserted in the support bundle as `circuit_profile.json.gz`
+//
+// [7] Client, one of two variants
+//     - runs on: outside Feldera
+//     - what it does:
+//          - a REST client (`fda`, `curl`) writes the body to a file;
+//          - the profiler UI (`js-packages/profiler-layout`) inflates the
+//            `circuit_profile.json.gz` entry of a support bundle and parses the
+//            JSON in the browser
+//     - produces:
+//          - the REST client: a file;
+//          - the profiler UI: the profile displayed in the browser
+//
+// Within the pipeline process:
+// - The circuit thread is busy only while the workers collect metadata; the
+//   handler awaits the reply and never blocks it.
+// - Serialization runs on the blocking pool, one worker at a time; at most one
+//   worker's JSON exists in memory, never the whole profile.
+// - actix polls the stream only as the client reads, so a slow client stalls
+//   the serializer, not the circuit; a disconnected client drops the stream,
+//   and no further worker is serialized.
+
+/// The JSON profile as a stream of one chunk per worker.
+///
+/// Each worker is serialized on the blocking pool, in order, and its chunk is
+/// yielded before the next worker is started, so at most one worker's JSON
+/// exists at a time. An error aborts the body, which the client sees as a
+/// truncated transfer.
+fn json_profile_body(
+    profile: DbspProfile,
+) -> impl futures::Stream<Item = Result<Bytes, std::io::Error>> {
+    let DbspProfile {
+        metrics,
+        worker_profiles,
+        graph,
+    } = profile;
+    async_stream::try_stream! {
+        let mut json = ProfileJsonWriter::begin(Vec::new(), Some(metrics))?;
+        for worker in worker_profiles {
+            json = spawn_blocking(move || -> std::io::Result<_> {
+                json.worker(&worker)?;
+                Ok(json)
+            })
+            .await
+            .map_err(std::io::Error::other)??;
+            yield Bytes::from(std::mem::take(json.writer_mut()));
+        }
+        yield Bytes::from(json.finish(&graph)?);
+    }
+}
+
+#[cfg(test)]
+mod json_profile_body_tests {
+    use super::*;
+    use dbsp::profile::WorkerProfile;
+    use futures::TryStreamExt;
+
+    /// The chunks concatenate to exactly `DbspProfile::as_json`, one chunk per
+    /// worker plus the closing one.
+    #[tokio::test]
+    async fn chunks_concatenate_to_as_json() {
+        for workers in [0, 1, 3] {
+            let profile = DbspProfile::new(vec![WorkerProfile::default(); workers], None);
+            let expected = profile.as_json();
+            let chunks: Vec<Bytes> = json_profile_body(profile).try_collect().await.unwrap();
+            let expected_chunks = if workers == 0 { 1 } else { workers + 1 };
+            assert_eq!(chunks.len(), expected_chunks);
+            assert_eq!(chunks.concat(), expected.as_bytes());
+        }
+    }
+}
+
 #[get("/dump_profile")]
 async fn dump_profile(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    let profile = state.controller()?.async_graph_profile().await?;
+    // `ZipWriter` needs a synchronous `Write` sink, so the archive goes to an
+    // anonymous temporary file (removed when closed) and is streamed from there;
+    // memory consumption stays bounded.
+    let body = async_stream::try_stream! {
+        let file = spawn_blocking(move || -> std::io::Result<std::fs::File> {
+            let mut file = profile
+                .write_zip(tempfile::tempfile()?)
+                .map_err(std::io::Error::other)?;
+            std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(0))?;
+            Ok(file)
+        })
+        .await
+        .map_err(std::io::Error::other)??;
+        let mut chunks = tokio_util::io::ReaderStream::new(tokio::fs::File::from_std(file));
+        while let Some(chunk) = futures::StreamExt::next(&mut chunks).await {
+            yield chunk?;
+        }
+    };
     Ok(HttpResponse::Ok()
         .insert_header(header::ContentType("application/zip".parse().unwrap()))
         .insert_header(header::ContentDisposition::attachment("profile.zip"))
         .insert_header(header::ContentEncoding::Identity)
-        .body(state.controller()?.async_graph_profile().await?.as_zip()))
+        .streaming::<_, std::io::Error>(body))
 }
 
-#[get("/dump_json_profile")]
+/// Registered in [`build_app`] behind a `Compress` middleware, which negotiates
+/// the response encoding with the client.
 async fn dump_json_profile(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    let profile = state.controller()?.async_json_profile().await?;
     Ok(HttpResponse::Ok()
         .insert_header(header::ContentType("application/json".parse().unwrap()))
         .insert_header(header::ContentDisposition::attachment("profile.json"))
-        .body(state.controller()?.async_json_profile().await?.as_json()))
+        .streaming::<_, std::io::Error>(json_profile_body(profile)))
 }
 
 /// Dump the low-level IR of the circuit.
@@ -4070,6 +4225,78 @@ outputs:
         }
 
         (server, state_ret)
+    }
+
+    /// Downloads both circuit profiles from a running pipeline.
+    #[actix_web::test]
+    async fn test_profiles_stream_from_running_pipeline() {
+        use std::io::Read;
+        crate::ensure_default_crypto_provider();
+
+        let server = start_test_server(
+            r#"
+name: test
+inputs:
+outputs:
+"#,
+            Uuid::new_v4(),
+        )
+        .await;
+        start_pipeline(&server).await;
+
+        // Without `Accept-Encoding` the JSON profile streams uncompressed.
+        let mut plain = server
+            .get("/dump_json_profile")
+            .no_decompress()
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(plain.status(), StatusCode::OK);
+        assert!(plain.headers().get("content-encoding").is_none());
+        assert_eq!(
+            plain.headers().get("transfer-encoding").unwrap(),
+            "chunked",
+            "the profile must stream rather than be buffered"
+        );
+        let plain_body = plain.body().limit(64 << 20).await.unwrap();
+        let plain_json: serde_json::Value = serde_json::from_slice(&plain_body).unwrap();
+        let workers = plain_json["worker_profiles"].as_array().unwrap().len();
+        assert!(workers > 0);
+
+        // With `Accept-Encoding: gzip` it arrives gzip-compressed, with the same content.
+        let mut gz = server
+            .get("/dump_json_profile")
+            .insert_header(("accept-encoding", "gzip"))
+            .no_decompress()
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(gz.status(), StatusCode::OK);
+        assert_eq!(gz.headers().get("content-encoding").unwrap(), "gzip");
+        let gz_body = gz.body().limit(64 << 20).await.unwrap();
+        let mut decoded = Vec::new();
+        flate2::read::GzDecoder::new(&gz_body[..])
+            .read_to_end(&mut decoded)
+            .unwrap();
+        let gz_json: serde_json::Value = serde_json::from_slice(&decoded).unwrap();
+        assert_eq!(
+            gz_json["worker_profiles"].as_array().unwrap().len(),
+            workers
+        );
+        assert_eq!(gz_json["graph"], plain_json["graph"]);
+
+        // The dot profile is a zip with one `.dot` and `.txt` per worker plus a Makefile.
+        let mut dot = server.get("/dump_profile").send().await.unwrap();
+        assert_eq!(dot.status(), StatusCode::OK);
+        assert_eq!(
+            dot.headers().get("content-type").unwrap(),
+            "application/zip"
+        );
+        let dot_body = dot.body().limit(64 << 20).await.unwrap();
+        // Zip local headers carry entry names uncompressed, so they are visible as bytes.
+        assert!(dot_body.starts_with(b"PK\x03\x04"));
+        let contains = |name: &[u8]| dot_body.windows(name.len()).any(|w| w == name);
+        assert!(contains(b"0.dot") && contains(b"0.txt") && contains(b"Makefile"));
     }
 
     /// Simulate an ungraceful crash of a fault-tolerant pipeline: terminate the

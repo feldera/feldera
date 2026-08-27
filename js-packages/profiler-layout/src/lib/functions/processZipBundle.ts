@@ -4,7 +4,9 @@ import sortOn from 'sort-on'
 import { groupBy } from './array'
 import type { GlobalMetrics } from './globalMetrics'
 
-const circuitProfileRegex = /circuit_profile\.json$/
+// Bundles store the JSON profile gzip-compressed (`.json.gz`);
+// but legacy bundles may still carry plain `.json`.
+const circuitProfileRegex = /circuit_profile\.json(\.gz)?$/
 const dataflowGraphRegex = /dataflow_graph\.json$/
 const pipelineConfigRegex = /pipeline_config\.json$/
 const logsRegex = /logs\.txt$/
@@ -105,6 +107,21 @@ export function selectProfiles(files: ZipItem[]): [Date, ZipItem[]][] {
 }
 
 /**
+ * Returns the contents of a zip entry, gunzipped when the entry name ends in `.gz`.
+ * `file.read()` performs the unzip.
+ */
+async function readZipItem(file: ZipItem): Promise<Uint8Array> {
+  const bytes = await file.read()
+  if (!file.filename.endsWith('.gz')) {
+    return bytes
+  }
+  const inflated = new Blob([new Uint8Array(bytes)])
+    .stream()
+    .pipeThrough(new DecompressionStream('gzip'))
+  return new Uint8Array(await new Response(inflated).arrayBuffer())
+}
+
+/**
  * Process a specific set of profile files (already unzipped) into structured data.
  * Use this with the files from getSuitableProfiles() for efficient processing.
  * @param files Array of ZipItem files for a specific profile timestamp
@@ -117,7 +134,7 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
   const profileFile = files.find((file) => circuitProfileRegex.test(file.filename))
   let profile: JsonProfiles | undefined
   if (profileFile) {
-    profile = JSON.parse(decoder.decode(await profileFile.read())) as JsonProfiles
+    profile = JSON.parse(decoder.decode(await readZipItem(profileFile))) as JsonProfiles
   }
 
   const dataflowFile = files.find((file) => dataflowGraphRegex.test(file.filename))

@@ -24,11 +24,11 @@ use std::{
     collections::{BTreeMap, HashMap},
     fmt::Write,
     fs::{self, create_dir_all},
-    io::{Cursor as IoCursor, Error as IoError, Write as _},
+    io::{Error as IoError, Write as IoWrite},
     path::{Path, PathBuf},
     time::Duration,
 };
-use zip::{ZipWriter, write::SimpleFileOptions};
+use zip::{ZipWriter, result::ZipResult, write::SimpleFileOptions};
 
 mod cpu;
 pub use cpu::{CPUProfiler, RuntimeIdle};
@@ -194,22 +194,23 @@ $(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
         Ok(dir_path)
     }
 
-    /// Returns a Zip archive containing all the profile `.dot` files.
-    pub fn as_zip(&self) -> Vec<u8> {
-        let mut zip = ZipWriter::new(IoCursor::new(Vec::with_capacity(65536)));
+    /// Writes a Zip archive containing all the profile `.dot` and `.txt` files
+    /// to `writer`.
+    ///
+    /// Each worker's text is rendered and compressed one worker at a time, so
+    /// the full archive is never held in memory.
+    pub fn write_zip<W: IoWrite>(&self, writer: W) -> ZipResult<W> {
+        let mut zip = ZipWriter::new_stream(writer);
         for (graph, worker) in self.worker_graphs.iter().zip(self.worker_offset..) {
-            zip.start_file(format!("{worker}.dot"), SimpleFileOptions::default())
-                .unwrap();
-            zip.write_all(graph.to_dot().as_bytes()).unwrap();
+            zip.start_file(format!("{worker}.dot"), SimpleFileOptions::default())?;
+            zip.write_all(graph.to_dot().as_bytes())?;
 
-            zip.start_file(format!("{worker}.txt"), SimpleFileOptions::default())
-                .unwrap();
-            zip.write_all(graph.to_string().as_bytes()).unwrap();
+            zip.start_file(format!("{worker}.txt"), SimpleFileOptions::default())?;
+            zip.write_all(graph.to_string().as_bytes())?;
         }
-        zip.start_file("Makefile", SimpleFileOptions::default())
-            .unwrap();
-        zip.write_all(Self::MAKEFILE.as_bytes()).unwrap();
-        zip.finish().unwrap().into_inner()
+        zip.start_file("Makefile", SimpleFileOptions::default())?;
+        zip.write_all(Self::MAKEFILE.as_bytes())?;
+        Ok(zip.finish()?.into_inner())
     }
 }
 
@@ -220,6 +221,51 @@ pub struct DbspProfile {
     pub metrics: &'static [CircuitMetric],
     pub worker_profiles: Vec<WorkerProfile>,
     pub graph: Option<Graph>,
+}
+
+/// Writes a [`DbspProfile`] document as JSON.
+/// (This abstraction is reused by the coordinator)
+pub struct ProfileJsonWriter<W: IoWrite> {
+    writer: W,
+    workers: usize,
+}
+
+impl<W: IoWrite> ProfileJsonWriter<W> {
+    /// Starts the document.
+    pub fn begin<M: Serialize + ?Sized>(
+        mut writer: W,
+        metrics: Option<&M>,
+    ) -> Result<Self, IoError> {
+        writer.write_all(b"{")?;
+        if let Some(metrics) = metrics {
+            writer.write_all(b"\"metrics\":")?;
+            serde_json::to_writer(&mut writer, metrics)?;
+            writer.write_all(b",")?;
+        }
+        writer.write_all(b"\"worker_profiles\":[")?;
+        Ok(Self { writer, workers: 0 })
+    }
+
+    pub fn worker<T: Serialize + ?Sized>(&mut self, worker: &T) -> Result<(), IoError> {
+        if self.workers > 0 {
+            self.writer.write_all(b",")?;
+        }
+        serde_json::to_writer(&mut self.writer, worker)?;
+        self.workers += 1;
+        Ok(())
+    }
+
+    pub fn finish<G: Serialize + ?Sized>(mut self, graph: &G) -> Result<W, IoError> {
+        self.writer.write_all(b"],\"graph\":")?;
+        serde_json::to_writer(&mut self.writer, graph)?;
+        self.writer.write_all(b"}")?;
+        Ok(self.writer)
+    }
+
+    /// The underlying writer
+    pub fn writer_mut(&mut self) -> &mut W {
+        &mut self.writer
+    }
 }
 
 impl DbspProfile {
@@ -480,5 +526,85 @@ impl Profiler {
 
             (output, importance)
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::circuit::circuit_builder::NodeId;
+    use std::io::Read;
+
+    /// A worker profile with three operators carrying two metrics each.
+    fn worker_profile(seed: u64) -> WorkerProfile {
+        let mut metadata = HashMap::new();
+        for node in 0..3 {
+            let mut meta = OperatorMeta::new();
+            meta.extend([
+                MetricReading::new(
+                    USED_MEMORY_BYTES,
+                    Vec::new(),
+                    MetaItem::Bytes(HumanBytes::new(seed * 100 + node as u64)),
+                ),
+                MetricReading::new(INVOCATIONS_COUNT, Vec::new(), MetaItem::Count(node)),
+            ]);
+            metadata.insert(GlobalNodeId::from_path(&[NodeId::new(node)]), meta);
+        }
+        WorkerProfile::new(metadata)
+    }
+
+    fn profile(workers: u64, graph: Option<Graph>) -> DbspProfile {
+        DbspProfile::new((0..workers).map(worker_profile).collect(), graph)
+    }
+
+    #[test]
+    fn profile_json_writer_phases() {
+        let mut json = ProfileJsonWriter::begin(Vec::new(), None::<&str>).unwrap();
+        assert_eq!(json.writer_mut().as_slice(), b"{\"worker_profiles\":[");
+        json.worker(&1).unwrap();
+        json.worker(&2).unwrap();
+        let so_far = std::mem::take(json.writer_mut());
+        assert_eq!(so_far, b"{\"worker_profiles\":[1,2");
+        let rest = json.finish(&"g").unwrap();
+        assert_eq!(rest, b"],\"graph\":\"g\"}");
+    }
+
+    /// The phased writer produces the same bytes as `as_json`.
+    #[test]
+    fn profile_json_writer_matches_as_json() {
+        for (workers, graph) in [(0, None), (1, None), (3, Some(Graph::default()))] {
+            let profile = profile(workers, graph);
+            let expected = profile.as_json();
+            let mut json = ProfileJsonWriter::begin(Vec::new(), Some(profile.metrics)).unwrap();
+            for worker in &profile.worker_profiles {
+                json.worker(worker).unwrap();
+            }
+            let streamed = json.finish(&profile.graph).unwrap();
+            assert_eq!(String::from_utf8(streamed).unwrap(), expected);
+        }
+    }
+
+    /// The streamed archive is a valid zip naming one `.dot` and one `.txt`
+    /// per worker, plus the Makefile.
+    #[test]
+    fn write_zip_lists_every_worker() {
+        let profile = GraphProfile {
+            elapsed_time: Duration::from_secs(1),
+            worker_offset: 4,
+            worker_graphs: vec![Graph::default(); 2],
+        };
+        let streamed = profile.write_zip(Vec::new()).unwrap();
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(streamed)).unwrap();
+        let names: Vec<String> = (0..archive.len())
+            .map(|i| archive.by_index(i).unwrap().name().to_string())
+            .collect();
+        assert_eq!(names, ["4.dot", "4.txt", "5.dot", "5.txt", "Makefile"]);
+        let mut makefile = String::new();
+        archive
+            .by_name("Makefile")
+            .unwrap()
+            .read_to_string(&mut makefile)
+            .unwrap();
+        assert_eq!(makefile, GraphProfile::MAKEFILE);
     }
 }

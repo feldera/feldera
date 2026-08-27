@@ -32,9 +32,11 @@ use utoipa::{IntoParams, ToSchema};
 const COLLECTION_TIMEOUT: Duration = Duration::from_secs(120);
 const SKIPPED_BY_USER: &str = "Skipped due to user request";
 
-const EXTENDED_RESPONSE_SIZE_LIMIT: usize = 300 * 1024 * 1024; // Applies to profiles which can be very large
-
 type BundleResult<T> = Result<T, String>;
+
+/// Size cap for pipeline response. Counts transferred bytes: an item fetched
+/// compressed can be much larger.  Applies to e.g., profiles collected.
+const EXTENDED_RESPONSE_SIZE_LIMIT: usize = 300 * 1024 * 1024;
 
 fn collect() -> bool {
     true
@@ -131,10 +133,11 @@ async fn fetch_pipeline_data(
     query_string: &str,
     timeout_duration: Option<Duration>,
     body_size_limit: Option<usize>,
+    accept_encoding: Option<&str>,
 ) -> Result<HttpResponse, ManagerError> {
     state
         .runner
-        .forward_http_request_to_pipeline_by_name(
+        .forward_http_request_to_pipeline_by_name_with_accept_encoding(
             client,
             tenant_id,
             pipeline_name,
@@ -143,6 +146,7 @@ async fn fetch_pipeline_data(
             query_string,
             timeout_duration,
             body_size_limit,
+            accept_encoding,
         )
         .await
 }
@@ -216,6 +220,47 @@ fn gz_decompress(data: &[u8]) -> Result<Vec<u8>, String> {
     Ok(decompressed)
 }
 
+/// A `Content-Encoding` the collector accepts from a pipeline.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TransportEncoding {
+    Identity,
+    Gzip,
+}
+
+/// Parses a `Content-Encoding` header value; an absent header is identity.
+fn parse_transport_encoding(value: &str) -> BundleResult<TransportEncoding> {
+    match value.to_ascii_lowercase().as_str() {
+        "" | "identity" => Ok(TransportEncoding::Identity),
+        "gzip" | "x-gzip" => Ok(TransportEncoding::Gzip),
+        other => Err(format!("unsupported Content-Encoding {other:?}")),
+    }
+}
+
+/// Undoes the transport encoding of `body`.
+fn decode_transport_encoding(body: Vec<u8>, content_encoding: &str) -> BundleResult<Vec<u8>> {
+    match parse_transport_encoding(content_encoding)? {
+        TransportEncoding::Identity => Ok(body),
+        TransportEncoding::Gzip => gz_decompress(&body),
+    }
+}
+
+/// Converts a pipeline's JSON profile response to the stored form,
+/// gzip-compressed JSON, whether it arrived gzip-compressed, as plain JSON, or
+/// as a zip holding `profile.json`. Legacy pipelines send the last two.
+fn stored_json_profile(
+    body: Vec<u8>,
+    content_type: &str,
+    content_encoding: &str,
+) -> BundleResult<Vec<u8>> {
+    match parse_transport_encoding(content_encoding)? {
+        TransportEncoding::Gzip => Ok(body),
+        TransportEncoding::Identity if content_type.contains("application/zip") => {
+            extract_from_zip(&body, "profile.json").and_then(gz_compress)
+        }
+        TransportEncoding::Identity => gz_compress(body),
+    }
+}
+
 /// Extract a specific file from a ZIP archive
 fn extract_from_zip(zip_data: &[u8], filename: &str) -> Result<Vec<u8>, String> {
     use std::io::Read;
@@ -238,36 +283,37 @@ fn extract_from_zip(zip_data: &[u8], filename: &str) -> Result<Vec<u8>, String> 
 async fn response_to_bundle_result(
     response: Result<HttpResponse, ManagerError>,
 ) -> BundleResult<Vec<u8>> {
-    response_to_bundle_result_with_transform(response, |body, _| Ok(body)).await
+    response_to_bundle_result_with_transform(response, |body, _, _| Ok(body)).await
 }
 
-/// Convert the HTTP response from a pipeline to a bundle result,
-/// applying a transformer function to the response body.
-///
-/// The transformer receives (body_bytes, content_type) and returns
-/// a transformed BundleResult<Vec<u8>>.
+/// Convert the HTTP response from a pipeline to a bundle result, passing a
+/// successful body through `transform(body, content_type, content_encoding)`.
 async fn response_to_bundle_result_with_transform<F>(
     response: Result<HttpResponse, ManagerError>,
     transform: F,
 ) -> BundleResult<Vec<u8>>
 where
-    F: FnOnce(Vec<u8>, &str) -> BundleResult<Vec<u8>>,
+    F: FnOnce(Vec<u8>, &str, &str) -> BundleResult<Vec<u8>>,
 {
     match response {
         Ok(response) if response.status().is_success() => {
-            let content_type = response
-                .headers()
-                .get(actix_web::http::header::CONTENT_TYPE)
-                .and_then(|v| v.to_str().ok())
-                .unwrap_or("")
-                .to_string();
+            let header_value = |name| {
+                response
+                    .headers()
+                    .get(name)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("")
+                    .to_string()
+            };
+            let content_type = header_value(actix_web::http::header::CONTENT_TYPE);
+            let content_encoding = header_value(actix_web::http::header::CONTENT_ENCODING);
 
             let body_bytes = actix_web::body::to_bytes(response.into_body())
                 .await
                 .map(|bytes| bytes.to_vec())
                 .map_err(|e| e.to_string())?;
 
-            transform(body_bytes, &content_type)
+            transform(body_bytes, &content_type, &content_encoding)
         }
         Ok(response) => {
             let mut error_string = format!("HTTP {}", response.status());
@@ -438,9 +484,7 @@ impl SupportBundleData {
         }
 
         let (
-            circuit_profile,
-            json_circuit_profile,
-            heap_profile,
+            (circuit_profile, json_circuit_profile, heap_profile),
             metrics,
             logs,
             stats,
@@ -449,27 +493,26 @@ impl SupportBundleData {
             dataflow_graph,
             pipeline_events,
         ) = tokio::join!(
+            // Profiles can be very large: fetching them one after another keeps the
+            // pipeline memory bounded.
             async {
-                if params.circuit_profile {
+                let circuit_profile = if params.circuit_profile {
                     Self::collect_circuit_profile(state, client, tenant_id, pipeline_name).await
                 } else {
                     skipped()
-                }
-            },
-            async {
-                if params.circuit_profile {
+                };
+                let json_circuit_profile = if params.circuit_profile {
                     Self::collect_json_circuit_profile(state, client, tenant_id, pipeline_name)
                         .await
                 } else {
                     skipped()
-                }
-            },
-            async {
-                if params.heap_profile {
+                };
+                let heap_profile = if params.heap_profile {
                     Self::collect_heap_profile(state, client, tenant_id, pipeline_name).await
                 } else {
                     skipped()
-                }
+                };
+                (circuit_profile, json_circuit_profile, heap_profile)
             },
             async {
                 if params.metrics {
@@ -553,10 +596,14 @@ impl SupportBundleData {
             "",
             Some(COLLECTION_TIMEOUT),
             Some(EXTENDED_RESPONSE_SIZE_LIMIT),
+            Some("gzip"),
         )
         .await;
 
-        response_to_bundle_result(response).await
+        response_to_bundle_result_with_transform(response, |body, _, encoding| {
+            decode_transport_encoding(body, encoding)
+        })
+        .await
     }
 
     async fn collect_json_circuit_profile(
@@ -574,23 +621,11 @@ impl SupportBundleData {
             "",
             Some(COLLECTION_TIMEOUT),
             Some(EXTENDED_RESPONSE_SIZE_LIMIT),
+            Some("gzip"),
         )
         .await;
 
-        // Transform the response based on Content-Type:
-        // - Old pipelines return application/zip with profile.json inside
-        // - New pipelines return plain JSON
-        // Both are normalized to gzip-compressed JSON for storage.
-        response_to_bundle_result_with_transform(response, |body_bytes, content_type| {
-            if content_type.contains("application/zip") {
-                // Extract JSON from ZIP, then compress for storage
-                extract_from_zip(&body_bytes, "profile.json").and_then(gz_compress)
-            } else {
-                // Plain JSON, compress for storage
-                gz_compress(body_bytes)
-            }
-        })
-        .await
+        response_to_bundle_result_with_transform(response, stored_json_profile).await
     }
 
     async fn collect_heap_profile(
@@ -608,10 +643,14 @@ impl SupportBundleData {
             "",
             Some(COLLECTION_TIMEOUT),
             Some(EXTENDED_RESPONSE_SIZE_LIMIT),
+            Some("gzip"),
         )
         .await;
 
-        response_to_bundle_result(response).await
+        response_to_bundle_result_with_transform(response, |body, _, encoding| {
+            decode_transport_encoding(body, encoding)
+        })
+        .await
     }
 
     async fn collect_metrics(
@@ -628,6 +667,7 @@ impl SupportBundleData {
             "metrics",
             "",
             Some(COLLECTION_TIMEOUT),
+            None,
             None,
         )
         .await;
@@ -665,6 +705,7 @@ impl SupportBundleData {
             "stats",
             "include_connector_errors=true",
             Some(COLLECTION_TIMEOUT),
+            None,
             None,
         )
         .await;
@@ -718,19 +759,28 @@ impl SupportBundleData {
         serde_json::to_vec_pretty(&events).map_err(|e| e.to_string())
     }
 
+    /// Adds this collection's files to a bundle. `add_to_zip` receives the file
+    /// name, its bytes, and how to store them: items that are already
+    /// compressed (gzip, zip) are stored verbatim, everything else deflated.
     #[allow(clippy::type_complexity)]
     pub(crate) async fn push_to_zip(
         &self,
-        add_to_zip: &mut dyn FnMut(&str, &[u8]) -> Result<(), Box<dyn std::error::Error>>,
+        add_to_zip: &mut dyn FnMut(
+            &str,
+            &[u8],
+            zip::CompressionMethod,
+        ) -> Result<(), Box<dyn std::error::Error>>,
         params: &SupportBundleParameters,
     ) -> Result<CollectionSummary, Box<dyn std::error::Error>> {
+        use zip::CompressionMethod::{Deflated, Stored};
+
         let mut summary = CollectionSummary::default();
 
         // Add circuit profile
         if params.circuit_profile {
             match &self.circuit_profile {
                 Ok(content) => {
-                    let _ = add_to_zip("circuit_profile.zip", content);
+                    let _ = add_to_zip("circuit_profile.zip", content, Stored);
                     summary.collected("circuit_profile.zip");
                 }
                 Err(e) => {
@@ -740,51 +790,39 @@ impl SupportBundleData {
                 }
             };
             match &self.json_circuit_profile {
-                Ok(content) => {
-                    if self.version >= 4 {
-                        match gz_decompress(content) {
-                            Ok(decompressed) => {
-                                let _ = add_to_zip("circuit_profile.json", &decompressed);
-                                summary.collected("circuit_profile.json");
-                            }
-                            Err(e) => {
-                                summary.failed(
-                                    "circuit_profile.json",
-                                    format!("Failed to decompress: {}", e),
-                                );
-                            }
-                        }
-                    } else {
-                        match extract_from_zip(content, "profile.json") {
-                            Ok(json_content) => {
-                                let _ = add_to_zip("circuit_profile.json", &json_content);
-                                summary.collected("circuit_profile.json");
-                            }
-                            Err(e) => {
-                                summary.failed(
-                                    "circuit_profile.json",
-                                    format!("Failed to extract from ZIP: {}", e),
-                                );
-                            }
-                        }
-                    }
+                // Since data version 4 the profile is stored as gzip-compressed JSON,
+                // which the bundle carries unchanged: a large profile is never
+                // inflated on the manager.
+                Ok(content) if self.version >= 4 => {
+                    let _ = add_to_zip("circuit_profile.json.gz", content, Stored);
+                    summary.collected("circuit_profile.json.gz");
                 }
+                // Older versions hold a zip with `profile.json` inside.
+                Ok(content) => match extract_from_zip(content, "profile.json").and_then(|json| {
+                    gz_compress(json).map_err(|e| format!("Failed to compress: {e}"))
+                }) {
+                    Ok(gz) => {
+                        let _ = add_to_zip("circuit_profile.json.gz", &gz, Stored);
+                        summary.collected("circuit_profile.json.gz");
+                    }
+                    Err(reason) => summary.failed("circuit_profile.json.gz", reason),
+                },
                 Err(e) => {
                     if e != SKIPPED_BY_USER {
-                        summary.failed("circuit_profile.json", e.clone());
+                        summary.failed("circuit_profile.json.gz", e.clone());
                     }
                 }
             }
         } else {
             summary.skipped("circuit_profile.zip");
-            summary.skipped("circuit_profile.json");
+            summary.skipped("circuit_profile.json.gz");
         }
 
         // Add heap profile
         if params.heap_profile {
             match &self.heap_profile {
                 Ok(content) => {
-                    let _ = add_to_zip("heap_profile.pb.gz", content);
+                    let _ = add_to_zip("heap_profile.pb.gz", content, Stored);
                     summary.collected("heap_profile.pb.gz");
                 }
                 Err(e) => {
@@ -801,7 +839,7 @@ impl SupportBundleData {
         if params.metrics {
             match &self.metrics {
                 Ok(content) => {
-                    let _ = add_to_zip("metrics.txt", content);
+                    let _ = add_to_zip("metrics.txt", content, Deflated);
                     summary.collected("metrics.txt");
                 }
                 Err(e) => {
@@ -818,7 +856,7 @@ impl SupportBundleData {
         if params.logs {
             match &self.logs {
                 Ok(content) => {
-                    let _ = add_to_zip("logs.txt", content.as_bytes());
+                    let _ = add_to_zip("logs.txt", content.as_bytes(), Deflated);
                     summary.collected("logs.txt");
                 }
                 Err(e) => {
@@ -835,7 +873,7 @@ impl SupportBundleData {
         if params.stats {
             match &self.stats {
                 Ok(content) => {
-                    let _ = add_to_zip("stats.json", content);
+                    let _ = add_to_zip("stats.json", content, Deflated);
                     summary.collected("stats.json");
                 }
                 Err(e) => {
@@ -857,7 +895,7 @@ impl SupportBundleData {
                     if self.version > 0 {
                         match gz_decompress(content) {
                             Ok(decompressed) => {
-                                let _ = add_to_zip("pipeline_config.json", &decompressed);
+                                let _ = add_to_zip("pipeline_config.json", &decompressed, Deflated);
                                 summary.collected("pipeline_config.json");
                             }
                             Err(e) => {
@@ -868,7 +906,7 @@ impl SupportBundleData {
                             }
                         }
                     } else {
-                        let _ = add_to_zip("pipeline_config.json.gz", content);
+                        let _ = add_to_zip("pipeline_config.json.gz", content, Stored);
                         summary.collected("pipeline_config.json.gz");
                     }
                 }
@@ -891,7 +929,7 @@ impl SupportBundleData {
         if params.system_config {
             match &self.system_config {
                 Ok(content) => {
-                    let _ = add_to_zip("system_config.json", content);
+                    let _ = add_to_zip("system_config.json", content, Deflated);
                     summary.collected("system_config.json");
                 }
                 Err(e) => {
@@ -908,7 +946,7 @@ impl SupportBundleData {
         if params.dataflow_graph {
             match &self.dataflow_graph {
                 Ok(content) => {
-                    let _ = add_to_zip("dataflow_graph.json", content);
+                    let _ = add_to_zip("dataflow_graph.json", content, Deflated);
                     summary.collected("dataflow_graph.json");
                 }
                 Err(e) => {
@@ -927,7 +965,7 @@ impl SupportBundleData {
         if params.pipeline_events {
             match &self.pipeline_events {
                 Ok(content) => {
-                    let _ = add_to_zip("pipeline_events.json", content);
+                    let _ = add_to_zip("pipeline_events.json", content, Deflated);
                     summary.collected("pipeline_events.json");
                 }
                 Err(e) => {
@@ -1500,6 +1538,113 @@ mod tests {
         );
     }
 
+    /// Storage holds gzip-compressed JSON whatever shape the pipeline sent.
+    #[test]
+    fn stored_json_profile_normalizes_every_wire_shape() {
+        use std::io::Write as _;
+        let json = br#"{"worker_profiles":[]}"#.to_vec();
+
+        // Compressed by the pipeline: stored byte for byte.
+        let gz = gz_compress(json.clone()).unwrap();
+        assert_eq!(
+            stored_json_profile(gz.clone(), "application/json", "gzip").unwrap(),
+            gz
+        );
+
+        // Plain JSON: compressed here.
+        let stored = stored_json_profile(json.clone(), "application/json", "").unwrap();
+        assert_eq!(gz_decompress(&stored).unwrap(), json);
+
+        // Legacy zip holding `profile.json`: unpacked, then compressed.
+        let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        archive
+            .start_file("profile.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        archive.write_all(&json).unwrap();
+        let legacy = archive.finish().unwrap().into_inner();
+        let stored = stored_json_profile(legacy, "application/zip", "identity").unwrap();
+        assert_eq!(gz_decompress(&stored).unwrap(), json);
+
+        // Unknown encodings are refused rather than stored as garbage.
+        assert!(stored_json_profile(json, "application/json", "br").is_err());
+    }
+
+    #[test]
+    fn decode_transport_encoding_undoes_gzip_only() {
+        let payload = b"PK\x03\x04 pretend zip".to_vec();
+        assert_eq!(
+            decode_transport_encoding(payload.clone(), "").unwrap(),
+            payload
+        );
+        assert_eq!(
+            decode_transport_encoding(payload.clone(), "identity").unwrap(),
+            payload
+        );
+        let gz = gz_compress(payload.clone()).unwrap();
+        assert_eq!(
+            decode_transport_encoding(gz.clone(), "GZIP").unwrap(),
+            payload
+        );
+        assert_eq!(decode_transport_encoding(gz, "x-gzip").unwrap(), payload);
+        assert!(decode_transport_encoding(payload, "br").is_err());
+    }
+
+    /// Data collected before version 4 holds the JSON profile inside a zip;
+    /// the bundle still carries it as `circuit_profile.json.gz`. A corrupt
+    /// archive is reported properly.
+    #[tokio::test]
+    async fn push_to_zip_converts_legacy_json_profile() {
+        use std::io::Write as _;
+        let json = br#"{"worker_profiles":[]}"#;
+        let mut archive = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        archive
+            .start_file("profile.json", zip::write::SimpleFileOptions::default())
+            .unwrap();
+        archive.write_all(json).unwrap();
+        let legacy_zip = archive.finish().unwrap().into_inner();
+
+        let params = SupportBundleParameters::default();
+        let mut entries = Vec::new();
+        let mut add = |name: &str, content: &[u8], method: zip::CompressionMethod| {
+            entries.push((name.to_string(), content.to_vec(), method));
+            Ok(())
+        };
+
+        let mut legacy = SupportBundleData::test_data();
+        legacy.version = 3;
+        legacy.json_circuit_profile = Ok(legacy_zip);
+        let converted = legacy.push_to_zip(&mut add, &params).await.unwrap();
+
+        let mut corrupt = SupportBundleData::test_data();
+        corrupt.version = 3;
+        corrupt.json_circuit_profile = Ok(b"not a zip".to_vec());
+        let rejected = corrupt.push_to_zip(&mut add, &params).await.unwrap();
+
+        assert!(
+            converted
+                .collected
+                .iter()
+                .any(|file| file == "circuit_profile.json.gz")
+        );
+        let (_, gz, method) = entries
+            .iter()
+            .find(|(name, _, _)| name == "circuit_profile.json.gz")
+            .unwrap();
+        assert_eq!(*method, zip::CompressionMethod::Stored);
+        assert_eq!(gz_decompress(gz).unwrap(), json);
+
+        let failure = rejected
+            .failed
+            .iter()
+            .find(|failure| failure.file == "circuit_profile.json.gz")
+            .unwrap();
+        assert!(
+            failure.reason.starts_with("Invalid ZIP"),
+            "{}",
+            failure.reason
+        );
+    }
+
     #[tokio::test]
     async fn push_to_zip_with_ignores() {
         let bundle_data = SupportBundleData {
@@ -1527,8 +1672,8 @@ mod tests {
 
         let summary = bundle_data
             .push_to_zip(
-                &mut |filename, content| {
-                    zip_entries.push((filename.to_string(), content.to_vec()));
+                &mut |filename, content, method| {
+                    zip_entries.push((filename.to_string(), content.to_vec(), method));
                     Ok(())
                 },
                 &all_enabled,
@@ -1540,6 +1685,18 @@ mod tests {
         assert_eq!(summary.failed.len(), 0);
         assert_eq!(summary.skipped.len(), 0);
         assert_eq!(zip_entries.len(), 10);
+
+        // The gzip-compressed JSON profile goes into the bundle as is,
+        // stored rather than deflated.
+        let json_entry = zip_entries
+            .iter()
+            .find(|(name, _, _)| name == "circuit_profile.json.gz")
+            .expect("circuit_profile.json.gz in bundle");
+        assert_eq!(
+            &json_entry.1,
+            bundle_data.json_circuit_profile.as_ref().unwrap()
+        );
+        assert_eq!(json_entry.2, zip::CompressionMethod::Stored);
 
         // Test with some parameters disabled
         let some_disabled = SupportBundleParameters {
@@ -1560,8 +1717,8 @@ mod tests {
 
         let summary = bundle_data
             .push_to_zip(
-                &mut |filename, content| {
-                    zip_entries.push((filename.to_string(), content.to_vec()));
+                &mut |filename, content, method| {
+                    zip_entries.push((filename.to_string(), content.to_vec(), method));
                     Ok(())
                 },
                 &some_disabled,

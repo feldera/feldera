@@ -4221,6 +4221,7 @@ dependencies = [
  "feldera-storage",
  "feldera-types",
  "feldera_rust_decimal",
+ "flate2",
  "form_urlencoded",
  "futures",
  "futures-timer",
