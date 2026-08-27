@@ -17,17 +17,15 @@ fn pipeline_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
     let Ok(cli) = Cli::try_parse_from(["fda", "pipelines"]) else {
         return completions;
     };
-    // Never resolve `--auth-token-command` for completion: it would execute the
-    // user's token command (e.g. `gcloud auth print-access-token`) on every Tab
-    // press. Static API keys are cheap, so pass those through; token-command
-    // users simply get no pipeline-name completion (a failed/anonymous list
-    // returns nothing rather than panicking).
+    // Both credentials are cheap to resolve on every Tab press: a static key
+    // and a file read. A failed or anonymous list returns nothing rather
+    // than panicking.
     let Ok(client) = make_client(crate::ClientOpts {
         host: cli.host,
         insecure: cli.insecure,
         tls_cert: cli.tls_cert,
         auth: cli.auth,
-        auth_token_command: None,
+        oidc_token_file: cli.oidc_token_file,
         timeout_secs: cli.timeout,
         tenant: cli.tenant,
         retries: cli.retries,
@@ -125,32 +123,31 @@ pub struct Cli {
         help_heading = "Global Options"
     )]
     pub auth: Option<String>,
-    /// Shell command that prints a bearer token on stdout.
+    /// File holding a bearer token, typically an OIDC identity token.
     ///
-    /// Run once per `fda` invocation; the trimmed stdout becomes the
+    /// Read once per `fda` invocation; the trimmed contents become the
     /// `Authorization: Bearer <token>` header for every request that
-    /// invocation makes. Use for OIDC workload-identity flows with short-lived
-    /// tokens: because the command runs on every invocation, a rotated token is
-    /// picked up automatically. Conflicts with `--auth`.
+    /// invocation makes. Use for workload-identity flows with short-lived
+    /// tokens: whatever keeps the file current (a Kubernetes projected
+    /// volume, `feldera/oidc-auth-action` in GitHub Actions) rotates the
+    /// credential without `fda` holding a copy. Conflicts with `--auth`.
     ///
     /// Examples:
     ///
     /// Kubernetes projected service-account token:
-    /// `--auth-token-command 'cat /var/run/secrets/kubernetes.io/serviceaccount/token'`
+    /// `--oidc-token-file /var/run/secrets/kubernetes.io/serviceaccount/token`
     ///
     /// AWS EKS, IAM roles for service accounts:
-    /// `--auth-token-command 'cat $AWS_WEB_IDENTITY_TOKEN_FILE'`
-    ///
-    /// Google Cloud, where an ID token is a JWT and an access token is not:
-    /// `--auth-token-command 'gcloud auth print-identity-token'`
+    /// `--oidc-token-file "$AWS_WEB_IDENTITY_TOKEN_FILE"`
     #[arg(
         long,
-        env = "FELDERA_AUTH_TOKEN_COMMAND",
+        env = "FELDERA_OIDC_TOKEN_FILE",
+        value_hint = ValueHint::FilePath,
         global = true,
         help_heading = "Global Options",
         conflicts_with = "auth"
     )]
-    pub auth_token_command: Option<String>,
+    pub oidc_token_file: Option<PathBuf>,
     /// The client timeout for requests in seconds.
     ///
     /// In almost all cases you should not need to set this value, but it can
