@@ -1175,6 +1175,10 @@ public class MetadataTests extends BaseSQLTests {
                     --format
                       Output the SQL program reformatted
                       Default: false
+                    --gen2
+                      Compile for the Gen-2 engine: emit the circuit IR (as --jit does) and\s
+                      drop the primary-key columns from the value of an indexed source
+                      Default: false
                     --handles
                       Use handles (true) or Catalog (false) in the emitted Rust code
                       Default: false

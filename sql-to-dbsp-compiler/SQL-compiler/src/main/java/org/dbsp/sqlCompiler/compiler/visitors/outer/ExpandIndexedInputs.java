@@ -26,7 +26,9 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /** Invokes {@link IndexedInputs} and then optimizes the circuit a bit */
 public class ExpandIndexedInputs extends Passes {
@@ -102,9 +104,9 @@ public class ExpandIndexedInputs extends Passes {
 
         @Override
         public void postorder(DBSPSourceMultisetOperator node) {
-            // Under --jit the value drops the primary-key columns (the indexed z-set holds
-            // each column once); otherwise the value is the whole row, as before.
-            boolean dedupKeys = this.compiler.options.ioOptions.interpreterJson;
+            // Under --gen2 the value drops the primary-key columns (the indexed z-set holds
+            // each column once); otherwise the value is the whole row.
+            boolean dedupKeys = this.compiler.options.ioOptions.gen2;
             DBSPTypeIndexedZSet ix = getIndexedType(node, dedupKeys);
             if (ix == null) {
                 super.postorder(node);
@@ -131,16 +133,17 @@ public class ExpandIndexedInputs extends Passes {
 
         /** Rebuild the whole row from a deduped {@code (key, value)} pair: field {@code i}
          * comes from the key when column {@code i} is a primary-key column, else from the
-         * value, each side addressed by its own compacted slot. */
+         * value. */
         private DBSPClosureExpression interleaveKeyValue(
                 DBSPSourceMultisetOperator node, DBSPTypeIndexedZSet ix, List<Integer> keyColumnFields) {
+            Set<Integer> keyColumns = new HashSet<>(keyColumnFields);
             DBSPVariablePath w = ix.getKVRefType().var();
             int columns = node.metadata.getColumns().size();
             DBSPExpression[] rowFields = new DBSPExpression[columns];
             int keySlot = 0;
             int valueSlot = 0;
             for (int i = 0; i < columns; i++) {
-                if (keyColumnFields.contains(i)) {
+                if (keyColumns.contains(i)) {
                     rowFields[i] = w.field(0).deref().field(keySlot++).applyCloneIfNeeded();
                 } else {
                     rowFields[i] = w.field(1).deref().field(valueSlot++).applyCloneIfNeeded();
@@ -176,7 +179,7 @@ public class ExpandIndexedInputs extends Passes {
         private DBSPClosureExpression rewriteClosure(
                 DBSPClosureExpression closure, DBSPSourceMapOperator map, List<Integer> keyColumnFields) {
             DBSPVariablePath w = map.getOutputIndexedZSetType().getKVRefType().var();
-            boolean dedupKeys = this.compiler.options.ioOptions.interpreterJson;
+            boolean dedupKeys = this.compiler.options.ioOptions.gen2;
             IndexFunctionRewriter rewriter = new IndexFunctionRewriter(
                     this.compiler, closure.parameters[0], w, keyColumnFields, dedupKeys);
             var result = rewriter.apply(closure);
@@ -237,11 +240,11 @@ public class ExpandIndexedInputs extends Passes {
                         // field is of the form (*v.X)
                         int keyField = this.keyColumnFields.indexOf(field.fieldNo);
                         if (keyField < 0) {
-                            // A non-key column.  When the value dropped the key columns (--jit),
-                            // address it by its compacted slot within the value rather than its
-                            // original row position.
+                            // A non-key column.
                             int valueField = field.fieldNo;
                             if (this.dedupKeys) {
+                                // The value dropped the key columns, so address the column by
+                                // its compacted slot rather than its original row position.
                                 int keysBefore = 0;
                                 for (int key : this.keyColumnFields)
                                     if (key < field.fieldNo)

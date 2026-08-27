@@ -237,10 +237,11 @@ public class CompilerMain {
                     this.options.ioOptions.verbosity, dotFormat, circuit);
             return compiler.messages;
         }
-        if (this.options.ioOptions.interpreterJson) {
+        if (this.options.ioOptions.emitCircuitIr()) {
             if (this.options.ioOptions.multiCrates()) {
                 compiler.reportError(SourcePositionRange.INVALID,
-                        "Incompatible options", "Option --crates is not compatible with --jit");
+                        "Incompatible options",
+                        "Option --crates is not compatible with --jit or --gen2");
                 return compiler.messages;
             } else {
                 ToJsonOuterVisitor visitor = ToJsonOuterVisitor.create(compiler, 1);
