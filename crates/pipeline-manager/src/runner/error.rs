@@ -54,7 +54,7 @@ pub enum RunnerError {
         current_status: ResourcesStatus,
         desired_status: ResourcesDesiredStatus,
     },
-    AutomatonCrucibleMultihostUnsupported {
+    AutomatonGen2MultihostUnsupported {
         hosts: usize,
     },
 
@@ -74,7 +74,8 @@ pub enum RunnerError {
     RunnerConfigError {
         error: String,
     },
-    CrucibleBinaryNotFound {
+    Gen2BinaryNotConfigured,
+    Gen2BinaryNotFound {
         path: String,
     },
 
@@ -166,15 +167,16 @@ impl DetailedError for RunnerError {
             RunnerError::AutomatonImpossibleDesiredStatus { .. } => {
                 Cow::from("AutomatonImpossibleDesiredStatus")
             }
-            RunnerError::AutomatonCrucibleMultihostUnsupported { .. } => {
-                Cow::from("AutomatonCrucibleMultihostUnsupported")
+            RunnerError::AutomatonGen2MultihostUnsupported { .. } => {
+                Cow::from("AutomatonGen2MultihostUnsupported")
             }
             RunnerError::RunnerProvisionError { .. } => Cow::from("RunnerProvisionError"),
             RunnerError::RunnerCheckError { .. } => Cow::from("RunnerCheckError"),
             RunnerError::RunnerStopError { .. } => Cow::from("RunnerStopError"),
             RunnerError::RunnerClearError { .. } => Cow::from("RunnerClearError"),
             RunnerError::RunnerConfigError { .. } => Cow::from("RunnerConfigError"),
-            RunnerError::CrucibleBinaryNotFound { .. } => Cow::from("CrucibleBinaryNotFound"),
+            RunnerError::Gen2BinaryNotConfigured => Cow::from("Gen2BinaryNotConfigured"),
+            RunnerError::Gen2BinaryNotFound { .. } => Cow::from("Gen2BinaryNotFound"),
             RunnerError::RunnerInteractionUnreachable { .. } => {
                 Cow::from("RunnerInteractionUnreachable")
             }
@@ -323,10 +325,10 @@ impl Display for RunnerError {
                     "
                 }
             }
-            Self::AutomatonCrucibleMultihostUnsupported { hosts } => {
+            Self::AutomatonGen2MultihostUnsupported { hosts } => {
                 write!(
                     f,
-                    "The crucible runtime does not support multihost pipelines yet. \
+                    "The Gen-2 engine does not support multihost pipelines yet. \
                     Set 'runtime_config.hosts' to 1 or select a different runtime version \
                     to start this pipeline (requested {hosts} hosts)."
                 )
@@ -349,11 +351,18 @@ impl Display for RunnerError {
             Self::RunnerConfigError { error } => {
                 write!(f, "Pipeline runner configuration error: {error}")
             }
-            Self::CrucibleBinaryNotFound { path } => {
+            Self::Gen2BinaryNotConfigured => {
                 write!(
                     f,
-                    "Crucible executable '{path}' not found. Install the crucible engine on PATH, \
-                    or set the CRUCIBLE_BINARY environment variable to its location."
+                    "The Gen-2 engine executable is not configured. Set the GEN2_BINARY \
+                    environment variable to the executable's location to start a Gen-2 pipeline."
+                )
+            }
+            Self::Gen2BinaryNotFound { path } => {
+                write!(
+                    f,
+                    "Gen-2 engine executable '{path}' not found. Point the GEN2_BINARY \
+                    environment variable at the executable, or place it on PATH under that name."
                 )
             }
             Self::RunnerInteractionUnreachable { error } => {
@@ -470,13 +479,14 @@ impl ResponseError for RunnerError {
             Self::AutomatonSuspendingComputeTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonAfterInitializationBecameRunning => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonImpossibleDesiredStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::AutomatonCrucibleMultihostUnsupported { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::AutomatonGen2MultihostUnsupported { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerProvisionError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerCheckError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerStopError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerClearError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerConfigError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::CrucibleBinaryNotFound { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::Gen2BinaryNotConfigured => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::Gen2BinaryNotFound { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerInteractionUnreachable { .. } => StatusCode::SERVICE_UNAVAILABLE,
             Self::RunnerInteractionLogFollowRequestChannelFull { .. } => {
                 StatusCode::SERVICE_UNAVAILABLE
@@ -502,12 +512,12 @@ impl ResponseError for RunnerError {
 mod test {
     use super::RunnerError;
 
-    /// The crucible-multihost refusal is customer-facing; pin its wording.
+    /// The Gen-2 multihost refusal is customer-facing; pin its wording.
     #[test]
-    fn crucible_multihost_error_wording() {
-        let message = RunnerError::AutomatonCrucibleMultihostUnsupported { hosts: 3 }.to_string();
+    fn gen2_multihost_error_wording() {
+        let message = RunnerError::AutomatonGen2MultihostUnsupported { hosts: 3 }.to_string();
         assert!(
-            message.contains("crucible runtime does not support multihost pipelines"),
+            message.contains("Gen-2 engine does not support multihost pipelines"),
             "unexpected wording: {message}"
         );
         assert!(
@@ -520,18 +530,34 @@ mod test {
         );
     }
 
-    /// The missing-crucible-executable error is customer-facing; pin its wording.
+    /// The missing-executable error is customer-facing; pin its wording.
     #[test]
-    fn crucible_binary_not_found_wording() {
-        let message = RunnerError::CrucibleBinaryNotFound {
-            path: "crucible".to_string(),
+    fn gen2_binary_not_found_wording() {
+        let message = RunnerError::Gen2BinaryNotFound {
+            path: "gen2-engine".to_string(),
         }
         .to_string();
-        assert!(message.contains("Crucible executable"), "{message}");
+        assert!(message.contains("Gen-2 engine executable"), "{message}");
         assert!(message.contains("not found"), "{message}");
         assert!(
-            message.contains("CRUCIBLE_BINARY"),
-            "should point at the override env var: {message}"
+            message.contains("gen2-engine"),
+            "names the value that failed: {message}"
+        );
+        assert!(
+            message.contains("GEN2_BINARY"),
+            "should point at the env var that names it: {message}"
+        );
+    }
+
+    /// The unconfigured-engine error is customer-facing; pin its wording. It must name
+    /// `GEN2_BINARY`, since that variable is the only way to reach the engine.
+    #[test]
+    fn gen2_binary_not_configured_wording() {
+        let message = RunnerError::Gen2BinaryNotConfigured.to_string();
+        assert!(message.contains("not configured"), "{message}");
+        assert!(
+            message.contains("GEN2_BINARY"),
+            "should name the variable to set: {message}"
         );
     }
 }

@@ -68,9 +68,9 @@ pub trait PipelineExecutor: Sync + Send {
     ///
     /// Note: `program_info` is used to discover the set of secrets to mount into the pipeline.
     ///
-    /// When `is_crucible` is true the pipeline is configured with the crucible
-    /// runtime, so no pipeline binary was compiled: the executor launches the
-    /// crucible engine and ignores `program_binary_url`.
+    /// When `is_gen2` is true the pipeline is configured with the Gen-2
+    /// engine, so no pipeline binary was compiled: the executor launches the
+    /// Gen-2 engine and ignores `program_binary_url`.
     #[allow(clippy::too_many_arguments)]
     async fn provision(
         &mut self,
@@ -83,7 +83,7 @@ pub trait PipelineExecutor: Sync + Send {
         program_info_url: &str,
         program_version: Version,
         runtime_config: &serde_json::Value,
-        is_crucible: bool,
+        is_gen2: bool,
     ) -> Result<(), ManagerError>;
 
     /// Validates whether the compute and possibly storage resources provisioning

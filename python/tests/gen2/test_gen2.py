@@ -1,21 +1,21 @@
-"""Crucible runtime tests, driven through the pipeline manager.
+"""Gen-2 engine tests, driven through the pipeline manager.
 
-A pipeline whose program config sets ``runtime_version: "crucible"`` compiles to
-a circuit IR rather than a Rust binary, and the runner launches the crucible
-engine to execute it.
+A pipeline whose program config sets ``runtime_version: "gen2"`` compiles to a
+circuit IR rather than a Rust binary, and the runner launches the Gen-2 engine
+to execute it.
 
 The API never returns the circuit IR: it is stripped from ``program_info``
 alongside the generated Rust and the dataflow graph, and reaches the pipeline
 through the program info artifact instead. So these tests assert the effects of
-the IR rather than its contents. That a crucible pipeline ingests a row and
+the IR rather than its contents. That a Gen-2 pipeline ingests a row and
 reads it back is the strongest evidence the IR was captured and delivered,
 since the pipeline cannot run at all otherwise.
 
 Disabled by default. They need a manager started with the ``runtime_version``
-unstable feature and a crucible engine the runner can launch, so nothing here
-runs unless ``FELDERA_TEST_CRUCIBLE`` is set:
+unstable feature and a Gen-2 engine the runner can launch, so nothing here runs
+unless ``FELDERA_TEST_GEN2`` is set:
 
-    FELDERA_TEST_CRUCIBLE=1 uv run pytest tests/crucible -vv
+    FELDERA_TEST_GEN2=1 uv run pytest tests/gen2 -vv
 
 No CI job collects this directory.
 """
@@ -31,8 +31,8 @@ from tests.platform.helper import gen_pipeline_name, wait_for_program_success
 from tests.utils import wait_for_records
 
 pytestmark = pytest.mark.skipif(
-    not env_truthy("FELDERA_TEST_CRUCIBLE"),
-    reason="crucible tests need a crucible engine and the runtime_version unstable feature; set FELDERA_TEST_CRUCIBLE=1",
+    not env_truthy("FELDERA_TEST_GEN2"),
+    reason="Gen-2 tests need a Gen-2 engine and the runtime_version unstable feature; set FELDERA_TEST_GEN2=1",
 )
 
 SQL = """
@@ -40,26 +40,26 @@ CREATE TABLE t(id BIGINT, s VARCHAR);
 CREATE MATERIALIZED VIEW v AS SELECT * FROM t;
 """.strip()
 
-# Crucible does not support multihost pipelines yet, so pin one host. One worker
-# keeps the engine's runtime shape the same as the compiler-output fixture.
-CRUCIBLE_RUNTIME = RuntimeConfig(workers=1, hosts=1)
+# The Gen-2 engine does not support multihost pipelines yet, so pin one host. One
+# worker keeps the engine's runtime shape the same as the compiler-output fixture.
+GEN2_RUNTIME = RuntimeConfig(workers=1, hosts=1)
 
 
 def build(pipeline_name: str, sql: str = SQL) -> Pipeline:
-    """Creates a stopped, compiled pipeline on the crucible runtime."""
+    """Creates a stopped, compiled pipeline on the Gen-2 engine."""
     pipeline = PipelineBuilder(
         TEST_CLIENT,
         name=pipeline_name,
         sql=sql,
-        runtime_version="crucible",
-        runtime_config=CRUCIBLE_RUNTIME,
+        runtime_version="gen2",
+        runtime_config=GEN2_RUNTIME,
     ).create_or_replace()
 
     # PipelineBuilder lets FELDERA_RUNTIME_VERSION override its argument, so pin
     # what the manager actually stored rather than what we asked for.
     selected = pipeline.program_config().get("runtime_version")
-    assert selected == "crucible", (
-        f"expected runtime_version 'crucible', got {selected!r}"
+    assert selected == "gen2", (
+        f"expected runtime_version 'gen2', got {selected!r}"
     )
     return pipeline
 
@@ -72,11 +72,11 @@ def recompile(pipeline: Pipeline, **modify_kwargs) -> None:
 
 
 @gen_pipeline_name
-def test_crucible_completes_without_rust_compilation(pipeline_name):
-    """Crucible reaches Success at the SQL stage, never entering Rust compilation.
+def test_gen2_completes_without_rust_compilation(pipeline_name):
+    """The Gen-2 engine reaches Success at the SQL stage, never entering Rust compilation.
 
     The SQL compiler delivers the program info artifact and marks the program
-    Success itself, so a crucible program carries a SQL compilation log and no
+    Success itself, so a Gen-2 program carries a SQL compilation log and no
     Rust one.
     """
     pipeline = build(pipeline_name)
@@ -85,18 +85,18 @@ def test_crucible_completes_without_rust_compilation(pipeline_name):
 
     error = pipeline.program_error() or {}
     assert error.get("sql_compilation") is not None, (
-        "a crucible program carries its SQL log"
+        "a Gen-2 program carries its SQL log"
     )
     assert error.get("rust_compilation") is None, (
-        f"crucible must not run Rust compilation, got {error.get('rust_compilation')}"
+        f"a Gen-2 program must not run Rust compilation, got {error.get('rust_compilation')}"
     )
 
     pipeline.delete()
 
 
 @gen_pipeline_name
-def test_crucible_pipeline_runs_end_to_end(pipeline_name):
-    """A crucible pipeline runs: ingest a row and read it back from the view."""
+def test_gen2_pipeline_runs_end_to_end(pipeline_name):
+    """A Gen-2 pipeline runs: ingest a row and read it back from the view."""
     pipeline = build(pipeline_name)
 
     pipeline.start_paused()

@@ -99,16 +99,34 @@ fn multihost_host_ip(ordinal: usize) -> Ipv4Addr {
     Ipv4Addr::new(127, MULTIHOST_LOOPBACK_OCTET, ordinal as u8, 1)
 }
 
-/// Resolves the crucible engine executable, launched for a pipeline that delivers
-/// no binary. `CRUCIBLE_BINARY` overrides the default `crucible`. Returns a clear
-/// error when the executable is missing (crucible is not always installed), so the
-/// gap is reported rather than surfacing as an opaque process-spawn failure.
-fn resolve_crucible_binary() -> Result<PathBuf, ManagerError> {
-    let configured = std::env::var_os("CRUCIBLE_BINARY")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("crucible"));
-    resolve_executable(&configured, std::env::var_os("PATH"))
-        .map_err(|path| RunnerError::CrucibleBinaryNotFound { path }.into())
+/// Resolves the Gen-2 engine executable, launched for a pipeline that delivers no
+/// binary.
+///
+/// `GEN2_BINARY` is required and has no default. The engine ships from a separate
+/// repository, so the manager cannot know what its executable is called, and a guessed
+/// default goes stale silently the moment that name changes. Requiring the variable
+/// makes the dependency explicit and keeps a bare `PATH` search from picking up an
+/// unrelated program that happens to share the name.
+fn resolve_gen2_binary() -> Result<PathBuf, ManagerError> {
+    gen2_binary_from(std::env::var_os("GEN2_BINARY"), std::env::var_os("PATH")).map_err(Into::into)
+}
+
+/// The executable `configured` (`GEN2_BINARY`) names, searched on `path_env` when it is
+/// a bare name. An unset or empty variable is a configuration error, and a name that
+/// resolves to nothing is reported with the value that failed, so neither surfaces as an
+/// opaque process-spawn failure.
+///
+/// Split from [`resolve_gen2_binary`] so the resolution is testable without mutating the
+/// process environment, which no test can do safely while others run.
+fn gen2_binary_from(
+    configured: Option<std::ffi::OsString>,
+    path_env: Option<std::ffi::OsString>,
+) -> Result<PathBuf, RunnerError> {
+    let configured = configured
+        .filter(|value| !value.is_empty())
+        .ok_or(RunnerError::Gen2BinaryNotConfigured)?;
+    resolve_executable(&PathBuf::from(configured), path_env)
+        .map_err(|path| RunnerError::Gen2BinaryNotFound { path })
 }
 
 /// Resolves `configured` to an existing executable file, as the OS would on spawn:
@@ -727,7 +745,7 @@ impl LocalRunner {
         program_binary_url: &str,
         program_info_url: &str,
         program_version: Version,
-        is_crucible: bool,
+        is_gen2: bool,
     ) -> Result<(), ManagerError> {
         // The coordinator binary must be configured.
         let coordinator_binary = self.config.coordinator_binary.clone().ok_or_else(|| {
@@ -834,11 +852,11 @@ impl LocalRunner {
         );
 
         // Retrieve the pipeline binary once; every host process runs the same
-        // executable. A crucible pipeline compiled no binary: every host launches
-        // the crucible engine instead, reading the same config. The launch decision
-        // is the explicit crucible configuration, not the presence of a binary.
-        let executable = if is_crucible {
-            resolve_crucible_binary()?
+        // executable. A Gen-2 pipeline compiled no binary: every host launches
+        // the Gen-2 engine instead, reading the same config. The launch decision
+        // is the explicit Gen-2 configuration, not the presence of a binary.
+        let executable = if is_gen2 {
+            resolve_gen2_binary()?
         } else {
             let binary_file_path = self
                 .config
@@ -1061,7 +1079,7 @@ impl PipelineExecutor for LocalRunner {
         program_info_url: &str,
         program_version: Version,
         _runtime_config: &serde_json::Value,
-        is_crucible: bool,
+        is_gen2: bool,
     ) -> Result<(), ManagerError> {
         if let Err(e) = validate_pipeline_env(&deployment_config.global.env) {
             return Err(RunnerError::RunnerProvisionError { error: e }.into());
@@ -1080,7 +1098,7 @@ impl PipelineExecutor for LocalRunner {
                     program_binary_url,
                     program_info_url,
                     program_version,
-                    is_crucible,
+                    is_gen2,
                 )
                 .await;
         }
@@ -1183,12 +1201,12 @@ impl PipelineExecutor for LocalRunner {
         // checkpoint).
         let _ = remove_file(&self.config.port_file_path(self.pipeline_id)).await;
 
-        // Retrieve and store executable in pipeline working directory. A crucible
-        // pipeline compiled no binary: launch the crucible engine instead, which
+        // Retrieve and store executable in pipeline working directory. A Gen-2
+        // pipeline compiled no binary: launch the Gen-2 engine instead, which
         // reads the same config.yaml (carrying the circuit IR). The launch decision
-        // is the explicit crucible configuration, not the presence of a binary.
-        let executable = if is_crucible {
-            resolve_crucible_binary()?
+        // is the explicit Gen-2 configuration, not the presence of a binary.
+        let executable = if is_gen2 {
+            resolve_gen2_binary()?
         } else {
             let binary_file_path = self
                 .config
@@ -1551,11 +1569,12 @@ mod multihost_tests {
 }
 
 #[cfg(test)]
-mod crucible_binary_tests {
-    use super::resolve_executable;
+mod gen2_binary_tests {
+    use super::{gen2_binary_from, resolve_executable};
+    use crate::runner::error::RunnerError;
     use std::path::Path;
 
-    /// A crucible executable given as a path must exist; a missing path errors.
+    /// A Gen-2 engine executable given as a path must exist; a missing path errors.
     #[test]
     fn resolves_existing_path_and_rejects_missing() {
         let tmp = tempfile::NamedTempFile::new().unwrap();
@@ -1563,22 +1582,53 @@ mod crucible_binary_tests {
             resolve_executable(tmp.path(), None).unwrap(),
             tmp.path().to_path_buf()
         );
-        assert!(resolve_executable(Path::new("/nonexistent/crucible-xyz"), None).is_err());
+        assert!(resolve_executable(Path::new("/nonexistent/gen2-engine-xyz"), None).is_err());
     }
 
     /// A bare name is resolved against PATH and errors when it is absent.
     #[test]
     fn resolves_bare_name_on_path() {
         let dir = tempfile::tempdir().unwrap();
-        let exe = dir.path().join("crucible");
+        let exe = dir.path().join("gen2-engine");
         std::fs::write(&exe, b"").unwrap();
         let path_env = std::env::join_paths([dir.path()]).unwrap();
         assert_eq!(
-            resolve_executable(Path::new("crucible"), Some(path_env)).unwrap(),
+            resolve_executable(Path::new("gen2-engine"), Some(path_env)).unwrap(),
             exe
         );
-        assert!(resolve_executable(Path::new("crucible"), None).is_err());
+        assert!(resolve_executable(Path::new("gen2-engine"), None).is_err());
         let empty = std::env::join_paths(std::iter::empty::<&Path>()).unwrap();
-        assert!(resolve_executable(Path::new("crucible"), Some(empty)).is_err());
+        assert!(resolve_executable(Path::new("gen2-engine"), Some(empty)).is_err());
+    }
+
+    /// `GEN2_BINARY` is required: unset and empty both report the configuration error
+    /// rather than falling back to a guessed name.
+    #[test]
+    fn an_unset_or_empty_variable_is_a_configuration_error() {
+        for configured in [None, Some(std::ffi::OsString::new())] {
+            assert!(
+                matches!(
+                    gen2_binary_from(configured.clone(), None),
+                    Err(RunnerError::Gen2BinaryNotConfigured)
+                ),
+                "{configured:?} must not resolve to any executable"
+            );
+        }
+    }
+
+    /// A configured value resolves through the same path/PATH rules; one that names
+    /// nothing reports the value that failed.
+    #[test]
+    fn a_configured_variable_resolves_or_reports_its_value() {
+        let tmp = tempfile::NamedTempFile::new().unwrap();
+        assert_eq!(
+            gen2_binary_from(Some(tmp.path().as_os_str().to_owned()), None).unwrap(),
+            tmp.path().to_path_buf()
+        );
+        let missing = "/nonexistent/gen2-engine-xyz";
+        assert!(matches!(
+            gen2_binary_from(Some(missing.into()), None),
+            Err(RunnerError::Gen2BinaryNotFound { path }) if path == missing
+        ));
     }
 }

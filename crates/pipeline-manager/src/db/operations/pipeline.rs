@@ -872,7 +872,7 @@ pub(crate) async fn set_program_status(
         ProgramStatus::Success => {
             // Two shapes reach Success. A Rust pipeline arrives from CompilingRust,
             // where its program info and SQL log are already stored, and delivers a
-            // binary plus a Rust log. A crucible pipeline arrives straight from
+            // binary plus a Rust log. A Gen-2 pipeline arrives straight from
             // CompilingSql, so it carries its program info and SQL log here and
             // delivers no binary and no Rust log. The Rust log is therefore present
             // exactly when a binary was built, and a half-delivered binary is a bug.

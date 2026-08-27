@@ -13903,7 +13903,7 @@
           },
           "runtime_version": {
             "type": "string",
-            "description": "Override runtime version of the pipeline being executed.\n\nWarning: This setting is experimental and may change in the future.\nRequires the platform to run with the unstable feature `runtime_version`\nenabled. Should only be used for testing purposes, and requires\nnetwork access.\n\nA runtime version can be specified in the form of a version\nor SHA taken from the `feldera/feldera` repository main branch.\n\nExamples: `v0.96.0` or `f4dcac0989ca0fda7d2eb93602a49d007cb3b0ae`\n\nThe value `crucible` names an engine rather than a runtime commit: the SQL\ncompiler captures the circuit IR and the runner launches the crucible\nengine, so no pipeline binary is compiled.\n\nA platform of version `0.x.y` may be capable of running future and past\nruntimes with versions `>=0.x.y` and `<=0.x.y` until breaking API changes happen,\nthe exact bounds for each platform version are unspecified until we reach a\nstable version. Compatibility is only guaranteed if platform and runtime version\nare exact matches.\n\nNote that any enterprise features are currently considered to be part of\nthe platform.\n\nIf not set (null), the runtime version will be the same as the platform version.",
+            "description": "Override runtime version of the pipeline being executed.\n\nWarning: This setting is experimental and may change in the future.\nRequires the platform to run with the unstable feature `runtime_version`\nenabled. Should only be used for testing purposes, and requires\nnetwork access.\n\nA runtime version can be specified in the form of a version\nor SHA taken from the `feldera/feldera` repository main branch.\n\nExamples: `v0.96.0` or `f4dcac0989ca0fda7d2eb93602a49d007cb3b0ae`\n\nThe value `gen2` names an engine rather than a runtime commit: the SQL\ncompiler captures the circuit IR and the runner launches the Gen-2\nengine, so no pipeline binary is compiled.\n\nA platform of version `0.x.y` may be capable of running future and past\nruntimes with versions `>=0.x.y` and `<=0.x.y` until breaking API changes happen,\nthe exact bounds for each platform version are unspecified until we reach a\nstable version. Compatibility is only guaranteed if platform and runtime version\nare exact matches.\n\nNote that any enterprise features are currently considered to be part of\nthe platform.\n\nIf not set (null), the runtime version will be the same as the platform version.",
             "default": null,
             "nullable": true
           },
@@ -14001,7 +14001,7 @@
         ],
         "properties": {
           "circuit_ir": {
-            "description": "JIT circuit IR (`allOperators`) captured by the SQL compiler for crucible\nprograms; the crucible engine reads it to build the circuit.\n\nNot returned by the API. It runs to several MiB and reaches the pipeline\nthrough the program info artifact, so a pipeline read never carries it.",
+            "description": "JIT circuit IR (`allOperators`) captured by the SQL compiler for Gen-2\nprograms; the Gen-2 engine reads it to build the circuit.\n\nNot returned by the API. It runs to several MiB and reaches the pipeline\nthrough the program info artifact, so a pipeline read never carries it.",
             "nullable": true
           },
           "dataflow": {
@@ -14048,7 +14048,7 @@
         ],
         "properties": {
           "circuit_ir": {
-            "description": "The circuit IR (the compiler's JIT `allOperators` form) that the crucible\nengine lowers onto the runtime to build the circuit. `None` for\nRust-compiled pipelines, whose circuit is statically linked into the binary.",
+            "description": "The circuit IR (the compiler's JIT `allOperators` form) that the Gen-2\nengine lowers onto the runtime to build the circuit. `None` for\nRust-compiled pipelines, whose circuit is statically linked into the binary.",
             "nullable": true
           },
           "mir": {

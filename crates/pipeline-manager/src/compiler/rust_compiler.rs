@@ -1041,12 +1041,12 @@ pub async fn perform_rust_compilation(
     })?;
     let runtime_selector = program_config.runtime_version();
     assert!(has_unstable_feature("runtime_version") || runtime_selector.is_platform());
-    // Crucible needs no Rust compilation: the SQL compiler completes it, so it never
+    // The Gen-2 engine needs no Rust compilation: the SQL compiler completes it, so it never
     // enters the Rust compilation queue. Reaching here means the claim predicate is
-    // wrong; fail loudly rather than build a binary crucible does not use.
-    if runtime_selector.is_crucible() {
+    // wrong; fail loudly rather than build a binary the Gen-2 engine does not use.
+    if runtime_selector.is_gen2() {
         return Err(RustCompilationError::SystemError(
-            "crucible programs are completed by the SQL compiler and must not reach Rust compilation"
+            "Gen-2 programs are completed by the SQL compiler and must not reach Rust compilation"
                 .to_string(),
         ));
     }
@@ -1343,8 +1343,8 @@ pub async fn resolve_runtime_sha(
     match runtime_version {
         RuntimeSelector::Sha(sha) => Ok(sha.clone()),
         RuntimeSelector::Platform(platform_sha) => Ok(platform_sha.clone()),
-        RuntimeSelector::Crucible => unreachable!(
-            "crucible compiles against the platform sources; no runtime SHA is resolved"
+        RuntimeSelector::Gen2 => unreachable!(
+            "the Gen-2 engine compiles against the platform sources; no runtime SHA is resolved"
         ),
         RuntimeSelector::Version(version) => {
             let repo_location = runtime_version.runtime_sources(config);
@@ -1559,7 +1559,7 @@ async fn prepare_workspace(
     // ---------------------
     // Make sure the runtime version is checked out.
     let runtime_sources = requested_runtime_version.runtime_sources(config);
-    if !requested_runtime_version.is_platform() && !requested_runtime_version.is_crucible() {
+    if !requested_runtime_version.is_platform() && !requested_runtime_version.is_gen2() {
         let repo_location = PathBuf::from(&runtime_sources);
         checkout_runtime_version(
             &repo_location,
@@ -1578,7 +1578,7 @@ async fn prepare_workspace(
     // ---------------------
     // Contains all the (indirect and direct) dependencies of the crates besides UDF.
     // The original is copied over each time such that the starting point is the same.
-    if requested_runtime_version.is_platform() || requested_runtime_version.is_crucible() {
+    if requested_runtime_version.is_platform() || requested_runtime_version.is_gen2() {
         let cargo_lock_source_path = Path::new(&config.compilation_cargo_lock_path);
         let cargo_lock_target_path = workspace_dir.join("Cargo.lock");
         copy_file(cargo_lock_source_path, &cargo_lock_target_path).await?;

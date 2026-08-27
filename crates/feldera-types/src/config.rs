@@ -64,7 +64,7 @@ pub struct ProgramIr {
     pub mir: HashMap<MirNodeId, MirNode>,
     /// Program schema.
     pub program_schema: serde_json::Value,
-    /// The circuit IR (the compiler's JIT `allOperators` form) that the crucible
+    /// The circuit IR (the compiler's JIT `allOperators` form) that the Gen-2
     /// engine lowers onto the runtime to build the circuit. `None` for
     /// Rust-compiled pipelines, whose circuit is statically linked into the binary.
     #[serde(default)]

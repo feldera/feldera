@@ -100,12 +100,12 @@ impl<T: PipelineExecutor> Drop for PipelineAutomaton<T> {
     }
 }
 
-/// Whether the program configuration selects the crucible engine, which runs the
+/// Whether the program configuration selects the Gen-2 engine, which runs the
 /// pipeline directly and so compiles no pipeline binary (only program info is
-/// delivered). A configuration that fails to parse is treated as not crucible.
-fn program_config_is_crucible(program_config: &serde_json::Value) -> bool {
+/// delivered). A configuration that fails to parse is treated as not Gen-2.
+fn program_config_is_gen2(program_config: &serde_json::Value) -> bool {
     validate_program_config(program_config, false)
-        .map(|config| config.runtime_version().is_crucible())
+        .map(|config| config.runtime_version().is_gen2())
         .unwrap_or(false)
 }
 
@@ -966,12 +966,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             }
         };
 
-        // Crucible does not support multihost pipelines yet; refuse before provisioning
+        // The Gen-2 engine does not support multihost pipelines yet; refuse before provisioning
         // rather than attempting a launch that cannot succeed. The multihost start path
         // stays intact for other runtimes.
-        if runtime_config.hosts > 1 && program_config_is_crucible(&pipeline.program_config) {
+        if runtime_config.hosts > 1 && program_config_is_gen2(&pipeline.program_config) {
             return Action::RemainStoppedUpdateError {
-                error: RunnerError::AutomatonCrucibleMultihostUnsupported {
+                error: RunnerError::AutomatonGen2MultihostUnsupported {
                     hosts: runtime_config.hosts,
                 }
                 .into(),
@@ -1045,7 +1045,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     ) -> Result<bool, DBError> {
         let program_version = pipeline.program_version;
 
-        let engine_is_crucible = program_config_is_crucible(&pipeline.program_config);
+        let engine_is_gen2 = program_config_is_gen2(&pipeline.program_config);
 
         // The program info integrity checksum names the delivered program info
         // artifact and is checked for both engines.
@@ -1054,13 +1054,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             .as_deref()
             .unwrap_or("none");
 
-        // A normal pipeline verifies the binary and the program info. A crucible
+        // A normal pipeline verifies the binary and the program info. A Gen-2
         // pipeline compiles no binary, so it verifies only the program info (named
         // by its own integrity checksum) and passes "none" for the binary.
-        let (source_checksum, binary_integrity_checksum): (&str, &str) = if engine_is_crucible {
+        let (source_checksum, binary_integrity_checksum): (&str, &str) = if engine_is_gen2 {
             if program_info_integrity_checksum == "none" {
                 info!(
-                    "Cannot verify artifacts for crucible pipeline {}: program info integrity checksum is missing. This may indicate that the program has not been compiled yet, will retry later.",
+                    "Cannot verify artifacts for Gen-2 pipeline {}: program info integrity checksum is missing. This may indicate that the program has not been compiled yet, will retry later.",
                     self.pipeline_id
                 );
                 return Ok(false);
@@ -1309,12 +1309,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             };
         };
 
-        // Crucible compiles no binary: pass an empty binary URL (the runner then
-        // launches the crucible engine) and name the program info artifact by its
-        // own integrity checksum. A normal pipeline builds a binary URL and names
-        // the program info by the binary source checksum.
-        let engine_is_crucible = program_config_is_crucible(&pipeline.program_config);
-        let (program_binary_url, program_info_source_checksum) = if engine_is_crucible {
+        // A Gen-2 pipeline compiles no binary: pass an empty binary URL (the runner
+        // then launches the engine) and name the program info artifact by its own
+        // integrity checksum. A normal pipeline builds a binary URL and names the
+        // program info by the binary source checksum.
+        let engine_is_gen2 = program_config_is_gen2(&pipeline.program_config);
+        let (program_binary_url, program_info_source_checksum) = if engine_is_gen2 {
             (String::new(), program_info_integrity_checksum.clone())
         } else {
             let Some(source_checksum) = pipeline.program_binary_source_checksum.as_ref() else {
@@ -1403,7 +1403,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 &program_info_url,
                 pipeline.program_version,
                 &pipeline.runtime_config,
-                engine_is_crucible,
+                engine_is_gen2,
             )
             .await
         {
@@ -1985,7 +1985,7 @@ mod test {
             _: &str,
             _: Version,
             _: &serde_json::Value,
-            _is_crucible: bool,
+            _is_gen2: bool,
         ) -> Result<(), ManagerError> {
             Ok(())
         }
@@ -2340,24 +2340,25 @@ mod test {
         )
     }
 
-    /// Crucible does not support multihost pipelines yet: a pipeline with
-    /// `runtime_config.hosts > 1` and the crucible runtime is refused at the
-    /// provisioning gate, staying Stopped with a clear error rather than launching.
+    /// The Gen-2 engine does not support multihost pipelines yet: a Gen-2 pipeline
+    /// with `runtime_config.hosts > 1` is refused at the provisioning gate, staying
+    /// Stopped with a clear error rather than launching.
     #[tokio::test]
     #[rustfmt::skip]
-    async fn crucible_multihost_refused_before_provisioning() {
+    async fn gen2_multihost_refused_before_provisioning() {
         // Without the gate the runtime selector falls back to the platform runtime,
-        // the pipeline is not a crucible pipeline, and there is nothing to refuse.
+        // the pipeline is not a Gen-2 pipeline, and there is nothing to refuse.
         crate::enable_test_unstable_features();
         assert!(crate::has_unstable_feature("runtime_version"));
 
         let (mut server, _temp, mut test) = setup_complete_with(
             json!({ "hosts": 2 }),
-            json!({ "runtime_version": "crucible", "profile": "unoptimized", "cache": false }),
+            json!({ "runtime_version": "gen2", "profile": "unoptimized", "cache": false }),
         ).await;
 
-        // Artifacts present so the flow reaches the provisioning gate. Crucible names
-        // the program info artifact by its own checksum and passes "none" for the binary.
+        // Artifacts present so the flow reaches the provisioning gate. The Gen-2 engine
+        // names the program info artifact by its own checksum and passes "none" for the
+        // binary.
         let artifacts_path = format!(
             "/artifacts/{}/1/{}/none/{}",
             test.automaton.pipeline_id,
@@ -2370,11 +2371,11 @@ mod test {
         assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
         test.tick().await;
 
-        // Refused: stays Stopped with the crucible-multihost error instead of provisioning.
+        // Refused: stays Stopped with the Gen-2 multihost error instead of provisioning.
         assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
         let error = test.deployment_error().await.expect("a deployment error is set");
         assert!(
-            error.message.contains("crucible runtime does not support multihost pipelines"),
+            error.message.contains("Gen-2 engine does not support multihost pipelines"),
             "unexpected error: {}", error.message
         );
     }
