@@ -6739,6 +6739,7 @@ impl ModelHelpers for Mutex<DbModel> {
             pipeline.program_info = None;
             pipeline.program_binary_source_checksum = None;
             pipeline.program_binary_integrity_checksum = None;
+            pipeline.program_info_integrity_checksum = None;
             pipeline.platform_version = platform_version.to_string();
         }
 
@@ -8999,6 +9000,7 @@ impl Storage for Mutex<DbModel> {
             .map(|pipeline| PipelineProgramArtifacts {
                 pipeline_id: pipeline.id,
                 program_version: pipeline.program_version,
+                program_status: pipeline.program_status,
                 program_binary_source_checksum: pipeline.program_binary_source_checksum.clone(),
                 program_binary_integrity_checksum: pipeline
                     .program_binary_integrity_checksum

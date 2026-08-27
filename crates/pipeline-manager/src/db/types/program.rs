@@ -358,6 +358,10 @@ pub fn validate_program_status_transition(
 pub struct PipelineProgramArtifacts {
     pub pipeline_id: PipelineId,
     pub program_version: Version,
+    /// Compilation status. The checksums below describe the artifacts on disk only once this
+    /// is [`ProgramStatus::Success`]; while a program is still compiling they belong to no
+    /// artifact yet, or to a previous version, so cleanup must not name a file from them.
+    pub program_status: ProgramStatus,
     /// Checksum of the sources the binary was built from. `None` while `CompilingRust`, and
     /// for a Gen-2 program, which builds no binary.
     pub program_binary_source_checksum: Option<String>,

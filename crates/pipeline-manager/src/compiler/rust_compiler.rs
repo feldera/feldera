@@ -12,7 +12,8 @@ use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::program::{
-    CompilationProfile, PipelineProgramArtifacts, RuntimeSelector, RustCompilationInfo,
+    CompilationProfile, PipelineProgramArtifacts, ProgramStatus, RuntimeSelector,
+    RustCompilationInfo,
 };
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{validate_program_config, validate_program_info};
@@ -1953,9 +1954,10 @@ fn decide_cleanup(
 /// removed, or ignored by the binaries cleanup.
 /// The binary filenames cleanup must keep, one per program.
 ///
-/// A program still `CompilingRust` has no checksums yet: the compiler server may be
-/// uploading its binary over HTTP right now, so it is matched on a checksum-less prefix
-/// rather than removed.
+/// A program that is not yet `Success` is matched on a checksum-less prefix rather than
+/// removed: its artifacts may be mid-delivery, and the checksums in its row describe no
+/// artifact yet. Naming a file from an unsettled row would protect the wrong name and
+/// collect the right one, so the exact name is used only once the program has settled.
 fn valid_pipeline_binary_filenames(programs: &[PipelineProgramArtifacts]) -> Vec<String> {
     programs
         .iter()
@@ -1963,17 +1965,20 @@ fn valid_pipeline_binary_filenames(programs: &[PipelineProgramArtifacts]) -> Vec
             let pipeline_id = &program.pipeline_id;
             let program_version = program.program_version;
             match (
+                program.program_status,
                 &program.program_binary_source_checksum,
                 &program.program_binary_integrity_checksum,
             ) {
-                (Some(source_checksum), Some(binary_integrity_checksum)) => {
-                    pipeline_binary_filename(
-                        pipeline_id,
-                        program_version,
-                        source_checksum,
-                        binary_integrity_checksum,
-                    )
-                }
+                (
+                    ProgramStatus::Success,
+                    Some(source_checksum),
+                    Some(binary_integrity_checksum),
+                ) => pipeline_binary_filename(
+                    pipeline_id,
+                    program_version,
+                    source_checksum,
+                    binary_integrity_checksum,
+                ),
                 _ => format!("pipeline_{pipeline_id}_v{program_version}_"),
             }
         })
@@ -1988,6 +1993,7 @@ fn valid_program_info_filenames(programs: &[PipelineProgramArtifacts]) -> Vec<St
             let pipeline_id = &program.pipeline_id;
             let program_version = program.program_version;
             match (
+                program.program_status,
                 program.is_gen2,
                 &program.program_binary_source_checksum,
                 &program.program_info_integrity_checksum,
@@ -1995,22 +2001,28 @@ fn valid_program_info_filenames(programs: &[PipelineProgramArtifacts]) -> Vec<St
                 // A Gen-2 program builds no binary, so it has no binary source checksum;
                 // its artifact is named by the program-info checksum on both halves (see
                 // `deliver_gen2_program_info`). Naming it exactly is what keeps a running
-                // Gen-2 pipeline's only artifact off the checksum-less fallback below,
-                // which is there for the transient `CompilingRust` upload window.
-                (true, _, Some(program_info_integrity_checksum)) => program_info_filename(
-                    pipeline_id,
-                    program_version,
-                    program_info_integrity_checksum,
-                    program_info_integrity_checksum,
-                ),
-                (false, Some(source_checksum), Some(program_info_integrity_checksum)) => {
+                // Gen-2 pipeline's only artifact off the checksum-less fallback below.
+                (ProgramStatus::Success, true, _, Some(program_info_integrity_checksum)) => {
                     program_info_filename(
                         pipeline_id,
                         program_version,
-                        source_checksum,
+                        program_info_integrity_checksum,
                         program_info_integrity_checksum,
                     )
                 }
+                (
+                    ProgramStatus::Success,
+                    false,
+                    Some(source_checksum),
+                    Some(program_info_integrity_checksum),
+                ) => program_info_filename(
+                    pipeline_id,
+                    program_version,
+                    source_checksum,
+                    program_info_integrity_checksum,
+                ),
+                // Still compiling: the artifact may be mid-delivery and the row names no
+                // artifact yet, so keep everything for this version.
                 _ => format!("program_info_{pipeline_id}_v{program_version}_"),
             }
         })
@@ -2512,7 +2524,7 @@ mod test {
     use crate::compiler::rust_compiler::{
         STALE_TEMP_UPLOAD_MAX_AGE, calculate_source_checksum, decide_cleanup,
         decide_pipeline_binary_cleanup, is_permanent_upload_rejection, program_info_filename,
-        sccache_message, valid_program_info_filenames,
+        sccache_message, valid_pipeline_binary_filenames, valid_program_info_filenames,
     };
     use crate::compiler::test::{CompilerTest, list_content_as_sorted_names};
     use crate::compiler::util::{
@@ -2933,6 +2945,7 @@ mod test {
         let gen2 = PipelineProgramArtifacts {
             pipeline_id,
             program_version: Version(3),
+            program_status: ProgramStatus::Success,
             program_binary_source_checksum: None,
             program_binary_integrity_checksum: None,
             program_info_integrity_checksum: Some(checksum.to_string()),
@@ -2965,6 +2978,7 @@ mod test {
         // prefix, which is what that fallback is for.
         let compiling = PipelineProgramArtifacts {
             is_gen2: false,
+            program_status: ProgramStatus::CompilingRust,
             program_info_integrity_checksum: None,
             ..gen2.clone()
         };
@@ -2988,6 +3002,7 @@ mod test {
         let compiling_sql = PipelineProgramArtifacts {
             pipeline_id,
             program_version: Version(3),
+            program_status: ProgramStatus::CompilingSql,
             program_binary_source_checksum: None,
             program_binary_integrity_checksum: None,
             // Not recorded until the row moves to Success.
@@ -3015,6 +3030,44 @@ mod test {
             decide_pipeline_binary_cleanup(&other_version, None, &[], &valid),
             CleanupDecision::Remove
         );
+    }
+
+    /// A checksum on a row that has not settled names no artifact, so cleanup must not name a
+    /// file from it. A program edit bumps the version and returns the program to `Pending`;
+    /// were a checksum from the previous version left behind, using it here would compute a
+    /// filename that does not exist, protect that, and collect the artifact actually being
+    /// delivered for the new version. Status, not the presence of a checksum, decides.
+    #[test]
+    fn a_checksum_on_an_unsettled_row_names_no_file() {
+        let pipeline_id = PipelineId(uuid::Uuid::nil());
+        let stale = "0ldc0de";
+        for status in [
+            ProgramStatus::Pending,
+            ProgramStatus::CompilingSql,
+            ProgramStatus::SqlCompiled,
+            ProgramStatus::CompilingRust,
+        ] {
+            let unsettled = PipelineProgramArtifacts {
+                pipeline_id,
+                program_version: Version(2),
+                program_status: status,
+                program_binary_source_checksum: Some(stale.to_string()),
+                program_binary_integrity_checksum: Some(stale.to_string()),
+                program_info_integrity_checksum: Some(stale.to_string()),
+                is_gen2: true,
+            };
+            let one = std::slice::from_ref(&unsettled);
+            assert_eq!(
+                valid_program_info_filenames(one),
+                vec![format!("program_info_{pipeline_id}_v2_")],
+                "{status:?}: the whole version is kept, rather than one name off a stale checksum"
+            );
+            assert_eq!(
+                valid_pipeline_binary_filenames(one),
+                vec![format!("pipeline_{pipeline_id}_v2_")],
+                "{status:?}: same for the binary"
+            );
+        }
     }
 
     /// Stale `.tmp-` uploads are removed, fresh or unstat-able ones are kept,
