@@ -64,6 +64,41 @@ describe('processProfileFiles without a circuit profile', () => {
   })
 })
 
+/** Build a ZipItem whose `read()` returns `bytes`. */
+function binaryFile(filename: string, bytes: Uint8Array): ZipItem {
+  return { filename, comment: '', read: () => bytes }
+}
+
+async function gzip(text: string): Promise<Uint8Array> {
+  const compressed = new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))
+  return new Uint8Array(await new Response(compressed).arrayBuffer())
+}
+
+describe('processProfileFiles with a gzip-compressed circuit profile', () => {
+  const profile = { metrics: [], worker_profiles: [], graph: { nodes: [], edges: [] } }
+
+  it('recognises circuit_profile.json.gz as a collection file', async () => {
+    const collections = selectProfiles([
+      binaryFile(`${TIMESTAMP}/circuit_profile.json.gz`, await gzip('{}'))
+    ])
+    expect(collections).toHaveLength(1)
+  })
+
+  it('inflates circuit_profile.json.gz before parsing it', async () => {
+    const result = await processProfileFiles([
+      binaryFile(`${TIMESTAMP}/circuit_profile.json.gz`, await gzip(JSON.stringify(profile)))
+    ])
+    expect(result.profile).toEqual(profile)
+  })
+
+  it('still parses a plain circuit_profile.json', async () => {
+    const result = await processProfileFiles([
+      file(`${TIMESTAMP}/circuit_profile.json`, JSON.stringify(profile))
+    ])
+    expect(result.profile).toEqual(profile)
+  })
+})
+
 describe('processProfileFiles runtimeConfig', () => {
   it('extracts runtime_config from pipeline_config.json', async () => {
     const runtime_config = { workers: 8, storage: { backend: { name: 'default' } } }

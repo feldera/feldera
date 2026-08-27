@@ -96,6 +96,7 @@ impl SupportBundleZip {
         let mut zip = ZipWriter::new(std::io::Cursor::new(&mut zip_buffer));
         let options = zip::write::SimpleFileOptions::default()
             .compression_method(CompressionMethod::Deflated);
+        let options_for = |method: CompressionMethod| options.compression_method(method);
 
         let combined_status = CombinedStatus::new(
             pipeline.deployment_resources_status,
@@ -123,13 +124,16 @@ impl SupportBundleZip {
         for data in bundles.iter() {
             let directory = unique_directory(&timestamp_dir(&data.time), &mut used_dirs);
             let dir_prefix = directory.clone();
-            let mut add_to_zip =
-                |filename: &str, content: &[u8]| -> Result<(), Box<dyn std::error::Error>> {
-                    let path = format!("{}/{}", dir_prefix, filename);
-                    zip.start_file(&path, options)?;
-                    zip.write_all(content)?;
-                    Ok(())
-                };
+            // Already-compressed items (gzip, zip) are stored verbatim
+            let mut add_to_zip = |filename: &str,
+                                  content: &[u8],
+                                  method: CompressionMethod|
+             -> Result<(), Box<dyn std::error::Error>> {
+                let path = format!("{}/{}", dir_prefix, filename);
+                zip.start_file(&path, options_for(method))?;
+                zip.write_all(content)?;
+                Ok(())
+            };
 
             let summary = data
                 .push_to_zip(&mut add_to_zip, params)
@@ -436,6 +440,16 @@ mod tests {
                     .iter()
                     .any(|n| n == &format!("{dir}/circuit_profile.zip")),
                 "missing circuit_profile.zip in {dir}"
+            );
+            // The JSON profile is stored gzip-compressed, exactly as collected.
+            let json_gz = archive
+                .by_name(&format!("{dir}/circuit_profile.json.gz"))
+                .expect("missing circuit_profile.json.gz");
+            assert_eq!(json_gz.compression(), CompressionMethod::Stored);
+            assert_eq!(
+                json_gz.size(),
+                3,
+                "stored bytes must be the collected bytes"
             );
             assert!(
                 names

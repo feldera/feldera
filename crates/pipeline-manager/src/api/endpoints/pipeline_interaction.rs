@@ -1717,19 +1717,20 @@ pub(crate) async fn get_pipeline_heap_profile(
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
+    body: web::Payload,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
+    // Streamed, like the circuit profiles
     state
         .runner
-        .forward_http_request_to_pipeline_by_name(
+        .forward_streaming_http_request_to_pipeline_by_name(
             client.as_ref(),
             *tenant_id,
             &pipeline_name,
-            Method::GET,
             "heap_profile",
-            request.query_string(),
-            None,
-            None,
+            request,
+            body,
+            Some(Duration::from_secs(120)),
         )
         .await
 }

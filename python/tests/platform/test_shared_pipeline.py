@@ -802,7 +802,18 @@ class TestPipeline(SharedTestPipeline):
             with zipfile.ZipFile(io.BytesIO(support_bundle_bytes), "r") as zip_file:
                 file_list = zip_file.namelist()
                 # Files now live inside per-collection timestamp directories.
-                assert any(item.endswith("/circuit_profile.json") for item in file_list)
+                # The JSON profile is stored gzip-compressed, as the pipeline sent it.
+                json_profiles = [
+                    item
+                    for item in file_list
+                    if item.endswith("/circuit_profile.json.gz")
+                ]
+                assert json_profiles, file_list
+                with zip_file.open(json_profiles[0]) as member:
+                    with gzip.GzipFile(fileobj=member) as gz:
+                        profile = json.load(gz)
+                assert "worker_profiles" in profile
+                assert any(item.endswith("/circuit_profile.zip") for item in file_list)
                 assert "metadata.txt" in file_list
                 assert "metadata.json" in file_list
         except zipfile.BadZipFile:
