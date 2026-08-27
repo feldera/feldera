@@ -2120,6 +2120,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             let response = client
                 .get_pipeline()
                 .pipeline_name(name)
+                .selector(PipelineFieldSelector::Status)
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
@@ -3532,6 +3533,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
             let response = client
                 .get_pipeline()
                 .pipeline_name(name)
+                .selector(PipelineFieldSelector::Status)
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
