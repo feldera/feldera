@@ -187,6 +187,8 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         public boolean emitSvg = false;
         @Parameter(names="--jit", description = "Emit a JSON representation suitable for an interpreter")
         public boolean interpreterJson = false;
+        @Parameter(names="--gen2", description = "Compile for the Gen-2 engine: emit the circuit IR (as --jit does) and drop the primary-key columns from the value of an indexed source")
+        public boolean gen2 = false;
         @Nullable @Parameter(names = "--plan", description = "Emit the Calcite plan of the program in the specified JSON file")
         public String emitPlan = null;
         @Nullable @Parameter(names = "--dataflow", description = "Emit the Dataflow graph of the program in the specified JSON file")
@@ -251,6 +253,13 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
             return !this.crates.isEmpty();
         }
 
+        /** Whether to emit the circuit IR instead of Rust.  {@code --jit} asks for the IR
+         * alone; {@code --gen2} implies it, and additionally changes how the IR is built
+         * (see {@link #gen2}). */
+        public boolean emitCircuitIr() {
+            return this.interpreterJson || this.gen2;
+        }
+
         @Override
         public boolean validate(IErrorReporter reporter) {
             int count = 0;
@@ -278,6 +287,7 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                     ",\n\temitJpeg=" + this.emitJpeg +
                     ",\n\temitSvg=" + this.emitSvg +
                     ",\n\tinterpreterJson=" + this.interpreterJson +
+                    ",\n\tgen2=" + this.gen2 +
                     ",\n\temitJsonErrors=" + this.emitJsonErrors +
                     ",\n\temitJsonSchema=" + Utilities.singleQuote(this.emitJsonSchema) +
                     ",\n\temitPlan=" + this.emitPlan +

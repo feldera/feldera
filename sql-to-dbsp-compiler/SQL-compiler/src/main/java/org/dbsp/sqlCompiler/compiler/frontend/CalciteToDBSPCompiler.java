@@ -3469,7 +3469,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         // Under --jit the index value drops the index-key columns, so key ++ value holds each
         // column once (matching the deduped source); otherwise the value is the whole row.
-        boolean dedupKeys = this.compiler.options.ioOptions.interpreterJson;
+        boolean dedupKeys = this.compiler.options.ioOptions.gen2;
         List<Integer> valueColumnIndexes = new ArrayList<>();
         List<ViewColumnMetadata> valueColumns = new ArrayList<>();
         if (dedupKeys) {
