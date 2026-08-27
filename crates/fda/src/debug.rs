@@ -374,6 +374,7 @@ async fn unbundle_support_bundle(
                 let res = client
                     .get_pipeline()
                     .pipeline_name(pipeline_name.clone())
+                    .selector(PipelineFieldSelector::Status)
                     .send()
                     .await;
                 if res.is_ok() {

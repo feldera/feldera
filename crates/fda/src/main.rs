@@ -1156,6 +1156,7 @@ async fn wait_for_status_one_of(
         let pc = client
             .get_pipeline()
             .pipeline_name(name.clone())
+            .selector(PipelineFieldSelector::Status)
             .send()
             .await
             .map_err(handle_errors_fatal(
@@ -1210,6 +1211,7 @@ async fn wait_for_storage_status(
         let pc = client
             .get_pipeline()
             .pipeline_name(name.clone())
+            .selector(PipelineFieldSelector::Status)
             .send()
             .await
             .map_err(handle_errors_fatal(
@@ -1313,6 +1315,7 @@ async fn get_pipeline_tags(client: &Client, name: &str) -> Vec<String> {
     client
         .get_pipeline()
         .pipeline_name(name)
+        .selector(PipelineFieldSelector::Status)
         .send()
         .await
         .map_err(handle_errors_fatal(
@@ -3423,6 +3426,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
             let response = client
                 .get_pipeline()
                 .pipeline_name(name)
+                .selector(PipelineFieldSelector::Status)
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
