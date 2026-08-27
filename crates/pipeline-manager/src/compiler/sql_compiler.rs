@@ -157,7 +157,7 @@ pub async fn sql_compiler_task(
 /// 4. Performs SQL compilation on `program_code`, configured with `program_config`
 /// 5. Upon completion, the compilation status is set to `SqlCompiled` with the `program_info`
 ///    containing the output of the SQL compiler (inputs, outputs, `main.rs`, `stubs.rs`, etc.).
-///    A crucible program needs no Rust compilation, so its program info is delivered here and
+///    A Gen-2 program needs no Rust compilation, so its program info is delivered here and
 ///    it is set to `Success` directly, ready to run without entering the Rust compiler queue.
 ///
 /// Note that this function assumes it runs in isolation, and as such at the beginning resets
@@ -235,15 +235,15 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
                 duration.as_secs_f64()
             );
 
-            // Crucible needs no Rust compilation: deliver its program info (which
+            // The Gen-2 engine needs no Rust compilation: deliver its program info (which
             // carries the circuit IR) and mark the program ready to run, so it never
             // enters the serialized Rust compilation queue. Every other runtime moves
             // to SqlCompiled and waits for the Rust compiler.
-            let is_crucible = validate_program_config(&pipeline.program_config, true)
-                .map(|config| config.runtime_version().is_crucible())
+            let is_gen2 = validate_program_config(&pipeline.program_config, true)
+                .map(|config| config.runtime_version().is_gen2())
                 .unwrap_or(false);
-            if is_crucible {
-                match deliver_crucible_program_info(
+            if is_gen2 {
+                match deliver_gen2_program_info(
                     common_config,
                     config,
                     pipeline.id,
@@ -269,7 +269,7 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
                         error!(
                             pipeline_id = %pipeline.id,
                             pipeline = %pipeline.name,
-                            "Crucible program info delivery failed (program version: {}): {error}",
+                            "Gen-2 program info delivery failed (program version: {}): {error}",
                             pipeline.program_version
                         );
                         db.lock()
@@ -446,9 +446,9 @@ fn determine_sql_compiler_path(
     runtime_selector: &RuntimeSelector,
 ) -> PathBuf {
     match runtime_selector {
-        // Crucible consumes the platform SQL compiler's program info; only the
+        // The Gen-2 engine consumes the platform SQL compiler's program info; only the
         // Rust half of the compilation differs.
-        RuntimeSelector::Platform(_) | RuntimeSelector::Crucible => {
+        RuntimeSelector::Platform(_) | RuntimeSelector::Gen2 => {
             PathBuf::from(&config.sql_compiler_path)
         }
         RuntimeSelector::Sha(sha) => {
@@ -598,11 +598,11 @@ pub(crate) fn ephemeral_compilation_dir(config: &CompilerConfig) -> PathBuf {
         .join("ephemeral")
 }
 
-/// Delivers the crucible program info artifact so the runner can fetch its circuit
-/// IR. Crucible builds no binary, so the artifact is named by its own integrity
+/// Delivers the Gen-2 program info artifact so the runner can fetch its circuit
+/// IR. The Gen-2 engine builds no binary, so the artifact is named by its own integrity
 /// checksum; the runner rebuilds the same name. Returns that checksum. The SQL
-/// compiler completes a crucible program without Rust compilation.
-async fn deliver_crucible_program_info(
+/// compiler completes a Gen-2 program without Rust compilation.
+async fn deliver_gen2_program_info(
     common_config: &CommonConfig,
     config: &CompilerConfig,
     pipeline_id: PipelineId,
@@ -610,13 +610,13 @@ async fn deliver_crucible_program_info(
     program_info_value: &serde_json::Value,
 ) -> Result<String, String> {
     let program_info = validate_program_info(program_info_value)
-        .map_err(|error| format!("crucible program info is not valid: {error}"))?
+        .map_err(|error| format!("Gen-2 program info is not valid: {error}"))?
         .to_pipeline_config_program_info();
     let program_info_str = serde_json::to_string(&program_info)
-        .map_err(|e| format!("failed to serialize crucible program info: {e}"))?;
+        .map_err(|e| format!("failed to serialize Gen-2 program info: {e}"))?;
     let program_info_integrity_checksum = checksum_buffer(program_info_str.as_bytes())
         .await
-        .map_err(|e| format!("failed to checksum crucible program info: {e:?}"))?;
+        .map_err(|e| format!("failed to checksum Gen-2 program info: {e:?}"))?;
 
     // The compiler's HTTP server serves program info artifacts from this directory,
     // so deliver here for the runner's program_info_url to resolve.
@@ -642,7 +642,7 @@ async fn deliver_crucible_program_info(
         &pipeline_binaries_dir,
     )
     .await
-    .map_err(|e| format!("failed to deliver crucible program info: {e:?}"))?;
+    .map_err(|e| format!("failed to deliver Gen-2 program info: {e:?}"))?;
     Ok(program_info_integrity_checksum)
 }
 
@@ -744,9 +744,9 @@ pub(crate) async fn perform_sql_compilation(
     let output_dataflow_file_path = working_dir.join("dataflow.json");
     let output_jit_file_path = working_dir.join("jit.json");
     let output_rust_directory_path = working_dir.join("rust");
-    // Crucible runs the circuit from the JIT IR and skips the Rust half of
+    // The Gen-2 engine runs the circuit from the JIT IR and skips the Rust half of
     // compilation, so the Rust output tree is only prepared for other runtimes.
-    if !runtime_selector.is_crucible() {
+    if !runtime_selector.is_gen2() {
         recreate_dir(&output_rust_directory_path.join("crates"))
             .await
             .map_err(|e| SqlCompilationError::SystemError(e.to_string()))?;
@@ -792,8 +792,8 @@ pub(crate) async fn perform_sql_compilation(
         .arg("-je")
         .arg("--alltables")
         .arg("--ignoreOrder");
-    if runtime_selector.is_crucible() {
-        // Crucible consumes the JIT circuit IR and skips Rust codegen. `--jit`
+    if runtime_selector.is_gen2() {
+        // The Gen-2 engine consumes the JIT circuit IR and skips Rust codegen. `--jit`
         // emits the circuit IR to stdout (it is incompatible with `--crates`),
         // captured into jit.json below.
         command.arg("--jit");
@@ -809,9 +809,9 @@ pub(crate) async fn perform_sql_compilation(
     }
     #[cfg(feature = "feldera-enterprise")]
     command.arg("--enterprise");
-    // Crucible captures the JIT circuit IR that `--jit` writes to stdout into
+    // The Gen-2 engine captures the JIT circuit IR that `--jit` writes to stdout into
     // jit.json; every other runtime sends stdout to stdout.log.
-    let stdout_sink = if runtime_selector.is_crucible() {
+    let stdout_sink = if runtime_selector.is_gen2() {
         create_new_file(&output_jit_file_path).await?
     } else {
         output_stdout_file
@@ -973,8 +973,8 @@ pub(crate) async fn perform_sql_compilation(
 
         // For IR-only compilation (used to compute diffs), skip packaging the
         // generated Rust: only the schema, dataflow, and connectors are needed.
-        let (main_rust, stubs) = if runtime_selector.is_crucible() {
-            // Crucible skips Rust codegen, so there is no generated Rust to package.
+        let (main_rust, stubs) = if runtime_selector.is_gen2() {
+            // The Gen-2 engine skips Rust codegen, so there is no generated Rust to package.
             (String::new(), String::new())
         } else {
             match output {
@@ -989,9 +989,9 @@ pub(crate) async fn perform_sql_compilation(
             }
         };
 
-        // For crucible, read back the JIT circuit IR the compiler emitted via
+        // For Gen-2, read back the JIT circuit IR the compiler emitted via
         // `--jit`.
-        let circuit_ir = if runtime_selector.is_crucible() {
+        let circuit_ir = if runtime_selector.is_gen2() {
             let jit_str = read_file_content(&output_jit_file_path).await?;
             let jit: serde_json::Value = serde_json::from_str(&jit_str).map_err(|e| {
                 SqlCompilationError::SystemError(

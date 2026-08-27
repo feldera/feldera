@@ -477,10 +477,10 @@ fn map_val_to_limited_program_config(val: ProgramConfigPropVal) -> serde_json::V
                 Some(CompilationProfile::Optimized)
             },
             cache: val.3,
-            // Exercise setting and unsetting the crucible runtime across create and
+            // Exercise setting and unsetting the Gen-2 engine across create and
             // update transitions; a third of valid configs select it.
             runtime_version: if val.4.is_multiple_of(3) {
-                Some(RuntimeSelector::Crucible)
+                Some(RuntimeSelector::Gen2)
             } else {
                 None
             },
@@ -491,13 +491,13 @@ fn map_val_to_limited_program_config(val: ProgramConfigPropVal) -> serde_json::V
 }
 
 #[test]
-fn limited_program_config_exercises_crucible() {
-    // Guard against a silent no-op: the generator must actually emit a crucible
+fn limited_program_config_exercises_gen2() {
+    // Guard against a silent no-op: the generator must actually emit a Gen-2
     // runtime. A serialization slip would store null instead, and the harness
-    // would never exercise setting or unsetting crucible.
+    // would never exercise setting or unsetting Gen-2.
     assert_eq!(
         map_val_to_limited_program_config((1, true, false, true, 0))["runtime_version"],
-        json!("crucible")
+        json!("gen2")
     );
     assert!(
         map_val_to_limited_program_config((1, true, false, true, 1))["runtime_version"].is_null()
@@ -7745,7 +7745,7 @@ impl Storage for Mutex<DbModel> {
             error: e,
         })?;
 
-        // Crucible completes at the SQL stage: it carries its SQL log and program info
+        // The Gen-2 engine completes at the SQL stage: it carries its SQL log and program info
         // (CompilingSql stored neither), delivers no binary, and stores no Rust log.
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();

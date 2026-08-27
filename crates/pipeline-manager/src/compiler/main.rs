@@ -98,7 +98,7 @@ async fn check_compilation_artifacts(
         })
     })?;
 
-    // A crucible program compiles no binary; the caller passes "none" for the
+    // A Gen-2 program compiles no binary; the caller passes "none" for the
     // binary integrity checksum to check only the program info artifact.
     let binary_expected = binary_integrity_checksum != "none";
     if binary_expected {
@@ -161,7 +161,7 @@ async fn check_compilation_artifacts(
     // Check artifact existence and return status + headers indicating presence
     let program_info_exists = program_info_file_path.exists();
 
-    // Crucible has no binary, so only the program info must be present.
+    // The Gen-2 engine has no binary, so only the program info must be present.
     let artifacts_present = if binary_expected {
         binary_exists && program_info_exists
     } else {
@@ -1532,19 +1532,19 @@ mod test {
     }
 
     // Test helper functions and constants
-    /// A crucible pipeline delivers no binary, so the artifact check passes "none"
+    /// A Gen-2 pipeline delivers no binary, so the artifact check passes "none"
     /// for the binary integrity checksum. The endpoint must then verify only the
     /// program info: an absent binary is expected, not a missing artifact.
     #[actix_web::test]
-    async fn artifacts_present_for_crucible_without_binary() {
+    async fn artifacts_present_for_gen2_without_binary() {
         use crate::compiler::util::program_info_filename;
 
-        let (_tempdir, config) = create_test_config("crucible_artifacts");
+        let (_tempdir, config) = create_test_config("gen2_artifacts");
         let pipeline_id = PipelineId(Uuid::now_v7());
         let program_version = 1i64;
-        // Crucible names the program info artifact by its own integrity checksum and
+        // The Gen-2 engine names the program info artifact by its own integrity checksum and
         // reuses that value as the source checksum.
-        let checksum = hex::encode(sha256(b"crucible-program-info"));
+        let checksum = hex::encode(sha256(b"gen2-program-info"));
 
         let app = actix_test::init_service(
             App::new()
@@ -1589,7 +1589,7 @@ mod test {
         assert_eq!(
             resp.status(),
             actix_web::http::StatusCode::OK,
-            "crucible artifacts are present with program info delivered and no binary"
+            "Gen-2 artifacts are present with program info delivered and no binary"
         );
     }
 

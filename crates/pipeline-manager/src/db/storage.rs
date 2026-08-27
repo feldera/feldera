@@ -488,7 +488,7 @@ pub(crate) trait Storage {
         program_info_integrity_checksum: &str,
     ) -> Result<(), DBError>;
 
-    /// Transitions program status from `CompilingSql` to `Success` for a crucible
+    /// Transitions program status from `CompilingSql` to `Success` for a Gen-2
     /// program, which the SQL compiler completes without Rust compilation. It carries
     /// the SQL log and program info (neither is stored yet at `CompilingSql`), delivers
     /// no pipeline binary (both binary checksums stay cleared), and stores no Rust log.

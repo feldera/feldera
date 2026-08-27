@@ -297,7 +297,7 @@ pub fn validate_program_status_transition(
             | (ProgramStatus::Pending, ProgramStatus::SystemError)
             | (ProgramStatus::CompilingSql, ProgramStatus::Pending)
             | (ProgramStatus::CompilingSql, ProgramStatus::SqlCompiled)
-            // Crucible needs no Rust compilation, so the SQL compiler completes it
+            // The Gen-2 engine needs no Rust compilation, so the SQL compiler completes it
             // directly instead of routing it through the Rust compiler queue.
             | (ProgramStatus::CompilingSql, ProgramStatus::Success)
             | (ProgramStatus::CompilingSql, ProgramStatus::SqlError)
@@ -339,10 +339,10 @@ pub enum RuntimeSelector {
     ///
     /// The string corresponds to the git SHA of feldera/feldera at the time of the build.
     Platform(String),
-    /// The crucible engine runs the pipeline. The SQL compiler captures the JIT
+    /// The Gen-2 engine runs the pipeline. The SQL compiler captures the JIT
     /// circuit IR into the program info; the Rust half compiles against the
     /// platform sources, so no runtime commit is selected.
-    Crucible,
+    Gen2,
 }
 
 impl From<RuntimeSelector> for Option<String> {
@@ -351,7 +351,7 @@ impl From<RuntimeSelector> for Option<String> {
             RuntimeSelector::Sha(sha) => Some(sha),
             RuntimeSelector::Version(version) => Some(version),
             RuntimeSelector::Platform(_platform_sha) => None,
-            RuntimeSelector::Crucible => Some("crucible".to_string()),
+            RuntimeSelector::Gen2 => Some("gen2".to_string()),
         }
     }
 }
@@ -359,7 +359,7 @@ impl From<RuntimeSelector> for Option<String> {
 impl RuntimeSelector {
     /// Returns a path to sources of the runtime which the compilation should be using.
     pub fn runtime_sources(&self, config: &CompilerConfig) -> String {
-        if self.is_platform() || self.is_crucible() {
+        if self.is_platform() || self.is_gen2() {
             config.dbsp_override_path.clone()
         } else {
             assert!(has_unstable_feature("runtime_version"));
@@ -374,9 +374,9 @@ impl RuntimeSelector {
         matches!(self, RuntimeSelector::Platform(_))
     }
 
-    /// Is the crucible engine selected?
-    pub fn is_crucible(&self) -> bool {
-        matches!(self, RuntimeSelector::Crucible)
+    /// Is the Gen-2 engine selected?
+    pub fn is_gen2(&self) -> bool {
+        matches!(self, RuntimeSelector::Gen2)
     }
 
     /// Bytes representation of the runtime selector (for hashing).
@@ -385,7 +385,7 @@ impl RuntimeSelector {
             RuntimeSelector::Sha(sha) => sha.as_bytes(),
             RuntimeSelector::Version(version) => version.as_bytes(),
             RuntimeSelector::Platform(platform_sha) => platform_sha.as_bytes(),
-            RuntimeSelector::Crucible => b"crucible",
+            RuntimeSelector::Gen2 => b"gen2",
         }
     }
 
@@ -395,8 +395,8 @@ impl RuntimeSelector {
             RuntimeSelector::Sha(sha) => sha,
             RuntimeSelector::Version(version) => version,
             RuntimeSelector::Platform(platform_sha) => platform_sha,
-            RuntimeSelector::Crucible => {
-                unreachable!("crucible selects no runtime commit; no git operation applies")
+            RuntimeSelector::Gen2 => {
+                unreachable!("the Gen-2 engine selects no runtime commit; no git operation applies")
             }
         }
     }
@@ -408,7 +408,7 @@ impl Display for RuntimeSelector {
             RuntimeSelector::Sha(sha) => write!(f, "{sha}"),
             RuntimeSelector::Version(version) => write!(f, "{version}"),
             RuntimeSelector::Platform(platform_sha) => write!(f, "{platform_sha}"),
-            RuntimeSelector::Crucible => write!(f, "crucible"),
+            RuntimeSelector::Gen2 => write!(f, "gen2"),
         }
     }
 }
@@ -433,8 +433,8 @@ impl TryFrom<String> for RuntimeSelector {
             version_regex.is_match(s)
         }
 
-        if value == "crucible" {
-            Ok(RuntimeSelector::Crucible)
+        if value == "gen2" {
+            Ok(RuntimeSelector::Gen2)
         } else if is_valid_git_sha(&value) {
             Ok(RuntimeSelector::Sha(value))
         } else if is_version_tag(&value) {
@@ -473,8 +473,8 @@ pub struct ProgramConfig {
     ///
     /// Examples: `v0.96.0` or `f4dcac0989ca0fda7d2eb93602a49d007cb3b0ae`
     ///
-    /// The value `crucible` names an engine rather than a runtime commit: the SQL
-    /// compiler captures the circuit IR and the runner launches the crucible
+    /// The value `gen2` names an engine rather than a runtime commit: the SQL
+    /// compiler captures the circuit IR and the runner launches the Gen-2
     /// engine, so no pipeline binary is compiled.
     ///
     /// A platform of version `0.x.y` may be capable of running future and past
@@ -698,8 +698,8 @@ pub struct ProgramInfo {
     #[serde(default)]
     pub dataflow: Option<Dataflow>,
 
-    /// JIT circuit IR (`allOperators`) captured by the SQL compiler for crucible
-    /// programs; the crucible engine reads it to build the circuit.
+    /// JIT circuit IR (`allOperators`) captured by the SQL compiler for Gen-2
+    /// programs; the Gen-2 engine reads it to build the circuit.
     ///
     /// Not returned by the API. It runs to several MiB and reaches the pipeline
     /// through the program info artifact, so a pipeline read never carries it.
@@ -926,9 +926,9 @@ mod tests {
     }
 
     #[test]
-    fn crucible_sql_stage_reaches_success_directly() {
+    fn gen2_sql_stage_reaches_success_directly() {
         use super::{ProgramStatus, validate_program_status_transition};
-        // Crucible skips Rust compilation: the SQL compiler moves the program from
+        // The Gen-2 engine skips Rust compilation: the SQL compiler moves the program from
         // CompilingSql straight to Success.
         assert!(
             validate_program_status_transition(ProgramStatus::CompilingSql, ProgramStatus::Success)
