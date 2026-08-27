@@ -14,26 +14,32 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
-        - Breaking change (SQL): `=`, `<>` and `!=` are no longer allowed between
-          `ROW` values, so some programs that used to compile are now rejected.
-          The previous implementation of these operations did not follow the
-          standard SQL semantics, which requires that `ROW(NULL) = ROW(NULL)` evaluates
-          to `NULL` (in our implementation it would evaluate to `TRUE`).
+        - Output connectors can be paused, like input connectors: a paused
+          output connector discards the output of its view instead of writing it
+          to its sink, which lets a pipeline run on while a sink is unavailable.
+          Set `paused` in the connector configuration to create it paused, and
+          use `POST /v0/pipelines/{pipeline}/views/{view}/connectors/{connector}/{start,pause}`
+          or `fda connector <pipeline> <view> <connector> start|pause` at
+          runtime. The connector status reports a `paused` field, the web console
+          shows it, and the paused state survives a restart. Output produced
+          while a connector is paused is not replayed when it is started. See
+          [connector orchestration](/connectors/orchestration#output-connectors).
 
-          Instead of these operators, use `IS NOT DISTINCT FROM` (or its
-          shorthand `<=>`) and `IS DISTINCT FROM` instead.  A user-defined type declared with
-          `CREATE TYPE ... AS (...)` is a `ROW` type, so the restriction covers its
-          values too.
+        - Python: `Pipeline.pause_input_connector` and
+          `Pipeline.start_input_connector` (and their `FelderaClient`
+          counterparts) name the kind of connector they act on, matching the new
+          `pause_output_connector` and `start_output_connector`.
+          `pause_connector` and `resume_connector` still work but are
+          deprecated and now raise a `DeprecationWarning`.
 
-          The restriction also covers the forms that ask for `ROW` equality without
-          writing `=`: a join condition, `NATURAL JOIN`, `USING`, `IN`,
-          `CASE value WHEN`, `NULLIF`, and a comparison between two row constructors
-          such as `(a, b) = (c, d)`.  See
-          [comparing `ROW` values](https://docs.feldera.com/sql/comparisons#comparing-row-values)
-          for the accepted rewrite of each form.
+        - Breaking change (fda): `--auth-token-command` and
+          `FELDERA_AUTH_TOKEN_COMMAND` are removed. `--oidc-token-file` and
+          `FELDERA_OIDC_TOKEN_FILE` take the path of a file holding a bearer
+          token, which `fda` reads once per invocation; `feldera/oidc-auth-action`
+          v3.0.1 and later export that variable. For a command that prints a
+          token, pass its output as `--auth "$(...)"`.
 
-        - Joining on `ROW` values is now supported, using
-          `ON left.r IS NOT DISTINCT FROM right.r` (#3398).
+        ## v0.337.0
 
         - Breaking change (SQL): comparing a `UUID` with a character or binary value
           now converts that value to a `UUID`, the same direction as comparing a
@@ -60,30 +66,28 @@ import TabItem from '@theme/TabItem';
           the pipeline restarts.  If it does, the operation itself must be restarted
           (the most common use of the Python API does this automatically).
 
-        - Output connectors can be paused, like input connectors: a paused
-          output connector discards the output of its view instead of writing it
-          to its sink, which lets a pipeline run on while a sink is unavailable.
-          Set `paused` in the connector configuration to create it paused, and
-          use `POST /v0/pipelines/{pipeline}/views/{view}/connectors/{connector}/{start,pause}`
-          or `fda connector <pipeline> <view> <connector> start|pause` at
-          runtime. The connector status reports a `paused` field, the web console
-          shows it, and the paused state survives a restart. Output produced
-          while a connector is paused is not replayed when it is started. See
-          [connector orchestration](/connectors/orchestration#output-connectors).
+        ## v0.333.0
 
-        - Python: `Pipeline.pause_input_connector` and
-          `Pipeline.start_input_connector` (and their `FelderaClient`
-          counterparts) name the kind of connector they act on, matching the new
-          `pause_output_connector` and `start_output_connector`.
-          `pause_connector` and `resume_connector` still work but are
-          deprecated and now raise a `DeprecationWarning`.
+        - Breaking change (SQL): `=`, `<>` and `!=` are no longer allowed between
+          `ROW` values, so some programs that used to compile are now rejected.
+          The previous implementation of these operations did not follow the
+          standard SQL semantics, which requires that `ROW(NULL) = ROW(NULL)` evaluates
+          to `NULL` (in our implementation it would evaluate to `TRUE`).
 
-        - Breaking change (fda): `--auth-token-command` and
-          `FELDERA_AUTH_TOKEN_COMMAND` are removed. `--oidc-token-file` and
-          `FELDERA_OIDC_TOKEN_FILE` take the path of a file holding a bearer
-          token, which `fda` reads once per invocation; `feldera/oidc-auth-action`
-          v3.0.1 and later export that variable. For a command that prints a
-          token, pass its output as `--auth "$(...)"`.
+          Instead of these operators, use `IS NOT DISTINCT FROM` (or its
+          shorthand `<=>`) and `IS DISTINCT FROM` instead.  A user-defined type declared with
+          `CREATE TYPE ... AS (...)` is a `ROW` type, so the restriction covers its
+          values too.
+
+          The restriction also covers the forms that ask for `ROW` equality without
+          writing `=`: a join condition, `NATURAL JOIN`, `USING`, `IN`,
+          `CASE value WHEN`, `NULLIF`, and a comparison between two row constructors
+          such as `(a, b) = (c, d)`.  See
+          [comparing `ROW` values](https://docs.feldera.com/sql/comparisons#comparing-row-values)
+          for the accepted rewrite of each form.
+
+        - Joining on `ROW` values is now supported, using
+          `ON left.r IS NOT DISTINCT FROM right.r` (#3398).
 
         ## v0.330.0
 
