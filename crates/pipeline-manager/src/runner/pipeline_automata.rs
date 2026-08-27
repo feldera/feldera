@@ -18,7 +18,9 @@ use crate::is_supported_runtime;
 use crate::runner::error::RunnerError;
 use crate::runner::interaction::{format_pipeline_url, format_timeout_error_message};
 use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
-use crate::runner::pipeline_logs::{LogMessage, LogsSender, start_thread_pipeline_logs};
+use crate::runner::pipeline_logs::{
+    FollowRequest, LogMessage, LogsSender, start_thread_pipeline_logs,
+};
 use chrono::Utc;
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{
@@ -217,7 +219,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         client: reqwest::Client,
         pipeline_handle: T,
         default_provisioning_timeout: Duration,
-        follow_request_receiver: mpsc::Receiver<mpsc::Sender<String>>,
+        follow_request_receiver: mpsc::Receiver<FollowRequest>,
         logs_sender: LogsSender,
         logs_receiver: mpsc::Receiver<LogMessage>,
     ) -> Self {
@@ -1870,7 +1872,7 @@ mod test {
     use crate::runner::main::MAXIMUM_OUTSTANDING_LOG_FOLLOW_REQUESTS;
     use crate::runner::pipeline_automata::PipelineAutomaton;
     use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
-    use crate::runner::pipeline_logs::{LogMessage, LogsSender};
+    use crate::runner::pipeline_logs::{FollowRequest, LogMessage, LogsSender};
     use async_trait::async_trait;
     use feldera_types::config::{PipelineConfig, StorageConfig};
     use feldera_types::program_schema::ProgramSchema;
@@ -1963,7 +1965,7 @@ mod test {
     struct AutomatonTest {
         db: Arc<Mutex<StoragePostgres>>,
         automaton: PipelineAutomaton<MockRunner>,
-        _follow_request_sender: Sender<Sender<String>>,
+        _follow_request_sender: Sender<FollowRequest>,
     }
 
     impl AutomatonTest {
@@ -2133,7 +2135,7 @@ mod test {
 
         // Construct the automaton
         let (_follow_request_sender, follow_request_receiver) =
-            channel::<Sender<String>>(MAXIMUM_OUTSTANDING_LOG_FOLLOW_REQUESTS);
+            channel::<FollowRequest>(MAXIMUM_OUTSTANDING_LOG_FOLLOW_REQUESTS);
         let (logs_sender, logs_receiver) =
             channel::<LogMessage>(MAXIMUM_OUTSTANDING_LOG_FOLLOW_REQUESTS);
         let logs_sender = LogsSender::new(logs_sender);

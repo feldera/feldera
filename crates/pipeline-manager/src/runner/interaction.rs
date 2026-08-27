@@ -555,6 +555,7 @@ impl RunnerInteraction {
         client: &awc::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
+        query_string: &str,
     ) -> Result<ClientResponse<Decoder<actix_http::Payload>>, ManagerError> {
         // Retrieve pipeline
         let pipeline = self
@@ -564,9 +565,10 @@ impl RunnerInteraction {
             .get_pipeline_for_monitoring(tenant_id, pipeline_name)
             .await?;
 
-        // Build request to the runner
+        // Build request to the runner. The query string is forwarded verbatim so the
+        // runner sees the caller's resume cursor.
         let url = format!(
-            "{}://{}:{}/logs/{}",
+            "{}://{}:{}/logs/{}?{}",
             if self.common_config.enable_https {
                 "https"
             } else {
@@ -574,7 +576,8 @@ impl RunnerInteraction {
             },
             self.common_config.runner_host,
             self.common_config.runner_port,
-            pipeline.id
+            pipeline.id,
+            query_string
         );
 
         // Perform request to the runner
@@ -607,10 +610,11 @@ impl RunnerInteraction {
         client: &awc::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
+        query_string: &str,
     ) -> Result<HttpResponse, ManagerError> {
         // Perform request to the runner
         let response = self
-            .get_logs_from_pipeline(client, tenant_id, pipeline_name)
+            .get_logs_from_pipeline(client, tenant_id, pipeline_name, query_string)
             .await?;
 
         // Build the HTTP response with the same status, headers and streaming body

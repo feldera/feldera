@@ -24,7 +24,7 @@ use crate::has_unstable_feature;
 #[cfg(feature = "feldera-enterprise")]
 use actix_web::http::Method;
 use actix_web::{
-    HttpResponse, delete, get,
+    HttpRequest, HttpResponse, delete, get,
     http::header::{CacheControl, CacheDirective},
     patch, post, put,
     web::{self, Data as WebData, ReqData},
@@ -2077,17 +2077,59 @@ pub(crate) async fn post_pipeline_clear(
 ///
 /// The logs stream will end when the pipeline is deleted, or if the runner restarts. Note that in
 /// both cases the logs will be cleared.
+///
+/// ## Resuming a stream
+///
+/// Supplying the `cursor` parameter asks for only the lines the caller is missing, rather
+/// than the whole retained buffer. This matters on an unstable connection, where replaying
+/// the buffer on every reconnect can consume the entire link and leave the caller unable to
+/// reach the live tail.
+///
+/// A caller that supplies `cursor` is answered with three response headers:
+///
+/// ```text
+/// feldera-logs-epoch: 0199c3f1-2d0a-7e84-b711-6f2c9a1d4e08
+/// feldera-logs-seq: 41272
+/// feldera-logs-gap: 0
+/// ```
+///
+/// - `feldera-logs-epoch` identifies this lifetime of the logs buffer. Pass it back unchanged.
+/// - `feldera-logs-seq` is the sequence number of the line preceding the response's first
+///   log line.
+/// - `feldera-logs-gap` counts lines that were discarded between the requested cursor and
+///   the sequence number above, and which the caller will therefore never receive. Zero
+///   means the resume is exact.
+///
+/// The body is log lines and nothing else, one per sequence number, so the caller's current
+/// position is `feldera-logs-seq` plus the number of lines it has received. To reconnect,
+/// pass `cursor=<epoch>:<position>`.
+///
+/// The epoch changes whenever the logs buffer is recreated, which clears the logs. A cursor
+/// carrying a stale epoch is not an error: it is answered with a full catch-up and a gap
+/// naming what was lost, so a caller can never be locked out of its logs by an old cursor.
+///
+/// Callers that supply `cursor` receive no informational lines in the body, which is what
+/// makes the one-line-per-sequence-number correspondence exact. Callers that omit it get
+/// the body they have always received, and no position headers.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        ("cursor" = Option<String>, Query, description = "Resume the stream after this position, \
+            formatted as `<epoch>:<sequence>` and derived from a previous response's \
+            `feldera-logs-epoch` and `feldera-logs-seq` headers. Omit for the whole retained \
+            buffer with no position headers. Pass empty to start from the beginning of the \
+            buffer and be told the position."),
     ),
     responses(
         (status = OK
             , description = "Pipeline logs retrieved successfully"
             , content_type = "text/plain"
             , body = Vec<u8>),
+        (status = BAD_REQUEST
+            , description = "Cursor is malformed"
+            , body = ErrorResponse),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
@@ -2108,11 +2150,18 @@ pub(crate) async fn get_pipeline_logs(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
+    request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
     state
         .runner
-        .http_streaming_logs_from_pipeline_by_name(&client, *tenant_id, &pipeline_name)
+        .http_streaming_logs_from_pipeline_by_name(
+            &client,
+            *tenant_id,
+            &pipeline_name,
+            // The runner owns cursor validation, and its status and body are proxied back.
+            request.query_string(),
+        )
         .await
 }
 
