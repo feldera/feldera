@@ -435,29 +435,54 @@ def test_output_connector_orchestration(pipeline_name):
         poll_interval_s=0.5,
     )
 
-    # Let the pipeline run long enough that a connector that kept writing would
-    # be caught: wait until it has processed more input than the connector had
-    # transmitted when it was paused.
-    paused_at = transmitted()
+    # Pausing bounds the connector's queue rather than emptying it: the output
+    # it was handed before the pause is still owed to the sink, and the step in
+    # flight when the pause landed had already decided to hand it that step's
+    # output too. This sink fsyncs every write, so that backlog is real and
+    # takes time to drain.
+    #
+    # Both are behind us once the connector has processed a step that started
+    # after the pause was observed: from that step on it is handed empty
+    # batches, and it processes the steps in order.
+    steps_at_pause = pipeline_stats(pipeline_name)["global_metrics"][
+        "total_initiated_steps"
+    ]
     wait_for_condition(
-        "pipeline processes more input while the connector is paused",
+        "paused connector drains the output it was handed before the pause",
         lambda: (
-            pipeline_stats(pipeline_name)["global_metrics"]["total_processed_records"]
-            > paused_at
+            output_connector_stats(pipeline_name, "v", "sink")["metrics"][
+                "total_processed_steps"
+            ]
+            > steps_at_pause
         ),
         timeout_s=30.0,
         poll_interval_s=0.5,
     )
-    assert transmitted() == paused_at
-
-    # A paused connector does not hold the pipeline back: it reports the output
-    # it discards as processed.
     metrics = output_connector_stats(pipeline_name, "v", "sink")["metrics"]
     assert metrics["queued_records"] == 0
-    assert (
-        metrics["total_processed_input_records"]
-        > pipeline_stats(pipeline_name)["global_metrics"]["total_processed_records"] / 2
+    paused_at = metrics["transmitted_records"]
+
+    # The connector is now quiet, and stays quiet however much the pipeline
+    # produces. It does not hold the pipeline back either: it reports the
+    # output it discards as processed, so its own progress counter passes the
+    # pipeline's count at the moment it went quiet.
+    processed_at_pause = pipeline_stats(pipeline_name)["global_metrics"][
+        "total_processed_records"
+    ]
+    wait_for_condition(
+        "paused connector reports input processed after the pause",
+        lambda: (
+            output_connector_stats(pipeline_name, "v", "sink")["metrics"][
+                "total_processed_input_records"
+            ]
+            > processed_at_pause
+        ),
+        timeout_s=30.0,
+        poll_interval_s=0.5,
     )
+    metrics = output_connector_stats(pipeline_name, "v", "sink")["metrics"]
+    assert metrics["transmitted_records"] == paused_at
+    assert metrics["queued_records"] == 0
 
     # Start it again: it resumes with the output produced from now on.
     resp = output_connector_action(pipeline_name, "v", "sink", "start")
