@@ -3928,7 +3928,7 @@ fn main() {
             if cli.host.ends_with("/") {
                 cli.host = cli.host.trim_end_matches('/').to_string();
             }
-            // Releases before 0.339.0 read this variable; a shell that still
+            // Releases before 0.340.0 read this variable; a shell that still
             // exports it would otherwise send no credential and see a bare 401.
             if cli.auth.is_none()
                 && cli.oidc_token_file.is_none()
