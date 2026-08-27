@@ -159,6 +159,13 @@ pub(crate) async fn setup_pg() -> (StoragePostgres, tempfile::TempDir) {
     use crate::config::DatabaseConfig;
     use std::net::TcpListener;
 
+    // Connecting to the database goes through `rustls`, which panics when no process-wide
+    // crypto provider is installed. Install it here rather than in each test: without it a
+    // test panics *after* its embedded server has started, and the panic leaks that server.
+    // Enough leaked servers exhaust the host's shared memory and every later `pg_ctl` fails
+    // with "could not start server", which reads as an unrelated problem.
+    crate::ensure_default_crypto_provider();
+
     // Install the test database in a temporary directory and bound to a free port
     let mut attempt = 1;
     let (_temp_dir, pg) = loop {
