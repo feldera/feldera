@@ -8397,7 +8397,9 @@ impl Storage for Mutex<DbModel> {
         if storage_status_details.is_some() {
             pipeline.storage_status_details = storage_status_details;
         }
-        pipeline.deployment_id = None;
+        // Stopping keeps the deployment id: the deployment is still being torn down and
+        // the runner needs to know which one. The implementation carries it through here
+        // and clears it at Stopped.
         pipeline.deployment_initial = None;
         pipeline.bootstrap_policy = None;
         pipeline.deployment_config = None;
