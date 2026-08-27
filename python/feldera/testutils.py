@@ -4,7 +4,6 @@ import logging
 import os
 import platform
 import re
-import subprocess
 import time
 import json
 import unittest
@@ -48,9 +47,9 @@ def _get_effective_api_key():
 def feldera_bearer_token() -> Optional[str]:
     """The bearer token to send with a request issued now.
 
-    A configured OIDC login flow wins, then whatever CI exports: a token file
-    that feldera/oidc-auth-action keeps current for the life of the job, or a
-    command that prints one. Then the static API key, and None when nothing is
+    A configured OIDC login flow wins, then the token file named by
+    FELDERA_OIDC_TOKEN_FILE, which feldera/oidc-auth-action keeps current for
+    the life of a CI job. Then the static API key, and None when nothing is
     configured, which is how a local instance without authentication runs.
 
     Callers that build their own requests resolve this per request: a CI token
@@ -62,16 +61,6 @@ def feldera_bearer_token() -> Optional[str]:
     token_file = os.environ.get("FELDERA_OIDC_TOKEN_FILE")
     if token_file:
         return Path(token_file).read_text().strip()
-    token_command = os.environ.get("FELDERA_AUTH_TOKEN_COMMAND")
-    if token_command:
-        return subprocess.run(
-            token_command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=30,
-        ).stdout.strip()
     return API_KEY
 
 
@@ -111,7 +100,6 @@ class _LazyClient:
                 api_key=(
                     feldera_bearer_token
                     if os.environ.get("FELDERA_OIDC_TOKEN_FILE")
-                    or os.environ.get("FELDERA_AUTH_TOKEN_COMMAND")
                     else feldera_bearer_token()
                 ),
             )
