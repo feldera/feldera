@@ -78,6 +78,13 @@ import TabItem from '@theme/TabItem';
           `pause_connector` and `resume_connector` still work but are
           deprecated and now raise a `DeprecationWarning`.
 
+        - Breaking change (fda): `--auth-token-command` and
+          `FELDERA_AUTH_TOKEN_COMMAND` are removed. `--oidc-token-file` and
+          `FELDERA_OIDC_TOKEN_FILE` take the path of a file holding a bearer
+          token, which `fda` reads once per invocation; `feldera/oidc-auth-action`
+          v3.0.1 and later export that variable. For a command that prints a
+          token, pass its output as `--auth "$(...)"`.
+
         ## v0.330.0
 
         - Feldera's membership table now authorizes every login: a user acts

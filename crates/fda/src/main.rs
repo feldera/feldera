@@ -88,8 +88,8 @@ pub(crate) struct ClientOpts {
     pub tls_cert: Option<std::path::PathBuf>,
     /// Static API key.
     pub auth: Option<String>,
-    /// Shell command that prints a bearer token; overrides `auth`.
-    pub auth_token_command: Option<String>,
+    /// File holding a bearer token; overrides `auth`.
+    pub oidc_token_file: Option<std::path::PathBuf>,
     pub timeout_secs: Option<u64>,
     /// Sent as the `Feldera-Tenant` header on every request.
     pub tenant: Option<String>,
@@ -104,7 +104,7 @@ impl ClientOpts {
             insecure: cli.insecure,
             tls_cert: cli.tls_cert.clone(),
             auth: cli.auth.clone(),
-            auth_token_command: cli.auth_token_command.clone(),
+            oidc_token_file: cli.oidc_token_file.clone(),
             timeout_secs: cli.timeout,
             tenant: cli.tenant.clone(),
             retries: cli.retries,
@@ -119,7 +119,7 @@ pub(crate) fn make_client(opts: ClientOpts) -> Result<Client, Box<dyn std::error
         insecure,
         tls_cert,
         auth,
-        auth_token_command,
+        oidc_token_file,
         timeout_secs,
         tenant,
         retries,
@@ -161,8 +161,8 @@ pub(crate) fn make_client(opts: ClientOpts) -> Result<Client, Box<dyn std::error
     }
 
     // The tenant selector is not a credential and travels on any scheme;
-    // bearer credentials go over https alone. Only execute the auth-token
-    // command if the credentials will actually be sent.
+    // bearer credentials go over https alone. Only read the token file if
+    // the credentials will actually be sent.
     let mut headers = HeaderMap::new();
     if let Some(tenant) = &tenant {
         headers.insert(
@@ -172,12 +172,12 @@ pub(crate) fn make_client(opts: ClientOpts) -> Result<Client, Box<dyn std::error
         );
     }
     if host.starts_with("https://") {
-        let resolved_auth = match auth_token_command {
-            Some(cmd) => Some(run_auth_token_command(&cmd)?),
+        let resolved_auth = match oidc_token_file {
+            Some(path) => Some(read_oidc_token_file(&path)?),
             None => auth,
         };
         headers.extend(make_auth_headers(&resolved_auth)?);
-    } else if host.starts_with("http://") && (auth.is_some() || auth_token_command.is_some()) {
+    } else if host.starts_with("http://") && (auth.is_some() || oidc_token_file.is_some()) {
         warn!(
             "The provided credentials are not added to the request because {host} does not use `https`."
         );
@@ -192,35 +192,29 @@ pub(crate) fn make_client(opts: ClientOpts) -> Result<Client, Box<dyn std::error
     Ok(Client::new_with_client(host.as_str(), client, retry_policy))
 }
 
-/// Execute the user-supplied auth-token command through the platform's shell and
-/// return trimmed stdout. Errors if the command fails or prints nothing.
-fn run_auth_token_command(cmd: &str) -> Result<String, Box<dyn std::error::Error>> {
-    // Windows has no `sh`; `cmd /C` is what runs a command line there.
-    let (shell, shell_flag) = if cfg!(windows) {
-        ("cmd", "/C")
-    } else {
-        ("sh", "-c")
-    };
-    let output = std::process::Command::new(shell)
-        .arg(shell_flag)
-        .arg(cmd)
-        .output()
-        .map_err(|e| format!("failed to spawn auth-token-command `{cmd}`: {e}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!(
-            "auth-token-command `{cmd}` exited with {}: {}",
-            output.status,
-            stderr.trim()
-        )
-        .into());
-    }
-    let token = String::from_utf8(output.stdout)
-        .map_err(|e| format!("auth-token-command `{cmd}` produced non-UTF-8 output: {e}"))?
+/// Read the bearer token in `path`, trimmed. Errors if the file is unreadable,
+/// holds nothing but whitespace, or holds a character that cannot travel in a
+/// header value, which is what a second line is.
+fn read_oidc_token_file(path: &std::path::Path) -> Result<String, Box<dyn std::error::Error>> {
+    let token = std::fs::read_to_string(path)
+        .map_err(|e| format!("failed to read OIDC token file `{}`: {e}", path.display()))?
         .trim()
         .to_string();
     if token.is_empty() {
-        return Err(format!("auth-token-command `{cmd}` produced empty output").into());
+        return Err(format!("OIDC token file `{}` is empty", path.display()).into());
+    }
+    // The header rejects the same set; checking here names the file and the
+    // spot instead of a bare "failed to parse header value".
+    if let Some(offset) = token.find(|c: char| c.is_ascii_control() && c != '\t') {
+        let found = match token.as_bytes()[offset] {
+            b'\n' | b'\r' => "a line break",
+            _ => "a control character",
+        };
+        return Err(format!(
+            "OIDC token file `{}` does not hold a single-line token: found {found} at byte {offset}",
+            path.display()
+        )
+        .into());
     }
     Ok(token)
 }
@@ -3906,12 +3900,17 @@ async fn cluster(format: OutputFormat, action: ClusterAction, client: Client) {
     }
 }
 
-fn main() {
-    // reqwest is built without a rustls provider, so the process default decides
-    // which one it uses.
+/// reqwest is built without a rustls provider, so the process default decides
+/// which one it uses.
+fn install_crypto_provider() {
+    // Err means a provider is already installed, which is the state wanted.
     let _ = rustls::crypto::CryptoProvider::install_default(
         rustls::crypto::aws_lc_rs::default_provider(),
     );
+}
+
+fn main() {
+    install_crypto_provider();
     init_logging("warn");
 
     tokio::runtime::Builder::new_multi_thread()
@@ -3928,6 +3927,16 @@ fn main() {
             // we remove it here.
             if cli.host.ends_with("/") {
                 cli.host = cli.host.trim_end_matches('/').to_string();
+            }
+            // Releases before 0.339.0 read this variable; a shell that still
+            // exports it would otherwise send no credential and see a bare 401.
+            if cli.auth.is_none()
+                && cli.oidc_token_file.is_none()
+                && std::env::var_os("FELDERA_AUTH_TOKEN_COMMAND").is_some()
+            {
+                warn!(
+                    "FELDERA_AUTH_TOKEN_COMMAND is no longer read. Point FELDERA_OIDC_TOKEN_FILE at a file holding the token, or pass the command's output as --auth \"$(...)\"."
+                );
             }
 
             let client_opts = ClientOpts::from_cli(&cli);
@@ -3978,7 +3987,10 @@ fn init_logging(default_level: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{ClientOpts, format_program_errors, make_client, run_auth_token_command};
+    use super::{
+        ClientOpts, format_program_errors, install_crypto_provider, make_client,
+        read_oidc_token_file,
+    };
     use feldera_rest_api::types::{
         ProgramError, RustCompilationInfo, SqlCompilationInfo, SqlCompilerMessage,
     };
@@ -4007,7 +4019,7 @@ aC3Oy4iVrYGOq9v6uP9iblE=\n\
             insecure: false,
             tls_cert: Some(tls_cert),
             auth: None,
-            auth_token_command: None,
+            oidc_token_file: None,
             timeout_secs: None,
             tenant: None,
             retries: 0,
@@ -4069,27 +4081,83 @@ aC3Oy4iVrYGOq9v6uP9iblE=\n\
         }
     }
 
-    #[cfg(unix)]
     #[test]
-    fn auth_token_command_trims_stdout() {
-        let token = run_auth_token_command("printf '  tok-123\\n'").expect("command succeeds");
+    fn oidc_token_file_trims_contents() {
+        let mut file = tempfile::NamedTempFile::new().expect("create temp file");
+        file.write_all(b"  tok-123\n").expect("write temp file");
+        let token = read_oidc_token_file(file.path()).expect("readable file");
         assert_eq!(token, "tok-123");
     }
 
-    #[cfg(unix)]
     #[test]
-    fn auth_token_command_empty_output_is_error() {
-        let err = run_auth_token_command("true").expect_err("empty output must error");
-        assert!(err.to_string().contains("empty output"), "{err}");
+    fn oidc_token_file_whitespace_only_is_error() {
+        let mut file = tempfile::NamedTempFile::new().expect("create temp file");
+        file.write_all(b"\n\t \n").expect("write temp file");
+        let err = read_oidc_token_file(file.path()).expect_err("blank file must error");
+        assert!(err.to_string().contains("is empty"), "{err}");
     }
 
-    #[cfg(unix)]
     #[test]
-    fn auth_token_command_nonzero_exit_is_error() {
-        let err = run_auth_token_command("echo boom >&2; exit 3").expect_err("failure must error");
+    fn oidc_token_file_missing_is_error() {
+        let missing = std::path::Path::new("/definitely/not/a/real/path-fda-token");
+        let err = read_oidc_token_file(missing).expect_err("missing file must error");
         let msg = err.to_string();
-        assert!(msg.contains("exited with"), "{msg}");
-        assert!(msg.contains("boom"), "stderr should be surfaced: {msg}");
+        assert!(msg.contains("failed to read OIDC token file"), "{msg}");
+        assert!(
+            msg.contains("path-fda-token"),
+            "path should be named: {msg}"
+        );
+    }
+
+    #[test]
+    fn oidc_token_file_second_line_is_error() {
+        let mut file = tempfile::NamedTempFile::new().expect("create temp file");
+        file.write_all(b"tok-1\ntok-2\n").expect("write temp file");
+        let err = read_oidc_token_file(file.path()).expect_err("two lines must error");
+        let msg = err.to_string();
+        assert!(msg.contains("does not hold a single-line token"), "{msg}");
+        assert!(msg.contains("a line break at byte 5"), "{msg}");
+    }
+
+    /// Options for a client whose only credential is a token file.
+    fn token_file_opts(host: &str, oidc_token_file: std::path::PathBuf) -> ClientOpts {
+        ClientOpts {
+            host: host.to_string(),
+            insecure: false,
+            tls_cert: None,
+            auth: None,
+            oidc_token_file: Some(oidc_token_file),
+            timeout_secs: None,
+            tenant: None,
+            retries: 0,
+        }
+    }
+
+    #[test]
+    fn make_client_reads_token_file_for_https_only() {
+        install_crypto_provider();
+        let missing = std::path::PathBuf::from("/definitely/not/a/real/path-fda-token");
+        // Plain http sends no credential, so the file is never opened.
+        make_client(token_file_opts("http://example.invalid", missing.clone()))
+            .expect("http host must not read the token file");
+        let err = make_client(token_file_opts("https://example.invalid", missing))
+            .expect_err("https host must fail on a missing token file");
+        assert!(
+            err.to_string().contains("failed to read OIDC token file"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn make_client_rejects_blank_token_file_for_https() {
+        install_crypto_provider();
+        let file = tempfile::NamedTempFile::new().expect("create temp file");
+        let err = make_client(token_file_opts(
+            "https://example.invalid",
+            file.path().to_path_buf(),
+        ))
+        .expect_err("blank token file must fail rather than send nothing");
+        assert!(err.to_string().contains("is empty"), "{err}");
     }
 
     #[test]

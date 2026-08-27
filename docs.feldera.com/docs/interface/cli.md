@@ -210,6 +210,24 @@ right. Go to **Manage API Keys** and click **Generate new key**.
 
 :::
 
+### Authenticating with a short-lived token
+
+Workloads can use short lived bearer tokens from a file, typically an OIDC identity token
+that the platform rotates: a Kubernetes service-account token, or the one
+[`feldera/oidc-auth-action`](https://github.com/feldera/oidc-auth-action)
+keeps current for a GitHub Actions job. The environment variable `FELDERA_OIDC_TOKEN_FILE` and the command line
+argument `--oidc-token-file` both take the path to that file.
+
+```bash
+fda --host https://feldera.internal --oidc-token-file /var/run/secrets/kubernetes.io/serviceaccount/token pipelines
+# or via environment:
+export FELDERA_OIDC_TOKEN_FILE="$AWS_WEB_IDENTITY_TOKEN_FILE"
+fda --host https://feldera.internal pipelines
+```
+
+The instance accepts such a token only where an OIDC trust matches its issuer, subject and audience; see
+`fda oidc-trust create --help`. `--oidc-token-file` and `--auth` are mutually exclusive.
+
 ### Connecting to HTTPS with a custom CA
 
 When the Feldera manager is served over HTTPS with a certificate issued by a private CA, or with a self-signed
