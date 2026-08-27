@@ -1067,15 +1067,25 @@ export const relationEgressStream = async (
   )
 }
 
+/**
+ * Opens the pipeline log stream.
+ *
+ * `cursor` asks the server to carry on from where a previous connection stopped, instead
+ * of sending the whole log again. Pass the position from the last response, or an empty
+ * string the first time. Either way the response reports where it resumed in its
+ * `feldera-logs-*` headers and the body holds nothing but log lines. See
+ * `$lib/functions/pipelines/logCursor` for how the position is kept.
+ */
 export const pipelineLogsStream = async (
   pipelineName: string,
+  cursor: string,
   requestInit?: RequestInit,
   options?: FetchOptions
 ) => {
   return streamResponse(
     streamingFetch(
       getAuthenticatedFetch(options),
-      `${felderaEndpoint}/v0/pipelines/${pipelineName}/logs`,
+      `${felderaEndpoint}/v0/pipelines/${pipelineName}/logs?cursor=${encodeURIComponent(cursor)}`,
       requestInit ?? {}
     )
   )
