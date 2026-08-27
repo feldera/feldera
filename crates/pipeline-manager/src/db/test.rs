@@ -3958,6 +3958,130 @@ async fn pipeline_start_fails() {
 /// Pipeline can only transition from `Stopped` to `Provisioning` if the version guard
 /// presented matches.
 #[tokio::test]
+async fn runner_descriptor_uses_runtime_compatibility_not_string_equality() {
+    // A pipeline compiled for one platform version, asked for by a runner naming another.
+    // Readiness is decided by `is_supported_runtime`, not by comparing the two strings, so
+    // the runner gets the complete descriptor it needs to provision.
+    //
+    // Drives the model and the implementation through the same steps and compares them, the
+    // way `db_impl_behaves_like_model` does, because the divergence was in the model alone:
+    // asserting on the implementation would pass either way. Deterministic, where the
+    // property test reaches this only when its generator happens to name a different
+    // platform version.
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+    let model = Mutex::new(DbModel {
+        tenants: BTreeMap::from([(tenant_id, TenantRecord::default())]),
+        api_keys: BTreeMap::new(),
+        pipelines: BTreeMap::new(),
+        pipeline_events: BTreeMap::new(),
+        cluster_events: BTreeMap::new(),
+        oidc_trusts: BTreeMap::new(),
+        users: BTreeMap::new(),
+        memberships: BTreeMap::new(),
+    });
+
+    let pipeline_id = Uuid::now_v7();
+    let descr = PipelineDescr {
+        name: "example1".to_string(),
+        description: "".to_string(),
+        tags: vec![],
+        runtime_config: json!({}),
+        program_code: "".to_string(),
+        udf_rust: "".to_string(),
+        udf_toml: "".to_string(),
+        program_config: json!({}),
+    };
+    let program_info = serde_json::to_value(ProgramInfo {
+        schema: serde_json::to_value(ProgramSchema {
+            inputs: vec![],
+            outputs: vec![],
+        })
+        .unwrap(),
+        main_rust: "".to_string(),
+        udf_stubs: "".to_string(),
+        input_connectors: BTreeMap::new(),
+        output_connectors: BTreeMap::new(),
+        circuit_ir: None,
+        dataflow: None,
+    })
+    .unwrap();
+    let sql_info = SqlCompilationInfo {
+        exit_code: 0,
+        messages: vec![],
+    };
+    let rust_info = RustCompilationInfo {
+        exit_code: 0,
+        stdout: "".to_string(),
+        stderr: "".to_string(),
+    };
+
+    // Compile the pipeline to Success on platform version "v0", on both sides.
+    for db in [&model as &dyn Storage, &handle.db as &dyn Storage] {
+        db.new_pipeline(tenant_id, pipeline_id, "v0", descr.clone())
+            .await
+            .unwrap();
+        let id = PipelineId(pipeline_id);
+        db.transit_program_status_to_compiling_sql(tenant_id, id, Version(1))
+            .await
+            .unwrap();
+        db.transit_program_status_to_sql_compiled(
+            tenant_id,
+            id,
+            Version(1),
+            &sql_info,
+            &program_info,
+        )
+        .await
+        .unwrap();
+        db.transit_program_status_to_compiling_rust(tenant_id, id, Version(1))
+            .await
+            .unwrap();
+        db.transit_program_status_to_success(
+            tenant_id,
+            id,
+            Version(1),
+            &rust_info,
+            "def",
+            "123",
+            "456",
+        )
+        .await
+        .unwrap();
+        db.set_deployment_resources_desired_status_provisioned(
+            tenant_id,
+            &descr.name,
+            RuntimeDesiredStatus::Running,
+            BootstrapConfig::default(),
+            false,
+        )
+        .await
+        .unwrap();
+    }
+
+    // Ask as a runner on "v1" for a pipeline compiled on "v0".
+    let id = PipelineId(pipeline_id);
+    let from_model = model
+        .get_pipeline_by_id_for_runner(tenant_id, id, "v1", false)
+        .await
+        .unwrap();
+    let from_impl = handle
+        .db
+        .get_pipeline_by_id_for_runner(tenant_id, id, "v1", false)
+        .await
+        .unwrap();
+
+    assert!(
+        matches!(from_impl, ExtendedPipelineDescrRunner::Complete(_)),
+        "a differing platform version must not by itself withhold the complete descriptor"
+    );
+    assert_eq!(
+        std::mem::discriminant(&from_model),
+        std::mem::discriminant(&from_impl),
+        "the model must decide runner readiness the way the implementation does"
+    );
+}
+#[tokio::test]
 async fn pipeline_provision_version_guard() {
     let handle = test_setup().await;
     let tenant_id = TenantRecord::default().id;
@@ -7322,8 +7446,12 @@ impl Storage for Mutex<DbModel> {
         provision_called: bool,
     ) -> Result<ExtendedPipelineDescrRunner, DBError> {
         let pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
+        // Mirror the implementation: a pipeline compiled for a different platform version may
+        // still be runnable, and `is_supported_runtime` is the one place that decides. Exact
+        // string equality here made the model report Monitoring where the implementation
+        // reported Complete, for any request naming a different platform version.
         let is_ready_compiled = pipeline.program_status == ProgramStatus::Success
-            && pipeline.platform_version == platform_version;
+            && crate::is_supported_runtime(platform_version, &pipeline.platform_version);
         if matches!(
             (
                 pipeline.deployment_resources_status,
