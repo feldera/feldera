@@ -2,6 +2,7 @@ use crate::config::CompilerConfig;
 use crate::db::error::DBError;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::utils::validate_connector_name;
+use crate::db::types::version::Version;
 use crate::has_unstable_feature;
 use clap::Parser;
 use feldera_ir::Dataflow;
@@ -126,6 +127,21 @@ impl Display for SqlCompilerMessage {
 }
 
 impl SqlCompilerMessage {
+    /// An error no span in the SQL explains: an unsupported combination of the program and
+    /// its configuration. Positions are zero, as they are for a connector-generation error.
+    pub(crate) fn without_position(error_type: &str, message: String) -> Self {
+        SqlCompilerMessage {
+            start_line_number: 0,
+            start_column: 0,
+            end_line_number: 0,
+            end_column: 0,
+            warning: false,
+            error_type: error_type.to_string(),
+            message,
+            snippet: None,
+        }
+    }
+
     pub(crate) fn new_from_connector_generation_error(error: ConnectorGenerationError) -> Self {
         let position = match error {
             ConnectorGenerationError::PropertyDoesNotExist { position, .. } => position,
@@ -233,6 +249,16 @@ impl SqlCompilationInfo {
             messages: vec![],
         }
     }
+
+    /// A single error, shaped as the compiler would have reported it. For a refusal the
+    /// manager makes instead of invoking the compiler, so the user sees a program error
+    /// rather than a system error.
+    pub(crate) fn from_error(error_type: &str, message: String) -> Self {
+        Self {
+            exit_code: 1,
+            messages: vec![SqlCompilerMessage::without_position(error_type, message)],
+        }
+    }
 }
 
 /// Rust compilation information.
@@ -321,6 +347,28 @@ pub fn validate_program_status_transition(
             new_status,
         })
     }
+}
+
+/// One compiled (or compiling) pipeline program, as artifact cleanup sees it.
+///
+/// Cleanup keeps the files these checksums name and removes the rest, so a field that is
+/// `None` widens what is kept: a program still `CompilingRust` has no checksums yet and is
+/// matched on a checksum-less prefix instead.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PipelineProgramArtifacts {
+    pub pipeline_id: PipelineId,
+    pub program_version: Version,
+    /// Checksum of the sources the binary was built from. `None` while `CompilingRust`, and
+    /// for a Gen-2 program, which builds no binary.
+    pub program_binary_source_checksum: Option<String>,
+    /// Checksum of the binary itself. `None` while `CompilingRust`, and for a Gen-2 program.
+    pub program_binary_integrity_checksum: Option<String>,
+    /// Checksum of the delivered program info.
+    pub program_info_integrity_checksum: Option<String>,
+    /// Whether the Gen-2 engine runs this program. A Gen-2 program delivers program info and
+    /// no binary, so its artifact is named by the program-info checksum on both halves; the
+    /// flag is what lets cleanup rebuild that name rather than fall back to a prefix.
+    pub is_gen2: bool,
 }
 
 /// A selector for the runtime to use.
@@ -716,11 +764,20 @@ pub struct ProgramInfo {
 impl ProgramInfo {
     /// Extract fields from `ProgramInfo` to create a `PipelineConfigProgramInfo` instance.
     pub fn to_pipeline_config_program_info(&self) -> PipelineConfigProgramInfo {
-        let program_ir = self.dataflow.as_ref().map(|d| ProgramIr {
-            mir: d.mir.clone(),
-            program_schema: self.schema.clone(),
-            circuit_ir: self.circuit_ir.clone(),
-        });
+        // Either payload is enough to build the `ProgramIr`. Keying it on `dataflow` alone
+        // would make the circuit IR a passenger of an unrelated optional field: dropping
+        // `--dataflow` for the Gen-2 engine (the dataflow graph is large and the engine
+        // ignores it) would then start pipelines with no circuit and nothing to point at.
+        let program_ir =
+            (self.dataflow.is_some() || self.circuit_ir.is_some()).then(|| ProgramIr {
+                mir: self
+                    .dataflow
+                    .as_ref()
+                    .map(|d| d.mir.clone())
+                    .unwrap_or_default(),
+                program_schema: self.schema.clone(),
+                circuit_ir: self.circuit_ir.clone(),
+            });
 
         PipelineConfigProgramInfo {
             inputs: self.input_connectors.clone(),

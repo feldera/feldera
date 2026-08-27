@@ -11,7 +11,9 @@ use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
-use crate::db::types::program::{CompilationProfile, RuntimeSelector, RustCompilationInfo};
+use crate::db::types::program::{
+    CompilationProfile, PipelineProgramArtifacts, RuntimeSelector, RustCompilationInfo,
+};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{validate_program_config, validate_program_info};
 use crate::db::types::version::Version;
@@ -1949,6 +1951,72 @@ fn decide_cleanup(
 
 /// Decides whether a file in the pipeline-binaries directory is kept,
 /// removed, or ignored by the binaries cleanup.
+/// The binary filenames cleanup must keep, one per program.
+///
+/// A program still `CompilingRust` has no checksums yet: the compiler server may be
+/// uploading its binary over HTTP right now, so it is matched on a checksum-less prefix
+/// rather than removed.
+fn valid_pipeline_binary_filenames(programs: &[PipelineProgramArtifacts]) -> Vec<String> {
+    programs
+        .iter()
+        .map(|program| {
+            let pipeline_id = &program.pipeline_id;
+            let program_version = program.program_version;
+            match (
+                &program.program_binary_source_checksum,
+                &program.program_binary_integrity_checksum,
+            ) {
+                (Some(source_checksum), Some(binary_integrity_checksum)) => {
+                    pipeline_binary_filename(
+                        pipeline_id,
+                        program_version,
+                        source_checksum,
+                        binary_integrity_checksum,
+                    )
+                }
+                _ => format!("pipeline_{pipeline_id}_v{program_version}_"),
+            }
+        })
+        .collect()
+}
+
+/// The program-info filenames cleanup must keep, one per program.
+fn valid_program_info_filenames(programs: &[PipelineProgramArtifacts]) -> Vec<String> {
+    programs
+        .iter()
+        .map(|program| {
+            let pipeline_id = &program.pipeline_id;
+            let program_version = program.program_version;
+            match (
+                program.is_gen2,
+                &program.program_binary_source_checksum,
+                &program.program_info_integrity_checksum,
+            ) {
+                // A Gen-2 program builds no binary, so it has no binary source checksum;
+                // its artifact is named by the program-info checksum on both halves (see
+                // `deliver_gen2_program_info`). Naming it exactly is what keeps a running
+                // Gen-2 pipeline's only artifact off the checksum-less fallback below,
+                // which is there for the transient `CompilingRust` upload window.
+                (true, _, Some(program_info_integrity_checksum)) => program_info_filename(
+                    pipeline_id,
+                    program_version,
+                    program_info_integrity_checksum,
+                    program_info_integrity_checksum,
+                ),
+                (false, Some(source_checksum), Some(program_info_integrity_checksum)) => {
+                    program_info_filename(
+                        pipeline_id,
+                        program_version,
+                        source_checksum,
+                        program_info_integrity_checksum,
+                    )
+                }
+                _ => format!("program_info_{pipeline_id}_v{program_version}_"),
+            }
+        })
+        .collect()
+}
+
 fn decide_pipeline_binary_cleanup(
     filename: &str,
     metadata: Option<std::fs::Metadata>,
@@ -2025,61 +2093,9 @@ pub(crate) async fn cleanup_pipeline_binaries(
 
     // Clean up pipeline binaries
     // These are not subject to the retention period.
-    let valid_pipeline_binary_filenames: Vec<String> = existing_pipeline_programs
-        .iter()
-        .map(
-            |(
-                pipeline_id,
-                program_version,
-                source_checksum,
-                binary_integrity_checksum,
-                _program_info_integrity_checksum,
-            )| {
-                if let (Some(source_checksum), Some(binary_integrity_checksum)) =
-                    (source_checksum, binary_integrity_checksum)
-                {
-                    pipeline_binary_filename(
-                        pipeline_id,
-                        *program_version,
-                        source_checksum,
-                        binary_integrity_checksum,
-                    )
-                } else {
-                    // this is when program status is 'CompilingRust'
-                    // when compiler server is uploading the binary over http, the status is still 'CompilingRust'
-                    // we don't want to delete such binaries, hence we keep a more relaxed matching pattern
-                    // if either of the checksums is missing
-                    format!("pipeline_{pipeline_id}_v{program_version}_")
-                }
-            },
-        )
-        .collect();
-
-    let valid_program_info_filenames: Vec<String> = existing_pipeline_programs
-        .iter()
-        .map(
-            |(
-                pipeline_id,
-                program_version,
-                source_checksum,
-                _binary_integrity_checksum,
-                program_info_integrity_checksum,
-            )| {
-                if let (Some(source_checksum), Some(program_info_integrity_checksum)) =
-                    (source_checksum, program_info_integrity_checksum)
-                {
-                    program_info_filename(
-                        pipeline_id,
-                        *program_version,
-                        source_checksum,
-                        program_info_integrity_checksum,
-                    )
-                } else {
-                    format!("program_info_{pipeline_id}_v{program_version}_")
-                }
-            },
-        )
-        .collect();
+    let valid_pipeline_binary_filenames =
+        valid_pipeline_binary_filenames(&existing_pipeline_programs);
+    let valid_program_info_filenames = valid_program_info_filenames(&existing_pipeline_programs);
 
     cleanup_specific_files(
         "Rust compilation pipeline binaries",
@@ -2495,16 +2511,20 @@ mod test {
     use crate::compiler::rust_compiler::prepare_workspace;
     use crate::compiler::rust_compiler::{
         STALE_TEMP_UPLOAD_MAX_AGE, calculate_source_checksum, decide_cleanup,
-        decide_pipeline_binary_cleanup, is_permanent_upload_rejection, sccache_message,
+        decide_pipeline_binary_cleanup, is_permanent_upload_rejection, program_info_filename,
+        sccache_message, valid_program_info_filenames,
     };
     use crate::compiler::test::{CompilerTest, list_content_as_sorted_names};
     use crate::compiler::util::{
         CleanupDecision, crate_name_pipeline_globals, crate_name_pipeline_main, read_file_content,
     };
+    use crate::db::types::pipeline::PipelineId;
     use crate::db::types::program::{
-        CompilationProfile, ProgramStatus, RuntimeSelector, RustCompilationInfo,
+        CompilationProfile, PipelineProgramArtifacts, ProgramStatus, RuntimeSelector,
+        RustCompilationInfo,
     };
     use crate::db::types::utils::validate_program_info;
+    use crate::db::types::version::Version;
     use std::collections::HashSet;
 
     /// Tests that sccache's report is picked out of real `cargo build` output, that the
@@ -2894,6 +2914,64 @@ mod test {
             StatusCode::INTERNAL_SERVER_ERROR
         ));
         assert!(!is_permanent_upload_rejection(StatusCode::BAD_GATEWAY));
+    }
+
+    /// A Gen-2 program's program info is retained by its exact name, not by the
+    /// checksum-less prefix that exists for the transient `CompilingRust` upload window.
+    ///
+    /// A Gen-2 program has no binary source checksum, so it used to fall into that prefix
+    /// and its only artifact survived by accident: scoping the fallback more tightly would
+    /// have deleted the program info of a running Gen-2 pipeline. This pins the exact name,
+    /// so the two are no longer coupled.
+    #[test]
+    fn gen2_program_info_is_retained_by_its_exact_name() {
+        let pipeline_id = PipelineId(uuid::Uuid::nil());
+        let checksum = "c0ffee";
+        // What `deliver_gen2_program_info` writes: the program-info checksum on both halves.
+        let filename = program_info_filename(&pipeline_id, Version(3), checksum, checksum);
+
+        let gen2 = PipelineProgramArtifacts {
+            pipeline_id,
+            program_version: Version(3),
+            program_binary_source_checksum: None,
+            program_binary_integrity_checksum: None,
+            program_info_integrity_checksum: Some(checksum.to_string()),
+            is_gen2: true,
+        };
+        let valid = valid_program_info_filenames(std::slice::from_ref(&gen2));
+        assert_eq!(
+            valid,
+            vec![filename.clone()],
+            "a Gen-2 program is named exactly, not by a prefix"
+        );
+        assert!(
+            !valid[0].ends_with('_'),
+            "an exact name, so tightening the checksum-less fallback cannot reach it"
+        );
+        assert_eq!(
+            decide_pipeline_binary_cleanup(&filename, None, &[], &valid),
+            CleanupDecision::Keep {
+                motivation: filename.clone()
+            }
+        );
+        // Another version of the same pipeline is still collected.
+        let other_version = program_info_filename(&pipeline_id, Version(2), checksum, checksum);
+        assert_eq!(
+            decide_pipeline_binary_cleanup(&other_version, None, &[], &valid),
+            CleanupDecision::Remove
+        );
+
+        // A program still compiling Rust has no checksums at all and keeps the relaxed
+        // prefix, which is what that fallback is for.
+        let compiling = PipelineProgramArtifacts {
+            is_gen2: false,
+            program_info_integrity_checksum: None,
+            ..gen2.clone()
+        };
+        assert_eq!(
+            valid_program_info_filenames(std::slice::from_ref(&compiling)),
+            vec![format!("program_info_{pipeline_id}_v3_")]
+        );
     }
 
     /// Stale `.tmp-` uploads are removed, fresh or unstat-able ones are kept,

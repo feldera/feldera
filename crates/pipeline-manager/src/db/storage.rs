@@ -11,7 +11,9 @@ use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PatchClientMetadata, PipelineDescr,
     PipelineId,
 };
-use crate::db::types::program::{RustCompilationInfo, SqlCompilationInfo};
+use crate::db::types::program::{
+    PipelineProgramArtifacts, RustCompilationInfo, SqlCompilationInfo,
+};
 use crate::db::types::role::{MintableKeyRole, Role};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::user::{
@@ -737,21 +739,11 @@ pub(crate) trait Storage {
     /// `operations::pipeline::count_pipelines_needing_compilation`.
     async fn count_pipelines_needing_compilation(&self) -> Result<u64, DBError>;
 
-    /// Retrieves the list of fully compiled pipeline programs (pipeline identifier, program version,
-    /// program binary source checksum, program binary integrity checksum) AND pipeline programs that
-    /// are currently being compiled (pipeline identifier, program version) across all tenants.
+    /// Retrieves every pipeline program that is fully compiled or currently compiling, across
+    /// all tenants, with the checksums naming its artifacts. Feeds artifact cleanup.
     async fn list_pipeline_programs_across_all_tenants(
         &self,
-    ) -> Result<
-        Vec<(
-            PipelineId,
-            Version,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-        )>,
-        DBError,
-    >;
+    ) -> Result<Vec<PipelineProgramArtifacts>, DBError>;
 
     async fn get_support_bundle_data(
         &self,

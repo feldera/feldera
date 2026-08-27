@@ -19,9 +19,9 @@ use crate::db::types::pipeline::{
     PipelineDescr, PipelineId,
 };
 use crate::db::types::program::{
-    CompilationProfile, ProgramConfig, ProgramError, ProgramInfo, ProgramStatus, RuntimeSelector,
-    RustCompilationInfo, SqlCompilationInfo, generate_pipeline_config,
-    validate_program_status_transition,
+    CompilationProfile, PipelineProgramArtifacts, ProgramConfig, ProgramError, ProgramInfo,
+    ProgramStatus, RuntimeSelector, RustCompilationInfo, SqlCompilationInfo,
+    generate_pipeline_config, validate_program_status_transition,
 };
 use crate::db::types::resources_status::{
     ResourcesDesiredStatus, ResourcesStatus, validate_resources_desired_status_transition,
@@ -8695,23 +8695,8 @@ impl Storage for Mutex<DbModel> {
 
     async fn list_pipeline_programs_across_all_tenants(
         &self,
-    ) -> Result<
-        Vec<(
-            PipelineId,
-            Version,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-        )>,
-        DBError,
-    > {
-        let mut checksums: Vec<(
-            PipelineId,
-            Version,
-            Option<String>,
-            Option<String>,
-            Option<String>,
-        )> = self
+    ) -> Result<Vec<PipelineProgramArtifacts>, DBError> {
+        let mut artifacts: Vec<PipelineProgramArtifacts> = self
             .lock()
             .await
             .pipelines
@@ -8720,18 +8705,21 @@ impl Storage for Mutex<DbModel> {
                 pipeline.program_status == ProgramStatus::Success
                     || pipeline.program_status == ProgramStatus::CompilingRust
             })
-            .map(|pipeline| {
-                (
-                    pipeline.id,
-                    pipeline.program_version,
-                    pipeline.program_binary_source_checksum.clone(),
-                    pipeline.program_binary_integrity_checksum.clone(),
-                    pipeline.program_info_integrity_checksum.clone(),
-                )
+            .map(|pipeline| PipelineProgramArtifacts {
+                pipeline_id: pipeline.id,
+                program_version: pipeline.program_version,
+                program_binary_source_checksum: pipeline.program_binary_source_checksum.clone(),
+                program_binary_integrity_checksum: pipeline
+                    .program_binary_integrity_checksum
+                    .clone(),
+                program_info_integrity_checksum: pipeline.program_info_integrity_checksum.clone(),
+                is_gen2: validate_program_config(&pipeline.program_config, true)
+                    .map(|config| config.runtime_version().is_gen2())
+                    .unwrap_or(false),
             })
             .collect();
-        checksums.sort_by(|p1, p2| p1.0.cmp(&p2.0));
-        Ok(checksums)
+        artifacts.sort_by(|p1, p2| p1.pipeline_id.cmp(&p2.pipeline_id));
+        Ok(artifacts)
     }
 
     async fn get_support_bundle_data(
