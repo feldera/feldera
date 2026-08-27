@@ -3958,6 +3958,159 @@ async fn pipeline_start_fails() {
 /// Pipeline can only transition from `Stopped` to `Provisioning` if the version guard
 /// presented matches.
 #[tokio::test]
+async fn sql_compilation_clear_recovers_every_stranded_program() {
+    // A worker clears, before taking its next job, the rows in its shard that nothing else
+    // will advance. `get_next_sql_compilation` claims only `Stopped` + `Pending` + this
+    // platform version, so a row is stranded either because this worker died holding it, or
+    // because it names a platform version no running worker matches.
+    //
+    // Behavioural, not a model-versus-implementation comparison: the predicate is written
+    // twice, once in SQL and once in the model, and dropping a case from both at once would
+    // leave those two agreeing with each other and wrong.
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+
+    let descr = |name: &'static str| PipelineDescr {
+        name: name.to_string(),
+        description: "".to_string(),
+        tags: vec![],
+        runtime_config: json!({}),
+        program_code: "".to_string(),
+        udf_rust: "".to_string(),
+        udf_toml: "".to_string(),
+        program_config: json!({}),
+    };
+
+    // Interrupted by this worker's previous incarnation: same platform version.
+    let ours = handle
+        .db
+        .new_pipeline(tenant_id, Uuid::now_v7(), "v0", descr("ours"))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_compiling_sql(tenant_id, ours.id, Version(1))
+        .await
+        .unwrap();
+
+    // Claimed by a worker of a platform version that no longer runs.
+    let stale_platform = handle
+        .db
+        .new_pipeline(tenant_id, Uuid::now_v7(), "v_old", descr("stale_platform"))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_compiling_sql(tenant_id, stale_platform.id, Version(1))
+        .await
+        .unwrap();
+
+    // Waiting to be compiled, but on a platform version the claim query will not match.
+    let stale_pending = handle
+        .db
+        .new_pipeline(tenant_id, Uuid::now_v7(), "v_old", descr("stale_pending"))
+        .await
+        .unwrap();
+
+    handle
+        .db
+        .clear_ongoing_sql_compilation_for_worker("v0", 0, 1)
+        .await
+        .unwrap();
+
+    for (pipeline, name) in [
+        (&ours, "ours"),
+        (&stale_platform, "stale_platform"),
+        (&stale_pending, "stale_pending"),
+    ] {
+        let after = handle.db.get_pipeline(tenant_id, name).await.unwrap();
+        assert_eq!(
+            after.program_status,
+            ProgramStatus::Pending,
+            "{name}: must be claimable again"
+        );
+        assert_eq!(
+            after.platform_version, "v0",
+            "{name}: must name the platform version the claim query matches"
+        );
+        let _ = pipeline;
+    }
+}
+
+#[tokio::test]
+async fn artifact_retention_covers_both_compiling_statuses() {
+    // `runtime_version` is an unstable feature; without it `program_config`'s selector is
+    // ignored and every program looks like a platform one.
+    crate::enable_test_unstable_features();
+
+    // Artifact cleanup keeps what this list names and removes the rest, so a program whose
+    // artifacts are on disk must appear here even before its checksums are recorded. Both
+    // compiling statuses cover such a window: `CompilingRust` for the binary and program
+    // info a legacy program delivers, `CompilingSql` for the program info a Gen-2 program
+    // delivers, which is its only artifact.
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+
+    let make = |name: &'static str| PipelineDescr {
+        name: name.to_string(),
+        description: "".to_string(),
+        tags: vec![],
+        runtime_config: json!({}),
+        program_code: "".to_string(),
+        udf_rust: "".to_string(),
+        udf_toml: "".to_string(),
+        program_config: json!({ "runtime_version": "gen2" }),
+    };
+
+    // Left in `Pending`: nothing has been delivered, so nothing must be retained.
+    let pending = handle
+        .db
+        .new_pipeline(tenant_id, Uuid::now_v7(), "v0", make("pending"))
+        .await
+        .unwrap();
+    // Moved to `CompilingSql`, the status a Gen-2 program is in when it delivers.
+    let compiling = handle
+        .db
+        .new_pipeline(tenant_id, Uuid::now_v7(), "v0", make("compiling"))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_compiling_sql(tenant_id, compiling.id, Version(1))
+        .await
+        .unwrap();
+
+    let listed = handle
+        .db
+        .list_pipeline_programs_across_all_tenants()
+        .await
+        .unwrap();
+    let ids: Vec<PipelineId> = listed.iter().map(|p| p.pipeline_id).collect();
+    assert!(
+        ids.contains(&compiling.id),
+        "a CompilingSql program must be retained: its program info is already on disk"
+    );
+    assert!(
+        !ids.contains(&pending.id),
+        "a Pending program has delivered nothing and must not hold artifacts"
+    );
+
+    let entry = listed
+        .iter()
+        .find(|p| p.pipeline_id == compiling.id)
+        .unwrap();
+    assert!(
+        entry.is_gen2,
+        "the runtime selector is read from program_config"
+    );
+    assert_eq!(
+        entry.program_info_integrity_checksum, None,
+        "the checksum is not recorded until the row reaches Success, which is why the \
+         relaxed prefix has to cover this window"
+    );
+}
+
+#[tokio::test]
 async fn runner_descriptor_uses_runtime_compatibility_not_string_equality() {
     // A pipeline compiled for one platform version, asked for by a runner naming another.
     // Readiness is decided by `is_supported_runtime`, not by comparing the two strings, so
@@ -8841,6 +8994,7 @@ impl Storage for Mutex<DbModel> {
             .filter(|pipeline| {
                 pipeline.program_status == ProgramStatus::Success
                     || pipeline.program_status == ProgramStatus::CompilingRust
+                    || pipeline.program_status == ProgramStatus::CompilingSql
             })
             .map(|pipeline| PipelineProgramArtifacts {
                 pipeline_id: pipeline.id,
