@@ -7,6 +7,7 @@ use tempfile::tempdir;
 use crate::{
     Circuit, IndexedZSetHandle, OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit, Runtime,
     ZWeight,
+    algebra::F64,
     circuit::{CircuitConfig, CircuitStorageConfig, Mode},
     default_hasher,
     dynamic::{Data, DowncastTrait as _},
@@ -281,6 +282,115 @@ fn circular_dependency_test_circuit(
         output4_ref,
         output7_ref,
         output8_ref,
+    ))
+}
+
+/// Sizes for `diluted_cluster_test_circuit`, applied as balancer hints in
+/// `test_skew_survives_a_diluting_cluster`.
+const NUM_FILLERS: usize = 6;
+const FILLER_SIZE: usize = 1_400_000_000;
+const SKEWED_SIZE: usize = 400_000_000;
+const SKEWED_SKEW: f64 = 4.0;
+
+const SKEWED_STREAM: &str = "skewed";
+const BCAST_STREAM: &str = "bcast";
+
+fn filler_stream(index: usize) -> String {
+    format!("filler{index}")
+}
+
+/// A join cluster in which one skewed collection is worth repartitioning and
+/// nothing else can move.
+///
+/// ```text
+///   skewed --left_join--> bcast --join--> filler0 --join--> filler1 --join--> ... --join--> filler5
+/// ```
+///
+/// All 8 streams form one cluster, since clusters are connected components of the
+/// graph whose edges are joins.
+///
+/// `skewed` is the outer input of a left join, so `Balance` is its only
+/// alternative to `Shard`, and choosing it forces `bcast` to `Broadcast`. The
+/// fillers are large and unskewed, so `Shard` is already their optimum;
+/// `filler0` and `filler1` are additionally pinned to it.
+fn diluted_cluster_test_circuit(
+    circuit: &mut RootCircuit,
+) -> AnyResult<(
+    IndexedZSetHandle<u64, u64>,
+    IndexedZSetHandle<u64, u64>,
+    Vec<OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, u64>>>>,
+    Vec<OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, u64>>>>,
+)> {
+    let (skewed_input, skewed_input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
+    let (filler_input, filler_input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
+
+    let skewed = skewed_input
+        .map_index(|(k, v)| (k.clone(), v.clone()))
+        .set_persistent_id(Some(SKEWED_STREAM));
+    let bcast = filler_input
+        .map_index(|(k, v)| (k.clone(), Some(v.clone())))
+        .set_persistent_id(Some(BCAST_STREAM));
+    let fillers = (0..NUM_FILLERS)
+        .map(|index| {
+            filler_input
+                .map_index(|(k, v)| (k.clone(), v.clone()))
+                .set_persistent_id(Some(&filler_stream(index)))
+        })
+        .collect::<Vec<_>>();
+
+    let mut balanced = vec![
+        skewed.left_join_index_balanced_inner(&bcast, |key, left, right| {
+            Some((*key, *left + right.unwrap_or(0)))
+        }),
+        bcast.join_index_balanced_inner(&fillers[0], |key, left, right| {
+            Some((*key, left.unwrap_or(0) + *right))
+        }),
+    ];
+
+    // Reference outputs computed using regular joins.
+    let mut reference = vec![
+        skewed.left_join_index(&bcast, |key, left, right| {
+            Some((*key, *left + right.unwrap_or(0)))
+        }),
+        bcast.join_index(&fillers[0], |key, left, right| {
+            Some((*key, left.unwrap_or(0) + *right))
+        }),
+    ];
+
+    for pair in fillers.windows(2) {
+        balanced.push(
+            pair[0].join_index_balanced_inner(&pair[1], |key, left, right| {
+                Some((*key, *left + *right))
+            }),
+        );
+        reference
+            .push(pair[0].join_index(&pair[1], |key, left, right| Some((*key, *left + *right))));
+    }
+
+    let balanced_outputs = balanced
+        .iter()
+        .enumerate()
+        .map(|(index, stream)| {
+            stream
+                .set_persistent_id(Some(&format!("balanced{index}")))
+                .accumulate_output_persistent(Some(&format!("balanced_output{index}")))
+        })
+        .collect();
+    let reference_outputs = reference
+        .iter()
+        .enumerate()
+        .map(|(index, stream)| {
+            stream
+                .set_persistent_id(Some(&format!("reference{index}")))
+                .accumulate_output_persistent(Some(&format!("reference_output{index}")))
+        })
+        .collect();
+
+    Ok((
+        skewed_input_handle,
+        filler_input_handle,
+        balanced_outputs,
+        reference_outputs,
     ))
 }
 
@@ -1302,6 +1412,114 @@ fn test_slow_skew() {
         });
     }
     test_join_with_balancer(num_partitions, false, false, test_steps, false, true);
+}
+
+/// The skewed collection reaches `Balance` even though its cluster is too large
+/// for the change to look significant cluster-wide.
+#[test]
+fn test_skew_survives_a_diluting_cluster() {
+    init_test_logger();
+
+    let workers = 4;
+    let temp = tempdir().expect("Can't create temp dir for storage");
+
+    let (mut circuit, (skewed_handle, filler_handle, balanced_outputs, reference_outputs)) =
+        Runtime::init_circuit(mkconfig(temp.path(), workers), diluted_cluster_test_circuit)
+            .unwrap();
+    circuit.set_auto_rebalance(true).unwrap();
+
+    // Size hints stand in for the filler collections, which cost too much to
+    // materialize. `filler0` and `filler1` are also pinned, the other way a
+    // cluster member becomes immovable. Together these make `Balance` beat
+    // `Shard` 110,000,001 to 400,000,000 on the two collections the change
+    // repartitions, which is only an 11.6% cut of the cluster's 2,500,000,015,
+    // under the 16.7% the default 1.2 relative threshold demands.
+    let mut hints = (0..NUM_FILLERS)
+        .map(|index| (filler_stream(index), BalancerHint::Size(Some(FILLER_SIZE))))
+        .collect::<Vec<_>>();
+    hints.push((
+        filler_stream(0),
+        BalancerHint::Policy(Some(PartitioningPolicy::Shard)),
+    ));
+    hints.push((
+        filler_stream(1),
+        BalancerHint::Policy(Some(PartitioningPolicy::Shard)),
+    ));
+    for result in circuit.set_balancer_hints(hints).unwrap() {
+        result.unwrap();
+    }
+
+    // Five evenly distributed steps, then five skewed ones. The even phase is what
+    // makes this a test of the gate: the gate is only consulted once every stream
+    // reports an effective policy that the current domains still admit.
+    for step in 0..10 {
+        if step == 5 {
+            // The data below really is skewed onto one worker, but a collection
+            // whose skew is worth billions of records is not one a unit test can
+            // materialize, so scale it with hints. Setting a hint also requests a
+            // refresh, which gets the cluster re-solved at the start of the next
+            // transaction, while its policies can still change.
+            circuit
+                .set_balancer_hint(SKEWED_STREAM, BalancerHint::Size(Some(SKEWED_SIZE)))
+                .unwrap();
+            circuit
+                .set_balancer_hint(
+                    SKEWED_STREAM,
+                    BalancerHint::Skew(Some(F64::new(SKEWED_SKEW))),
+                )
+                .unwrap();
+        }
+
+        let skewed_batch = if step < 5 {
+            generate_skewed_batch(workers, 20, 1)
+        } else {
+            generate_skewed_batch(workers, 100, 5)
+        };
+        for Tup2(key, Tup2(val, w)) in skewed_batch {
+            skewed_handle.push(key, (val, w));
+        }
+        for Tup2(key, Tup2(val, w)) in generate_skewed_batch(workers, 10, 1) {
+            filler_handle.push(key, (val, w));
+        }
+
+        circuit.transaction().unwrap();
+
+        for (balanced, reference) in balanced_outputs.iter().zip(reference_outputs.iter()) {
+            assert_eq!(
+                balanced.concat().consolidate(),
+                reference.concat().consolidate(),
+                "step {step}"
+            );
+        }
+
+        let (expected_skewed, expected_bcast) = if step < 5 {
+            (PartitioningPolicy::Shard, PartitioningPolicy::Shard)
+        } else {
+            (PartitioningPolicy::Balance, PartitioningPolicy::Broadcast)
+        };
+
+        assert_eq!(
+            circuit.get_current_balancer_policy(SKEWED_STREAM).unwrap(),
+            expected_skewed,
+            "step {step}"
+        );
+        assert_eq!(
+            circuit.get_current_balancer_policy(BCAST_STREAM).unwrap(),
+            expected_bcast,
+            "step {step}"
+        );
+
+        // The fillers are what dilutes the ratio, so they must stay put.
+        for index in 0..NUM_FILLERS {
+            assert_eq!(
+                circuit
+                    .get_current_balancer_policy(&filler_stream(index))
+                    .unwrap(),
+                PartitioningPolicy::Shard,
+                "step {step}, filler {index}"
+            );
+        }
+    }
 }
 
 #[test]
