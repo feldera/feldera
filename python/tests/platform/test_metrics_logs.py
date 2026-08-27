@@ -1,7 +1,10 @@
 import json
 import time
+import uuid
 from http import HTTPStatus
 from urllib.parse import quote_plus
+
+import requests
 
 from .helper import (
     create_pipeline,
@@ -274,3 +277,130 @@ def test_pipeline_logs(pipeline_name):
         timeout_s=30.0,
         poll_interval_s=0.5,
     )
+
+
+_POSITION_HEADERS = ("feldera-logs-epoch", "feldera-logs-seq", "feldera-logs-gap")
+
+
+def _read_logs(
+    pipeline_name: str,
+    cursor: str | None,
+    count: int,
+    timeout_s: float = 30.0,
+) -> tuple[dict | None, list[str]]:
+    """
+    Opens the logs stream and reads the first `count` log lines from it.
+
+    `cursor` selects the resume protocol: `None` omits the parameter entirely and asks
+    for the legacy stream, an empty string asks to start from the beginning of the
+    retained buffer. A caller that supplies either form of a cursor is told its position
+    in the response headers, which are returned separately from the log lines.
+
+    A `count` of zero reads the position alone, which is all a caller already at the end
+    of the stream can expect to receive. The position arrives with the response head, so
+    such a read completes without waiting for a line that may never come.
+    """
+    path = api_url(f"/pipelines/{pipeline_name}/logs")
+    if cursor is not None:
+        path += f"?cursor={quote_plus(cursor)}"
+
+    lines: list[str] = []
+    with get(path, stream=True, timeout=timeout_s) as resp:
+        assert resp.status_code == HTTPStatus.OK, (resp.status_code, resp.text)
+        position = _position_of(resp)
+        if count > 0:
+            for raw in resp.iter_lines():
+                lines.append(raw.decode("utf-8"))
+                if len(lines) >= count:
+                    break
+    return position, lines
+
+
+def _position_of(resp: requests.Response) -> dict | None:
+    """
+    The position a logs response reports, or `None` if it reports none.
+
+    All three headers are required. A response carrying only some of them could not be
+    turned into a cursor, so it is a failure rather than something to interpret.
+    """
+    present = [h in resp.headers for h in _POSITION_HEADERS]
+    assert all(present) or not any(present), dict(resp.headers)
+    if not all(present):
+        return None
+    epoch, seq, gap = (resp.headers[h] for h in _POSITION_HEADERS)
+    return {"epoch": epoch, "seq": int(seq), "gap": int(gap)}
+
+
+def _has_log_lines(pipeline_name: str, count: int) -> bool:
+    """
+    Whether the stream already holds `count` lines. A stream with fewer simply stays open
+    until more arrive, so a read timeout is the expected answer for "not yet". Every other
+    failure is reported, rather than being retried until the enclosing wait gives up with
+    nothing to show for it.
+    """
+    try:
+        _, lines = _read_logs(pipeline_name, "", count, timeout_s=5.0)
+        return len(lines) >= count
+    except requests.exceptions.Timeout:
+        return False
+
+
+@gen_pipeline_name
+def test_pipeline_logs_cursor(pipeline_name):
+    """
+    A caller that presents a cursor receives the lines it is missing, rather than the
+    whole retained buffer, with neither duplication nor loss across the reconnect.
+    """
+    create_pipeline(pipeline_name, "CREATE TABLE t1(c1 INTEGER);")
+    start_pipeline_as_paused(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
+
+    prefix, suffix = 3, 2
+    wait_for_condition(
+        "pipeline has produced enough log lines",
+        lambda: _has_log_lines(pipeline_name, prefix + suffix),
+        timeout_s=60.0,
+        poll_interval_s=1.0,
+    )
+
+    # A full catch-up, read first, is the authority on what the stream holds. Every read
+    # below asserts a zero gap, so an eviction crossing the test fails on the position
+    # that reports it rather than on a line comparison that cannot explain itself.
+    whole_position, whole = _read_logs(pipeline_name, "", prefix + suffix)
+    assert (whole_position["seq"], whole_position["gap"]) == (0, 0), whole_position
+    epoch = whole_position["epoch"]
+
+    # Read the head of the stream, then reconnect where that read left off. The two
+    # partial reads must reconstruct the prefix of the full read exactly: a cursor that
+    # replayed would duplicate lines here, one that skipped would drop them.
+    first, head = _read_logs(pipeline_name, "", prefix)
+    assert (first["epoch"], first["seq"], first["gap"]) == (epoch, 0, 0), first
+
+    resumed, tail = _read_logs(pipeline_name, f"{epoch}:{prefix}", suffix)
+    assert resumed["epoch"] == epoch, resumed
+    assert (resumed["seq"], resumed["gap"]) == (prefix, 0), resumed
+    assert head + tail == whole
+
+    # A cursor from another instance of the buffer refers to lines this instance never
+    # held, so it is answered with a full catch-up instead of being trusted.
+    stale, replayed = _read_logs(pipeline_name, f"{uuid.uuid4()}:{prefix}", prefix)
+    assert stale["epoch"] == epoch, stale
+    assert (stale["seq"], stale["gap"]) == (0, 0), stale
+    assert replayed == head
+
+    # A cursor past the end of the stream names a position the buffer can never reach.
+    # Answering with the end of the stream is what lets the next connection resume, where
+    # echoing the position back would deliver nothing for the life of the epoch.
+    beyond_end, _ = _read_logs(pipeline_name, f"{epoch}:{2**64 - 1}", 0)
+    assert beyond_end["gap"] == 0, beyond_end
+    assert prefix + suffix <= beyond_end["seq"] < 2**64 - 1, beyond_end
+
+    # Omitting the cursor keeps the legacy stream, which reports no position at all.
+    legacy_position, legacy = _read_logs(pipeline_name, None, 1)
+    assert legacy_position is None
+    assert legacy[0] == whole[0], legacy
+
+    # A malformed cursor can only come from a broken client, so it is rejected rather
+    # than quietly reinterpreted as some other position.
+    r = get(api_url(f"/pipelines/{pipeline_name}/logs?cursor=nonsense"), stream=True)
+    assert r.status_code == HTTPStatus.BAD_REQUEST, (r.status_code, r.text)
