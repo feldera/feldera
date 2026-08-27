@@ -699,7 +699,8 @@ pub(crate) async fn update_pipeline(
                      program_status_since = now(),
                      program_error = $2,
                      program_binary_source_checksum = NULL,
-                     program_binary_integrity_checksum = NULL
+                     program_binary_integrity_checksum = NULL,
+                     program_info_integrity_checksum = NULL
                  WHERE tenant_id = $3 AND name = $4",
             )
             .await?;
@@ -2070,7 +2071,7 @@ pub(crate) async fn list_pipeline_programs_across_all_tenants(
 ) -> Result<Vec<PipelineProgramArtifacts>, DBError> {
     let stmt = txn
         .prepare_cached(
-            "SELECT p.id, p.program_version, p.program_binary_source_checksum, p.program_binary_integrity_checksum, p.program_info_integrity_checksum, p.program_config
+            "SELECT p.id, p.program_version, p.program_binary_source_checksum, p.program_binary_integrity_checksum, p.program_info_integrity_checksum, p.program_config, p.program_status
              FROM pipeline AS p
              WHERE p.program_status = 'success' OR p.program_status = 'compiling_rust' OR p.program_status = 'compiling_sql'
              ORDER BY p.id ASC
@@ -2078,25 +2079,27 @@ pub(crate) async fn list_pipeline_programs_across_all_tenants(
         )
         .await?;
     let rows = txn.query(&stmt, &[]).await?;
-    Ok(rows
-        .iter()
-        .map(|row| PipelineProgramArtifacts {
-            pipeline_id: PipelineId(row.get(0)),
-            program_version: Version(row.get(1)),
-            program_binary_source_checksum: row.get::<_, Option<String>>(2),
-            program_binary_integrity_checksum: row.get::<_, Option<String>>(3),
-            program_info_integrity_checksum: row.get::<_, Option<String>>(4),
-            // Derived from the parsed configuration rather than a SQL comparison against the
-            // literal `gen2`, so what selects the engine stays defined in one place.
-            // `program_config` is a VARCHAR holding JSON text, as the other readers of this
-            // column treat it.
-            is_gen2: serde_json::from_str::<serde_json::Value>(row.get::<_, &str>(5))
-                .ok()
-                .and_then(|config| validate_program_config(&config, true).ok())
-                .map(|config| config.runtime_version().is_gen2())
-                .unwrap_or(false),
+    rows.iter()
+        .map(|row| {
+            Ok(PipelineProgramArtifacts {
+                pipeline_id: PipelineId(row.get(0)),
+                program_version: Version(row.get(1)),
+                program_status: row.get::<_, String>(6).try_into()?,
+                program_binary_source_checksum: row.get::<_, Option<String>>(2),
+                program_binary_integrity_checksum: row.get::<_, Option<String>>(3),
+                program_info_integrity_checksum: row.get::<_, Option<String>>(4),
+                // Derived from the parsed configuration rather than a SQL comparison against the
+                // literal `gen2`, so what selects the engine stays defined in one place.
+                // `program_config` is a VARCHAR holding JSON text, as the other readers of this
+                // column treat it.
+                is_gen2: serde_json::from_str::<serde_json::Value>(row.get::<_, &str>(5))
+                    .ok()
+                    .and_then(|config| validate_program_config(&config, true).ok())
+                    .map(|config| config.runtime_version().is_gen2())
+                    .unwrap_or(false),
+            })
         })
-        .collect())
+        .collect()
 }
 
 /// Store a support data collection entry
