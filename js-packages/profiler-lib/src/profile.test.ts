@@ -1162,6 +1162,47 @@ describe('CircuitProfile.rankNodes', () => {
     })
 })
 
+describe('ComplexNode.leafCount', () => {
+    // A region's badge reports the primitive operators hidden inside it, at any nesting depth -
+    // counting immediate children instead would report 2 for `outer` below.
+    const simple = (id: string, label: string) => ({ Simple: { id, label } })
+    const cluster = (id: string, label: string, nodes: unknown[]) => ({ Cluster: { id, label, nodes } })
+
+    const parse = () =>
+        CircuitProfile.fromJson({
+            metrics: [],
+            worker_profiles: [{ metadata: {} }],
+            graph: {
+                nodes: {
+                    id: 'n',
+                    label: 'circuit',
+                    nodes: [
+                        simple('n1', 'source'),
+                        cluster('outer', 'region', [
+                            simple('n2', 'map'),
+                            cluster('inner', 'subregion', [simple('n3', 'join'), simple('n4', 'filter')])
+                        ])
+                    ]
+                },
+                edges: []
+            }
+        } as never).profile
+
+    it('counts primitive operators at any depth, not immediate children', () => {
+        const profile = parse()
+        expect(profile.complexNodes.get('inner').unwrap().leafCount).toBe(2)
+        expect(profile.complexNodes.get('outer').unwrap().leafCount).toBe(3)
+    })
+
+    it('leaves primitive operators and the toplevel graph node without a count', () => {
+        const profile = parse()
+        // Primitive operators carry no count, so they get no badge...
+        expect(profile.simpleNodes.get('n1').unwrap()).not.toHaveProperty('leafCount')
+        // ...and neither does the toplevel node, which is never drawn.
+        expect(profile.complexNodes.get('n').unwrap().leafCount).toBe(0)
+    })
+})
+
 describe('CircuitProfile.byName', () => {
     const mirNode = (persistent_id: string, table: string | null, view: string | null) => ({
         operation: 'op', table, view, inputs: [], calcite: {}, positions: [], persistent_id
