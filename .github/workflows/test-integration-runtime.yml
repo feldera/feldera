@@ -50,7 +50,7 @@ jobs:
       # The instances identify this workflow by the audience it requests, so
       # the value has to match the one their trust pins.
       - name: Authenticate to Feldera
-        uses: feldera/oidc-auth-action@e9b985a9e43429f0036a7f84e4d1d1f26a397685 # v3.0.1
+        uses: feldera/oidc-auth-action@8d6ac3e4be2ce12d3d70c4418f97eebd28b66f29 # v4.0.0
         with:
           host: ${{ matrix.feldera_host }}
           audience: feldera-ci-runtime-tests
