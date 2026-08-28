@@ -1,0 +1,14 @@
+/*
+  Tailwind for the components under test.
+
+  The library's components are written against the host application's Tailwind build, so without
+  one their utility classes are inert: `LogView` loses `overflow-y-auto` and `flex-1`, its scroll
+  container never scrolls, and every geometry assertion in these suites measures nothing.
+
+  Deliberately not the host's full stylesheet. Skeleton's theme and the icon webfonts only supply
+  colours and glyphs, which nothing here asserts on, and the fonts are what make the host's build
+  slow.
+*/
+@import 'tailwindcss';
+@source '../src/lib/**/*.svelte';
+@source './**/*.svelte';

@@ -21,7 +21,7 @@
   import type { Field } from '$lib/services/manager'
   import SqlColumnHeader from '$lib/components/relationData/SQLColumnHeader.svelte'
   import { usePopoverTooltip } from '$lib/compositions/common/usePopoverTooltip.svelte'
-  import { ScrollDownFab, useReverseScrollContainer } from 'common-ui'
+  import { ScrollDownFab, useStickToBottom } from 'common-ui'
   import SQLValueTooltip from '$lib/components/other/SQLValueTooltip.svelte'
   import type { SQLValueJS } from '$lib/types/sql'
 
@@ -42,9 +42,9 @@
   // resume when it sticks again — the same threshold that toggles `ScrollDownFab`, so
   // pause/resume and FAB visibility stay in lockstep. Driven by the scroll container's own
   // notification rather than a reactive read, so the host callback always fires.
-  const reverseScroll = useReverseScrollContainer({
-    observeContentSize: () => changeStream.rows.length,
-    onStickToBottomChange: (stickToBottom) => onScrollPausedChange?.(!stickToBottom)
+  const stickToBottom = useStickToBottom({
+    observeSize: () => changeStream.rows.length,
+    onChange: (stuck) => onScrollPausedChange?.(!stuck)
   })
 </script>
 
@@ -67,7 +67,7 @@
       }}
       <div
         class="scrollbar h-full overflow-auto"
-        use:reverseScroll.action
+        use:stickToBottom.action
         {onscroll}
         bind:clientHeight={_.clientHeight}
       >
@@ -136,5 +136,5 @@
       </tr>
     {/snippet}
   </List>
-  <ScrollDownFab {reverseScroll}></ScrollDownFab>
+  <ScrollDownFab {stickToBottom}></ScrollDownFab>
 </div>
