@@ -58,9 +58,7 @@ def build(pipeline_name: str, sql: str = SQL) -> Pipeline:
     # PipelineBuilder lets FELDERA_RUNTIME_VERSION override its argument, so pin
     # what the manager actually stored rather than what we asked for.
     selected = pipeline.program_config().get("runtime_version")
-    assert selected == "gen2", (
-        f"expected runtime_version 'gen2', got {selected!r}"
-    )
+    assert selected == "gen2", f"expected runtime_version 'gen2', got {selected!r}"
     return pipeline
 
 
