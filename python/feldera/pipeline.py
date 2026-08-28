@@ -445,7 +445,8 @@ class Pipeline:
             the pipeline to complete. The default is None, which means wait
             indefinitely.
 
-        :raises RuntimeError: If the pipeline returns unknown metrics.
+        :raises RuntimeError: If the pipeline returns unknown metrics, or an
+            input connector failed fatally and can no longer complete.
         """
 
         if self.status() not in [
@@ -494,6 +495,19 @@ class Pipeline:
             elif pipeline_complete:
                 wait_for_completion.done()
                 break
+
+            # A fatally errored input connector never issues end-of-input, so
+            # waiting on it only hides the error behind a timeout.
+            fatal_errors = [
+                f"{endpoint.endpoint_name}: {endpoint.fatal_error}"
+                for endpoint in latest_stats.inputs
+                if endpoint.fatal_error
+            ]
+            if fatal_errors:
+                raise RuntimeError(
+                    f"input connector(s) of pipeline '{self.name}' failed fatally"
+                    f" and cannot complete: {'; '.join(fatal_errors)}"
+                )
 
             wait_for_completion.check()
             time.sleep(1)
