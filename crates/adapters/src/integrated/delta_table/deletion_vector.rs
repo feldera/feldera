@@ -10,6 +10,7 @@
 //! thus fully applied (deleted rows are never emitted), and memory stays bounded
 //! to one batch.
 
+use crate::format::parquet::int96_as_micros;
 use crate::integrated::delta_table::ReadSchema;
 use anyhow::{Result as AnyResult, anyhow};
 use arrow::array::{
@@ -677,12 +678,17 @@ impl PartitionStream for MaskedParquetPartition {
                 // decoder builds 32-bit-offset arrays, which cap one batch at 2 GiB
                 // per column, and `project_to_logical` then pays to cast them.
                 // Rebuilding the reader metadata reuses the footer read above.
-                let metadata = ArrowReaderMetadata::try_new(
-                        Arc::clone(probe.metadata()),
-                        ArrowReaderOptions::new()
-                            .with_schema(Arc::clone(ReadSchema::new(probe.schema()).schema())))
+                let options = ArrowReaderOptions::new()
+                    .with_schema(Arc::clone(ReadSchema::new(probe.schema()).schema()));
+                let mut metadata = ArrowReaderMetadata::try_new(
+                        Arc::clone(probe.metadata()), options.clone())
                     .map_err(|e| DataFusionError::External(
                         format!("failed to read Parquet file '{path}' as view types: {e}").into()))?;
+                if let Some(coerced) = int96_as_micros(&metadata, &options)
+                    .map_err(|e| DataFusionError::External(
+                        format!("failed to read INT96 timestamps in Parquet file '{path}': {e}").into()))? {
+                    metadata = coerced;
+                }
                 // `num_rows()` is `i64` because Parquet's metadata is signed
                 // throughout; it is non-negative for any file whose footer parsed
                 // (which it did, just above).
