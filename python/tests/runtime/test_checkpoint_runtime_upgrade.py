@@ -258,7 +258,11 @@ def _row(idx: int) -> dict:
 
 
 def _ensure_delta_source(source: DeltaTestLocation) -> None:
-    """Generate the Delta source if the cache is missing or wrong-sized."""
+    """Generate the Delta source if the cache is missing or wrong-sized.
+
+    Needs no build lock: one atomic Delta commit of deterministic content, so a
+    racing writer rewrites the same rows rather than mixing two builds.
+    """
 
     cached = source.row_count(missing_ok=True)
     if cached == TABLE_ROWS:
