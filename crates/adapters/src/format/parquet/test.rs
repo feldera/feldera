@@ -6,10 +6,14 @@ use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
 
-use arrow::array::RecordBatch;
+use arrow::array::{Array, ListArray, RecordBatch, StructArray, TimestampMicrosecondArray};
+use arrow::datatypes::{DataType, TimeUnit};
+use bytes::Bytes;
+use chrono::DateTime;
 use dbsp::OrdZSet;
 use dbsp::utils::Tup2;
 use feldera_adapterlib::transport::OutputBatchType;
+use feldera_sqllib::Timestamp;
 use feldera_sqllib::Variant;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::format::parquet::ParquetEncoderConfig;
@@ -28,9 +32,18 @@ use tracing_subscriber::util::SubscriberInitExt;
 
 use crate::{
     catalog::SerBatchReader,
-    format::{Encoder, parquet::ParquetEncoder},
+    format::{Encoder, parquet::ParquetEncoder, parquet::open_parquet_reader},
     static_compile::seroutput::SerBatchImpl,
-    test::{DEFAULT_TIMEOUT_MS, MockOutputConsumer, TestStruct2, mock_input_pipeline, wait},
+    test::{
+        DEFAULT_TIMEOUT_MS, MockOutputConsumer, TestStruct2, TimestampTestStruct,
+        mock_input_pipeline,
+        parquet_timestamps::{
+            TimestampEncoding, timestamp_test_data, write_mixed_column_parquet,
+            write_nested_int96_parquet, write_sub_microsecond_int96_parquet,
+            write_timestamp_parquet,
+        },
+        wait,
+    },
 };
 
 /// Parse Parquet file into an array of `T`.
@@ -117,6 +130,203 @@ fn parquet_input_test(compression: Compression) {
     for (i, upd) in zset.state().flushed.iter().enumerate() {
         assert_eq!(upd.unwrap_insert(), &test_data[i]);
     }
+}
+
+/// The `parquet` input format decodes INT96 timestamps without going through
+/// nanoseconds, so a far-future or far-past date survives ingest.
+#[test]
+fn parquet_input_int96_timestamps() {
+    let test_data = timestamp_test_data();
+    let temp_file = NamedTempFile::new().unwrap();
+    write_timestamp_parquet(temp_file.path(), &test_data, TimestampEncoding::Int96);
+
+    let config = serde_json::from_value(json!({
+        "stream": "test_input",
+        "transport": {
+            "name": "file_input",
+            "config": {
+                "path": temp_file.path()
+            }
+        },
+        "format": {
+            "name": "parquet"
+        }
+    }))
+    .unwrap();
+
+    let (endpoint, _consumer, _parser, zset) =
+        mock_input_pipeline::<TimestampTestStruct, TimestampTestStruct>(
+            config,
+            Relation::new(
+                "test".into(),
+                TimestampTestStruct::schema(),
+                false,
+                BTreeMap::new(),
+            ),
+        )
+        .unwrap();
+    endpoint.extend();
+    wait(
+        || {
+            endpoint.queue(false);
+            zset.state().flushed.len() == test_data.len()
+        },
+        DEFAULT_TIMEOUT_MS,
+    )
+    .unwrap();
+
+    for (i, upd) in zset.state().flushed.iter().enumerate() {
+        assert_eq!(upd.unwrap_insert(), &test_data[i]);
+    }
+}
+
+/// Sub-microsecond precision in an INT96 timestamp is dropped, not rounded.
+///
+/// INT96 counts nanoseconds within the day, so a writer can store a remainder
+/// finer than Feldera's `TIMESTAMP` holds. `Int96::to_micros` truncates it
+/// toward zero, which is a floor even before the epoch, where the negative
+/// part sits in the day number rather than the nanoseconds.
+///
+/// Each row below reads back as exactly the microsecond it was built from, and
+/// every remainder is large enough that rounding would give the next one.
+#[test]
+fn parquet_input_int96_truncates_sub_microseconds() {
+    fn at(rfc3339: &str) -> Timestamp {
+        Timestamp::from_dateTime(DateTime::parse_from_rfc3339(rfc3339).unwrap().to_utc())
+    }
+
+    let rows = [
+        (at("2024-06-01T12:00:00.123456Z"), 789),
+        // Before the epoch, so the day number is negative while the
+        // nanoseconds within the day stay positive.
+        (at("1600-01-01T00:00:00.123456Z"), 789),
+        // Past the nanosecond range, and one nanosecond below a whole
+        // microsecond.
+        (at("4000-12-31T00:00:00.999999Z"), 999),
+    ];
+
+    let temp_file = NamedTempFile::new().unwrap();
+    write_sub_microsecond_int96_parquet(temp_file.path(), &rows);
+
+    let data = Bytes::from(std::fs::read(temp_file.path()).unwrap());
+    let batches: Vec<RecordBatch> = open_parquet_reader(data, 1024)
+        .unwrap()
+        .map(|batch| batch.unwrap())
+        .collect();
+    let column = batches[0]
+        .column(0)
+        .as_any()
+        .downcast_ref::<TimestampMicrosecondArray>()
+        .expect("INT96 must decode at microsecond resolution");
+
+    let read_back: Vec<i64> = column.values().to_vec();
+    let expected: Vec<i64> = rows.iter().map(|(ts, _)| ts.microseconds()).collect();
+    assert_eq!(read_back, expected);
+}
+
+/// A file whose two timestamp columns carry different physical encodings
+/// decodes each one on its own terms: the INT96 column reads back retyped to
+/// microseconds, the INT64 microsecond column exactly as it was written, down
+/// to its UTC marker.
+///
+/// Coercion keys off a column's own physical type, so neither column's
+/// treatment depends on the other. Spark leaves a file in this shape when it
+/// rewrites some timestamp columns and not others.
+#[test]
+fn parquet_input_mixed_timestamp_columns_in_one_file() {
+    let test_data = timestamp_test_data();
+    let temp_file = NamedTempFile::new().unwrap();
+    write_mixed_column_parquet(temp_file.path(), &test_data);
+
+    let data = Bytes::from(std::fs::read(temp_file.path()).unwrap());
+    let batches: Vec<RecordBatch> = open_parquet_reader(data, 1024)
+        .unwrap()
+        .map(|batch| batch.unwrap())
+        .collect();
+    let batch = &batches[0];
+
+    // INT96 carries no time zone, so coercion lands on a naive microsecond
+    // timestamp; the INT64 column keeps the UTC marker it was written with.
+    let schema = batch.schema();
+    assert_eq!(
+        schema.field_with_name("ts_int96").unwrap().data_type(),
+        &DataType::Timestamp(TimeUnit::Microsecond, None),
+    );
+    assert_eq!(
+        schema.field_with_name("ts_micros").unwrap().data_type(),
+        &DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
+    );
+
+    let expected: Vec<Option<i64>> = test_data
+        .iter()
+        .map(|row| row.ts.map(|ts| ts.microseconds()))
+        .collect();
+    for name in ["ts_int96", "ts_micros"] {
+        let column = batch
+            .column_by_name(name)
+            .unwrap()
+            .as_any()
+            .downcast_ref::<TimestampMicrosecondArray>()
+            .unwrap_or_else(|| panic!("{name} must decode at microsecond resolution"));
+        let read_back: Vec<Option<i64>> = column.iter().collect();
+        assert_eq!(read_back, expected, "column {name}");
+    }
+}
+
+/// An INT96 timestamp inside a struct field and inside a list element decodes
+/// at microsecond resolution, the same as one at the top level.
+///
+/// Delta permits timestamps at any depth and Spark writes those as INT96 too.
+/// Coercion reaches them by walking struct, list and map paths, including the
+/// `.list.element` name Parquet gives a list's elements.
+#[test]
+fn parquet_input_nested_int96_timestamps() {
+    let test_data = timestamp_test_data();
+    let temp_file = NamedTempFile::new().unwrap();
+    write_nested_int96_parquet(temp_file.path(), &test_data);
+
+    let data = Bytes::from(std::fs::read(temp_file.path()).unwrap());
+    let batches: Vec<RecordBatch> = open_parquet_reader(data, 1024)
+        .unwrap()
+        .map(|batch| batch.unwrap())
+        .collect();
+    let batch = &batches[0];
+
+    // The fixture skips rows without a timestamp.
+    let expected: Vec<i64> = test_data
+        .iter()
+        .filter_map(|row| row.ts)
+        .map(|ts| ts.microseconds())
+        .collect();
+
+    let in_struct = batch
+        .column_by_name("nested")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<StructArray>()
+        .unwrap()
+        .column_by_name("ts")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<TimestampMicrosecondArray>()
+        .expect("INT96 inside a struct must decode at microsecond resolution")
+        .values()
+        .to_vec();
+    assert_eq!(in_struct, expected, "struct field");
+
+    let in_list = batch
+        .column_by_name("ts_list")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<ListArray>()
+        .unwrap()
+        .values()
+        .as_any()
+        .downcast_ref::<TimestampMicrosecondArray>()
+        .expect("INT96 inside a list must decode at microsecond resolution")
+        .values()
+        .to_vec();
+    assert_eq!(in_list, expected, "list element");
 }
 
 #[test]

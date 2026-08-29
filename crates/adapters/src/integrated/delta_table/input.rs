@@ -1,5 +1,6 @@
 use crate::catalog::{ArrowStream, InputCollectionHandle};
 use crate::format::InputBuffer;
+use crate::format::parquet::INT96_TIME_UNIT_NAME;
 use crate::integrated::delta_table::deletion_vector::{
     ReadMode, filtered_parquet_table, read_deletion_vector,
 };
@@ -15,6 +16,7 @@ use chrono::{DateTime, Utc};
 use datafusion::catalog::TableProvider;
 use datafusion::common::DataFusionError;
 use datafusion::common::arrow::array::RecordBatch;
+use datafusion::config::TableParquetOptions;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
@@ -513,19 +515,25 @@ impl DeltaTableInputEndpoint {
         };
 
         // Configure datafusion not to generate Utf8View arrow types, which are
-        // not yet supported by the `serde_arrow` crate. The `SessionContext`
-        // shares the pipeline-wide `RuntimeEnv` so that the CDC-mode ORDER BY
-        // query spills to the same bounded memory pool and on-disk scratch
-        // dir as every other datafusion user in the pipeline.
+        // not yet supported by the `serde_arrow` crate, and to decode INT96
+        // timestamps at `INT96_TIME_UNIT`. The `SessionContext` shares the
+        // pipeline-wide `RuntimeEnv` so that the CDC-mode ORDER BY query spills
+        // to the same bounded memory pool and on-disk scratch dir as every
+        // other datafusion user in the pipeline.
         //
         // `target_partitions` inherits `create_session_context_with`'s
         // worker-derived default; only override if `DELTA_DF_TARGET_PARTITIONS`
         // was set explicitly. Same for `batch_size`.
         let datafusion = create_session_context_with(pipeline_config, runtime_env, |cfg| {
-            let mut cfg = cfg.set_bool(
-                "datafusion.execution.parquet.schema_force_view_types",
-                false,
-            );
+            let mut cfg = cfg
+                .set_bool(
+                    "datafusion.execution.parquet.schema_force_view_types",
+                    false,
+                )
+                .set_str(
+                    "datafusion.execution.parquet.coerce_int96",
+                    INT96_TIME_UNIT_NAME,
+                );
             if let Some(n) = env_target_partitions {
                 cfg = cfg.set_usize("datafusion.execution.target_partitions", n);
             }
@@ -3327,8 +3335,23 @@ impl DeltaTableInputEndpointInner {
             urls.push(ListingTableUrl::parse(file).map_err(|e| anyhow!("internal error processing {description}; {REPORT_ERROR}; error converting file path '{file}' to table URL: {e}"))?);
         }
 
-        let listing_options = ListingOptions::new(Arc::new(ParquetFormat::default()))
-            .with_file_extension_opt(Some(".parquet"));
+        // `ParquetFormat` keeps its own copy of the Parquet settings, so hand it
+        // the session's: the snapshot scan and this read must decode a file the
+        // same way.
+        let parquet_options = TableParquetOptions {
+            global: self
+                .datafusion
+                .copied_config()
+                .options()
+                .execution
+                .parquet
+                .clone(),
+            ..Default::default()
+        };
+        let listing_options = ListingOptions::new(Arc::new(
+            ParquetFormat::default().with_options(parquet_options),
+        ))
+        .with_file_extension_opt(Some(".parquet"));
 
         let table_config = ListingTableConfig::new_with_multi_paths(urls)
             .with_listing_options(listing_options)
