@@ -11,7 +11,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
@@ -49,13 +48,8 @@ class FindComparisons {
         Utilities.enforce(clo.parameters.length == 1);
         this.parameter = clo.parameters[0];
 
-        DBSPExpression expression = clo.body;
-        if (expression.is(DBSPUnaryExpression.class)) {
-            DBSPUnaryExpression unary = expression.to(DBSPUnaryExpression.class);
-            // If the filter is wrap_bool(expression), analyze expression
-            if (unary.opcode == DBSPOpcode.WRAP_BOOL)
-                expression = unary.source;
-        }
+        // If the filter is wrap_bool(expression), analyze expression
+        DBSPExpression expression = clo.body.stripWrapBool();
         this.analyzeConjunction(expression);
     }
 
