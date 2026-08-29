@@ -32,74 +32,83 @@ use std::sync::{Arc, LazyLock};
 use std::task::{Context, Poll};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-/// Default GET cap; also the DataFusion `target_partitions` fallback.
+/// Default number of concurrently buffered object-store reads.
 pub(super) const DEFAULT_MAX_CONCURRENT_READERS: usize = 6;
 
-static DELTA_READER_SEMAPHORE: LazyLock<Arc<Semaphore>> =
-    LazyLock::new(|| Arc::new(Semaphore::new(DEFAULT_MAX_CONCURRENT_READERS)));
-
-/// Configured `max_concurrent_readers` value (0 = not set by any connector).
-static MAX_CONCURRENT_READERS: AtomicUsize = AtomicUsize::new(0);
-
-/// Apply `max_concurrent_readers` to the process-wide GET semaphore.
+/// The process-wide read budget: a semaphore plus the value a connector set on it.
 ///
-/// Returns `true` if this connector was first to set the value.
-pub(super) fn apply_max_concurrent_readers(max_concurrent_readers: usize) -> AnyResult<bool> {
-    if max_concurrent_readers == 0 {
-        bail!(
-            "invalid 'max_concurrent_readers' value: 'max_concurrent_readers' must be greater than 0"
-        );
-    }
-
-    let first_setter = match MAX_CONCURRENT_READERS.compare_exchange(
-        0,
-        max_concurrent_readers,
-        Ordering::AcqRel,
-        Ordering::Acquire,
-    ) {
-        Ok(_) => true,
-        Err(current) if current == max_concurrent_readers => false,
-        Err(_) => {
-            bail!(
-                "found conflicting values of the `max_concurrent_readers` attribute: this is a global setting that affects all Delta Lake connectors, and not just the connector where it is specified; if multiple connectors specify `max_concurrent_readers`, they must all use the same value."
-            );
-        }
-    };
-
-    if first_setter {
-        // Tokens have not been acquired yet: connectors initialize before the first GET.
-        let available_permits = DELTA_READER_SEMAPHORE.available_permits();
-        if max_concurrent_readers > available_permits {
-            DELTA_READER_SEMAPHORE.add_permits(max_concurrent_readers - available_permits);
-        } else if max_concurrent_readers < available_permits {
-            DELTA_READER_SEMAPHORE.forget_permits(available_permits - max_concurrent_readers);
-        }
-    }
-
-    Ok(first_setter)
+/// Kept together so tests can build their own budget instead of mutating the
+/// global one, which only ever moves 0 -> N once per process.
+pub(super) struct ReaderBudget {
+    semaphore: Arc<Semaphore>,
+    /// Configured `max_concurrent_readers` (0 = not set by any connector).
+    configured: AtomicUsize,
 }
 
-/// Cap DataFusion `target_partitions` so a snapshot scan cannot open one GET per worker.
-pub(super) fn delta_scan_target_partitions(
-    env_target_partitions: Option<usize>,
-    max_concurrent_readers: Option<u32>,
-    workers: usize,
-) -> usize {
-    if let Some(n) = env_target_partitions {
-        return n.max(1);
+impl ReaderBudget {
+    pub(super) fn new(permits: usize) -> Self {
+        Self {
+            semaphore: Arc::new(Semaphore::new(permits)),
+            configured: AtomicUsize::new(0),
+        }
     }
-    let cap = max_concurrent_readers
-        .map(|n| n as usize)
-        .unwrap_or(DEFAULT_MAX_CONCURRENT_READERS)
-        .max(1);
-    workers.max(1).min(cap)
+
+    pub(super) fn semaphore(&self) -> Arc<Semaphore> {
+        Arc::clone(&self.semaphore)
+    }
+
+    /// Apply `max_concurrent_readers`. Returns `true` if this caller set the value.
+    pub(super) fn apply(&self, max_concurrent_readers: usize) -> AnyResult<bool> {
+        if max_concurrent_readers == 0 {
+            bail!(
+                "invalid 'max_concurrent_readers' value: 'max_concurrent_readers' must be greater than 0"
+            );
+        }
+
+        let first_setter = match self.configured.compare_exchange(
+            0,
+            max_concurrent_readers,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => true,
+            Err(current) if current == max_concurrent_readers => false,
+            Err(_) => {
+                bail!(
+                    "found conflicting values of the `max_concurrent_readers` attribute: this is a global setting that affects all Delta Lake connectors, and not just the connector where it is specified; if multiple connectors specify `max_concurrent_readers`, they must all use the same value."
+                );
+            }
+        };
+
+        if first_setter {
+            // Tokens have not been acquired yet: connectors initialize before the first GET.
+            let available = self.semaphore.available_permits();
+            if max_concurrent_readers > available {
+                self.semaphore
+                    .add_permits(max_concurrent_readers - available);
+            } else if max_concurrent_readers < available {
+                self.semaphore
+                    .forget_permits(available - max_concurrent_readers);
+            }
+        }
+
+        Ok(first_setter)
+    }
+}
+
+static DELTA_READER_BUDGET: LazyLock<ReaderBudget> =
+    LazyLock::new(|| ReaderBudget::new(DEFAULT_MAX_CONCURRENT_READERS));
+
+/// Apply `max_concurrent_readers` to the process-wide read budget.
+pub(super) fn apply_max_concurrent_readers(max_concurrent_readers: usize) -> AnyResult<bool> {
+    DELTA_READER_BUDGET.apply(max_concurrent_readers)
 }
 
 /// Wrap `inner` with the process-wide Delta GET limiter.
 pub(super) fn bound_delta_reads(inner: Arc<dyn ObjectStore>) -> Arc<dyn ObjectStore> {
     Arc::new(BoundedObjectStore::with_semaphore(
         inner,
-        Arc::clone(&DELTA_READER_SEMAPHORE),
+        DELTA_READER_BUDGET.semaphore(),
     ))
 }
 
@@ -212,6 +221,7 @@ fn permit_get_result(
         },
         payload => {
             // Local-file payloads are not HTTP bodies; release the slot now.
+            drop(permit);
             drop(guard);
             GetResult { payload, ..result }
         }
@@ -378,11 +388,39 @@ mod tests {
     }
 
     #[test]
-    fn scan_partitions_cap_workers_to_reader_limit() {
-        assert_eq!(delta_scan_target_partitions(None, None, 16), 6);
-        assert_eq!(delta_scan_target_partitions(None, Some(3), 16), 3);
-        assert_eq!(delta_scan_target_partitions(None, None, 2), 2);
-        assert_eq!(delta_scan_target_partitions(Some(1), Some(32), 16), 1);
+    fn budget_rejects_zero() {
+        let budget = ReaderBudget::new(DEFAULT_MAX_CONCURRENT_READERS);
+        let err = budget.apply(0).unwrap_err().to_string();
+        assert!(err.contains("must be greater than 0"), "{err}");
+    }
+
+    #[test]
+    fn budget_first_setter_resizes_then_agrees_with_itself() {
+        let budget = ReaderBudget::new(DEFAULT_MAX_CONCURRENT_READERS);
+        assert!(budget.apply(32).unwrap(), "first caller sets the value");
+        assert_eq!(budget.semaphore().available_permits(), 32);
+        assert!(!budget.apply(32).unwrap(), "same value is not a new setter");
+        assert_eq!(budget.semaphore().available_permits(), 32);
+    }
+
+    #[test]
+    fn budget_shrinks_when_configured_below_default() {
+        let budget = ReaderBudget::new(DEFAULT_MAX_CONCURRENT_READERS);
+        assert!(budget.apply(2).unwrap());
+        assert_eq!(budget.semaphore().available_permits(), 2);
+    }
+
+    #[test]
+    fn budget_rejects_conflicting_values() {
+        let budget = ReaderBudget::new(DEFAULT_MAX_CONCURRENT_READERS);
+        budget.apply(8).unwrap();
+        let err = budget.apply(9).unwrap_err().to_string();
+        assert!(err.contains("conflicting values"), "{err}");
+        assert_eq!(
+            budget.semaphore().available_permits(),
+            8,
+            "a rejected value must not resize the semaphore"
+        );
     }
 
     #[tokio::test]
@@ -436,24 +474,29 @@ mod tests {
     ///
     /// This is the property `object_store::limit::LimitStore` cannot provide: it
     /// builds a private semaphore per store, so N Delta connectors would get N
-    /// separate budgets and the process-wide bound would not hold. The test goes
-    /// through `bound_delta_reads`, the same entry point `input.rs` uses at both
-    /// registration sites, so it also fails if that wiring is ever dropped.
+    /// separate budgets and the process-wide bound would not hold.
+    ///
+    /// This pins the sharing property only. It does not cover the `input.rs`
+    /// registration sites, which need an integration test against a real object
+    /// store.
     #[tokio::test]
     async fn separately_wrapped_stores_share_one_global_budget() {
-        let cap = DELTA_READER_SEMAPHORE.available_permits();
-        assert!(cap > 0, "global semaphore must start with permits");
+        let cap = 3;
+        let budget = ReaderBudget::new(cap);
 
         let started = Arc::new(AtomicUsize::new(0));
         let (gate_tx, gate_rx) = watch::channel(false);
 
         let mut stores = Vec::new();
         for _ in 0..2 {
-            stores.push(bound_delta_reads(Arc::new(GatedStore {
-                inner: seeded_memory().await,
-                started: Arc::clone(&started),
-                gate: gate_rx.clone(),
-            })));
+            stores.push(Arc::new(BoundedObjectStore::with_semaphore(
+                Arc::new(GatedStore {
+                    inner: seeded_memory().await,
+                    started: Arc::clone(&started),
+                    gate: gate_rx.clone(),
+                }),
+                budget.semaphore(),
+            )));
         }
 
         // 2 * cap callers race for cap global slots.

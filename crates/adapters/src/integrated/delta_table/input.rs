@@ -1,7 +1,7 @@
 use crate::catalog::{ArrowStream, InputCollectionHandle};
 use crate::format::InputBuffer;
 use crate::integrated::delta_table::bounded_store::{
-    apply_max_concurrent_readers, bound_delta_reads, delta_scan_target_partitions,
+    apply_max_concurrent_readers, bound_delta_reads,
 };
 use crate::integrated::delta_table::deletion_vector::{
     ReadMode, filtered_parquet_table, read_deletion_vector,
@@ -478,23 +478,8 @@ impl DeltaTableInputEndpoint {
                 }
             },
         };
-        let workers = pipeline_config
-            .global
-            .io_workers
-            .unwrap_or(pipeline_config.global.workers as u64) as usize;
-        let target_partitions = delta_scan_target_partitions(
-            env_target_partitions,
-            config.max_concurrent_readers,
-            workers,
-        );
-        if env_target_partitions.is_some() {
-            info!(
-                "delta_table {endpoint_name}: DELTA_DF_TARGET_PARTITIONS={target_partitions} overriding default"
-            );
-        } else if target_partitions < workers {
-            info!(
-                "delta_table {endpoint_name}: capping DataFusion target_partitions to {target_partitions} (workers={workers})"
-            );
+        if let Some(n) = env_target_partitions {
+            info!("delta_table {endpoint_name}: DELTA_DF_TARGET_PARTITIONS={n} overriding default");
         }
 
         let env_batch_size = match std::env::var("DELTA_DF_BATCH_SIZE").ok() {
@@ -519,13 +504,17 @@ impl DeltaTableInputEndpoint {
         // query spills to the same bounded memory pool and on-disk scratch
         // dir as every other datafusion user in the pipeline.
         //
-        // Cap `target_partitions` so a snapshot scan cannot open one parquet GET per worker.
+        // `target_partitions` inherits `create_session_context_with`'s
+        // worker-derived default; only override if `DELTA_DF_TARGET_PARTITIONS`
+        // was set explicitly. Same for `batch_size`.
         let datafusion = create_session_context_with(pipeline_config, runtime_env, |cfg| {
             let mut cfg = cfg.set_bool(
                 "datafusion.execution.parquet.schema_force_view_types",
                 false,
             );
-            cfg = cfg.set_usize("datafusion.execution.target_partitions", target_partitions);
+            if let Some(n) = env_target_partitions {
+                cfg = cfg.set_usize("datafusion.execution.target_partitions", n);
+            }
             if let Some(n) = env_batch_size {
                 cfg = cfg.set_usize("datafusion.execution.batch_size", n);
             }
