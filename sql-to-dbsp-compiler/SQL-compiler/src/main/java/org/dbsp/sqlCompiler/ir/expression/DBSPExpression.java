@@ -110,6 +110,33 @@ public abstract class DBSPExpression
         return this;
     }
 
+    /** This expression without the WRAP_BOOL around it, if any. */
+    public DBSPExpression stripWrapBool() {
+        DBSPExpression result = this;
+        while (result.is(DBSPUnaryExpression.class) &&
+                result.to(DBSPUnaryExpression.class).opcode == DBSPOpcode.WRAP_BOOL)
+            result = result.to(DBSPUnaryExpression.class).source;
+        return result;
+    }
+
+    /** The operands of the top-level ANDs of this Boolean expression, as written.  A WRAP_BOOL
+     * around the whole expression is removed first. */
+    public List<DBSPExpression> conjuncts() {
+        List<DBSPExpression> result = new ArrayList<>();
+        this.stripWrapBool().collectConjuncts(result);
+        return result;
+    }
+
+    private void collectConjuncts(List<DBSPExpression> result) {
+        if (this.is(DBSPBinaryExpression.class) &&
+                this.to(DBSPBinaryExpression.class).opcode == DBSPOpcode.AND) {
+            this.to(DBSPBinaryExpression.class).left.collectConjuncts(result);
+            this.to(DBSPBinaryExpression.class).right.collectConjuncts(result);
+        } else {
+            result.add(this);
+        }
+    }
+
     /** Unwrap a Rust 'Result' type */
     public DBSPExpression resultUnwrap() {
         DBSPType resultType;
