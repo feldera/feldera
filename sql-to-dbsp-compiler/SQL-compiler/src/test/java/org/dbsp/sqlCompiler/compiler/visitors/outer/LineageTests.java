@@ -36,8 +36,8 @@ import java.util.Map;
 public class LineageTests extends BaseSQLTests {
     @Test
     public void testInnerLineage() {
-        Lineage outer = new Lineage(this.testCompiler());
-        Lineage.InnerLineage lineage = outer.new InnerLineage(this.testCompiler());
+        Lineage outer = new Lineage(this.testCompiler(), false);
+        Lineage.InnerLineage lineage = new Lineage.InnerLineage(this.testCompiler(), outer);
 
         DBSPType i32 = DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, false);
         var var = new DBSPVariablePath(new DBSPTypeTuple(i32, i32, i32).ref());
