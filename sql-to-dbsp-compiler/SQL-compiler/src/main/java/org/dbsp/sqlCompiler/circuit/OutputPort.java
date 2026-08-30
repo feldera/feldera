@@ -14,6 +14,7 @@ import org.dbsp.util.Utilities;
 import org.dbsp.util.graph.Port;
 
 import javax.annotation.Nullable;
+import org.dbsp.sqlCompiler.ir.type.CollectionShape;
 
 /** An output port of an operator. */
 public class OutputPort {
@@ -84,6 +85,16 @@ public class OutputPort {
 
     public DBSPType getOutputZSetElementType() {
         return this.getOutputZSetType().elementType;
+    }
+
+    /** The shape of the rows this port carries, or null if it carries no tuples */
+    @Nullable
+    public CollectionShape getShape() {
+        if (this.outputType().is(DBSPTypeZSet.class))
+            return this.getOutputZSetType().getShape();
+        if (this.outputType().is(DBSPTypeIndexedZSet.class))
+            return this.getOutputIndexedZSetType().getShape();
+        return null;
     }
 
     /** If the output is a ZSet it returns the element type.
