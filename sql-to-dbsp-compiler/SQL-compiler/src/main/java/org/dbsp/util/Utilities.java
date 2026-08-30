@@ -124,6 +124,13 @@ public class Utilities {
             throw new InternalCompilerError(message.get() + System.lineSeparator() + getCurrentStackTrace());
     }
 
+    /** Signal that a code path must not be reached.
+     * @param message  Explanation included in the exception */
+    @Contract("_ -> fail")
+    public static void fail(String message) {
+        throw new InternalCompilerError(message + System.lineSeparator() + getCurrentStackTrace());
+    }
+
     /** Delete a file/directory recursively
      *
      * @param file File to delete.

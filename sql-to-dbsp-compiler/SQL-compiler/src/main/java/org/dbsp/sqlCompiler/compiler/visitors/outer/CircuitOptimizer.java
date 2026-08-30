@@ -81,8 +81,7 @@ public class CircuitOptimizer extends Passes {
         // expensive computations, which makes them implementable as windows
         this.add(new DecomposeExpensiveFilters(compiler));
         this.add(new ImplementNow(compiler));
-        if (compiler.options.ioOptions.correlatedColumns)
-            this.add(new Lineage(compiler));
+        this.add(new Conditional(compiler, new Lineage(compiler, true), () -> compiler.options.ioOptions.correlatedColumns));
         this.add(new DeterministicFunctions(compiler));
         this.add(new NoConnectorMetadata(compiler).getCircuitVisitor(true));
         this.add(new StopOnError(compiler));
