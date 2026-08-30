@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type.user;
 
+import org.dbsp.sqlCompiler.ir.type.ZSetShape;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -34,9 +35,19 @@ import org.dbsp.sqlCompiler.ir.type.ICollectionType;
 import org.dbsp.util.Utilities;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.ZSET;
+import javax.annotation.Nullable;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 
 public class DBSPTypeZSet extends DBSPTypeUser implements ICollectionType {
     public final DBSPType elementType;
+
+    /** The shape of the rows, or null if the element is not a tuple */
+    @Nullable
+    public ZSetShape getShape() {
+        if (!this.elementType.is(DBSPTypeTupleBase.class))
+            return null;
+        return new ZSetShape(this.elementType.to(DBSPTypeTupleBase.class).size());
+    }
 
     public DBSPTypeZSet(CalciteObject node, DBSPType elementType) {
         super(node, ZSET, "WSet", false, elementType);
