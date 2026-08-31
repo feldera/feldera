@@ -1,13 +1,13 @@
 /**
  * Home page scroll layout.
  *
- * The page is the only scroll container: the pipelines table flows at full height and
- * the sections below it pin as one group over the table's tail, so the table reads as
- * a window the page scroll walks through while the top of the group waits at the
- * bottom of the screen.
+ * The page is the only scroll container. The pipelines table is laid out at full
+ * height, and `PinnedSections` holds the sections below it at the bottom of the screen
+ * until the table has scrolled past.
  *
- * The assertions compare measured geometry, so the numbers hold whatever the browser's
- * scrollbar metrics are.
+ * Needs the browser project, because the assertions are layout measurements. They
+ * compare measured geometry rather than pixel constants, so they hold whatever the
+ * browser's scrollbar metrics are.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -34,10 +34,21 @@ const thumb = (name: string): PipelineThumb =>
     connectors: { numErrors: 0 }
   }) as unknown as PipelineThumb
 
-// `list.names` is what the mocked composition serves; a test sets it before rendering
-// to control how tall the table is.
+// The page reads `pipelines` on every reactive pass. Returning the same array for the
+// same names keeps the table from rebuilding its rows on each read, which leaves fewer
+// of `TableHandler`'s deferred scroll writes pending at teardown.
+let cachedThumbs: { names: string[]; thumbs: PipelineThumb[] } | undefined
+const thumbsFor = (names: string[]) => {
+  if (cachedThumbs?.names !== names) {
+    cachedThumbs = { names, thumbs: names.map(thumb) }
+  }
+  return cachedThumbs.thumbs
+}
+
+// The mocked composition below reads `list.names`. A test sets it before rendering to
+// control how tall the table is.
 const { list, demos } = vi.hoisted(() => ({
-  // Enough rows that the table overflows any window the fixture can give it.
+  // Enough rows to overflow the fixture's height.
   list: { names: Array.from({ length: 40 }, (_, i) => `pipeline-${i}`) },
   demos: Array.from({ length: 9 }, (_, i) => ({
     name: `demo-${i}`,
@@ -79,15 +90,15 @@ vi.mock('$lib/services/redirectTarget', () => ({
   takeRedirectTarget: vi.fn(),
   stashRedirectTarget: vi.fn()
 }))
-// Dialog bodies the profile menu can open. Each fetches on import, and no test
-// reaches them.
+// Dialog bodies the profile menu can open. Each one fetches on import, and no test
+// opens them.
 vi.mock('$lib/components/other/ApiKeyMenu.svelte', () => ({ default: () => {} }))
 vi.mock('$lib/components/other/OidcTrustMenu.svelte', () => ({ default: () => {} }))
-// The page and the demo tiles read the list; nothing here polls the API for it.
+// The page and the demo tiles read this list. Nothing here polls the API.
 vi.mock('$lib/compositions/pipelines/usePipelineList.svelte', () => ({
   usePipelineList: () => ({
     get pipelines() {
-      return list.names.map(thumb)
+      return thumbsFor(list.names)
     }
   }),
   useUpdatePipelineList: () => ({
@@ -110,26 +121,37 @@ import { pinnedPeekHeightPixels } from '$lib/components/layout/PinnedSections.sv
 import HomePage from './+page.svelte'
 
 const SCROLL_AREA_HEIGHT = 800
-// What the pinned group shows at rest; the table's window gets the rest of the screen.
+// How much of the wrapper shows while it is pinned.
 const PEEK = pinnedPeekHeightPixels
 const ALL_PIPELINES = list.names
 
-/** The wrapper around the demos, which is the pinned group's only section. */
+/** The demos section, which is the wrapper's only child. */
 const demosSection = (container: HTMLElement) =>
   [...container.querySelectorAll<HTMLElement>('[data-testid=box-pinned-sections] > div')].find(
     (section) => section.textContent?.includes('Explore use cases and tutorials')
   )!
 
-/** The demos' collapse toggle, which a click reaches only once the section is up. */
+/**
+ * The demos' collapse toggle. A click reaches it only once the section is fully on
+ * screen.
+ */
 const demosHeader = (section: HTMLElement) =>
   section.querySelector<HTMLElement>('[role=presentation]')!
 
-const click = (element: HTMLElement) => element.click()
+/**
+ * A pointer click.
+ *
+ * `HTMLElement.click()` reports `detail` 0, which `PinnedSections` treats as keyboard
+ * activation. Playwright's click would report 1 but scrolls the target into view
+ * first, which undoes the state under test.
+ */
+const click = (element: HTMLElement) =>
+  element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
 
 /** Mounts the page in a container of known size and returns the scroll geometry. */
 const renderHome = async ({ width = 1200 }: { width?: number } = {}) => {
-  // The welcome banner is a one-time greeting at the top of the page; dismissed is the
-  // state the page spends its life in.
+  // The welcome banner greets the user once. Dismissed is the state the page is in for
+  // every visit after the first.
   localStorage.setItem('home/welcomed', 'true')
   const { container } = render(HomePage)
   container.style.width = `${width}px`
@@ -137,28 +159,30 @@ const renderHome = async ({ width = 1200 }: { width?: number } = {}) => {
 
   const scrollArea = container.querySelector<HTMLElement>('[data-testid=box-home-scroll-area]')!
   const pipelines = container.querySelector<HTMLElement>('[data-testid=box-pipelines-section]')!
-  const pinnedGroup = container.querySelector<HTMLElement>('[data-testid=box-pinned-sections]')!
-  // The pin offset comes from the measured group, so it settles a frame after the
-  // container is sized and the group laid out.
+  const wrapper = container.querySelector<HTMLElement>('[data-testid=box-pinned-sections]')!
+  // `stickyBottom` comes from the measured height, so it is set a frame after the
+  // container is sized.
   await expect.poll(() => scrollArea.clientHeight).toBe(SCROLL_AREA_HEIGHT)
   await new Promise((settled) => requestAnimationFrame(() => requestAnimationFrame(settled)))
-  return { container, scrollArea, pipelines, pinnedGroup }
+  return { container, scrollArea, pipelines, wrapper }
 }
 
 describe('/ (home) scroll layout', () => {
   beforeEach(() => {
     list.names = ALL_PIPELINES
+    // `renderHome` and the collapse toggle both write to localStorage, so without this
+    // a test appended after one that toggles would start with the demos collapsed.
+    localStorage.clear()
   })
 
   it('leaves the page as the only scroll container', async () => {
     const { scrollArea, pipelines } = await renderHome()
 
-    // The page grows with the table, which gives the single scrollbar enough range to
-    // walk through the table.
+    // The page is taller than the screen, so its one scrollbar covers the whole table.
     expect(scrollArea.scrollHeight).toBeGreaterThan(scrollArea.clientHeight)
-    // Nothing nested scrolls: a second scroll container would mean a second scroll
-    // position, and a wheel gesture over the table would have to reach the table's end
-    // before the page moved at all.
+    // A nested scroll container would add a second scroll position, and a wheel
+    // gesture over the table would move the table to its end before the page moved at
+    // all.
     const nestedScrollers = [...scrollArea.querySelectorAll<HTMLElement>('*')].filter((el) => {
       const overflowY = getComputedStyle(el).overflowY
       return (
@@ -169,118 +193,121 @@ describe('/ (home) scroll layout', () => {
     expect(getComputedStyle(pipelines).overflowY).toBe('visible')
   })
 
-  it('leaves the table a window with the section group pinned below it', async () => {
-    const { scrollArea, pinnedGroup } = await renderHome()
+  it('pins the wrapper below the visible part of the table', async () => {
+    const { scrollArea, wrapper } = await renderHome()
 
     const visible = scrollArea.getBoundingClientRect()
-    const pinned = pinnedGroup.getBoundingClientRect()
+    const pinned = wrapper.getBoundingClientRect()
     expect(scrollArea.scrollTop).toBe(0)
-    // The group starts where the table's window ends...
+    // The wrapper's top is one peek above the bottom of the screen...
     expect(pinned.top - visible.top).toBeCloseTo(SCROLL_AREA_HEIGHT - PEEK, 0)
-    // ...and reaches past the bottom of the screen, so only the peek shows.
+    // ...and its bottom is past the screen edge, so only the peek shows.
     expect(pinned.bottom).toBeGreaterThan(visible.bottom)
-    // Opaque, or the rows the group is pinned over would show through.
-    expect(getComputedStyle(pinnedGroup).backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
+    // Opaque, or the rows behind the wrapper would show through.
+    expect(getComputedStyle(wrapper).backgroundColor).not.toBe('rgba(0, 0, 0, 0)')
   })
 
-  it('scrolls the table under the pinned group', async () => {
-    const { scrollArea, pinnedGroup } = await renderHome()
+  it('scrolls the table under the pinned wrapper', async () => {
+    const { scrollArea, wrapper } = await renderHome()
 
     const rowBefore = scrollArea.querySelector('tbody tr')!.getBoundingClientRect().top
-    const pinnedBefore = pinnedGroup.getBoundingClientRect().top
+    const pinnedBefore = wrapper.getBoundingClientRect().top
     scrollArea.scrollTop = 200
     expect(scrollArea.scrollTop).toBe(200)
 
-    // The rows move with the page while the group stays put: one scroll position
-    // drives both the table window and the page.
+    // One scroll position moves the rows and leaves the wrapper where it is.
     expect(scrollArea.querySelector('tbody tr')!.getBoundingClientRect().top).toBeCloseTo(
       rowBefore - 200,
       0
     )
-    expect(pinnedGroup.getBoundingClientRect().top).toBeCloseTo(pinnedBefore, 0)
+    expect(wrapper.getBoundingClientRect().top).toBeCloseTo(pinnedBefore, 0)
   })
 
-  it('releases the group once the table has been scrolled through', async () => {
-    const { scrollArea, pipelines, pinnedGroup } = await renderHome()
-    const pinnedTop = pinnedGroup.getBoundingClientRect().top
+  it('unpins the wrapper at the end of the page', async () => {
+    const { scrollArea, pipelines, wrapper } = await renderHome()
+    const pinnedTop = wrapper.getBoundingClientRect().top
 
     scrollArea.scrollTop = scrollArea.scrollHeight
     const visible = scrollArea.getBoundingClientRect()
-    const released = pinnedGroup.getBoundingClientRect()
-    // The group has moved up out of the pinned position and clears the bottom of the
-    // screen, so its tail is reachable.
+    const released = wrapper.getBoundingClientRect()
+    // The wrapper has moved up out of the pinned position, and its bottom is now on
+    // screen.
     expect(released.top).toBeLessThan(pinnedTop)
     expect(released.bottom).toBeLessThanOrEqual(visible.bottom + 1)
-    // The table is clear of the group: every row the peek covered is scrolled
-    // through.
+    // No part of the table is behind the wrapper.
     expect(pipelines.getBoundingClientRect().bottom).toBeLessThanOrEqual(released.top + 1)
   })
 
-  it('does not pin the group when the pipelines fit on screen', async () => {
+  it('does not pin the wrapper when the pipelines fit on screen', async () => {
     list.names = ALL_PIPELINES.slice(0, 3)
-    const { scrollArea, pipelines, pinnedGroup } = await renderHome()
+    const { scrollArea, pipelines, wrapper } = await renderHome()
 
-    // Three rows leave the group room above the pin line, so the group keeps its
-    // place in the flow, `gap-8` below the table, without floating over the gap.
-    const gap = pinnedGroup.getBoundingClientRect().top - pipelines.getBoundingClientRect().bottom
+    // Three rows leave the wrapper above the bottom of the screen, so it stays in the
+    // flow, `gap-8` below the table.
+    const gap = wrapper.getBoundingClientRect().top - pipelines.getBoundingClientRect().bottom
     expect(gap).toBeCloseTo(32, 0)
     expect(scrollArea.scrollTop).toBe(0)
   })
 
-  it('pins the whole group when a section is added above the demos', async () => {
-    const { scrollArea, pinnedGroup } = await renderHome()
-    const offsetBefore = pinnedGroup.style.bottom
+  it('pins the whole wrapper when a section is added above the demos', async () => {
+    const { scrollArea, wrapper } = await renderHome()
+    const offsetBefore = wrapper.style.bottom
 
-    // Stands in for a section added at the top of the group: the peek keeps its
-    // height and shows this section, which pushes the demos below the screen edge.
+    // Stands in for a section added at the top of the wrapper. The peek keeps its
+    // height, so this section fills it and the demos move below the screen edge.
     const added = document.createElement('div')
     added.style.height = '300px'
     added.textContent = 'ADDED SECTION'
-    pinnedGroup.prepend(added)
-    await expect.poll(() => pinnedGroup.style.bottom).not.toBe(offsetBefore)
+    wrapper.prepend(added)
+    await expect.poll(() => wrapper.style.bottom).not.toBe(offsetBefore)
 
     const visible = scrollArea.getBoundingClientRect()
-    expect(pinnedGroup.getBoundingClientRect().top - visible.top).toBeCloseTo(
+    expect(wrapper.getBoundingClientRect().top - visible.top).toBeCloseTo(
       SCROLL_AREA_HEIGHT - PEEK,
       0
     )
-    // The added section owns the peek; the demos start below the screen edge.
+    // The added section fills the peek, and the demos start below the screen edge.
     expect(added.getBoundingClientRect().top).toBeCloseTo(visible.bottom - PEEK, 0)
-    const demos = pinnedGroup.lastElementChild!.getBoundingClientRect()
+    const demos = wrapper.lastElementChild!.getBoundingClientRect()
     expect(demos.top).toBeGreaterThanOrEqual(visible.bottom - 1)
   })
 
-  it('brings the demos section up when its peek is clicked', async () => {
-    const { container, scrollArea } = await renderHome()
+  it('brings the demos section into view when its peek is clicked', async () => {
+    const { container, scrollArea, wrapper } = await renderHome()
     const section = demosSection(container)
+    const offsetBefore = wrapper.style.bottom
+    // Set here rather than inherited from the demo tiles: how many tiles render depends
+    // on a media query against the real viewport, not on the container this test sizes.
+    section.style.height = `${SCROLL_AREA_HEIGHT * 0.75}px`
+    await expect.poll(() => wrapper.style.bottom).not.toBe(offsetBefore)
     const visible = scrollArea.getBoundingClientRect()
 
     click(demosHeader(section))
 
-    // The section is taller than half the screen, so it comes up far enough to show
-    // all of it and no further.
+    // The section is taller than half the screen, so it stops where all of it shows
+    // rather than at the middle.
     await expect
       .poll(() => Math.round(section.getBoundingClientRect().bottom))
       .toBe(Math.round(visible.bottom))
     const top = section.getBoundingClientRect().top - visible.top
     expect(top).toBeGreaterThan(0)
     expect(top).toBeLessThanOrEqual(SCROLL_AREA_HEIGHT / 2)
-    // The click went to the section, not to the collapse toggle under the pointer, so
-    // the demos are still on show.
+    // The click scrolled the section instead of reaching the collapse toggle under the
+    // pointer, so the demos are still expanded.
     expect(section.textContent).toContain('Demo 0')
   })
 
   it('stops the top of a short section at the middle of the screen', async () => {
-    const { container, scrollArea, pinnedGroup } = await renderHome()
+    const { container, scrollArea, wrapper } = await renderHome()
     const section = demosSection(container)
-    const offsetBefore = pinnedGroup.style.bottom
-    // Short enough to fit below the middle, with room left underneath to scroll
-    // through: at the very end of the page there would be nothing to scroll into.
+    const offsetBefore = wrapper.style.bottom
+    // Short enough to fit in the lower half of the screen, with a spacer below it so
+    // there is somewhere left to scroll.
     section.style.height = '200px'
     const below = document.createElement('div')
     below.style.height = '400px'
-    pinnedGroup.after(below)
-    await expect.poll(() => pinnedGroup.style.bottom).not.toBe(offsetBefore)
+    wrapper.after(below)
+    await expect.poll(() => wrapper.style.bottom).not.toBe(offsetBefore)
 
     click(demosHeader(section))
 
@@ -300,7 +327,7 @@ describe('/ (home) scroll layout', () => {
       .poll(() => section.getBoundingClientRect().bottom)
       .toBeLessThanOrEqual(visible.bottom + 1)
 
-    // The section is up, so this click reaches the collapse toggle.
+    // All of the section shows now, so this click reaches the collapse toggle.
     click(demosHeader(section))
 
     await expect.poll(() => section.textContent).not.toContain('Demo 0')

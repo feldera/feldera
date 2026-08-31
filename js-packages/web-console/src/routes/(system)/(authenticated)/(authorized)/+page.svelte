@@ -171,19 +171,17 @@
           </div>
         {/if}
       </div>
-      <!-- Sections in here pin over the tail of the pipelines table until the table
-           is scrolled through; a click brings the pinned section into view. -->
-      <PinnedSections class="max-w-[100cqi] gap-8">
-        {#if demos.current.length}
+      {#if demos.current.length}
+        <!-- Held at the bottom of the screen while the pipelines table scrolls. -->
+        <PinnedSections class="max-w-[100cqi] gap-8">
           <div class="px-2 md:px-8">
             <InlineDropdown bind:open={showSuggestedDemos.value}>
               {#snippet header(open, toggle)}
                 <div
                   class="flex w-fit cursor-pointer items-center gap-4 py-2"
                   onclick={(e) => {
-                    // A click on "View all" must not toggle the dropdown. The click
-                    // is left to propagate to `document`, where SvelteKit's router
-                    // handles the navigation.
+                    // Let a click on the "View all" link reach the SvelteKit's router
+                    // instead of toggling the dropdown.
                     if ((e.target as HTMLElement).closest('a')) {
                       return
                     }
@@ -216,15 +214,14 @@
                     <div class="text-sm text-surface-500"></div>
                     <a class="text-left text-primary-500" href={resolve('/demos/')}>
                       <span class="py-2">Discover More Examples and Tutorials</span>
-                      <!-- <span class="fd fd-arrow-right inline-block w-2 text-[20px]"></span> -->
                     </a>
                   </div>
                 </div>
               {/snippet}
             </InlineDropdown>
           </div>
-        {/if}
-      </PinnedSections>
+        </PinnedSections>
+      {/if}
     </div>
   </div>
   <div class="sticky left-0"><Footer></Footer></div>
