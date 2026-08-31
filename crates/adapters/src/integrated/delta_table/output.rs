@@ -37,6 +37,7 @@ use serde::Serialize;
 use serde_arrow::ArrayBuilder;
 use serde_arrow::schema::SerdeArrowSchema;
 use std::cmp::min;
+use std::num::NonZeroU64;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use tokio::time::{Duration, sleep};
@@ -88,6 +89,16 @@ pub struct DeltaTableWriter {
 
 /// Limit on the number of records buffered in memory in the encoder.
 const CHUNK_SIZE: usize = 100_000;
+
+/// Size at which the writer closes the current Parquet file and starts a new one.
+///
+/// delta-rs rolls over only when the writer is given a target size; without one it
+/// writes a single object per key range until the batch ends. Object stores cap a
+/// multipart upload at 10000 parts, so an unbounded file fails outright once it
+/// grows past that, and a table written as a handful of huge files is slow for
+/// readers to scan. 100 MiB is the size delta-rs itself used before the target
+/// became optional.
+const TARGET_FILE_SIZE: NonZeroU64 = NonZeroU64::new(100 * 1024 * 1024).unwrap();
 
 impl DeltaTableWriter {
     #[allow(clippy::too_many_arguments)]
@@ -679,7 +690,7 @@ async fn stream_encode_and_write(
         inner.arrow_schema.clone(),
         vec![],
         None,
-        None,
+        Some(TARGET_FILE_SIZE),
         None,
         DataSkippingNumIndexedCols::NumColumns(num_indexed_cols),
         None,
@@ -1386,6 +1397,57 @@ mod parallel {
     #[test]
     fn test_insert_multi_thread() {
         insert_test(4);
+    }
+
+    /// A batch bigger than `TARGET_FILE_SIZE` must land in more than one Parquet
+    /// file. delta-rs rolls over only when the writer config carries a target
+    /// size; without one it writes a single object per key range, which an object
+    /// store rejects once the multipart upload passes 10000 parts.
+    #[test]
+    fn test_batch_larger_than_target_file_size_rolls_over() {
+        const PAYLOAD_LEN: usize = 8 * 1024;
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        let target = super::TARGET_FILE_SIZE.get() as usize;
+        let rows = (target * 5 / 4).div_ceil(PAYLOAD_LEN);
+        let records: Vec<DeltaTestStruct> = (0..rows)
+            .map(|i| DeltaTestStruct {
+                string: incompressible_string(i as u64, PAYLOAD_LEN),
+                ..make_record(i)
+            })
+            .collect();
+
+        let mut endpoint = make_endpoint(1, &table_uri, true);
+        encode_batch(&mut endpoint, &build_insert_batch(&records));
+
+        let files =
+            list_files_recursive(Path::new(&table_uri), OsStr::from_bytes(b"parquet")).unwrap();
+        assert!(
+            files.len() > 1,
+            "{rows} rows of {PAYLOAD_LEN} bytes each exceed the {target} byte target \
+             but landed in {} file(s)",
+            files.len()
+        );
+        // Read through the delta log, so a rolled-over file that never made it
+        // into the commit shows up as missing rows instead of being picked up
+        // off disk.
+        assert_eq!(read_delta_output(&table_uri).len(), rows);
+    }
+
+    /// Deterministic printable ASCII that Snappy cannot shrink and that Parquet
+    /// cannot dictionary-encode away, so the written file size tracks `len`.
+    fn incompressible_string(seed: u64, len: usize) -> String {
+        let mut state = seed | 1;
+        let mut bytes = Vec::with_capacity(len + 8);
+        while bytes.len() < len {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            bytes.extend((state >> 8).to_le_bytes().map(|b| b' ' + b % 95));
+        }
+        bytes.truncate(len);
+        String::from_utf8(bytes).unwrap()
     }
 
     fn upsert_test(threads: usize) {
