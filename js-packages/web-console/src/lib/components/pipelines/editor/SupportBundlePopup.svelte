@@ -2,22 +2,23 @@
   /**
    * Opens a support bundle from disk in the profile viewer.
    *
-   * Two shapes, one flow:
-   *   - `mode="menu"` (the pipeline editor's split button): the trigger opens a
+   * Two visual, one flow:
+   *   - `mode="menu"`, the pipeline editor's split button: the trigger opens a
    *     dropdown offering the download, the "collect new data" toggle and the entry
    *     that picks a bundle.
-   *   - `mode="pick"` (the "Open support bundle" dialog's button): the trigger picks
-   *     a bundle straight away, and the dropdown holds the confirmation alone.
+   *   - `mode="pick"`, the "Open support bundle" dialog's button: the trigger picks a
+   *     bundle straight away, and the dropdown holds only the confirmation button.
    *
-   * Confirming takes a second click: the browser treats `window.open` as a popup
-   * unless it runs synchronously inside a click handler, and picking a file is
-   * asynchronous. So picking shows the confirmation, and the click on it opens the
-   * tab.
+   * Confirming takes a second click - it generates a user activation, necessary because
+   * the browser requires an explicit "grant" - user activation, as `window.open` counts
+   * as a popup unless it runs synchronously inside a click handler,
+   * and picking a file is asynchronous. Picking therefore shows the confirmation,
+   * and the click on the confirmation opens the tab.
    *
-   * A picked bundle goes into the bundle history, so the viewer tab can read it
-   * again, including after a reload. Browsers without the File System Access API fall
-   * back to the hidden file input below, whose file the history copies; only a bundle
-   * too big to copy is handed over as bytes, once.
+   * A picked bundle goes into the bundle history, so the viewer tab can read it again,
+   * including after a reload. Browsers without the File System Access API use the
+   * hidden file input below, and the history keeps a copy of that file. Only a bundle
+   * the history cannot hold is handed over as bytes, once.
    */
   import { slide } from 'svelte/transition'
   import Popup from '$lib/components/common/Popup.svelte'
@@ -37,7 +38,7 @@
     align?: 'left' | 'right'
     /**
      * Which way the dropdown opens. Use `'up'` for a trigger near the bottom edge of
-     * its container, where a downward dropdown would hang off.
+     * its container, where a downward dropdown would hide below the viewport.
      */
     drop?: 'down' | 'up'
     /** Runs once the viewer tab is open, so a caller such as a dialog can close itself. */
@@ -100,7 +101,7 @@
     }
   }
 
-  /** Drops the pick: back to the menu in menu mode, otherwise closes the dropdown. */
+  /** Drops the pick. Menu mode returns to the menu, pick mode closes the dropdown. */
   function dismissPicked() {
     picked = null
     if (mode === 'pick') {
@@ -126,6 +127,7 @@
         openStoredBundleTab(bundle.bundleId)
       } catch (e) {
         reportError('Opening support bundle viewer')(e)
+        return
       }
       onOpened?.()
       return
@@ -138,8 +140,8 @@
       reportError('Opening support bundle viewer')(e)
       return
     }
-    // The transfer below outlives this component if `onOpened` unmounts it: the
-    // handoff is a closure over the opened window, not component state.
+    // The transfer below outlives this component when `onOpened` unmounts it, because
+    // the handoff closes over the opened window rather than over component state.
     onOpened?.()
     ;(async () => {
       try {
@@ -153,8 +155,8 @@
   }
 </script>
 
-<!-- The input sits outside the dropdown: in menu mode the dropdown closes the
-     moment the input is clicked, and an unmounted input reports no file. -->
+<!-- The input sits outside the dropdown. In menu mode the dropdown closes the moment
+     the input is clicked, and an unmounted input reports no file. -->
 <input
   type="file"
   accept=".zip"
@@ -177,8 +179,8 @@
   content={dropdown}
 />
 
-<!-- In pick mode the trigger picks instead of toggling, and the dropdown opens by
-     itself once there is something to confirm. -->
+<!-- In pick mode the trigger picks instead of toggling, and the dropdown opens once
+     there is something to confirm. -->
 {#snippet pickTrigger(_toggle: () => void, isOpen: boolean)}
   {@render trigger(pickBundle, isOpen)}
 {/snippet}
