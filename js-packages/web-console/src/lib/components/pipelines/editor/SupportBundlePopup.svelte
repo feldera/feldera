@@ -98,7 +98,11 @@
     if (bundle.bundleId !== undefined) {
       // The viewer reads the bundle out of the history itself, so nothing has to be
       // handed over and the viewer tab survives a reload.
-      openStoredBundleTab(bundle.bundleId)
+      try {
+        openStoredBundleTab(bundle.bundleId)
+      } catch (e) {
+        reportError('Opening support bundle viewer')(e)
+      }
       return
     }
 

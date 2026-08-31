@@ -13,7 +13,7 @@
     confirmLabel?: string
     /** Runs inside the click, so it may call `window.open`. */
     onConfirm: () => void
-    /** When set, the popup offers a way back out. */
+    /** Popup variant only: offers a way back out. The page variant ignores it. */
     onDismiss?: () => void
     variant?: 'popup' | 'page'
     'data-testid'?: string

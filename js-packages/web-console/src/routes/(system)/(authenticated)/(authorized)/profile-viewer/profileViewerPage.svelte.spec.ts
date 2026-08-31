@@ -1,10 +1,11 @@
 /**
  * How the profile viewer gets hold of an uploaded bundle.
  *
- * The viewer prefers the File System Access handle the bundle history keeps: it reads
- * the archive from disk itself, so a link survives a reload, and a bundle picked in
- * this tab leaves a URL that reopens it. The heavy `profiler-layout` rendering is
- * mocked out; what is under test is which bundle reaches the viewer, and how.
+ * The viewer prefers the File System Access handle the bundle history keeps, because it
+ * can then read the archive from disk itself: a link survives a reload, and a bundle
+ * picked in this tab leaves a URL that reopens it. The heavy `profiler-layout`
+ * rendering is mocked out, so what is under test is which bundle reaches the viewer,
+ * and how.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -40,7 +41,7 @@ const {
   resolveStoredBundle: vi.fn()
 }))
 
-// Only the parts the page drives: the diagram, the ELK layout and the zip reader have
+// Only the parts the page drives. The diagram, the ELK layout and the zip reader have
 // their own tests in profiler-layout.
 vi.mock('profiler-layout', () => ({
   createLoadGuard:
@@ -124,8 +125,8 @@ vi.mock('$lib/services/supportBundleHistory', () => ({
   touchSupportBundle: vi.fn(),
   clearSupportBundles: vi.fn()
 }))
-// Mocked whole: the real module reaches into the history module for IndexedDB access,
-// which the mock above does not provide.
+// Mocked whole, because the real module reaches into the history module for IndexedDB
+// access, which the mock above does not provide.
 vi.mock('$lib/services/supportBundleCache', () => ({
   isBundleCacheRequired: vi.fn(() => false),
   rememberSupportBundleFile
@@ -194,7 +195,7 @@ describe('profile viewer — uploaded bundles', () => {
     expect(resolveStoredBundle).toHaveBeenCalledWith(BUNDLE.id)
     expect(readStoredBundle).toHaveBeenCalledWith(BUNDLE)
     expect(getSuitableProfiles).toHaveBeenCalledWith(BUNDLE_BYTES)
-    // The cross-tab handoff serves only bundles with no history entry.
+    // The cross-tab handoff carries only bundles with no history entry.
     expect(receiveUploadedBundle).not.toHaveBeenCalled()
   })
 
@@ -212,8 +213,8 @@ describe('profile viewer — uploaded bundles', () => {
 
     const container = renderViewer({ source: 'upload', bundle: BUNDLE.id })
 
-    // Nothing is read behind the user's back: the grant needs a click of its own.
-    // This is the page reached by opening the link directly, after a restart.
+    // Nothing is read without a click of its own, which is what the grant needs. This
+    // is the page reached by opening the link directly, after a browser restart.
     await expect.poll(() => find(container, 'btn-open-stored-bundle')).toBeTruthy()
     expect(find(container, 'box-support-bundle-confirm')!.textContent).toContain(BUNDLE.name)
     expect(readStoredBundle).not.toHaveBeenCalled()
@@ -239,24 +240,23 @@ describe('profile viewer — uploaded bundles', () => {
     pickSupportBundle.mockResolvedValue({ name: BUNDLE.name, kind: 'file' })
     rememberSupportBundle.mockResolvedValue({ ...BUNDLE, id: 42 })
 
-    // No pipeline and no upload: the empty state offers to open a bundle.
+    // No pipeline and no upload, so the empty state offers to open a bundle.
     const container = renderViewer()
     const openFromDisk = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('or open another support bundle')
+      button.textContent?.includes('Open a support bundle')
     )!
     expect(openFromDisk).toBeTruthy()
 
     openFromDisk.click()
 
     await expect.poll(() => processProfileFiles.mock.calls.length).toBe(1)
-    // Picking remembers the bundle, and the URL names that entry: the same link the
-    // home page's list uses.
+    // Picking records the bundle, and the URL names that entry.
     expect(rememberSupportBundle).toHaveBeenCalledOnce()
     expect(replaceState).toHaveBeenCalledWith('/profile-viewer?source=upload&bundle=42', {})
   })
 
   it('remembers a bundle from the file input by keeping a copy of it', async () => {
-    // The path browsers without a file picker take: the copy in the history earns them
+    // The path browsers without a file picker take. The copy in the history gives them
     // a reloadable URL, as a handle does in Chromium.
     isBundlePickerSupported.mockReturnValue(false)
     rememberSupportBundleFile.mockResolvedValue({ ...BUNDLE, id: 11 })
@@ -285,7 +285,7 @@ describe('profile viewer — uploaded bundles', () => {
     input.files = transfer.files
     input.dispatchEvent(new Event('change', { bubbles: true }))
 
-    // The bundle still opens; it just cannot be reopened, so the URL names no entry.
+    // The bundle still opens, but it cannot be reopened, so the URL names no entry.
     await expect.poll(() => processProfileFiles.mock.calls.length).toBe(1)
     expect(replaceState).not.toHaveBeenCalled()
   })
