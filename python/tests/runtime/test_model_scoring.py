@@ -69,7 +69,14 @@ class ModelServer(threading.Thread):
         super().__init__(daemon=True)
         self.pipeline = pipeline
         self._ready = threading.Event()
-        self.predictions_written = 0
+        # Transactions the model answered a request for, in answer order.
+        self.answered: list[int] = []
+        # Answers the pipeline has confirmed processing. This trails `answered`:
+        # `input_json` returns only once a completion poll observes the batch,
+        # which can be a poll interval after the pipeline processed it. Wait on
+        # this counter to synchronize with the pipeline; read `answered` to count
+        # the times the model ran.
+        self.answers_processed = 0
         self.failure: Optional[BaseException] = None
 
     def run(self):
@@ -104,11 +111,11 @@ class ModelServer(threading.Thread):
         # Ignore deleted requests
         writes = [self._prediction(i["insert"]) for i in items if "insert" in i]
         if writes:
-            # `input_json` blocks until the pipeline has processed the batch, so a
-            # test that waits on this counter waits for the predictions to be
-            # visible to a query, not merely for the write to be issued.
+            # `input_json` sits between the two updates on purpose: its return is
+            # the only point at which the pipeline has confirmed these answers.
+            self.answered += [write["trans_id"] for write in writes]
             self.pipeline.input_json("model_prediction", writes, update_format="raw")
-            self.predictions_written += len(writes)
+            self.answers_processed += len(writes)
 
     def _prediction(self, request: Mapping[str, Any]) -> dict:
         probability = predict(float(request["pct_of_limit"]))
@@ -190,9 +197,6 @@ class TestModelScoring(PipelineTestCase):
             time.sleep(0.25)
         raise TimeoutError(f"`{query}` stalled at {seen}, expected {expected}")
 
-    def wait_for_predictions(self, expected: int):
-        self.wait_for("SELECT COALESCE(SUM(scored), 0) FROM model_score", expected)
-
     # -- the lifecycle ----------------------------------------------------
 
     def test_model_scoring(self):
@@ -207,10 +211,19 @@ class TestModelScoring(PipelineTestCase):
         self.addCleanup(server.stop)
         server.wait_until_connected()
 
-        # 1. A server that connects after the requests were made still sees all of them.
-        self.wait_for_predictions(SEED_TRANSACTIONS)
-        log(f"answered {server.predictions_written} requests")
+        # 1. A server that connects after the requests were made still sees all
+        #    of them. Wait on the server, not on a view: an ad-hoc query can see a
+        #    prediction before the server's own `input_json` returns, and a seed
+        #    answer confirmed after this point would land in step 2's slice.
+        self.wait_until(
+            lambda: server.answers_processed >= SEED_TRANSACTIONS,
+            "the seeded transactions to be predicted",
+        )
+        log(f"answered requests for transactions {sorted(server.answered)}")
 
+        assert sorted(server.answered) == list(range(1, SEED_TRANSACTIONS + 1)), (
+            "one request per seeded transaction"
+        )
         assert self.predicted_fraud() == {2, 3, 5, 6}
         score = self.model_score()
         log(f"score: {score}")
@@ -224,23 +237,24 @@ class TestModelScoring(PipelineTestCase):
         # 2. Modify a cardholder record by inserting a version dated in the
         #    past. ASOF means only transactions from that date onward see it, so
         #    transaction 1 keeps the limit that was in effect at its own time.
-        before = server.predictions_written
+        before = len(server.answered)
         pipeline.input_json(
             "cardholder",
             [{"cc_num": 1001, "ts": DAY_2, "zip": 94105, "credit_limit": "20000.00"}],
             update_format="raw",
         )
-        # Wait for the two re-predictions to be written and processed. `scored`
-        # cannot serve as the barrier here: a re-prediction upserts on
-        # (event_time, trans_id), so it stays at SEED_TRANSACTIONS throughout.
+        # Wait for the two re-predictions to be processed. `scored` cannot serve
+        # as the barrier here: a re-prediction upserts on (event_time, trans_id),
+        # so it stays at SEED_TRANSACTIONS throughout. Step 1 left
+        # `answers_processed` at `before`, so the seed answers are all counted.
         self.wait_until(
-            lambda: server.predictions_written >= before + 2,
+            lambda: server.answers_processed >= before + 2,
             "the corrected transactions to be re-predicted",
         )
-        repredicted = server.predictions_written - before
-        log(f"cardholder correction triggered {repredicted} new predictions")
+        repredicted = sorted(server.answered[before:])
+        log(f"cardholder correction re-predicted transactions {repredicted}")
 
-        assert repredicted == 2, "only transactions at or after the new version"
+        assert repredicted == [2, 3], "only transactions at or after the new version"
         assert self.predicted_fraud() == {5, 6}
         # Re-predicting a transaction overwrites the previous prediction
         assert self.stored_predictions() == SEED_TRANSACTIONS
@@ -257,7 +271,7 @@ class TestModelScoring(PipelineTestCase):
         # 3. The 'is_fraud' label changes months later on a transaction nobody had
         #    labelled. Labels are not model inputs, so the model score changes without
         #    asking the model for anything.
-        written_before = server.predictions_written
+        answered_before = list(server.answered)
         assert self.model_score()["false_negative"] == 1
         pipeline.input_json(
             "confirmed_fraud_label",
@@ -265,7 +279,7 @@ class TestModelScoring(PipelineTestCase):
             update_format="raw",
         )
         self.wait_for("SELECT false_negative FROM model_score", 2)
-        assert server.predictions_written == written_before, (
+        assert server.answered == answered_before, (
             "a label revision must not ask the model for anything"
         )
 
