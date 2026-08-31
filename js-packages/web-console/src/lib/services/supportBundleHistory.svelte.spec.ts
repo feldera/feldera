@@ -1,8 +1,10 @@
 /**
- * The IndexedDB-backed support bundle history. Runs in the browser project because it
- * drives a real IndexedDB and a real structured clone, which decide whether a File
- * System Access handle can be stored at all. The other kind of entry, a cached
- * archive, is covered by `supportBundleCache.svelte.spec.ts`.
+ * The IndexedDB-backed support bundle history.
+ *
+ * Needs the browser project, because it drives a real IndexedDB and a real structured
+ * clone, and those decide whether a File System Access handle can be stored at all.
+ * The other kind of entry, a copy of the archive, is covered by
+ * `supportBundleCache.svelte.spec.ts`.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,6 +12,7 @@ import {
   clearSupportBundles,
   getSupportBundle,
   isBundlePickerSupported,
+  isHistorySupported,
   isLinkedBundle,
   type LinkedSupportBundle,
   listSupportBundles,
@@ -28,9 +31,9 @@ import {
 /**
  * Stand-in for a `FileSystemFileHandle`, which no test can construct.
  *
- * The methods sit on the prototype: IndexedDB stores a handle with structured clone,
+ * The methods sit on the prototype. IndexedDB stores a handle with structured clone,
  * which copies own properties only, so a fake carrying own function properties is
- * rejected with a DataCloneError. A fake read back out of the database therefore
+ * rejected with a `DataCloneError`. A fake read back out of the database therefore
  * carries the data and none of the methods, where a real handle keeps both.
  */
 const fakeHandle = (name: string, contents = 'bundle contents') =>
@@ -53,7 +56,7 @@ const fakeEntry = (handle: FileSystemFileHandle): StoredSupportBundle => ({
   handle
 })
 
-/** Distinct, increasing timestamps, so "most recent" is never a coin toss. */
+/** Distinct, increasing timestamps, so the most-recent ordering is never ambiguous. */
 const useCountingClock = () => {
   let now = 1_700_000_000_000
   vi.spyOn(Date, 'now').mockImplementation(() => ++now)
@@ -62,6 +65,9 @@ const useCountingClock = () => {
 describe('supportBundleHistory', () => {
   beforeEach(async () => {
     vi.restoreAllMocks()
+    // A test that fails part way through leaves its stubbed globals behind, which
+    // would take out every test after it.
+    vi.unstubAllGlobals()
     useCountingClock()
     await clearSupportBundles()
   })
@@ -123,7 +129,7 @@ describe('supportBundleHistory', () => {
       const bundles = await listSupportBundles()
       expect(bundles).toHaveLength(maxRememberedBundles)
       expect(bundles.at(0)?.name).toBe(`bundle-${maxRememberedBundles}.zip`)
-      // The very first bundle is the one that falls off the end.
+      // The first bundle stored is the one dropped.
       expect(bundles.map((b) => b.name)).not.toContain('bundle-0.zip')
     })
   })
@@ -164,7 +170,7 @@ describe('supportBundleHistory', () => {
       const { bundle, needsPermission } = await resolveStoredBundle(id)
 
       // A stored fake carries no permission API, which `queryBundleReadPermission`
-      // answers with 'granted'. A real handle whose grant has lapsed answers
+      // answers with 'granted'. A real handle whose grant has expired answers
       // 'prompt'.
       expect(bundle.name).toBe('pipeline-a.zip')
       expect(needsPermission).toBe(false)
@@ -195,7 +201,7 @@ describe('supportBundleHistory', () => {
     })
 
     it('reports an entry that says nothing about where to read', async () => {
-      // Unreachable through this module; records come out of IndexedDB untyped, so a
+      // Unreachable through this module. Records come out of IndexedDB untyped, so a
       // database written by other means is reported, not crashed on.
       const orphan = { id: 1, name: 'orphan.zip', openedAt: 1 } as StoredSupportBundle
 
@@ -213,7 +219,7 @@ describe('supportBundleHistory', () => {
     })
 
     it('treats a browser without the permission API as granting access', async () => {
-      // Reading either works or throws; reporting 'granted' lets the caller find out
+      // Reading either works or throws. Reporting 'granted' lets the caller find out
       // which, instead of blocking on a prompt it cannot show.
       expect(await queryBundleReadPermission(fakeEntry(fakeHandle('pipeline-a.zip')))).toBe(
         'granted'
@@ -233,6 +239,15 @@ describe('supportBundleHistory', () => {
     })
   })
 
+  describe('whether a history can be kept', () => {
+    it('follows IndexedDB, not the file picker', () => {
+      expect(isHistorySupported()).toBe(true)
+
+      vi.stubGlobal('indexedDB', undefined)
+      expect(isHistorySupported()).toBe(false)
+    })
+  })
+
   describe('picking a bundle', () => {
     it('returns the handle the user picked', async () => {
       const handle = fakeHandle('pipeline-a.zip')
@@ -243,7 +258,6 @@ describe('supportBundleHistory', () => {
 
       expect(isBundlePickerSupported()).toBe(true)
       expect(await pickSupportBundle()).toBe(handle)
-      vi.unstubAllGlobals()
     })
 
     it('reports a dismissed picker as no choice rather than an error', async () => {
@@ -255,7 +269,14 @@ describe('supportBundleHistory', () => {
       )
 
       expect(await pickSupportBundle()).toBe(null)
-      vi.unstubAllGlobals()
+    })
+
+    it('reports no picker where the API is missing', async () => {
+      // Separate from the IndexedDB check below, because a browser can have one and
+      // not the other.
+      vi.stubGlobal('showOpenFilePicker', undefined)
+
+      expect(isBundlePickerSupported()).toBe(false)
     })
 
     it('propagates a picker failure that is not a dismissal', async () => {
@@ -267,7 +288,6 @@ describe('supportBundleHistory', () => {
       )
 
       await expect(pickSupportBundle()).rejects.toThrow('Not allowed')
-      vi.unstubAllGlobals()
     })
   })
 })
