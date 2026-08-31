@@ -1,4 +1,4 @@
--- Keeping an ML Model in the Loop
+-- Keeping an ML Model in the Loop with a Feldera pipeline
 --
 -- Companion SQL for
 -- https://docs.feldera.com/use_cases/model_scoring/model_scoring
