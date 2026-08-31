@@ -1,22 +1,27 @@
 /**
- * The cached half of the support bundle history: whole archives kept in IndexedDB for
- * browsers that hand out no file handles. Runs in the browser project because a real
- * IndexedDB and a real structured clone decide whether a `File` can be stored.
+ * The copy-the-archive half of the support bundle history: whole archives kept in
+ * IndexedDB for browsers that yield no file handles.
+ *
+ * Needs the browser project, because a real IndexedDB and a real structured clone
+ * decide whether a `File` can be stored at all.
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { listSupportBundles } = vi.hoisted(() => ({
-  // Typed like the real listing, so the tests reading it keep their types.
-  listSupportBundles: vi.fn<() => Promise<StoredSupportBundle[]>>()
+const { listSupportBundles, putSupportBundle } = vi.hoisted(() => ({
+  // Typed like the real functions, so the tests reading them keep their types.
+  listSupportBundles: vi.fn<() => Promise<StoredSupportBundle[]>>(),
+  putSupportBundle:
+    vi.fn<(id: number | undefined, entry: NewSupportBundle) => Promise<StoredSupportBundle>>()
 }))
 
-// The history module runs for real: the database, the writes and the count limit.
-// Only the listing is a spy, so one test can report archive sizes too large to write
-// here.
+// The history module runs for real: the database, the writes and the count limit. Two
+// functions are spies that delegate to the real ones, so one test can report archive
+// sizes too large to write here and another can make a write fail.
 vi.mock('./supportBundleHistory', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./supportBundleHistory')>()),
-  listSupportBundles
+  listSupportBundles,
+  putSupportBundle
 }))
 
 // Imported AFTER vi.mock so the mock takes effect.
@@ -32,6 +37,7 @@ import {
   clearSupportBundles,
   getSupportBundle,
   maxRememberedBundles,
+  type NewSupportBundle,
   queryBundleReadPermission,
   readStoredBundle,
   requestBundleReadPermission,
@@ -50,7 +56,7 @@ const actualHistory =
 const entryOfSize = (id: number, size: number): StoredSupportBundle =>
   ({ id, name: `bundle-${id}.zip`, openedAt: id, file: { size } }) as StoredSupportBundle
 
-/** Distinct, increasing timestamps, so "most recent" is never a coin toss. */
+/** Distinct, increasing timestamps, so the most-recent ordering is never ambiguous. */
 const useCountingClock = () => {
   let now = 1_700_000_000_000
   vi.spyOn(Date, 'now').mockImplementation(() => ++now)
@@ -59,29 +65,39 @@ const useCountingClock = () => {
 describe('supportBundleCache', () => {
   beforeEach(async () => {
     vi.restoreAllMocks()
+    // A test that fails part way through leaves its stubbed globals behind, which
+    // would take out every test after it.
+    vi.unstubAllGlobals()
     listSupportBundles.mockImplementation(actualHistory.listSupportBundles)
+    putSupportBundle.mockImplementation(actualHistory.putSupportBundle)
     useCountingClock()
     await clearSupportBundles()
   })
 
-  describe('when the cache is needed', () => {
+  describe('when a copy is needed', () => {
     it('follows the absence of the file picker', () => {
-      // The answer is a feature check, so the interface can rely on it from the first
-      // render.
+      // A feature check, so the answer is settled before anything renders.
       vi.stubGlobal('showOpenFilePicker', vi.fn())
       expect(isBundleCacheRequired()).toBe(false)
 
       vi.stubGlobal('showOpenFilePicker', undefined)
       expect(isBundleCacheRequired()).toBe(true)
+    })
 
-      vi.unstubAllGlobals()
+    it('asks for no copy where IndexedDB is unusable', () => {
+      // There is nowhere to keep a copy, so answering true here would send the caller
+      // into `indexedDB.open` and throw.
+      vi.stubGlobal('showOpenFilePicker', undefined)
+      vi.stubGlobal('indexedDB', undefined)
+
+      expect(isBundleCacheRequired()).toBe(false)
     })
   })
 
   describe('caching a file the input handed over', () => {
     it('keeps a copy of a file that comes with no handle', async () => {
-      // Why the cache exists for Firefox and Safari: a `File` cannot be reopened from
-      // its path, so the archive itself has to survive in the database.
+      // Firefox and Safari need this. A `File` cannot be re-opened from its path, so
+      // the archive itself has to be in the database.
       const stored = await rememberSupportBundleFile(new File(['PK-not-really'], 'from-input.zip'))
 
       expect(stored?.name).toBe('from-input.zip')
@@ -105,8 +121,8 @@ describe('supportBundleCache', () => {
     })
 
     it('tells apart two files that share a name', async () => {
-      // Same name, different archive: without a handle there is no identity test, so
-      // size and modification time have to stand in for one.
+      // Same name, different archive. Without a handle there is no identity test, so
+      // size and last-modified date stand in for one.
       await rememberSupportBundleFile(new File(['one'], 'bundle.zip', { lastModified: 1_000 }))
       await rememberSupportBundleFile(new File(['two'], 'bundle.zip', { lastModified: 2_000 }))
 
@@ -115,12 +131,22 @@ describe('supportBundleCache', () => {
 
     it('refuses an archive bigger than the per-bundle limit', async () => {
       const huge = new File(['small enough really'], 'huge.zip')
-      // Faked rather than allocated: the limit is hundreds of megabytes.
+      // Faked rather than allocated, because the limit is hundreds of megabytes.
       Object.defineProperty(huge, 'size', { value: maxCachedBundleBytes + 1 })
 
       expect(await rememberSupportBundleFile(huge)).toBe(null)
-      // Nothing cached means no history entry, and the caller falls back to handing
-      // the bytes to the viewer tab.
+      // No copy means no history entry, and the caller falls back to handing the bytes
+      // to the viewer tab.
+      expect(await listSupportBundles()).toEqual([])
+    })
+
+    it('refuses a file the storage quota rejected', async () => {
+      // The quota depends on free disk, so no check up front can rule it out. A
+      // rejected write has to read like an archive that is too big, or the caller
+      // loses the bundle instead of only the history entry.
+      putSupportBundle.mockRejectedValue(new DOMException('no room', 'QuotaExceededError'))
+
+      expect(await rememberSupportBundleFile(new File(['zip'], 'refused.zip'))).toBe(null)
       expect(await listSupportBundles()).toEqual([])
     })
 
@@ -143,18 +169,18 @@ describe('supportBundleCache', () => {
       ).toEqual([])
     })
 
-    it('drops the oldest copies once they outgrow the budget', () => {
+    it('reports the copies that do not fit, in the order it was given', () => {
       const half = cachedBundlesByteBudget / 2
       const newest = entryOfSize(3, half)
       const middle = entryOfSize(2, half)
       const oldest = entryOfSize(1, half)
 
-      // Two halves fit exactly; the third tips the total over, and the oldest copy
-      // goes.
+      // Two halves fill the budget exactly. The third read takes the total over, so
+      // the least recently opened copy is the one reported.
       expect(cachedBundlesOverBudget([newest, middle, oldest])).toEqual([oldest])
     })
 
-    it('does not weigh entries that hold a handle', () => {
+    it('skips entries that hold a handle', () => {
       const linked = { id: 9, name: 'linked.zip', openedAt: 9, handle: {} } as StoredSupportBundle
 
       expect(cachedBundlesOverBudget([entryOfSize(2, cachedBundlesByteBudget), linked])).toEqual([])
@@ -162,9 +188,9 @@ describe('supportBundleCache', () => {
 
     it('is applied when a copy is cached', async () => {
       const older = await rememberSupportBundleFile(new File(['older'], 'older.zip'))
-      // The entries are real; only the sizes the accounting reads are faked, since
-      // half a gigabyte cannot be written here. The phantom newest entry fills the
-      // budget on its own, leaving nothing for the entry behind it.
+      // The entries are real. Only the sizes the budget reads are faked, since half a
+      // gigabyte cannot be written here. The first faked entry fills the budget on its
+      // own, so the one behind it does not fit.
       listSupportBundles.mockResolvedValue([
         entryOfSize(9999, cachedBundlesByteBudget),
         entryOfSize(older!.id, cachedBundlesByteBudget)
@@ -188,8 +214,8 @@ describe('supportBundleCache', () => {
 
   describe('read permission', () => {
     it('asks nobody about a cached copy', async () => {
-      // The copy belongs to this origin, so there is no file grant to lapse: that is
-      // what gives browsers with no picker a working history.
+      // The copy belongs to this origin, so there is no file grant to expire. That is
+      // what gives browsers with no picker a usable history.
       const stored = await rememberSupportBundleFile(new File(['zip'], 'copied.zip'))
 
       expect(await queryBundleReadPermission(stored!)).toBe('granted')

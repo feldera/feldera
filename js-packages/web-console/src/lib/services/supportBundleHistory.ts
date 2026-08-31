@@ -1,21 +1,22 @@
 /**
  * History of the support bundles the user opened from disk.
  *
- * An entry remembers the archive one of two ways, and IndexedDB makes either
- * possible: both a `FileSystemFileHandle` and a `File` are structured-cloneable but
- * not JSON-serializable, so `localStorage` can hold neither.
+ * An entry records where to read the archive in one of two ways, and IndexedDB is the
+ * only store that can hold either. A `FileSystemFileHandle` and a `File` are both
+ * structured-cloneable, and neither is JSON-serializable, so `localStorage` can hold
+ * neither.
  *
- *   Browser                     Entry holds     Cost              Re-read needs
- *   Chromium (picker)           handle          a few hundred B   a re-grant
+ *   Browser                     Entry holds     Costs             Re-reading needs
+ *   Chromium (picker)           handle          a few hundred B   a fresh grant
  *   Firefox, Safari (input)     file            the whole archive nothing
  *
- * A handle is preferred wherever it exists: it costs the same few hundred bytes
- * whatever the size of the archive behind it. Browsers with no File System Access API
- * hand out only a `File`, which cannot be re-opened from its path, so the database
- * caches the archive itself; everything specific to those copies lives in
- * `supportBundleCache.ts`.
+ * A handle is preferred wherever the picker exists, because it costs the same few
+ * hundred bytes whatever the size of the archive behind it. Browsers without the File
+ * System Access API yield only a `File`, which cannot be re-opened from its path, so
+ * the database keeps a copy of the archive instead. Everything specific to those
+ * copies lives in `supportBundleCache.ts`.
  *
- * Either way the entry is readable from any tab of this origin, which is how the
+ * Either kind of entry is readable from any tab of this origin, which is how the
  * profile viewer opens a bundle the home page linked to.
  */
 
@@ -39,13 +40,13 @@ type SupportBundleFacts = {
 /** A bundle that points at a file on disk. */
 export type LinkedSupportBundle = SupportBundleFacts & { handle: FileSystemFileHandle }
 
-/** A bundle the database keeps a copy of, for browsers that hand out no handle. */
+/** A bundle the database keeps a copy of, for browsers that yield no handle. */
 export type CachedSupportBundle = SupportBundleFacts & { file: File }
 
 /**
- * A remembered bundle. The two ways of holding a file are alternatives, not optional
- * fields, so reading an entry starts with deciding which kind it is: `isLinkedBundle`
- * here, `isCachedBundle` in the cache module.
+ * A remembered bundle. The two ways of recording a file are alternatives, not optional
+ * fields, so reading an entry starts by deciding which kind it is. `isLinkedBundle`
+ * below tests for one kind, `isCachedBundle` in the cache module for the other.
  */
 export type StoredSupportBundle = LinkedSupportBundle | CachedSupportBundle
 
@@ -59,9 +60,9 @@ export const isLinkedBundle = (
 /** Read/write access to a single file, as `navigator.permissions` reports it. */
 export type BundlePermissionState = 'granted' | 'denied' | 'prompt'
 
-// The parts of the File System Access API that TypeScript 5.9's lib.dom.d.ts does
-// not declare, narrowed to what we call. All three are optional: a browser may ship
-// the handles without the permission methods, and outside Chromium none of them
+// The parts of the File System Access API that TypeScript 5.9's lib.dom.d.ts does not
+// declare, narrowed to what we call. All three are optional, because a browser may
+// ship the handles without the permission methods, and outside Chromium none of them
 // exists.
 type FileHandleWithPermissions = FileSystemFileHandle & {
   queryPermission?: (descriptor: { mode: 'read' }) => Promise<BundlePermissionState>
@@ -75,14 +76,23 @@ type WindowWithFilePicker = Window & {
 }
 
 /**
- * Whether a bundle can be picked as a handle. False in browsers with no file picker,
- * where callers fall back to a plain file input and the history caches a copy of the
- * archive. A feature check, so the answer is settled before anything renders.
+ * Whether the file picker can be shown, and so whether a bundle can be remembered as a
+ * handle. False in Firefox and Safari, where callers fall back to a plain file input.
+ * A feature check, so the answer is settled before anything renders.
  */
 export const isBundlePickerSupported = () =>
   typeof window !== 'undefined' &&
-  typeof (window as WindowWithFilePicker).showOpenFilePicker === 'function' &&
-  typeof indexedDB !== 'undefined'
+  typeof (window as WindowWithFilePicker).showOpenFilePicker === 'function'
+
+/**
+ * Whether a history can be kept at all. False where IndexedDB is missing or blocked,
+ * as in a Chromium with site data turned off, and every read and write below throws
+ * there.
+ *
+ * Separate from `isBundlePickerSupported` because the two capabilities are
+ * independent: a browser can have the picker and no usable IndexedDB.
+ */
+export const isHistorySupported = () => typeof indexedDB !== 'undefined'
 
 /**
  * Shows the file picker. Resolves to null when the user dismisses it, which the
@@ -149,8 +159,10 @@ const withStore = async <T>(
       transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB write failed'))
       transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB write aborted'))
     })
-    const result = await use(transaction.objectStore(STORE_NAME))
-    await finished
+    // A failing request rejects `use` and aborts the transaction, so both promises
+    // reject. Awaiting them together reports the first failure and leaves the other
+    // rejection handled.
+    const [result] = await Promise.all([use(transaction.objectStore(STORE_NAME)), finished])
     return result
   } finally {
     db.close()
@@ -173,11 +185,11 @@ export const getSupportBundle = async (id: number): Promise<StoredSupportBundle 
   )
 
 /**
- * Same file as `handle`, if it is already in the history.
+ * The existing entry for `handle`, if the history already holds one.
  *
- * `isSameEntry` is the only reliable identity test: two handles for one file are
- * separate objects, and a name matches across directories. A handle from a browser
- * that does not implement `isSameEntry` falls back to a name match.
+ * `isSameEntry` is the only reliable identity test, because two handles for one file
+ * are separate objects and one name can match in two directories. A handle from a
+ * browser that does not implement `isSameEntry` falls back to a name match.
  */
 const findSameEntry = async (
   handle: FileSystemFileHandle
@@ -187,8 +199,8 @@ const findSameEntry = async (
     if (!isLinkedBundle(bundle)) {
       continue
     }
-    // A handle read back from IndexedDB comes from whatever browser stored it, so
-    // `isSameEntry` is treated as optional.
+    // A handle read back from IndexedDB was stored by whatever browser wrote it, so
+    // `isSameEntry` is treated as optional here too.
     const isSameEntry = (bundle.handle as Partial<FileSystemFileHandle>).isSameEntry
     const same = isSameEntry
       ? await isSameEntry.call(bundle.handle, handle)
@@ -239,8 +251,8 @@ export const putSupportBundle = async (
  * Records a picked bundle as the most recent one. Re-picking a file already in the
  * history moves that entry to the front instead of duplicating it.
  *
- * Only the count is pruned afterwards: a handle takes almost no space, so remembering
- * one cannot put the cache over its byte budget.
+ * Only the count is pruned afterwards. A handle takes almost no space, so remembering
+ * one cannot put the store over its byte budget.
  */
 export const rememberSupportBundle = async (
   handle: FileSystemFileHandle
@@ -283,7 +295,7 @@ export const queryBundleReadPermission = async (
     return 'granted'
   }
   const queryPermission = (bundle.handle as FileHandleWithPermissions).queryPermission
-  // Without the permission API there is nothing to ask: reading either works or
+  // Without the permission API there is nothing to ask. Reading either works or
   // throws, and reporting 'granted' lets the caller find out which.
   return queryPermission ? await queryPermission.call(bundle.handle, { mode: 'read' }) : 'granted'
 }
@@ -292,8 +304,8 @@ export const queryBundleReadPermission = async (
  * Asks the user to re-grant read access to a bundle, and reports whether the
  * bundle can be read afterwards.
  *
- * MUST be called from a user-gesture handler: browsers reject a permission request
- * that no click can be attributed to.
+ * MUST be called from a user-gesture handler, because browsers reject a permission
+ * request that no click can be attributed to.
  */
 export const requestBundleReadPermission = async (
   bundle: StoredSupportBundle
@@ -310,13 +322,13 @@ export const requestBundleReadPermission = async (
 
 /**
  * Looks up a remembered bundle and reports whether reading it needs the user to grant
- * access. Throws when the history holds no such entry: a stale link, or a cleared
- * history.
+ * access. Throws when the history holds no such entry, which happens for a stale link
+ * or after the history has been cleared.
  */
 export const resolveStoredBundle = async (
   id: number | undefined
 ): Promise<{ bundle: StoredSupportBundle; needsPermission: boolean }> => {
-  const bundle = id ? await getSupportBundle(id) : undefined
+  const bundle = id === undefined ? undefined : await getSupportBundle(id)
   if (!bundle) {
     throw new Error(
       'This support bundle is no longer in the browser history. Open it from disk again.'
@@ -334,12 +346,12 @@ const readFileBytes = async (file: File) => new Uint8Array(await file.arrayBuffe
 export const readSupportBundle = async (handle: FileSystemFileHandle): Promise<Uint8Array> =>
   readFileBytes(await handle.getFile())
 
-/** Reads a remembered bundle, from disk or from the copy the cache keeps. */
+/** Reads a remembered bundle, from disk or from the copy in the database. */
 export const readStoredBundle = async (bundle: StoredSupportBundle): Promise<Uint8Array> => {
   if (isLinkedBundle(bundle)) {
     return readSupportBundle(bundle.handle)
   }
-  // Unreachable through this module, but records come out of IndexedDB untyped: an
+  // Unreachable through this module, but records come out of IndexedDB untyped. An
   // entry holding neither a handle nor a copy is reported, not crashed on.
   if (!(bundle.file instanceof Blob)) {
     throw new Error(`The history entry for ${bundle.name} does not say where to read the file.`)

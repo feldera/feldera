@@ -1,21 +1,22 @@
 /**
- * Copies of support bundle archives, kept in the same IndexedDB store the history
- * uses (see `supportBundleHistory.ts`).
+ * Copies of support bundle archives, kept in the same IndexedDB store as the history
+ * (see `supportBundleHistory.ts`).
  *
- * The cache serves browsers with no File System Access API: an `<input type=file>`
- * yields a `File`, which cannot be re-opened from its path once the page is gone, so
- * remembering such a bundle means keeping the archive itself. Copies cost storage,
- * hence the two limits below; a bundle past them still opens, it just leaves no
- * history entry.
+ * Browsers with no File System Access API give an `<input type=file>` a `File`, and a
+ * `File` cannot be re-opened from its path once the page is gone. Remembering such a
+ * bundle therefore means keeping the archive itself. The two limits below cap what
+ * that costs in storage. A bundle over either limit still opens; it gets no history
+ * entry.
  *
- * The picker path needs nothing from here, and the history module depends on nothing
- * here.
+ * Nothing in the file-picker path reads this module, and `supportBundleHistory` does
+ * not import it.
  */
 
 import {
   type CachedSupportBundle,
   deleteSupportBundles,
   isBundlePickerSupported,
+  isHistorySupported,
   listSupportBundles,
   maxRememberedBundles,
   pruneToCountLimit,
@@ -24,23 +25,25 @@ import {
 } from './supportBundleHistory'
 
 /**
- * Whether remembering a bundle means caching the archive, because this browser hands
- * out no file handles.
+ * Whether remembering a bundle means keeping a copy of the archive, because this
+ * browser has no file picker and so yields no handles.
+ *
+ * False where IndexedDB is unusable, since there is nowhere to keep the copy.
  */
-export const isBundleCacheRequired = () => !isBundlePickerSupported()
+export const isBundleCacheRequired = () => isHistorySupported() && !isBundlePickerSupported()
 
 /**
- * Biggest archive the cache takes. A bigger bundle is not remembered: filling the
- * origin's storage quota with one archive costs the user more than the history is
- * worth.
+ * Biggest archive this module will copy, in bytes. A larger bundle gets no history
+ * entry, because one archive filling the origin's storage quota costs the user more
+ * than the history is worth.
  */
 export const maxCachedBundleBytes = 256 * 1024 * 1024
 
 /**
- * What all the copies together may take. Past the budget the oldest copies are
- * dropped, so a browser that caches archives keeps fewer bundles than one storing
- * handles. The budget is above `maxCachedBundleBytes`, so the bundle just opened
- * survives its own pruning pass.
+ * Bytes all the copies together may occupy. Over the budget, the least recently
+ * opened copies are deleted, so a browser that copies archives remembers fewer
+ * bundles than one that stores handles. The budget exceeds `maxCachedBundleBytes`, so
+ * the pruning pass after a write never deletes the bundle that write just added.
  */
 export const cachedBundlesByteBudget = 512 * 1024 * 1024
 
@@ -48,8 +51,8 @@ export const isCachedBundle = (bundle: StoredSupportBundle): bundle is CachedSup
   'file' in bundle
 
 /**
- * The cached copies that exceed the byte budget, oldest first. Entries holding a
- * handle weigh nothing, so they are passed over.
+ * The copies that do not fit in the byte budget, in the order `mostRecentFirst` gives
+ * them. Entries holding a handle occupy no budget and are skipped.
  *
  * @param mostRecentFirst the history in the order `listSupportBundles` returns.
  *   Exported so tests can exercise the budget without storing half a gigabyte.
@@ -72,11 +75,11 @@ export const cachedBundlesOverBudget = (
 }
 
 /**
- * Same file as `file`, if the cache already holds a copy of it.
+ * The existing copy of `file`, if there is one.
  *
- * A `File` supports no identity test, so name, size and modification time stand in
- * for one. Two files that agree on all three count as one file, which costs the user
- * a stale entry at worst.
+ * A `File` has no identity test, so name, size and last-modified date stand in for
+ * one. Two different files agreeing on all three are treated as one, which at worst
+ * leaves the user a stale entry.
  */
 const findCachedFile = async (file: File): Promise<StoredSupportBundle | undefined> =>
   (await listSupportBundles()).find(
@@ -88,11 +91,30 @@ const findCachedFile = async (file: File): Promise<StoredSupportBundle | undefin
   )
 
 /**
- * Records a bundle that came from an `<input type=file>` by caching the archive.
- * Returns null for an archive too big to cache, which leaves it unremembered.
+ * Writes a copy of `file` to IndexedDB, or returns null if the web origin's storage quota refused it.
  *
- * Adding a copy is the only thing that can put the cache over its byte budget, so
- * the budget is enforced here.
+ * The quota is a third limit on top of the two above, and it depends on how much disk
+ * the browser has left, so no check up front can rule it out. A refusal here means the
+ * same to the caller as an archive that is too big to copy.
+ */
+const storeCopy = async (id: number | undefined, file: File) => {
+  try {
+    return await putSupportBundle(id, { name: file.name, openedAt: Date.now(), file })
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'QuotaExceededError') {
+      return null
+    }
+    throw error
+  }
+}
+
+/**
+ * Records a bundle that came from an `<input type=file>` by keeping a copy of the
+ * archive. Returns null when the copy does not fit, which leaves the bundle out of
+ * the history.
+ *
+ * Adding a copy is the only thing that can put the store over its byte budget, so the
+ * budget is applied here.
  */
 export const rememberSupportBundleFile = async (
   file: File
@@ -101,11 +123,10 @@ export const rememberSupportBundleFile = async (
     return null
   }
   const existing = await findCachedFile(file)
-  const stored = await putSupportBundle(existing?.id, {
-    name: file.name,
-    openedAt: Date.now(),
-    file
-  })
+  const stored = await storeCopy(existing?.id, file)
+  if (!stored) {
+    return null
+  }
   await pruneToCountLimit()
   await deleteSupportBundles(
     cachedBundlesOverBudget(await listSupportBundles()).map((bundle) => bundle.id)
