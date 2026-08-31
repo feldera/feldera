@@ -255,7 +255,7 @@
                 {#if pipeline.deploymentError}
                   {@const message = pipeline.deploymentError.message}
                   <span class="fd fd-circle-alert pr-2 text-[20px] text-error-500"></span>
-                  <Popover class="z-10" strategy="fixed">
+                  <Popover class="z-20" strategy="fixed">
                     <div
                       class="scrollbar flex max-h-[50vh] max-w-[80vw] overflow-auto whitespace-pre-wrap"
                     >
