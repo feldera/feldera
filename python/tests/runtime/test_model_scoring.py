@@ -104,8 +104,11 @@ class ModelServer(threading.Thread):
         # Ignore deleted requests
         writes = [self._prediction(i["insert"]) for i in items if "insert" in i]
         if writes:
-            self.predictions_written += len(writes)
+            # `input_json` blocks until the pipeline has processed the batch, so a
+            # test that waits on this counter waits for the predictions to be
+            # visible to a query, not merely for the write to be issued.
             self.pipeline.input_json("model_prediction", writes, update_format="raw")
+            self.predictions_written += len(writes)
 
     def _prediction(self, request: Mapping[str, Any]) -> dict:
         probability = predict(float(request["pct_of_limit"]))
@@ -227,12 +230,13 @@ class TestModelScoring(PipelineTestCase):
             [{"cc_num": 1001, "ts": DAY_2, "zip": 94105, "credit_limit": "20000.00"}],
             update_format="raw",
         )
-        # Wait for the server to receive the new prediction (one delete and one insert)
+        # Wait for the two re-predictions to be written and processed. `scored`
+        # cannot serve as the barrier here: a re-prediction upserts on
+        # (event_time, trans_id), so it stays at SEED_TRANSACTIONS throughout.
         self.wait_until(
             lambda: server.predictions_written >= before + 2,
             "the corrected transactions to be re-predicted",
         )
-        self.wait_for_predictions(SEED_TRANSACTIONS)
         repredicted = server.predictions_written - before
         log(f"cardholder correction triggered {repredicted} new predictions")
 
