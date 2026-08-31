@@ -12,8 +12,8 @@ import {
 /**
  * A remembered bundle plus whether reading it needs the user's permission.
  *
- * The permission is queried when the list is read, not when a bundle is opened:
- * requesting permission takes a click, so a caller has to know the answer before
+ * The permission is queried when the list is read, not when a bundle is opened.
+ * Requesting permission takes a click, so a caller has to know the answer before
  * deciding whether to ask.
  */
 export type SupportBundleEntry = StoredSupportBundle & { needsPermission: boolean }
@@ -21,13 +21,13 @@ export type SupportBundleEntry = StoredSupportBundle & { needsPermission: boolea
 /**
  * Reactive view of the support bundles remembered in IndexedDB.
  *
- * The state is module-level, like `useDemos`: every caller reads the same list, so a
- * bundle opened in one component shows up in the others without its own trip to the
+ * The state is module-level, like `useDemos`. Every caller reads the same list, so a
+ * bundle opened in one component appears in the others without another trip to the
  * database. The first caller triggers the initial read.
  *
- * IndexedDB failures (private-mode restrictions, a corrupt database) leave the list
- * empty instead of propagating: the history is a convenience, and losing it must not
- * stop the user from opening a bundle from disk.
+ * IndexedDB failures, such as private-mode restrictions or a corrupt database, leave
+ * the list empty instead of propagating. The history is a convenience, and losing it
+ * must not stop the user from opening a bundle from disk.
  */
 let bundles = $state<SupportBundleEntry[]>([])
 let loaded = false
@@ -72,8 +72,8 @@ export const useSupportBundleHistory = () => {
     },
     /**
      * Records a bundle that came from a file input, by keeping a copy of it. Returns
-     * null when there is no room for the copy, or when the storage quota refuses it:
-     * the bundle still opens, it just leaves no history entry.
+     * null when there is no room for the copy, or when the storage quota rejects it.
+     * The bundle still opens; it gets no history entry.
      */
     async rememberFile(file: File) {
       try {

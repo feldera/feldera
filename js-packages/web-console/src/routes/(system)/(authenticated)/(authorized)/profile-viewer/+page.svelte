@@ -70,9 +70,9 @@
 
   let collectNewData = $state(collect)
   let fileInput: HTMLInputElement | null = $state(null)
-  // Set when the URL names a bundle in the history: where to read the file is known,
-  // but reading it may need the user to grant access, since browsers drop file grants
-  // between sessions.
+  // Set when the URL names a bundle in the history. Where to read the file is known,
+  // but reading it may need the user to grant access, because browsers drop file
+  // grants between sessions.
   let pendingBundle: StoredSupportBundle | null = $state(null)
 
   const withLoadGuard = createLoadGuard({
@@ -149,8 +149,8 @@
           await loadStoredBundle(bundle)
           return
         }
-        // No history entry: the tab that picked the bundle hands the bytes over. The
-        // last resort, for an archive too big to keep a copy of.
+        // No history entry, so the tab that picked the bundle hands the bytes over.
+        // The last resort, for an archive too big to keep a copy of.
         const buffer = await receiveUploadedBundle(channel)
         await processZipBundle(
           new Uint8Array(buffer),
@@ -255,7 +255,10 @@
     errorMessage = ''
     await withLoadGuard(async () => {
       if (!(await requestBundleReadPermission(stored))) {
-        throw new Error(`Reading ${stored.name} needs access to the file.`)
+        throw new Error(
+          `Reading ${stored.name} needs access to the file. Click "Open from disk" and ` +
+            'allow access when the browser asks, or open the bundle from disk again.'
+        )
       }
       await loadStoredBundle(stored)
     }, onLoadError('Failed to open the support bundle.'))
@@ -417,9 +420,9 @@
       {#if pendingBundle}
         {@const stored = pendingBundle}
         <!-- Shown when the browser holds no grant for the file, which is the case for
-             this URL opened directly, e.g. after reloading the page. Coming from the
-             home page the grant is given there, so the profile is already loading and
-             there is nothing to confirm. -->
+             this URL opened directly, such as after a reload. A bundle opened from the
+             home page was granted there, so the profile is already loading and there is
+             nothing to confirm. -->
         <SupportBundleConfirm
           name={stored.name}
           confirmLabel="Open from disk"
@@ -433,9 +436,9 @@
           Download profile
         </button>
       {/if}
-      <button class="link p-2 hover:underline" onclick={pickBundle}>
-        or open another support bundle
-      </button>
+      <!-- Also the only control on a cold start, where nothing has been opened yet, so
+           the label cannot say "another". -->
+      <button class="link p-2 hover:underline" onclick={pickBundle}> Open a support bundle </button>
     </div>
   {/if}
 </div>

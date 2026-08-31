@@ -1,9 +1,8 @@
 /**
- * The pipeline editor's support-bundle dropdown. The dropdown shares
- * `SupportBundlePopup` with the home page, so these tests cover the menu shape
- * specific to the editor plus the two ways a bundle reaches the viewer from here: the
- * file picker, whose handle the history keeps, and the file input, whose file the
- * history copies. Either way the bundle turns up on the home page.
+ * The pipeline editor's support-bundle dropdown: the menu entries specific to the
+ * editor, and the two ways a bundle reaches the viewer from here. The file picker
+ * yields a handle the history stores; the file input yields a `File` the history
+ * copies.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -72,7 +71,7 @@ const find = (container: HTMLElement, testid: string) =>
 
 const click = (element: Element | null | undefined) => (element as HTMLElement).click()
 
-/** Opens the dropdown and waits for its menu. */
+/** Opens the dropdown and returns once its menu is on screen. */
 const openDropdown = async (container: HTMLElement) => {
   click(container.querySelector('[aria-label="Support bundle options"]'))
   await expect.poll(() => find(container, 'box-support-bundle-menu')).toBeTruthy()
@@ -129,8 +128,8 @@ describe('DownloadSupportBundle.svelte', () => {
   })
 
   it('remembers a bundle picked here and links the viewer to it', async () => {
-    // The same history the home page shows: a bundle opened from the editor turns up
-    // there, and its viewer tab can re-read the file from disk.
+    // The bundle goes into the history, so the viewer tab can re-read the file from
+    // disk.
     await clearSupportBundles()
     vi.stubGlobal('showOpenFilePicker', showOpenFilePicker)
     showOpenFilePicker.mockResolvedValue([fakeHandle('bundle-from-picker.zip')])
@@ -163,8 +162,8 @@ describe('DownloadSupportBundle.svelte', () => {
     pickThroughFileInput(container, 'bundle-from-input.zip')
     await expect.poll(() => find(container, 'btn-confirm-view-profile')).toBeTruthy()
     expect(container.textContent).toContain('bundle-from-input.zip')
-    // Picking alone must not open the tab: `window.open` has to run inside the
-    // confirming click, or the browser treats it as a popup.
+    // Picking alone must not open the tab. `window.open` has to run inside the
+    // confirming click, or the browser counts it as a popup.
     expect(openStoredBundleTab).not.toHaveBeenCalled()
     await expect
       .poll(async () => (await listSupportBundles())[0]?.name)
@@ -174,7 +173,7 @@ describe('DownloadSupportBundle.svelte', () => {
     click(find(container, 'btn-confirm-view-profile'))
 
     // The history holds a copy of the archive, so the viewer reads it from there and
-    // no bytes are handed over.
+    // nothing is handed over.
     expect(openStoredBundleTab).toHaveBeenCalledWith(id)
     expect(openUploadBundleTab).not.toHaveBeenCalled()
     expect(sendBundle).not.toHaveBeenCalled()

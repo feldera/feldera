@@ -11,8 +11,8 @@ export const load = ({ url }: LoadEvent) => {
     /**
      * An uploaded bundle arrives one of two ways. `bundle` names an entry in the
      * bundle history, which the viewer reads itself, so the tab survives a reload.
-     * `channel` is the fallback for a bundle with no history entry: the tab that read
-     * the file hands the bytes over once.
+     * `channel` is the fallback for a bundle with no history entry, where the tab that
+     * read the file hands the bytes over once.
      */
     bundle: Number(url.searchParams.get('bundle')) || undefined,
     channel: url.searchParams.get('channel') ?? ''

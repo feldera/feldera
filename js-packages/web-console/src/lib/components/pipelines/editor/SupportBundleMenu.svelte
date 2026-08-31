@@ -1,11 +1,11 @@
 <script lang="ts">
-  // Shared dropdown body for the support-bundle menus: an optional download button
+  // The dropdown body shared by the support-bundle menus: an optional download button
   // with the "collect new data" toggle, and the entry that opens a bundle from disk.
   //
-  // Callers supply their own Popup and outer container, so the trigger and the outer
-  // styling stay caller-specific. Callers also do the picking: each one has its own
-  // use for a picked bundle, and the hidden file input the fallback needs has to sit
-  // outside this menu, where a closing popup cannot remove it mid-pick.
+  // Callers supply the Popup and the outer container, so the trigger and the outer
+  // styling stay theirs. Callers also do the picking, because each one has its own use
+  // for a picked bundle, and the file input the fallback needs must sit outside this
+  // menu, where a closing popup cannot remove it while a pick is in progress.
 
   type Props = {
     collectNewData?: boolean
