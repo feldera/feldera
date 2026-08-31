@@ -96,7 +96,11 @@ pub struct DeltaTableWriterConfig {
     /// Number of parallel threads used by the connector.
     ///
     /// Increasing this value can improve Delta Lake write throughput
-    /// by enabling concurrent writes.
+    /// by enabling concurrent writes. Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.
+    /// Values above 1 require the view to have a unique key, so that the connector can order inserts and deletes correctly.
+    /// Define the key with `CREATE INDEX` and set the connector's `index` property to that index;
+    /// see [views with unique keys](https://docs.feldera.com/connectors/sinks/delta/#views-with-unique-keys) and
+    /// [writing in parallel](https://docs.feldera.com/connectors/sinks/delta/#writing-in-parallel).
     ///
     /// Default: 1.
     #[serde(default, skip_serializing_if = "Option::is_none")]
