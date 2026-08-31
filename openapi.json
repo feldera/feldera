@@ -10129,7 +10129,7 @@
           },
           "threads": {
             "type": "integer",
-            "description": "Number of parallel threads used by the connector.\n\nIncreasing this value can improve Delta Lake write throughput\nby enabling concurrent writes.\n\nDefault: 1.",
+            "description": "Number of parallel threads used by the connector.\n\nIncreasing this value can improve Delta Lake write throughput\nby enabling concurrent writes. Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.\nValues above 1 require the view to have a unique key, so that the connector can order inserts and deletes correctly.\nDefine the key with `CREATE INDEX` and set the connector's `index` property to that index;\nsee [views with unique keys](https://docs.feldera.com/connectors/sinks/delta/#views-with-unique-keys) and\n[writing in parallel](https://docs.feldera.com/connectors/sinks/delta/#writing-in-parallel).\n\nDefault: 1.",
             "nullable": true,
             "minimum": 1
           },

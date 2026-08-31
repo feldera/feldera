@@ -80,7 +80,7 @@ MERGE INTO {target_table} AS target
 | `log_retention_duration` | <p>Log retention duration for newly created Delta tables.</p><p>Configures the `delta.logRetentionDuration` table property, which controls how long the table's transaction-log history is kept.  Each time a checkpoint is written, Delta Lake automatically cleans up log entries older than this interval (subject to `enable_expired_log_cleanup`).</p><p>The option is only available when creating the Delta table (`mode = append` and there is no existing table at the target location, or `mode = truncate`).</p><p>The value follows the Delta Lake interval syntax `"interval <N> <unit>"`, where `<unit>` is one of `nanosecond[s]`, `microsecond[s]`, `millisecond[s]`, `second[s]`, `minute[s]`, `hour[s]`, `day[s]`, or `week[s]`.  Examples: `"interval 30 days"`, `"interval 6 hours"`.</p><p>Default: `"interval 30 days"` (Delta Lake default).</p>|
 | `enable_expired_log_cleanup` | <p>Whether to clean up expired log entries when a checkpoint is written.</p><p>Configures the `delta.enableExpiredLogCleanup` table property.  When set to `false`, transaction-log entries are retained indefinitely regardless of `log_retention_duration`.</p><p>The option is only available when creating the Delta table (`mode = append` and there is no existing table at the target location, or `mode = truncate`).</p><p>Default: `true` (Delta Lake default).</p>|
 | `max_retries`|<p>Maximum number of retries for failed Delta Lake operations like writing Parquet files and committing transactions.</p><p>The connector performs retries on several levels: individual S3 operations, Delta Lake transaction commits, and overall operation retries. This setting controls the overall operation retries. When a write to the table fails, because of an S3 timeout or any other reason that was not resolved by lower-level retries, the connector will retry the entire operation.</p><p>When not specified, the connector performs infinite retries. When set to 0, the connector doesn't retry failed operations.</p>|
-| `threads` | Number of parallel threads used by the connector. Increasing this value can improve Delta Lake write throughput by enabling concurrent writes. Default: `1`. |
+| `threads` | <p>Number of parallel threads used by the connector. Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.</p><p>Values above 1 require the view to have a unique key, so that the connector can order inserts and deletes correctly. Define the key with `CREATE INDEX` and set the connector's `index` property to that index; see [views with unique keys](#views-with-unique-keys) and [writing in parallel](#writing-in-parallel).</p><p>Default: `1`.</p>|
 
 [*]: Required fields
 
@@ -188,3 +188,37 @@ WITH (
 AS SELECT * FROM my_table;
 ```
 
+### Writing in parallel
+
+Set `threads` above 1 to have the connector write Parquet files concurrently. Parallel writes require the view to have a
+unique key, so that the connector can order inserts and deletes correctly; without one the pipeline fails to start.
+Define the key with `CREATE INDEX` and set the connector's `index` property to that index. See
+[views with unique keys](#views-with-unique-keys) for additional details.
+
+```sql
+CREATE VIEW v
+WITH (
+ 'connectors' = '[{
+    "index": "v_idx",
+    "transport": {
+      "name": "delta_table_output",
+      "config": {
+        "uri": "s3://feldera-fraud-detection-demo/feature_train",
+        "threads": 4,
+        "mode": "append",
+        "aws_access_key_id": <AWS_ACCESS_KEY_ID>,
+        "aws_secret_access_key": <AWS_SECRET_ACCESS_KEY>,
+        "aws_region": "us-east-1"
+      }
+    },
+    "enable_output_buffer": true,
+    "max_output_buffer_time_millis": 10000
+ }]'
+)
+AS SELECT * FROM my_table;
+
+-- Unique key required by "threads": 4.
+CREATE INDEX v_idx ON v(id);
+```
+
+Note where each option goes: `threads` is a transport option, while `index` is a connector option.
