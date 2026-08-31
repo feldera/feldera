@@ -2,9 +2,9 @@
  * The "Open support bundle" button and the dialog it opens: the remembered bundles,
  * with the picker and "Clear history" in the row below them.
  *
- * The history is the real IndexedDB-backed one; only the tab-opening helpers are
- * mocked, since a test cannot let a new window through. The assertions measure
- * geometry and stored state, not class names.
+ * Needs the browser project. The history is the real IndexedDB-backed one, and the
+ * assertions measure geometry and stored state rather than class names. Only the
+ * tab-opening helpers are mocked, because a test cannot let a new window through.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -17,11 +17,13 @@ const {
   queryBundleReadPermission,
   rememberSupportBundleFile,
   requestBundleReadPermission,
-  sendBundle
+  sendBundle,
+  toastError
 } = vi.hoisted(() => {
   const sendBundle = vi.fn(async () => {})
   return {
     goto: vi.fn(async () => {}),
+    toastError: vi.fn(),
     openStoredBundleTab: vi.fn(),
     openUploadBundleTab: vi.fn(() => ({ send: sendBundle, cancel: vi.fn() })),
     queryBundleReadPermission: vi.fn(async () => 'granted' as string),
@@ -30,6 +32,13 @@ const {
     sendBundle
   }
 })
+
+// The only observable difference between reporting a failure and swallowing it, so the
+// error-path tests below assert against this.
+vi.mock('svelte-french-toast', () => ({
+  toast: { error: toastError, success: vi.fn(), dismiss: vi.fn() },
+  Toaster: () => {}
+}))
 
 vi.mock('$app/navigation', () => ({
   goto,
@@ -42,17 +51,17 @@ vi.mock('$lib/compositions/profileBundleHandoff', async (importOriginal) => ({
   openStoredBundleTab,
   openUploadBundleTab
 }))
-// The history is real, IndexedDB included; only the two calls that would put a
-// browser permission prompt on screen are stubbed. A stored fake handle carries no
-// permission API, which the real calls answer with 'granted'; these spies override
-// that answer.
+// The history is real, IndexedDB included. Only the two calls that would put a browser
+// permission prompt on screen are stubbed. A stored fake handle carries no permission
+// API, which the real calls answer with 'granted', and these spies override that
+// answer.
 vi.mock('$lib/services/supportBundleHistory', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/services/supportBundleHistory')>()),
   queryBundleReadPermission,
   requestBundleReadPermission
 }))
-// The cache runs for real as well. `rememberSupportBundleFile` is a spy so one test
-// can make it decline a file, which is how an archive too big to cache looks here.
+// The cache runs for real as well. `rememberSupportBundleFile` is a spy so one test can
+// make it refuse a file, which is what an archive too big to copy looks like here.
 vi.mock('$lib/services/supportBundleCache', async (importOriginal) => {
   const original = await importOriginal<typeof import('$lib/services/supportBundleCache')>()
   rememberSupportBundleFile.mockImplementation(original.rememberSupportBundleFile)
@@ -122,7 +131,7 @@ const seedHistoryOpenedAgo = async (bundles: { name: string; openedMinutesAgo: n
 let mounted: { unmount: () => Promise<void> } | undefined
 let modal: { unmount: () => Promise<void> } | undefined
 
-/** Mounts the button on its own, the way the page header holds it. */
+/** Mounts the button on its own, the way the page header renders it. */
 const renderButton = () => {
   const rendered = render(OpenSupportBundleButton)
   mounted = rendered as any
@@ -176,13 +185,15 @@ const probeStyle = (container: HTMLElement, className: string) => {
 
 describe('OpenSupportBundleButton.svelte', () => {
   beforeEach(async () => {
-    // Skeleton's palette lives behind the theme selector; without it the color
+    // Skeleton's palette lives behind the theme selector. Without it the color
     // assertions below would compare two inherited blacks.
     document.documentElement.setAttribute('data-theme', 'feldera-modern-theme')
     queryBundleReadPermission.mockResolvedValue('granted')
     requestBundleReadPermission.mockResolvedValue(true)
     await seedHistory(Array.from({ length: BUNDLE_COUNT }, (_, i) => bundleName(i)))
-    openStoredBundleTab.mockClear()
+    // Reset, not just clear: one test replaces the implementation with a throw.
+    openStoredBundleTab.mockReset()
+    toastError.mockClear()
     openUploadBundleTab.mockClear()
     requestBundleReadPermission.mockClear()
     goto.mockClear()
@@ -205,8 +216,8 @@ describe('OpenSupportBundleButton.svelte', () => {
       const primary = probeStyle(container, 'border-primary-500')
       expect(getComputedStyle(button).borderTopColor).toBe(primary.borderTopColor)
       expect(parseFloat(getComputedStyle(button).borderTopWidth)).toBeGreaterThan(0)
-      // Outlined, not filled: the filled preset belongs to the dialog's own primary
-      // action.
+      // Outlined, not filled, because the filled preset belongs to the dialog's own
+      // primary action.
       expect(getComputedStyle(button).backgroundColor).not.toBe(
         probeStyle(container, 'preset-filled-primary-500').backgroundColor
       )
@@ -314,7 +325,7 @@ describe('OpenSupportBundleButton.svelte', () => {
         ROW_PADDING,
         0
       )
-      // Quieter than the name it accompanies.
+      // A dimmer color than the name beside it.
       expect(getComputedStyle(ago).color).toBe(probeStyle(dialog, 'text-surface-700-300').color)
       expect(getComputedStyle(ago).color).not.toBe(getComputedStyle(name).color)
     })
@@ -351,14 +362,14 @@ describe('OpenSupportBundleButton.svelte', () => {
       expect(getComputedStyle(name).textOverflow).toBe('ellipsis')
       expect(name.scrollWidth).toBeGreaterThan(name.clientWidth)
       expect(long.title).toBe(longName)
-      // No sideways scrolling: the list neither widens nor outgrows the screen.
+      // The list does not widen past the screen, so nothing scrolls sideways.
       expect(box.scrollWidth).toBe(box.clientWidth)
       expect(long.getBoundingClientRect().width).toBeLessThanOrEqual(box.clientWidth)
       expect(box.getBoundingClientRect().width).toBeLessThanOrEqual(
         box.parentElement!.getBoundingClientRect().width
       )
       expect(box.getBoundingClientRect().right).toBeLessThanOrEqual(window.innerWidth)
-      // The name gives way; the elapsed time keeps its place.
+      // The name truncates, and the elapsed time keeps its position.
       expect(rowOpenedAgo(long)).toMatch(/ago$/)
       expect(
         long.getBoundingClientRect().right -
@@ -398,9 +409,8 @@ describe('OpenSupportBundleButton.svelte', () => {
       expect(useGlobalDialog().dialog).toBe(null)
     })
 
-    it('asks for access and goes straight to the profile', async () => {
-      // What a browser restart leaves behind: the history is intact, the grants are
-      // not.
+    it('asks for access, then opens the profile', async () => {
+      // A browser restart leaves the history intact and the grants gone.
       await setReadPermission('prompt')
       const { dialog } = await openDialog()
       const row = listedRows(dialog)[0]
@@ -408,7 +418,7 @@ describe('OpenSupportBundleButton.svelte', () => {
 
       click(row)
 
-      // The prompt comes first, then the profile opens; nothing in between.
+      // The prompt comes first, then the profile opens, with nothing in between.
       await expect.poll(() => requestBundleReadPermission.mock.calls.length).toBe(1)
       await expect.poll(() => openStoredBundleTab.mock.calls).toContainEqual([id])
       expect(dialog.querySelector('[data-testid=box-support-bundle-confirm]')).toBe(null)
@@ -425,7 +435,47 @@ describe('OpenSupportBundleButton.svelte', () => {
       await expect.poll(() => requestBundleReadPermission.mock.calls.length).toBe(1)
       expect(openStoredBundleTab).not.toHaveBeenCalled()
       expect(goto).not.toHaveBeenCalled()
+      // The message says what to do next, not only what failed.
+      await expect
+        .poll(() => toastError.mock.calls.at(0)?.[0])
+        .toMatch(/needs access to the file\. Click it again/)
       // The dialog stays open, so the user can try again.
+      expect(useGlobalDialog().dialog).not.toBe(null)
+    })
+
+    it('reports a rejected permission request instead of failing silently', async () => {
+      // `requestPermission` rejects rather than resolving false when the click's
+      // activation is already spent, or when the handle is detached.
+      await setReadPermission('prompt')
+      requestBundleReadPermission.mockRejectedValue(new Error('NotAllowedError'))
+      const { dialog } = await openDialog()
+
+      click(listedRows(dialog)[0])
+
+      await expect.poll(() => toastError.mock.calls.at(0)?.[0]).toContain('NotAllowedError')
+      expect(requestBundleReadPermission).toHaveBeenCalledOnce()
+      expect(openStoredBundleTab).not.toHaveBeenCalled()
+      expect(useGlobalDialog().dialog).not.toBe(null)
+    })
+
+    it('leaves the bundle where it is when the browser blocks the new page', async () => {
+      openStoredBundleTab.mockImplementation(() => {
+        throw new Error('Browser blocked the popup.')
+      })
+      const { dialog } = await openDialog()
+      const row = listedRows(dialog)[1]
+      const name = rowName(row)
+      const firstBefore = (await listSupportBundles())[0].name
+
+      click(row)
+
+      // Nothing opened, so the history order is untouched and the dialog stays up for
+      // another try.
+      await expect
+        .poll(() => toastError.mock.calls.at(0)?.[0])
+        .toContain('Browser blocked the popup')
+      expect((await listSupportBundles())[0].name).toBe(firstBefore)
+      expect(name).not.toBe(firstBefore)
       expect(useGlobalDialog().dialog).not.toBe(null)
     })
   })
@@ -440,24 +490,24 @@ describe('OpenSupportBundleButton.svelte', () => {
 
       click(dialog.querySelector('[data-testid=btn-pick-support-bundle]'))
 
-      // No menu between the button and the file picker: the popup holds only the
-      // confirmation.
+      // No menu between the button and the file picker, because the popup holds only
+      // the confirmation.
       await expect
         .poll(() => dialog.querySelector('[data-testid=btn-confirm-view-profile]'))
         .toBeTruthy()
       expect(dialog.querySelector('[data-testid=btn-upload-support-bundle]')).toBe(null)
       expect(dialog.querySelector('[data-testid=btn-download-support-bundle]')).toBe(null)
       expect(dialog.textContent).toContain('picked.zip')
-      // The confirmation opens upwards: the button it hangs from sits at the bottom
-      // edge of the dialog, so a downward popup would be off screen.
+      // The confirmation opens upwards, because the button it hangs from sits at the
+      // bottom edge of the dialog and a downward popup would be off screen.
       const pick = dialog.querySelector<HTMLElement>('[data-testid=btn-pick-support-bundle]')!
       const confirm = dialog.querySelector<HTMLElement>('[data-testid=box-support-bundle-menu]')!
       expect(confirm.getBoundingClientRect().bottom).toBeLessThanOrEqual(
         pick.getBoundingClientRect().top + 1
       )
       expect(confirm.getBoundingClientRect().top).toBeGreaterThanOrEqual(0)
-      // Opening the viewer waits for its own click, or the browser blocks the new
-      // tab as a popup.
+      // Opening the viewer needs a click of its own, or the browser blocks the new tab
+      // as a popup.
       expect(openStoredBundleTab).not.toHaveBeenCalled()
 
       // Picking remembers the bundle, so the list shows it and the viewer points at
@@ -493,8 +543,8 @@ describe('OpenSupportBundleButton.svelte', () => {
     }
 
     it('remembers a bundle the file input handed over', async () => {
-      // Firefox and Safari take this path for every bundle: no picker, so no handle,
-      // and the history keeps a copy of the archive.
+      // Firefox and Safari take this path for every bundle. There is no picker, so no
+      // handle, and the history keeps a copy of the archive.
       const { dialog } = await openDialog()
 
       await pickThroughInput(dialog, new File(['bundle contents'], 'from-input.zip'))
@@ -510,7 +560,7 @@ describe('OpenSupportBundleButton.svelte', () => {
 
     it('hands the bytes over for an archive the history will not copy', async () => {
       // What `rememberSupportBundleFile` reports for an archive past
-      // `maxCachedBundleBytes`, or one the storage quota refused.
+      // `maxCachedBundleBytes`, or one the storage quota rejected.
       rememberSupportBundleFile.mockResolvedValueOnce(null)
       const { dialog } = await openDialog()
 

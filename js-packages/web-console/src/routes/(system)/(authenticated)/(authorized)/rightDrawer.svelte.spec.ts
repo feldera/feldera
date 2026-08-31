@@ -1,10 +1,11 @@
 /**
- * The right navigation drawer: on a screen too narrow for the page header, the drawer
- * holds creating a pipeline, opening a support bundle, booking a demo, and the
- * documentation and community links.
+ * The right navigation drawer, which replaces the page header on a screen too narrow
+ * for it. The drawer holds creating a pipeline, opening a support bundle, booking a
+ * demo, and the documentation and community links.
  *
- * The layout is rendered whole, so the bundle button opens into the drawer's own dialog
- * host, as it does in the running app.
+ * Needs the browser project: the assertions are layout measurements. The layout is
+ * rendered whole, so the bundle button opens into the drawer's own dialog host, as it
+ * does in the running app.
  */
 
 import { createRawSnippet } from 'svelte'
@@ -21,14 +22,14 @@ vi.mock('$app/navigation', () => ({
   goto: vi.fn(),
   invalidateAll: vi.fn(),
   preloadCode: vi.fn(() => Promise.resolve()),
-  // The layout's top loader subscribes to navigation; nothing navigates here.
+  // The layout's top loader subscribes to navigation, and nothing navigates here.
   afterNavigate: vi.fn(),
   beforeNavigate: vi.fn(),
   onNavigate: vi.fn()
 }))
 // Booking a demo tags its URL from the analytics loader, which no test loads.
 vi.mock('$lib/services/analytics', () => ({ captureEvent: vi.fn() }))
-// The layout's own pollers: nothing here talks to a backend.
+// The layout's own pollers. Nothing here talks to a backend.
 vi.mock('$lib/compositions/configCache', () => ({ fetchConfigs: vi.fn(async () => ({})) }))
 vi.mock('$lib/compositions/health/useClusterHealth.svelte', () => ({
   useClusterHealth: () => ({ current: { api: 'healthy', compiler: 'healthy', runner: 'healthy' } }),
@@ -81,7 +82,7 @@ const renderDrawer = async () => {
   return { container, drawer }
 }
 
-/** Where the drawer's panel is: off to the right once it closes. */
+/** Where the drawer's panel is. Once closed it sits off the right edge. */
 const isDrawerOpen = (drawer: HTMLElement) =>
   !drawer.parentElement!.className.includes('translate-x-full')
 
@@ -112,7 +113,7 @@ describe('(authorized) right drawer', () => {
     expect(top(labelled(drawer, 'New Pipeline'))).toBeLessThan(top(bundles))
     expect(top(bundles)).toBeLessThan(top(labelled(drawer, 'Book a demo')))
     // Centred in the drawer's column, like its neighbours: as wide as its label, with
-    // equal space on either side.
+    // equal space either side.
     const button = bundles.getBoundingClientRect()
     const column = drawer.getBoundingClientRect()
     expect(button.width).toBeLessThan(column.width - 2 * DRAWER_PADDING)
@@ -121,7 +122,7 @@ describe('(authorized) right drawer', () => {
     )
   })
 
-  it('steps aside for the dialog it opens', async () => {
+  it('retracts when the dialog it opens covers the screen', async () => {
     const { container, drawer } = await renderDrawer()
 
     drawer.querySelector<HTMLElement>('[data-testid=btn-open-support-bundle]')!.click()
