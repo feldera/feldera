@@ -337,8 +337,8 @@ describe('/ (home) scroll layout', () => {
 
 describe('/ (home) header', () => {
   // Below 1280px the header collapses into a single drawer button, and the test iframe
-  // is narrower than that by default, so these tests widen the iframe and put it back
-  // for whatever runs next.
+  // is narrower than that by default. These tests widen the iframe and restore it for
+  // whatever runs next.
   const narrow = { width: window.innerWidth, height: window.innerHeight }
   beforeEach(() => page.viewport(1400, 900))
   afterEach(() => page.viewport(narrow.width, narrow.height))
@@ -346,8 +346,8 @@ describe('/ (home) header', () => {
   it('offers the support bundle dialog between the community menu and New Pipeline', async () => {
     const { container } = await renderHome()
 
-    // The button is a direct child of the header row, which tells the header's New
-    // Pipeline button apart from the table's copy.
+    // The button is a direct child of the header row, which distinguishes the header's
+    // New Pipeline button from the table's.
     const bundles = container.querySelector<HTMLElement>('[data-testid=btn-open-support-bundle]')!
     const header = bundles.parentElement!
     const labelled = (text: string) =>

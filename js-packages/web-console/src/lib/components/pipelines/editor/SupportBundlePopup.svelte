@@ -38,7 +38,7 @@
     align?: 'left' | 'right'
     /**
      * Which way the dropdown opens. Use `'up'` for a trigger near the bottom edge of
-     * its container, where a downward dropdown would hang off.
+     * its container, where a downward dropdown would hide below the viewport.
      */
     drop?: 'down' | 'up'
     /** Runs once the viewer tab is open, so a caller such as a dialog can close itself. */
@@ -130,6 +130,7 @@
         openStoredBundleTab(bundle.bundleId)
       } catch (e) {
         reportError('Opening support bundle viewer')(e)
+        return
       }
       onOpened?.()
       return
@@ -142,8 +143,8 @@
       reportError('Opening support bundle viewer')(e)
       return
     }
-    // The transfer below outlives this component if `onOpened` unmounts it: the
-    // handoff is a closure over the opened window, not component state.
+    // The transfer below outlives this component when `onOpened` unmounts it, because
+    // the handoff closes over the opened window rather than over component state.
     onOpened?.()
     ;(async () => {
       try {
@@ -182,8 +183,8 @@
   content={dropdown}
 />
 
-<!-- In pick mode the trigger picks instead of toggling, and the dropdown opens by
-     itself once there is something to confirm. -->
+<!-- In pick mode the trigger picks instead of toggling, and the dropdown opens once
+     there is something to confirm. -->
 {#snippet pickTrigger(_toggle: () => void, isOpen: boolean)}
   {@render trigger(pickBundle, isOpen)}
 {/snippet}
