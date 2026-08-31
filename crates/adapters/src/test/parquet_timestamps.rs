@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use parquet::data_type::{Int64Type, Int96, Int96Type};
+use parquet::data_type::{ByteArray, ByteArrayType, Int64Type, Int96, Int96Type};
 use parquet::file::properties::WriterProperties;
 use parquet::file::writer::SerializedFileWriter;
 use parquet::schema::parser::parse_message_type;
@@ -401,4 +401,54 @@ pub fn timestamp_test_data() -> Vec<TimestampTestStruct> {
         },
         TimestampTestStruct { id: 4, ts: None },
     ]
+}
+
+/// Write a data file of a `columnMapping.mode = id` table: physical
+/// `col-<id>` names, a Parquet field id on every field, a struct nested in a
+/// struct, and an INT96 timestamp.
+///
+/// Coercing the INT96 column is what strips the ids from the struct fields, so
+/// the timestamp has to share the file with them.
+pub fn write_column_mapped_int96_parquet(path: &Path, label: &str, ts: Timestamp) {
+    const MESSAGE_TYPE: &str = r#"
+        message spark_schema {
+            REQUIRED INT64 "col-1" = 1;
+            OPTIONAL group "col-2" = 2 {
+                OPTIONAL group "col-3" = 3 {
+                    OPTIONAL BYTE_ARRAY "col-4" (STRING) = 4;
+                }
+            }
+            OPTIONAL INT96 "col-5" = 5;
+        }
+    "#;
+
+    let schema = Arc::new(parse_message_type(MESSAGE_TYPE).unwrap());
+    let props = Arc::new(WriterProperties::builder().build());
+    let mut writer = SerializedFileWriter::new(File::create(path).unwrap(), schema, props).unwrap();
+    let mut row_group = writer.next_row_group().unwrap();
+
+    let mut column = row_group.next_column().unwrap().unwrap();
+    column
+        .typed::<Int64Type>()
+        .write_batch(&[1], None, None)
+        .unwrap();
+    column.close().unwrap();
+
+    // All three levels are present, so definition level 3.
+    let mut column = row_group.next_column().unwrap().unwrap();
+    column
+        .typed::<ByteArrayType>()
+        .write_batch(&[ByteArray::from(label)], Some(&[3]), None)
+        .unwrap();
+    column.close().unwrap();
+
+    let mut column = row_group.next_column().unwrap().unwrap();
+    column
+        .typed::<Int96Type>()
+        .write_batch(&[to_int96(ts, 0)], Some(&[1]), None)
+        .unwrap();
+    column.close().unwrap();
+
+    row_group.close().unwrap();
+    writer.close().unwrap();
 }

@@ -4577,3 +4577,127 @@ fn delta_table_input_mixed_timestamp_encodings_test() {
         timestamp_zset(&data)
     );
 }
+
+/// Guards the datafusion pin in the workspace `Cargo.toml`.
+///
+/// A `columnMapping` table pairs its data file's columns with the read schema
+/// by Parquet field id. Coercing an INT96 column strips that id from every
+/// struct, list and map field in the file, so a struct column pairs with
+/// nothing and reads back as NULL, silently, on exactly the Databricks tables
+/// that write INT96 (<https://github.com/apache/datafusion/issues/24786>).
+///
+/// The snapshot scan coerces inside datafusion's Parquet opener, past any hook
+/// of ours, so only the patched datafusion keeps this passing. Drop the
+/// `[patch.crates-io]` section and this test fails; that is what it is for.
+#[tokio::test]
+async fn delta_table_input_int96_column_mapping_snapshot_test() {
+    use crate::test::parquet_timestamps::write_column_mapped_int96_parquet;
+    use arrow::array::{Array, StringArray, StructArray};
+
+    let table_dir = TempDir::new().unwrap();
+    std::fs::create_dir_all(table_dir.path().join("_delta_log")).unwrap();
+    let ts = timestamp_test_data()[1].ts.unwrap();
+    write_column_mapped_int96_parquet(&table_dir.path().join("data.parquet"), "hello", ts);
+    let size = std::fs::metadata(table_dir.path().join("data.parquet"))
+        .unwrap()
+        .len();
+
+    // Logical names in the Delta schema, physical `col-<id>` names in the
+    // file, paired by id: an ordinary column-mapped table.
+    let schema = json!({"type":"struct","fields":[
+        {"name":"row_id","type":"long","nullable":false,
+         "metadata":{"delta.columnMapping.id":1,"delta.columnMapping.physicalName":"col-1"}},
+        {"name":"info","type":{"type":"struct","fields":[
+            {"name":"inner","type":{"type":"struct","fields":[
+                {"name":"label","type":"string","nullable":true,
+                 "metadata":{"delta.columnMapping.id":4,"delta.columnMapping.physicalName":"col-4"}}]},
+             "nullable":true,
+             "metadata":{"delta.columnMapping.id":3,"delta.columnMapping.physicalName":"col-3"}}]},
+         "nullable":true,
+         "metadata":{"delta.columnMapping.id":2,"delta.columnMapping.physicalName":"col-2"}},
+        {"name":"ts","type":"timestamp","nullable":true,
+         "metadata":{"delta.columnMapping.id":5,"delta.columnMapping.physicalName":"col-5"}}]});
+    let actions = [
+        json!({"protocol":{"minReaderVersion":2,"minWriterVersion":5}}),
+        json!({"metaData":{
+            "id":"3f2b1c00-0000-0000-0000-000000000001",
+            "format":{"provider":"parquet","options":{}},
+            "schemaString": schema.to_string(),
+            "partitionColumns":[],
+            "configuration":{"delta.columnMapping.mode":"id","delta.columnMapping.maxColumnId":"5"},
+            "createdTime":0}}),
+        json!({"add":{"path":"data.parquet","partitionValues":{},
+            "size":size,"modificationTime":0,"dataChange":true}}),
+    ];
+    let mut log = File::create(
+        table_dir
+            .path()
+            .join("_delta_log/00000000000000000000.json"),
+    )
+    .unwrap();
+    for action in &actions {
+        writeln!(log, "{action}").unwrap();
+    }
+    drop(log);
+
+    let table = deltalake::open_table(url::Url::from_file_path(table_dir.path()).unwrap())
+        .await
+        .unwrap();
+    let log_store = table.log_store();
+
+    // The settings the connector gives its own session.
+    let config = datafusion::prelude::SessionConfig::new()
+        .set_bool(
+            "datafusion.execution.parquet.schema_force_view_types",
+            false,
+        )
+        .set_str(
+            "datafusion.execution.parquet.coerce_int96",
+            crate::format::parquet::INT96_TIME_UNIT_NAME,
+        );
+    let datafusion = SessionContext::new_with_config(config);
+    datafusion
+        .runtime_env()
+        .register_object_store(log_store.root_url(), log_store.root_object_store(None));
+
+    let batches = datafusion
+        .read_table(table.table_provider().await.unwrap())
+        .unwrap()
+        .collect()
+        .await
+        .unwrap();
+    let batch = &batches[0];
+
+    let info = batch
+        .column_by_name("info")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<StructArray>()
+        .unwrap();
+    assert!(
+        !info.is_null(0),
+        "the struct column lost its field id and was null-filled"
+    );
+    // Cast rather than downcast: delta-rs may hand back `Utf8` or `Utf8View`
+    // depending on its view-type setting, and the point here is the value.
+    let label = arrow::compute::cast(
+        info.column(0)
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap()
+            .column(0),
+        &arrow::datatypes::DataType::Utf8,
+    )
+    .unwrap();
+    let label = label.as_any().downcast_ref::<StringArray>().unwrap();
+    assert_eq!(label.value(0), "hello");
+
+    // The timestamp that triggers the coercion still arrives intact.
+    let timestamps = batch
+        .column_by_name("ts")
+        .unwrap()
+        .as_any()
+        .downcast_ref::<arrow::array::TimestampMicrosecondArray>()
+        .unwrap();
+    assert_eq!(timestamps.value(0), ts.microseconds());
+}
