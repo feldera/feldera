@@ -77,10 +77,10 @@ test.describe('Profile viewer', () => {
   test('re-uploaded bundle opens a working viewer', async ({ page, context }) => {
     // Playwright cannot drive the operating system's file picker, so hide the File
     // System Access API from the page. The controls then take the file-input fallback,
-    // the path Firefox and Safari take and the only one an automated test can drive.
-    // That path also writes to the bundle history, so this test covers the viewer
-    // reading a bundle back out of IndexedDB; the browser tests cover the handle
-    // path.
+    // which is the path Firefox and Safari take and the only one an automated test can
+    // drive. That path also writes to the bundle history, so this test covers the
+    // viewer reading a bundle back out of IndexedDB. The browser tests cover the
+    // handle path.
     await page.addInitScript(() => {
       Object.defineProperty(window, 'showOpenFilePicker', { value: undefined })
     })
@@ -130,8 +130,8 @@ async function withProfileViewer(context: BrowserContext, trigger: () => Promise
 }
 
 /**
- * Switch to the Logs tab and confirm at least one log line rendered: the signal
- * that `logText` was extracted from the bundle, however it arrived.
+ * Switch to the Logs tab and confirm at least one log line rendered, which shows that
+ * `logText` was extracted from the bundle, however it arrived.
  */
 async function assertLogsPanelPopulates(viewer: Page) {
   // The Logs tab label appears once the bundle finishes loading and the

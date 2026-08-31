@@ -8,10 +8,10 @@ import { useSupportBundleHistory } from './useSupportBundleHistory.svelte'
 /**
  * A support bundle the user chose.
  *
- * `bundleId` names the history entry, which lets the profile viewer read the archive
- * again later: after a reload, or in a tab opened days afterwards. Without a
- * `bundleId` (an archive too big to copy, or a history write that failed) the bundle
- * exists only as the bytes `read` returns, once.
+ * `bundleId` names the history entry, which is what lets the profile viewer read the
+ * archive again later, after a reload or in a tab opened days afterwards. Without a
+ * `bundleId` the bundle exists only as the bytes `read` returns, and only once. That
+ * happens for an archive too big to copy, and when the history write failed.
  */
 export type PickedBundle = {
   name: string
@@ -20,10 +20,10 @@ export type PickedBundle = {
 }
 
 /**
- * Choosing a support bundle from disk, in one place. The File System Access picker
- * is preferred, since its handle costs the history almost nothing; where that API is
- * missing, callers fall back to a plain file input. Either way the bundle lands in
- * the history.
+ * Choosing a support bundle from disk, in one place. The File System Access picker is
+ * preferred, because its handle costs the history almost nothing. Where that API is
+ * missing, callers fall back to a plain file input. Either way the bundle is recorded
+ * in the history.
  */
 export const useBundlePicker = () => {
   const history = useSupportBundleHistory()
@@ -38,8 +38,8 @@ export const useBundlePicker = () => {
      * Shows the file picker and remembers what came back. Resolves to null when the
      * browser has no picker or the user dismissed it.
      *
-     * The promise waits for the history write, so the caller holds `bundleId` before
-     * it opens the viewer tab: `window.open` works only inside a click handler, and a
+     * The promise resolves after the history write, so the caller holds `bundleId` before
+     * it opens the viewer tab. `window.open` works only inside a click handler, and a
      * click handler cannot await the write itself.
      */
     async pick(): Promise<PickedBundle | null> {
@@ -59,10 +59,10 @@ export const useBundlePicker = () => {
     },
 
     /**
-     * Wraps a file from an `<input type=file>`, which yields no handle, and remembers
-     * it by keeping a copy. The copy gives browsers without a picker a history.
+     * Wraps a file from an `<input type=file>`, which yields no handle, and records it
+     * by keeping a copy. The copy is what gives browsers without a picker a history.
      *
-     * The promise waits for the history write, as in `pick`.
+     * The promise resolves after the history write, as in `pick`.
      */
     async fromFile(file: File): Promise<PickedBundle> {
       const remembered = await history.rememberFile(file)
