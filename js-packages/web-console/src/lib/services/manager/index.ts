@@ -202,6 +202,7 @@ export type {
   DeltaTableTransactionMode,
   DeltaTableWriteMode,
   DeltaTableWriterConfig,
+  DeltaVariantEncoding,
   Demo,
   DevTweaks,
   DisplaySchedule,

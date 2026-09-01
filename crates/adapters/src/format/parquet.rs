@@ -250,21 +250,60 @@ impl OutputFormat for ParquetOutputFormat {
     }
 }
 
-pub fn relation_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Vec<ArrowField> {
-    fn field_to_arrow_field(f: &Field, delta_lake: bool) -> ArrowField {
+/// How [`relation_to_arrow_fields`] renders a SQL type that has more than one
+/// Arrow representation.
+#[derive(Clone, Copy)]
+pub struct ArrowSchemaOptions {
+    /// Target the Delta Lake dialect: every field is nullable, because
+    /// Databricks refuses to understand the `nullable: false` constraint, and
+    /// timestamps carry a time zone.
+    pub delta_lake: bool,
+
+    /// Render `VARIANT` as the Parquet variant binary encoding, a struct of
+    /// `metadata` and `value` binary buffers, rather than as JSON text.
+    pub parquet_variant: bool,
+}
+
+impl ArrowSchemaOptions {
+    /// The historical rendering: JSON text for `VARIANT`.
+    pub fn new(delta_lake: bool) -> Self {
+        Self {
+            delta_lake,
+            parquet_variant: false,
+        }
+    }
+
+    /// Render `VARIANT` as a Parquet variant.
+    pub fn with_parquet_variant(mut self, parquet_variant: bool) -> Self {
+        self.parquet_variant = parquet_variant;
+        self
+    }
+}
+
+/// The unshredded Parquet variant storage type, which Delta Lake and Iceberg
+/// both use for a `variant` column.
+pub fn parquet_variant_arrow_type() -> DataType {
+    DataType::Struct(Fields::from(vec![
+        ArrowField::new("metadata", DataType::Binary, false),
+        ArrowField::new("value", DataType::Binary, false),
+    ]))
+}
+
+pub fn relation_to_arrow_fields(fields: &[Field], options: ArrowSchemaOptions) -> Vec<ArrowField> {
+    fn field_to_arrow_field(f: &Field, options: ArrowSchemaOptions) -> ArrowField {
         ArrowField::new(
             &f.name,
-            columntype_to_datatype(&f.columntype, delta_lake),
+            columntype_to_datatype(&f.columntype, options),
             // FIXME: Databricks refuses to understand the `nullable: false` constraint.
-            delta_lake || f.columntype.nullable,
+            options.delta_lake || f.columntype.nullable,
         )
     }
 
-    fn struct_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Fields {
+    fn struct_to_arrow_fields(fields: &[Field], options: ArrowSchemaOptions) -> Fields {
         Fields::from(
             fields
                 .iter()
-                .map(|f| field_to_arrow_field(f, delta_lake))
+                .map(|f| field_to_arrow_field(f, options))
                 .collect::<Vec<ArrowField>>(),
         )
     }
@@ -272,7 +311,7 @@ pub fn relation_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Vec<Arrow
     // The type conversion is chosen in accordance with our internal
     // data types (see sqllib). This may need to be adjusted in the future
     // or made configurable.
-    fn columntype_to_datatype(c: &ColumnType, delta_lake: bool) -> DataType {
+    fn columntype_to_datatype(c: &ColumnType, options: ArrowSchemaOptions) -> DataType {
         match c.typ {
             SqlType::Boolean => DataType::Boolean,
             SqlType::TinyInt => DataType::Int8,
@@ -297,7 +336,11 @@ pub fn relation_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Vec<Arrow
             // in the JSON schema, which Databricks doesn't fully support yet.
             SqlType::Timestamp => DataType::Timestamp(
                 TimeUnit::Microsecond,
-                if delta_lake { Some("UTC".into()) } else { None },
+                if options.delta_lake {
+                    Some("UTC".into())
+                } else {
+                    None
+                },
             ),
             SqlType::TimestampTz => DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
             SqlType::Date => DataType::Date32,
@@ -312,22 +355,27 @@ pub fn relation_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Vec<Arrow
             SqlType::Interval(
                 IntervalUnit::YearToMonth | IntervalUnit::Year | IntervalUnit::Month,
             ) => DataType::Interval(ArrowIntervalUnit::YearMonth),
-            // We serialize variants into JSON strings.
-            SqlType::Variant => DataType::Utf8,
+            SqlType::Variant => {
+                if options.parquet_variant {
+                    parquet_variant_arrow_type()
+                } else {
+                    // Serialized as JSON text.
+                    DataType::Utf8
+                }
+            }
             SqlType::Interval(_) => DataType::Interval(ArrowIntervalUnit::DayTime),
             SqlType::Array => {
                 // SqlType::Array implies c.component.is_some()
                 let array_component = c.component.as_ref().unwrap();
                 DataType::LargeList(Arc::new(ArrowField::new_list_field(
-                    columntype_to_datatype(array_component, delta_lake),
+                    columntype_to_datatype(array_component, options),
                     // FIXME: Databricks refuses to understand the `nullable: false` constraint.
-                    delta_lake || array_component.nullable,
+                    options.delta_lake || array_component.nullable,
                 )))
             }
-            SqlType::Struct => DataType::Struct(struct_to_arrow_fields(
-                c.fields.as_ref().unwrap(),
-                delta_lake,
-            )),
+            SqlType::Struct => {
+                DataType::Struct(struct_to_arrow_fields(c.fields.as_ref().unwrap(), options))
+            }
             SqlType::Map => {
                 let key_type = c.key.as_ref().unwrap();
                 let val_type = c.value.as_ref().unwrap();
@@ -338,12 +386,12 @@ pub fn relation_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Vec<Arrow
                         [
                             Arc::new(ArrowField::new(
                                 "key",
-                                columntype_to_datatype(key_type, delta_lake),
+                                columntype_to_datatype(key_type, options),
                                 key_type.nullable,
                             )),
                             Arc::new(ArrowField::new(
                                 "value",
-                                columntype_to_datatype(val_type, delta_lake),
+                                columntype_to_datatype(val_type, options),
                                 val_type.nullable,
                             )),
                         ]
@@ -358,7 +406,7 @@ pub fn relation_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Vec<Arrow
 
     fields
         .iter()
-        .map(|f| field_to_arrow_field(f, delta_lake))
+        .map(|f| field_to_arrow_field(f, options))
         .collect::<Vec<ArrowField>>()
 }
 
@@ -366,7 +414,7 @@ pub fn relation_to_parquet_schema(
     fields: &[Field],
     delta_lake: bool,
 ) -> Result<SerdeArrowSchema, ControllerError> {
-    let fields = relation_to_arrow_fields(fields, delta_lake);
+    let fields = relation_to_arrow_fields(fields, ArrowSchemaOptions::new(delta_lake));
 
     SerdeArrowSchema::try_from(fields.as_slice()).map_err(|e| ControllerError::SchemaParseError {
         error: format!("Unable to convert schema to parquet/arrow: {e}"),

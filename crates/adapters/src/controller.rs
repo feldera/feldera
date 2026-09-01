@@ -160,7 +160,7 @@ mod test;
 use crate::adhoc::execute_sql;
 use crate::adhoc::table::AdHocTable;
 use crate::catalog::{SerBatch, SerBatchReader, SerTrace};
-use crate::format::parquet::relation_to_arrow_fields;
+use crate::format::parquet::{ArrowSchemaOptions, relation_to_arrow_fields};
 use crate::format::{
     MessageOrientedPreprocessedParser, PostprocessedConsumer, StreamingPreprocessedParser,
 };
@@ -2316,7 +2316,10 @@ impl Controller {
                 name: name.clone(),
                 materialized: clh.integrate_handle.is_some(),
                 indexed: clh.is_indexed(),
-                schema: Schema::new(relation_to_arrow_fields(&clh.value_schema.fields, false)),
+                schema: Schema::new(relation_to_arrow_fields(
+                    &clh.value_schema.fields,
+                    ArrowSchemaOptions::new(false),
+                )),
                 table_type: if self.inner.catalog.input_collection_handle(name).is_some() {
                     AdHocTableType::Table
                 } else {
@@ -7426,7 +7429,8 @@ impl ControllerInner {
         // Sync feldera catalog with datafusion catalog
         let mut tables = HashMap::new();
         for (name, clh) in catalog.output_iter() {
-            let arrow_fields = relation_to_arrow_fields(&clh.value_schema.fields, false);
+            let arrow_fields =
+                relation_to_arrow_fields(&clh.value_schema.fields, ArrowSchemaOptions::new(false));
             let input_handle = catalog
                 .input_collection_handle(name)
                 .map(|ich| ich.handle.fork());

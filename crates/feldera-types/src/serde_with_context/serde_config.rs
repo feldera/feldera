@@ -86,8 +86,18 @@ pub enum VariantFormat {
     /// Serialize VARIANT to/from a JSON value.
     Json,
     /// Represent variant type as a JSON-formatted string.
+    ///
+    /// On input this also accepts the Parquet variant binary encoding, chosen
+    /// per column from what the data holds.
     #[default]
     JsonString,
+    /// Serialize VARIANT to the Parquet variant binary encoding: a struct of
+    /// `metadata` and `value` binary buffers, as Delta Lake and Iceberg store
+    /// the type.
+    ///
+    /// Deserialization behaves like [`VariantFormat::JsonString`], which reads
+    /// that encoding anyway.
+    ParquetVariant,
 }
 
 /// Representation of the SQL `BINARY` and `VARBINARY` types.

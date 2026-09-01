@@ -29,11 +29,40 @@ pub enum DeltaTableWriteMode {
     ErrorIfExists,
 }
 
+/// Encoding of `VARIANT` columns written to a Delta table.
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+pub enum DeltaVariantEncoding {
+    /// The Delta `variant` type, holding the Parquet variant binary encoding.
+    ///
+    /// Values keep the types they have in Feldera: a date stays a date, a
+    /// decimal a decimal. Requires the `variantType` table feature, which the
+    /// connector enables on tables it creates.
+    #[default]
+    #[serde(rename = "variant")]
+    Variant,
+
+    /// A Delta `string` column holding JSON text.
+    ///
+    /// What Feldera wrote before it supported the Delta `variant` type. Use
+    /// this to append to a table whose `VARIANT` column is already a string,
+    /// or for readers that cannot read the `variant` type. Values that JSON
+    /// cannot express keep their type only approximately: a date becomes a
+    /// string.
+    #[serde(rename = "json_string")]
+    JsonString,
+}
+
 /// Delta table output connector configuration.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct DeltaTableWriterConfig {
     /// Table URI.
     pub uri: String,
+
+    /// Encoding of `VARIANT` columns.
+    ///
+    /// Default: `variant`.
+    #[serde(default)]
+    pub variant_encoding: DeltaVariantEncoding,
 
     /// Determines how the Delta table connector handles an existing table at the target location.
     #[serde(default)]
@@ -534,6 +563,7 @@ mod log_retention_tests {
         DeltaTableWriterConfig {
             uri: "memory://".to_string(),
             mode: DeltaTableWriteMode::default(),
+            variant_encoding: DeltaVariantEncoding::default(),
             checkpoint_interval: None,
             log_retention_duration: log_retention.map(str::to_string),
             enable_expired_log_cleanup: None,
@@ -541,6 +571,14 @@ mod log_retention_tests {
             threads: None,
             object_store_config: HashMap::new(),
         }
+    }
+
+    /// Provisioning serializes the connector config as YAML, where a nested
+    /// enum panics. `variant_encoding` is unit-only, and this pins that.
+    #[test]
+    fn writer_config_serializes_to_yaml() {
+        let yaml = serde_yaml::to_string(&make_config(None)).unwrap();
+        assert!(yaml.contains("variant_encoding: variant"), "{yaml}");
     }
 
     #[test]

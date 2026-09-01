@@ -50,6 +50,21 @@ import TabItem from '@theme/TabItem';
           v3.0.1 and later export that variable. For a command that prints a
           token, pass its output as `--auth "$(...)"`.
 
+        - The Delta Lake and Iceberg input connectors read a `VARIANT` column
+          stored in the Parquet variant binary encoding, which is how Delta
+          Lake's `variant` type stores one. Values keep the types the writer
+          encoded, so a date inside a `VARIANT` arrives as a date rather than
+          as a string. A `VARIANT` column stored as JSON text still reads as
+          before, and the two can sit side by side in one table.
+
+        - Breaking change (Delta Lake output connector): a `VARIANT` column is
+          now written as the Delta `variant` type rather than as JSON text in a
+          `string` column, so values keep the types they have in Feldera. Set
+          `variant_encoding` to `json_string` for the previous encoding, which
+          is also what appending to a table whose `VARIANT` column is already a
+          `string` requires. See
+          [VARIANT](/connectors/sinks/delta#variant).
+
         ## v0.337.0
 
         - Breaking change (SQL): comparing a `UUID` with a character or binary value

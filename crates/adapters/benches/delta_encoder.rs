@@ -17,6 +17,7 @@ fn create_indexed_writer(threads: usize, table_uri: &str) -> DeltaTableWriter {
     let config = DeltaTableWriterConfig {
         uri: table_uri.to_string(),
         mode: DeltaTableWriteMode::Truncate,
+        variant_encoding: Default::default(),
         max_retries: Some(0),
         threads: Some(threads),
         object_store_config: Default::default(),

@@ -320,7 +320,19 @@ export type CheckpointSyncStatus = {
    */
   periodic?: string | null
   /**
+   * Checkpoint syncs running right now.
+   *
+   * A UUID leaves `running` and lands in `success` or `failure` at the same
+   * moment.
+   *
+   * Periodic syncs do not appear here.
+   */
+  running?: Array<string>
+  /**
    * Most recently successful checkpoint sync.
+   *
+   * If `success` and `failure` would otherwise name the same UUID, then the
+   * most recent result is set and the other is cleared.
    */
   success?: string | null
 }
@@ -1532,7 +1544,11 @@ export type DeltaTableWriterConfig = {
    * Number of parallel threads used by the connector.
    *
    * Increasing this value can improve Delta Lake write throughput
-   * by enabling concurrent writes.
+   * by enabling concurrent writes. Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.
+   * Values above 1 require the view to have a unique key, so that the connector can order inserts and deletes correctly.
+   * Define the key with `CREATE INDEX` and set the connector's `index` property to that index;
+   * see [views with unique keys](https://docs.feldera.com/connectors/sinks/delta/#views-with-unique-keys) and
+   * [writing in parallel](https://docs.feldera.com/connectors/sinks/delta/#writing-in-parallel).
    *
    * Default: 1.
    */
@@ -1541,6 +1557,7 @@ export type DeltaTableWriterConfig = {
    * Table URI.
    */
   uri: string
+  variant_encoding?: DeltaVariantEncoding
   [key: string]:
     | string
     | number
@@ -1554,8 +1571,14 @@ export type DeltaTableWriterConfig = {
     | DeltaTableWriteMode
     | number
     | null
+    | DeltaVariantEncoding
     | undefined
 }
+
+/**
+ * Encoding of `VARIANT` columns written to a Delta table.
+ */
+export type DeltaVariantEncoding = 'variant' | 'json_string'
 
 export type Demo = {
   /**
@@ -1633,9 +1656,10 @@ export type DevTweaks = {
    * benefits.
    *
    * A rebalancing is considered significant if the absolute estimated
-   * improvement for the cluster of joins where the rebalancing is applied is
-   * at least this threshold. The cost model used by the balancer is based on
-   * the number of records in the largest partition of a collection.
+   * improvement across the collections whose partitioning policy the
+   * rebalancing changes is at least this threshold. The cost model used by the
+   * balancer is based on the number of records in the largest partition of a
+   * collection.
    *
    * A rebalancing is applied if both this threshold and
    * `balancer_min_relative_improvement_threshold` are met.
@@ -1654,8 +1678,9 @@ export type DevTweaks = {
    * benefits.
    *
    * A rebalancing is considered significant if the relative estimated
-   * improvement for the cluster of joins where the rebalancing is applied is
-   * at least this threshold.
+   * improvement across the collections whose partitioning policy the
+   * rebalancing changes is at least this threshold. Collections that keep
+   * their policy are excluded, since they cost the same either way.
    *
    * A rebalancing is applied if both this threshold and
    * `balancer_min_absolute_improvement_threshold` are met.
@@ -1664,20 +1689,9 @@ export type DevTweaks = {
    */
   balancer_min_relative_improvement_threshold?: number | null
   /**
-   * False-positive rate for Bloom filters on batches on storage, as a
-   * fraction f, where 0 < f < 1.
+   * False-positive rate for Bloom filters on batches on storage.
    *
-   * The false-positive rate trades off between the amount of memory used by
-   * Bloom filters and how frequently storage needs to be searched for keys
-   * that are not actually present.  Typical false-positive rates and their
-   * corresponding memory costs are:
-   *
-   * - 0.1: 4.8 bits per key
-   * - 0.01: 9.6 bits per key
-   * - 0.001: 14.4 bits per key
-   * - 0.0001: 19.2 bits per key (default)
-   *
-   * Values outside the valid range, such as 0.0, disable Bloom filters.
+   * Deprecated: use `storage.bloom_false_positive_rate` instead.
    */
   bloom_false_positive_rate?: number | null
   buffer_cache_allocation_strategy?: BufferCacheAllocationStrategy | null
@@ -4612,6 +4626,10 @@ export type ProgramConfig = {
    *
    * Examples: `v0.96.0` or `f4dcac0989ca0fda7d2eb93602a49d007cb3b0ae`
    *
+   * The value `gen2` names an engine rather than a runtime commit: the SQL
+   * compiler captures the circuit IR and the runner launches the Gen-2
+   * engine, so no pipeline binary is compiled.
+   *
    * A platform of version `0.x.y` may be capable of running future and past
    * runtimes with versions `>=0.x.y` and `<=0.x.y` until breaking API changes happen,
    * the exact bounds for each platform version are unspecified until we reach a
@@ -4677,6 +4695,14 @@ export type ProgramError = {
  * as well as only for runtime (e.g., schema, input/output connectors).
  */
 export type ProgramInfo = {
+  /**
+   * JIT circuit IR (`allOperators`) captured by the SQL compiler for Gen-2
+   * programs; the Gen-2 engine reads it to build the circuit.
+   *
+   * Not returned by the API. It runs to several MiB and reaches the pipeline
+   * through the program info artifact, so a pipeline read never carries it.
+   */
+  circuit_ir?: unknown
   dataflow?: Dataflow | null
   /**
    * Input connectors derived from the schema.
@@ -4708,6 +4734,12 @@ export type ProgramInfo = {
  * Program information included in the pipeline configuration.
  */
 export type ProgramIr = {
+  /**
+   * The circuit IR (the compiler's JIT `allOperators` form) that the Gen-2
+   * engine lowers onto the runtime to build the circuit. `None` for
+   * Rust-compiled pipelines, whose circuit is statically linked into the binary.
+   */
+  circuit_ir?: unknown
   /**
    * The MIR of the program.
    */
@@ -5762,6 +5794,23 @@ export type StorageConfig = {
  */
 export type StorageOptions = {
   backend?: StorageBackendConfig
+  /**
+   * False-positive rate for Bloom filters on batches on storage, as a
+   * fraction f, where 0 < f < 1.
+   *
+   * The false-positive rate trades off between the amount of memory used by
+   * Bloom filters and how frequently storage needs to be searched for keys
+   * that are not actually present.  Typical false-positive rates and their
+   * corresponding memory costs are:
+   *
+   * - 0.1: 4.8 bits per key
+   * - 0.01: 9.6 bits per key
+   * - 0.001: 14.4 bits per key
+   * - 0.0001: 19.2 bits per key (default)
+   *
+   * Values outside the valid range, such as 0.0, disable Bloom filters.
+   */
+  bloom_false_positive_rate?: number | null
   /**
    * The maximum size of the in-memory storage cache, in MiB.
    *

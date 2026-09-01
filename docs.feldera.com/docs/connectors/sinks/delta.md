@@ -81,6 +81,7 @@ MERGE INTO {target_table} AS target
 | `enable_expired_log_cleanup` | <p>Whether to clean up expired log entries when a checkpoint is written.</p><p>Configures the `delta.enableExpiredLogCleanup` table property.  When set to `false`, transaction-log entries are retained indefinitely regardless of `log_retention_duration`.</p><p>The option is only available when creating the Delta table (`mode = append` and there is no existing table at the target location, or `mode = truncate`).</p><p>Default: `true` (Delta Lake default).</p>|
 | `max_retries`|<p>Maximum number of retries for failed Delta Lake operations like writing Parquet files and committing transactions.</p><p>The connector performs retries on several levels: individual S3 operations, Delta Lake transaction commits, and overall operation retries. This setting controls the overall operation retries. When a write to the table fails, because of an S3 timeout or any other reason that was not resolved by lower-level retries, the connector will retry the entire operation.</p><p>When not specified, the connector performs infinite retries. When set to 0, the connector doesn't retry failed operations.</p>|
 | `threads` | <p>Number of parallel threads used by the connector. Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.</p><p>Values above 1 require the view to have a unique key, so that the connector can order inserts and deletes correctly. Define the key with `CREATE INDEX` and set the connector's `index` property to that index; see [views with unique keys](#views-with-unique-keys) and [writing in parallel](#writing-in-parallel).</p><p>Default: `1`.</p>|
+| `variant_encoding` | <p>Encoding of `VARIANT` columns. Options:</p><p>- `variant`: the Delta `variant` type, holding the Parquet variant binary encoding.</p><p>- `json_string`: JSON text in a `string` column.</p><p>See [VARIANT](#variant).</p><p>Default: `variant`.</p>|
 
 [*]: Required fields
 
@@ -108,6 +109,35 @@ For more information, see the [documentation on views with unique keys](/connect
 
 See [source connector documentation](/connectors/sources/delta/#data-type-mapping) for DeltaLake to Feldera SQL
 type mapping.
+
+## VARIANT
+
+By default, the connector writes a `VARIANT` column as the Delta `variant` type,
+holding the Parquet variant binary encoding. Alternatively, the user can configure
+the connector to write `VARIANT` columns as JSON-encoded `string` columns by
+setting `"variant_encoding": "json_string"`:
+
+```json
+{
+  "transport": {
+    "name": "delta_table_output",
+    "config": {
+      "uri": "s3://feldera-fraud-detection-demo/feature_train",
+      "variant_encoding": "json_string"
+    }
+  }
+}
+```
+
+The `variant` encoding enables the `variantType` table feature on tables the
+connector creates. Under the `variant` encoding, three SQL types have no counterpart
+and are rejected: long and short `INTERVAL`, and `GEOMETRY`. Unsigned
+integers widen to the smallest signed type that holds them, and a `BIGINT
+UNSIGNED` too large for `BIGINT` becomes a decimal. SQL `NULL` and a `VARIANT`
+null share one encoding.
+
+Appending to a table whose `VARIANT` column is already a `string` requires this
+setting; without it the write fails on a schema mismatch.
 
 ## The small file problem and output buffer configuration
 
