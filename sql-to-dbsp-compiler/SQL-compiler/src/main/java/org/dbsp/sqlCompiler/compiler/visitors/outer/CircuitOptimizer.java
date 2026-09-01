@@ -100,6 +100,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new FuseExpensiveMaps(compiler));
         this.add(new RemoveViewOperators(compiler, false));
         this.add(new UnusedFields(compiler));
+        this.add(new RemoveUselessLeftJoins(compiler));
         this.add(new Intern(compiler));
         this.add(new CSE(compiler));
         this.add(new ExpandAggregates(compiler, compiler.weightVar));
