@@ -7,13 +7,15 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use arrow::array::RecordBatch;
+use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
 use dbsp::OrdZSet;
 use dbsp::utils::Tup2;
 use feldera_adapterlib::transport::OutputBatchType;
 use feldera_sqllib::Variant;
+use feldera_types::deserialize_table_record;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::format::parquet::ParquetEncoderConfig;
-use feldera_types::program_schema::Relation;
+use feldera_types::program_schema::{ColumnType, Field, Relation};
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use parquet::arrow::ArrowWriter;
 use parquet::basic::Compression;
@@ -226,4 +228,191 @@ fn debug_parquet_buffer(buffer: Vec<u8>) {
         let record = maybe_record.expect("Record should be read successfully");
         tracing::info!("record = {:?}", record.to_string());
     }
+}
+
+/// Record with two VARIANT columns: one held as a Parquet variant, one as JSON
+/// text.
+#[derive(Debug, Eq, PartialEq, Hash, Clone, Default)]
+struct VariantRecord {
+    id: i64,
+    v: Option<Variant>,
+    json_v: Option<Variant>,
+}
+
+deserialize_table_record!(VariantRecord["VariantRecord", Variant, 3] {
+    (id, "id", false, i64, |_| None),
+    (v, "v", false, Option<Variant>, |_| Some(None)),
+    (json_v, "json_v", false, Option<Variant>, |_| Some(None))
+});
+
+impl VariantRecord {
+    fn schema() -> Vec<Field> {
+        vec![
+            Field::new("id".into(), ColumnType::bigint(false)),
+            Field::new("v".into(), ColumnType::variant(true)),
+            Field::new("json_v".into(), ColumnType::variant(true)),
+        ]
+    }
+
+    fn arrow_schema() -> Arc<ArrowSchema> {
+        Arc::new(ArrowSchema::new(vec![
+            ArrowField::new("id", ArrowDataType::Int64, false),
+            ArrowField::new("v", variant_arrow_type(), true),
+            ArrowField::new("json_v", ArrowDataType::Utf8, true),
+        ]))
+    }
+}
+
+/// The unshredded Parquet variant storage type.
+fn variant_arrow_type() -> ArrowDataType {
+    ArrowDataType::Struct(
+        vec![
+            ArrowField::new("metadata", ArrowDataType::Binary, false),
+            ArrowField::new("value", ArrowDataType::Binary, false),
+        ]
+        .into(),
+    )
+}
+
+/// A Parquet file whose VARIANT column holds the binary variant encoding is
+/// read through the same Arrow path every table-format connector uses, with no
+/// Delta or Iceberg table involved.
+///
+/// The second row leaves both VARIANT columns NULL, and `json_v` proves a
+/// column of JSON text still reads the way it always did.
+#[test]
+fn parquet_input_variant_test() {
+    use arrow::array::{ArrayRef, Int64Array, StringArray};
+    use chrono::NaiveDate;
+    use feldera_sqllib::{ByteArray, Date, SqlString};
+    use parquet_variant::{Variant as PqVariant, VariantBuilderExt, VariantDecimal4};
+    use parquet_variant_compute::VariantArrayBuilder;
+
+    let temp_file = NamedTempFile::new().unwrap();
+    let config = serde_json::from_value(json!({
+        "stream": "test_input",
+        "transport": {
+            "name": "file_input",
+            "config": { "path": temp_file.path() }
+        },
+        "format": { "name": "parquet" }
+    }))
+    .unwrap();
+
+    let mut builder = VariantArrayBuilder::new(2);
+    {
+        let mut object = builder.new_object();
+        object.insert("int", 42i64);
+        object.insert("str", "hello");
+        object.insert("bool", true);
+        object.insert("nul", PqVariant::Null);
+        object.insert(
+            "dec",
+            PqVariant::Decimal4(VariantDecimal4::try_new(12_345i32, 2u8).unwrap()),
+        );
+        object.insert(
+            "date",
+            PqVariant::Date(NaiveDate::from_ymd_opt(2026, 9, 1).unwrap()),
+        );
+        object.insert("bin", PqVariant::Binary(&[1u8, 2, 3]));
+        {
+            let mut list = object.new_list("list");
+            list.append_value(1i64);
+            list.append_value("two");
+            list.finish();
+        }
+        object.finish();
+    }
+    builder.append_null();
+
+    // The Parquet variant builder produces `BinaryView` sub-fields.
+    let variant_column =
+        arrow::compute::cast(&ArrayRef::from(builder.build()), &variant_arrow_type()).unwrap();
+
+    let batch = RecordBatch::try_new(
+        VariantRecord::arrow_schema(),
+        vec![
+            Arc::new(Int64Array::from(vec![1i64, 2])) as ArrayRef,
+            variant_column,
+            Arc::new(StringArray::from(vec![Some(r#"{"legacy": true}"#), None])) as ArrayRef,
+        ],
+    )
+    .unwrap();
+
+    let mut writer = ArrowWriter::try_new(&temp_file, VariantRecord::arrow_schema(), None).unwrap();
+    writer.write(&batch).unwrap();
+    writer.close().unwrap();
+
+    let (endpoint, _consumer, parser, zset) = mock_input_pipeline::<VariantRecord, VariantRecord>(
+        config,
+        Relation::new(
+            "test".into(),
+            VariantRecord::schema(),
+            false,
+            BTreeMap::new(),
+        ),
+    )
+    .unwrap();
+    endpoint.extend();
+    wait(
+        || {
+            endpoint.queue(false);
+            // Fail on the first parse error rather than spinning until the
+            // timeout: a VARIANT the parser cannot read shows up here.
+            let errors = parser.state().parser_result.clone().unwrap_or_default();
+            assert!(errors.is_empty(), "parse errors: {errors:?}");
+            zset.state().flushed.len() == 2
+        },
+        10_000,
+    )
+    .unwrap();
+
+    let key = |k: &str| Variant::String(SqlString::from_ref(k));
+    let expected = vec![
+        VariantRecord {
+            id: 1,
+            // Every value keeps the type the writer encoded.
+            v: Some(Variant::Map(
+                BTreeMap::from([
+                    (key("bin"), Variant::Binary(ByteArray::new(&[1, 2, 3]))),
+                    (key("bool"), Variant::Boolean(true)),
+                    (
+                        key("date"),
+                        Variant::Date(Date::from_date(
+                            NaiveDate::from_ymd_opt(2026, 9, 1).unwrap(),
+                        )),
+                    ),
+                    (key("dec"), Variant::SqlDecimal((12_345, 2))),
+                    (key("int"), Variant::BigInt(42)),
+                    (
+                        key("list"),
+                        Variant::Array(
+                            vec![
+                                Variant::BigInt(1),
+                                Variant::String(SqlString::from_ref("two")),
+                            ]
+                            .into(),
+                        ),
+                    ),
+                    (key("nul"), Variant::VariantNull),
+                    (key("str"), Variant::String(SqlString::from_ref("hello"))),
+                ])
+                .into(),
+            )),
+            json_v: Some(Variant::Map(
+                BTreeMap::from([(key("legacy"), Variant::Boolean(true))]).into(),
+            )),
+        },
+        VariantRecord {
+            id: 2,
+            v: None,
+            json_v: None,
+        },
+    ];
+
+    let flushed = zset.state().flushed.clone();
+    for (update, expected) in flushed.iter().zip(expected.iter()) {
+        assert_eq!(update.unwrap_insert(), expected);
+    }
+    assert_eq!(flushed.len(), expected.len());
 }

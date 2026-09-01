@@ -46,7 +46,6 @@
 pub mod casts;
 pub mod functions;
 
-use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -63,7 +62,7 @@ use feldera_types::serde_with_context::{
 };
 use rkyv::ser::{ScratchSpace, Serializer as RkyvSerializer};
 use rkyv::vec::{ArchivedVec, VecResolver};
-use serde::de::{DeserializeSeed, Error as _, MapAccess, SeqAccess, Visitor};
+use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use size_of::SizeOf;
@@ -772,6 +771,97 @@ pub(crate) fn sort_map_entries(out: &[u8], entries: &mut Vec<(Range<usize>, Rang
     entries.truncate(w);
 }
 
+// Conversion from the Parquet variant binary encoding
+
+/// Encode a decoded Parquet variant into the writer; returns the value's
+/// range.
+///
+/// The tag mapping mirrors [`encode_variant`], so the two paths into
+/// `FlatVariant` agree value for value. A nanosecond timestamp is the one
+/// lossy step: `TAG_TIMESTAMP` holds microseconds.
+fn encode_parquet_variant(
+    w: &mut Writer,
+    v: parquet_variant::Variant<'_, '_>,
+) -> Result<Range<usize>, String> {
+    use parquet_variant::Variant as PqVariant;
+
+    Ok(match v {
+        PqVariant::Null => w.scalar(TAG_VARIANT_NULL, &[]),
+        PqVariant::BooleanTrue => w.scalar(TAG_BOOLEAN, &[1u8]),
+        PqVariant::BooleanFalse => w.scalar(TAG_BOOLEAN, &[0u8]),
+        PqVariant::Int8(x) => w.scalar(TAG_TINYINT, &x.to_le_bytes()),
+        PqVariant::Int16(x) => w.scalar(TAG_SMALLINT, &x.to_le_bytes()),
+        PqVariant::Int32(x) => w.scalar(TAG_INT, &x.to_le_bytes()),
+        PqVariant::Int64(x) => w.scalar(TAG_BIGINT, &x.to_le_bytes()),
+        PqVariant::Float(x) => w.scalar(TAG_REAL, &x.to_le_bytes()),
+        PqVariant::Double(x) => w.scalar(TAG_DOUBLE, &x.to_le_bytes()),
+        PqVariant::Decimal4(x) => w.scalar(
+            TAG_DECIMAL,
+            &casts::decimal_payload(x.integer() as i128, x.scale()),
+        ),
+        PqVariant::Decimal8(x) => w.scalar(
+            TAG_DECIMAL,
+            &casts::decimal_payload(x.integer() as i128, x.scale()),
+        ),
+        PqVariant::Decimal16(x) => {
+            w.scalar(TAG_DECIMAL, &casts::decimal_payload(x.integer(), x.scale()))
+        }
+        PqVariant::String(x) => w.scalar(TAG_STRING, x.as_bytes()),
+        PqVariant::ShortString(x) => w.scalar(TAG_STRING, x.as_str().as_bytes()),
+        PqVariant::Binary(x) => w.scalar(TAG_BINARY, x),
+        PqVariant::Uuid(x) => w.scalar(TAG_UUID, &x.as_bytes()[..]),
+        PqVariant::Date(x) => w.scalar(TAG_DATE, &Date::from_date(x).days().to_le_bytes()),
+        PqVariant::Time(x) => w.scalar(TAG_TIME, &Time::from_time(x).nanoseconds().to_le_bytes()),
+        PqVariant::TimestampNtzMicros(x) => {
+            w.scalar(TAG_TIMESTAMP, &x.and_utc().timestamp_micros().to_le_bytes())
+        }
+        PqVariant::TimestampNtzNanos(x) => {
+            w.scalar(TAG_TIMESTAMP, &x.and_utc().timestamp_micros().to_le_bytes())
+        }
+        PqVariant::TimestampMicros(x) => {
+            w.scalar(TAG_TIMESTAMP_TZ, &x.timestamp_micros().to_le_bytes())
+        }
+        PqVariant::TimestampNanos(x) => {
+            w.scalar(TAG_TIMESTAMP_TZ, &x.timestamp_micros().to_le_bytes())
+        }
+        PqVariant::List(list) => {
+            let elements: Vec<_> = list
+                .iter_try()
+                .collect::<Result<_, _>>()
+                .map_err(|e| e.to_string())?;
+            let mut children = Vec::with_capacity(elements.len());
+            for element in elements {
+                children.push(encode_parquet_variant(w, element)?);
+            }
+            w.array(&children)
+        }
+        PqVariant::Object(object) => {
+            let fields: Vec<_> = object
+                .iter_try()
+                .collect::<Result<_, _>>()
+                .map_err(|e| e.to_string())?;
+            let mut entries = Vec::with_capacity(fields.len());
+            for (name, value) in fields {
+                let key = w.scalar(TAG_STRING, name.as_bytes());
+                let value = encode_parquet_variant(w, value)?;
+                entries.push((key, value));
+            }
+            // A Parquet object's field order follows its metadata dictionary,
+            // which the encoding does not require to be sorted.
+            sort_map_entries(&w.out, &mut entries);
+            w.map(&entries)
+        }
+    })
+}
+
+/// Decode the Parquet variant binary encoding straight into a `FlatVariant`,
+/// with no intermediate enum tree.
+pub(crate) fn flat_variant_from_parquet(
+    v: parquet_variant::Variant<'_, '_>,
+) -> Result<FlatVariant, String> {
+    build_document(|w| encode_parquet_variant(w, v))
+}
+
 // Conversion from/to the enum Variant
 
 /// Encode one `Variant` into the writer; returns the value's range.
@@ -1337,14 +1427,7 @@ impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for FlatVariant 
     {
         match context.variant_format {
             VariantFormat::Json => FlatVariant::deserialize(deserializer),
-            VariantFormat::JsonString => {
-                let s = Cow::<String>::deserialize(deserializer)?;
-                serde_json::from_str::<FlatVariant>(&s).map_err(|e| {
-                    D::Error::custom(format!(
-                        "error deserializing VARIANT type from a JSON string: {e}"
-                    ))
-                })
-            }
+            VariantFormat::JsonString => crate::variant_binary::deserialize_variant(deserializer),
         }
     }
 }

@@ -482,7 +482,9 @@ mod test {
 
     use super::CsvSplitter;
     use crate::format::Splitter;
+    use feldera_sqllib::{SqlString, Variant};
     use feldera_types::format::csv::{CsvFormatConfig, CsvTrim};
+    use std::collections::BTreeMap;
 
     #[derive(Debug, Eq, PartialEq)]
     #[allow(non_snake_case)]
@@ -528,6 +530,63 @@ true,bar,buzz"#;
                 r#"{"field":"field3","description":"field 2: invalid digit found in string"}"#
                     .to_string()
             )
+        );
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct VariantRow {
+        object: Variant,
+        positive: Variant,
+        negative: Variant,
+        float: Variant,
+        boolean: Variant,
+        null: Variant,
+    }
+
+    deserialize_table_record!(VariantRow["VariantRow", Variant, 6] {
+    (object, "object", true, Variant, |_| None),
+    (positive, "positive", true, Variant, |_| None),
+    (negative, "negative", true, Variant, |_| None),
+    (float, "float", true, Variant, |_| None),
+    (boolean, "boolean", true, Variant, |_| None),
+    (null, "null", true, Variant, |_| None)
+    });
+
+    /// The `csv` crate infers a field's type rather than always reporting text,
+    /// so a bare `123` or `true` reaches the VARIANT deserializer as a number
+    /// or a boolean. Each must land on the value that parsing the same text as
+    /// JSON produces.
+    #[test]
+    fn csv_variant() {
+        let data = r#""{""a"": 1}",123,-4,1.5,true,null"#;
+        let rdr = csv::ReaderBuilder::new()
+            .has_headers(false)
+            .from_reader(data.as_bytes());
+        let mut records = rdr.into_records();
+
+        assert_eq!(
+            VariantRow::deserialize_with_context(
+                &mut string_record_deserializer(&records.next().unwrap().unwrap(), None),
+                &SqlSerdeConfig::default()
+            )
+            .unwrap(),
+            VariantRow {
+                object: Variant::Map(
+                    BTreeMap::from([(
+                        Variant::String(SqlString::from_ref("a")),
+                        Variant::UBigInt(1)
+                    )])
+                    .into()
+                ),
+                positive: Variant::UBigInt(123),
+                negative: Variant::BigInt(-4),
+                // `serde_json` with `arbitrary_precision` reports a fractional
+                // number through its private token, so a CSV float has always
+                // arrived as a decimal.
+                float: Variant::SqlDecimal((15, 1)),
+                boolean: Variant::Boolean(true),
+                null: Variant::VariantNull,
+            }
         );
     }
 

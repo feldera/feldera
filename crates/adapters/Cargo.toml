@@ -277,6 +277,9 @@ pretty_assertions = { workspace = true }
 google-cloud-googleapis = { workspace = true }
 postgres-types = { version = "0.2.9", features = ["derive"] }
 criterion = { workspace = true }
+# Builds the Parquet variant fixtures the VARIANT tests read.
+parquet-variant = { workspace = true }
+parquet-variant-compute = { workspace = true }
 
 [[bench]]
 name = "avro_encoder"
