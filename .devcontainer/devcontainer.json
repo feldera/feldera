@@ -36,6 +36,15 @@
 			"settings": {
 				"editor.formatOnSave": false,
 				"terminal.integrated.defaultProfile.linux": "bash",
+				"files.watcherExclude": {
+					"**/target/**": true,
+					"**/node_modules/**": true,
+					"**/build/**": true,
+					"**/.venv/**": true,
+					"**/.svelte-kit/**": true,
+					"**/dist/**": true,
+					"**/__pycache__/**": true
+				},
 				"files.exclude": {
 					"**/CODE_OF_CONDUCT.md": true,
 					"**/LICENSE": true
