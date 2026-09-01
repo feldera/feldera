@@ -351,3 +351,77 @@ where
         unimplemented!();
     }
 }
+
+#[cfg(test)]
+mod partition_keys_test {
+    use crate::{
+        ZWeight,
+        dynamic::{DowncastTrait, DynData},
+        trace::{BatchReader, BatchReaderFactories, Cursor, SpineSnapshot},
+        typed_batch::{DynOrdIndexedZSet, OrdIndexedZSet},
+        utils::Tup2,
+    };
+    use std::sync::Arc;
+
+    type Batch = DynOrdIndexedZSet<DynData, DynData>;
+
+    const BATCHES: u64 = 200;
+    const KEYS_PER_BATCH: u64 = 500;
+    const PARTITIONS: usize = 12;
+
+    /// A snapshot with many batches.
+    fn interleaved_snapshot() -> SpineSnapshot<Batch> {
+        let factories: <Batch as BatchReader>::Factories =
+            BatchReaderFactories::new::<u64, u64, ZWeight>();
+        let batches = (0..BATCHES)
+            .map(|batch| {
+                let tuples = (0..KEYS_PER_BATCH)
+                    .map(|i| {
+                        let key = i * BATCHES + batch;
+                        Tup2(Tup2(key, key), 1)
+                    })
+                    .collect();
+                Arc::new(OrdIndexedZSet::<u64, u64>::from_tuples((), tuples).into_inner())
+            })
+            .collect();
+
+        SpineSnapshot::with_batches(&factories, batches)
+    }
+
+    /// `partition_keys` returns a full set of boundaries, cutting ranges of
+    /// comparable size, over a snapshot of many small batches.
+    ///
+    /// The snapshot holds more batches than the sample holds draws and no batch
+    /// reaches a full share of it, so each batch contributes at most one key.
+    #[test]
+    fn a_snapshot_of_many_small_batches_yields_every_boundary() {
+        let snapshot = interleaved_snapshot();
+        let total_keys = BATCHES * KEYS_PER_BATCH;
+        assert_eq!(snapshot.key_count() as u64, total_keys);
+        assert!(KEYS_PER_BATCH < total_keys / PARTITIONS.pow(2) as u64);
+
+        let mut bounds = snapshot.factories().keys_factory().default_box();
+        snapshot.partition_keys(PARTITIONS, bounds.as_mut());
+
+        assert_eq!(bounds.len(), PARTITIONS - 1);
+
+        // Sizes of the ranges the boundaries cut the snapshot into.
+        let mut sizes = vec![0u64; PARTITIONS];
+        let mut cursor = snapshot.cursor();
+        while cursor.key_valid() {
+            let key = *cursor.key().downcast_checked::<u64>();
+            let partition = (0..PARTITIONS - 1)
+                .find(|&i| key < *bounds.index(i).downcast_checked::<u64>())
+                .unwrap_or(PARTITIONS - 1);
+            sizes[partition] += 1;
+            cursor.step_key();
+        }
+
+        assert_eq!(sizes.iter().sum::<u64>(), total_keys);
+        let largest = *sizes.iter().max().unwrap();
+        assert!(
+            largest * PARTITIONS as u64 <= total_keys * 3,
+            "largest range holds {largest} of {total_keys} keys: {sizes:?}"
+        );
+    }
+}
