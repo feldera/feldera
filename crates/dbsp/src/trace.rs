@@ -395,6 +395,46 @@ pub enum BatchLocation {
 //     }
 // }
 
+/// Number of keys [`BatchReader::partition_keys`] to sample in order to place
+/// `num_partitions - 1` boundaries.
+///
+/// More samples lead to more accurate bounds (with less imbalance between the
+/// resulting ranges), but make sampling more expensive. We choos sample size
+/// that keeps the expected largest range within 10% of an even split.
+///
+/// Each boundary is a sample quantile, so a range ends up holding a
+/// Beta-distributed share of the batch with `sample_size / num_partitions`
+/// draws in it and a relative error near the inverse square root of that count.
+///
+/// Three terms, in order:
+///
+/// * `DRAWS_PER_PARTITION` per partition, the accuracy the boundaries need.
+/// * A budget that keeps the sample small against one range's scan. The sample
+///   is drawn once on one thread and the ranges are then scanned in parallel,
+///   so a draw competes with `key_count / num_partitions` keys, not with the
+///   whole batch. A draw seeks to a random row in every batch of a spine
+///   snapshot, which is dearer than the sequential step per key that the scan
+///   pays, hence the charge of several hundred keys per draw.
+/// * Never fewer than `num_partitions.pow(2)`, because on a batch that small
+///   the sample costs nothing in absolute terms whatever the budget says.
+///
+/// Capped at `key_count`, where [`BatchReader::sample_keys`] returns every key
+/// and the split is exact.
+pub(crate) fn partition_sample_size(key_count: usize, num_partitions: usize) -> usize {
+    /// Draws per partition. 256 keeps the expected largest range within ~10% of
+    /// an even split (~20% at the 99th percentile) for partition counts from 4
+    /// to 32; doubling it halves what is left of the gap.
+    const DRAWS_PER_PARTITION: usize = 256;
+
+    /// Scanned keys a draw is charged against the budget.
+    const KEYS_CHARGED_PER_DRAW: usize = 512;
+
+    (num_partitions * DRAWS_PER_PARTITION)
+        .min(key_count / (num_partitions * KEYS_CHARGED_PER_DRAW))
+        .max(num_partitions * num_partitions)
+        .min(key_count)
+}
+
 /// A set of `(key, value, time, diff)` tuples whose contents may be read in
 /// order by key and value.
 ///
@@ -614,8 +654,11 @@ where
     /// Returns num_partitions-1 keys from the batch that partition the batch into num_partitions
     /// approximately equal size ranges 0..key1, key1..key2, ... , key_num_partitions-1..last_key_in_the_batch.
     ///
-    /// The default implementation uses the sample_keys method to sample num_partitions^2 keys and
-    /// picks keys num_partitions, 2*num_partitions, ..,num_partitions-1*num_partitions as boundaries.
+    /// The default implementation samples keys with [`BatchReader::sample_keys`]
+    /// and cuts the sorted sample into `num_partitions` equal runs, so each
+    /// boundary is a sample quantile. `partition_sample_size` decides how many
+    /// keys it draws, from the imbalance a caller reading the ranges in
+    /// parallel can afford.
     ///
     /// # Arguments
     ///
@@ -630,7 +673,7 @@ where
             return;
         }
 
-        let sample_size = num_partitions * num_partitions;
+        let sample_size = partition_sample_size(self.key_count(), num_partitions);
 
         let mut sample = self.factories().keys_factory().default_box();
         self.sample_keys(&mut thread_rng(), sample_size, sample.as_mut());
@@ -1799,6 +1842,65 @@ mod serialize_test {
             assert_eq!(archived.len(), table.len());
             for (index, offset) in table.iter().enumerate() {
                 assert_eq!(archived[index] as usize, *offset, "offset {index}");
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod partition_sample_size_test {
+    use super::partition_sample_size;
+
+    const P: usize = 12;
+
+    /// A batch large enough for the budget to clear the accuracy target draws
+    /// that target, whatever the partition count.
+    #[test]
+    fn a_large_batch_draws_the_accuracy_target() {
+        assert_eq!(partition_sample_size(10_000_000_000, P), P * 256);
+        assert_eq!(partition_sample_size(10_000_000_000, 32), 32 * 256);
+    }
+
+    /// Sampling runs on one thread before the ranges are scanned in parallel,
+    /// so a mid-sized batch trades some accuracy to keep the serial phase short.
+    #[test]
+    fn a_mid_sized_batch_is_held_to_its_budget() {
+        assert_eq!(partition_sample_size(4_000_000, P), 4_000_000 / (P * 512));
+    }
+
+    /// Below the budget the sample costs nothing in absolute terms, so the
+    /// floor decides.
+    #[test]
+    fn a_small_batch_falls_back_to_the_floor() {
+        assert_eq!(partition_sample_size(100_000, P), P * P);
+        assert_eq!(partition_sample_size(P * P, P), P * P);
+    }
+
+    /// `sample_keys` returns every key when asked for at least as many as the
+    /// batch holds, which makes the split exact.
+    #[test]
+    fn a_batch_smaller_than_the_sample_is_drawn_whole() {
+        for key_count in 0..P * P {
+            assert_eq!(partition_sample_size(key_count, P), key_count);
+        }
+    }
+
+    /// A bigger batch never asks for a smaller sample.
+    #[test]
+    fn the_sample_size_never_shrinks_as_the_batch_grows() {
+        for partitions in [2, 4, P, 32, 64] {
+            let mut previous = 0;
+            let mut key_count = 0;
+            while key_count < 100_000_000 {
+                let sample_size = partition_sample_size(key_count, partitions);
+                assert!(
+                    sample_size >= previous,
+                    "{partitions} partitions: {key_count} keys drew {sample_size} \
+                     after a smaller batch drew {previous}"
+                );
+                assert!(sample_size <= key_count.max(partitions * partitions));
+                previous = sample_size;
+                key_count = (key_count + 1) * 3 / 2;
             }
         }
     }
