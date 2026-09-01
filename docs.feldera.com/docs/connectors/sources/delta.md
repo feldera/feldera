@@ -201,7 +201,7 @@ The following table lists supported Delta Lake data types and corresponding Feld
 | `MAP<K,V>`                  | `MAP<K,V>`       |               |
 | `ARRAY<T>`                  | `T ARRAY`        |               |
 | `STRUCT`                    | `ROW` or [user-defined type](/sql/types#user-defined-types)| structs can be encoded as either anonymous `ROW` types or as named user-defined structs |
-| `VARIANT`                   | `VARIANT`        |               |
+| `VARIANT`                   | `VARIANT`        | Read from the Parquet variant binary encoding, keeping the types the writer encoded (dates, decimals, timestamps and binary stay typed inside the `VARIANT`). Shredded variants (the `variantShredding-preview` table feature) are not supported. Timestamps with nanosecond precision are truncated to microseconds. A `VARIANT` column stored as a JSON string is also accepted. |
 
 
 ## Transactions

@@ -22,16 +22,18 @@ use deltalake::kernel::{DataType, StructField};
 use deltalake::operations::create::CreateBuilder;
 use deltalake::protocol::SaveMode;
 use deltalake::{DeltaTable, DeltaTableBuilder, ensure_table_uri};
+use feldera_macros::IsNone;
 use feldera_sqllib::Variant;
 use feldera_types::config::PipelineConfig;
 use feldera_types::format::json::JsonFlavor;
-use feldera_types::program_schema::{Field, Relation, SqlIdentifier};
+use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::serde_with_context::serde_config::DecimalFormat;
 use feldera_types::serde_with_context::serialize::SerializeWithContextWrapper;
 use feldera_types::serde_with_context::{
     DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimestampFormat,
 };
 use feldera_types::transport::delta_table::DeltaTableTransactionMode;
+use feldera_types::{deserialize_table_record, serialize_table_record};
 use proptest::collection::vec;
 use proptest::prelude::{Arbitrary, ProptestConfig, Strategy};
 use proptest::proptest;
@@ -40,6 +42,7 @@ use proptest::test_runner::TestRunner;
 use serde_json::{Value, json};
 #[cfg(feature = "delta-s3-test")]
 use serial_test::{parallel, serial};
+use size_of::SizeOf;
 use std::cmp::min;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsStr;
@@ -4400,4 +4403,283 @@ async fn follow_filter_before_projection_prunes_scan() {
         "the scan must read only the projected columns plus the filter's, so \
          'junk' must be pruned; plan was:\n{plan}"
     );
+}
+
+// ---- Delta `variant` columns ----------------------------------------------
+
+/// Table read by the VARIANT tests: one column stored as a Delta `variant`,
+/// one stored as a Delta `string` holding JSON text.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    IsNone,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+struct VariantTestStruct {
+    id: i64,
+    v: Option<Variant>,
+    json_v: Option<Variant>,
+}
+
+serialize_table_record!(VariantTestStruct[3]{
+    id["id"]: i64,
+    v["v"]: Option<Variant>,
+    json_v["json_v"]: Option<Variant>
+});
+
+deserialize_table_record!(VariantTestStruct["VariantTestStruct", Variant, 3] {
+    (id, "id", false, i64, |_| None),
+    (v, "v", false, Option<Variant>, |_| Some(None)),
+    (json_v, "json_v", false, Option<Variant>, |_| Some(None))
+});
+
+impl VariantTestStruct {
+    fn schema() -> Vec<Field> {
+        vec![
+            Field::new("id".into(), ColumnType::bigint(false)),
+            Field::new("v".into(), ColumnType::variant(true)),
+            Field::new("json_v".into(), ColumnType::variant(true)),
+        ]
+    }
+}
+
+/// Create the VARIANT test table. `cdc` adds the operation and timestamp
+/// columns the `cdc` mode reads.
+async fn create_variant_test_table(table_uri: &str, cdc: bool) -> DeltaTable {
+    let mut fields = vec![
+        StructField::new("id", DataType::LONG, false),
+        StructField::new("v", DataType::unshredded_variant(), true),
+        StructField::new("json_v", DataType::STRING, true),
+    ];
+    if cdc {
+        fields.push(StructField::new("__feldera_op", DataType::STRING, false));
+        fields.push(StructField::new("__feldera_ts", DataType::LONG, false));
+    }
+    create_table(table_uri, &HashMap::new(), &fields).await
+}
+
+/// Append the two test rows: one carrying a variant of every type the mapping
+/// covers, one whose VARIANT columns are SQL NULL.
+async fn write_variant_test_rows(table: DeltaTable, cdc: bool) -> DeltaTable {
+    use arrow::array::{ArrayRef, Int64Array, RecordBatch, StringArray};
+    use arrow::datatypes::DataType as ArrowDataType;
+    use chrono::NaiveDate;
+    use parquet_variant::VariantBuilderExt;
+    use parquet_variant_compute::VariantArrayBuilder;
+
+    // Build the batch against the table's own Arrow schema so the column types
+    // and nullability match what Delta declared.
+    let arrow_schema = table
+        .snapshot()
+        .unwrap()
+        .snapshot()
+        .arrow_schema()
+        .as_ref()
+        .clone();
+
+    let mut builder = VariantArrayBuilder::new(2);
+    {
+        let mut object = builder.new_object();
+        object.insert("int", 42i64);
+        object.insert("str", "hello");
+        object.insert("bool", true);
+        object.insert("nul", parquet_variant::Variant::Null);
+        object.insert(
+            "dec",
+            parquet_variant::Variant::Decimal4(
+                parquet_variant::VariantDecimal4::try_new(12_345i32, 2u8).unwrap(),
+            ),
+        );
+        object.insert(
+            "date",
+            parquet_variant::Variant::Date(NaiveDate::from_ymd_opt(2026, 9, 1).unwrap()),
+        );
+        object.insert("bin", parquet_variant::Variant::Binary(&[1u8, 2, 3]));
+        {
+            let mut list = object.new_list("list");
+            list.append_value(1i64);
+            list.append_value("two");
+            list.finish();
+        }
+        object.finish();
+    }
+    builder.append_null();
+
+    // The Parquet variant builder produces `BinaryView` sub-fields; Delta
+    // stores them as `binary`.
+    let variant_type = arrow_schema.field_with_name("v").unwrap().data_type();
+    let variant_column =
+        arrow::compute::cast(&ArrayRef::from(builder.build()), variant_type).unwrap();
+
+    let mut columns: Vec<ArrayRef> = vec![
+        Arc::new(Int64Array::from(vec![1i64, 2])),
+        variant_column,
+        Arc::new(StringArray::from(vec![Some(r#"{"legacy": true}"#), None])),
+    ];
+    if cdc {
+        columns.push(Arc::new(StringArray::from(vec!["i", "i"])));
+        columns.push(Arc::new(Int64Array::from(vec![1i64, 2])));
+    }
+
+    assert_eq!(
+        arrow_schema.fields().len(),
+        columns.len(),
+        "test batch must cover every column"
+    );
+    assert!(matches!(variant_type, ArrowDataType::Struct(_)));
+
+    let batch = RecordBatch::try_new(Arc::new(arrow_schema), columns).unwrap();
+
+    table
+        .write(vec![batch])
+        .with_save_mode(SaveMode::Append)
+        .await
+        .unwrap()
+}
+
+/// The `insert` payloads the pipeline wrote, sorted by `id`.
+fn variant_output_records(path: &Path) -> Vec<Value> {
+    let contents = std::fs::read_to_string(path).unwrap_or_default();
+    let mut records: Vec<Value> = contents
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            serde_json::from_str::<Value>(line)
+                .unwrap_or_else(|e| panic!("output line is not JSON: {line}: {e}"))["insert"]
+                .clone()
+        })
+        .collect();
+    records.sort_by_key(|record| record["id"].as_i64().unwrap());
+    records
+}
+
+/// What the two rows must look like once ingested.
+///
+/// The typed values are the point: a date arrives as a date and a decimal as a
+/// number because the connector decoded the Parquet variant, which a detour
+/// through JSON text could not have produced.
+fn expected_variant_records() -> Vec<Value> {
+    vec![
+        json!({
+            "id": 1,
+            "v": {
+                "bin": [1, 2, 3],
+                "bool": true,
+                "date": "2026-09-01",
+                "dec": 123.45,
+                "int": 42,
+                "list": [1, "two"],
+                "nul": null,
+                "str": "hello",
+            },
+            "json_v": {"legacy": true},
+        }),
+        json!({"id": 2, "v": null, "json_v": null}),
+    ]
+}
+
+/// Wait until the pipeline has written `count` records, then return them.
+fn wait_for_variant_records(path: &Path, count: usize) -> Vec<Value> {
+    wait(|| variant_output_records(path).len() >= count, 60_000)
+        .unwrap_or_else(|_| panic!("timeout waiting for {count} records from the VARIANT table"));
+    variant_output_records(path)
+}
+
+/// `snapshot` mode reads a Delta `variant` column, and a `VARIANT` column
+/// stored as a JSON string keeps working alongside it.
+#[tokio::test]
+async fn delta_table_variant_snapshot_test() {
+    init_logging();
+
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let table = create_variant_test_table(&table_uri, false).await;
+    write_variant_test_rows(table, false).await;
+
+    let output_file = NamedTempFile::new().unwrap();
+    let pipeline = delta_table_input_pipeline::<VariantTestStruct>(
+        &table_uri,
+        &VariantTestStruct::schema(),
+        &HashMap::from([("mode".to_string(), "snapshot".to_string())]),
+        &output_file.path().display().to_string(),
+    );
+    pipeline.start();
+    wait(|| pipeline.pipeline_complete(), 60_000).expect("timeout ingesting the snapshot");
+    pipeline.stop().unwrap();
+
+    assert_eq!(
+        variant_output_records(output_file.path()),
+        expected_variant_records()
+    );
+}
+
+/// `follow` mode picks up a Delta `variant` column from a new commit.
+#[tokio::test]
+async fn delta_table_variant_follow_test() {
+    init_logging();
+
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let table = create_variant_test_table(&table_uri, false).await;
+
+    let output_file = NamedTempFile::new().unwrap();
+    let pipeline = delta_table_input_pipeline::<VariantTestStruct>(
+        &table_uri,
+        &VariantTestStruct::schema(),
+        &HashMap::from([("mode".to_string(), "follow".to_string())]),
+        &output_file.path().display().to_string(),
+    );
+    pipeline.start();
+
+    // Follow starts at the current version, so the rows have to land after it.
+    write_variant_test_rows(table, false).await;
+
+    let records = wait_for_variant_records(output_file.path(), 2);
+    pipeline.stop().unwrap();
+
+    assert_eq!(records, expected_variant_records());
+}
+
+/// `cdc` mode reads a Delta `variant` column through the change-feed
+/// projection, which drops the operation and timestamp columns.
+#[tokio::test]
+async fn delta_table_variant_cdc_test() {
+    init_logging();
+
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let table = create_variant_test_table(&table_uri, true).await;
+
+    let output_file = NamedTempFile::new().unwrap();
+    let pipeline = delta_table_input_pipeline::<VariantTestStruct>(
+        &table_uri,
+        &VariantTestStruct::schema(),
+        &HashMap::from([
+            ("mode".to_string(), "cdc".to_string()),
+            (
+                "cdc_delete_filter".to_string(),
+                "__feldera_op = 'd'".to_string(),
+            ),
+            ("cdc_order_by".to_string(), "__feldera_ts".to_string()),
+        ]),
+        &output_file.path().display().to_string(),
+    );
+    pipeline.start();
+
+    write_variant_test_rows(table, true).await;
+
+    let records = wait_for_variant_records(output_file.path(), 2);
+    pipeline.stop().unwrap();
+
+    assert_eq!(records, expected_variant_records());
 }
