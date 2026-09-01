@@ -392,7 +392,7 @@ impl NatsReader {
             // Since range is exclusive, last message to replay is (end - 1).
             let last_message_sequence = metadata.sequence_numbers.end - 1;
 
-            'replay_attempt: loop {
+            loop {
                 let replay_result: Result<(Xxh3Default, BufferSize), ConnectorError> = async {
                     let jetstream = Self::initialize_jetstream(&stream_ctx.connection_config, &stream_ctx.stream_name)
                         .await
@@ -454,15 +454,14 @@ impl NatsReader {
                         if let Some(command) = command_receiver.try_recv()? {
                             match command {
                                 InputReaderCommand::Disconnect => return Ok(()),
-                                InputReaderCommand::Replay { .. } => {
-                                    // Keep this command buffered and continue retrying
-                                    // the current replay range until it completes.
-                                    command_receiver.put_back(command);
-                                }
                                 other => {
-                                    // Honor control commands while replay is retrying.
+                                    // Buffer the command (Replay or control) and
+                                    // keep retrying the current replay range. An
+                                    // acknowledged replay step must run to
+                                    // completion — honoring a control command here
+                                    // would abandon the step before `replayed()`,
+                                    // leaving replay/checkpoint state divergent.
                                     command_receiver.put_back(other);
-                                    break 'replay_attempt;
                                 }
                             }
                         }
