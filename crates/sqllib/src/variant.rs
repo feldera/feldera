@@ -13,11 +13,10 @@ use feldera_types::serde_with_context::serde_config::VariantFormat;
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
-use serde::de::{self, DeserializeSeed, Error as _, MapAccess, SeqAccess, Visitor};
+use serde::de::{self, DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde::ser::{self, Error as _};
 use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
-use std::borrow::Cow;
 use std::cmp::Ord;
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
@@ -255,14 +254,7 @@ impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for Variant {
     {
         match context.variant_format {
             VariantFormat::Json => Variant::deserialize(deserializer),
-            VariantFormat::JsonString => {
-                let s = Cow::<String>::deserialize(deserializer)?;
-                serde_json::from_str::<Variant>(&s).map_err(|e| {
-                    D::Error::custom(format!(
-                        "error deserializing VARIANT type from a JSON string: {e}"
-                    ))
-                })
-            }
+            VariantFormat::JsonString => crate::variant_binary::deserialize_variant(deserializer),
         }
     }
 }

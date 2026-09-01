@@ -51,6 +51,9 @@ pub use uuid::*;
 pub mod variant;
 pub use variant::*;
 pub mod flat_variant;
+
+/// Reading VARIANT from the Parquet variant binary encoding.
+mod variant_binary;
 pub use flat_variant::casts::*;
 pub use flat_variant::functions::*;
 pub use flat_variant::{FlatVariant, variant_to_fv, variant_to_fvN};
