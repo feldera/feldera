@@ -374,3 +374,57 @@ debug = true
 
 [profile.release]
 debug = "line-tables-only"
+
+# Feldera fork of datafusion: release 53.1.0 + 1 patch, on branch
+# `int96-preserve-field-metadata-53.1.0`.
+#
+#   - Preserve field metadata when coercing INT96 timestamps.
+#     `Int96Coercer` rebuilds struct, list and map fields with `Field::new_*`,
+#     which start from empty metadata, so reading a file that holds an INT96
+#     column strips `PARQUET:field_id` from every container field. A Delta
+#     table with column mapping pairs its columns to the read schema by that
+#     id, so a struct column silently reads as NULL.
+#     Upstream issue:  https://github.com/apache/datafusion/issues/24786
+#     Upstream branch: https://github.com/ryzhyk/datafusion/tree/int96-preserve-field-metadata
+#     Repro:           https://github.com/ryzhyk/coerce_int96_bug
+#
+# Patching one crate pulls its siblings in from the fork, so every datafusion
+# crate in the graph must be patched or the same crate resolves twice, once
+# from the fork and once from crates.io, and the build fails on mismatched
+# types. `datafusion-functions-json` is a third-party crate, not part of the
+# datafusion workspace, so it stays on crates.io.
+#
+# Drop this section once the fix is released upstream.
+[patch.crates-io]
+datafusion = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-catalog = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-catalog-listing = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-common = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-common-runtime = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-datasource = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-datasource-arrow = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-datasource-csv = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-datasource-json = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-doc = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-execution = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-expr = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-expr-common = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-functions = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-functions-aggregate = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-functions-aggregate-common = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-functions-nested = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-functions-table = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-functions-window = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-functions-window-common = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-macros = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-optimizer = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-physical-expr = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-physical-expr-adapter = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-physical-expr-common = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-physical-optimizer = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-physical-plan = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-proto = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-proto-common = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-pruning = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-session = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }
+datafusion-sql = { git = "https://github.com/feldera/datafusion.git", rev = "bee5811ee4c1cfea159bc2e6ece0309c59a66b9f" }

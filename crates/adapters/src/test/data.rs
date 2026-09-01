@@ -1105,6 +1105,49 @@ deserialize_table_record!(S3TablesTestStruct["S3TablesTestStruct", Variant, 3] {
     (created_at, "created_at", true, Option<Timestamp>, |_| Some(None))
 });
 
+/// Records in the Parquet timestamp-encoding fixtures built by
+/// [`crate::test::parquet_timestamps`]: `id BIGINT NOT NULL`, `ts TIMESTAMP`.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    IsNone,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+pub struct TimestampTestStruct {
+    pub id: i64,
+    pub ts: Option<Timestamp>,
+}
+
+impl TimestampTestStruct {
+    pub fn schema() -> Vec<Field> {
+        vec![
+            Field::new("id".into(), ColumnType::bigint(false)),
+            Field::new("ts".into(), ColumnType::timestamp(true)),
+        ]
+    }
+}
+
+serialize_table_record!(TimestampTestStruct[2]{
+    id["id"]: i64,
+    ts["ts"]: Option<Timestamp>
+});
+
+deserialize_table_record!(TimestampTestStruct["TimestampTestStruct", Variant, 2] {
+    (id, "id", false, i64, |_| None),
+    (ts, "ts", true, Option<Timestamp>, |_| Some(None))
+});
+
 /// SQL table that declares a subset of [`IcebergTestStruct`]'s columns, for
 /// testing that the Iceberg connector only reads declared columns.
 ///

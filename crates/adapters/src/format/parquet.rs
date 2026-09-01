@@ -9,6 +9,7 @@ use arrow::datatypes::{
     TimeUnit,
 };
 use bytes::Bytes;
+use datafusion::datasource::file_format::parquet::coerce_int96_to_resolution;
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::ConnectorMetadata;
@@ -20,7 +21,11 @@ use feldera_types::serde_with_context::serde_config::{
 };
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 use parquet::arrow::ArrowWriter;
-use parquet::arrow::arrow_reader::ParquetRecordBatchReader;
+use parquet::arrow::arrow_reader::{
+    ArrowReaderMetadata, ArrowReaderOptions, ParquetRecordBatchReader,
+    ParquetRecordBatchReaderBuilder,
+};
+use parquet::errors::ParquetError;
 use parquet::file::properties::WriterProperties;
 use serde::Deserialize;
 use serde_arrow::ArrayBuilder;
@@ -55,6 +60,58 @@ pub const fn default_arrow_serde_config() -> &'static SqlSerdeConfig {
         binary_format: BinaryFormat::Array,
         uuid_format: UuidFormat::String,
     }
+}
+
+/// Time unit Feldera decodes deprecated INT96 Parquet timestamps at.
+///
+/// Spark and Databricks still write timestamps as INT96, which spans a wider
+/// date range than 64-bit nanoseconds. arrow-rs converts INT96 to nanoseconds
+/// unless told otherwise, wrapping silently: 4000-12-31 becomes 2247-05-04.
+/// Microseconds cover the whole INT96 range and match Feldera's own TIMESTAMP
+/// precision, so avoiding the nanosecond conversion preserves the value.
+pub(crate) const INT96_TIME_UNIT: TimeUnit = TimeUnit::Microsecond;
+
+/// [`INT96_TIME_UNIT`] as datafusion spells it in its
+/// `execution.parquet.coerce_int96` setting.
+pub(crate) const INT96_TIME_UNIT_NAME: &str = "us";
+
+/// Retype `metadata`'s INT96 timestamp columns as [`INT96_TIME_UNIT`], or
+/// return `None` when the file declares no such column.
+///
+/// Rebuilding the metadata restates the options it was loaded with, so the
+/// caller passes the same `options` it used; defaulting them here would drop
+/// the caller's settings on exactly the files that contain an INT96 column.
+pub(crate) fn int96_as_micros(
+    metadata: &ArrowReaderMetadata,
+    options: &ArrowReaderOptions,
+) -> Result<Option<ArrowReaderMetadata>, ParquetError> {
+    let Some(schema) = coerce_int96_to_resolution(
+        metadata.parquet_schema(),
+        metadata.schema(),
+        &INT96_TIME_UNIT,
+    ) else {
+        return Ok(None);
+    };
+    ArrowReaderMetadata::try_new(
+        Arc::clone(metadata.metadata()),
+        options.clone().with_schema(Arc::new(schema)),
+    )
+    .map(Some)
+}
+
+/// Open `data` for reading.
+fn open_parquet_reader(
+    data: Bytes,
+    batch_size: usize,
+) -> Result<ParquetRecordBatchReader, ParquetError> {
+    let options = ArrowReaderOptions::default();
+    let mut metadata = ArrowReaderMetadata::load(&data, options.clone())?;
+    if let Some(coerced) = int96_as_micros(&metadata, &options)? {
+        metadata = coerced;
+    }
+    ParquetRecordBatchReaderBuilder::new_with_metadata(data, metadata)
+        .with_batch_size(batch_size)
+        .build()
 }
 
 /// CSV format parser.
@@ -115,7 +172,7 @@ impl Parser for ParquetParser {
 
         let bytes = Bytes::copy_from_slice(data);
 
-        let parquet_reader = match ParquetRecordBatchReader::try_new(bytes, 1_000_000) {
+        let parquet_reader = match open_parquet_reader(bytes, 1_000_000) {
             Ok(parquet_reader) => parquet_reader,
             Err(e) => {
                 return (

@@ -31,12 +31,16 @@ use deltalake::logstore::LogStore;
 use deltalake::{DeltaTable, ObjectStore, Path};
 use futures_util::StreamExt;
 use parquet::arrow::ProjectionMask;
-use parquet::arrow::arrow_reader::{RowSelection, RowSelector};
+use parquet::arrow::arrow_reader::{
+    ArrowReaderMetadata, ArrowReaderOptions, RowSelection, RowSelector,
+};
 use parquet::arrow::async_reader::{ParquetObjectReader, ParquetRecordBatchStreamBuilder};
 use roaring::RoaringTreemap;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
+
+use crate::format::parquet::int96_as_micros;
 
 /// Convert the delta-rs descriptor into its `delta_kernel` equivalent, which
 /// owns the decoding logic. The fields are identical; only the storage-type
@@ -393,11 +397,18 @@ impl PartitionStream for MaskedParquetPartition {
         let mode = self.mode;
 
         let stream = try_stream! {
-            let reader = ParquetObjectReader::new(store, path.clone());
-            let builder = ParquetRecordBatchStreamBuilder::new(reader)
+            let mut reader = ParquetObjectReader::new(store, path.clone());
+            let options = ArrowReaderOptions::default();
+            let mut metadata = ArrowReaderMetadata::load_async(&mut reader, options.clone())
                 .await
                 .map_err(|e| DataFusionError::External(
                     format!("failed to open Parquet file '{path}': {e}").into()))?;
+            if let Some(coerced) = int96_as_micros(&metadata, &options)
+                .map_err(|e| DataFusionError::External(
+                    format!("failed to read INT96 timestamps in Parquet file '{path}': {e}").into()))? {
+                metadata = coerced;
+            }
+            let builder = ParquetRecordBatchStreamBuilder::new_with_metadata(reader, metadata);
             // `num_rows()` is `i64` because Parquet's metadata is signed
             // throughout; it is non-negative for any file whose footer parsed
             // (which it did, just above).
