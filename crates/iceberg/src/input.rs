@@ -2819,3 +2819,126 @@ mod tests {
         assert_eq!(parsed.snapshot_id, Some(snapshot_id));
     }
 }
+
+#[cfg(test)]
+mod variant_tests {
+    use crate::iceberg_input_serde_config;
+    use datafusion::arrow::array::{ArrayRef, Int64Array, RecordBatch};
+    use datafusion::arrow::datatypes::{
+        DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema,
+    };
+    use feldera_sqllib::{SqlString, Variant};
+    use feldera_types::deserialize_table_record;
+    use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
+    use parquet_variant::VariantBuilderExt;
+    use parquet_variant_compute::VariantArrayBuilder;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    #[derive(Debug, PartialEq)]
+    struct VariantRecord {
+        id: i64,
+        v: Variant,
+    }
+
+    deserialize_table_record!(VariantRecord["VariantRecord", Variant, 2] {
+        (id, "id", false, i64, |_| None),
+        (v, "v", false, Variant, |_| None)
+    });
+
+    /// An Iceberg V3 `variant` column reaches the connector as the Parquet
+    /// variant binary encoding: a struct of two binary buffers. The Iceberg
+    /// deserializer configuration must decode it, the way the Delta one does.
+    #[test]
+    fn iceberg_config_decodes_a_parquet_variant() {
+        let mut builder = VariantArrayBuilder::new(1);
+        {
+            let mut object = builder.new_object();
+            object.insert("k", 7i64);
+            object.finish();
+        }
+
+        // Iceberg stores the buffers as `binary`; the builder produces
+        // `binary_view`.
+        let variant_type = ArrowDataType::Struct(
+            vec![
+                ArrowField::new("metadata", ArrowDataType::Binary, false),
+                ArrowField::new("value", ArrowDataType::Binary, false),
+            ]
+            .into(),
+        );
+        let variant_column =
+            datafusion::arrow::compute::cast(&ArrayRef::from(builder.build()), &variant_type)
+                .unwrap();
+
+        let batch = RecordBatch::try_new(
+            Arc::new(ArrowSchema::new(vec![
+                ArrowField::new("id", ArrowDataType::Int64, false),
+                ArrowField::new("v", variant_type, true),
+            ])),
+            vec![
+                Arc::new(Int64Array::from(vec![1i64])) as ArrayRef,
+                variant_column,
+            ],
+        )
+        .unwrap();
+
+        let deserializer = serde_arrow::Deserializer::from_record_batch(&batch).unwrap();
+        let records = Vec::<VariantRecord>::deserialize_with_context(
+            deserializer,
+            &iceberg_input_serde_config(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            records,
+            vec![VariantRecord {
+                id: 1,
+                v: Variant::Map(
+                    BTreeMap::from([(
+                        Variant::String(SqlString::from_ref("k")),
+                        Variant::BigInt(7)
+                    )])
+                    .into()
+                ),
+            }]
+        );
+    }
+
+    /// `iceberg-rust` has no `variant` primitive type, so a table whose schema
+    /// declares one cannot be loaded at all, whatever the connector can decode.
+    ///
+    /// When a future `iceberg-rust` adds the type this assertion fails, which
+    /// is the signal to write the end-to-end test and update the connector
+    /// documentation.
+    #[test]
+    fn iceberg_rust_still_lacks_the_variant_type() {
+        let variant_field = serde_json::json!({
+            "id": 1,
+            "name": "v",
+            "required": false,
+            "type": "variant",
+        });
+        let error = serde_json::from_value::<iceberg::spec::NestedField>(variant_field)
+            .expect_err("iceberg-rust gained a `variant` type; see the doc comment");
+        assert!(
+            error.to_string().contains("variant"),
+            "unexpected error: {error}"
+        );
+    }
+
+    /// A deserializer configuration is only as good as the settings around it:
+    /// the Iceberg configuration reads UUIDs as bytes, and that must not
+    /// disturb a VARIANT column in the same record.
+    #[test]
+    fn iceberg_config_still_reads_uuid_as_binary() {
+        assert!(matches!(
+            iceberg_input_serde_config().uuid_format,
+            feldera_types::serde_with_context::serde_config::UuidFormat::Binary
+        ));
+        assert!(matches!(
+            SqlSerdeConfig::default().variant_format,
+            feldera_types::serde_with_context::serde_config::VariantFormat::JsonString
+        ));
+    }
+}
