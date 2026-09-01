@@ -31,3 +31,9 @@ chrono = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 futures-util = { workspace = true }
+
+[dev-dependencies]
+feldera-sqllib = { workspace = true }
+parquet-variant = { workspace = true }
+parquet-variant-compute = { workspace = true }
+serde_arrow = { workspace = true }
