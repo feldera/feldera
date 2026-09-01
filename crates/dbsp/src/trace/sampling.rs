@@ -231,6 +231,45 @@ mod test {
         assert!(draws.iter().all(|&draw| draw <= 1));
     }
 
+    /// A spine where every batch falls below one share still spends the whole
+    /// sample, over enough batches to place a full set of partition boundaries.
+    ///
+    /// `BatchReader::partition_keys` samples `partitions.pow(2)` keys and cuts
+    /// them into `partitions` runs, so it needs draws to reach at least
+    /// `partitions` batches. A spine holds far more batches than that, each a
+    /// small fraction of the keys.
+    #[test]
+    fn a_spine_of_many_small_batches_still_draws_the_whole_sample() {
+        const PARTITIONS: usize = 12;
+        const SAMPLE_SIZE: usize = PARTITIONS * PARTITIONS;
+
+        // Batch counts and sizes spanning four orders of magnitude, as a spine's
+        // levels do.
+        const TIERS: [(usize, usize); 4] = [
+            // (batches, keys per batch)
+            (1_000, 10_000),
+            (500, 100_000),
+            (200, 1_000_000),
+            (100, 5_000_000),
+        ];
+        let counts: Vec<usize> = TIERS
+            .iter()
+            .flat_map(|&(batches, keys)| std::iter::repeat_n(keys, batches))
+            .collect();
+
+        let total_keys: usize = counts.iter().sum();
+        assert!(counts.len() > SAMPLE_SIZE);
+        assert!(
+            counts.iter().all(|&count| count < total_keys / SAMPLE_SIZE),
+            "the shape under test is one where no batch reaches a full share"
+        );
+
+        let draws = apportion_draws(&counts, SAMPLE_SIZE);
+
+        assert_eq!(draws.iter().sum::<usize>(), SAMPLE_SIZE);
+        assert!(draws.iter().filter(|&&draw| draw > 0).count() >= PARTITIONS);
+    }
+
     /// A sample size of zero, and a spine holding no keys at all, draw nothing.
     #[test]
     fn degenerate_inputs_draw_nothing() {
