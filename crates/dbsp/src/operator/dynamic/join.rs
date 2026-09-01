@@ -37,6 +37,7 @@ use crate::{
 };
 use crate::{DynZWeight, NestedCircuit, Position, Runtime};
 use async_stream::stream;
+use rand::thread_rng;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::{
@@ -1469,6 +1470,55 @@ where
     }
 }
 
+/// Number of keys sampled when estimating a join input's key count.
+const KEY_COUNT_SAMPLE_SIZE: usize = 100;
+
+/// Inputs smaller than this are not sampled, since the cost of sampling can be high
+/// relative to the gain from it.
+const MIN_KEYS_TO_SAMPLE: usize = 10_000;
+
+/// Estimates the number of keys a cursor over `input` will surface.
+///
+/// [`BatchReader::sample_keys`] returns only keys that are present with a
+/// non-zero weight, so the fraction of the sample that survives estimates the
+/// fraction of `key_count` the cursor will yield.
+fn sampled_key_count<B>(input: &B, key_count: usize) -> usize
+where
+    B: BatchReader,
+{
+    let mut sample = input.factories().keys_factory().default_box();
+    input.sample_keys(&mut thread_rng(), KEY_COUNT_SAMPLE_SIZE, sample.as_mut());
+
+    (key_count as u128 * sample.len() as u128 / KEY_COUNT_SAMPLE_SIZE as u128) as usize
+}
+
+/// Estimates the key counts used to choose which side the joint cursor drives.
+///
+/// [`BatchReader::key_count`] reports the sum of key counts across all batches.
+/// The same key that occurs in multiple batches is counted multiple times even
+/// if its weight adds up to 0. Sampling is used to estimate the number of distinct
+/// keys with non-zero weights without actually enumerating them.
+///
+/// Sampling is skipped when the smaller input is below [`MIN_KEYS_TO_SAMPLE`]:
+/// at that size neither side is expensive to drive.
+fn estimate_input_key_counts<D, T>(delta: &D, trace: &T) -> (usize, usize)
+where
+    D: BatchReader,
+    T: BatchReader,
+{
+    let delta_key_count = delta.key_count();
+    let trace_key_count = trace.key_count();
+
+    if min(delta_key_count, trace_key_count) < MIN_KEYS_TO_SAMPLE {
+        return (delta_key_count, trace_key_count);
+    }
+
+    (
+        sampled_key_count(delta, delta_key_count),
+        sampled_key_count(trace, trace_key_count),
+    )
+}
+
 /// A cursor that iterates over matching keys in two cursors.
 /// It enumerates all keys in one cursor, and for each key
 /// checks if the other cursor has a matching key.
@@ -1592,10 +1642,15 @@ where
             }
 
             let delta = self.delta.borrow_mut().take().expect("no input delta provided before flush");
-            let delta_key_count = delta.key_count();
-
             let trace = trace.unwrap();
-            let trace_key_count = if self.saturate { usize::MAX } else { trace.key_count() };
+
+            // Key counts decide which side the joint cursor drives. Driving a
+            // side costs a full pass over it, so getting this wrong can be expensive.
+            let (delta_key_count, trace_key_count) = if self.saturate {
+                (0, usize::MAX)
+            } else {
+                estimate_input_key_counts(&delta, &trace)
+            };
 
             self.empty_input.set(delta.is_empty());
             self.empty_output.set(true);
@@ -1798,6 +1853,108 @@ where
 
             yield (batch, true, joint_cursor.position())
         }
+    }
+}
+
+#[cfg(test)]
+mod key_count_estimate_test {
+    use super::{MIN_KEYS_TO_SAMPLE, estimate_input_key_counts};
+    use crate::{
+        ZWeight,
+        dynamic::DynData,
+        trace::{BatchReader, BatchReaderFactories, SpineSnapshot},
+        typed_batch::{DynOrdIndexedZSet, OrdIndexedZSet},
+        utils::Tup2,
+    };
+    use std::sync::Arc;
+
+    type Batch = DynOrdIndexedZSet<DynData, DynData>;
+
+    /// Builds a snapshot over `batches`, each a list of (key, value, weight).
+    fn snapshot(batches: Vec<Vec<(u64, u64, ZWeight)>>) -> SpineSnapshot<Batch> {
+        let factories: <Batch as BatchReader>::Factories =
+            BatchReaderFactories::new::<u64, u64, ZWeight>();
+        let batches = batches
+            .into_iter()
+            .map(|rows| {
+                let tuples = rows
+                    .into_iter()
+                    .map(|(k, v, w)| Tup2(Tup2(k, v), w))
+                    .collect();
+                Arc::new(OrdIndexedZSet::<u64, u64>::from_tuples((), tuples).into_inner())
+            })
+            .collect();
+
+        SpineSnapshot::with_batches(&factories, batches)
+    }
+
+    fn rows(keys: std::ops::Range<u64>, weight: ZWeight) -> Vec<(u64, u64, ZWeight)> {
+        keys.map(|k| (k, k, weight)).collect()
+    }
+
+    /// The estimate is a sample, so it is checked against a band rather than an
+    /// exact value.
+    #[track_caller]
+    fn assert_within(actual: usize, expected: usize, tolerance_percent: usize) {
+        let tolerance = expected * tolerance_percent / 100;
+        assert!(
+            actual.abs_diff(expected) <= tolerance,
+            "estimate {actual} is not within {tolerance} of {expected}"
+        );
+    }
+
+    const N: u64 = MIN_KEYS_TO_SAMPLE as u64 * 2;
+
+    /// An input that fully retracts and re-inserts the same rows stores twice
+    /// the row count and yields nothing. `key_count()` reports the stored count,
+    /// which is the error that makes the join drive the wrong side.
+    #[test]
+    fn cancelling_keys_are_not_counted() {
+        let delta = snapshot(vec![rows(0..N, -1), rows(0..N, 1)]);
+        let trace = snapshot(vec![rows(0..N, 1)]);
+
+        assert_eq!(delta.key_count(), 2 * N as usize);
+
+        let (delta_keys, _) = estimate_input_key_counts(&delta, &trace);
+        assert_eq!(delta_keys, 0);
+    }
+
+    /// Keys that survive are counted, whether or not the input also holds
+    /// cancelling ones.
+    ///
+    /// Only a third of this input's key slots survive, which is the regime where
+    /// a 100-key sample is noisiest: single draws were measured spanning 6,900
+    /// to 13,500 around a mean of 9,955. The test averages draws rather than
+    /// widening the band, so it still fails if the mean moves. Do not replace it
+    /// with a single draw.
+    #[test]
+    fn surviving_share_of_a_mixed_input_is_counted() {
+        // Keys 0..N/2 cancel; keys N/2..N are inserted once and survive.
+        let delta = snapshot(vec![rows(0..N / 2, -1), rows(0..N, 1)]);
+        let trace = snapshot(vec![rows(0..N, 1)]);
+
+        // Two thirds of the stored key slots belong to keys that cancel.
+        assert_eq!(delta.key_count(), (N + N / 2) as usize);
+
+        const DRAWS: usize = 50;
+        let mean = (0..DRAWS)
+            .map(|_| estimate_input_key_counts(&delta, &trace).0)
+            .sum::<usize>()
+            / DRAWS;
+
+        assert_within(mean, (N / 2) as usize, 10);
+    }
+
+    /// A trace whose records are spread thinly over many keys keeps its count:
+    /// the estimate must not shrink an input that has nothing to cancel.
+    #[test]
+    fn insert_only_input_keeps_its_count() {
+        let delta = snapshot(vec![rows(0..N, 1)]);
+        let trace = snapshot(vec![rows(0..N, 1)]);
+
+        let (delta_keys, trace_keys) = estimate_input_key_counts(&delta, &trace);
+        assert_within(delta_keys, N as usize, 0);
+        assert_within(trace_keys, N as usize, 0);
     }
 }
 
