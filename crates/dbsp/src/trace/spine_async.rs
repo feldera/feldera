@@ -1809,22 +1809,8 @@ where
         RG: Rng,
     {
         let batches = self.merger.get_batches();
-        let total_keys = batches.iter().map(|batch| batch.key_count()).sum::<usize>();
         let batch_refs: Vec<_> = batches.iter().map(Arc::as_ref).collect();
-        sample_keys_from_batches(
-            &self.factories,
-            &batch_refs,
-            rng,
-            |batch| {
-                if sample_size == 0 || total_keys == 0 {
-                    0
-                } else {
-                    ((batch.key_count() as u128) * (sample_size as u128) / (total_keys as u128))
-                        as usize
-                }
-            },
-            sample,
-        );
+        sample_keys_from_batches(&self.factories, &batch_refs, rng, sample_size, sample);
     }
 
     async fn fetch<KR>(

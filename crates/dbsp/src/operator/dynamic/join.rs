@@ -1481,7 +1481,9 @@ const MIN_KEYS_TO_SAMPLE: usize = 10_000;
 ///
 /// [`BatchReader::sample_keys`] returns only keys that are present with a
 /// non-zero weight, so the fraction of the sample that survives estimates the
-/// fraction of `key_count` the cursor will yield.
+/// fraction of `key_count` the cursor will yield. The draws are apportioned
+/// across the input's batches so that they sum to exactly
+/// [`KEY_COUNT_SAMPLE_SIZE`], which is what makes it the right denominator.
 fn sampled_key_count<B>(input: &B, key_count: usize) -> usize
 where
     B: BatchReader,
@@ -1494,10 +1496,17 @@ where
 
 /// Estimates the key counts used to choose which side the joint cursor drives.
 ///
-/// [`BatchReader::key_count`] reports the sum of key counts across all batches.
-/// The same key that occurs in multiple batches is counted multiple times even
-/// if its weight adds up to 0. Sampling is used to estimate the number of distinct
-/// keys with non-zero weights without actually enumerating them.
+/// [`BatchReader::key_count`] reports the sum of key counts across all batches,
+/// which overstates what a cursor yields in two ways: a key held by several
+/// batches is counted once per batch, and keys whose weights add up to zero are
+/// counted even though the cursor skips them.
+///
+/// Sampling corrects the second of those. It does not correct the first: a
+/// duplicated key collapses only when two draws happen to land on it, which
+/// needs a sample near the square root of the distinct key count rather than
+/// [`KEY_COUNT_SAMPLE_SIZE`]. Such a key is still counted once per batch that
+/// holds it, so the estimate remains an upper bound on what the cursor will
+/// yield, overstated by at most the number of batches.
 ///
 /// Sampling is skipped when the smaller input is below [`MIN_KEYS_TO_SAMPLE`]:
 /// at that size neither side is expensive to drive.
@@ -1644,14 +1653,6 @@ where
             let delta = self.delta.borrow_mut().take().expect("no input delta provided before flush");
             let trace = trace.unwrap();
 
-            // Key counts decide which side the joint cursor drives. Driving a
-            // side costs a full pass over it, so getting this wrong can be expensive.
-            let (delta_key_count, trace_key_count) = if self.saturate {
-                (0, usize::MAX)
-            } else {
-                estimate_input_key_counts(&delta, &trace)
-            };
-
             self.empty_input.set(delta.is_empty());
             self.empty_output.set(true);
             self.stats.borrow_mut().lhs_tuples += delta.len();
@@ -1661,6 +1662,21 @@ where
                 trace.fetch(&delta).await
             } else {
                 None
+            };
+
+            // Which side the joint cursor drives. Driving a side costs a full
+            // pass over it, so getting this wrong can be expensive. Estimating
+            // the key counts is not free either: it samples both inputs, which
+            // seeks into a spilled trace. `fetch` has already narrowed the trace
+            // to the delta's keys, and a saturating join synthesizes values for
+            // trace keys the delta does not hold, so both force the delta to
+            // drive and neither needs the estimate.
+            let swap = if fetched.is_some() || self.saturate {
+                false
+            } else {
+                let (delta_key_count, trace_key_count) =
+                    estimate_input_key_counts(&delta, &trace);
+                delta_key_count > trace_key_count
             };
 
             let delta_cursor = delta.cursor();
@@ -1680,8 +1696,7 @@ where
 
             let mut val = self.right_factories.val_factory().default_box();
 
-            let mut joint_cursor =
-                JointKeyCursor::new(delta_cursor, trace_cursor, fetched.is_none() && (delta_key_count > trace_key_count));
+            let mut joint_cursor = JointKeyCursor::new(delta_cursor, trace_cursor, swap);
 
             let batch = if size_of::<T::Time>() != 0 {
                 let time = self.clock.time();
@@ -1892,10 +1907,13 @@ mod key_count_estimate_test {
         keys.map(|k| (k, k, weight)).collect()
     }
 
-    /// The estimate is a sample, so it is checked against a band rather than an
-    /// exact value.
+    /// Asserts a sampled estimate against a band. Cases whose draw count and
+    /// survival are both fixed are deterministic; assert those with `assert_eq!`
+    /// rather than a zero-width band.
     #[track_caller]
     fn assert_within(actual: usize, expected: usize, tolerance_percent: usize) {
+        assert!(tolerance_percent > 0, "use assert_eq! for exact cases");
+
         let tolerance = expected * tolerance_percent / 100;
         assert!(
             actual.abs_diff(expected) <= tolerance,
@@ -1945,16 +1963,65 @@ mod key_count_estimate_test {
         assert_within(mean, (N / 2) as usize, 10);
     }
 
-    /// A trace whose records are spread thinly over many keys keeps its count:
-    /// the estimate must not shrink an input that has nothing to cancel.
+    /// The estimate must not depend on how the spine happens to be split into
+    /// batches. Flooring each batch's share of the sample independently used to
+    /// make it collapse as the batch count grew (40 batches read 16,000 of
+    /// 20,000 keys, 200 batches read none at all), and the trace is normally the
+    /// side with more batches, so the bias drove the join onto it.
+    #[test]
+    fn many_batches_do_not_shrink_the_estimate() {
+        let trace = snapshot(vec![rows(0..N, 1)]);
+
+        for batch_count in [1u64, 10, 40, 200] {
+            let per_batch = N / batch_count;
+            let delta = snapshot(
+                (0..batch_count)
+                    .map(|batch| rows(batch * per_batch..(batch + 1) * per_batch, 1))
+                    .collect(),
+            );
+
+            assert_eq!(delta.key_count(), N as usize);
+
+            let (delta_keys, _) = estimate_input_key_counts(&delta, &trace);
+            assert_eq!(delta_keys, N as usize, "batch_count={batch_count}");
+        }
+    }
+
+    /// Sampling corrects for cancellation, not for duplication. A key held by
+    /// several batches with a non-zero net weight is collapsed only when two
+    /// draws land on it, which a 100-key sample almost never does, so it still
+    /// counts once per batch.
+    ///
+    /// This pins the limitation rather than the behavior we would want. Replace
+    /// it if the estimator ever learns to count distinct keys.
+    #[test]
+    fn duplication_across_batches_is_not_corrected() {
+        let trace = snapshot(vec![rows(0..N, 1)]);
+
+        for batch_count in [2usize, 20, 200] {
+            // Every batch holds the same live keys, so the cursor yields N / 2.
+            let delta = snapshot(vec![rows(0..N / 2, 1); batch_count]);
+
+            let key_count = delta.key_count();
+            assert_eq!(key_count, batch_count * (N / 2) as usize);
+
+            let (delta_keys, _) = estimate_input_key_counts(&delta, &trace);
+            assert_within(delta_keys, key_count, 5);
+        }
+    }
+
+    /// The estimate must not shrink an input that has nothing to cancel.
+    ///
+    /// One batch of distinct live keys draws the whole sample and every draw
+    /// survives, so both counts come back exactly.
     #[test]
     fn insert_only_input_keeps_its_count() {
         let delta = snapshot(vec![rows(0..N, 1)]);
         let trace = snapshot(vec![rows(0..N, 1)]);
 
         let (delta_keys, trace_keys) = estimate_input_key_counts(&delta, &trace);
-        assert_within(delta_keys, N as usize, 0);
-        assert_within(trace_keys, N as usize, 0);
+        assert_eq!(delta_keys, N as usize);
+        assert_eq!(trace_keys, N as usize);
     }
 }
 
