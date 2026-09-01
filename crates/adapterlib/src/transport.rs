@@ -1236,3 +1236,55 @@ impl<M, D> InputCommandReceiver<M, D> {
         self.buffer = Some(value);
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use tokio::sync::mpsc::unbounded_channel;
+
+    /// A fault-tolerant reader must not abandon an acknowledged replay step
+    /// just because a control command arrives while the replay is in progress
+    /// (see the `InputReaderCommand::Replay` docs: "The input reader doesn't
+    /// have to process other commands while it does the replay."). The command
+    /// receiver's single-slot buffer is what lets a reader park a control
+    /// command and keep retrying the in-flight replay until it completes.
+    ///
+    /// This test drives the exact command interleaving the NATS input hit:
+    /// a Replay, then a Pause arriving mid-replay. The Pause must stay
+    /// buffered behind the replay (try_recv/put_back), never interrupt it, and
+    /// only surface after the replay completes.
+    #[test]
+    fn control_command_does_not_interrupt_inflight_replay() {
+        let (sender, receiver) = unbounded_channel();
+        let mut commands = InputCommandReceiver::<serde_json::Value, rmpv::Value>::new(receiver);
+
+        // A replay step, then a control command arriving while it is in flight.
+        sender
+            .send(InputReaderCommand::Replay {
+                metadata: serde_json::json!({}),
+                data: rmpv::Value::Nil,
+            })
+            .unwrap();
+        sender.send(InputReaderCommand::Pause).unwrap();
+
+        // The reader is mid-replay and polls for a *control* command without
+        // consuming the replay. It must see the Replay first (FIFO), buffer it
+        // back, and not yet observe the Pause.
+        let first = commands.try_recv().unwrap().expect("a command is queued");
+        assert!(matches!(first, InputReaderCommand::Replay { .. }));
+        commands.put_back(first);
+
+        // Polling again returns the buffered Replay, not the Pause — the
+        // control command stays behind the in-flight replay.
+        let again = commands.try_recv().unwrap().expect("buffered command");
+        assert!(matches!(again, InputReaderCommand::Replay { .. }));
+        commands.put_back(again);
+
+        // Once the replay completes, the buffered command is drained and the
+        // Pause is finally delivered.
+        let replay = commands.try_recv().unwrap().unwrap();
+        assert!(matches!(replay, InputReaderCommand::Replay { .. }));
+        let pause = commands.try_recv().unwrap().unwrap();
+        assert!(matches!(pause, InputReaderCommand::Pause));
+    }
+}
