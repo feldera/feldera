@@ -13,11 +13,11 @@ use dbsp::utils::Tup2;
 use feldera_adapterlib::transport::OutputBatchType;
 use feldera_sqllib::Variant;
 use feldera_types::deserialize_table_record;
-use feldera_types::format::json::JsonFlavor;
 use feldera_types::format::parquet::ParquetEncoderConfig;
 use feldera_types::program_schema::{ColumnType, Field, Relation};
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use parquet::arrow::ArrowWriter;
+use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
 use parquet::file::serialized_reader::SerializedFileReader;
@@ -35,25 +35,32 @@ use crate::{
     test::{DEFAULT_TIMEOUT_MS, MockOutputConsumer, TestStruct2, mock_input_pipeline, wait},
 };
 
-/// Parse Parquet file into an array of `T`.
+/// Parse a Parquet file into an array of `T`, reading it as Arrow.
+///
+/// `config` must match the one the writer used. Reading through Arrow rather
+/// than through the row reader's JSON projection matters for any column whose
+/// value is binary: the JSON projection base64-encodes it, which a VARIANT
+/// column stored as a Parquet variant cannot survive.
 pub fn load_parquet_file<T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>>(
     path: &Path,
+    config: &SqlSerdeConfig,
 ) -> Vec<T> {
-    let file = File::open(path).unwrap();
+    let file = File::open(path).unwrap_or_else(|e| panic!("error opening {path:?}: {e}"));
+    let reader = ParquetRecordBatchReaderBuilder::try_new(file)
+        .unwrap_or_else(|e| panic!("error reading parquet file {path:?}: {e}"))
+        .build()
+        .unwrap();
 
-    SerializedFileReader::new(file)
-        .unwrap_or_else(|_| panic!("error opening parquet file {path:?}"))
-        .into_iter()
-        .map(|row| {
-            let row = row.unwrap();
-
-            let row = row.to_json_value();
-            // println!("row: {row}");
-
-            T::deserialize_with_context(row, &SqlSerdeConfig::from(JsonFlavor::ParquetConverter))
-                .unwrap()
-        })
-        .collect::<Vec<_>>()
+    let mut records = Vec::new();
+    for batch in reader {
+        let batch = batch.unwrap();
+        let deserializer = serde_arrow::Deserializer::from_record_batch(&batch).unwrap();
+        records.extend(
+            Vec::<T>::deserialize_with_context(deserializer, config)
+                .unwrap_or_else(|e| panic!("error deserializing {path:?}: {e}")),
+        );
+    }
+    records
 }
 
 #[test]

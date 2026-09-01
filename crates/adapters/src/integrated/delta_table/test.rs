@@ -1,7 +1,7 @@
 use crate::Controller;
 use crate::adhoc::execute_sql;
-use crate::format::parquet::relation_to_arrow_fields;
 use crate::format::parquet::test::load_parquet_file;
+use crate::format::parquet::{ArrowSchemaOptions, relation_to_arrow_fields};
 use crate::integrated::delta_table::delta_input_serde_config;
 use crate::test::data::DeltaTestKey;
 use crate::test::{
@@ -27,7 +27,7 @@ use feldera_sqllib::Variant;
 use feldera_types::config::PipelineConfig;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
-use feldera_types::serde_with_context::serde_config::DecimalFormat;
+use feldera_types::serde_with_context::serde_config::{DecimalFormat, VariantFormat};
 use feldera_types::serde_with_context::serialize::SerializeWithContextWrapper;
 use feldera_types::serde_with_context::{
     DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimestampFormat,
@@ -61,13 +61,16 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
-fn delta_output_serde_config() -> SqlSerdeConfig {
+/// Serde config for the tables the tests write by hand, matching what the
+/// output connector writes by default so the two are interchangeable.
+fn delta_test_write_serde_config() -> SqlSerdeConfig {
     SqlSerdeConfig::default()
         .with_date_format(DateFormat::String("%Y-%m-%d"))
         .with_decimal_format(DecimalFormat::String)
         // DeltaLake only supports microsecond-based timestamp encoding, so we just
         // hardwire that for now.  See also `format/parquet.rs`.
         .with_timestamp_format(TimestampFormat::MicrosSinceEpoch)
+        .with_variant_format(VariantFormat::ParquetVariant)
 }
 
 /// Read a snapshot of a delta table with records of type `T` to a temporary JSON file.
@@ -105,6 +108,13 @@ where
     info!("Read delta snapshot in {:?}", start.elapsed());
 
     json_file
+}
+
+/// Arrow schema options matching what the Delta output connector writes by
+/// default, so a table the tests create by hand lines up with one the connector
+/// would have created.
+fn delta_schema_options() -> ArrowSchemaOptions {
+    ArrowSchemaOptions::new(true).with_parquet_variant(true)
 }
 
 const DELTA_TEST_INPUT_ENDPOINT: &str = "test_input1";
@@ -320,7 +330,7 @@ async fn run_catchup_lag_experiment(
     } = opts;
 
     let relation_schema = DeltaTestStruct::schema();
-    let arrow_fields = relation_to_arrow_fields(&relation_schema, true);
+    let arrow_fields = relation_to_arrow_fields(&relation_schema, delta_schema_options());
     let arrow_schema = ArrowSchema::new(arrow_fields);
 
     let input_table_dir = TempDir::new().unwrap();
@@ -761,7 +771,7 @@ where
     // Convert data to RecordBatch
     let batch = serde_arrow::to_record_batch(
         arrow_schema.fields(),
-        &SerializeWithContextWrapper::new(&data.to_vec(), &delta_output_serde_config()),
+        &SerializeWithContextWrapper::new(&data.to_vec(), &delta_test_write_serde_config()),
     )
     .unwrap();
 
@@ -1136,7 +1146,8 @@ fn read_delta_snapshot(table_uri: &str) -> Vec<DeltaTestStruct> {
     let base = Path::new(table_uri);
     let mut records = Vec::new();
     for uri in table.get_file_uris().unwrap() {
-        let mut batch: Vec<DeltaTestStruct> = load_parquet_file(&base.join(&*uri));
+        let mut batch: Vec<DeltaTestStruct> =
+            load_parquet_file(&base.join(&*uri), &delta_input_serde_config());
         records.append(&mut batch);
     }
     records
@@ -1469,7 +1480,8 @@ fn delta_table_output_test(
                 .to_string()
                 .ends_with(".checkpoint.parquet")
             {
-                let mut records: Vec<DeltaTestStruct> = load_parquet_file(&parquet_file);
+                let mut records: Vec<DeltaTestStruct> =
+                    load_parquet_file(&parquet_file, &delta_input_serde_config());
                 output_records.append(&mut records);
             }
         }
@@ -1607,7 +1619,7 @@ async fn test_follow(
     let datafusion = SessionContext::new();
 
     // Create arrow schema
-    let arrow_fields = relation_to_arrow_fields(schema, true);
+    let arrow_fields = relation_to_arrow_fields(schema, delta_schema_options());
     info!("arrow_fields: {arrow_fields:?}");
 
     let arrow_schema = Arc::new(ArrowSchema::new(arrow_fields));
@@ -4453,24 +4465,24 @@ impl VariantTestStruct {
     }
 }
 
-/// Create the VARIANT test table. `cdc` adds the operation and timestamp
-/// columns the `cdc` mode reads.
-async fn create_variant_test_table(table_uri: &str, cdc: bool) -> DeltaTable {
-    let mut fields = vec![
-        StructField::new("id", DataType::LONG, false),
-        StructField::new("v", DataType::unshredded_variant(), true),
-        StructField::new("json_v", DataType::STRING, true),
-    ];
-    if cdc {
-        fields.push(StructField::new("__feldera_op", DataType::STRING, false));
-        fields.push(StructField::new("__feldera_ts", DataType::LONG, false));
-    }
-    create_table(table_uri, &HashMap::new(), &fields).await
+/// Create the VARIANT test table: one Delta `variant` column and one Delta
+/// `string` column holding JSON, both declared `VARIANT` in SQL.
+async fn create_variant_test_table(table_uri: &str) -> DeltaTable {
+    create_table(
+        table_uri,
+        &HashMap::new(),
+        &[
+            StructField::new("id", DataType::LONG, false),
+            StructField::new("v", DataType::unshredded_variant(), true),
+            StructField::new("json_v", DataType::STRING, true),
+        ],
+    )
+    .await
 }
 
 /// Append the two test rows: one carrying a variant of every type the mapping
 /// covers, one whose VARIANT columns are SQL NULL.
-async fn write_variant_test_rows(table: DeltaTable, cdc: bool) -> DeltaTable {
+async fn write_variant_test_rows(table: DeltaTable) -> DeltaTable {
     use arrow::array::{ArrayRef, Int64Array, RecordBatch, StringArray};
     use arrow::datatypes::DataType as ArrowDataType;
     use chrono::NaiveDate;
@@ -4521,16 +4533,11 @@ async fn write_variant_test_rows(table: DeltaTable, cdc: bool) -> DeltaTable {
     let variant_column =
         arrow::compute::cast(&ArrayRef::from(builder.build()), variant_type).unwrap();
 
-    let mut columns: Vec<ArrayRef> = vec![
+    let columns: Vec<ArrayRef> = vec![
         Arc::new(Int64Array::from(vec![1i64, 2])),
         variant_column,
         Arc::new(StringArray::from(vec![Some(r#"{"legacy": true}"#), None])),
     ];
-    if cdc {
-        columns.push(Arc::new(StringArray::from(vec!["i", "i"])));
-        columns.push(Arc::new(Int64Array::from(vec![1i64, 2])));
-    }
-
     assert_eq!(
         arrow_schema.fields().len(),
         columns.len(),
@@ -4588,23 +4595,21 @@ fn expected_variant_records() -> Vec<Value> {
     ]
 }
 
-/// Wait until the pipeline has written `count` records, then return them.
-fn wait_for_variant_records(path: &Path, count: usize) -> Vec<Value> {
-    wait(|| variant_output_records(path).len() >= count, 60_000)
-        .unwrap_or_else(|_| panic!("timeout waiting for {count} records from the VARIANT table"));
-    variant_output_records(path)
-}
-
-/// `snapshot` mode reads a Delta `variant` column, and a `VARIANT` column
-/// stored as a JSON string keeps working alongside it.
+/// A Delta `variant` column written by something other than Feldera.
+///
+/// The `DeltaTestStruct` round trips cover Feldera writing and reading its own
+/// variants. This covers what they structurally cannot: an encoding produced by
+/// another engine, values of types `DeltaTestStruct`'s generator never emits,
+/// and a JSON-string `VARIANT` column beside a binary one, which is the
+/// per-column choice the reader makes from the data.
 #[tokio::test]
-async fn delta_table_variant_snapshot_test() {
+async fn delta_table_foreign_variant_test() {
     init_logging();
 
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
-    let table = create_variant_test_table(&table_uri, false).await;
-    write_variant_test_rows(table, false).await;
+    let table = create_variant_test_table(&table_uri).await;
+    write_variant_test_rows(table).await;
 
     let output_file = NamedTempFile::new().unwrap();
     let pipeline = delta_table_input_pipeline::<VariantTestStruct>(
@@ -4623,63 +4628,73 @@ async fn delta_table_variant_snapshot_test() {
     );
 }
 
-/// `follow` mode picks up a Delta `variant` column from a new commit.
-#[tokio::test]
-async fn delta_table_variant_follow_test() {
-    init_logging();
+/// Whether the table's protocol advertises the `variantType` writer feature,
+/// which a table holding a `variant` column requires.
+fn delta_has_variant_writer_feature(table_uri: &str) -> bool {
+    use dbsp::circuit::tokio::TOKIO;
+    use deltalake::open_table;
 
-    let table_dir = TempDir::new().unwrap();
-    let table_uri = table_dir.path().display().to_string();
-    let table = create_variant_test_table(&table_uri, false).await;
-
-    let output_file = NamedTempFile::new().unwrap();
-    let pipeline = delta_table_input_pipeline::<VariantTestStruct>(
-        &table_uri,
-        &VariantTestStruct::schema(),
-        &HashMap::from([("mode".to_string(), "follow".to_string())]),
-        &output_file.path().display().to_string(),
-    );
-    pipeline.start();
-
-    // Follow starts at the current version, so the rows have to land after it.
-    write_variant_test_rows(table, false).await;
-
-    let records = wait_for_variant_records(output_file.path(), 2);
-    pipeline.stop().unwrap();
-
-    assert_eq!(records, expected_variant_records());
+    let url = url::Url::from_file_path(table_uri).unwrap();
+    let table = TOKIO
+        .block_on(async move { open_table(url).await })
+        .unwrap();
+    table
+        .snapshot()
+        .unwrap()
+        .protocol()
+        .writer_features()
+        .is_some_and(|features| features.iter().any(|f| f.as_ref() == "variantType"))
 }
 
-/// `cdc` mode reads a Delta `variant` column through the change-feed
-/// projection, which drops the operation and timestamp columns.
-#[tokio::test]
-async fn delta_table_variant_cdc_test() {
-    init_logging();
+/// The declared Delta type of `column`, as the table's schema JSON spells it.
+fn delta_column_type(table_uri: &str, column: &str) -> String {
+    use dbsp::circuit::tokio::TOKIO;
+    use deltalake::open_table;
 
-    let table_dir = TempDir::new().unwrap();
-    let table_uri = table_dir.path().display().to_string();
-    let table = create_variant_test_table(&table_uri, true).await;
+    let url = url::Url::from_file_path(table_uri).unwrap();
+    let table = TOKIO
+        .block_on(async move { open_table(url).await })
+        .unwrap();
+    let schema = table.snapshot().unwrap().schema();
+    serde_json::to_value(schema.field(column).unwrap().data_type())
+        .unwrap()
+        .to_string()
+}
 
-    let output_file = NamedTempFile::new().unwrap();
-    let pipeline = delta_table_input_pipeline::<VariantTestStruct>(
-        &table_uri,
-        &VariantTestStruct::schema(),
-        &HashMap::from([
-            ("mode".to_string(), "cdc".to_string()),
-            (
-                "cdc_delete_filter".to_string(),
-                "__feldera_op = 'd'".to_string(),
-            ),
-            ("cdc_order_by".to_string(), "__feldera_ts".to_string()),
-        ]),
-        &output_file.path().display().to_string(),
-    );
-    pipeline.start();
+/// `variant_encoding` picks how the output connector writes a `VARIANT`
+/// column, and the choice must reach the Delta schema: `variant` by default,
+/// `string` under the override.
+///
+/// The values must survive either way. The default is what the rest of the
+/// suite exercises; `json_string` is the encoding Feldera wrote before it
+/// supported the Delta `variant` type, and nothing else covers it now.
+#[test]
+fn delta_table_output_variant_encoding_test() {
+    let data: Vec<DeltaTestStruct> = (0..10).map(|i| delta_test_record(i * 2)).collect();
 
-    write_variant_test_rows(table, true).await;
+    for (encoding, delta_type) in [(None, r#""variant""#), (Some("json_string"), r#""string""#)] {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
 
-    let records = wait_for_variant_records(output_file.path(), 2);
-    pipeline.stop().unwrap();
+        let mut config = HashMap::new();
+        if let Some(encoding) = encoding {
+            config.insert("variant_encoding".to_string(), encoding.to_string());
+        }
 
-    assert_eq!(records, expected_variant_records());
+        delta_table_output_test(data.clone(), &table_uri, &config, true, None, false);
+
+        assert_eq!(
+            delta_column_type(&table_uri, "variant"),
+            delta_type,
+            "unexpected Delta type for encoding {encoding:?}"
+        );
+
+        // A `variant` column is only legible to other engines if the table
+        // says so in its protocol.
+        assert_eq!(
+            delta_has_variant_writer_feature(&table_uri),
+            encoding.is_none(),
+            "unexpected variantType writer feature for encoding {encoding:?}"
+        );
+    }
 }

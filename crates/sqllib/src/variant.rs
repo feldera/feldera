@@ -254,7 +254,9 @@ impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for Variant {
     {
         match context.variant_format {
             VariantFormat::Json => Variant::deserialize(deserializer),
-            VariantFormat::JsonString => crate::variant_binary::deserialize_variant(deserializer),
+            VariantFormat::JsonString | VariantFormat::ParquetVariant => {
+                crate::variant_binary::deserialize_variant(deserializer)
+            }
         }
     }
 }
@@ -345,6 +347,9 @@ impl SerializeWithContext<SqlSerdeConfig> for Variant {
                     S::Error::custom(format!("error serializing VARIANT to JSON string: {e}"))
                 })?)
             }
+            VariantFormat::ParquetVariant => {
+                crate::variant_binary::serialize_variant(self, serializer)
+            }
             VariantFormat::Json => match self {
                 Variant::SqlNull | Variant::VariantNull => serializer.serialize_none(),
                 Variant::Boolean(v) => v.serialize_with_context(serializer, context),
@@ -380,7 +385,7 @@ impl SerializeWithContext<SqlSerdeConfig> for Variant {
 
 impl Variant {
     /// Get the runtime type of a Variant value
-    fn get_type_string(&self) -> &'static str {
+    pub(crate) fn get_type_string(&self) -> &'static str {
         match self {
             Variant::SqlNull => "NULL",
             Variant::VariantNull => "VARIANT",

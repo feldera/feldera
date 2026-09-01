@@ -53,6 +53,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::sync::{Arc, OnceLock};
 
+use casts::type_string;
 use dbsp::algebra::{F32, F64};
 use feldera_fxp::DynamicDecimal;
 use feldera_macros::IsNone;
@@ -66,6 +67,7 @@ use serde::de::{DeserializeSeed, MapAccess, SeqAccess, Visitor};
 use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use size_of::SizeOf;
+use std::borrow::Cow;
 
 use crate::variant::Variant;
 use crate::{
@@ -854,6 +856,165 @@ fn encode_parquet_variant(
     })
 }
 
+/// Append the encoded value at `bytes` to a builder that takes an unnamed
+/// value: the top-level builder or a list.
+fn append_flat_variant<B: parquet_variant::VariantBuilderExt>(
+    builder: &mut B,
+    bytes: &[u8],
+) -> Result<(), String> {
+    match bytes[0] {
+        TAG_ARRAY => {
+            let container = Container::new(bytes);
+            let mut list = builder
+                .try_new_list()
+                .map_err(|e| format!("cannot start a variant list: {e}"))?;
+            for i in 0..container.count {
+                append_flat_variant(&mut list, &bytes[container.element(i)])?;
+            }
+            list.finish();
+        }
+        TAG_MAP => {
+            let container = Container::new(bytes);
+            let mut object = builder
+                .try_new_object()
+                .map_err(|e| format!("cannot start a variant object: {e}"))?;
+            for i in 0..container.count {
+                insert_flat_variant(
+                    &mut object,
+                    &bytes[container.element(i)],
+                    &bytes[container.map_value(i)],
+                )?;
+            }
+            object.finish();
+        }
+        _ => builder.append_value(flat_scalar_to_parquet(bytes)?),
+    }
+    Ok(())
+}
+
+/// Insert one field into a variant object. Objects need the key alongside the
+/// value, so they cannot share [`append_flat_variant`]'s builder trait.
+fn insert_flat_variant<S: parquet_variant::BuilderSpecificState>(
+    object: &mut parquet_variant::ObjectBuilder<'_, S>,
+    key: &[u8],
+    value: &[u8],
+) -> Result<(), String> {
+    let key = flat_variant_object_key(key)?;
+    let key = key.as_ref();
+
+    match value[0] {
+        TAG_ARRAY => {
+            let container = Container::new(value);
+            let mut list = object
+                .try_new_list(key)
+                .map_err(|e| format!("cannot start a variant list: {e}"))?;
+            for i in 0..container.count {
+                append_flat_variant(&mut list, &value[container.element(i)])?;
+            }
+            list.finish();
+        }
+        TAG_MAP => {
+            let container = Container::new(value);
+            let mut nested = object
+                .try_new_object(key)
+                .map_err(|e| format!("cannot start a variant object: {e}"))?;
+            for i in 0..container.count {
+                insert_flat_variant(
+                    &mut nested,
+                    &value[container.element(i)],
+                    &value[container.map_value(i)],
+                )?;
+            }
+            nested.finish();
+        }
+        _ => object.insert(key, flat_scalar_to_parquet(value)?),
+    }
+    Ok(())
+}
+
+/// Render an encoded map key as a Parquet variant object field name; see
+/// `variant_binary::variant_object_key`.
+fn flat_variant_object_key(key: &[u8]) -> Result<Cow<'_, str>, String> {
+    let p = &key[1..];
+    Ok(match key[0] {
+        TAG_STRING => Cow::Borrowed(std::str::from_utf8(p).expect("encoded string must be UTF-8")),
+        TAG_TINYINT => Cow::Owned((p[0] as i8).to_string()),
+        TAG_SMALLINT => Cow::Owned(i16::from_le_bytes(payload_array(p)).to_string()),
+        TAG_INT => Cow::Owned(i32::from_le_bytes(payload_array(p)).to_string()),
+        TAG_BIGINT => Cow::Owned(i64::from_le_bytes(payload_array(p)).to_string()),
+        TAG_UTINYINT => Cow::Owned(p[0].to_string()),
+        TAG_USMALLINT => Cow::Owned(u16::from_le_bytes(payload_array(p)).to_string()),
+        TAG_UINT => Cow::Owned(u32::from_le_bytes(payload_array(p)).to_string()),
+        TAG_UBIGINT => Cow::Owned(u64::from_le_bytes(payload_array(p)).to_string()),
+        _ => {
+            return Err(crate::variant_binary::unencodable_variant_key(type_string(
+                key,
+            )));
+        }
+    })
+}
+
+/// Map one encoded scalar onto the Parquet variant type that holds it; the
+/// tag-driven twin of `variant_binary::to_parquet_scalar`.
+fn flat_scalar_to_parquet(bytes: &[u8]) -> Result<parquet_variant::Variant<'_, '_>, String> {
+    use crate::variant_binary::{parquet_decimal, parquet_u64, unencodable_variant};
+    use parquet_variant::Variant as PqVariant;
+
+    let p = &bytes[1..];
+    Ok(match bytes[0] {
+        // The encoding draws no distinction between the two nulls.
+        TAG_SQL_NULL | TAG_VARIANT_NULL => PqVariant::Null,
+        TAG_BOOLEAN => {
+            if p[0] != 0 {
+                PqVariant::BooleanTrue
+            } else {
+                PqVariant::BooleanFalse
+            }
+        }
+        TAG_TINYINT => PqVariant::Int8(p[0] as i8),
+        TAG_SMALLINT => PqVariant::Int16(i16::from_le_bytes(payload_array(p))),
+        TAG_INT => PqVariant::Int32(i32::from_le_bytes(payload_array(p))),
+        TAG_BIGINT => PqVariant::Int64(i64::from_le_bytes(payload_array(p))),
+        // The encoding has no unsigned types; each widens to the smallest
+        // signed type that holds it.
+        TAG_UTINYINT => PqVariant::Int16(p[0] as i16),
+        TAG_USMALLINT => PqVariant::Int32(u16::from_le_bytes(payload_array(p)) as i32),
+        TAG_UINT => PqVariant::Int64(u32::from_le_bytes(payload_array(p)) as i64),
+        TAG_UBIGINT => parquet_u64(u64::from_le_bytes(payload_array(p)))?,
+        TAG_REAL => PqVariant::Float(f32::from_le_bytes(payload_array(p))),
+        TAG_DOUBLE => PqVariant::Double(f64::from_le_bytes(payload_array(p))),
+        TAG_DECIMAL => parquet_decimal(i128::from_le_bytes(payload_array(&p[..16])), p[16])?,
+        TAG_STRING => {
+            PqVariant::String(std::str::from_utf8(p).expect("encoded string must be UTF-8"))
+        }
+        TAG_BINARY => PqVariant::Binary(p),
+        TAG_UUID => PqVariant::Uuid(uuid::Uuid::from_bytes(payload_array(p))),
+        TAG_DATE => {
+            PqVariant::Date(Date::from_days(i32::from_le_bytes(payload_array(p))).to_date())
+        }
+        TAG_TIME => {
+            PqVariant::Time(Time::from_nanoseconds(u64::from_le_bytes(payload_array(p))).to_time())
+        }
+        TAG_TIMESTAMP => PqVariant::TimestampNtzMicros(
+            Timestamp::from_microseconds(i64::from_le_bytes(payload_array(p)))
+                .to_dateTime()
+                .naive_utc(),
+        ),
+        TAG_TIMESTAMP_TZ => PqVariant::TimestampMicros(
+            TimestampTz::from_microseconds(i64::from_le_bytes(payload_array(p))).to_dateTime(),
+        ),
+        _ => return Err(unencodable_variant(type_string(bytes))),
+    })
+}
+
+/// Encode a `FlatVariant` into the Parquet variant binary encoding, walking
+/// the flat buffer with no intermediate enum tree.
+pub(crate) fn flat_variant_to_parquet(value: &FlatVariant) -> Result<(Vec<u8>, Vec<u8>), String> {
+    let mut builder = parquet_variant::VariantBuilder::new();
+    append_flat_variant(&mut builder, value.as_bytes())?;
+    Ok(builder.finish())
+}
+
 /// Decode the Parquet variant binary encoding straight into a `FlatVariant`,
 /// with no intermediate enum tree.
 pub(crate) fn flat_variant_from_parquet(
@@ -1427,7 +1588,9 @@ impl<'de, AUX> DeserializeWithContext<'de, SqlSerdeConfig, AUX> for FlatVariant 
     {
         match context.variant_format {
             VariantFormat::Json => FlatVariant::deserialize(deserializer),
-            VariantFormat::JsonString => crate::variant_binary::deserialize_variant(deserializer),
+            VariantFormat::JsonString | VariantFormat::ParquetVariant => {
+                crate::variant_binary::deserialize_variant(deserializer)
+            }
         }
     }
 }
@@ -1559,6 +1722,9 @@ impl SerializeWithContext<SqlSerdeConfig> for FlatVariant {
                         "error serializing VARIANT to JSON string: {e}"
                     ))
                 })?)
+            }
+            VariantFormat::ParquetVariant => {
+                crate::variant_binary::serialize_flat_variant(self, serializer)
             }
             VariantFormat::Json => Enc {
                 bytes: self.as_bytes(),

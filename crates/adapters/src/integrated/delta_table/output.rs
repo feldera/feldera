@@ -1,7 +1,7 @@
 use crate::catalog::{CursorWithPolarity, SerBatchReader, SplitCursorBuilder};
 use crate::controller::{ControllerInner, EndpointId};
 use crate::format::MAX_DUPLICATES;
-use crate::format::parquet::relation_to_arrow_fields;
+use crate::format::parquet::{ArrowSchemaOptions, relation_to_arrow_fields};
 use crate::integrated::delta_table::register_storage_handlers;
 use crate::transport::Step;
 use crate::util::{IndexedOperationType, indexed_operation_type};
@@ -24,11 +24,13 @@ use deltalake::operations::write::writer::{DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
 use feldera_adapterlib::catalog::SerCursorFlattened;
 use feldera_adapterlib::transport::OutputBatchType;
+use feldera_types::program_schema::SqlType;
 use feldera_types::serde_with_context::serde_config::{
     BinaryFormat, DecimalFormat, UuidFormat, VariantFormat,
 };
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 use feldera_types::transport::delta_table::DeltaTableWriteMode;
+use feldera_types::transport::delta_table::DeltaVariantEncoding;
 use feldera_types::{
     adapter_stats::ConnectorHealth, program_schema::Relation,
     transport::delta_table::DeltaTableWriterConfig,
@@ -37,21 +39,25 @@ use serde::Serialize;
 use serde_arrow::ArrayBuilder;
 use serde_arrow::schema::SerdeArrowSchema;
 use std::cmp::min;
+use std::collections::HashSet;
 use std::num::NonZeroU64;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use tokio::time::{Duration, sleep};
 use tracing::{Instrument, info, info_span, warn};
 
-/// Arrow serde config for reading/writing Delta tables.
-pub const fn delta_arrow_serde_config() -> &'static SqlSerdeConfig {
-    &SqlSerdeConfig {
+/// Arrow serde config for writing Delta tables.
+pub fn delta_output_serde_config(variant_encoding: DeltaVariantEncoding) -> SqlSerdeConfig {
+    SqlSerdeConfig {
         timestamp_format: TimestampFormat::MicrosSinceEpoch,
         timestamp_tz_format: TimestampFormat::MicrosSinceEpoch,
         time_format: TimeFormat::NanosSigned,
         date_format: DateFormat::String("%Y-%m-%d"),
         decimal_format: DecimalFormat::String,
-        variant_format: VariantFormat::JsonString,
+        variant_format: match variant_encoding {
+            DeltaVariantEncoding::Variant => VariantFormat::ParquetVariant,
+            DeltaVariantEncoding::JsonString => VariantFormat::JsonString,
+        },
         binary_format: BinaryFormat::Array,
         uuid_format: UuidFormat::String,
     }
@@ -131,7 +137,11 @@ impl DeltaTableWriter {
         register_storage_handlers();
 
         // Create arrow schema
-        let mut arrow_fields = relation_to_arrow_fields(&value_schema.fields, true);
+        let parquet_variant = config.variant_encoding == DeltaVariantEncoding::Variant;
+        let mut arrow_fields = relation_to_arrow_fields(
+            &value_schema.fields,
+            ArrowSchemaOptions::new(true).with_parquet_variant(parquet_variant),
+        );
         arrow_fields.push(ArrowField::new("__feldera_op", ArrowDataType::Utf8, true));
         arrow_fields.push(ArrowField::new("__feldera_ts", ArrowDataType::Int64, true));
 
@@ -147,14 +157,31 @@ impl DeltaTableWriter {
 
         let mut struct_fields: Vec<_> = vec![];
 
+        // A Parquet variant is `struct<metadata, value>` in Arrow, which does
+        // not say "variant"; the Delta type has to come from the SQL schema.
+        let variant_columns: HashSet<String> = if parquet_variant {
+            value_schema
+                .fields
+                .iter()
+                .filter(|f| f.columntype.typ == SqlType::Variant)
+                .map(|f| f.name.name())
+                .collect()
+        } else {
+            HashSet::new()
+        };
+
         for f in arrow_schema.fields.iter() {
-            let data_type = DataType::try_from_arrow(f.data_type()).map_err(|e| {
-                ControllerError::output_transport_error(
-                    endpoint_name,
-                    true,
-                    anyhow!("error converting arrow field '{f}' to a Delta Lake field: {e}"),
-                )
-            })?;
+            let data_type = if variant_columns.contains(f.name()) {
+                DataType::unshredded_variant()
+            } else {
+                DataType::try_from_arrow(f.data_type()).map_err(|e| {
+                    ControllerError::output_transport_error(
+                        endpoint_name,
+                        true,
+                        anyhow!("error converting arrow field '{f}' to a Delta Lake field: {e}"),
+                    )
+                })?
+            };
             struct_fields.push(StructField::new(f.name(), data_type, f.is_nullable()));
         }
 
@@ -936,7 +963,9 @@ impl Encoder for DeltaTableWriter {
                 batch.clone(),
                 &*bounds,
                 i,
-                RecordFormat::Parquet(delta_arrow_serde_config().clone()),
+                RecordFormat::Parquet(delta_output_serde_config(
+                    self.inner.config.variant_encoding,
+                )),
             ) else {
                 continue;
             };
@@ -1080,6 +1109,7 @@ mod parallel {
     use crate::controller::EndpointId;
     use crate::format::Encoder;
     use crate::format::parquet::test::load_parquet_file;
+    use crate::integrated::delta_table::delta_input_serde_config;
     use crate::static_compile::seroutput::SerBatchImpl;
     use crate::test::data::{DeltaTestKey, DeltaTestStruct, TestStruct};
     use crate::test::list_files_recursive;
@@ -1210,6 +1240,7 @@ mod parallel {
             EndpointId::default(),
             "test_endpoint",
             &DeltaTableWriterConfig {
+                variant_encoding: Default::default(),
                 uri: table_uri.to_string(),
                 mode,
                 max_retries: Some(0),
@@ -1282,7 +1313,8 @@ mod parallel {
             list_files_recursive(Path::new(table_uri), OsStr::from_bytes(b"parquet")).unwrap();
         let mut records = Vec::new();
         for path in parquet_files {
-            let mut batch: Vec<OutputRecord> = load_parquet_file(&path);
+            let mut batch: Vec<OutputRecord> =
+                load_parquet_file(&path, &delta_input_serde_config());
             records.append(&mut batch);
         }
         records
@@ -1299,7 +1331,8 @@ mod parallel {
         let base = Path::new(table_uri);
         let mut records = Vec::new();
         for uri in table.get_file_uris().unwrap() {
-            let mut batch: Vec<OutputRecord> = load_parquet_file(&base.join(&*uri));
+            let mut batch: Vec<OutputRecord> =
+                load_parquet_file(&base.join(&*uri), &delta_input_serde_config());
             records.append(&mut batch);
         }
         records
@@ -1563,6 +1596,7 @@ mod parallel {
             EndpointId::default(),
             "test_endpoint",
             &DeltaTableWriterConfig {
+                variant_encoding: Default::default(),
                 uri: table_uri,
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(0),
@@ -1705,6 +1739,7 @@ mod parallel {
             EndpointId::default(),
             "test_endpoint",
             &DeltaTableWriterConfig {
+                variant_encoding: Default::default(),
                 uri: table_uri.clone(),
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(1),
@@ -1768,6 +1803,7 @@ mod parallel {
             EndpointId::default(),
             "test_endpoint",
             &DeltaTableWriterConfig {
+                variant_encoding: Default::default(),
                 uri: table_uri.clone(),
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(0),
@@ -1804,6 +1840,7 @@ mod parallel {
     #[test]
     fn test_threads_zero_rejected() {
         let config = DeltaTableWriterConfig {
+            variant_encoding: Default::default(),
             uri: "/tmp/test".to_string(),
             mode: DeltaTableWriteMode::Truncate,
             max_retries: Some(0),
@@ -1964,6 +2001,7 @@ mod parallel {
             EndpointId::default(),
             "test_endpoint",
             &DeltaTableWriterConfig {
+                variant_encoding: Default::default(),
                 uri: table_uri.clone(),
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(1),

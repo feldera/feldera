@@ -453,6 +453,7 @@ It contains the following fields:
         feldera_types::transport::delta_table::DeltaTableIngestMode,
         feldera_types::transport::delta_table::DeltaTableTransactionMode,
         feldera_types::transport::delta_table::DeltaTableWriteMode,
+        feldera_types::transport::delta_table::DeltaVariantEncoding,
         feldera_types::transport::delta_table::DeltaTableReaderConfig,
         feldera_types::transport::delta_table::DeltaTableWriterConfig,
         feldera_types::transport::dynamodb::DynamoDBWriteMode,
