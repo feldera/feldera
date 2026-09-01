@@ -39,10 +39,12 @@
 				"files.watcherExclude": {
 					"**/target/**": true,
 					"**/node_modules/**": true,
+					"**/target-check/**": true,
+					"**/cargo_workspace/**": true,
 					"**/build/**": true,
 					"**/.venv/**": true,
 					"**/.svelte-kit/**": true,
-					"**/dist/**": true,
+					"js-packages/**/dist/**": true,
 					"**/__pycache__/**": true
 				},
 				"files.exclude": {
