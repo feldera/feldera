@@ -90,6 +90,7 @@ public class Logger {
             "backend.rust",
             "backend.rust.multi",
             "visitors.outer.monotonicity",
+            "visitors.outer.keys",
             "visitors.outer.indexSharing",
             "visitors.outer.recursive",
             "visitors.outer.temporal",
