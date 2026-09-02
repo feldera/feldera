@@ -16,6 +16,11 @@ public class KafkaInputConfig implements IValidateConfig {
     @JsonProperty("topic")
     public String topic = "";
 
+    /** Legacy form of {@link #topic}, accepted with exactly one element. */
+    @Nullable
+    @JsonProperty("topics")
+    public List<String> topics = null;
+
     @Nullable
     @JsonProperty("log_level")
     public KafkaLogLevel logLevel = null;
@@ -73,9 +78,22 @@ public class KafkaInputConfig implements IValidateConfig {
     @Override
     public boolean validate(ConfigReporter reporter) {
         boolean ok = true;
-        if (topic.isBlank()) {
-            reporter.warn("Invalid configuration",
-                    "required field \"topic\" is missing or empty");
+        List<String> topicList = topics != null ? topics : List.of();
+        if (topicList.isEmpty()) {
+            if (topic.isBlank()) {
+                reporter.warn("Invalid configuration",
+                        "required field \"topic\" is missing or empty"
+                                + " (or use the legacy \"topics\" form)");
+                ok = false;
+            }
+        } else if (!topic.isBlank()) {
+            reporter.warnPath("topics", "Invalid configuration",
+                    "\"topic\" and the legacy \"topics\" are mutually exclusive");
+            ok = false;
+        } else if (topicList.size() > 1) {
+            reporter.warnPath("topics", "Invalid configuration",
+                    "the legacy \"topics\" accepts exactly one topic, not "
+                            + topicList.size());
             ok = false;
         }
         return ok;

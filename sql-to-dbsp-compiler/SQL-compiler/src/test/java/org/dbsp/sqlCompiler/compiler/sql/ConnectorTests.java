@@ -20,6 +20,15 @@ public class ConnectorTests extends BaseSQLTests {
             TestUtil.assertMessagesContain(compiler.messages, msg);
     }
 
+    /** Compiles SQL and asserts that it produces neither errors nor warnings. */
+    private void runCleanConnectorTest(String sql) {
+        DBSPCompiler compiler = this.chattyCompiler();
+        compiler.submitStatementsForCompilation(sql);
+        compiler.getFinalCircuit(true);
+        Assert.assertEquals(0, compiler.messages.exitCode);
+        Assert.assertEquals(compiler.messages.toString(), 0, compiler.messages.warningCount());
+    }
+
     /** Adds four spaces of indentation to every line of {@code body}. */
     private static String indent4(String body) {
         return body.lines()
@@ -53,6 +62,17 @@ public class ConnectorTests extends BaseSQLTests {
                 "  }]'\n" +
                 ");",
                 expectedMessages);
+    }
+
+    /** Like {@link #tableConnectorTest}, but asserts that the config draws no warning. */
+    private void cleanTableConnectorTest(String connectorBody) {
+        runCleanConnectorTest(
+                "CREATE TABLE T (x INT) WITH (\n" +
+                "  'connectors' = '[{\n" +
+                "    \"name\": \"c\",\n" +
+                indent4(connectorBody) + "\n" +
+                "  }]'\n" +
+                ");");
     }
 
     /**
@@ -869,6 +889,54 @@ public class ConnectorTests extends BaseSQLTests {
                   }
                 }""",
                 "required field \"topic\" is missing or empty");
+    }
+
+    @Test
+    public void kafkaInputLegacyTopics() {
+        cleanTableConnectorTest("""
+                "transport": {
+                  "name": "kafka_input",
+                  "config": {
+                    "topics": ["my-topic"]
+                  }
+                }""");
+    }
+
+    @Test
+    public void kafkaInputEmptyTopics() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "kafka_input",
+                  "config": {
+                    "topics": []
+                  }
+                }""",
+                "required field \"topic\" is missing or empty");
+    }
+
+    @Test
+    public void kafkaInputTopicAndTopics() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "kafka_input",
+                  "config": {
+                    "topic": "my-topic",
+                    "topics": ["my-topic"]
+                  }
+                }""",
+                "\"topic\" and the legacy \"topics\" are mutually exclusive");
+    }
+
+    @Test
+    public void kafkaInputMultipleTopics() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "kafka_input",
+                  "config": {
+                    "topics": ["a", "b"]
+                  }
+                }""",
+                "the legacy \"topics\" accepts exactly one topic, not 2");
     }
 
     @Test
