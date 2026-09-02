@@ -799,6 +799,102 @@ mod tests {
             .unwrap()
     }
 
+    /// The route a `uc://` change feed read takes: one change data file, read
+    /// through the object store rather than a listing, with an empty bitmap.
+    ///
+    /// A change data file has no deletion vector -- the protocol gives it no
+    /// field to carry one -- so the bitmap is always empty and every row must
+    /// come back. Spark also writes a `__is_cdc` column the declared schema
+    /// leaves out, and `_change_type`, which the table schema does not contain,
+    /// has to survive alongside the columns that it does.
+    #[tokio::test]
+    async fn change_data_file_reads_whole_through_object_store() {
+        let dir = TempDir::new().unwrap();
+
+        // As Delta Spark writes it: table columns, then the two it adds.
+        let file_schema = Arc::new(ArrowSchema::new(vec![
+            ArrowField::new("id", ArrowDataType::Int64, false),
+            ArrowField::new("name", ArrowDataType::Utf8, false),
+            ArrowField::new("_change_type", ArrowDataType::Utf8, false),
+            ArrowField::new("__is_cdc", ArrowDataType::Boolean, false),
+        ]));
+        let change_types = ["update_preimage", "update_postimage", "delete", "insert"];
+        let batch = RecordBatch::try_new(
+            Arc::clone(&file_schema),
+            vec![
+                Arc::new(Int64Array::from_iter_values(0..4i64)),
+                Arc::new(StringArray::from_iter_values(
+                    (0..4).map(|i| format!("row_{i}")),
+                )),
+                Arc::new(StringArray::from_iter_values(change_types)),
+                Arc::new(arrow::array::BooleanArray::from(vec![true; 4])),
+            ],
+        )
+        .unwrap();
+        let file = std::fs::File::create(dir.path().join("cdc.parquet")).unwrap();
+        let mut writer = parquet::arrow::ArrowWriter::try_new(file, file_schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        // What `change_data_read_schema` builds: the table's columns plus
+        // `_change_type`, and nothing else.
+        let declared = Arc::new(ArrowSchema::new(vec![
+            ArrowField::new("id", ArrowDataType::Int64, false),
+            ArrowField::new("name", ArrowDataType::Utf8, false),
+            ArrowField::new("_change_type", ArrowDataType::Utf8, true),
+        ]));
+
+        let store = unloaded_table(dir.path()).log_store().object_store(None);
+        let provider = filtered_parquet_table(
+            store,
+            Path::from("cdc.parquet"),
+            RoaringTreemap::new(),
+            Arc::clone(&declared),
+            ReadMode::NotInBitmap,
+        )
+        .await
+        .unwrap();
+        let batches = SessionContext::new()
+            .read_table(provider)
+            .unwrap()
+            .collect()
+            .await
+            .unwrap();
+
+        let mut got: Vec<(i64, String)> = Vec::new();
+        for batch in &batches {
+            assert_eq!(
+                batch.schema().as_ref(),
+                declared.as_ref(),
+                "`__is_cdc` must be pruned: the declared schema drives the read"
+            );
+            let ids = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            let kinds = batch
+                .column(2)
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            for row in 0..batch.num_rows() {
+                got.push((ids.value(row), kinds.value(row).to_string()));
+            }
+        }
+        got.sort();
+
+        let expected: Vec<(i64, String)> = change_types
+            .iter()
+            .enumerate()
+            .map(|(i, kind)| (i as i64, (*kind).to_string()))
+            .collect();
+        assert_eq!(
+            got, expected,
+            "an empty bitmap must read every row, with its change type intact"
+        );
+    }
+
     /// End-to-end check of [`filtered_parquet_table`] with [`ReadMode::NotInBitmap`]
     /// against a real Parquet file: DV-flagged rows are skipped inside the
     /// decoder, and the logical schema drives the read. A file column it omits is

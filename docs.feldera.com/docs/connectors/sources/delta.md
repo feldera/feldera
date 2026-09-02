@@ -25,14 +25,15 @@ exactly once fault tolerance.
 | Property                    | Type   | Default    | Description   |
 |-----------------------------|--------|------------|---------------|
 | `uri`*                      | string |            | Table URI, e.g., `s3://feldera-fraud-detection-data/demographics_train`. Supported URI schemes include: <ul><li>AWS S3: `s3://`, `s3a://`</li><li>Azure Blob Storage: `az://`, `adl://`, `azure://`, `abfs://`, `abfss://`</li><li>Google Cloud Storage: `gs://`</li><li>`uc://` - Unity catalog</li></ul> |
-| `mode`*                     | enum   |            | Table read mode. Four options are available: <ul> <li>`snapshot` - read a snapshot of the table and stop.</li> <li>`follow` - follow the changelog of the table, only ingesting changes (new and deleted rows)</li> <li>`snapshot_and_follow` - Read a snapshot of the table before switching to the `follow` mode.  This mode implements the backfill pattern where we load historical data for the table before ingesting the stream of real-time updates.</li><li>`cdc` - Change-Data-Capture (CDC) mode. The connector treats the table as an append-only log where every row represents an insert or delete action. The order of actions is determined by the `cdc_order_by` property, and the type of each action is determined by the `cdc_delete_filter` property. Removed rows are ignored, so users can clean up old log entries without affecting the contents of the ingested stream. In this mode, the connector does not read the initial snapshot of the table and follows the transaction log starting from the version of the table specified by the `version` or `datetime` property.</li> </ul>|
+| `mode`*                     | enum   |            | Table read mode. Four options are available: <ul> <li>`snapshot` - read a snapshot of the table and stop.</li> <li>`follow` - follow the changelog of the table, only ingesting changes (new and deleted rows)</li> <li>`snapshot_and_follow` - Read a snapshot of the table before switching to the `follow` mode.  This mode implements the backfill pattern where we load historical data for the table before ingesting the stream of real-time updates.</li><li>`cdc` - Change-Data-Capture (CDC) mode. The connector treats the table as an append-only log where every row represents an insert or delete action. The order of actions is determined by the `cdc_order_by` property, and the type of each action is determined by the `cdc_delete_filter` property. Removed rows are ignored, so users can clean up old log entries without affecting the contents of the ingested stream. In this mode, the connector does not read the initial snapshot of the table and follows the transaction log starting from the version of the table specified by the `version` or `datetime` property. This mode reads a change log that *you* encoded as table rows; to read the change log Delta Lake maintains, see [`change_feed`](#reading-the-change-data-feed).</li> </ul>|
 | `transaction_mode`          | enum   | `none`     | Determines how the connector breaks up its input into transactions. Supported values are `none`, `snapshot`, `catchup`, and `always`. See [below](#transactions) for details. |
-| `timestamp_column`          | string |            | Table column that serves as an event timestamp. When this option is specified, and `mode` is one of `snapshot` or `snapshot_and_follow`, table rows are ingested in the timestamp order, respecting the [`LATENESS`](/sql/streaming#lateness-expressions) property of the column: each ingested row has a timestamp no more than `LATENESS` time units earlier than the most recent timestamp of any previously ingested row.  See details [below](#ingesting-time-series-data-from-a-delta-lake). |
+| `change_feed`               | enum   | `auto`     | <p>How the connector reads changes: from the table's [Change Data Feed](#reading-the-change-data-feed), or from the data files each commit added and removed. The result is the same either way; the option chooses how a change is read, never what it means.</p><ul><li>`auto` - read change data when a commit records it, otherwise read the commit's file actions. Costs nothing on a table that records no change data.</li><li>`require` - like `auto`, but fail at startup unless the table has `delta.enableChangeDataFeed` set.</li><li>`off` - never read change data.</li></ul><p>Valid only in the `follow` and `snapshot_and_follow` modes.</p>|
+| `timestamp_column`          | string |            | Table column that serves as an event timestamp. When this option is specified, and `mode` takes an initial snapshot (`snapshot` or `snapshot_and_follow`), table rows are ingested in the timestamp order, respecting the [`LATENESS`](/sql/streaming#lateness-expressions) property of the column: each ingested row has a timestamp no more than `LATENESS` time units earlier than the most recent timestamp of any previously ingested row.  See details [below](#ingesting-time-series-data-from-a-delta-lake). |
 | <a name="filter">`filter`</a> | string |            | <p>Optional row filter.</p> <p>When specified, only rows that satisfy the filter condition are read from the delta table. The condition must be a valid SQL Boolean expression that can be used in the `where` clause of the `select * from my_table where ...` query.</p> |
-| `snapshot_filter`           | string |            | <p>Optional snapshot filter.</p><p>This option is only valid when `mode` is set to `snapshot` or `snapshot_and_follow`. When specified, only rows that satisfy the filter condition are included in the snapshot.</p> <p>The condition must be a valid SQL Boolean expression that can be used in  the `where` clause of the `select * from snapshot where ...` query.</p><p>Unlike the `filter` option, which applies to all records retrieved from the table, this filter only applies to rows in the initial snapshot of the table. For instance, it can be used to specify the range of event times to include in the snapshot, e.g.: `ts BETWEEN TIMESTAMP '2005-01-01 00:00:00' AND TIMESTAMP '2010-12-31 23:59:59'`. This option can be used together with the `filter` option. During the initial snapshot, only rows that satisfy both `filter` and `snapshot_filter` are retrieved from the Delta table. When subsequently following changes in the the transaction log (`mode = snapshot_and_follow`), all rows that meet the `filter` condition are ingested, regardless of `snapshot_filter`. </p> |
-| `version`, `start_version`  | integer|            | <p>Optional table version.  When this option is set, the connector finds and opens the specified version of the table. In `snapshot` and `snapshot_and_follow` modes, it retrieves the snapshot of this version of the table.  In `follow`, `snapshot_and_follow`, and `cdc` modes, it follows transaction log records **after** this version.</p><p>Note: at most one of `version` and `datetime` options can be specified.  When neither of the two options is specified, the latest committed version of the table is used.</p> |
-| `datetime`                  | string |            | <p>Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g., "2024-12-09T16:09:53+00:00". When this option is set, the connector finds and opens the version of the table as of the specified point in time (based on the server time recorded in the transaction log, not the event time encoded in the data).  In `snapshot` and `snapshot_and_follow` modes, it retrieves the snapshot of this version of the table.  In `follow`, `snapshot_and_follow`, and `cdc` modes, it follows transaction log records **after** this version.</p><p> Note: at most one of `version` and `datetime` options can be specified.  When neither of the two options is specified, the latest committed version of the table is used.</p>|
-| `end_version`               | integer|            | <p>Optional final table version.</p><p>Valid only when the connector is configured in `follow`, `snapshot_and_follow`, or `cdc` mode.</p><p>When set, the connector will stop scanning the table’s transaction log after reaching this version or any greater version.</p><p>This bound is inclusive: if the specified version appears in the log, it will be processed before signaling end-of-input.</p>|
+| `snapshot_filter`           | string |            | <p>Optional snapshot filter.</p><p>This option is only valid in a mode that takes an initial snapshot: `snapshot` or `snapshot_and_follow`. When specified, only rows that satisfy the filter condition are included in the snapshot.</p> <p>The condition must be a valid SQL Boolean expression that can be used in  the `where` clause of the `select * from snapshot where ...` query.</p><p>Unlike the `filter` option, which applies to all records retrieved from the table, this filter only applies to rows in the initial snapshot of the table. For instance, it can be used to specify the range of event times to include in the snapshot, e.g.: `ts BETWEEN TIMESTAMP '2005-01-01 00:00:00' AND TIMESTAMP '2010-12-31 23:59:59'`. This option can be used together with the `filter` option. During the initial snapshot, only rows that satisfy both `filter` and `snapshot_filter` are retrieved from the Delta table. When subsequently following changes in the the transaction log (`mode = snapshot_and_follow`), all rows that meet the `filter` condition are ingested, regardless of `snapshot_filter`. </p> |
+| `version`, `start_version`  | integer|            | <p>Optional table version.  When this option is set, the connector finds and opens the specified version of the table. In the snapshot-taking modes it retrieves the snapshot of this version of the table.  In the log-following modes (`follow`, `snapshot_and_follow`, `cdc`) it follows transaction log records **after** this version.</p><p>Note: at most one of `version` and `datetime` options can be specified.  When neither of the two options is specified, the latest committed version of the table is used.</p> |
+| `datetime`                  | string |            | <p>Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g., "2024-12-09T16:09:53+00:00". When this option is set, the connector finds and opens the version of the table as of the specified point in time (based on the server time recorded in the transaction log, not the event time encoded in the data).  In the snapshot-taking modes it retrieves the snapshot of this version of the table.  In the log-following modes (`follow`, `snapshot_and_follow`, `cdc`) it follows transaction log records **after** this version.</p><p> Note: at most one of `version` and `datetime` options can be specified.  When neither of the two options is specified, the latest committed version of the table is used.</p>|
+| `end_version`               | integer|            | <p>Optional final table version.</p><p>Valid only when the connector follows the transaction log: `follow`, `snapshot_and_follow`, or `cdc` mode.</p><p>When set, the connector will stop scanning the table’s transaction log after reaching this version or any greater version.</p><p>This bound is inclusive: if the specified version appears in the log, it will be processed before signaling end-of-input.</p>|
 | `cdc_delete_filer`          | string |            | <p>A predicate that determines whether the record represents a deletion.</p><p>This setting is only valid in the `cdc` mode. It specifies a predicate applied to each row in the Delta table to determine whether the row represents a deletion event. Its value must be a valid Boolean SQL expression that can be used in a query of the form `SELECT * from <table> WHERE <cdc_delete_filter>`.</p>|
 | `cdc_order_by`              | string |            | <p>An expression that determines the ordering of updates in the Delta table.</p><p>This setting is only valid in the `cdc` mode. It specifies a predicate applied to each row in the Delta table to determine the order in which updates in the table should be applied. Its value must be a valid SQL expression that can be used in a query of the form `SELECT * from <table> ORDER BY <cdc_order_by>`.</p>|
 | `num_parsers`               | integer| 4          | The number of parallel parsing tasks the connector uses to process data read from the table. Increasing this value can enhance performance by allowing more concurrent processing. Recommended range: 1–10.|
@@ -203,6 +204,86 @@ The following table lists supported Delta Lake data types and corresponding Feld
 | `STRUCT`                    | `ROW` or [user-defined type](/sql/types#user-defined-types)| structs can be encoded as either anonymous `ROW` types or as named user-defined structs |
 | `VARIANT`                   | `VARIANT`        |               |
 
+
+## Reading the Change Data Feed
+
+The `follow` and `snapshot_and_follow` modes reconstruct each change from the
+transaction log: they retract every file a commit removed and insert every file
+it added. The unchanged rows cancel, so the result is correct, but the work is
+proportional to the size of the rewritten files rather than to the size of the
+change. An `UPDATE` of ten rows in a 1 GiB file reads 2 GiB.
+
+Delta Lake can record the change itself. Set the `delta.enableChangeDataFeed`
+property on the source table and every operation that modifies existing rows
+writes the affected rows to a `_change_data` directory, tagged with the kind of
+change. The connector reads them by default:
+
+```sql
+ALTER TABLE customer SET TBLPROPERTIES (delta.enableChangeDataFeed = true)
+```
+
+Nothing has to be configured on the Feldera side. `change_feed` defaults to
+`auto`, which reads change data when a commit records it and falls back to the
+commit's file actions when it does not, so enabling the property on the source
+table is the whole change. Only changes committed after the property is set are
+recorded.
+
+Two settings exist for the cases where the default is not what you want:
+
+| `change_feed` | Behavior |
+|---------------|----------|
+| `auto` (default) | Read change data when a commit records it. |
+| `require` | The same, but fail at startup unless the table has the property set. Use it when the connector is provisioned for the cost of reading changed rows rather than rewritten files: without the property it still works, but reads as much as `off`. |
+| `off` | Never read change data. Use it to reproduce the pre-change-feed behavior. |
+
+### What it costs and what it saves
+
+The saving depends on how the table is written:
+
+| Commit | `change_feed = off` reads | `change_feed = auto` reads |
+|--------|---------------------------|----------------------------|
+| Append (`INSERT`) | the added files | the added files, identically |
+| `DELETE` with deletion vectors | the rows the vector newly masks | the same: Delta records no change data for it |
+| `DELETE` rewriting files | the removed file and the rewritten file | the deleted rows |
+| `UPDATE` or `MERGE` rewriting files | every removed file and every new file | the changed rows, before and after |
+| `OPTIMIZE`, compaction | nothing | nothing |
+
+So the change feed is worth enabling for a table maintained by `MERGE` or
+`UPDATE` that rewrites whole files, and makes no difference to an append-only
+table.
+
+Delta Lake does not record change data for a commit that only adds or only
+removes rows. An append is the common case, and so is a `DELETE` on a table with
+deletion vectors: the vector already says which rows left, so Delta writes no
+change data and the connector reads the commit's file actions instead, applying
+the vectors. Two metrics report the split:
+
+| Metric | Meaning |
+|--------|---------|
+| `input_connector_delta_commits_from_change_data` | commits read from change data |
+| `input_connector_delta_commits_from_file_actions` | commits read from added and removed files |
+
+If the second counter rises while the first stays at zero on a table that is
+being updated, the writer is not recording change data even though the property
+is set: check that `changeDataFeed` is among the table's `writerFeatures`.
+
+### Limits
+
+- Change data files are cleaned up by `VACUUM` along with everything else, so a
+  connector that falls further behind than the table's retention window fails
+  whichever way it reads.
+- Some maintenance operations, `RESTORE` among them, record no change data. The
+  connector reads them from their file actions.
+- An `UPDATE` reaches the pipeline as a retraction of the old row and an
+  insertion of the new one. Those can land in different Feldera steps, leaving
+  the row briefly absent from downstream views. Set
+  [`transaction_mode`](#transactions) to `always` to make each Delta commit a
+  single Feldera transaction, or to `catchup` to batch several.
+- `filter` applies to both images of an update, so a row that moves across the
+  filter boundary is retracted or inserted accordingly.
+- The `cdc` mode never reads change data. It interprets each row as an event
+  whose polarity comes from `cdc_delete_filter`, and Delta's `_change_type` is a
+  second, incompatible answer to the same question.
 
 ## Transactions
 

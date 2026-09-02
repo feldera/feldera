@@ -569,6 +569,53 @@ fn test_delta_reader_config_serde() {
 
 #[cfg(test)]
 #[test]
+fn test_delta_change_feed_serde() {
+    // Unset means `auto`, and stays absent when serialized: an older manager that
+    // does not know the field must be able to round-trip a config without it.
+    let config: DeltaTableReaderConfig =
+        serde_json::from_str(r#"{"uri":"s3://bucket/t","mode":"snapshot_and_follow"}"#).unwrap();
+    assert_eq!(config.change_feed, None);
+    assert_eq!(config.change_feed(), DeltaTableChangeFeed::Auto);
+    assert!(config.reads_change_feed());
+    assert!(!config.requires_change_feed());
+    assert!(
+        !serde_json::to_string(&config)
+            .unwrap()
+            .contains("change_feed"),
+        "an unset change_feed must not be serialized"
+    );
+
+    for (json, expected, reads, requires) in [
+        ("auto", DeltaTableChangeFeed::Auto, true, false),
+        ("require", DeltaTableChangeFeed::Require, true, true),
+        ("off", DeltaTableChangeFeed::Off, false, false),
+    ] {
+        let config: DeltaTableReaderConfig = serde_json::from_str(&format!(
+            r#"{{"uri":"s3://bucket/t","mode":"follow","change_feed":"{json}"}}"#
+        ))
+        .unwrap();
+        assert_eq!(config.change_feed(), expected);
+        assert_eq!(config.reads_change_feed(), reads);
+        assert_eq!(config.requires_change_feed(), requires);
+        assert_eq!(config.change_feed().to_string(), json);
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn test_delta_change_feed_excludes_cdc_mode() {
+    // `cdc` reads a change log the user encoded as table rows; Delta's own change
+    // data is a different, incompatible answer to the same question.
+    let config: DeltaTableReaderConfig = serde_json::from_str(
+        r#"{"uri":"s3://bucket/t","mode":"cdc","cdc_order_by":"ts","cdc_delete_filter":"op='d'"}"#,
+    )
+    .unwrap();
+    assert!(config.follow());
+    assert!(!config.reads_change_feed());
+}
+
+#[cfg(test)]
+#[test]
 fn test_delta_transaction_mode_catchup_serde() {
     let config: DeltaTableReaderConfig = serde_json::from_str(
         r#"{"uri":"s3://bucket/t","mode":"follow","transaction_mode":"catchup"}"#,

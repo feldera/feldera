@@ -4321,6 +4321,93 @@ mod format_datafusion_error_tests {
 }
 
 #[cfg(test)]
+mod change_type_tests {
+    use super::*;
+    use arrow::array::{Int64Array, StringArray};
+    use std::sync::Arc;
+
+    /// A batch of `id` values tagged with `change_types`, shaped like a change
+    /// data file: the table's columns followed by `_change_type`.
+    fn batch(change_types: Vec<Option<&str>>) -> RecordBatch {
+        let ids: Vec<i64> = (0..change_types.len() as i64).collect();
+        RecordBatch::try_new(
+            Arc::new(ArrowSchema::new(vec![
+                ArrowField::new("id", ArrowDataType::Int64, false),
+                ArrowField::new(CHANGE_TYPE_COLUMN, ArrowDataType::Utf8, true),
+            ])),
+            vec![
+                Arc::new(Int64Array::from(ids)),
+                Arc::new(StringArray::from(change_types)),
+            ],
+        )
+        .unwrap()
+    }
+
+    /// The two images of an update carry opposite polarities, so an update is a
+    /// retraction of the old row and an insertion of the new one.
+    #[test]
+    fn change_types_map_to_polarities() {
+        let (batch, polarities) = take_change_type_polarities(batch(vec![
+            Some("insert"),
+            Some("update_postimage"),
+            Some("update_preimage"),
+            Some("delete"),
+        ]))
+        .unwrap();
+
+        assert_eq!(polarities, vec![true, true, false, false]);
+        // The polarity column is consumed here, not passed to the deserializer.
+        assert_eq!(
+            batch
+                .schema()
+                .fields()
+                .iter()
+                .map(|f| f.name().as_str())
+                .collect::<Vec<_>>(),
+            vec!["id"]
+        );
+        assert_eq!(batch.num_rows(), 4);
+    }
+
+    /// A value outside the protocol's vocabulary is a parse error naming the
+    /// value, not a row silently ingested with a guessed polarity.
+    #[test]
+    fn unknown_change_type_is_an_error() {
+        for (change_type, expected) in [(Some("upsert"), "'upsert'"), (None, "NULL")] {
+            let error = take_change_type_polarities(batch(vec![change_type]))
+                .expect_err("an unrecognized change type must not be ingested")
+                .to_string();
+            assert!(
+                error.contains(expected) && error.contains(CHANGE_TYPE_COLUMN),
+                "the error must name the value and the column; got: {error}"
+            );
+        }
+    }
+
+    /// A batch that never carried the column cannot be assigned polarities.
+    #[test]
+    fn missing_change_type_column_is_an_error() {
+        let batch = RecordBatch::try_new(
+            Arc::new(ArrowSchema::new(vec![ArrowField::new(
+                "id",
+                ArrowDataType::Int64,
+                false,
+            )])),
+            vec![Arc::new(Int64Array::from(vec![1i64]))],
+        )
+        .unwrap();
+
+        let error = take_change_type_polarities(batch)
+            .expect_err("a batch without the change type column must not be ingested")
+            .to_string();
+        assert!(
+            error.contains(CHANGE_TYPE_COLUMN),
+            "the error must name the missing column; got: {error}"
+        );
+    }
+}
+
+#[cfg(test)]
 mod is_skippable_tests {
     use super::DeltaTableInputEndpointInner;
     use feldera_types::program_schema::{ColumnType, Field};
