@@ -111,7 +111,7 @@ use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
 use serde_json::Value as JsonValue;
 use size_of::HumanBytes;
-use stats::{BufferedInput, StepResults};
+use stats::StepResults;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -8699,19 +8699,17 @@ impl ControllerInner {
         // circuit thread, and the circuit thread reads the endpoint metrics.
         // Updating in the wrong order can cause the circuit thread to park
         // itself indefinitely.
-        let buffered_input = if let Some(endpoint_id) = endpoint_id {
+        if let Some(endpoint_id) = endpoint_id {
             self.status.input_batch_from_endpoint(
                 endpoint_id,
                 amt,
                 &self.backpressure_thread_unparker,
-            )
-        } else {
-            BufferedInput::Normal
-        };
+            );
+        }
 
         if !amt.is_empty() {
             self.status
-                .input_batch_global(amt, buffered_input, &self.circuit_thread_unparker);
+                .input_batch_global(amt, &self.circuit_thread_unparker);
         }
     }
 

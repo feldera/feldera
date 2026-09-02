@@ -1,4 +1,4 @@
-use super::{OutputEndpointControl, stats::BufferedInput};
+use super::OutputEndpointControl;
 use crate::{
     Controller, InputConsumer, InputEndpoint, OutputEndpoint, PipelineConfig,
     TransportInputEndpoint,
@@ -2850,52 +2850,74 @@ fn output_path(storage_dir: &Path, i: usize) -> PathBuf {
     storage_dir.join(format!("output{}.csv", i + 1))
 }
 
+/// Buffering input wakes the circuit thread, whatever else is buffered.
+///
+/// A wake rule that reasons about how much is buffered has to know which
+/// endpoints the next step polls, and gets it wrong every time that set
+/// narrows: input buffered by an endpoint the step skips stays buffered, so
+/// the global count never falls back and every other endpoint's wakeup is
+/// swallowed.  Waking unconditionally and leaving the decision to
+/// [`StepTrigger`] costs one trigger evaluation and cannot go stale.
+///
+/// A missed wakeup here is a hang, not a slowdown:
+/// [`committed_connector_input_does_not_spin_the_circuit`] covers the case
+/// end to end.
 #[test]
-fn barrier_input_batch_wakes_when_endpoint_already_has_buffered_input() {
+fn input_batch_wakes_the_circuit_thread() {
     init_test_logger();
 
-    // During suspend, every new batch from a barrier endpoint can be the batch
-    // that clears the barrier.
-    //
-    // https://github.com/feldera/feldera/actions/runs/26535433930/job/78166265316
-    // That test likely failed because the endpoint already had buffered
-    // barrier input, so the old > 0 condition was not enough to wake the
-    // circuit thread.
-    let tempdir = TempDir::new().unwrap();
-    let storage_dir = tempdir.path().join("storage");
-    create_dir(&storage_dir).unwrap();
-    File::create(input_path(&storage_dir, 0)).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        // High enough that a wake rule reading the buffered count would
+        // suppress the wakeup below.
+        "min_batch_size_records": 1_000_000,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
 
-    let controller = start_controller(&storage_dir, &[0]);
-
-    let endpoint_id = {
-        let input_status = controller.status().input_status();
-        *input_status.keys().next().unwrap()
-    };
-    {
-        let input_status = controller.status().input_status();
-        let endpoint = input_status.get(&endpoint_id).unwrap();
-        endpoint.set_barrier(true);
-        endpoint
-            .metrics
-            .buffered_records
-            .store(1, Ordering::Relaxed);
-    }
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    let status = controller.status();
 
     let parker = Parker::new();
-    let unparker = parker.unparker().clone();
-    let buffered_input = controller.status().input_batch_from_endpoint(
-        endpoint_id,
+    let batch = BufferSize {
+        records: 1,
+        bytes: 1,
+    };
+    // A backlog no step will consume, of the kind a connector that has
+    // committed the in-progress transaction leaves behind.
+    status.input_batch_global(
         BufferSize {
-            records: 1,
-            bytes: 1,
+            records: 1_000,
+            bytes: 1_000,
         },
-        &unparker,
+        parker.unparker(),
     );
+    parker.park_timeout(Duration::ZERO);
+
+    status.input_batch_global(batch, parker.unparker());
 
     controller.stop().unwrap();
 
-    assert_eq!(buffered_input, BufferedInput::Barrier);
+    // Set, so `park` returns without blocking. Unset, this waits the full
+    // timeout and the assertion fails.
+    let start = Instant::now();
+    parker.park_timeout(Duration::from_secs(10));
+    assert!(
+        start.elapsed() < Duration::from_secs(1),
+        "buffering input did not wake the circuit thread"
+    );
 }
 
 fn start_controller(storage_dir: &Path, barriers: &[usize]) -> Controller {
