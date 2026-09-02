@@ -1,5 +1,8 @@
 use crate::catalog::{ArrowStream, InputCollectionHandle};
 use crate::format::InputBuffer;
+use crate::integrated::delta_table::bounded_store::{
+    apply_max_concurrent_readers, bound_delta_reads,
+};
 use crate::integrated::delta_table::deletion_vector::{
     ReadMode, filtered_parquet_table, read_deletion_vector,
 };
@@ -66,8 +69,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::select;
+use tokio::sync::mpsc;
 use tokio::sync::watch::{Receiver, Sender, channel};
-use tokio::sync::{Semaphore, mpsc};
 use tokio::time::sleep;
 use tracing::{debug, info, trace, warn};
 
@@ -82,23 +85,6 @@ const DEFAULT_OBJECT_STORE_TIMEOUT: &str = "120s";
 
 const REPORT_ERROR: &str =
     "please report this error to developers (https://github.com/feldera/feldera/issues)";
-
-/// Semaphore used to control the number of concurrent reads to the object store
-/// as a workaround for https://github.com/apache/arrow-rs-object-store/issues/14.
-/// (see `max_concurrent_readers` in `DeltaTableReaderConfig`).
-static DELTA_READER_SEMAPHORE: std::sync::LazyLock<Semaphore> =
-    std::sync::LazyLock::new(|| Semaphore::new(DEFAULT_MAX_CONCURRENT_READERS));
-
-/// Default cap for concurrent Delta object-store reads, used both as the
-/// initial token count for `DELTA_READER_SEMAPHORE` and as the fallback
-/// for DataFusion's `target_partitions` when neither
-/// `DELTA_DF_TARGET_PARTITIONS` nor `max_concurrent_readers` is set.
-const DEFAULT_MAX_CONCURRENT_READERS: usize = 6;
-
-/// Configured `max_concurrent_readers` value (0 = not set by any connector).
-/// Used to detect conflicting values of `max_concurrent_readers` during parallel
-/// connector initialization.
-static MAX_CONCURRENT_READERS: AtomicUsize = AtomicUsize::new(0);
 
 /// Format a DataFusion error, appending actionable guidance when the
 /// underlying variant is `ResourcesExhausted` (the shared memory pool ran
@@ -646,50 +632,14 @@ impl DeltaTableInputReader {
             bail!("'end_version' must be greater than 'version'")
         }
 
-        // If the config specifies max_concurrent_readers, adjust the number of tokens
-        // in the semaphore. Connectors are initialized in parallel, so we atomically
-        // record the configured value and only adjust the semaphore once.
-        if let Some(max_concurrent_readers) = config.max_concurrent_readers {
-            let max_concurrent_readers = max_concurrent_readers as usize;
-
-            if max_concurrent_readers == 0 {
-                bail!(
-                    "invalid 'max_concurrent_readers' value: 'max_concurrent_readers' must be greater than 0"
-                );
-            }
-
-            let first_setter = match MAX_CONCURRENT_READERS.compare_exchange(
-                0,
-                max_concurrent_readers,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => true,
-                Err(current) if current == max_concurrent_readers => false,
-                Err(_) => {
-                    bail!(
-                        "found conflicting values of the `max_concurrent_readers` attribute: this is a global setting that affects all Delta Lake connectors, and not just the connector where it is specified; if multiple connectors specify `max_concurrent_readers`, they must all use the same value."
-                    );
-                }
-            };
-
-            if first_setter {
-                info!(
-                    "delta_table {endpoint_name}: adjusting the number of concurrent readers to {max_concurrent_readers}"
-                );
-
-                // The semaphore doesn't allow changing the total token count directly, but at this point,
-                // while initializing connectors, none of the tokens have been acquired, so we can adjust
-                // the total number of tokens by adjusting currently available tokens.
-                let available_permits = DELTA_READER_SEMAPHORE.available_permits();
-                if max_concurrent_readers > available_permits {
-                    DELTA_READER_SEMAPHORE.add_permits(max_concurrent_readers - available_permits);
-                } else if max_concurrent_readers < available_permits {
-                    DELTA_READER_SEMAPHORE
-                        .forget_permits(available_permits - max_concurrent_readers);
-                }
-            }
-        };
+        // Shared GET semaphore; connectors initialize in parallel, so only the first setter adjusts tokens.
+        if let Some(max_concurrent_readers) = config.max_concurrent_readers
+            && apply_max_concurrent_readers(max_concurrent_readers as usize)?
+        {
+            info!(
+                "delta_table {endpoint_name}: adjusting the number of concurrent readers to {max_concurrent_readers}"
+            );
+        }
 
         if !config.object_store_config.contains_key("timeout") {
             config.object_store_config.insert(
@@ -2282,7 +2232,10 @@ impl DeltaTableInputEndpointInner {
         // synthetic `delta-rs://` URL, so we don't register it anymore.)
         let log_store = delta_table.log_store();
         let runtime_env = self.datafusion.runtime_env();
-        runtime_env.register_object_store(log_store.root_url(), log_store.root_object_store(None));
+        runtime_env.register_object_store(
+            log_store.root_url(),
+            bound_delta_reads(log_store.root_object_store(None)),
+        );
 
         // if let Some(schema) = delta_table.schema() {
         //     info!("Delta table schema: {schema:?}");
@@ -2690,9 +2643,6 @@ impl DeltaTableInputEndpointInner {
     ) -> Result<usize, String> {
         wait_running(receiver).await;
         let transaction = self.follow_start_transaction(transaction);
-
-        // Limit the number of connectors simultaneously reading from Delta Lake.
-        let _token = DELTA_READER_SEMAPHORE.acquire().await.unwrap();
 
         let mut stream = match dataframe.execute_stream().await {
             Err(e) => {
@@ -3372,7 +3322,7 @@ impl DeltaTableInputEndpointInner {
             .map_err(|e| anyhow!("invalid file path '{path}' in Delta log action: {e}"))?;
 
         filtered_parquet_table(
-            table.log_store().object_store(None),
+            bound_delta_reads(table.log_store().object_store(None)),
             file_path,
             bitmap,
             read_schema,

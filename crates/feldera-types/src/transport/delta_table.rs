@@ -430,6 +430,10 @@ pub struct DeltaTableReaderConfig {
     /// pipeline with a large number of Delta Lake connectors. When multiple connectors are simultaneously
     /// reading from the object store, this can lead to transport timeouts.
     ///
+    /// The cap applies to concurrently buffered reads, not just whole-query execution:
+    /// a read holds its slot until the HTTP response body has been consumed, so a slow
+    /// network cannot buffer unbounded snapshot reads.
+    ///
     /// When enabled, this setting limits the number of concurrent reads across all connectors.
     /// This is a global setting that affects all Delta Lake connectors, and not just the connector
     /// where it is specified. It should therefore be used at most once in a pipeline.  If multiple
