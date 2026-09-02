@@ -396,6 +396,12 @@ mod partition_keys_test {
         move |batch, i| i * batches + batch
     }
 
+    /// Each batch holding one contiguous run of keys, as they are when the key
+    /// grows with arrival: a timestamp, or a sequence number.
+    fn contiguous(keys_per_batch: u64) -> impl Fn(u64, u64) -> u64 {
+        move |batch, i| batch * keys_per_batch + i
+    }
+
     /// Partitions `snapshot` and returns the size of each range.
     fn partition(snapshot: &SpineSnapshot<Batch>, partitions: usize) -> Vec<u64> {
         let mut bounds = snapshot.factories().keys_factory().default_box();
@@ -458,6 +464,29 @@ mod partition_keys_test {
         assert!(
             sample_size > PARTITIONS.pow(2),
             "fixture is meant to be sampled above the floor, drew {sample_size}"
+        );
+
+        assert_within(&partition(&snapshot, PARTITIONS), 3);
+    }
+
+    /// A snapshot whose batches each hold one contiguous run of keys partitions
+    /// as evenly as one whose batches are spread over the key range.
+    ///
+    /// The sample is smaller than the batch count here, so most batches draw
+    /// nothing. Which ones matters: where the batches divide the key range
+    /// between them, a run of undrawn batches at one end of that range leaves
+    /// its keys with no boundary to fall between, and they all land in one
+    /// partition.
+    #[test]
+    fn a_snapshot_of_contiguous_batches_partitions_evenly() {
+        const BATCHES: u64 = 200;
+        const KEYS_PER_BATCH: u64 = 500;
+        const PARTITIONS: usize = 12;
+
+        let snapshot = snapshot(BATCHES, KEYS_PER_BATCH, contiguous(KEYS_PER_BATCH));
+        assert!(
+            partition_sample_size(snapshot.key_count(), PARTITIONS) < BATCHES as usize,
+            "the sample is meant to be too small to reach every batch"
         );
 
         assert_within(&partition(&snapshot, PARTITIONS), 3);
