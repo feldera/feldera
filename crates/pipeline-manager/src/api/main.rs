@@ -450,6 +450,7 @@ It contains the following fields:
         feldera_types::transport::nexmark::NexmarkInputConfig,
         feldera_types::transport::nexmark::NexmarkTable,
         feldera_types::transport::nexmark::NexmarkInputOptions,
+        feldera_types::transport::delta_table::DeltaTableChangeFeed,
         feldera_types::transport::delta_table::DeltaTableIngestMode,
         feldera_types::transport::delta_table::DeltaTableTransactionMode,
         feldera_types::transport::delta_table::DeltaTableWriteMode,

@@ -320,7 +320,19 @@ export type CheckpointSyncStatus = {
    */
   periodic?: string | null
   /**
+   * Checkpoint syncs running right now.
+   *
+   * A UUID leaves `running` and lands in `success` or `failure` at the same
+   * moment.
+   *
+   * Periodic syncs do not appear here.
+   */
+  running?: Array<string>
+  /**
    * Most recently successful checkpoint sync.
+   *
+   * If `success` and `failure` would otherwise name the same UUID, then the
+   * most recent result is set and the other is cleared.
    */
   success?: string | null
 }
@@ -1192,9 +1204,27 @@ export type DeliverPolicy =
   | 'LastPerSubject'
 
 /**
- * Delta table read mode.
+ * Whether the connector reads a Delta table's
+ * [Change Data Feed](https://docs.delta.io/latest/delta-change-data-feed.html).
  *
- * Three options are available:
+ * A table with the `delta.enableChangeDataFeed` property records the rows an
+ * `UPDATE`, `DELETE`, or `MERGE` changed, in a `_change_data` directory.  Reading
+ * those rows is what the `follow` and `snapshot_and_follow` modes do instead of
+ * reconstructing the change from the data files a commit added and removed: for a
+ * commit that rewrites whole files, the difference is between reading the changed
+ * rows and reading every file those rows lived in.
+ *
+ * The result is the same either way, so this option chooses how the change is read,
+ * never what it means.
+ *
+ * Delta records no change data for a commit that only adds or only removes rows -
+ * an append, or a `DELETE` on a table with deletion vectors - so those commits are
+ * always read from their file actions.
+ */
+export type DeltaTableChangeFeed = 'auto' | 'require' | 'off'
+
+/**
+ * Delta table read mode.
  *
  * * `snapshot` - read a snapshot of the table and stop.
  *
@@ -1203,6 +1233,7 @@ export type DeliverPolicy =
  *
  * * `snapshot_and_follow` - read a snapshot of the table before switching to continuous ingestion
  * mode.
+ *
  */
 export type DeltaTableIngestMode = 'snapshot' | 'follow' | 'snapshot_and_follow' | 'cdc'
 
@@ -1228,15 +1259,16 @@ export type DeltaTableReaderConfig = {
    * form `SELECT * from <table> ORDER BY <cdc_order_by>`.
    */
   cdc_order_by?: string | null
+  change_feed?: DeltaTableChangeFeed | null
   /**
    * Optional timestamp for the snapshot in the ISO-8601/RFC-3339 format, e.g.,
    * "2024-12-09T16:09:53+00:00".
    *
    * When this option is set, the connector finds and opens the version of the table as of the
    * specified point in time (based on the server time recorded in the transaction log, not the
-   * event time encoded in the data).  In `snapshot` and `snapshot_and_follow` modes, it
-   * retrieves the snapshot of this version of the table.  In `follow`, `snapshot_and_follow`, and
-   * `cdc` modes, it follows transaction log records **after** this version.
+   * event time encoded in the data).  In the snapshot-taking modes it retrieves the snapshot
+   * of this version of the table.  In the log-following modes (`follow`,
+   * `snapshot_and_follow`, `cdc`) it follows transaction log records **after** this version.
    *
    * Note: at most one of `version` and `datetime` options can be specified.
    * When neither of the two options is specified, the latest committed version of the table
@@ -1246,7 +1278,8 @@ export type DeltaTableReaderConfig = {
   /**
    * Optional final table version.
    *
-   * Valid only when the connector is configured in `follow`, `snapshot_and_follow`, or `cdc` mode.
+   * Valid only when the connector follows the transaction log: `follow`,
+   * `snapshot_and_follow`, or `cdc` mode.
    *
    * When set, the connector will stop scanning the table’s transaction log after reaching this version or any greater version.
    * This bound is inclusive: if the specified version appears in the log, it will be processed before signaling end-of-input.
@@ -1314,7 +1347,8 @@ export type DeltaTableReaderConfig = {
   /**
    * Optional snapshot filter.
    *
-   * This option is only valid when `mode` is set to `snapshot` or `snapshot_and_follow`.
+   * This option is only valid in a mode that takes an initial snapshot: `snapshot`
+   * or `snapshot_and_follow`.
    *
    * When specified, only rows that satisfy the filter condition are included in the
    * snapshot.  The condition must be a valid SQL Boolean expression that can be used in
@@ -1334,7 +1368,8 @@ export type DeltaTableReaderConfig = {
   /**
    * Table column that serves as an event timestamp.
    *
-   * When this option is specified, and `mode` is one of `snapshot` or `snapshot_and_follow`,
+   * When this option is specified, and `mode` takes an initial snapshot (`snapshot`
+   * or `snapshot_and_follow`),
    * table rows are ingested in the timestamp order, respecting the
    * [`LATENESS`](https://docs.feldera.com/sql/streaming#lateness-expressions)
    * property of the column: each ingested row has a timestamp no more than `LATENESS`
@@ -1372,7 +1407,7 @@ export type DeltaTableReaderConfig = {
    *
    * Supported values:
    * * 0 - no verbose logging
-   * * 1 - log all Delta log entries in follow and cdc modes.
+   * * 1 - log all Delta log entries in the log-following modes.
    * * >1 - reserved for future use
    */
   verbose?: number
@@ -1380,9 +1415,9 @@ export type DeltaTableReaderConfig = {
    * Optional table version.
    *
    * When this option is set, the connector finds and opens the specified version of the table.
-   * In `snapshot` and `snapshot_and_follow` modes, it retrieves the snapshot of this version of
-   * the table.  In `follow`, `snapshot_and_follow`, and `cdc` modes, it follows transaction log records
-   * **after** this version.
+   * In the snapshot-taking modes it retrieves the snapshot of this version of the table.
+   * In the log-following modes (`follow`, `snapshot_and_follow`, `cdc`) it follows
+   * transaction log records **after** this version.
    *
    * Note: at most one of `version` and `datetime` options can be specified.
    * When neither of the two options is specified, the latest committed version of the table
@@ -1394,6 +1429,8 @@ export type DeltaTableReaderConfig = {
     | string
     | null
     | string
+    | null
+    | DeltaTableChangeFeed
     | null
     | string
     | null
@@ -1446,8 +1483,9 @@ export type DeltaTableReaderConfig = {
  *
  * # How transaction log is ingested using transactions
  *
- * If the connector is configured in the `follow`, `snapshot_and_follow`, or `cdc` mode, and its
- * `transaction_mode` is set to `catchup`, it ingests the transaction log in batches. When it starts a
+ * If the connector follows the transaction log (`follow`, `snapshot_and_follow`, or `cdc`
+ * mode), and its `transaction_mode` is set to `catchup`, it ingests the
+ * transaction log in batches. When it starts a
  * Feldera transaction, it reads the latest available version of the Delta table (capped by `end_version` if set) and
  * ingests all log entries up to and including that version in a single Feldera transaction before committing. It then
  * repeats for subsequent versions as they appear in the log.
@@ -1633,9 +1671,10 @@ export type DevTweaks = {
    * benefits.
    *
    * A rebalancing is considered significant if the absolute estimated
-   * improvement for the cluster of joins where the rebalancing is applied is
-   * at least this threshold. The cost model used by the balancer is based on
-   * the number of records in the largest partition of a collection.
+   * improvement across the collections whose partitioning policy the
+   * rebalancing changes is at least this threshold. The cost model used by the
+   * balancer is based on the number of records in the largest partition of a
+   * collection.
    *
    * A rebalancing is applied if both this threshold and
    * `balancer_min_relative_improvement_threshold` are met.
@@ -1654,8 +1693,9 @@ export type DevTweaks = {
    * benefits.
    *
    * A rebalancing is considered significant if the relative estimated
-   * improvement for the cluster of joins where the rebalancing is applied is
-   * at least this threshold.
+   * improvement across the collections whose partitioning policy the
+   * rebalancing changes is at least this threshold. Collections that keep
+   * their policy are excluded, since they cost the same either way.
    *
    * A rebalancing is applied if both this threshold and
    * `balancer_min_absolute_improvement_threshold` are met.
@@ -1664,20 +1704,9 @@ export type DevTweaks = {
    */
   balancer_min_relative_improvement_threshold?: number | null
   /**
-   * False-positive rate for Bloom filters on batches on storage, as a
-   * fraction f, where 0 < f < 1.
+   * False-positive rate for Bloom filters on batches on storage.
    *
-   * The false-positive rate trades off between the amount of memory used by
-   * Bloom filters and how frequently storage needs to be searched for keys
-   * that are not actually present.  Typical false-positive rates and their
-   * corresponding memory costs are:
-   *
-   * - 0.1: 4.8 bits per key
-   * - 0.01: 9.6 bits per key
-   * - 0.001: 14.4 bits per key
-   * - 0.0001: 19.2 bits per key (default)
-   *
-   * Values outside the valid range, such as 0.0, disable Bloom filters.
+   * Deprecated: use `storage.bloom_false_positive_rate` instead.
    */
   bloom_false_positive_rate?: number | null
   buffer_cache_allocation_strategy?: BufferCacheAllocationStrategy | null
@@ -4612,6 +4641,10 @@ export type ProgramConfig = {
    *
    * Examples: `v0.96.0` or `f4dcac0989ca0fda7d2eb93602a49d007cb3b0ae`
    *
+   * The value `gen2` names an engine rather than a runtime commit: the SQL
+   * compiler captures the circuit IR and the runner launches the Gen-2
+   * engine, so no pipeline binary is compiled.
+   *
    * A platform of version `0.x.y` may be capable of running future and past
    * runtimes with versions `>=0.x.y` and `<=0.x.y` until breaking API changes happen,
    * the exact bounds for each platform version are unspecified until we reach a
@@ -4677,6 +4710,14 @@ export type ProgramError = {
  * as well as only for runtime (e.g., schema, input/output connectors).
  */
 export type ProgramInfo = {
+  /**
+   * JIT circuit IR (`allOperators`) captured by the SQL compiler for Gen-2
+   * programs; the Gen-2 engine reads it to build the circuit.
+   *
+   * Not returned by the API. It runs to several MiB and reaches the pipeline
+   * through the program info artifact, so a pipeline read never carries it.
+   */
+  circuit_ir?: unknown
   dataflow?: Dataflow | null
   /**
    * Input connectors derived from the schema.
@@ -4708,6 +4749,12 @@ export type ProgramInfo = {
  * Program information included in the pipeline configuration.
  */
 export type ProgramIr = {
+  /**
+   * The circuit IR (the compiler's JIT `allOperators` form) that the Gen-2
+   * engine lowers onto the runtime to build the circuit. `None` for
+   * Rust-compiled pipelines, whose circuit is statically linked into the binary.
+   */
+  circuit_ir?: unknown
   /**
    * The MIR of the program.
    */
@@ -5762,6 +5809,23 @@ export type StorageConfig = {
  */
 export type StorageOptions = {
   backend?: StorageBackendConfig
+  /**
+   * False-positive rate for Bloom filters on batches on storage, as a
+   * fraction f, where 0 < f < 1.
+   *
+   * The false-positive rate trades off between the amount of memory used by
+   * Bloom filters and how frequently storage needs to be searched for keys
+   * that are not actually present.  Typical false-positive rates and their
+   * corresponding memory costs are:
+   *
+   * - 0.1: 4.8 bits per key
+   * - 0.01: 9.6 bits per key
+   * - 0.001: 14.4 bits per key
+   * - 0.0001: 19.2 bits per key (default)
+   *
+   * Values outside the valid range, such as 0.0, disable Bloom filters.
+   */
+  bloom_false_positive_rate?: number | null
   /**
    * The maximum size of the in-memory storage cache, in MiB.
    *

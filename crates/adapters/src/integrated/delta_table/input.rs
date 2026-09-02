@@ -7,7 +7,7 @@ use crate::integrated::delta_table::{delta_input_serde_config, register_storage_
 use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand, IntegratedInputEndpoint};
 use crate::{ControllerError, InputConsumer, InputReader, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
-use arrow::array::{Array, ArrayData, ArrayRef, BooleanArray, make_array};
+use arrow::array::{Array, ArrayData, ArrayRef, BooleanArray, StringArray, make_array};
 use arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, FieldRef, Schema as ArrowSchema, SchemaRef,
 };
@@ -32,10 +32,12 @@ use deltalake::datafusion::sql::sqlparser::dialect::GenericDialect;
 use deltalake::datafusion::sql::sqlparser::parser::Parser;
 use deltalake::datafusion::sql::sqlparser::tokenizer::Token;
 use deltalake::kernel::{
-    Action, Add as AddAction, DeletionVectorDescriptor, Remove as RemoveAction,
+    Action, Add as AddAction, AddCDCFile as AddCdcAction, DeletionVectorDescriptor,
+    Remove as RemoveAction,
 };
 use deltalake::logstore::{self, IORuntime};
 use deltalake::table::builder::ensure_table_uri;
+use deltalake::table::config::TablePropertiesExt;
 use deltalake::{DeltaTable, DeltaTableBuilder, DeltaTableError, Path, datafusion};
 use feldera_adapterlib::format::{ParseError, StagedInputBuffer};
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
@@ -61,7 +63,7 @@ use std::cmp::min;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Display;
 use std::future::Future;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -966,6 +968,11 @@ struct DeltaTableMetrics {
     /// Target Delta table version for the in-flight catchup window;
     /// [`VERSION_METRIC_UNSET`] when no catchup window is active.
     catchup_target_version: AtomicU64,
+    /// Commits read from the change data files they recorded.
+    commits_from_change_data: AtomicU64,
+    /// Commits that recorded no change data and were read from the files they
+    /// added and removed instead.
+    commits_from_file_actions: AtomicU64,
 }
 
 /// Sentinel stored in version gauges before a value is available.
@@ -981,6 +988,8 @@ impl DeltaTableMetrics {
             snapshot_transaction_starts: AtomicU64::new(0),
             last_ingested_version: AtomicU64::new(VERSION_METRIC_UNSET),
             catchup_target_version: AtomicU64::new(VERSION_METRIC_UNSET),
+            commits_from_change_data: AtomicU64::new(0),
+            commits_from_file_actions: AtomicU64::new(0),
         }
     }
 
@@ -1062,6 +1071,19 @@ impl ConnectorMetrics for DeltaTableMetrics {
                 ValueType::Gauge,
                 self.catchup_target_version_metric(),
             ),
+            (
+                "input_connector_delta_commits_from_change_data",
+                "Commits read from the change data files they recorded.",
+                ValueType::Counter,
+                self.commits_from_change_data.load(Ordering::Relaxed) as f64,
+            ),
+            (
+                "input_connector_delta_commits_from_file_actions",
+                "Commits that recorded no change data and were read from the files they added \
+                 and removed.",
+                ValueType::Counter,
+                self.commits_from_file_actions.load(Ordering::Relaxed) as f64,
+            ),
         ]
     }
 }
@@ -1087,6 +1109,67 @@ struct CdcFile<'a> {
     path: &'a str,
     partition_values: Option<&'a HashMap<String, Option<String>>>,
     deletion_vector: Option<&'a DeletionVectorDescriptor>,
+}
+
+/// The column Delta Lake's change data files carry alongside the table's own
+/// columns, naming the change each row represents.
+const CHANGE_TYPE_COLUMN: &str = "_change_type";
+
+/// Table property that makes a writer record change data files.
+const ENABLE_CHANGE_DATA_FEED: &str = "delta.enableChangeDataFeed";
+
+/// Split `batch` into its table columns and one polarity per row, taken from the
+/// change feed's [`CHANGE_TYPE_COLUMN`].
+///
+/// The column is removed rather than left in place: it is not part of the SQL
+/// table, and the record deserializer would otherwise carry a string it discards
+/// for every row.
+fn take_change_type_polarities(mut batch: RecordBatch) -> AnyResult<(RecordBatch, Vec<bool>)> {
+    let index = batch.schema().index_of(CHANGE_TYPE_COLUMN).map_err(|_| {
+        anyhow!(
+            "internal error reading the Delta change data feed; {REPORT_ERROR}: column '{CHANGE_TYPE_COLUMN}' is missing from the batch"
+        )
+    })?;
+    let column = batch.remove_column(index);
+    let change_types = column.as_any().downcast_ref::<StringArray>().ok_or_else(|| {
+        anyhow!(
+            "internal error reading the Delta change data feed; {REPORT_ERROR}: column '{CHANGE_TYPE_COLUMN}' has type {:?}, expected Utf8",
+            column.data_type()
+        )
+    })?;
+
+    let polarities = change_types
+        .into_iter()
+        .map(|change_type| match change_type {
+            Some("insert") | Some("update_postimage") => Ok(true),
+            Some("delete") | Some("update_preimage") => Ok(false),
+            other => Err(anyhow!(
+                "unexpected value {} in the '{CHANGE_TYPE_COLUMN}' column of a Delta change data file; expected one of 'insert', 'update_postimage', 'update_preimage', 'delete'",
+                other.map_or_else(|| "NULL".to_string(), |v| format!("'{v}'"))
+            )),
+        })
+        .collect::<AnyResult<Vec<bool>>>()?;
+
+    Ok((batch, polarities))
+}
+
+/// How a read decides the polarity of each row it ingests: `true` inserts,
+/// `false` retracts.
+#[derive(Clone)]
+enum Polarity {
+    /// Every row in the frame shares one polarity: snapshot reads and the
+    /// follow reads of a single `Add` or `Remove` action.
+    Fixed(bool),
+
+    /// `cdc` mode: a predicate over the row decides, `true` meaning delete.
+    /// The expression binds columns by index, so it is compiled against the
+    /// frame it evaluates (see [`DeltaTableInputEndpointInner::compile_delete_filter`]).
+    DeleteFilter(Arc<dyn PhysicalExpr>),
+
+    /// A change feed read: the `_change_type` column decides. The column is
+    /// dropped from the batch once read, so it never reaches the record
+    /// deserializer.
+    ChangeType,
 }
 
 /// Evaluate a compiled `cdc_delete_filter` against `batch`; returns one polarity
@@ -1172,6 +1255,11 @@ struct DeltaTableInputEndpointInner {
     ///   later null-fills for earlier commits, and a dropped column is ignored
     ///   once gone.
     schema_table: Mutex<Option<Arc<DeltaTable>>>,
+
+    /// Set once the connector has warned that the table turned
+    /// `delta.enableChangeDataFeed` off, so the warning is logged once and not
+    /// once per commit.
+    warned_change_feed_disabled: AtomicBool,
 }
 
 #[derive(Debug, Clone)]
@@ -1222,6 +1310,7 @@ impl DeltaTableInputEndpointInner {
             used_sql_columns: OnceLock::new(),
             config_referenced_columns: OnceLock::new(),
             schema_table: Mutex::new(None),
+            warned_change_feed_disabled: AtomicBool::new(false),
         }
     }
 
@@ -1910,6 +1999,11 @@ impl DeltaTableInputEndpointInner {
         // latest version; this makes it available to the snapshot reads below.
         *self.schema_table.lock().unwrap() = Some(Arc::clone(&table));
 
+        if let Err(e) = self.validate_change_data_feed(&table) {
+            let _ = init_status_sender.send(Err(e)).await;
+            return;
+        }
+
         if let Err(e) = self.prepare_snapshot_query(&table).await {
             let _ = init_status_sender.send(Err(e)).await;
             return;
@@ -1994,17 +2088,17 @@ impl DeltaTableInputEndpointInner {
                     .phase
                     .store(DeltaPhase::Follow as u64, Ordering::Relaxed);
                 info!(
-                    "delta_table {}: snapshot phase completed, switching to follow mode (records: {}, version: {})",
-                    &self.endpoint_name, snapshot_record_count, version
+                    "delta_table {}: snapshot phase completed, switching to '{}' mode (records: {}, version: {})",
+                    &self.endpoint_name, self.config.mode, snapshot_record_count, version
                 );
             } else if !self.config.snapshot() {
-                // Pure CDC follow mode (no snapshot configured)
+                // Following the log without an initial snapshot.
                 self.metrics
                     .phase
                     .store(DeltaPhase::Follow as u64, Ordering::Relaxed);
                 info!(
-                    "delta_table {}: CDC follow started (from version: {})",
-                    &self.endpoint_name, version
+                    "delta_table {}: '{}' mode started (from version: {})",
+                    &self.endpoint_name, self.config.mode, version
                 );
             }
             // Note: If self.config.snapshot() && !snapshot_incomplete, we're resuming from a checkpoint
@@ -2507,6 +2601,67 @@ impl DeltaTableInputEndpointInner {
         Ok(())
     }
 
+    /// Check at startup what a change feed read needs from the table.
+    ///
+    /// `change_feed = require` fails unless the table has
+    /// `delta.enableChangeDataFeed` set: without it every commit falls back to
+    /// reading the files it added and removed, so a connector provisioned for the
+    /// cost of reading changed rows would silently read as much as `off` does.
+    /// `auto` accepts either, since the fallback is what it is for.
+    fn validate_change_data_feed(&self, table: &DeltaTable) -> Result<(), ControllerError> {
+        if !self.config.reads_change_feed() {
+            return Ok(());
+        }
+
+        let invalid = |message: String| {
+            ControllerError::invalid_transport_configuration(&self.endpoint_name, &message)
+        };
+
+        let enabled = table
+            .snapshot()
+            .map_err(|e| invalid(format!("error accessing Delta table snapshot: {e}")))?
+            .snapshot()
+            .table_properties()
+            .enable_change_data_feed();
+
+        if !enabled {
+            // `auto` is content either way: the fallback is what it is for.
+            return if self.config.requires_change_feed() {
+                Err(invalid(format!(
+                    "'change_feed' is set to 'require', but the Delta table '{}' does not have \
+                     the '{ENABLE_CHANGE_DATA_FEED}' property set to 'true', so it records no \
+                     change data and every commit would be read from the files it adds and \
+                     removes. Set the property on the table (changes committed before it is set \
+                     are not recorded), or set 'change_feed' to 'auto'.",
+                    &self.config.uri,
+                )))
+            } else {
+                Ok(())
+            };
+        }
+
+        // Delta reserves the name for the change feed, so a table recording one
+        // cannot also declare it as a column. Caught here because
+        // `change_data_read_schema` would otherwise declare the column twice and
+        // fail with a DataFusion error naming neither the table nor the cause.
+        let declares_change_type = self
+            .logical_schema()
+            .map_err(|e| invalid(e.to_string()))?
+            .fields()
+            .iter()
+            .any(|field| field.name() == CHANGE_TYPE_COLUMN);
+        if declares_change_type {
+            return Err(invalid(format!(
+                "the Delta table '{}' records a change data feed and also has a column named \
+                 '{CHANGE_TYPE_COLUMN}', which the feed reserves; set 'change_feed' to 'off' to \
+                 read this table from its file actions instead.",
+                &self.config.uri,
+            )));
+        }
+
+        Ok(())
+    }
+
     /// Prepare to process CDC stream.
     async fn prepare_cdc(&self) -> Result<(), ControllerError> {
         self.validate_cdc_config()?;
@@ -2570,8 +2725,7 @@ impl DeltaTableInputEndpointInner {
 
         self.execute_df(
             df,
-            true,
-            None,
+            Polarity::Fixed(true),
             &descr,
             input_stream,
             receiver,
@@ -2612,8 +2766,7 @@ impl DeltaTableInputEndpointInner {
     async fn execute_df(
         &self,
         dataframe: DataFrame,
-        polarity: bool,
-        cdc_delete_filter: Option<Arc<dyn PhysicalExpr>>,
+        polarity: Polarity,
         descr: &str,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
@@ -2626,8 +2779,7 @@ impl DeltaTableInputEndpointInner {
             match self
                 .execute_df_inner(
                     dataframe.clone(),
-                    polarity,
-                    cdc_delete_filter.clone(),
+                    polarity.clone(),
                     input_stream,
                     receiver,
                     &transaction,
@@ -2678,8 +2830,7 @@ impl DeltaTableInputEndpointInner {
     async fn execute_df_inner(
         &self,
         dataframe: DataFrame,
-        polarity: bool,
-        cdc_delete_filter: Option<Arc<dyn PhysicalExpr>>,
+        polarity: Polarity,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
         transaction: &Option<Option<String>>,
@@ -2727,23 +2878,18 @@ impl DeltaTableInputEndpointInner {
         >::new(
             num_parsers,
             move || {
-                let cdc_delete_filter: Option<Arc<dyn PhysicalExpr>> = cdc_delete_filter.clone();
+                let polarity = polarity.clone();
                 let input_stream = input_stream.fork();
 
                 Box::new(move |(batch, timestamp)| {
                     Box::pin({
-                        let cdc_delete_filter: Option<Arc<dyn PhysicalExpr>> =
-                            cdc_delete_filter.clone();
+                        let polarity = polarity.clone();
                         let mut input_stream = input_stream.fork();
 
                         async move {
-                            let (parsed_buffer, errors) = Self::parse_record_batch(
-                                batch,
-                                polarity,
-                                &cdc_delete_filter,
-                                input_stream.as_mut(),
-                            )
-                            .await;
+                            let (parsed_buffer, errors) =
+                                Self::parse_record_batch(batch, &polarity, input_stream.as_mut())
+                                    .await;
                             let staged_buffer = parsed_buffer.map(|buffer| {
                                 let len = buffer.len();
                                 StagedInputBuffer::new(input_stream.stage(vec![buffer]), len)
@@ -2816,32 +2962,39 @@ impl DeltaTableInputEndpointInner {
 
     async fn parse_record_batch(
         batch: RecordBatch,
-        polarity: bool,
-        cdc_delete_filter: &Option<Arc<dyn PhysicalExpr>>,
+        polarity: &Polarity,
         input_stream: &mut dyn ArrowStream,
     ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
-        let result = if polarity {
-            if let Some(delete_filter_expr) = cdc_delete_filter {
-                let polarities = match eval_delete_filter(delete_filter_expr.as_ref(), &batch) {
-                    Ok(polarities) => polarities,
-                    Err(e) => {
-                        return (
-                            None,
-                            vec![ParseError::bin_envelope_error(e.to_string(), &[], None)],
-                        );
-                    }
-                };
-                // println!(
-                //     "insert_with_polarities: {} updates, {} insertions",
-                //     polarities.len(),
-                //     polarities.iter().filter(|x| **x == true).count()
-                // );
-                input_stream.insert_with_polarities(&batch, &polarities, &None)
-            } else {
-                input_stream.insert(&batch, &None)
-            }
-        } else {
-            input_stream.delete(&batch, &None)
+        // `ChangeType` takes its polarities out of the batch, so resolve the
+        // polarity vector first and rebind `batch` to what is left.
+        let (batch, polarities) = match polarity {
+            Polarity::Fixed(_) => (batch, None),
+            Polarity::DeleteFilter(expr) => match eval_delete_filter(expr.as_ref(), &batch) {
+                Ok(polarities) => (batch, Some(polarities)),
+                Err(e) => {
+                    return (
+                        None,
+                        vec![ParseError::bin_envelope_error(e.to_string(), &[], None)],
+                    );
+                }
+            },
+            Polarity::ChangeType => match take_change_type_polarities(batch) {
+                Ok(split) => (split.0, Some(split.1)),
+                Err(e) => {
+                    return (
+                        None,
+                        vec![ParseError::bin_envelope_error(e.to_string(), &[], None)],
+                    );
+                }
+            },
+        };
+
+        let result = match (polarity, &polarities) {
+            (_, Some(polarities)) => input_stream.insert_with_polarities(&batch, polarities, &None),
+            (Polarity::Fixed(true), None) => input_stream.insert(&batch, &None),
+            (Polarity::Fixed(false), None) => input_stream.delete(&batch, &None),
+            // The other two variants always produce a polarity vector above.
+            (_, None) => unreachable!("only Polarity::Fixed reaches the deserializer unpolarized"),
         };
         let errors = result.map_or_else(
             |e| {
@@ -2889,6 +3042,9 @@ impl DeltaTableInputEndpointInner {
                 .filter(|action| match action {
                     Action::Add(add) if add.data_change => true,
                     Action::Remove(remove) if remove.data_change => true,
+                    // A `cdc` action carries `dataChange: false` by protocol,
+                    // but it is the action a change feed read takes the commit from.
+                    Action::Cdc(_) => self.config.reads_change_feed(),
                     _ => false,
                 })
                 .collect::<Vec<_>>();
@@ -2916,109 +3072,18 @@ impl DeltaTableInputEndpointInner {
         if self.config.is_cdc() {
             self.process_cdc_transaction(actions, table, input_stream, receiver, start_transaction)
                 .await?;
+        } else if self.config.reads_change_feed() {
+            self.process_change_feed_log_entry(
+                actions,
+                table,
+                input_stream,
+                receiver,
+                start_transaction,
+            )
+            .await?;
         } else {
-            // Compute the projected read set once for the whole transaction; each
-            // `process_action` borrows the `&str` view rather than re-collecting it
-            // per Add/Remove. `used_column_names` owns the strings the view points at.
-            let used_column_names = self.used_columns();
-            let used_columns: Vec<&str> = used_column_names.iter().map(String::as_str).collect();
-
-            // TODO: consider processing all Add actions and all Remove actions in one
-            // go using `ListingTable`, which understands partitioning and can probably
-            // parallelize the load.
-
-            // A same-path Add+Remove is a deletion-vector rewrite (DELETE/MERGE):
-            // Delta files are immutable and path-addressed, so the bytes are
-            // unchanged and only the DV differs. Its logical change is just the
-            // rows the DV newly masks (deleted) or un-masks (restored), so we
-            // read only those rows rather than re-reading the whole file.
-            //
-            // Index the data-change `Add` actions by path (a metadata-only
-            // rewrite has data_change == false and never pairs). The Delta
-            // protocol allows at most one `Add` per path in a commit.
-            let adds_by_path: BTreeMap<&str, &AddAction> = actions
-                .iter()
-                .filter_map(|action| match action {
-                    Action::Add(add) if add.data_change => Some((add.path.as_str(), add)),
-                    _ => None,
-                })
-                .collect();
-
-            // Row-position delta of each same-path rewrite, keyed by file path.
-            // The pair is (newly deleted = rows the new DV masks but the old did
-            // not, restored = rows the old DV masked but the new does not).
-            let mut dv_deltas: BTreeMap<&str, (RoaringTreemap, RoaringTreemap)> = BTreeMap::new();
-            for action in actions {
-                let Action::Remove(remove) = action else {
-                    continue;
-                };
-                if !remove.data_change {
-                    continue;
-                }
-                if let Some(add) = adds_by_path.get(remove.path.as_str()) {
-                    let description = format!("file '{}'", remove.path);
-                    let old_dv = self
-                        .decode_dv(table, remove.deletion_vector.as_ref(), &description)
-                        .await?;
-                    let new_dv = self
-                        .decode_dv(table, add.deletion_vector.as_ref(), &description)
-                        .await?;
-                    // newly deleted = in the new DV but not the old; restored = the reverse.
-                    dv_deltas.insert(remove.path.as_str(), (&new_dv - &old_dv, &old_dv - &new_dv));
-                }
-            }
-
-            // Process deletes before inserts. Semantically, delete actions are
-            // applied before insert actions; however the delta standard doesn't
-            // guarantee that actions occur in any particular order in the transaction log
-            // entry.
-            //
-            // Each pass hands `process_follow_action` the row-index delta for its
-            // side of a same-path pair (the `Remove` retracts the newly-deleted
-            // rows; the `Add` inserts the restored rows) or `None` for an unpaired
-            // action, which is then read whole. `dv_deltas` is keyed only by
-            // data-change pairs, so a metadata-only action never matches.
-            for action in actions {
-                if let Action::Remove(remove) = action {
-                    let newly_deleted = dv_deltas
-                        .get(remove.path.as_str())
-                        .map(|(newly_deleted, _)| newly_deleted);
-                    self.process_follow_action(
-                        action,
-                        &remove.path,
-                        remove.partition_values.as_ref(),
-                        newly_deleted,
-                        false,
-                        table,
-                        &used_columns,
-                        input_stream,
-                        receiver,
-                        start_transaction.clone(),
-                    )
-                    .await?;
-                }
-            }
-
-            for action in actions {
-                if let Action::Add(add) = action {
-                    let restored = dv_deltas
-                        .get(add.path.as_str())
-                        .map(|(_, restored)| restored);
-                    self.process_follow_action(
-                        action,
-                        &add.path,
-                        Some(&add.partition_values),
-                        restored,
-                        true,
-                        table,
-                        &used_columns,
-                        input_stream,
-                        receiver,
-                        start_transaction.clone(),
-                    )
-                    .await?;
-                }
-            }
+            self.process_follow_actions(actions, table, input_stream, receiver, start_transaction)
+                .await?;
         }
 
         // Empty buffer to indicate checkpointable state.
@@ -3038,6 +3103,343 @@ impl DeltaTableInputEndpointInner {
         self.metrics.set_last_ingested_version(new_version);
 
         Ok(())
+    }
+
+    /// Apply one commit's `Add` and `Remove` actions as a ZSet delta: every added
+    /// file's rows are inserted, every removed file's rows retracted.
+    ///
+    /// This is what a `change_feed = off` connector does with every commit, and
+    /// what any connector does with a commit that recorded no change data.
+    async fn process_follow_actions(
+        &self,
+        actions: &[Action],
+        table: &DeltaTable,
+        input_stream: &mut dyn ArrowStream,
+        receiver: &mut Receiver<PipelineState>,
+        start_transaction: Option<Option<String>>,
+    ) -> AnyResult<()> {
+        // Compute the projected read set once for the whole transaction; each
+        // `process_action` borrows the `&str` view rather than re-collecting it
+        // per Add/Remove. `used_column_names` owns the strings the view points at.
+        let used_column_names = self.used_columns();
+        let used_columns: Vec<&str> = used_column_names.iter().map(String::as_str).collect();
+
+        // TODO: consider processing all Add actions and all Remove actions in one
+        // go using `ListingTable`, which understands partitioning and can probably
+        // parallelize the load.
+
+        // A same-path Add+Remove is a deletion-vector rewrite (DELETE/MERGE):
+        // Delta files are immutable and path-addressed, so the bytes are
+        // unchanged and only the DV differs. Its logical change is just the
+        // rows the DV newly masks (deleted) or un-masks (restored), so we
+        // read only those rows rather than re-reading the whole file.
+        //
+        // Index the data-change `Add` actions by path (a metadata-only
+        // rewrite has data_change == false and never pairs). The Delta
+        // protocol allows at most one `Add` per path in a commit.
+        let adds_by_path: BTreeMap<&str, &AddAction> = actions
+            .iter()
+            .filter_map(|action| match action {
+                Action::Add(add) if add.data_change => Some((add.path.as_str(), add)),
+                _ => None,
+            })
+            .collect();
+
+        // Row-position delta of each same-path rewrite, keyed by file path.
+        // The pair is (newly deleted = rows the new DV masks but the old did
+        // not, restored = rows the old DV masked but the new does not).
+        let mut dv_deltas: BTreeMap<&str, (RoaringTreemap, RoaringTreemap)> = BTreeMap::new();
+        for action in actions {
+            let Action::Remove(remove) = action else {
+                continue;
+            };
+            if !remove.data_change {
+                continue;
+            }
+            if let Some(add) = adds_by_path.get(remove.path.as_str()) {
+                let description = format!("file '{}'", remove.path);
+                let old_dv = self
+                    .decode_dv(table, remove.deletion_vector.as_ref(), &description)
+                    .await?;
+                let new_dv = self
+                    .decode_dv(table, add.deletion_vector.as_ref(), &description)
+                    .await?;
+                // newly deleted = in the new DV but not the old; restored = the reverse.
+                dv_deltas.insert(remove.path.as_str(), (&new_dv - &old_dv, &old_dv - &new_dv));
+            }
+        }
+
+        // Process deletes before inserts. Semantically, delete actions are
+        // applied before insert actions; however the delta standard doesn't
+        // guarantee that actions occur in any particular order in the transaction log
+        // entry.
+        //
+        // Each pass hands `process_follow_action` the row-index delta for its
+        // side of a same-path pair (the `Remove` retracts the newly-deleted
+        // rows; the `Add` inserts the restored rows) or `None` for an unpaired
+        // action, which is then read whole. `dv_deltas` is keyed only by
+        // data-change pairs, so a metadata-only action never matches.
+        for action in actions {
+            if let Action::Remove(remove) = action {
+                let newly_deleted = dv_deltas
+                    .get(remove.path.as_str())
+                    .map(|(newly_deleted, _)| newly_deleted);
+                self.process_follow_action(
+                    action,
+                    &remove.path,
+                    remove.partition_values.as_ref(),
+                    newly_deleted,
+                    false,
+                    table,
+                    &used_columns,
+                    input_stream,
+                    receiver,
+                    start_transaction.clone(),
+                )
+                .await?;
+            }
+        }
+
+        for action in actions {
+            if let Action::Add(add) = action {
+                let restored = dv_deltas
+                    .get(add.path.as_str())
+                    .map(|(_, restored)| restored);
+                self.process_follow_action(
+                    action,
+                    &add.path,
+                    Some(&add.partition_values),
+                    restored,
+                    true,
+                    table,
+                    &used_columns,
+                    input_stream,
+                    receiver,
+                    start_transaction.clone(),
+                )
+                .await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Ingest one commit from the change data files it recorded.
+    ///
+    /// A commit that recorded none is read from its `add` and `remove` actions
+    /// instead: the Delta protocol lets a writer skip change data files when a
+    /// commit only adds or only removes rows, so an append never writes one.
+    /// That path also covers a table whose `delta.enableChangeDataFeed` was
+    /// turned off after the connector started, and it applies deletion vectors,
+    /// which a change data file never carries.
+    async fn process_change_feed_log_entry(
+        &self,
+        actions: &[Action],
+        table: &DeltaTable,
+        input_stream: &mut dyn ArrowStream,
+        receiver: &mut Receiver<PipelineState>,
+        start_transaction: Option<Option<String>>,
+    ) -> AnyResult<()> {
+        self.warn_if_change_data_feed_disabled(actions);
+
+        // `cdc` actions carry `dataChange: false` by protocol -- they describe a
+        // change rather than making one -- so, unlike `add` and `remove`, they
+        // are not filtered on that flag.
+        let change_files: Vec<&AddCdcAction> = actions
+            .iter()
+            .filter_map(|action| match action {
+                Action::Cdc(file) => Some(file),
+                _ => None,
+            })
+            .collect();
+
+        if change_files.is_empty() {
+            self.metrics
+                .commits_from_file_actions
+                .fetch_add(1, Ordering::Relaxed);
+            return self
+                .process_follow_actions(actions, table, input_stream, receiver, start_transaction)
+                .await;
+        }
+        self.metrics
+            .commits_from_change_data
+            .fetch_add(1, Ordering::Relaxed);
+
+        // The commit's `add` and `remove` actions are deliberately ignored: the
+        // protocol requires a reader that finds change data files to take the
+        // row-level changes from them alone. Reading both would double-count.
+        let description = format!(
+            "change data files {:?}",
+            change_files.iter().map(|f| &f.path).collect::<Vec<_>>()
+        );
+
+        // A partition column lives in the file path, not the file, so files
+        // sharing a partition read together and take their partition values from
+        // the group's first file. `BTreeMap` keeps the groups in a deterministic
+        // order.
+        let partition_keys = self.partition_value_keys()?;
+        let mut groups: BTreeMap<Vec<Option<Option<String>>>, Vec<&AddCdcAction>> = BTreeMap::new();
+        for file in &change_files {
+            let key = partition_keys
+                .iter()
+                .map(|key| file.partition_values.get(key).cloned())
+                .collect();
+            groups.entry(key).or_default().push(file);
+        }
+
+        let read_schema = self.change_data_read_schema()?;
+        let mut dfs: Vec<DataFrame> = Vec::new();
+        for group in groups.values() {
+            let df = self
+                .change_data_group_dataframe(table, group, &read_schema, &description)
+                .await?;
+            let df = self.project_physical_to_logical(df)?;
+            dfs.push(self.add_partition_columns(
+                df,
+                Some(&group[0].partition_values),
+                &[CHANGE_TYPE_COLUMN],
+                &description,
+            )?);
+        }
+
+        let mut dfs = dfs.into_iter();
+        // `change_files` is non-empty, so grouping produced at least one frame.
+        let df = dfs.next().expect("at least one change data file group");
+        let df = dfs.try_fold(df, |acc, df| {
+            acc.union(df).map_err(|e| {
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; error combining change data files: {e}")
+            })
+        })?;
+
+        // Filter first: it may name Delta columns the SQL table never declares,
+        // which the projection then drops. This is the order `emit_provider`
+        // uses, so a row is admitted on the same terms in both modes.
+        let df = apply_filter(df, self.config.filter.as_deref(), &description, None)?;
+
+        let mut columns = self.used_columns();
+        columns.push(CHANGE_TYPE_COLUMN.to_string());
+        let columns: Vec<&str> = columns.iter().map(String::as_str).collect();
+        let df = df.select_columns(&columns).map_err(|e| {
+            anyhow!("internal error processing {description}; {REPORT_ERROR}; error selecting columns: {e}")
+        })?;
+
+        self.execute_df(
+            df,
+            Polarity::ChangeType,
+            &description,
+            input_stream,
+            receiver,
+            start_transaction,
+            self.config.max_retries(),
+            table.version().map(|v| v as i64),
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    /// One frame over the change data files of a single partition.
+    ///
+    /// A `uc://` table's location has no path for a [`ListingTable`] to resolve,
+    /// so its files are read through the object store one at a time and unioned;
+    /// this is the same split [`add_with_polarity`](Self::add_with_polarity)
+    /// makes, and the reason it exists is the same: a listing needs a directory,
+    /// and a Unity Catalog location is not one.
+    ///
+    /// Every other scheme reads the whole group in one listing, which lets
+    /// DataFusion parallelize across its files.
+    async fn change_data_group_dataframe(
+        &self,
+        table: &DeltaTable,
+        group: &[&AddCdcAction],
+        read_schema: &SchemaRef,
+        description: &str,
+    ) -> AnyResult<DataFrame> {
+        let read = |provider: Arc<dyn TableProvider>| {
+            self.datafusion.read_table(provider).map_err(|e| {
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading change data files: {e}")
+            })
+        };
+
+        if !requires_direct_object_store_read(table) {
+            let urls = group
+                .iter()
+                .map(|file| file_listing_url(table, &file.path))
+                .collect::<AnyResult<Vec<_>>>()?;
+            return read(Arc::new(
+                self.create_parquet_table(urls, read_schema.clone(), description)
+                    .await?,
+            ));
+        }
+
+        // An empty bitmap reads every row: a change data file never carries a
+        // deletion vector, and the protocol gives it no field to carry one in.
+        let mut dfs = Vec::with_capacity(group.len());
+        for file in group {
+            let provider = self
+                .file_provider(
+                    table,
+                    &file.path,
+                    RoaringTreemap::new(),
+                    ReadMode::NotInBitmap,
+                    read_schema.clone(),
+                )
+                .await?;
+            dfs.push(read(provider)?);
+        }
+
+        let mut dfs = dfs.into_iter();
+        // A group exists only because a file was put in it.
+        let first = dfs
+            .next()
+            .expect("a partition group holds at least one file");
+        dfs.try_fold(first, |acc, df| {
+            acc.union(df).map_err(|e| {
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; error combining change data files: {e}")
+            })
+        })
+    }
+
+    /// Arrow schema for reading a change data file: the table's own columns as
+    /// [`physical_read_schema`](Self::physical_read_schema) names them, plus the
+    /// [`CHANGE_TYPE_COLUMN`] that only these files carry.
+    fn change_data_read_schema(&self) -> AnyResult<SchemaRef> {
+        let table_schema = self.physical_read_schema(|_| true)?;
+        let mut fields: Vec<FieldRef> = table_schema.fields().to_vec();
+        fields.push(Arc::new(ArrowField::new(
+            CHANGE_TYPE_COLUMN,
+            ArrowDataType::Utf8,
+            true,
+        )));
+        Ok(Arc::new(
+            ArrowSchema::new(fields).with_metadata(table_schema.metadata().clone()),
+        ))
+    }
+
+    /// Warn once when a commit turns `delta.enableChangeDataFeed` off.
+    ///
+    /// Later commits then record no change data files and are read from their
+    /// `add` and `remove` actions, which stays correct but costs what `follow`
+    /// costs: whole rewritten files rather than the rows that changed.
+    fn warn_if_change_data_feed_disabled(&self, actions: &[Action]) {
+        let disabled = actions.iter().any(|action| match action {
+            Action::Metadata(metadata) => metadata
+                .configuration()
+                .get(ENABLE_CHANGE_DATA_FEED)
+                .is_some_and(|value| !value.eq_ignore_ascii_case("true")),
+            _ => false,
+        });
+        if disabled
+            && !self
+                .warned_change_feed_disabled
+                .swap(true, Ordering::Relaxed)
+        {
+            warn!(
+                "delta_table {}: table property '{ENABLE_CHANGE_DATA_FEED}' was turned off; \
+                 commits from here on record no change data and are read from the files they \
+                 add and remove, which reads more data than the change feed would",
+                &self.endpoint_name
+            );
+        }
     }
 
     /// Process a DeltaLake transaction in CDC mode:
@@ -3151,14 +3553,17 @@ impl DeltaTableInputEndpointInner {
         )?;
 
         // Compile against this transaction's frame: a schema change between
-        // commits moves the columns the expression binds by index.
-        let delete_filter = self.compile_delete_filter(df.schema())?;
+        // commits moves the columns the expression binds by index.  The
+        // expression is mandatory in `cdc` mode (`validate_cdc_config`), so it
+        // always compiles to `Some`.
+        let delete_filter = self.compile_delete_filter(df.schema())?.ok_or_else(|| {
+            anyhow!("internal error processing {description}; {REPORT_ERROR}; 'cdc_delete_filter' is unset in cdc mode")
+        })?;
 
         let _record_count = self
             .execute_df(
                 df,
-                true,
-                delete_filter,
+                Polarity::DeleteFilter(delete_filter),
                 &description,
                 input_stream,
                 receiver,
@@ -3290,10 +3695,17 @@ impl DeltaTableInputEndpointInner {
     /// Reproject `df` in table column order, supplying each partition column as
     /// a constant from the file's log action. Every read side lays its columns
     /// out the same way, so `UNION ALL` and `EXCEPT ALL` line up.
+    ///
+    /// `extra_columns` names columns to carry through that the table schema does
+    /// not declare, appended after the table's own. A change data file's
+    /// `_change_type` is the only one today; without it the reprojection, which
+    /// walks the table schema, would drop the column that decides each row's
+    /// polarity.
     fn add_partition_columns(
         &self,
         df: DataFrame,
         partition_values: Option<&HashMap<String, Option<String>>>,
+        extra_columns: &[&str],
         description: &str,
     ) -> AnyResult<DataFrame> {
         let partition_columns = self.partition_columns()?;
@@ -3336,6 +3748,11 @@ impl DeltaTableInputEndpointInner {
                 );
             } else if schema.has_column_with_unqualified_name(field.name()) {
                 projection.push(col(field.name()));
+            }
+        }
+        for name in extra_columns {
+            if schema.has_column_with_unqualified_name(name) {
+                projection.push(col(*name));
             }
         }
 
@@ -3407,15 +3824,17 @@ impl DeltaTableInputEndpointInner {
             .map_err(|e| anyhow!("error remapping column-mapped names: {e}"))
     }
 
+    /// A [`ListingTable`] reading `urls` as `schema` describes them: on-disk
+    /// (physical) column names, so the reader matches each file's columns;
+    /// `project_physical_to_logical` renames them back afterwards. Change data
+    /// files carry one column the table schema does not
+    /// ([`Self::change_data_read_schema`]).
     async fn create_parquet_table(
         &self,
         urls: Vec<ListingTableUrl>,
+        schema: SchemaRef,
         description: &str,
     ) -> AnyResult<ListingTable> {
-        // Use the on-disk (physical) schema so the reader matches each file's
-        // columns; `project_physical_to_logical` renames them back afterwards.
-        let schema = self.physical_read_schema(|_| true)?;
-
         let listing_options = ListingOptions::new(Arc::new(ParquetFormat::default()))
             .with_file_extension_opt(Some(".parquet"));
 
@@ -3437,25 +3856,21 @@ impl DeltaTableInputEndpointInner {
     /// supplies the decoded bitmap: a deletion vector for the mask, or the
     /// difference of two deletion vectors for the delta.
     ///
-    /// `keep_column` picks the columns to read: the provider declares the
-    /// snapshot schema restricted to them, which doubles as the Parquet
-    /// projection (see [`filtered_parquet_table`]). It must match the columns
-    /// any file it unions with keeps, so the providers line up in one query. It
-    /// is a predicate rather than a fixed list because the callers differ:
-    /// follow keeps `needs_column`, CDC keeps `keeps_cdc_column`.
+    /// `read_schema` names the columns to read, under their physical names, and
+    /// doubles as the Parquet projection (see [`filtered_parquet_table`]). It
+    /// must match the columns of any file this one unions with, so the providers
+    /// line up in one query, which is why the caller supplies it: follow keeps
+    /// `needs_column`, CDC keeps `keeps_cdc_column`, and a change data file
+    /// carries one column the table schema does not
+    /// ([`change_data_read_schema`](Self::change_data_read_schema)).
     async fn file_provider(
         &self,
         table: &DeltaTable,
         path: &str,
         bitmap: RoaringTreemap,
         mode: ReadMode,
-        keep_column: impl Fn(&str) -> bool,
+        read_schema: SchemaRef,
     ) -> AnyResult<Arc<dyn TableProvider>> {
-        // The provider declares the kept columns under their physical names so
-        // files read into one query line up by column; the caller renames them
-        // back to logical.
-        let read_schema = self.physical_read_schema(keep_column)?;
-
         // delta-rs already decoded the log's URL-encoded path, so `path` is the
         // object-store key as written.
         let file_path = Path::parse(path)
@@ -3551,12 +3966,15 @@ impl DeltaTableInputEndpointInner {
                 .iter()
                 .map(|f| file_listing_url(table, f.path))
                 .collect::<AnyResult<Vec<_>>>()?;
-            let listing_table = Arc::new(self.create_parquet_table(urls, description).await?);
+            let listing_table = Arc::new(
+                self.create_parquet_table(urls, self.physical_read_schema(|_| true)?, description)
+                    .await?,
+            );
             let df = self.datafusion.read_table(listing_table).map_err(|e| {
                 anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading Parquet files: {e}")
             })?;
             let df = self.project_physical_to_logical(df)?;
-            let df = self.add_partition_columns(df, group[0].partition_values, description)?;
+            let df = self.add_partition_columns(df, group[0].partition_values, &[], description)?;
             // Drop unused columns when `skip_unused_columns` is set, so
             // DataFusion never reads them off disk.
             dfs.push(self.project_cdc_columns(df).map_err(|e| {
@@ -3570,15 +3988,19 @@ impl DeltaTableInputEndpointInner {
             // again below, after the partition columns go back in.
             let bitmap = self.decode_dv(table, Some(dv), description).await?;
             let provider = self
-                .file_provider(table, path, bitmap, ReadMode::NotInBitmap, |name| {
-                    self.keeps_cdc_column(name)
-                })
+                .file_provider(
+                    table,
+                    path,
+                    bitmap,
+                    ReadMode::NotInBitmap,
+                    self.physical_read_schema(|name| self.keeps_cdc_column(name))?,
+                )
                 .await?;
             let df = self.datafusion.read_table(provider).map_err(|e| {
                 anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading masked file '{path}': {e}")
             })?;
             let df = self.project_physical_to_logical(df)?;
-            let df = self.add_partition_columns(df, file.partition_values, description)?;
+            let df = self.add_partition_columns(df, file.partition_values, &[], description)?;
             dfs.push(self.project_cdc_columns(df).map_err(|e| {
                 anyhow!("internal error processing {description}; {REPORT_ERROR}; {e}")
             })?);
@@ -3673,14 +4095,22 @@ impl DeltaTableInputEndpointInner {
                 Some(dv) => self.decode_dv(table, Some(dv), &description).await?,
                 None => RoaringTreemap::new(),
             };
-            self.file_provider(table, path, bitmap, ReadMode::NotInBitmap, |name| {
-                self.needs_column(name)
-            })
+            self.file_provider(
+                table,
+                path,
+                bitmap,
+                ReadMode::NotInBitmap,
+                self.physical_read_schema(|name| self.needs_column(name))?,
+            )
             .await?
         } else {
             Arc::new(
-                self.create_parquet_table(vec![file_listing_url(table, path)?], &description)
-                    .await?,
+                self.create_parquet_table(
+                    vec![file_listing_url(table, path)?],
+                    self.physical_read_schema(|_| true)?,
+                    &description,
+                )
+                .await?,
             )
         };
 
@@ -3722,9 +4152,13 @@ impl DeltaTableInputEndpointInner {
             Some(positions) if !positions.is_empty() => {
                 let description = format!("file '{path}'");
                 let provider = self
-                    .file_provider(table, path, positions.clone(), ReadMode::InBitmap, |name| {
-                        self.needs_column(name)
-                    })
+                    .file_provider(
+                        table,
+                        path,
+                        positions.clone(),
+                        ReadMode::InBitmap,
+                        self.physical_read_schema(|name| self.needs_column(name))?,
+                    )
                     .await?;
                 self.emit_provider(
                     provider,
@@ -3780,7 +4214,7 @@ impl DeltaTableInputEndpointInner {
         // Translate column-mapped physical names back to logical before any
         // logical-name projection or filter.
         let df = self.project_physical_to_logical(df)?;
-        let df = self.add_partition_columns(df, partition_values, description)?;
+        let df = self.add_partition_columns(df, partition_values, &[], description)?;
 
         let df = apply_filter(df, self.config.filter.as_deref(), description, None)?;
 
@@ -3791,8 +4225,7 @@ impl DeltaTableInputEndpointInner {
         let _record_count = self
             .execute_df(
                 df,
-                polarity,
-                None,
+                Polarity::Fixed(polarity),
                 description,
                 input_stream,
                 receiver,

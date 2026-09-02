@@ -197,6 +197,7 @@ export type {
   DeleteTenantUserErrors,
   DeleteTenantUserResponses,
   DeliverPolicy,
+  DeltaTableChangeFeed,
   DeltaTableIngestMode,
   DeltaTableReaderConfig,
   DeltaTableTransactionMode,

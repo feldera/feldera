@@ -174,8 +174,6 @@ fn validate_delta_interval(value: &str) -> Result<(), String> {
 
 /// Delta table read mode.
 ///
-/// Three options are available:
-///
 /// * `snapshot` - read a snapshot of the table and stop.
 ///
 /// * `follow` - continuously ingest changes to the table, starting from a specified version
@@ -183,6 +181,7 @@ fn validate_delta_interval(value: &str) -> Result<(), String> {
 ///
 /// * `snapshot_and_follow` - read a snapshot of the table before switching to continuous ingestion
 ///   mode.
+///
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub enum DeltaTableIngestMode {
     /// Read a snapshot of the table and stop.
@@ -207,6 +206,9 @@ pub enum DeltaTableIngestMode {
     /// In this mode, the connector does not read the initial snapshot of the table
     /// and follows the transaction log starting from the version of the table
     /// specified by the `version` or `datetime` property.
+    ///
+    /// Note: this mode reads a change log the *user* encoded as table rows.  To read
+    /// the change log Delta Lake itself maintains, see the `change_feed` property.
     #[serde(rename = "cdc")]
     Cdc,
 }
@@ -218,6 +220,55 @@ impl Display for DeltaTableIngestMode {
             DeltaTableIngestMode::Follow => write!(f, "follow"),
             DeltaTableIngestMode::SnapshotAndFollow => write!(f, "snapshot_and_follow"),
             DeltaTableIngestMode::Cdc => write!(f, "cdc"),
+        }
+    }
+}
+
+/// Whether the connector reads a Delta table's
+/// [Change Data Feed](https://docs.delta.io/latest/delta-change-data-feed.html).
+///
+/// A table with the `delta.enableChangeDataFeed` property records the rows an
+/// `UPDATE`, `DELETE`, or `MERGE` changed, in a `_change_data` directory.  Reading
+/// those rows is what the `follow` and `snapshot_and_follow` modes do instead of
+/// reconstructing the change from the data files a commit added and removed: for a
+/// commit that rewrites whole files, the difference is between reading the changed
+/// rows and reading every file those rows lived in.
+///
+/// The result is the same either way, so this option chooses how the change is read,
+/// never what it means.
+///
+/// Delta records no change data for a commit that only adds or only removes rows -
+/// an append, or a `DELETE` on a table with deletion vectors - so those commits are
+/// always read from their file actions.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema, Default)]
+pub enum DeltaTableChangeFeed {
+    /// Read change data when a commit records it; otherwise read the commit's file
+    /// actions.  Costs nothing on a table that records no change data.
+    #[default]
+    #[serde(rename = "auto")]
+    Auto,
+
+    /// Like `auto`, but fail at startup unless the table has
+    /// `delta.enableChangeDataFeed` set.
+    ///
+    /// Use this when the connector is provisioned for the cost of reading changed
+    /// rows rather than rewritten files: without the property the connector still
+    /// works, but reads as much as `off` does.
+    #[serde(rename = "require")]
+    Require,
+
+    /// Never read change data; reconstruct every change from the files a commit
+    /// added and removed.
+    #[serde(rename = "off")]
+    Off,
+}
+
+impl Display for DeltaTableChangeFeed {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            DeltaTableChangeFeed::Auto => write!(f, "auto"),
+            DeltaTableChangeFeed::Require => write!(f, "require"),
+            DeltaTableChangeFeed::Off => write!(f, "off"),
         }
     }
 }
@@ -253,8 +304,9 @@ fn default_num_parsers() -> u32 {
 ///
 /// # How transaction log is ingested using transactions
 ///
-/// If the connector is configured in the `follow`, `snapshot_and_follow`, or `cdc` mode, and its
-/// `transaction_mode` is set to `catchup`, it ingests the transaction log in batches. When it starts a
+/// If the connector follows the transaction log (`follow`, `snapshot_and_follow`, or `cdc`
+/// mode), and its `transaction_mode` is set to `catchup`, it ingests the
+/// transaction log in batches. When it starts a
 /// Feldera transaction, it reads the latest available version of the Delta table (capped by `end_version` if set) and
 /// ingests all log entries up to and including that version in a single Feldera transaction before committing. It then
 /// repeats for subsequent versions as they appear in the log.
@@ -301,7 +353,8 @@ pub struct DeltaTableReaderConfig {
 
     /// Table column that serves as an event timestamp.
     ///
-    /// When this option is specified, and `mode` is one of `snapshot` or `snapshot_and_follow`,
+    /// When this option is specified, and `mode` takes an initial snapshot (`snapshot`
+    /// or `snapshot_and_follow`),
     /// table rows are ingested in the timestamp order, respecting the
     /// [`LATENESS`](https://docs.feldera.com/sql/streaming#lateness-expressions)
     /// property of the column: each ingested row has a timestamp no more than `LATENESS`
@@ -349,7 +402,8 @@ pub struct DeltaTableReaderConfig {
 
     /// Optional snapshot filter.
     ///
-    /// This option is only valid when `mode` is set to `snapshot` or `snapshot_and_follow`.
+    /// This option is only valid in a mode that takes an initial snapshot: `snapshot`
+    /// or `snapshot_and_follow`.
     ///
     /// When specified, only rows that satisfy the filter condition are included in the
     /// snapshot.  The condition must be a valid SQL Boolean expression that can be used in
@@ -369,9 +423,9 @@ pub struct DeltaTableReaderConfig {
     /// Optional table version.
     ///
     /// When this option is set, the connector finds and opens the specified version of the table.
-    /// In `snapshot` and `snapshot_and_follow` modes, it retrieves the snapshot of this version of
-    /// the table.  In `follow`, `snapshot_and_follow`, and `cdc` modes, it follows transaction log records
-    /// **after** this version.
+    /// In the snapshot-taking modes it retrieves the snapshot of this version of the table.
+    /// In the log-following modes (`follow`, `snapshot_and_follow`, `cdc`) it follows
+    /// transaction log records **after** this version.
     ///
     /// Note: at most one of `version` and `datetime` options can be specified.
     /// When neither of the two options is specified, the latest committed version of the table
@@ -384,9 +438,9 @@ pub struct DeltaTableReaderConfig {
     ///
     /// When this option is set, the connector finds and opens the version of the table as of the
     /// specified point in time (based on the server time recorded in the transaction log, not the
-    /// event time encoded in the data).  In `snapshot` and `snapshot_and_follow` modes, it
-    /// retrieves the snapshot of this version of the table.  In `follow`, `snapshot_and_follow`, and
-    /// `cdc` modes, it follows transaction log records **after** this version.
+    /// event time encoded in the data).  In the snapshot-taking modes it retrieves the snapshot
+    /// of this version of the table.  In the log-following modes (`follow`,
+    /// `snapshot_and_follow`, `cdc`) it follows transaction log records **after** this version.
     ///
     /// Note: at most one of `version` and `datetime` options can be specified.
     /// When neither of the two options is specified, the latest committed version of the table
@@ -396,11 +450,20 @@ pub struct DeltaTableReaderConfig {
 
     /// Optional final table version.
     ///
-    /// Valid only when the connector is configured in `follow`, `snapshot_and_follow`, or `cdc` mode.
+    /// Valid only when the connector follows the transaction log: `follow`,
+    /// `snapshot_and_follow`, or `cdc` mode.
     ///
     /// When set, the connector will stop scanning the table’s transaction log after reaching this version or any greater version.
     /// This bound is inclusive: if the specified version appears in the log, it will be processed before signaling end-of-input.
     pub end_version: Option<i64>,
+
+    /// How the connector reads changes: from the table's Change Data Feed, or from
+    /// the data files each commit added and removed.
+    ///
+    /// Valid only in the `follow` and `snapshot_and_follow` modes. See
+    /// [`DeltaTableChangeFeed`]. Defaults to `auto`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change_feed: Option<DeltaTableChangeFeed>,
 
     /// A predicate that determines whether the record represents a deletion.
     ///
@@ -444,7 +507,7 @@ pub struct DeltaTableReaderConfig {
     ///
     /// Supported values:
     /// * 0 - no verbose logging
-    /// * 1 - log all Delta log entries in follow and cdc modes.
+    /// * 1 - log all Delta log entries in the log-following modes.
     /// * >1 - reserved for future use
     #[serde(default)]
     pub verbose: u32,
@@ -642,7 +705,30 @@ impl DeltaTableReaderConfig {
         )
     }
 
+    /// `true` in the user-encoded change log mode (`cdc`), which is unrelated to
+    /// Delta Lake's own Change Data Feed ([`Self::change_feed`]).
     pub fn is_cdc(&self) -> bool {
         matches!(&self.mode, DeltaTableIngestMode::Cdc)
+    }
+
+    /// The configured [`DeltaTableChangeFeed`], or its default.
+    pub fn change_feed(&self) -> DeltaTableChangeFeed {
+        self.change_feed.unwrap_or_default()
+    }
+
+    /// `true` if the connector reads a commit's change data when the commit records
+    /// any.
+    ///
+    /// The `cdc` mode is excluded: it reads a change log the user encoded as table
+    /// rows, taking each row's polarity from `cdc_delete_filter`, and Delta's
+    /// `_change_type` is a second, incompatible answer to the same question.
+    pub fn reads_change_feed(&self) -> bool {
+        self.follow() && !self.is_cdc() && self.change_feed() != DeltaTableChangeFeed::Off
+    }
+
+    /// `true` if the table must record a change feed for the configuration to make
+    /// sense.
+    pub fn requires_change_feed(&self) -> bool {
+        self.change_feed() == DeltaTableChangeFeed::Require
     }
 }

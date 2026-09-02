@@ -117,6 +117,10 @@ fn type_replacement() -> Vec<(&'static str, &'static str)> {
             "feldera_types::transport::nexmark::NexmarkInputOptions",
         ),
         (
+            "DeltaTableChangeFeed",
+            "feldera_types::transport::delta_table::DeltaTableChangeFeed",
+        ),
+        (
             "DeltaTableIngestMode",
             "feldera_types::transport::delta_table::DeltaTableIngestMode",
         ),
