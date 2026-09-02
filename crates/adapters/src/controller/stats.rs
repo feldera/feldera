@@ -105,20 +105,6 @@ pub(crate) const MAX_CONNECTOR_ERRORS: usize = 100;
 /// error chain and a backtrace survives intact.
 pub(crate) const MAX_CONNECTOR_ERROR_LEN: usize = 8 * 1024;
 
-/// Kind of input buffered by an endpoint.
-///
-/// Used by [ControllerStatus::input_batch_global] to decide whether input
-/// buffering should wake the circuit thread.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub(super) enum BufferedInput {
-    /// Regular input buffering, with no special wakeup reason.
-    Normal,
-
-    /// Input was buffered for an endpoint currently blocking checkpoint or
-    /// suspend on a barrier.
-    Barrier,
-}
-
 /// Completion token.
 ///
 /// A completion token associated with an endpoint identifies a position in the endpoint's
@@ -1171,24 +1157,17 @@ impl ControllerStatus {
     ///
     /// This method is used for all input batches, including inserts that don't
     /// belong to an endpoint, e.g., happen by executing an ad-hoc INSERT query.
-    pub(super) fn input_batch_global(
-        &self,
-        amt: BufferSize,
-        buffered_input: BufferedInput,
-        circuit_thread_unparker: &Unparker,
-    ) {
-        let num_records = amt.records as u64;
-        // Increment buffered_records; unpark circuit thread once
-        // `min_batch_size_records` is exceeded.
-        let old = self.global_metrics.input_batch(amt);
+    pub(super) fn input_batch_global(&self, amt: BufferSize, circuit_thread_unparker: &Unparker) {
+        self.global_metrics.input_batch(amt);
 
-        if old == 0
-            || (old <= self.pipeline_config.global.min_batch_size_records
-                && old + num_records > self.pipeline_config.global.min_batch_size_records)
-            || buffered_input == BufferedInput::Barrier
-        {
-            circuit_thread_unparker.unpark();
-        }
+        // Wake the circuit thread for every batch and let [StepTrigger] decide
+        // whether to step.  A wake rule of its own has to know which endpoints
+        // the next step polls, and gets it wrong every time that set narrows:
+        // input buffered by an endpoint the step skips stays buffered, so a
+        // rule reading the global count sleeps through input it could consume.
+        // `min_batch_size_records` and `max_buffering_delay` still batch input,
+        // because they gate the step, not the wakeup.
+        circuit_thread_unparker.unpark();
     }
 
     /// Update counters after receiving a new input batch.
@@ -1199,30 +1178,18 @@ impl ControllerStatus {
     /// * `amt` - number of bytes and records in the batch.
     /// * `backpressure_thread_unparker` - unparker used to wake up the
     ///   backpressure thread if the endpoint is full.
-    ///
-    /// Returns the kind of input that was buffered, used by
-    /// [Self::input_batch_global] to decide whether to wake the circuit thread.
     pub(super) fn input_batch_from_endpoint(
         &self,
         endpoint_id: EndpointId,
         amt: BufferSize,
         backpressure_thread_unparker: &Unparker,
-    ) -> BufferedInput {
+    ) {
         // There is a potential race condition if the endpoint is currently
         // being removed. In this case, it's safe to ignore this operation.
         if !amt.is_empty() {
             let inputs = self.input_status();
             if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
                 let old = endpoint_stats.add_buffered(amt);
-                // Barrier endpoints must wake the circuit thread even if they
-                // already had buffered input. Otherwise the generic wake rules
-                // can ignore an old > 0 batch, leaving a suspend request parked
-                // even though this batch may make the endpoint checkpointable.
-                let buffered_input = if endpoint_stats.is_barrier() {
-                    BufferedInput::Barrier
-                } else {
-                    BufferedInput::Normal
-                };
                 let threshold = BufferSize {
                     records: endpoint_stats.config.connector_config.max_queued_records() as usize,
                     bytes: endpoint_stats.config.connector_config.max_queued_bytes() as usize,
@@ -1237,11 +1204,8 @@ impl ControllerStatus {
                 {
                     backpressure_thread_unparker.unpark();
                 }
-                return buffered_input;
             }
         }
-
-        BufferedInput::Normal
     }
 
     /// Update counters after receiving an end-of-input event on an input
