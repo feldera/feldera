@@ -232,16 +232,18 @@ mod test {
     }
 
     /// A spine where every batch falls below one share still spends the whole
-    /// sample, over enough batches to place a full set of partition boundaries.
+    /// sample, over enough batches for a caller to cut it into runs.
     ///
-    /// `BatchReader::partition_keys` samples `partitions.pow(2)` keys and cuts
-    /// them into `partitions` runs, so it needs draws to reach at least
-    /// `partitions` batches. A spine holds far more batches than that, each a
-    /// small fraction of the keys.
+    /// `BatchReader::partition_keys` cuts its sample into one run per partition
+    /// and takes a boundary from each, so a sample that reaches fewer batches
+    /// than that yields fewer boundaries. A spine holds far more batches than
+    /// the sample holds draws, each batch a small fraction of the keys.
     #[test]
     fn a_spine_of_many_small_batches_still_draws_the_whole_sample() {
-        const PARTITIONS: usize = 12;
-        const SAMPLE_SIZE: usize = PARTITIONS * PARTITIONS;
+        /// Runs the sample is to be cut into, standing in for a caller's
+        /// partition count.
+        const RUNS: usize = 12;
+        const SAMPLE_SIZE: usize = 144;
 
         // Batch counts and sizes spanning four orders of magnitude, as a spine's
         // levels do.
@@ -267,7 +269,7 @@ mod test {
         let draws = apportion_draws(&counts, SAMPLE_SIZE);
 
         assert_eq!(draws.iter().sum::<usize>(), SAMPLE_SIZE);
-        assert!(draws.iter().filter(|&&draw| draw > 0).count() >= PARTITIONS);
+        assert!(draws.iter().filter(|&&draw| draw > 0).count() >= RUNS);
     }
 
     /// A sample size of zero, and a spine holding no keys at all, draw nothing.

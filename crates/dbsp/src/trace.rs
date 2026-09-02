@@ -395,31 +395,34 @@ pub enum BatchLocation {
 //     }
 // }
 
-/// Number of keys [`BatchReader::partition_keys`] to sample in order to place
+/// Number of keys [`BatchReader::partition_keys`] samples in order to place
 /// `num_partitions - 1` boundaries.
 ///
 /// More samples lead to more accurate bounds (with less imbalance between the
-/// resulting ranges), but make sampling more expensive. We choos sample size
+/// resulting ranges), but make sampling more expensive. We choose a sample size
 /// that keeps the expected largest range within 10% of an even split.
 ///
 /// Each boundary is a sample quantile, so a range ends up holding a
 /// Beta-distributed share of the batch with `sample_size / num_partitions`
 /// draws in it and a relative error near the inverse square root of that count.
 ///
-/// Three terms, in order:
+/// The smallest of these three terms wins:
 ///
-/// * `DRAWS_PER_PARTITION` per partition, the accuracy the boundaries need.
+/// * `DRAWS_PER_PARTITION` draws per partition. This is the term that buys the
+///   accuracy: the relative error above falls as the draws per partition rise.
 /// * A budget that keeps the sample small against one range's scan. The sample
 ///   is drawn once on one thread and the ranges are then scanned in parallel,
 ///   so a draw competes with `key_count / num_partitions` keys, not with the
 ///   whole batch. A draw seeks to a random row in every batch of a spine
-///   snapshot, which is dearer than the sequential step per key that the scan
-///   pays, hence the charge of several hundred keys per draw.
-/// * Never fewer than `num_partitions.pow(2)`, because on a batch that small
-///   the sample costs nothing in absolute terms whatever the budget says.
+///   snapshot, which is more expensive than the sequential step per key that
+///   the scan pays, hence the charge of several hundred keys per draw.
+/// * `key_count`, beyond which [`BatchReader::sample_keys`] has no more keys to
+///   give. A sample that large is exhaustive and the split is exact.
 ///
-/// Capped at `key_count`, where [`BatchReader::sample_keys`] returns every key
-/// and the split is exact.
+/// Raised afterwards to `num_partitions.pow(2)` if the budget put it lower,
+/// since on a batch that small the sample costs nothing in absolute terms
+/// whatever the budget says. The `key_count` cap outranks that floor: a batch
+/// holding fewer keys than the floor is still drawn whole.
 pub(crate) fn partition_sample_size(key_count: usize, num_partitions: usize) -> usize {
     /// Draws per partition. 256 keeps the expected largest range within ~10% of
     /// an even split (~20% at the 99th percentile) for partition counts from 4
