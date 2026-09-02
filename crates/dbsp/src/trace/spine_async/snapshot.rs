@@ -357,7 +357,7 @@ mod partition_keys_test {
     use crate::{
         ZWeight,
         dynamic::{DowncastTrait, DynData},
-        trace::{BatchReader, BatchReaderFactories, Cursor, SpineSnapshot},
+        trace::{BatchReader, BatchReaderFactories, Cursor, SpineSnapshot, partition_sample_size},
         typed_batch::{DynOrdIndexedZSet, OrdIndexedZSet},
         utils::Tup2,
     };
@@ -365,20 +365,21 @@ mod partition_keys_test {
 
     type Batch = DynOrdIndexedZSet<DynData, DynData>;
 
-    const BATCHES: u64 = 200;
-    const KEYS_PER_BATCH: u64 = 500;
-    const PARTITIONS: usize = 12;
-
-    /// A snapshot with many batches.
-    fn interleaved_snapshot() -> SpineSnapshot<Batch> {
+    /// A snapshot of `batches` batches of `keys_per_batch` keys each, laid out
+    /// by `key`, which maps a batch index and an offset within it to a key.
+    fn snapshot(
+        batches: u64,
+        keys_per_batch: u64,
+        key: impl Fn(u64, u64) -> u64,
+    ) -> SpineSnapshot<Batch> {
         let factories: <Batch as BatchReader>::Factories =
             BatchReaderFactories::new::<u64, u64, ZWeight>();
-        let batches = (0..BATCHES)
+        let batches = (0..batches)
             .map(|batch| {
-                let tuples = (0..KEYS_PER_BATCH)
+                let tuples = (0..keys_per_batch)
                     .map(|i| {
-                        let key = i * BATCHES + batch;
-                        Tup2(Tup2(key, key), 1)
+                        let k = key(batch, i);
+                        Tup2(Tup2(k, k), 1)
                     })
                     .collect();
                 Arc::new(OrdIndexedZSet::<u64, u64>::from_tuples((), tuples).into_inner())
@@ -388,6 +389,43 @@ mod partition_keys_test {
         SpineSnapshot::with_batches(&factories, batches)
     }
 
+    /// Keys of every batch spread over the whole key range, as they are when a
+    /// spine groups its batches by arrival time and the keys do not correlate
+    /// with arrival.
+    fn interleaved(batches: u64) -> impl Fn(u64, u64) -> u64 {
+        move |batch, i| i * batches + batch
+    }
+
+    /// Partitions `snapshot` and returns the size of each range.
+    fn partition(snapshot: &SpineSnapshot<Batch>, partitions: usize) -> Vec<u64> {
+        let mut bounds = snapshot.factories().keys_factory().default_box();
+        snapshot.partition_keys(partitions, bounds.as_mut());
+        assert_eq!(bounds.len(), partitions - 1);
+
+        let mut sizes = vec![0u64; partitions];
+        let mut cursor = snapshot.cursor();
+        while cursor.key_valid() {
+            let key = *cursor.key().downcast_checked::<u64>();
+            let range = (0..partitions - 1)
+                .find(|&i| key < *bounds.index(i).downcast_checked::<u64>())
+                .unwrap_or(partitions - 1);
+            sizes[range] += 1;
+            cursor.step_key();
+        }
+        assert_eq!(sizes.iter().sum::<u64>(), snapshot.key_count() as u64);
+        sizes
+    }
+
+    #[track_caller]
+    fn assert_within(sizes: &[u64], multiple_of_an_even_split: u64) {
+        let total: u64 = sizes.iter().sum();
+        let largest = *sizes.iter().max().unwrap();
+        assert!(
+            largest * sizes.len() as u64 <= total * multiple_of_an_even_split,
+            "largest range holds {largest} of {total} keys: {sizes:?}"
+        );
+    }
+
     /// `partition_keys` returns a full set of boundaries, cutting ranges of
     /// comparable size, over a snapshot of many small batches.
     ///
@@ -395,33 +433,33 @@ mod partition_keys_test {
     /// reaches a full share of it, so each batch contributes at most one key.
     #[test]
     fn a_snapshot_of_many_small_batches_yields_every_boundary() {
-        let snapshot = interleaved_snapshot();
-        let total_keys = BATCHES * KEYS_PER_BATCH;
-        assert_eq!(snapshot.key_count() as u64, total_keys);
-        assert!(KEYS_PER_BATCH < total_keys / PARTITIONS.pow(2) as u64);
+        const BATCHES: u64 = 200;
+        const KEYS_PER_BATCH: u64 = 500;
+        const PARTITIONS: usize = 12;
 
-        let mut bounds = snapshot.factories().keys_factory().default_box();
-        snapshot.partition_keys(PARTITIONS, bounds.as_mut());
+        let snapshot = snapshot(BATCHES, KEYS_PER_BATCH, interleaved(BATCHES));
+        assert_eq!(snapshot.key_count() as u64, BATCHES * KEYS_PER_BATCH);
+        assert!(KEYS_PER_BATCH < snapshot.key_count() as u64 / PARTITIONS.pow(2) as u64);
 
-        assert_eq!(bounds.len(), PARTITIONS - 1);
+        assert_within(&partition(&snapshot, PARTITIONS), 3);
+    }
 
-        // Sizes of the ranges the boundaries cut the snapshot into.
-        let mut sizes = vec![0u64; PARTITIONS];
-        let mut cursor = snapshot.cursor();
-        while cursor.key_valid() {
-            let key = *cursor.key().downcast_checked::<u64>();
-            let partition = (0..PARTITIONS - 1)
-                .find(|&i| key < *bounds.index(i).downcast_checked::<u64>())
-                .unwrap_or(PARTITIONS - 1);
-            sizes[partition] += 1;
-            cursor.step_key();
-        }
+    /// A batch large enough for the sample size to come from the accuracy term
+    /// rather than the floor still partitions evenly, so the split does not
+    /// depend on `partition_keys` happening to fall back to its floor.
+    #[test]
+    fn a_snapshot_sampled_above_the_floor_partitions_evenly() {
+        const BATCHES: u64 = 50;
+        const KEYS_PER_BATCH: u64 = 4_000;
+        const PARTITIONS: usize = 6;
 
-        assert_eq!(sizes.iter().sum::<u64>(), total_keys);
-        let largest = *sizes.iter().max().unwrap();
+        let snapshot = snapshot(BATCHES, KEYS_PER_BATCH, interleaved(BATCHES));
+        let sample_size = partition_sample_size(snapshot.key_count(), PARTITIONS);
         assert!(
-            largest * PARTITIONS as u64 <= total_keys * 3,
-            "largest range holds {largest} of {total_keys} keys: {sizes:?}"
+            sample_size > PARTITIONS.pow(2),
+            "fixture is meant to be sampled above the floor, drew {sample_size}"
         );
+
+        assert_within(&partition(&snapshot, PARTITIONS), 3);
     }
 }
