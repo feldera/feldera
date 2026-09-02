@@ -128,6 +128,20 @@ This section breaks down pipelines' memory usage in more detail.
   number of bits per key, or disabling Bloom filters, can reduce
   performance.
 
+  A rate between two of the values above rounds to the nearest one in
+  log space, so 5e-4 rounds to 1e-3 rather than to 1e-4.
+
+  The rate applies to filters already on storage as well as to filters
+  as they are written.  Lowering it and restarting a pipeline sheds
+  Bloom filter memory immediately, without rewriting any batches, and
+  raising it again restores the accuracy those batches were written
+  with.
+
+  Raising the rate past the rate a batch was written at is a no-op for
+  that batch, which has no more accuracy to give.  Batches written
+  afterwards, including the ones background merges produce, are written
+  at the new rate, so a pipeline that keeps ingesting converges on it.
+
 - **Index batches in memory**.  The pipeline’s internal state is maintained as
   a set of indexes that are continuously updated as new data is processed. Updates
   are first accumulated in in-memory batches, which are then merged into larger

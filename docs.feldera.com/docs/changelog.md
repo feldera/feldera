@@ -14,6 +14,17 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - The `bloom_false_positive_rate` storage setting now applies when a
+          Bloom filter is read as well as when it is written.  Lowering it and
+          restarting a pipeline reduces Bloom filter memory without rewriting
+          any batches, and raising it again restores the accuracy the batches
+          were written with.  See [Memory management](/operations/memory).
+
+          Batches written at a rate finer than 0.1 use a new filter format, so
+          a checkpoint written by this or a later version cannot be resumed by
+          an earlier version.  Checkpoints written by earlier versions continue
+          to be read.
+
         - Output connectors can be paused, like input connectors: a paused
           output connector discards the output of its view instead of writing it
           to its sink, which lets a pipeline run on while a sink is unavailable.
