@@ -1,8 +1,15 @@
-use std::{io::Cursor, marker::PhantomData, sync::Arc};
+use std::{
+    io::Cursor,
+    marker::PhantomData,
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
+    },
+};
 
 use crate::{
     DBWeight, Runtime,
-    circuit::CircuitConfig,
+    circuit::{CircuitConfig, CircuitStorageConfig},
     dynamic::{DataTrait, DowncastTrait, DynWeight, Factory, LeanVec, Vector, WithFactory},
     storage::{
         backend::{BlockLocation, StorageBackend},
@@ -11,6 +18,7 @@ use crate::{
             TouchedWindowCount,
             format::{
                 BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, Compression, FileTrailer,
+                INCOMPATIBLE_FEATURE_MODULAR_FILTERS, MODULAR_BLOOM_FILTER_BLOCK_MAGIC,
                 ROARING_BITMAP_FILTER_BLOCK_MAGIC,
             },
             reader::{BulkRows, FilteredKeys, Reader},
@@ -30,11 +38,15 @@ use super::{
     writer::{Parameters, Writer1, Writer2},
 };
 
+use crate::storage::file::FilterKind;
+use crate::storage::{backend::StorageError, buffer_cache::FBuf};
 use crate::{
     DBData,
     dynamic::{DynData, Erase},
 };
 use binrw::BinRead;
+use feldera_storage::file::FileId;
+use feldera_storage::{FileCommitter, FileReader, FileRw, StoragePath};
 use feldera_types::config::{StorageConfig, StorageOptions};
 use rand::{Rng, seq::SliceRandom, thread_rng};
 use tempfile::tempdir;
@@ -210,6 +222,38 @@ where
 {
     let mut config = CircuitConfig::default();
     config.dev_tweaks.enable_roaring = Some(true);
+    let (handle, ()) = Runtime::init_circuit(config, move |_| {
+        f();
+        Ok(())
+    })
+    .unwrap();
+    handle.kill().unwrap();
+}
+
+/// Runs `f` inside a circuit configured with `rate`, which is what both the
+/// writer and the filter loader consult.
+///
+/// The rate goes through the storage options rather than the deprecated dev
+/// tweak, so the tests drive the same path production does. The circuit's own
+/// storage is unused: `f` reaches its batch files through its own backend.
+fn with_false_positive_rate<F>(rate: f64, f: F)
+where
+    F: FnOnce() + Clone + Send + 'static,
+{
+    let tempdir = tempdir().unwrap();
+    let config = CircuitConfig::default().with_storage(Some(
+        CircuitStorageConfig::for_config(
+            StorageConfig {
+                path: tempdir.path().to_string_lossy().into_owned(),
+                cache: Default::default(),
+            },
+            StorageOptions {
+                bloom_false_positive_rate: Some(rate),
+                ..StorageOptions::default()
+            },
+        )
+        .unwrap(),
+    ));
     let (handle, ()) = Runtime::init_circuit(config, move |_| {
         f();
         Ok(())
@@ -1259,8 +1303,16 @@ fn bloom_filter_roundtrip_and_block_kind() {
         for key in [1i64, 3, 7] {
             assert!(filters.maybe_contains_key(key.erase(), None));
         }
-        assert_eq!(filter_block_magic(&reader), Some(BLOOM_FILTER_BLOCK_MAGIC));
-        assert_eq!(incompatible_features(&reader), 0);
+        assert_eq!(
+            filter_block_magic(&reader),
+            Some(MODULAR_BLOOM_FILTER_BLOCK_MAGIC)
+        );
+        // A file carrying more than one module is deliberately unreadable by
+        // binaries that predate them, so they fail loudly rather than mis-parse.
+        assert_eq!(
+            incompatible_features(&reader),
+            INCOMPATIBLE_FEATURE_MODULAR_FILTERS
+        );
     }
 }
 
@@ -1419,7 +1471,10 @@ fn writer_without_filter_plan_uses_bloom_filter() {
         }
 
         let (reader, _filters) = writer.into_reader(BatchMetadata::default()).unwrap();
-        assert_eq!(filter_block_magic(&reader), Some(BLOOM_FILTER_BLOCK_MAGIC));
+        assert_eq!(
+            filter_block_magic(&reader),
+            Some(MODULAR_BLOOM_FILTER_BLOCK_MAGIC)
+        );
     });
 }
 
@@ -1563,7 +1618,10 @@ fn i64_keys_fallback_to_bloom_when_span_exceeds_u32() {
         }
 
         let (reader, _filters) = writer.into_reader(BatchMetadata::default()).unwrap();
-        assert_eq!(filter_block_magic(&reader), Some(BLOOM_FILTER_BLOCK_MAGIC));
+        assert_eq!(
+            filter_block_magic(&reader),
+            Some(MODULAR_BLOOM_FILTER_BLOCK_MAGIC)
+        );
     });
 }
 
@@ -1685,5 +1743,454 @@ fn test_big_values() {
             |row| (v(row * 2), v(row * 2 + 1), v(row * 2 + 2), ()),
             parameters,
         )
+    });
+}
+
+/// Builds a storage backend rooted at `dir`.
+fn backend_at(dir: &str) -> Arc<dyn StorageBackend> {
+    <dyn StorageBackend>::new(
+        &StorageConfig {
+            path: dir.to_string(),
+            cache: Default::default(),
+        },
+        &StorageOptions::default(),
+    )
+    .unwrap()
+}
+
+/// Writes `keys` into a batch file under `dir`.
+///
+/// # Arguments
+///
+/// - `dir`: directory to write the batch into.
+/// - `keys`: keys to write, in order.
+///
+/// # Returns
+///
+/// The path of the finished file, which the tests reopen through a fresh
+/// backend.
+fn write_u32_batch(dir: &str, keys: &[u32]) -> StoragePath {
+    let factories = Factories::<DynData, DynData>::new::<u32, ()>();
+    let storage_backend = backend_at(dir);
+    let mut writer = Writer1::new(
+        &factories,
+        test_buffer_cache,
+        &*storage_backend,
+        Parameters::default(),
+        FilterPlan::<DynData>::decide_filter(None, keys.len()),
+    )
+    .unwrap();
+    for key in keys {
+        writer.write0((key, &())).unwrap();
+    }
+    let tmp_path = writer.path().clone();
+    // The handle must outlive the copy: dropping it removes the file.
+    let (_file_handle, _filter, _bounds) = writer.close(BatchMetadata::default()).unwrap();
+
+    // The writer picks its own file name, which a later backend instance has
+    // no way to learn, so the batch is renamed to something the tests can ask
+    // for by name.
+    let stable_path = StoragePath::from("batch.feldera".to_string());
+    let content = storage_backend.read(&tmp_path).unwrap();
+    storage_backend
+        .write(&stable_path, (*content).clone())
+        .unwrap();
+    storage_backend.delete(&tmp_path).unwrap();
+    stable_path
+}
+
+/// Opens a batch file written by [`write_u32_batch`].
+///
+/// # Arguments
+///
+/// - `dir`: directory holding the batch.
+/// - `path`: the batch's path, as returned by [`write_u32_batch`].
+///
+/// # Returns
+///
+/// - the batch's filter chain;
+/// - the magic of the filter block on disk, or `None` when it has no filter;
+/// - the file's incompatible feature bits.
+fn open_u32_batch(dir: &str, path: &StoragePath) -> (BatchFilters<DynData>, Option<[u8; 4]>, u64) {
+    let factories = Factories::<DynData, DynData>::new::<u32, ()>();
+    let storage_backend = backend_at(dir);
+    let (reader, membership_filter): (Reader<(&'static DynData, &'static DynData, ())>, _) =
+        Reader::open_with_filter(
+            &[&factories.any_factories()],
+            test_buffer_cache,
+            &*storage_backend,
+            path,
+        )
+        .unwrap();
+    let magic = filter_block_magic(&reader);
+    let features = incompatible_features(&reader);
+    let key_range = reader.key_range().unwrap().map(Into::into);
+    (
+        BatchFilters::from_file(key_range, membership_filter),
+        magic,
+        features,
+    )
+}
+
+/// The configured rate selects the module count, and a one-module filter is
+/// written in the original encoding so older binaries can still read the file.
+#[test]
+fn rate_selects_the_module_count_and_the_block_encoding() {
+    init_test_logger();
+
+    for (rate, expected_magic) in [
+        (1e-4, Some(MODULAR_BLOOM_FILTER_BLOCK_MAGIC)),
+        (1e-3, Some(MODULAR_BLOOM_FILTER_BLOCK_MAGIC)),
+        (1e-2, Some(MODULAR_BLOOM_FILTER_BLOCK_MAGIC)),
+        (1e-1, Some(BLOOM_FILTER_BLOCK_MAGIC)),
+        (1.0, None),
+    ] {
+        let tempdir = tempdir().unwrap();
+        let dir = tempdir.path().to_string_lossy().to_string();
+        let keys: Vec<u32> = (0..2_000u32).map(|k| k * 2).collect();
+
+        with_false_positive_rate(rate, move || {
+            let path = write_u32_batch(&dir, &keys);
+            let (filters, magic, features) = open_u32_batch(&dir, &path);
+            assert_eq!(magic, expected_magic, "rate {rate:e} wrote the wrong block");
+
+            for key in &keys {
+                assert!(
+                    filters.maybe_contains_key(key as &DynData, None),
+                    "rate {rate:e}: filter rejected stored key {key}"
+                );
+            }
+
+            // Only a multi-module file is closed to older binaries. A file with
+            // one module, or none, stays readable by them.
+            let expected_features = if rate < 0.05 {
+                INCOMPATIBLE_FEATURE_MODULAR_FILTERS
+            } else {
+                0
+            };
+            assert_eq!(
+                features, expected_features,
+                "rate {rate:e} set the wrong incompatible features"
+            );
+
+            let kind = filters.membership_filter_kind();
+            if expected_magic.is_none() {
+                assert_eq!(
+                    kind,
+                    FilterKind::None,
+                    "rate {rate:e} should write no filter"
+                );
+            } else {
+                assert_eq!(kind, FilterKind::Bloom, "rate {rate:e} should write Bloom");
+            }
+        });
+    }
+}
+
+/// Lowering the rate sheds modules when the file is loaded, without rewriting
+/// it and without ever losing a key.
+#[test]
+fn lowering_the_rate_evicts_modules_on_load() {
+    init_test_logger();
+
+    let tempdir = tempdir().unwrap();
+    let dir = tempdir.path().to_string_lossy().to_string();
+    let keys: Vec<u32> = (0..4_000u32).map(|k| k * 2).collect();
+    let path = Arc::new(Mutex::new(None));
+
+    // Write at the most accurate rate, so the file holds four modules.
+    {
+        let (dir, keys, path) = (dir.clone(), keys.clone(), path.clone());
+        with_false_positive_rate(1e-4, move || {
+            *path.lock().unwrap() = Some(write_u32_batch(&dir, &keys));
+        });
+    }
+    let path = path.lock().unwrap().clone().unwrap();
+
+    // Reload it under progressively coarser rates. Each one keeps fewer bytes
+    // resident, and none of them may lose a key.
+    let mut previous_bytes = usize::MAX;
+    for rate in [1e-4, 1e-3, 1e-2, 1e-1] {
+        let (dir, keys, path) = (dir.clone(), keys.clone(), path.clone());
+        let bytes = Arc::new(Mutex::new(0));
+        {
+            let bytes = bytes.clone();
+            with_false_positive_rate(rate, move || {
+                let (filters, magic, _features) = open_u32_batch(&dir, &path);
+                assert_eq!(
+                    magic,
+                    Some(MODULAR_BLOOM_FILTER_BLOCK_MAGIC),
+                    "the file on disk is unchanged by loading it"
+                );
+                assert_eq!(filters.membership_filter_kind(), FilterKind::Bloom);
+                for key in &keys {
+                    assert!(
+                        filters.maybe_contains_key(key as &DynData, None),
+                        "rate {rate:e}: eviction lost key {key}"
+                    );
+                }
+                *bytes.lock().unwrap() = filters.stats().membership_filter.size_byte;
+            });
+        }
+        let bytes = *bytes.lock().unwrap();
+        assert!(
+            bytes < previous_bytes,
+            "rate {rate:e} kept {bytes} bytes resident, no less than the {previous_bytes} before it"
+        );
+        previous_bytes = bytes;
+    }
+}
+
+/// A rate of one drops the filter entirely at load time, even for a file that
+/// was written with modules.
+#[test]
+fn a_rate_of_one_drops_an_existing_filter_on_load() {
+    init_test_logger();
+
+    let tempdir = tempdir().unwrap();
+    let dir = tempdir.path().to_string_lossy().to_string();
+    let keys: Vec<u32> = (0..1_000u32).collect();
+    let path = Arc::new(Mutex::new(None));
+
+    {
+        let (dir, keys, path) = (dir.clone(), keys.clone(), path.clone());
+        with_false_positive_rate(1e-4, move || {
+            *path.lock().unwrap() = Some(write_u32_batch(&dir, &keys));
+        });
+    }
+    let path = path.lock().unwrap().clone().unwrap();
+
+    with_false_positive_rate(1.0, move || {
+        let (filters, _magic, _features) = open_u32_batch(&dir, &path);
+        assert_eq!(filters.membership_filter_kind(), FilterKind::None);
+        assert_eq!(filters.stats().membership_filter.size_byte, 0);
+        // Without a membership filter every in-range key must still be accepted.
+        for key in &keys {
+            assert!(filters.maybe_contains_key(key as &DynData, None));
+        }
+    });
+}
+
+/// A [`FileReader`] that tallies the bytes the reads it forwards ask for.
+#[derive(Debug)]
+struct CountingFileReader {
+    inner: Arc<dyn FileReader>,
+    bytes: Arc<AtomicUsize>,
+    calls: Arc<AtomicUsize>,
+}
+
+impl FileRw for CountingFileReader {
+    fn file_id(&self) -> FileId {
+        self.inner.file_id()
+    }
+
+    fn path(&self) -> &StoragePath {
+        self.inner.path()
+    }
+}
+
+impl FileCommitter for CountingFileReader {
+    fn commit(&self) -> Result<(), StorageError> {
+        self.inner.commit()
+    }
+}
+
+impl FileReader for CountingFileReader {
+    fn mark_for_checkpoint(&self) {
+        self.inner.mark_for_checkpoint();
+    }
+
+    fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError> {
+        self.bytes.fetch_add(location.size, Ordering::Relaxed);
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        self.inner.read_block(location)
+    }
+
+    fn get_size(&self) -> Result<u64, StorageError> {
+        self.inner.get_size()
+    }
+}
+
+/// Opens a batch file, counting what loading its membership filter reads.
+///
+/// The filter block is read on demand, so counting around that one call leaves
+/// out the trailer and index reads and measures the filter alone.
+///
+/// # Arguments
+///
+/// - `dir`: directory holding the batch.
+/// - `path`: the batch's path, as returned by [`write_u32_batch`].
+///
+/// # Returns
+///
+/// - the batch's filter chain;
+/// - bytes the reads asked for, filter block only;
+/// - number of reads issued.
+fn open_u32_batch_counting(dir: &str, path: &StoragePath) -> (BatchFilters<DynData>, usize, usize) {
+    let factories = Factories::<DynData, DynData>::new::<u32, ()>();
+    let storage_backend = backend_at(dir);
+    let bytes = Arc::new(AtomicUsize::new(0));
+    let calls = Arc::new(AtomicUsize::new(0));
+    let counting = Arc::new(CountingFileReader {
+        inner: storage_backend.open(path).unwrap(),
+        bytes: bytes.clone(),
+        calls: calls.clone(),
+    });
+    let reader: Reader<(&'static DynData, &'static DynData, ())> =
+        Reader::new(&[&factories.any_factories()], test_buffer_cache, counting).unwrap();
+    let key_range = reader.key_range().unwrap().map(Into::into);
+
+    let before = (bytes.load(Ordering::Relaxed), calls.load(Ordering::Relaxed));
+    let membership_filter = reader.membership_filter().unwrap();
+    let filter_bytes = bytes.load(Ordering::Relaxed) - before.0;
+    let filter_calls = calls.load(Ordering::Relaxed) - before.1;
+
+    (
+        BatchFilters::from_file(key_range, membership_filter),
+        filter_bytes,
+        filter_calls,
+    )
+}
+
+/// A coarse rate reads only the modules it needs, not the whole filter block.
+///
+/// This is what the recorded per-module bit counts buy. Without them a reader
+/// would have to read every module to learn what a prefix of them is worth, and
+/// dropping modules would save memory but no I/O.
+#[test]
+fn a_coarse_rate_reads_only_the_modules_it_keeps() {
+    init_test_logger();
+
+    let tempdir = tempdir().unwrap();
+    let dir = tempdir.path().to_string_lossy().to_string();
+    // Enough keys that a module spans many sectors, so the saving cannot hide
+    // in the rounding up to the 512-byte read granularity.
+    let keys: Vec<u32> = (0..20_000u32).map(|k| k * 3).collect();
+    let path = Arc::new(Mutex::new(None));
+
+    {
+        let (dir, keys, path) = (dir.clone(), keys.clone(), path.clone());
+        with_false_positive_rate(1e-4, move || {
+            *path.lock().unwrap() = Some(write_u32_batch(&dir, &keys));
+        });
+    }
+    let path = path.lock().unwrap().clone().unwrap();
+
+    // Coarse first: a shared cache could only make the later, finer open
+    // cheaper, so it cannot manufacture the difference asserted below.
+    let measure = |rate: f64| {
+        let (dir, keys, path) = (dir.clone(), keys.clone(), path.clone());
+        let result = Arc::new(Mutex::new((0usize, 0usize, 0usize)));
+        {
+            let result = result.clone();
+            with_false_positive_rate(rate, move || {
+                let (filters, bytes, calls) = open_u32_batch_counting(&dir, &path);
+                for key in &keys {
+                    assert!(
+                        filters.maybe_contains_key(key as &DynData, None),
+                        "rate {rate:e}: a prefix read lost key {key}"
+                    );
+                }
+                *result.lock().unwrap() =
+                    (bytes, filters.stats().membership_filter.size_byte, calls);
+            });
+        }
+        *result.lock().unwrap()
+    };
+
+    let (coarse_read, coarse_resident, _coarse_calls) = measure(1e-1);
+    let (fine_read, fine_resident, fine_calls) = measure(1e-4);
+
+    // The finest rate cannot shed a module, so it must not pay to find that
+    // out: one read of the block, as before any of this existed.
+    assert_eq!(
+        fine_calls, 1,
+        "1e-4 read the filter block in {fine_calls} calls, not the one it needs"
+    );
+
+    assert!(
+        coarse_resident < fine_resident,
+        "1e-1 kept {coarse_resident} bytes resident, 1e-4 kept {fine_resident}"
+    );
+    assert!(
+        coarse_read < fine_read,
+        "1e-1 read {coarse_read} bytes of filter, no fewer than the {fine_read} that 1e-4 read"
+    );
+
+    // Reads are issued in 512-byte sectors, so a module dropped is a module not
+    // read, give or take the sector the header shares with the first of them.
+    let unread = fine_read - coarse_read;
+    let evicted = fine_resident - coarse_resident;
+    assert!(
+        unread + 512 >= evicted,
+        "evicting {evicted} bytes of modules only avoided reading {unread}"
+    );
+}
+
+/// A filter written in the original encoding loads whole whatever the rate.
+///
+/// One module is written as `LFFB`, the encoding that predates modular filters,
+/// and such a filter has no ladder to descend: the rate can drop it entirely or
+/// leave it alone, and nothing in between. The modular path has its own tests
+/// for shedding; this pins that the legacy path does not try to.
+#[test]
+fn a_legacy_filter_has_no_ladder_to_descend() {
+    init_test_logger();
+
+    let tempdir = tempdir().unwrap();
+    let dir = tempdir.path().to_string_lossy().to_string();
+    let keys: Vec<u32> = (0..4_000u32).map(|k| k * 2).collect();
+    let path = Arc::new(Mutex::new(None));
+
+    // 1e-1 is one module, so the writer uses the original encoding.
+    {
+        let (dir, keys, path) = (dir.clone(), keys.clone(), path.clone());
+        with_false_positive_rate(1e-1, move || {
+            *path.lock().unwrap() = Some(write_u32_batch(&dir, &keys));
+        });
+    }
+    let path = path.lock().unwrap().clone().unwrap();
+
+    // Loading it at any rate that wants a filter gives back all of it, whether
+    // the rate is coarser or finer than the one it was written at.
+    let mut sizes = Vec::new();
+    for rate in [1e-1, 1e-2, 1e-4] {
+        let (dir, keys, path) = (dir.clone(), keys.clone(), path.clone());
+        let size = Arc::new(Mutex::new(0));
+        {
+            let size = size.clone();
+            with_false_positive_rate(rate, move || {
+                let (filters, magic, _features) = open_u32_batch(&dir, &path);
+                assert_eq!(
+                    magic,
+                    Some(BLOOM_FILTER_BLOCK_MAGIC),
+                    "rate {rate:e}: the file on disk is unchanged by loading it"
+                );
+                assert_eq!(filters.membership_filter_kind(), FilterKind::Bloom);
+                for key in &keys {
+                    assert!(
+                        filters.maybe_contains_key(key as &DynData, None),
+                        "rate {rate:e}: a legacy filter lost key {key}"
+                    );
+                }
+                *size.lock().unwrap() = filters.stats().membership_filter.size_byte;
+            });
+        }
+        sizes.push(*size.lock().unwrap());
+    }
+    assert!(sizes[0] > 0, "the legacy filter measured zero bytes");
+    assert!(
+        sizes.iter().all(|size| *size == sizes[0]),
+        "a legacy filter changed size with the rate: {sizes:?}"
+    );
+
+    // A rate of one drops it outright, the one thing the rate can do to it.
+    with_false_positive_rate(1.0, move || {
+        let (filters, _magic, _features) = open_u32_batch(&dir, &path);
+        assert_eq!(filters.membership_filter_kind(), FilterKind::None);
+        assert_eq!(filters.stats().membership_filter.size_byte, 0);
+        for key in &keys {
+            assert!(filters.maybe_contains_key(key as &DynData, None));
+        }
     });
 }

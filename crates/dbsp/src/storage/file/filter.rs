@@ -7,6 +7,7 @@ use crate::{
     Runtime, dynamic::DataTrait, storage::tracking_bloom_filter::TrackingBloomFilter, trace::Batch,
 };
 use dyn_clone::clone_box;
+use feldera_modular_bloom::{ModuleDensity, ModuleLayout};
 use std::io;
 use std::ops::Not;
 use std::sync::Once;
@@ -16,6 +17,18 @@ use roaring::RoaringLookupStats;
 pub(crate) use roaring::TouchedWindowCounter;
 pub use roaring::TrackingRoaringBitmap;
 pub use stats::{FilterKind, FilterStats, TrackingFilterStats};
+
+pub(crate) use bloom::{rate_can_evict, resident_modules};
+
+/// The configured false positive rate, which decides both how new filters are
+/// written and how many modules an existing filter keeps resident.
+///
+/// Off a runtime thread this falls back to the default, which loads every
+/// module. That errs toward accuracy and memory rather than toward a filter
+/// that is quietly less accurate than the file it was read from.
+pub(crate) fn bloom_false_positive_rate() -> f64 {
+    Runtime::bloom_false_positive_rate()
+}
 
 /// Whether writers should collect extra metadata needed by the roaring
 /// predictor. This is deliberately separate from the final filter choice so
@@ -35,11 +48,8 @@ pub enum BatchKeyFilter {
 }
 
 impl BatchKeyFilter {
-    pub(crate) fn new_bloom(estimated_keys: usize, bloom_false_positive_rate: f64) -> Self {
-        Self::Bloom(bloom::new_bloom_filter(
-            estimated_keys,
-            bloom_false_positive_rate,
-        ))
+    pub(crate) fn new_bloom(estimated_keys: usize, bloom_false_positive_rate: f64) -> Option<Self> {
+        bloom::new_bloom_filter(estimated_keys, bloom_false_positive_rate).map(Self::Bloom)
     }
 
     pub(crate) fn new_roaring_u32<K>(min: &K) -> Self
@@ -49,8 +59,29 @@ impl BatchKeyFilter {
         Self::RoaringU32(TrackingRoaringBitmap::with_min(min))
     }
 
-    pub(crate) fn deserialize_bloom(num_hashes: u32, data: Vec<u64>) -> Self {
-        Self::Bloom(bloom::deserialize_bloom_filter(num_hashes, data))
+    /// Loads a filter written before modular filters existed, as one module.
+    pub(crate) fn deserialize_bloom(
+        num_hashes: u32,
+        data: Vec<u64>,
+        bloom_false_positive_rate: f64,
+    ) -> Option<Self> {
+        bloom::deserialize_bloom_filter(num_hashes, data, bloom_false_positive_rate)
+            .map(Self::Bloom)
+    }
+
+    /// Builds a Bloom filter holding the modules in `words`, which are the
+    /// leading modules of a stored filter.
+    ///
+    /// `density` gives the bits set in every module the file holds, including
+    /// those `words` omits, and the filter reports false positive rates from
+    /// it. Returns `None` unless `words` is a whole number of modules and no
+    /// more of them than `layout` declares.
+    pub(crate) fn from_modular(
+        layout: ModuleLayout,
+        words: &[u64],
+        density: ModuleDensity,
+    ) -> Option<Self> {
+        bloom::load_modular_bloom_filter(layout, words, density).map(Self::Bloom)
     }
 
     pub(crate) fn deserialize_roaring_u32<K>(data: &[u8], min: &K) -> io::Result<Self>
@@ -80,7 +111,7 @@ impl BatchKeyFilter {
     }
     pub(crate) fn finalize(&mut self) {
         match self {
-            Self::Bloom(_) => {}
+            Self::Bloom(filter) => filter.finalize(),
             Self::RoaringU32(filter) => filter.finalize(),
         }
     }
@@ -218,7 +249,7 @@ where
         estimated_keys: usize,
         enable_roaring: bool,
         bloom_false_positive_rate: f64,
-    ) -> BatchKeyFilter {
+    ) -> Option<BatchKeyFilter> {
         if !self.can_use_roaring(enable_roaring) {
             debug!(
                 enable_roaring,
@@ -232,7 +263,7 @@ where
         }
         if self.predict_lookup_prefers_roaring(estimated_keys) {
             debug!(estimated_keys, "filter predictor: chose roaring bitmap");
-            BatchKeyFilter::new_roaring_u32(self.min.as_ref())
+            Some(BatchKeyFilter::new_roaring_u32(self.min.as_ref()))
         } else {
             debug!(
                 estimated_keys,
@@ -292,9 +323,9 @@ where
 
         match (bloom_false_positive_rate, filter_plan) {
             (Some(rate), Some(filter_plan)) => {
-                Some(filter_plan.preferred_filter(estimated_keys, enable_roaring, rate))
+                filter_plan.preferred_filter(estimated_keys, enable_roaring, rate)
             }
-            (Some(rate), None) => Some(BatchKeyFilter::new_bloom(estimated_keys, rate)),
+            (Some(rate), None) => BatchKeyFilter::new_bloom(estimated_keys, rate),
             (None, Some(filter_plan)) if filter_plan.can_use_roaring(enable_roaring) => {
                 debug!("filter predictor: Bloom disabled, roaring available, using roaring bitmap",);
                 Some(BatchKeyFilter::new_roaring_u32(filter_plan.min.as_ref()))

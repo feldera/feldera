@@ -155,9 +155,24 @@ pub const DEFAULT_ROWS: usize = 256;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum GoldenWriterKind {
+    /// Single-module Bloom filters written before modular filters existed.
+    ///
+    /// These files are frozen artifacts, not regenerated output: they are the
+    /// only evidence that a filter produced by an older binary still loads and
+    /// probes correctly. Regenerating them would silently replace the encoding
+    /// under test and make the compatibility check vacuous.
     Writer1Bloom,
     Writer2Roaring,
+    /// Multi-module Bloom filters, written at the default false positive rate.
+    Writer3Modular,
 }
+
+/// Format version the frozen legacy Bloom goldens were written at.
+///
+/// Pinned rather than following [`VERSION_NUMBER`], because those files must
+/// keep their names across a version bump; they record the past, not the
+/// present.
+pub const LEGACY_BLOOM_VERSION: u32 = 5;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum GoldenSize {
@@ -186,8 +201,13 @@ pub struct GoldenFileSpec {
 impl GoldenFileSpec {
     pub fn file_name(self) -> String {
         let mut file_name = match self.writer {
-            GoldenWriterKind::Writer1Bloom => format!("writer1-golden-batch-v{VERSION_NUMBER}"),
+            GoldenWriterKind::Writer1Bloom => {
+                format!("writer1-golden-batch-v{LEGACY_BLOOM_VERSION}")
+            }
             GoldenWriterKind::Writer2Roaring => format!("writer2-golden-batch-v{VERSION_NUMBER}"),
+            GoldenWriterKind::Writer3Modular => {
+                format!("writer3-golden-batch-v{VERSION_NUMBER}")
+            }
         };
         if matches!(self.compression, Some(Compression::Snappy)) {
             file_name += "-snappy";
@@ -197,6 +217,7 @@ impl GoldenFileSpec {
         file_name += match self.writer {
             GoldenWriterKind::Writer1Bloom => "-bloom.feldera",
             GoldenWriterKind::Writer2Roaring => "-roaring.feldera",
+            GoldenWriterKind::Writer3Modular => "-modular.feldera",
         };
         file_name
     }
@@ -267,6 +288,37 @@ pub fn golden_file_specs() -> impl Iterator<Item = GoldenFileSpec> {
         },
         GoldenFileSpec {
             writer: GoldenWriterKind::Writer2Roaring,
+            compression: Some(Compression::Snappy),
+            size: GoldenSize::Variant,
+        },
+        // Modular
+        GoldenFileSpec {
+            writer: GoldenWriterKind::Writer3Modular,
+            compression: None,
+            size: GoldenSize::Large,
+        },
+        GoldenFileSpec {
+            writer: GoldenWriterKind::Writer3Modular,
+            compression: Some(Compression::Snappy),
+            size: GoldenSize::Large,
+        },
+        GoldenFileSpec {
+            writer: GoldenWriterKind::Writer3Modular,
+            compression: None,
+            size: GoldenSize::Small,
+        },
+        GoldenFileSpec {
+            writer: GoldenWriterKind::Writer3Modular,
+            compression: Some(Compression::Snappy),
+            size: GoldenSize::Small,
+        },
+        GoldenFileSpec {
+            writer: GoldenWriterKind::Writer3Modular,
+            compression: None,
+            size: GoldenSize::Variant,
+        },
+        GoldenFileSpec {
+            writer: GoldenWriterKind::Writer3Modular,
             compression: Some(Compression::Snappy),
             size: GoldenSize::Variant,
         },
@@ -891,6 +943,30 @@ mod tests {
             let storage_path = StoragePath::from(file_name);
 
             match (spec.writer, spec.size) {
+                (GoldenWriterKind::Writer3Modular, GoldenSize::Large) => {
+                    validate_writer1_rows::<GoldenRow>(
+                        &*storage_backend,
+                        storage_path,
+                        golden_row,
+                        golden_aux,
+                    )
+                }
+                (GoldenWriterKind::Writer3Modular, GoldenSize::Small) => {
+                    validate_writer1_rows::<GoldenRowSmall>(
+                        &*storage_backend,
+                        storage_path,
+                        golden_row_small,
+                        golden_aux,
+                    )
+                }
+                (GoldenWriterKind::Writer3Modular, GoldenSize::Variant) => {
+                    validate_writer1_rows::<GoldenRowVariant>(
+                        &*storage_backend,
+                        storage_path,
+                        golden_row_variant,
+                        golden_aux,
+                    )
+                }
                 (GoldenWriterKind::Writer1Bloom, GoldenSize::Large) => {
                     validate_writer1_rows::<GoldenRow>(
                         &*storage_backend,

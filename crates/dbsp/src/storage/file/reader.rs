@@ -2,7 +2,11 @@
 //!
 //! [`Reader`] is the top-level interface for reading layer files.
 
-use super::format::{BloomFilterBlock, Compression, FileTrailer, RoaringBitmapFilterBlock};
+use super::filter::{bloom_false_positive_rate, rate_can_evict, resident_modules};
+use super::format::MODULAR_BLOOM_FILTER_BLOCK_MAGIC;
+use super::format::{
+    BloomFilterBlock, Compression, FileTrailer, ModularBloomFilterHeader, RoaringBitmapFilterBlock,
+};
 use super::{AnyFactories, BatchKeyFilter, Deserializer, Factories};
 use crate::dynamic::{DynVec, WeightTrait};
 use crate::storage::buffer_cache::CacheAccess;
@@ -30,6 +34,7 @@ use binrw::{
 use crc32c::crc32c;
 use dyn_clone::clone_box;
 use feldera_buffer_cache::CacheEntry;
+use feldera_modular_bloom::{ModuleDensity, ModuleLayout};
 use feldera_storage::StoragePath;
 use feldera_storage::file::FileId;
 use size_of::SizeOf;
@@ -1532,32 +1537,140 @@ fn parse_filter_block<T: for<'a> BinRead<Args<'a> = ()>>(
     })
 }
 
+/// Reads the first `size` bytes of the block at `location`.
+///
+/// `size` is rounded up to the 512-byte granularity the storage layer reads at,
+/// and clamped to the block, so the result may be longer than asked for and is
+/// never longer than the block.
+fn read_block_prefix(
+    file_handle: &dyn FileReader,
+    location: BlockLocation,
+    size: usize,
+) -> Result<Arc<FBuf>, Error> {
+    let size = size.next_multiple_of(512).min(location.size);
+    let prefix = if size == location.size {
+        location
+    } else {
+        BlockLocation::new(location.offset, size).expect("512-aligned by construction")
+    };
+    Ok(file_handle.read_block(prefix)?)
+}
+
+/// The whole block, reusing `head` when it already holds all of it.
+fn whole_block(
+    file_handle: &dyn FileReader,
+    location: BlockLocation,
+    head: &Arc<FBuf>,
+) -> Result<Arc<FBuf>, Error> {
+    if head.len() >= location.size {
+        return Ok(head.clone());
+    }
+    Ok(file_handle.read_block(location)?)
+}
+
+/// Reads a membership filter block.
+///
+/// Returns `None` when the current false positive rate asks for no Bloom filter
+/// at all, in which case the block is read but nothing is kept resident.
 fn read_filter_block(
     file_handle: &dyn FileReader,
     location: BlockLocation,
     roaring_min: Option<&DynData>,
-) -> Result<BatchKeyFilter, Error> {
-    let block = file_handle.read_block(location)?;
-    if block.len() < 8 {
+) -> Result<Option<BatchKeyFilter>, Error> {
+    // Reading the header before the modules only pays off when the configured
+    // rate can drop some of them. When it cannot, that first read would be
+    // spent learning there is nothing to skip, and every byte gets read
+    // anyway, so take the block in one call instead.
+    let rate = bloom_false_positive_rate();
+    let head_bytes = if rate_can_evict(rate) {
+        512
+    } else {
+        location.size
+    };
+    let head = read_block_prefix(file_handle, location, head_bytes)?;
+    if head.len() < 8 {
         return Err(Error::Corruption(CorruptionError::InvalidFilterEncoding {
             location,
             kind: "unknown",
-            inner: format!("block too short: {} bytes", block.len()),
+            inner: format!("block too short: {} bytes", head.len()),
         }));
     }
 
     let mut magic = [0u8; 4];
-    magic.copy_from_slice(&block[4..8]);
+    magic.copy_from_slice(&head[4..8]);
 
     match magic {
         BLOOM_FILTER_BLOCK_MAGIC => {
+            let block = whole_block(file_handle, location, &head)?;
             let block: BloomFilterBlock = parse_filter_block(&block, location, "bloom filter")?;
             Ok(BatchKeyFilter::deserialize_bloom(
                 block.num_hashes,
                 block.data,
+                rate,
             ))
         }
+        MODULAR_BLOOM_FILTER_BLOCK_MAGIC => {
+            let bad = |e: String| {
+                Error::Corruption(CorruptionError::InvalidFilterEncoding {
+                    location,
+                    kind: "modular bloom",
+                    inner: e,
+                })
+            };
+
+            // The header records the layout and the bits set in every module,
+            // so the rate any prefix of them would give is known before a
+            // single module is read. It fits the sector in hand at every module
+            // count the writer emits; a file claiming more needs the block.
+            let front: ModularBloomFilterHeader =
+                match parse_filter_block(&head, location, "modular bloom filter") {
+                    Ok(front) => front,
+                    Err(_) => {
+                        let block = whole_block(file_handle, location, &head)?;
+                        parse_filter_block(&block, location, "modular bloom filter")?
+                    }
+                };
+            let layout = ModuleLayout::new(
+                front.total_modules,
+                u32::try_from(front.words_per_module).map_err(|_| {
+                    bad(format!(
+                        "words_per_module {} exceeds the u32 a module is sized in",
+                        front.words_per_module
+                    ))
+                })?,
+                front.hashes_per_module,
+            )
+            .map_err(|e| bad(e.to_string()))?;
+            let density = ModuleDensity::new(front.set_bits);
+
+            let resident = resident_modules(&layout, &density, rate);
+            if resident == 0 {
+                return Ok(None);
+            }
+
+            // Read the header plus the modules residency asks for, and stop.
+            let front_len = ModularBloomFilterHeader::len_for(front.total_modules);
+            let wanted = front_len + resident as usize * layout.bytes_per_module();
+            let bytes = if wanted <= head.len() {
+                head
+            } else {
+                read_block_prefix(file_handle, location, wanted)?
+            };
+            if bytes.len() < wanted {
+                return Err(bad(format!(
+                    "block holds {} bytes, {resident} modules need {wanted}",
+                    bytes.len()
+                )));
+            }
+
+            let words: Vec<u64> = bytes[front_len..wanted]
+                .chunks_exact(8)
+                .map(|word| u64::from_le_bytes(word.try_into().unwrap()))
+                .collect();
+            Ok(BatchKeyFilter::from_modular(layout, &words, density))
+        }
         ROARING_BITMAP_FILTER_BLOCK_MAGIC => {
+            let block = whole_block(file_handle, location, &head)?;
             let block: RoaringBitmapFilterBlock =
                 parse_filter_block(&block, location, "roaring bitmap filter")?;
             let roaring_min = roaring_min.ok_or_else(|| {
@@ -1567,13 +1680,15 @@ fn read_filter_block(
                     inner: "roaring bitmap filter requires the batch minimum".to_string(),
                 })
             })?;
-            BatchKeyFilter::deserialize_roaring_u32(&block.data, roaring_min).map_err(|e| {
-                Error::Corruption(CorruptionError::InvalidFilterEncoding {
-                    location,
-                    kind: "roaring bitmap",
-                    inner: e.to_string(),
+            BatchKeyFilter::deserialize_roaring_u32(&block.data, roaring_min)
+                .map(Some)
+                .map_err(|e| {
+                    Error::Corruption(CorruptionError::InvalidFilterEncoding {
+                        location,
+                        kind: "roaring bitmap",
+                        inner: e.to_string(),
+                    })
                 })
-            })
         }
         magic => Err(Error::Corruption(
             CorruptionError::UnknownFilterBlockMagic { location, magic },
@@ -1850,6 +1965,7 @@ where
         self.membership_filter_location
             .map(|location| read_filter_block(&*self.file.file_handle, location, roaring_min))
             .transpose()
+            .map(Option::flatten)
     }
 
     pub(crate) fn open_with_filter(
