@@ -38,6 +38,7 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.rex.RexVisitorImpl;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlSyntax;
 import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimeString;
 import org.apache.calcite.util.TimestampString;
@@ -145,6 +146,7 @@ import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -152,6 +154,15 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.*;
 
 public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         implements IWritesLogs, ICompilerComponent {
+    /** Supported replacements for the date and time functions that SQL calls without
+     * parentheses; the other such functions, CURRENT_USER e.g., have none. */
+    static final Map<String, String> NILADIC_REPLACEMENTS = Map.of(
+            "CURRENT_TIMESTAMP", "NOW()",
+            "LOCALTIMESTAMP", "NOW()",
+            "CURRENT_DATE", "CAST(NOW() AS DATE)",
+            "CURRENT_TIME", "CAST(NOW() AS TIME)",
+            "LOCALTIME", "CAST(NOW() AS TIME)");
+
     private final TypeCompiler typeCompiler;
     @Nullable
     public final DBSPVariablePath inputRow;
@@ -2476,8 +2487,19 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         }
 
         ExternalFunction ef = this.compiler.getCustomFunctions().getUDF(function);
-        if (ef == null)
+        if (ef == null) {
+            if (call.op.getSyntax() == SqlSyntax.FUNCTION_ID) {
+                // SQL spells these functions without parentheses, so a bare name that
+                // looks like a column reference is in fact a call to one of them
+                String replacement = NILADIC_REPLACEMENTS.get(function.name().toUpperCase(Locale.ENGLISH));
+                String column = function.name().toLowerCase(Locale.ENGLISH);
+                throw new CompilationError("Function " + function.singleQuote() + " is not supported" +
+                        (replacement == null ? "." : "; use " + replacement + " instead.") +
+                        "  If you meant a column with this name, qualify it with a table name or " +
+                        "quote it: \"" + column + "\"", node);
+            }
             throw new CompilationError("Function " + function.singleQuote() + " is unknown", node);
+        }
         List<DBSPType> operandTypes = Linq.map(ef.parameterList,
                 p -> this.typeCompiler.convertType(node.getPositionRange(), p.getType(), false));
         // Give warnings if we have to insert casts that cast away nullability,

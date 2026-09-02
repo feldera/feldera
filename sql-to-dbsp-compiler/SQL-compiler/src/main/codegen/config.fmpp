@@ -28,11 +28,25 @@ data: {
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlForeignKey"
     ]
 
+    # Every keyword token is reserved unless one of the two lists below mentions
+    # it:
+    #
+    #   reserved = keyword tokens - (nonReservedKeywords + nonReservedKeywordsToAdd)
+    #
+    # Calcite's Parser.jj template declares most of the tokens and the 'keywords'
+    # list adds the rest.  The parser concatenates the two non-reserved lists, so
+    # a live entry in either one un-reserves the word and commenting it out in
+    # the other changes nothing.  Commenting out is the only way to reserve a
+    # word, which is why every commented entry records a decision, with its
+    # reason.
+    #
+    # Both lists are copies of Calcite lists: core's default_config.fmpp and
+    # babel's config.fmpp.
+
     # List of new keywords. Example: "DATABASES", "TABLES". If the keyword is
     # not a reserved keyword, add it to the 'nonReservedKeywords' section.
     keywords: [
       "INDEX"
-      "DISCARD"
       "IF"
       "INTERNED"
       "LATENESS"
@@ -40,12 +54,8 @@ data: {
       "LINEAR"
       "MATERIALIZED"
       "WATERMARK"
-      "PLANS"
       "REMOVE"
-      "SEED"
       "SEMI"
-      "SEQUENCES"
-      "TEMP"
       #"VOLATILE"
     ]
 
@@ -180,7 +190,6 @@ data: {
       "JAVA"
       "JSON"
       "K"
-#      "KEY"
       "KEY_MEMBER"
       "KEY_TYPE"
       "LABEL"
@@ -398,13 +407,8 @@ data: {
       "TYPE"
 
       # not in core, added in babel
-      # "DISCARD"
       "IF"
-      # "PLANS"
-      # "SEED"
-      # "SEMI"
-      # "SEQUENCES"
-      # "TEMP"
+#     "SEMI" # reserved: the LEFT SEMI JOIN production consumes it
 
       # The following keywords are reserved in core Calcite,
       # are reserved in some version of SQL,
@@ -432,7 +436,6 @@ data: {
 #     "ANY"
       "ARE"
       "ARRAY"
-#     "ARRAY_AGG" # not a keyword in Calcite
       "ARRAY_MAX_CARDINALITY"
       "AS"
       "ASC"
@@ -488,6 +491,7 @@ data: {
       "CONSTRAINTS"
       "CONSTRUCTOR"
       "CONTAINS"
+      "CONTAINS_SUBSTR"
       "CONTINUE"
       "CONVERT"
       "CORR"
@@ -590,7 +594,7 @@ data: {
       "GLOBAL"
       "GO"
       "GOTO"
-#     "GRANT"
+      "GRANT"
 #     "GROUP"
 #     "GROUPING"
       "GROUPS"
@@ -628,6 +632,7 @@ data: {
       "JSON_OBJECT"
       "JSON_OBJECTAGG"
       "JSON_QUERY"
+      "JSON_SCOPE"
       "JSON_VALUE"
 #     "KEEP" # not a keyword in Calcite
       "KEY"
@@ -789,7 +794,6 @@ data: {
       "SESSION"
       "SESSION_USER"
 #     "SET"
-#     "SETS"
       "SHOW"
 #     "SIGNAL" # not a keyword in Calcite
       "SIMILAR"

@@ -10,8 +10,8 @@ form.
 - Parentheses `()` are used for grouping productions together.
 - The vertical bar `|` indicates choice between two constructs.
 
-SQL reserved keywords cannot be used as table and view names.  In
-addition, the following keywords are reserved: `USER`, `NOW`.
+SQL [reserved keywords](#reserved-keywords) cannot be used as table and
+view names.
 Identifiers starting with "Feldera" (in any case combination) are used
 for system objects, such as the error view, and should not be used for
 user-defined objects.
@@ -837,3 +837,62 @@ a single copy of the data.  This settings is the number of temporal
 filters that are required to share a source in order to enable sharing.
 The default is 10; setting the option to 0
 disables the optimization.  This option is currently experimental.
+
+## Reserved keywords
+
+A reserved keyword can name a table, view, column, function, or alias
+only when it is written as a [quoted identifier](identifiers.md), as in
+`"select"`.  The following words are reserved:
+
+| Initial | Reserved keywords |
+|---|---|
+| A | `ANY`, `ASOF` |
+| C | `CALL`, `CASE`, `CREATE`, `CROSS`, `CURRENT`, `CURSOR` |
+| D | `DATE`, `DATEADD`, `DATEDIFF`, `DATEPART`, `DATETIME`, `DATE_PART`, `DEFAULT`, `DEFINE`, `DELETE`, `DESCRIBE`, `DISTINCT`, `DROP` |
+| E | `END-EXEC`, `EXCEPT`, `EXPLAIN` |
+| F | `FETCH`, `FOREIGN`, `FRIDAY`, `FROM`, `FULL` |
+| G | `GROUP`, `GROUPING` |
+| H | `HAVING` |
+| I | `IN`, `INDEX`, `INNER`, `INSERT`, `INTERNED`, `INTERSECT`, `INTERVAL`, `INTO` |
+| J | `JOIN` |
+| L | `LATENESS`, `LATERAL`, `LEFT`, `LIMIT` |
+| M | `MATCH_CONDITION`, `MATCH_RECOGNIZE`, `MATERIALIZED`, `MEASURE`, `MERGE`, `MINUS`, `MONDAY` |
+| N | `NATURAL`, `NEW`, `NEXT`, `NULL` |
+| O | `OFFSET`, `ON`, `ORDER`, `ORDINAL`, `OUTER`, `OVER` |
+| P | `PARTITION`, `PATTERN`, `PRIMARY` |
+| Q | `QUALIFY` |
+| R | `RANGE`, `REMOVE`, `RIGHT`, `ROLLUP`, `ROW`, `ROWS` |
+| S | `SAFE_CAST`, `SAFE_OFFSET`, `SAFE_ORDINAL`, `SATURDAY`, `SELECT`, `SEMI`, `SET`, `SKIP`, `SOME`, `STREAM`, `SUNDAY` |
+| T | `TABLE`, `TABLESAMPLE`, `THEN`, `THURSDAY`, `TIME`, `TIMESTAMP`, `TRY_CAST`, `TUESDAY` |
+| U | `UNION`, `UNNEST`, `UNSIGNED`, `UPDATE`, `USING`, `UUID` |
+| V | `VALUES`, `VARIANT` |
+| W | `WATERMARK`, `WEDNESDAY`, `WHEN`, `WHERE`, `WINDOW`, `WITH` |
+
+Feldera reserves far fewer words than the SQL standard does; `AND`,
+`CAST`, `COUNT`, `SUM`, `VARCHAR`, and several hundred other standard
+keywords are legal unquoted identifiers.  A few of these words are
+still unusable as unquoted column references:
+
+- `ALL`, `EXISTS`, `NOT`, and `UNIQUE` begin an expression, so the
+  parser rejects them where it expects an identifier.
+
+- `FALSE`, `TRUE`, and `UNKNOWN` are literals, and `CURRENT_CATALOG`,
+  `CURRENT_DATE`, `CURRENT_PATH`, `CURRENT_ROLE`, `CURRENT_SCHEMA`,
+  `CURRENT_TIME`, `CURRENT_TIMESTAMP`, `CURRENT_USER`, `LOCALTIME`,
+  `LOCALTIMESTAMP`, `SESSION_USER`, `SYSTEM_USER`, and `USER` are
+  functions that SQL calls without parentheses.  A column can carry
+  such a name, but a bare reference to it is the literal or the
+  function call.  Qualify the column with the name of its table, as in
+  `t.user`, or quote it, as in `"user"`.
+
+  Feldera does not support any of the functions in this list.
+  Each such name is therefore unusable on its own, although none of them
+  is a reserved keyword.  For the date and time functions use
+  [`NOW()`](datetime.md#now), as in `CAST(NOW() AS DATE)` for `CURRENT_DATE`.
+
+### Names of predefined objects
+
+A table cannot take the name of a predefined function:
+`CREATE TABLE abs(...)`, `CREATE TABLE now(...)`,
+and `CREATE TABLE user(...)` are rejected.  Quoting the name does not
+help; `CREATE TABLE "abs"(...)` is rejected too.  Choose a different name.

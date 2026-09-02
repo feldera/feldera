@@ -86,4 +86,14 @@ else
     update_pom "${CALCITE_CURRENT}"
 fi
 
+# Check if the list of reserved keywords is up-to-date
+# Fail if the SQL compiler reserves a keyword that Calcite does not reserve
+if [ ! -d "${CALCITE_BUILD_DIR}" ]; then
+    echo "keyword check: skipped, no Calcite source in ${CALCITE_BUILD_DIR}"
+elif ! command -v python3 >/dev/null; then
+    echo "keyword check: skipped, python3 is not installed"
+else
+    "${SCRIPT_DIR}/check-keyword-drift.py" "${CALCITE_BUILD_DIR}"
+fi
+
 mvn package -DskipTests --no-transfer-progress -DargLine="-ea" -q -B "$@"

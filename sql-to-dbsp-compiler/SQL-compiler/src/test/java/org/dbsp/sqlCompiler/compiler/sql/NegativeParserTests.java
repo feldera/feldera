@@ -233,4 +233,33 @@ public class NegativeParserTests extends BaseSQLTests {
         Assert.assertTrue(error.message.contains("Table 't' is not used"));
         Assert.assertTrue(messages.toString().contains("CREATE TABLE T"));
     }
+
+    @Test
+    public void predefinedFunctionNameTest() {
+        // The rule holds for every predefined function, not just for the 'user' of
+        // RegressionTests.issue3006, and quoting the name does not evade it
+        String message = "has the same name as a predefined function";
+        this.statementsFailingInCompilation("CREATE TABLE abs(x INT);", message);
+        this.statementsFailingInCompilation("CREATE TABLE \"now\"(x INT);", message);
+    }
+
+    @Test
+    public void niladicFunctionColumnTest() {
+        // SQL calls USER without parentheses, so a bare 'user' is that call and not the
+        // column; MetadataTests.predefinedNameColumnTest shows how to reach the column
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(user INT);
+                CREATE VIEW V AS SELECT user FROM T;""",
+                "Function 'USER' is not supported.  If you meant a column with this name, "
+                + "qualify it with a table name or quote it: \"user\"");
+    }
+
+    @Test
+    public void niladicDateFunctionTest() {
+        // The date and time functions have a supported replacement, named first
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x INT);
+                CREATE VIEW V AS SELECT current_date FROM T;""",
+                "Function 'CURRENT_DATE' is not supported; use CAST(NOW() AS DATE) instead.");
+    }
 }
