@@ -41,15 +41,19 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Lineage;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
@@ -188,6 +192,87 @@ public class KeyAnalysis extends CircuitVisitor {
         return new Provenance(sources);
     }
 
+    /** The expression each output column is built from, in the column order of {@code shape}.
+     * If the closure has an unexpected shape, the expression may be null. */
+    private static List<DBSPExpression> outputExpressions(
+            CollectionShape shape, DBSPClosureExpression closure) {
+        List<DBSPExpression> result = new ArrayList<>();
+        if (shape instanceof IndexedShape indexed) {
+            DBSPRawTupleExpression pair = closure.body.as(DBSPRawTupleExpression.class);
+            if (pair == null || pair.size() != 2)
+                return unknownExpressions(shape.width());
+            result.addAll(fieldExpressions(pair.get(0), indexed.indexFields()));
+            result.addAll(fieldExpressions(pair.get(1), indexed.valueFields()));
+        } else {
+            result.addAll(fieldExpressions(closure.body, shape.width()));
+        }
+        return result;
+    }
+
+    /** The fields of a tuple expression, all null when {@code expression} is not a tuple
+     * of {@code size} fields. */
+    private static List<DBSPExpression> fieldExpressions(DBSPExpression expression, int size) {
+        if (expression.is(DBSPSomeExpression.class))
+            expression = expression.to(DBSPSomeExpression.class).expression;
+        DBSPBaseTupleExpression tuple = expression.as(DBSPBaseTupleExpression.class);
+        if (tuple == null || tuple.fields == null || tuple.size() != size)
+            return unknownExpressions(size);
+        List<DBSPExpression> result = new ArrayList<>();
+        for (int i = 0; i < size; i++)
+            result.add(tuple.get(i));
+        return result;
+    }
+
+    private static List<DBSPExpression> unknownExpressions(int size) {
+        List<DBSPExpression> result = new ArrayList<>();
+        for (int i = 0; i < size; i++)
+            result.add(null);
+        return result;
+    }
+
+    /** Whether two expressions compute the same value.  Both are toplevel field
+     * accesses of the body of {@code closure}, so they are evaluated in the same contex. */
+    private static boolean sameValue(
+            DBSPClosureExpression closure, DBSPExpression left, DBSPExpression right) {
+        EquivalenceContext context = new EquivalenceContext();
+        context.leftDeclaration.newContext();
+        context.rightDeclaration.newContext();
+        for (DBSPParameter parameter : closure.parameters) {
+            context.leftDeclaration.substitute(parameter.getName(), parameter);
+            context.rightDeclaration.substitute(parameter.getName(), parameter);
+            context.leftToRight.substitute(parameter, parameter);
+        }
+        return context.equivalent(left, right);
+    }
+
+    /** Output columns that hold the same value: those computed by equal expressions.
+     * E.g., SELECT f(x), f(x). */
+    private static ColumnEquivalence outputEquivalence(
+            CollectionShape shape, DBSPClosureExpression closure, Provenance provenance) {
+        List<DBSPExpression> expressions = outputExpressions(shape, closure);
+        List<DBSPExpression> computations = new ArrayList<>();
+        List<List<Column>> groups = new ArrayList<>();
+        for (int i = 0; i < expressions.size(); i++) {
+            DBSPExpression expression = expressions.get(i);
+            if (expression == null)
+                continue;
+            int group = -1;
+            for (int j = 0; j < computations.size(); j++) {
+                if (sameValue(closure, computations.get(j), expression)) {
+                    group = j;
+                    break;
+                }
+            }
+            if (group < 0) {
+                computations.add(expression);
+                groups.add(new ArrayList<>());
+                group = groups.size() - 1;
+            }
+            groups.get(group).add(shape.output(i));
+        }
+        return provenance.equivalence().merge(ColumnEquivalence.of(groups));
+    }
+
     /** Record the keys of an operator's output, no two columns of which hold the same data. */
     private void set(DBSPSimpleOperator operator, Keys found) {
         this.set(operator, found, ColumnEquivalence.NONE);
@@ -243,7 +328,7 @@ public class KeyAnalysis extends CircuitVisitor {
         ColumnCopyTransform transform = column -> provenance.columnsReading(Provenance.Source.reading(column));
         Keys keys = this.getKeys(operator.input()).map(transform);
         ColumnEquivalence inputEquivalence = this.getEquivalence(operator.input()).after(transform);
-        ColumnEquivalence equivalence = provenance.equivalence().merge(inputEquivalence);
+        ColumnEquivalence equivalence = outputEquivalence(output, closure, provenance).merge(inputEquivalence);
         this.set(operator, keys, equivalence);
     }
 
@@ -485,13 +570,15 @@ public class KeyAnalysis extends CircuitVisitor {
         if (!(node.outputPort().getShape() instanceof IndexedShape shape))
             return;
         // The producer computes the value tuple from (rank, input value)
-        Provenance provenance = this.provenance(new IndexedShape(0, shape.valueFields()), node.outputProducer);
+        CollectionShape produced = new IndexedShape(0, shape.valueFields());
+        Provenance provenance = this.provenance(produced, node.outputProducer);
         // The operator keeps the index; a value column becomes what the producer copies it to
         ColumnCopyTransform transform = column -> column.part() == Part.INDEX ?
                 List.of(column) :
                 provenance.columnsReading(new Provenance.Source(1, Column.none(column.field())));
         ColumnEquivalence inputEquivalence = this.getEquivalence(node.input()).after(transform);
-        ColumnEquivalence equivalence = provenance.equivalence().merge(inputEquivalence);
+        ColumnEquivalence equivalence =
+                outputEquivalence(produced, node.outputProducer, provenance).merge(inputEquivalence);
         Keys result = this.getKeys(node.input()).map(transform);
         boolean rowNumber = node.numbering == DBSPIndexedTopKOperator.Numbering.ROW_NUMBER;
         boolean limitOne = node.limit.is(DBSPUSizeLiteral.class) &&
@@ -535,7 +622,8 @@ public class KeyAnalysis extends CircuitVisitor {
         ColumnCopyTransform rightTransform = sideTransform(provenance, 2);
         ColumnEquivalence leftEquivalence = this.getEquivalence(node.left()).after(leftTransform);
         ColumnEquivalence rightEquivalence = this.getEquivalence(node.right()).after(rightTransform);
-        ColumnEquivalence equivalence = provenance.equivalence().merge(leftEquivalence).merge(rightEquivalence);
+        ColumnEquivalence equivalence = outputEquivalence(output, closure, provenance)
+                .merge(leftEquivalence).merge(rightEquivalence);
         Keys leftMapped = left.map(leftTransform);
         Keys rightMapped = right.map(rightTransform);
         List<KeyColumns> result = new ArrayList<>();
@@ -572,7 +660,7 @@ public class KeyAnalysis extends CircuitVisitor {
         if (closure == null)
             return;
         Provenance provenance = this.provenance(output, closure);
-        ColumnEquivalence equivalence = provenance.equivalence();
+        ColumnEquivalence equivalence = outputEquivalence(output, closure, provenance);
         List<Keys> mapped = new ArrayList<>();
         for (int i = 0; i < node.inputs.size(); i++) {
             OutputPort input = node.inputs.get(i);

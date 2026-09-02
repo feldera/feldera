@@ -178,6 +178,23 @@ public class KeyAnalysisTests extends SqlIoTest {
                 QUALIFY row_number() OVER (PARTITION BY a ORDER BY b) = 1;""", "[[0=1]]");
     }
 
+    /** Both occurrences of the expression "a+b" compute the same
+     * value, which is propagated as a key by the partition key. */
+    @Test
+    public void top1OnComputedColumn() {
+        this.assertKeys("""
+                CREATE VIEW v AS SELECT a + b AS ab, c FROM m
+                QUALIFY row_number() OVER (PARTITION BY a + b ORDER BY c) = 1;""", "[[0]]");
+    }
+
+    /** Two different computations of the same columns are not known to hold the same value. */
+    @Test
+    public void top1OnOtherComputedColumn() {
+        this.assertNoKeys("""
+                CREATE VIEW v AS SELECT a - b AS ab, c FROM m
+                QUALIFY row_number() OVER (PARTITION BY a + b ORDER BY c) = 1;""");
+    }
+
     /** The TOP-1 output is indexed by the seven partition columns and repeats them in its
      * value tuple.  Each value of the key is named by both its columns. */
     @Test
