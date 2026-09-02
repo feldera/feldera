@@ -8353,14 +8353,17 @@
           },
           "jwt": {
             "type": "string",
+            "description": "User JWT for decentralized (operator-mode) authentication.\n\nRequires `nkey` to be set as well: the connection nonce is signed\nwith the NKey seed. Equivalent to `credentials`, for deployments\nthat store the JWT and seed separately (e.g. as two secrets)\nrather than as one `.creds` file.",
             "nullable": true
           },
           "nkey": {
             "type": "string",
+            "description": "NKey seed (`SU...`) for NKey challenge-response authentication.\n\nOn its own, authenticates as a bare NKey user (a `nkey:` user in\nthe server configuration). Combined with `jwt`, signs the\nconnection nonce for decentralized authentication.",
             "nullable": true
           },
           "token": {
             "type": "string",
+            "description": "Token for token-based authentication.",
             "nullable": true
           },
           "user_and_password": {
@@ -9431,6 +9434,9 @@
           "server_url": {
             "type": "string",
             "description": "NATS server URL (e.g., \"nats://localhost:4222\")."
+          },
+          "tls": {
+            "$ref": "#/components/schemas/Tls"
           }
         }
       },
@@ -15835,6 +15841,21 @@
               "$ref": "#/components/schemas/SampleStatistics"
             },
             "description": "Time series.\n\nThese report 60 seconds of samples, one per second."
+          }
+        }
+      },
+      "Tls": {
+        "type": "object",
+        "description": "TLS options for connecting to a NATS server.",
+        "properties": {
+          "require_tls": {
+            "type": "boolean",
+            "description": "Require an encrypted connection; refuse to connect to servers that\ndo not offer TLS."
+          },
+          "root_certificates_file": {
+            "type": "string",
+            "description": "Path to a PEM file with additional root certificates to trust when\nverifying the server certificate, for servers whose certificates\nare not signed by a public CA.",
+            "example": "/path/to/ca.crt"
           }
         }
       },

@@ -1,6 +1,7 @@
-use anyhow::Result as AnyResult;
+use anyhow::{Result as AnyResult, anyhow, bail};
 use async_nats::jetstream::consumer as nats;
 use feldera_types::transport::nats as cfg;
+use std::sync::Arc;
 use std::time::Duration;
 
 pub async fn translate_connect_options(
@@ -13,13 +14,81 @@ pub async fn translate_connect_options(
         .connection_timeout(connection_timeout)
         .request_timeout(Some(request_timeout));
 
-    // TODO Handle the rest of the auth options
-    if let Some(creds) = config.auth.credentials.as_ref() {
-        match creds {
-            cfg::Credentials::FromFile(path) => options = options.credentials_file(path).await?,
-            cfg::Credentials::FromString(c) => options = options.credentials(c)?,
-        }
+    options = apply_auth(options, &config.auth).await?;
+
+    if let Some(path) = config.tls.root_certificates_file.as_ref() {
+        options = options.add_root_certificates(path.clone());
     }
+    if config.tls.require_tls {
+        options = options.require_tls(true);
+    }
+
+    Ok(options)
+}
+
+/// Applies the configured authentication method to the connect options.
+///
+/// Exactly one method may be configured: `credentials`, `jwt` (which
+/// requires `nkey` for nonce signing), bare `nkey`, `token`, or
+/// `user_and_password`. Configuring none is valid (unauthenticated
+/// connection); configuring more than one is rejected rather than silently
+/// picking a winner.
+async fn apply_auth(
+    options: async_nats::ConnectOptions,
+    auth: &cfg::Auth,
+) -> AnyResult<async_nats::ConnectOptions> {
+    let configured = [
+        auth.credentials.is_some(),
+        auth.jwt.is_some(),
+        // A bare nkey is its own method; alongside jwt it is part of the
+        // jwt method (the seed signs the connection nonce).
+        auth.nkey.is_some() && auth.jwt.is_none(),
+        auth.token.is_some(),
+        auth.user_and_password.is_some(),
+    ]
+    .iter()
+    .filter(|&&set| set)
+    .count();
+    if configured > 1 {
+        bail!(
+            "multiple NATS authentication methods configured; set exactly one of `credentials`, `jwt` (with `nkey`), `nkey`, `token`, or `user_and_password`"
+        );
+    }
+
+    if let Some(creds) = auth.credentials.as_ref() {
+        return Ok(match creds {
+            cfg::Credentials::FromFile(path) => options.credentials_file(path).await?,
+            cfg::Credentials::FromString(c) => options.credentials(c)?,
+        });
+    }
+
+    if let Some(jwt) = auth.jwt.as_ref() {
+        let Some(seed) = auth.nkey.as_ref() else {
+            bail!(
+                "NATS `jwt` authentication requires `nkey` (the seed that signs the connection nonce)"
+            );
+        };
+        let key_pair = Arc::new(
+            nkeys::KeyPair::from_seed(seed).map_err(|e| anyhow!("invalid NATS nkey seed: {e}"))?,
+        );
+        return Ok(options.jwt(jwt.clone(), move |nonce| {
+            let key_pair = key_pair.clone();
+            async move { key_pair.sign(&nonce).map_err(async_nats::AuthError::new) }
+        }));
+    }
+
+    if let Some(seed) = auth.nkey.as_ref() {
+        return Ok(options.nkey(seed.clone()));
+    }
+
+    if let Some(token) = auth.token.as_ref() {
+        return Ok(options.token(token.clone()));
+    }
+
+    if let Some(cfg::UserAndPassword { user, password }) = auth.user_and_password.as_ref() {
+        return Ok(options.user_and_password(user.clone(), password.clone()));
+    }
+
     Ok(options)
 }
 

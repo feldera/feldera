@@ -93,6 +93,7 @@ awc = { workspace = true, features = [
 ] }
 async-nats = { workspace = true }
 async-stream = { workspace = true }
+nkeys = { workspace = true }
 anyhow = { workspace = true, features = ["backtrace"] }
 bytestring = "1.4.0"
 circular-queue = { workspace = true, features = ["serde_support"] }

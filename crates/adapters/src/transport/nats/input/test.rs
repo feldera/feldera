@@ -1,6 +1,7 @@
 use feldera_types::deserialize_without_context;
 use serde::{Deserialize, Serialize};
 
+mod auth_tests;
 mod control_tests;
 mod controller_framework;
 mod custom_tests;
@@ -125,8 +126,10 @@ mod util {
     /// Spawn a JetStream-enabled `nats-server` on `port` and wait until it binds.
     ///
     /// `port` is a `nats-server` port argument: a TCP port, or `-1` to let the
-    /// operating system choose one. Returns the guard and the bound address.
-    fn spawn_nats_server(port: &str) -> AnyResult<(ProcessKillGuard, String)> {
+    /// operating system choose one. `extra_args` are appended to the command
+    /// line (e.g. authorization flags). Returns the guard and the bound
+    /// address.
+    fn spawn_nats_server(port: &str, extra_args: &[&str]) -> AnyResult<(ProcessKillGuard, String)> {
         let nats_ip_addr = "127.0.0.1";
 
         let scratch = TempDir::new()?;
@@ -147,6 +150,7 @@ mod util {
             .arg("--jetstream")
             .arg("--store_dir")
             .arg(&store_dir)
+            .args(extra_args)
             .stdout(Stdio::from(log.try_clone()?))
             .stderr(Stdio::from(log))
             .spawn()?;
@@ -166,12 +170,18 @@ mod util {
     }
 
     pub fn start_nats_and_get_address() -> AnyResult<(ProcessKillGuard, String)> {
+        start_nats_with_args(&[])
+    }
+
+    /// Like [`start_nats_and_get_address`], with extra `nats-server` command
+    /// line arguments (e.g. authorization flags).
+    pub fn start_nats_with_args(extra_args: &[&str]) -> AnyResult<(ProcessKillGuard, String)> {
         const MAX_ATTEMPTS: usize = 2;
         const RANDOM_PORT: &str = "-1";
 
         let mut last_error: Option<anyhow::Error> = None;
         for attempt in 1..=MAX_ATTEMPTS {
-            match spawn_nats_server(RANDOM_PORT) {
+            match spawn_nats_server(RANDOM_PORT, extra_args) {
                 Ok(result) => return Ok(result),
                 Err(error) => {
                     last_error = Some(error);
@@ -193,7 +203,7 @@ mod util {
     /// reports that directly instead of letting a later action time out against
     /// a foreign server.
     pub fn start_nats_on_port(port: u16) -> AnyResult<(ProcessKillGuard, String)> {
-        let (guard, addr) = spawn_nats_server(&port.to_string())
+        let (guard, addr) = spawn_nats_server(&port.to_string(), &[])
             .map_err(|e| e.context(format!("failed to restart nats-server on port {port}")))?;
 
         if !addr.ends_with(&format!(":{port}")) {
