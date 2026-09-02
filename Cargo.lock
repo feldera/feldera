@@ -4094,6 +4094,7 @@ dependencies = [
  "feldera-buffer-cache",
  "feldera-ir",
  "feldera-macros",
+ "feldera-modular-bloom",
  "feldera-samply",
  "feldera-size-of",
  "feldera-storage",

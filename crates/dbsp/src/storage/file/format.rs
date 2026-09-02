@@ -117,6 +117,13 @@ pub const BLOOM_FILTER_BLOCK_MAGIC: [u8; 4] = *b"LFFB";
 /// Magic number for roaring bitmap filter blocks.
 pub const ROARING_BITMAP_FILTER_BLOCK_MAGIC: [u8; 4] = *b"LFFR";
 
+/// Magic number for modular Bloom filter blocks.
+///
+/// A filter with a single module is written with
+/// [`BLOOM_FILTER_BLOCK_MAGIC`] instead, so files that carry no ladder stay
+/// readable by binaries that predate modular filters.
+pub const MODULAR_BLOOM_FILTER_BLOCK_MAGIC: [u8; 4] = *b"LFMB";
+
 /// 8-byte header at the beginning of each block.
 ///
 /// A block does not identify its own size, so any reference to a block must
@@ -295,8 +302,9 @@ impl FileTrailer {
 
     /// Returns the unknown incompatible features, if any.
     pub fn unknown_incompatible_features(&self) -> Option<u64> {
-        let unknown_incompatible_features =
-            self.incompatible_features & !INCOMPATIBLE_FEATURE_ROARING_FILTERS;
+        let unknown_incompatible_features = self.incompatible_features
+            & !INCOMPATIBLE_FEATURE_ROARING_FILTERS
+            & !INCOMPATIBLE_FEATURE_MODULAR_FILTERS;
         if unknown_incompatible_features != 0 {
             Some(unknown_incompatible_features)
         } else {
@@ -325,6 +333,10 @@ pub const COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT: u64 = 1 << 1;
 /// Bit set to 1 in [FileTrailer::incompatible_features] if the file contains
 /// roaring bitmap membership filter blocks.
 pub const INCOMPATIBLE_FEATURE_ROARING_FILTERS: u64 = 1 << 0;
+
+/// Bit set to 1 in [FileTrailer::incompatible_features] if the file contains a
+/// Bloom filter with more than one module.
+pub const INCOMPATIBLE_FEATURE_MODULAR_FILTERS: u64 = 1 << 1;
 
 /// Information about a column.
 ///
@@ -660,6 +672,77 @@ pub struct BloomFilterBlockRef<'a> {
     pub len: u64,
 
     /// Bloom filter contents.
+    pub data: &'a [u64],
+}
+
+/// The fixed-size front of a modular Bloom filter block.
+///
+/// Kept separate from the module contents so a reader can parse it from the
+/// first sector of the block and learn, before reading any modules, both their
+/// layout and how accurate any prefix of them would be.
+///
+/// The modules follow, equally sized and stored back to back starting at module
+/// 0, so a reader can take any prefix of them and get a valid filter at reduced
+/// accuracy.
+#[binrw]
+#[derive(Clone, Debug)]
+pub struct ModularBloomFilterHeader {
+    /// Block header with "LFMB" magic.
+    #[brw(assert(
+        header.magic == MODULAR_BLOOM_FILTER_BLOCK_MAGIC,
+        "modular bloom filter block has bad magic"
+    ))]
+    pub header: BlockHeader,
+
+    /// Number of modules the filter was written with.
+    pub total_modules: u32,
+
+    /// Number of hashes each module uses per key.
+    pub hashes_per_module: u32,
+
+    /// Number of `u64` elements in each module.
+    pub words_per_module: u64,
+
+    /// Bits set in each module, one entry per module.
+    ///
+    /// A reader needs these to work out how many modules a target false
+    /// positive rate requires. Measuring instead would mean reading the modules
+    /// first, which is the read this is meant to size.
+    #[br(count = total_modules)]
+    pub set_bits: Vec<u64>,
+}
+
+impl ModularBloomFilterHeader {
+    /// Serialized length of the header, given `total_modules`.
+    pub fn len_for(total_modules: u32) -> usize {
+        // Block header, three scalars, then one count per module.
+        8 + 4 + 4 + 8 + total_modules as usize * 8
+    }
+}
+
+/// A block representing a modular Bloom filter (with data by reference).
+#[binwrite]
+pub struct ModularBloomFilterBlockRef<'a> {
+    /// Block header with "LFMB" magic.
+    #[bw(assert(
+        header.magic == MODULAR_BLOOM_FILTER_BLOCK_MAGIC,
+        "modular bloom filter block has bad magic"
+    ))]
+    pub header: BlockHeader,
+
+    /// Number of modules the filter was written with.
+    pub total_modules: u32,
+
+    /// Number of hashes each module uses per key.
+    pub hashes_per_module: u32,
+
+    /// Number of `u64` elements in each module.
+    pub words_per_module: u64,
+
+    /// Bits set in each module, one entry per module.
+    pub set_bits: &'a [u64],
+
+    /// Module contents, `total_modules * words_per_module` elements.
     pub data: &'a [u64],
 }
 

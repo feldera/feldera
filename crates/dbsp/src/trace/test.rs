@@ -1,7 +1,8 @@
+use crate::trace::StoragePath;
 use std::{
     cmp::max,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
 };
@@ -1811,4 +1812,213 @@ proptest! {
             test_key_batch_builder::<FileKeyBatch<DynI32, u32, DynZWeight>>(&factories, batch, seed);
         });
     }
+}
+
+/// Sets the false positive rate `config`'s circuit will report.
+fn set_false_positive_rate(config: &mut CircuitConfig, rate: f64) {
+    config
+        .storage
+        .as_mut()
+        .expect("config must be storage-backed")
+        .options
+        .bloom_false_positive_rate = Some(rate);
+}
+
+/// Builds a file batch at the most accurate rate, then reloads it at each
+/// coarser rate and checks that the filter shrinks without ever losing a key.
+///
+/// The filter lives below every batch type, in the layer file reader, but each
+/// of the four file batch types reaches it through its own `from_path`. This
+/// runs the same ladder through all of them so a divergence in any one shows up.
+fn assert_rate_ladder<B>(
+    label: &str,
+    dir: &std::path::Path,
+    factories: fn() -> B::Factories,
+    build: fn(&B::Factories) -> B,
+    keys: &'static [u32],
+) where
+    B: Batch<Key = DynData> + Send + 'static,
+    B::Factories: Send + 'static,
+{
+    // A circuit deletes its storage directory when it shuts down, so the batch
+    // file is stashed outside any of them and copied back in for each reload.
+    let stash = dir.join("stashed-batch.feldera");
+    let name: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+
+    {
+        let write_dir = dir.join("write");
+        std::fs::create_dir_all(&write_dir).unwrap();
+        let mut config = mkconfig(&write_dir);
+        set_false_positive_rate(&mut config, 1e-4);
+        let (name, stash, write_dir) = (name.clone(), stash.clone(), write_dir.clone());
+        run_in_circuit_with_storage_config(config, move || {
+            let batch = build(&factories());
+            let file = batch
+                .file_reader()
+                .expect("batch under test must be file backed");
+            let source = file.path().to_string();
+            std::fs::copy(write_dir.join(source.trim_start_matches('/')), &stash).unwrap();
+            *name.lock().unwrap() = Some("ladder-batch.feldera".to_string());
+            drop(batch);
+        });
+    }
+    let name = name.lock().unwrap().clone().unwrap();
+    let path = StoragePath::from(name.clone());
+
+    // Coarsening the rate never costs more memory, and going the whole way
+    // from the finest rate to the coarsest costs strictly less. Adjacent rungs
+    // can tie: a batch small enough to sit on the layout's floor is more
+    // accurate than nominal, so one module can already satisfy two of them.
+    let mut previous_bytes = usize::MAX;
+    let mut finest_bytes = 0;
+    for rate in [1e-4, 1e-3, 1e-2, 1e-1] {
+        let read_dir = dir.join(format!("read-{rate:e}"));
+        std::fs::create_dir_all(&read_dir).unwrap();
+        std::fs::copy(&stash, read_dir.join(&name)).unwrap();
+        let mut config = mkconfig(&read_dir);
+        set_false_positive_rate(&mut config, rate);
+        let bytes = Arc::new(Mutex::new(0));
+        {
+            let (bytes, path) = (bytes.clone(), path.clone());
+            let label = label.to_string();
+            run_in_circuit_with_storage_config(config, move || {
+                let batch = B::from_path(&factories(), &path)
+                    .unwrap_or_else(|e| panic!("{label} at {rate:e}: {e}"));
+
+                assert_eq!(
+                    batch.membership_filter_kind(),
+                    FilterKind::Bloom,
+                    "{label} at {rate:e} lost its Bloom filter"
+                );
+                for key in keys {
+                    let mut cursor = batch.cursor();
+                    assert!(
+                        cursor.seek_key_exact(key.erase(), None),
+                        "{label} at {rate:e}: eviction lost key {key}"
+                    );
+                }
+                *bytes.lock().unwrap() = batch.membership_filter_stats().size_byte;
+            });
+        }
+        let bytes = *bytes.lock().unwrap();
+        assert!(
+            bytes <= previous_bytes,
+            "{label} at {rate:e} kept {bytes} bytes, more than the {previous_bytes} before it"
+        );
+        if previous_bytes == usize::MAX {
+            finest_bytes = bytes;
+        }
+        previous_bytes = bytes;
+    }
+    assert!(
+        previous_bytes < finest_bytes,
+        "{label} kept {previous_bytes} bytes at the coarsest rate, no less than \
+         the {finest_bytes} it kept at the finest"
+    );
+}
+
+/// Keys wide enough that roaring is not preferred, so every batch type really
+/// exercises the Bloom path.
+const LADDER_KEYS: &[u32] = &[
+    1,
+    5_000,
+    90_000,
+    1_000_000,
+    7_000_000,
+    40_000_000,
+    300_000_000,
+    4_000_000_000,
+];
+
+#[test]
+fn file_wset_filter_follows_the_rate() {
+    let temp_dir = tempdir().expect("Can't create temp dir for storage");
+    assert_rate_ladder::<FileWSet<DynData, DynZWeight>>(
+        "FileWSet",
+        temp_dir.path(),
+        <FileWSetFactories<DynData, DynZWeight>>::new::<u32, (), ZWeight>,
+        |factories| {
+            let mut builder =
+                <FileWSet<DynData, DynZWeight> as Batch>::Builder::with_capacity(factories, 8, 0);
+            for key in LADDER_KEYS {
+                let weight: ZWeight = 1;
+                builder.push_time_diff(&(), weight.erase());
+                builder.push_key(key.erase());
+            }
+            builder.done()
+        },
+        LADDER_KEYS,
+    );
+}
+
+#[test]
+fn file_indexed_wset_filter_follows_the_rate() {
+    let temp_dir = tempdir().expect("Can't create temp dir for storage");
+    assert_rate_ladder::<FileIndexedWSet<DynData, DynData, DynZWeight>>(
+        "FileIndexedWSet",
+        temp_dir.path(),
+        <FileIndexedWSetFactories<DynData, DynData, DynZWeight>>::new::<u32, u32, ZWeight>,
+        |factories| {
+            let mut builder =
+                <FileIndexedWSet<DynData, DynData, DynZWeight> as Batch>::Builder::with_capacity(
+                    factories, 8, 0,
+                );
+            for key in LADDER_KEYS {
+                let weight: ZWeight = 1;
+                builder.push_time_diff(&(), weight.erase());
+                builder.push_val(7u32.erase());
+                builder.push_key(key.erase());
+            }
+            builder.done()
+        },
+        LADDER_KEYS,
+    );
+}
+
+#[test]
+fn file_key_batch_filter_follows_the_rate() {
+    let temp_dir = tempdir().expect("Can't create temp dir for storage");
+    assert_rate_ladder::<FileKeyBatch<DynData, u32, DynZWeight>>(
+        "FileKeyBatch",
+        temp_dir.path(),
+        <FileKeyBatchFactories<DynData, u32, DynZWeight>>::new::<u32, (), ZWeight>,
+        |factories| {
+            let mut builder =
+                <FileKeyBatch<DynData, u32, DynZWeight> as Batch>::Builder::with_capacity(
+                    factories, 8, 0,
+                );
+            for key in LADDER_KEYS {
+                let weight: ZWeight = 1;
+                builder.push_time_diff(&0u32, weight.erase());
+                builder.push_val(().erase());
+                builder.push_key(key.erase());
+            }
+            builder.done()
+        },
+        LADDER_KEYS,
+    );
+}
+
+#[test]
+fn file_val_batch_filter_follows_the_rate() {
+    let temp_dir = tempdir().expect("Can't create temp dir for storage");
+    assert_rate_ladder::<FileValBatch<DynData, DynData, u32, DynZWeight>>(
+        "FileValBatch",
+        temp_dir.path(),
+        <FileValBatchFactories<DynData, DynData, u32, DynZWeight>>::new::<u32, u32, ZWeight>,
+        |factories| {
+            let mut builder =
+                <FileValBatch<DynData, DynData, u32, DynZWeight> as Batch>::Builder::with_capacity(
+                    factories, 8, 0,
+                );
+            for key in LADDER_KEYS {
+                let weight: ZWeight = 1;
+                builder.push_time_diff(&0u32, weight.erase());
+                builder.push_val(7u32.erase());
+                builder.push_key(key.erase());
+            }
+            builder.done()
+        },
+        LADDER_KEYS,
+    );
 }

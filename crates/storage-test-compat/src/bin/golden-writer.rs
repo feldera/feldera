@@ -77,9 +77,16 @@ where
 
     let tmp_path = writer.path().clone();
     let (_file_handle, key_filter, _key_bounds) = writer.close(BatchMetadata::default())?;
+    // Assert the artifact is the kind this file is meant to pin. Without this a
+    // policy change silently rewrites the goldens into something else and the
+    // compatibility test keeps passing against the wrong thing.
+    let Some(BatchKeyFilter::Bloom(filter)) = &key_filter else {
+        panic!("modular golden files must persist a Bloom filter");
+    };
     assert!(
-        matches!(key_filter, Some(BatchKeyFilter::Bloom(_))),
-        "writer1 golden files must persist a Bloom filter",
+        filter.layout().total_modules() > 1,
+        "modular golden files must persist more than one module, got {}",
+        filter.layout().total_modules(),
     );
     let content = storage_backend.read(&tmp_path)?;
     storage_backend.write(&output_storage_path, (*content).clone())?;
@@ -163,7 +170,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         match (config.spec.writer, config.spec.size) {
-            (GoldenWriterKind::Writer1Bloom, GoldenSize::Large) => {
+            // Frozen: these files were produced by a binary that predates
+            // modular filters and are the only evidence that such a filter
+            // still loads. Rewriting them would test the current encoding
+            // against itself.
+            (GoldenWriterKind::Writer1Bloom, _) => {
+                println!("skipping frozen legacy golden {}", config.spec.file_name());
+            }
+            (GoldenWriterKind::Writer3Modular, GoldenSize::Large) => {
                 write_writer1_golden::<GoldenRow>(
                     &output,
                     config.rows,
@@ -171,7 +185,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     golden_row,
                 )?
             }
-            (GoldenWriterKind::Writer1Bloom, GoldenSize::Small) => {
+            (GoldenWriterKind::Writer3Modular, GoldenSize::Small) => {
                 write_writer1_golden::<GoldenRowSmall>(
                     &output,
                     config.rows,
@@ -179,7 +193,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     golden_row_small,
                 )?
             }
-            (GoldenWriterKind::Writer1Bloom, GoldenSize::Variant) => {
+            (GoldenWriterKind::Writer3Modular, GoldenSize::Variant) => {
                 write_writer1_golden::<GoldenRowVariant>(
                     &output,
                     config.rows,
