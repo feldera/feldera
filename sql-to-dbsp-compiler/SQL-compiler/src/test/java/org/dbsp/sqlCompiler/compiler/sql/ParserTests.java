@@ -29,7 +29,9 @@ import org.apache.calcite.rel.logical.LogicalProject;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlSelect;
 import org.apache.calcite.sql.SqlSetOption;
+import org.apache.calcite.sql.parser.SqlAbstractParserImpl;
 import org.apache.calcite.sql.parser.SqlParseException;
+import org.apache.calcite.sql.type.SqlTypeName;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.StderrErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.SourceFileContents;
@@ -45,10 +47,20 @@ import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlForeignKey;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
+import org.dbsp.generated.parser.DbspParserImpl;
 import org.junit.Assert;
 import org.junit.Test;
 
+import java.io.IOException;
+import java.io.StringReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.Locale;
 
 /** Test SQL parser extensions. */
 public class ParserTests {
@@ -540,5 +552,118 @@ public class ParserTests {
         SqlToRelCompiler calcite = this.getCompiler();
         List<ParsedStatement> node = calcite.parseStatements(query);
         Assert.assertNotNull(node);
+    }
+
+    /** Use `keyword` as a column name, both in a table declaration and in a query.
+     * Check that the resulting program compiles. */
+    void columnNamed(String keyword) throws SqlParseException {
+        SqlToRelCompiler compiler = this.getCompiler();
+        List<ParsedStatement> statements = compiler.parseStatements(
+                "CREATE TABLE T(" + keyword + " INT);\n" +
+                "CREATE VIEW V AS SELECT " + keyword + " FROM T WHERE " + keyword + " > 0");
+        Assert.assertEquals(keyword, 2, statements.size());
+        SourceFileContents sources = new SourceFileContents();
+        compiler.compile(statements.get(0), sources);
+        RelStatement view = compiler.compile(statements.get(1), sources);
+        RelNode rel = view.to(CreateViewStatement.class).getRel();
+        Assert.assertEquals(keyword,
+                List.of(keyword.toLowerCase(Locale.ENGLISH)), rel.getRowType().getFieldNames());
+    }
+
+    @Test
+    public void unusedKeywordTest() throws SqlParseException {
+        // Calcite's grammar declares these keywords but Feldera does not reserve them:
+        for (String keyword: new String[] {
+                "CONTAINS_SUBSTR", "DISCARD", "GRANT", "JSON_SCOPE",
+                "PLANS", "SEED", "SEQUENCES", "TEMP" })
+            this.columnNamed(keyword);
+
+        // The function call parses without either of its keywords being reserved
+        SqlToRelCompiler compiler = this.getCompiler();
+        Assert.assertNotNull(compiler.parse(
+                "SELECT contains_substr(s, 'cd', json_scope => 'JSON_KEYS') FROM T"));
+    }
+
+    /** Words that need double quotes to serve as identifiers, extracted from the parser implementation. */
+    static Set<String> reservedKeywords() {
+        SqlAbstractParserImpl.Metadata metadata =
+                new DbspParserImpl(new StringReader("")).getMetadata();
+        Set<String> reserved = new TreeSet<>();
+        for (String token: metadata.getTokens()) {
+            // The token list also holds operators such as "(" and ">="
+            if (token.matches("[A-Z][A-Z0-9_-]*")
+                    && metadata.isKeyword(token) && !metadata.isNonReservedKeyword(token))
+                reserved.add(token);
+        }
+        return reserved;
+    }
+
+    /** Checks that the documentation for reserved keywords matches the implementation. */
+    @Test
+    public void documentedReservedKeywordsTest() throws IOException {
+        Path grammar = Path.of("..", "..", "docs.feldera.com", "docs", "sql", "grammar.md");
+        Assert.assertTrue("Cannot find " + grammar.toAbsolutePath(), Files.exists(grammar));
+
+        // The table in the section "Reserved keywords": | S | `SELECT`, `SET`, ... |
+        String text = Files.readString(grammar);
+        int section = text.indexOf("\n## Reserved keywords");
+        Assert.assertTrue(grammar + " has no section 'Reserved keywords'", section >= 0);
+        int nextSection = text.indexOf("\n## ", section + 1);
+        String table = text.substring(section, nextSection < 0 ? text.length() : nextSection);
+        Set<String> documented = new TreeSet<>();
+        Matcher row = Pattern.compile("^\\| ([A-Z]) \\| (.*) \\|$", Pattern.MULTILINE).matcher(table);
+        while (row.find())
+            for (String word: row.group(2).split(","))
+                documented.add(word.replace("`", "").trim());
+
+        Set<String> reserved = reservedKeywords();
+        Set<String> undocumented = new TreeSet<>(reserved);
+        undocumented.removeAll(documented);
+        Set<String> stale = new TreeSet<>(documented);
+        stale.removeAll(reserved);
+        Assert.assertTrue("The reserved keyword table in " + grammar + " no longer matches the parser"
+                        + "\nreserved but not documented: " + undocumented
+                        + "\ndocumented but not reserved: " + stale,
+                undocumented.isEmpty() && stale.isEmpty());
+    }
+
+    @Test
+    public void keyColumnTest() throws SqlParseException {
+        // KEY is not a reserved keyword
+        SqlToRelCompiler compiler = this.getCompiler();
+        List<ParsedStatement> statements = compiler.parseStatements("""
+                CREATE TABLE T(key INT NOT NULL PRIMARY KEY);
+                CREATE VIEW V AS SELECT key FROM T;""");
+        Assert.assertEquals(2, statements.size());
+        SourceFileContents sources = new SourceFileContents();
+        compiler.compile(statements.get(0), sources);
+        RelStatement view = compiler.compile(statements.get(1), sources);
+        RelNode rel = view.to(CreateViewStatement.class).getRel();
+        Assert.assertEquals(List.of("key"), rel.getRowType().getFieldNames());
+    }
+
+    @Test
+    public void calciteReservedKeywordTest() throws SqlParseException {
+        // A sample of words that core Calcite reserves and Feldera does not.  One word
+        // per grammar rule that competes with an identifier: a function name, a type
+        // name, an infix operator, and a clause word.
+        for (String keyword: new String[] { "ABS", "CAST", "DOUBLE", "VARCHAR", "AND", "AS" })
+            this.columnNamed(keyword);
+    }
+
+    @Test
+    public void literalKeywordColumnTest() throws SqlParseException {
+        // TRUE is not reserved, so it can be used as a column name, but a bare true
+        // is the boolean literal rather than the INTEGER column
+        SqlToRelCompiler compiler = this.getCompiler();
+        List<ParsedStatement> statements = compiler.parseStatements("""
+                CREATE TABLE T(true INT);
+                CREATE VIEW V AS SELECT true FROM T;""");
+        SourceFileContents sources = new SourceFileContents();
+        compiler.compile(statements.get(0), sources);
+        RelStatement view = compiler.compile(statements.get(1), sources);
+        RelNode rel = view.to(CreateViewStatement.class).getRel();
+        Assert.assertEquals(SqlTypeName.BOOLEAN,
+                rel.getRowType().getFieldList().get(0).getType().getSqlTypeName());
     }
 }

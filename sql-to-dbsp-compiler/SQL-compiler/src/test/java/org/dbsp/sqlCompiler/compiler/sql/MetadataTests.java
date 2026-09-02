@@ -64,6 +64,9 @@ public class MetadataTests extends BaseSQLTests {
         // Create a view named like a system view
         this.statementsFailingInCompilation("CREATE VIEW ERROR_VIEW AS SELECT 2;",
                 "'error_view' already defined");
+        // 'now' is a system table, so no view can carry that name either
+        this.statementsFailingInCompilation("CREATE VIEW now AS SELECT 2;",
+                "'now' already defined");
     }
 
     @Test
@@ -2048,6 +2051,19 @@ public class MetadataTests extends BaseSQLTests {
         Assert.assertEquals(text, c.text);
         Assert.assertEquals(line, c.pos.getLineNum());
         Assert.assertEquals(col, c.pos.getColumnNum());
+    }
+
+    @Test
+    public void predefinedNameColumnTest() {
+        // A column can carry the name of a predefined function.  A reference to a
+        // function that SQL calls without parentheses (e.g. current_date) is parsed as
+        // a function call, so such a column has to be qualified or quoted.
+        // In contrast, 'now' always needs parentheses, so `now` is parsed as a column.
+        this.assertCompilesWithoutError("""
+                CREATE TABLE T(user INT, current_date INT, now INT);
+                CREATE VIEW V AS SELECT t.user AS a, "user" AS b,
+                    t.current_date AS c, "current_date" AS d, now AS e
+                FROM T AS t;""");
     }
 
     /** Verify that {@code sql} is accepted by the SQL compiler without errors. */
