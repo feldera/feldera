@@ -121,6 +121,14 @@ jobs:
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ./build/feldera_storage-*
 
+      - name: feldera-modular-bloom
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        # The lib tests plus every bloom_* integration test, so a test file
+        # added later needs no change here. A bare glob would not do: it
+        # expands to several paths, and the shell would run the first and hand
+        # it the rest as arguments.
+        run: for t in ./build/feldera_modular_bloom-* ./build/bloom_*; do "$t"; done
+
       - name: readers
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ../../../build/readers-*

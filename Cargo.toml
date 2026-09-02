@@ -31,6 +31,7 @@ members = [
   "crates/fxp",
   "crates/storage-test-compat",
   "crates/buffer-cache",
+  "crates/modular-bloom",
   "crates/samply"
 ]
 exclude = [
@@ -177,6 +178,7 @@ feldera-fxp = { version = "0.343.0", path = "crates/fxp", features = ["dbsp"] }
 feldera-iceberg = { path = "crates/iceberg" }
 feldera-observability = { version = "0.343.0", path = "crates/feldera-observability" }
 feldera-macros = { version = "0.343.0", path = "crates/feldera-macros" }
+feldera-modular-bloom = { version = "0.343.0", path = "crates/modular-bloom" }
 feldera-sqllib = { version = "0.343.0", path = "crates/sqllib" }
 feldera-storage = { version = "0.343.0", path = "crates/storage" }
 feldera-types = { version = "0.343.0", path = "crates/feldera-types" }
