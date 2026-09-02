@@ -5480,6 +5480,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "feldera-modular-bloom"
+version = "0.343.0"
+dependencies = [
+ "criterion",
+ "fastbloom",
+ "proptest",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "feldera-observability"
 version = "0.343.0"
 dependencies = [

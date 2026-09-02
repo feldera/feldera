@@ -1,0 +1,25 @@
+[package]
+name = "feldera-modular-bloom"
+version = { workspace = true }
+edition = "2024"
+homepage = { workspace = true }
+repository = { workspace = true }
+license = { workspace = true }
+authors = { workspace = true }
+rust-version = { workspace = true }
+publish = true
+description = "Bloom filters split into independently droppable modules, so accuracy can be traded for memory without rebuilding"
+
+[dependencies]
+thiserror = { workspace = true }
+
+# fastbloom is the oracle the compatibility tests check our hash schedule
+# against; it is deliberately not a runtime dependency.
+[dev-dependencies]
+criterion = { workspace = true }
+fastbloom = { workspace = true }
+proptest = { workspace = true }
+
+[[bench]]
+name = "modular_bloom"
+harness = false

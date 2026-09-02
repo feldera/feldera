@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc dd614dd435b16bd5b327361c788da9b6d235d094bc29a84eef59705351e3b631 # shrinks to geometry = ModuleGeometry { total_modules: 1, words_per_module: 1, hashes_per_module: 1 }, key_count = 0, ops = [2, 1]
