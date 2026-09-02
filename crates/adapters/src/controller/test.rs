@@ -9,15 +9,15 @@ use crate::{
         test_circuit_with_aggregate, wait,
     },
     transport::{
-        InputQueue, InputReader, InputReaderCommand, input_transport_config_to_endpoint,
-        set_barrier,
+        InputQueue, InputQueueEntry, InputReader, InputReaderCommand,
+        input_transport_config_to_endpoint, set_barrier,
     },
 };
 use anyhow::anyhow;
 use chrono::Utc;
 use crossbeam::sync::Parker;
 use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
-use feldera_adapterlib::format::{BufferSize, Parser};
+use feldera_adapterlib::format::{BufferSize, InputBuffer, Parser};
 use feldera_types::{
     adapter_stats::ExternalOutputEndpointMetrics,
     config::{FtModel, InputEndpointConfig, OutputEndpointConfig},
@@ -1063,6 +1063,247 @@ fn fault_tolerance_mismatch_unregisters_the_endpoint() {
         "the rejected endpoint stayed registered"
     );
     assert!(controller.status().input_status().is_empty());
+
+    controller.stop().unwrap();
+}
+
+/// An input endpoint that opens and commits Feldera transactions, the way a
+/// connector configured with a `transaction_mode` does.
+///
+/// It hands over whatever it has queued in reply to a `Queue` command, like an
+/// ordinary connector, so an endpoint that keeps input buffered across steps is
+/// one the controller chose not to poll.
+#[derive(Clone)]
+struct TransactionalInputEndpoint {
+    details: Arc<Mutex<Option<TransactionalInputEndpointDetails>>>,
+}
+
+struct TransactionalInputEndpointDetails {
+    parser: Box<dyn Parser>,
+    queue: InputQueue,
+}
+
+impl TransactionalInputEndpoint {
+    fn new() -> Self {
+        Self {
+            details: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Opens the transaction labeled `label`, or joins it if another connector
+    /// has already opened it, ahead of the input queued next.
+    fn start_transaction(&self, label: &str) {
+        self.push_entry(
+            InputQueueEntry::new_with_aux(Utc::now(), ())
+                .with_start_transaction(Some(Some(label.to_string()))),
+        );
+    }
+
+    /// Commits this connector's part of the transaction, after the input
+    /// queued so far.  The transaction itself commits once every participant
+    /// has done this.
+    fn commit_transaction(&self) {
+        self.push_entry(
+            InputQueueEntry::new_with_aux(Utc::now(), ()).with_commit_transaction(true),
+        );
+    }
+
+    /// Parses `data` and queues it, reporting the records as buffered.
+    fn push(&self, data: &str) {
+        let mut guard = self.details.lock().unwrap();
+        let details = guard.as_mut().unwrap();
+        let parsed = details.parser.parse(data.as_bytes(), None);
+        details.queue.push(parsed, Utc::now());
+    }
+
+    fn push_entry(&self, entry: InputQueueEntry<(), Box<dyn InputBuffer>>) {
+        self.details
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .queue
+            .push_entry(entry, Vec::new());
+    }
+}
+
+impl InputEndpoint for TransactionalInputEndpoint {
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        None
+    }
+}
+
+impl TransportInputEndpoint for TransactionalInputEndpoint {
+    fn open(
+        &self,
+        consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
+        _schema: Relation,
+        _resume_info: Option<serde_json::Value>,
+    ) -> anyhow::Result<Box<dyn InputReader>> {
+        *self.details.lock().unwrap() = Some(TransactionalInputEndpointDetails {
+            parser,
+            queue: InputQueue::new(consumer),
+        });
+        Ok(Box::new(self.clone()))
+    }
+}
+
+impl InputReader for TransactionalInputEndpoint {
+    fn as_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+
+    fn request(&self, command: InputReaderCommand) {
+        match command {
+            InputReaderCommand::Queue { .. } => {
+                self.details.lock().unwrap().as_ref().unwrap().queue.queue()
+            }
+            InputReaderCommand::Extend
+            | InputReaderCommand::Pause
+            | InputReaderCommand::Disconnect => (),
+            InputReaderCommand::Replay { .. } => {
+                unreachable!("this endpoint is not fault tolerant")
+            }
+        }
+    }
+
+    fn is_closed(&self) -> bool {
+        false
+    }
+}
+
+/// Input buffered by a connector that has committed the in-progress
+/// transaction must not keep the circuit thread stepping.
+///
+/// Such a connector is not polled until the transaction commits, so that a
+/// participant cannot extend forever the transaction it just committed.  Its
+/// input therefore stays buffered across every step.  A step trigger that
+/// counts it decides to step, takes a step that consumes nothing, finds the
+/// same input still buffered, and steps again: the circuit thread spins on
+/// empty steps for the rest of the transaction, evaluating the whole circuit
+/// each time.
+#[test]
+fn committed_connector_input_does_not_spin_the_circuit() {
+    init_test_logger();
+
+    // Step as soon as anything is buffered, with no clock connector and no
+    // checkpoint timer to ask for a step of its own.  Any step the test
+    // observes is then one the trigger decided to take on buffered input.
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "min_batch_size_records": 0,
+        "max_buffering_delay_usecs": 0,
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None, None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+
+    let add_endpoint = |name: &str, stream: &str| {
+        let endpoint = TransactionalInputEndpoint::new();
+        let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+            "stream": stream,
+            "transport": { "name": "file_input", "config": { "path": "unused" } },
+            "format": { "name": "csv" }
+        }))
+        .unwrap();
+        controller
+            .add_input_endpoint(name, endpoint_config, Box::new(endpoint.clone()), None)
+            .unwrap();
+        endpoint
+    };
+    let committer = add_endpoint("committer", "test_input1");
+    let holder = add_endpoint("holder", "test_input2");
+
+    let committed = |name: &str| {
+        controller
+            .inner
+            .transaction_info
+            .lock()
+            .unwrap()
+            .committed_connectors()
+            .contains(name)
+    };
+    let participates = |name: &str| {
+        controller
+            .inner
+            .transaction_info
+            .lock()
+            .unwrap()
+            .initiators
+            .initiated_by_connectors
+            .contains_key(name)
+    };
+
+    // Both connectors open the same transaction. `holder` never commits, so
+    // the transaction stays open for the rest of the test.
+    holder.start_transaction("t");
+    committer.start_transaction("t");
+    committer.push("1,true,,foo\n");
+    wait(
+        || participates("holder") && participates("committer"),
+        DEFAULT_TIMEOUT_MS,
+    )
+    .expect("the connectors never opened a transaction");
+
+    // `committer` commits its part. From here the controller stops polling it.
+    committer.commit_transaction();
+    wait(|| committed("committer"), DEFAULT_TIMEOUT_MS)
+        .expect("the connector never committed its part of the transaction");
+
+    // Input it buffers now cannot be consumed until the transaction commits.
+    committer.push(&"2,true,,foo\n".repeat(100));
+    wait(
+        || controller.status().num_buffered_input_records() == 100,
+        DEFAULT_TIMEOUT_MS,
+    )
+    .expect("the committed connector's input was consumed after all");
+
+    // Nothing the next step can consume is buffered, so the circuit thread
+    // must stay parked.
+    let before = controller.status().global_metrics.total_initiated_steps();
+    sleep(Duration::from_secs(1));
+    let steps = controller.status().global_metrics.total_initiated_steps() - before;
+    assert!(
+        steps < 10,
+        "the circuit thread took {steps} steps in a second with nothing to consume"
+    );
+
+    // The pipeline is parked, not wedged: input on the connector that is still
+    // polled gets processed.
+    let processed = controller.status().num_total_processed_records();
+    holder.push("3,true,,foo\n");
+    wait(
+        || controller.status().num_total_processed_records() > processed,
+        DEFAULT_TIMEOUT_MS,
+    )
+    .expect("input on a polled connector was never processed");
+
+    // Committing the transaction releases the backlog.
+    holder.commit_transaction();
+    wait(
+        || controller.status().num_buffered_input_records() == 0,
+        DEFAULT_TIMEOUT_MS,
+    )
+    .expect("the backlog was never consumed after the transaction committed");
+    assert_eq!(
+        controller.inner.get_transaction_state(),
+        TransactionState::None
+    );
 
     controller.stop().unwrap();
 }

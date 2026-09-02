@@ -3389,6 +3389,7 @@ impl CircuitThread {
             output_backpressure_warning = None;
 
             let coordination_request = self.controller.coordination_request.lock().unwrap().clone();
+            let step_selection = self.next_step_selection(coordination_request.as_ref());
             match trigger.trigger(
                 self.last_checkpoint(),
                 self.last_checkpoint_sync(),
@@ -3406,7 +3407,7 @@ impl CircuitThread {
                 self.concurrent_phase != ConcurrentPhase::Inactive,
                 self.checkpoint_requested(),
                 self.sync_checkpoint_requested(),
-                self.next_step_inputs(coordination_request.as_ref()),
+                &step_selection,
                 coordination_request,
                 self.step,
             ) {
@@ -4213,8 +4214,10 @@ impl CircuitThread {
         }
     }
 
-    fn next_step_inputs(&self, coordination_request: Option<&StepRequest>) -> StepInputs {
-        if let Some(coordination_request) = coordination_request {
+    /// The endpoints that the next step polls, used both to decide whether to
+    /// take a step and to execute it. See [StepSelection].
+    fn next_step_selection(&self, coordination_request: Option<&StepRequest>) -> StepSelection {
+        let inputs = if let Some(coordination_request) = coordination_request {
             coordination_request.inputs
         } else if self.checkpoint_requested()
             && self.ft.is_none()
@@ -4231,7 +4234,21 @@ impl CircuitThread {
             StepInputs::CheckpointBarriers
         } else {
             StepInputs::All
-        }
+        };
+
+        let committed = if coordination_request.is_none() {
+            self.controller
+                .transaction_info
+                .lock()
+                .unwrap()
+                .committed_connectors()
+        } else {
+            // When there is a coordinator, the coordinator decides which input
+            // connectors to use.
+            HashSet::new()
+        };
+
+        StepSelection { inputs, committed }
     }
 
     /// Requests all of the input adapters to flush their input to the circuit,
@@ -4329,7 +4346,7 @@ impl CircuitThread {
         // in the future is to remove the notion of barriers altogether, making input
         // connectors always checkpointable.
         let coordination_request = self.controller.coordination_request.lock().unwrap().clone();
-        let inputs = self.next_step_inputs(coordination_request.as_ref());
+        let selection = self.next_step_selection(coordination_request.as_ref());
 
         // Collect the ids of the endpoints that we'll flush to the circuit.
         //
@@ -4341,34 +4358,8 @@ impl CircuitThread {
         let statuses = self.controller.status.input_status();
         let mut waiting = HashMap::with_capacity(statuses.len());
 
-        // Connectors that have committed the transaction and should not be queried
-        // until the transaction is committed. This is necessary to ensure liveness, i.e.,
-        // the transaction does not continue indefinitely because connectors keep reinitiating
-        // it.
-        let committing = if coordination_request.is_none() {
-            self.controller
-                .transaction_info
-                .lock()
-                .unwrap()
-                .committed_connectors()
-        } else {
-            // When there is a coordinator, the coordinator decides which input
-            // connectors to use.
-            Default::default()
-        };
-
         for (&endpoint_id, status) in statuses.iter() {
-            let poll_endpoint = if committing.contains(&status.endpoint_name) {
-                // Do not include connectors that have requested commit.
-                false
-            } else {
-                match inputs {
-                    StepInputs::All => true,
-                    StepInputs::CheckpointBarriers => status.is_barrier(),
-                    StepInputs::None => false,
-                }
-            };
-            if !poll_endpoint {
+            if !selection.polls(status) {
                 if let Some(resume) = self.input_metadata.remove(&status.endpoint_name) {
                     step_metadata.insert(
                         endpoint_id,
@@ -5397,6 +5388,49 @@ impl FtState {
     }
 }
 
+/// Determines the input endpoints that the next step will poll.
+///
+/// [StepTrigger] and [CircuitThread::input_step] must agree on this set. The
+/// trigger decides to step from the amount of input those endpoints have
+/// buffered, and `input_step` then consumes exactly those endpoints. Counting
+/// an endpoint that `input_step` will not poll sends the circuit in a busy
+/// loop, stepping on empty inputs.
+struct StepSelection {
+    /// Which endpoints the coordinator, or a pending checkpoint, allows.
+    inputs: StepInputs,
+
+    /// Connectors that have committed the in-progress transaction.
+    ///
+    /// They are not polled until the transaction commits.
+    committed: HashSet<String>,
+}
+
+impl StepSelection {
+    /// True if the next step polls `status`.
+    fn polls(&self, status: &InputEndpointStatus) -> bool {
+        if self.committed.contains(&status.endpoint_name) {
+            return false;
+        }
+        match self.inputs {
+            StepInputs::All => true,
+            StepInputs::CheckpointBarriers => status.is_barrier(),
+            StepInputs::None => false,
+        }
+    }
+
+    /// Records buffered by the endpoints that the next step polls.
+    ///
+    /// Input buffered by any other endpoint stays buffered across the step, so
+    /// it must not enter the decision to take one.
+    fn buffered_records(&self, statuses: &BTreeMap<EndpointId, InputEndpointStatus>) -> u64 {
+        statuses
+            .values()
+            .filter(|status| self.polls(status))
+            .map(|status| status.metrics.buffered_records.load(Ordering::Relaxed))
+            .sum()
+    }
+}
+
 /// Decides when to trigger a step.
 struct StepTrigger {
     /// Time when `max_buffering_delay` expires.
@@ -5481,7 +5515,7 @@ impl StepTrigger {
         concurrent_active: bool,
         checkpoint_requested: bool,
         sync_checkpoint_requested: bool,
-        step_inputs: StepInputs,
+        step_selection: &StepSelection,
         coordination_request: Option<StepRequest>,
         step: Step,
     ) -> Action {
@@ -5549,27 +5583,12 @@ impl StepTrigger {
         let result = if let Some(result) = result {
             result
         } else {
-            // Count buffered records.
-            //
-            // Count only the inputs that the next input step is allowed to poll.
-            // During checkpoint barrier handling, non-barrier inputs are
-            // deliberately ignored; counting them would trigger empty steps
-            // because input_step() will not consume them.
-            //
-            // `step_inputs` matches the input selection that input_step() will
-            // use if this trigger decides to run a step.
-            let buffered_records = self
-                .controller
-                .status
-                .input_status()
-                .values()
-                .filter(|status| match step_inputs {
-                    StepInputs::All => true,
-                    StepInputs::CheckpointBarriers => status.is_barrier(),
-                    StepInputs::None => false,
-                })
-                .map(|status| status.metrics.buffered_records.load(Ordering::Relaxed))
-                .sum::<u64>();
+            // Count buffered records, over exactly the endpoints that
+            // `input_step()` will poll if this trigger decides to run a step.
+            // Counting any other endpoint spins the circuit thread on empty
+            // steps; see [StepSelection].
+            let buffered_records =
+                step_selection.buffered_records(&self.controller.status.input_status());
 
             if buffered_records > self.min_batch_size_records
                 || timer_expired(self.buffer_timeout, now)
