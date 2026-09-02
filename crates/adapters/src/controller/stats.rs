@@ -1161,12 +1161,7 @@ impl ControllerStatus {
         self.global_metrics.input_batch(amt);
 
         // Wake the circuit thread for every batch and let [StepTrigger] decide
-        // whether to step.  A wake rule of its own has to know which endpoints
-        // the next step polls, and gets it wrong every time that set narrows:
-        // input buffered by an endpoint the step skips stays buffered, so a
-        // rule reading the global count sleeps through input it could consume.
-        // `min_batch_size_records` and `max_buffering_delay` still batch input,
-        // because they gate the step, not the wakeup.
+        // whether to step.
         circuit_thread_unparker.unpark();
     }
 
