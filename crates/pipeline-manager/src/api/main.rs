@@ -440,6 +440,7 @@ It contains the following fields:
         feldera_types::transport::nats::DeliverPolicy,
         feldera_types::transport::nats::NatsInputConfig,
         feldera_types::transport::nats::ReplayPolicy,
+        feldera_types::transport::nats::Tls,
         feldera_types::transport::nats::UserAndPassword,
         feldera_types::transport::pubsub::PubSubInputConfig,
         feldera_types::transport::s3::S3InputConfig,

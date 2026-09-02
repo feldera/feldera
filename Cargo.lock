@@ -4242,6 +4242,7 @@ dependencies = [
  "mime",
  "mockall",
  "nix 0.29.0",
+ "nkeys",
  "nonzero_ext",
  "num-bigint",
  "once_cell",

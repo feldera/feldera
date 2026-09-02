@@ -24,6 +24,7 @@ The connector configuration consists of three main sections:
 |------------------------|--------|----------|-------------|
 | `server_url`           | string | Yes      | NATS server URL (e.g., `nats://localhost:4222`) |
 | `auth`                 | object | No       | Authentication configuration (see [Authentication](#authentication)) |
+| `tls`                  | object | No       | TLS configuration (see [TLS](#tls)) |
 | `connection_timeout_secs` | integer | No    | Connection timeout in seconds. How long to wait when establishing the initial connection to the NATS server. Default: 10 |
 | `request_timeout_secs` | integer | No       | Request timeout in seconds. How long to wait for responses to requests. Default: 10 |
 
@@ -103,7 +104,10 @@ starts fresh without referencing the now-invalid sequence numbers.
 
 ## Authentication
 
-The NATS connector currently supports credentials-based authentication through the `auth` object.
+The NATS connector supports the standard NATS authentication methods through
+the `auth` object. Configure exactly one method: `credentials`, `jwt` (with
+`nkey`), `nkey`, `token`, or `user_and_password`. Configuring more than one
+is rejected.
 
 ### Credentials File Authentication
 
@@ -111,8 +115,10 @@ Use a credentials file containing JWT and NKey seed:
 
 ```json
 {
-  "credentials": {
-    "FromFile": "/path/to/credentials.creds"
+  "auth": {
+    "credentials": {
+      "FromFile": "/path/to/credentials.creds"
+    }
   }
 }
 ```
@@ -121,19 +127,89 @@ Or provide credentials directly as a string:
 
 ```json
 {
-  "credentials": {
-    "FromString": "-----BEGIN NATS USER JWT-----\n...\n------END NATS USER JWT------\n\n************************* IMPORTANT *************************\n..."
+  "auth": {
+    "credentials": {
+      "FromString": "-----BEGIN NATS USER JWT-----\n...\n------END NATS USER JWT------\n\n************************* IMPORTANT *************************\n..."
+    }
   }
 }
 ```
 
-:::note
-Additional authentication methods (JWT, NKey, token, username/password) are defined in the configuration schema but not yet implemented. Only credentials-based authentication is currently supported.
-:::
+### JWT Authentication
+
+For decentralized (operator-mode) authentication with the user JWT and NKey
+seed stored separately (e.g. as two secrets) rather than as one `.creds`
+file. The seed signs the connection nonce:
+
+```json
+{
+  "auth": {
+    "jwt": "eyJ0eXAiOiJKV1QiLCJhbGciOiJlZDI1NTE5LW5rZXkifQ...",
+    "nkey": "SUACSSL3UAHUDXKFSNVUZRF5UHPMWZ6BFDTJ7M6USDXIEDNPPQYYYCU3VY"
+  }
+}
+```
+
+### NKey Authentication
+
+For a bare NKey user declared in the server configuration (`nkey:` user):
+the server issues a nonce and the connector signs it with the seed.
+
+```json
+{
+  "auth": {
+    "nkey": "SUACSSL3UAHUDXKFSNVUZRF5UHPMWZ6BFDTJ7M6USDXIEDNPPQYYYCU3VY"
+  }
+}
+```
+
+### Token Authentication
+
+```json
+{
+  "auth": {
+    "token": "s3cret"
+  }
+}
+```
+
+### Username and Password Authentication
+
+```json
+{
+  "auth": {
+    "user_and_password": {
+      "user": "myuser",
+      "password": "mypassword"
+    }
+  }
+}
+```
 
 :::tip
 For production environments, it is strongly recommended to use [secret references](/connectors/secret-references) instead of hardcoding credentials in the configuration.
 :::
+
+## TLS
+
+TLS options are configured through the `tls` object:
+
+| Property                  | Type    | Required | Description |
+|---------------------------|---------|----------|-------------|
+| `require_tls`             | boolean | No       | Require an encrypted connection; refuse to connect to servers that do not offer TLS. Default: `false` |
+| `root_certificates_file`  | string  | No       | Path to a PEM file with additional root certificates to trust when verifying the server certificate, for servers whose certificates are not signed by a public CA |
+
+```json
+{
+  "connection_config": {
+    "server_url": "tls://nats.example.com:4222",
+    "tls": {
+      "require_tls": true,
+      "root_certificates_file": "/etc/nats-ca/ca.crt"
+    }
+  }
+}
+```
 
 ## Setting up NATS JetStream
 
