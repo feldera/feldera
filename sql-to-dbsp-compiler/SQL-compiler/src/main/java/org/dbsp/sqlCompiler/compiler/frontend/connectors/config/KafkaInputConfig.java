@@ -16,6 +16,9 @@ public class KafkaInputConfig implements IValidateConfig {
     @JsonProperty("topic")
     public String topic = "";
 
+    @JsonProperty("topics")
+    public List<String> topics = null;
+
     @Nullable
     @JsonProperty("log_level")
     public KafkaLogLevel logLevel = null;
@@ -73,7 +76,7 @@ public class KafkaInputConfig implements IValidateConfig {
     @Override
     public boolean validate(ConfigReporter reporter) {
         boolean ok = true;
-        if (topic.isBlank()) {
+        if (topic.isBlank() && topics.length == 0) {
             reporter.warn("Invalid configuration",
                     "required field \"topic\" is missing or empty");
             ok = false;
