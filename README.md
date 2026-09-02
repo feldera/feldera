@@ -179,7 +179,7 @@ Feldera is generally [faster and uses less memory](https://www.feldera.com/blog/
 than systems like stream processors.
 
 <p float="left" align="middle">
-  <img src="https://www.feldera.com/_next/image?url=https://cdn.sanity.io/images/nlte859i/production/c80a9d592fb6f6e4cf2c7a665add24da65998123-1740x493.png?D75&fit=clip&auto=format&w=1920&q=100" width="100%">
+  <img alt="Nexmark throughput in events per second by query, comparing Feldera in-memory, Feldera with storage, and Flink" src="https://cdn.sanity.io/images/nlte859i/production/c80a9d592fb6f6e4cf2c7a665add24da65998123-1740x493.png?auto=format&fit=max&w=1740" width="100%">
 </p>
 
 ## 👍 Contributing
