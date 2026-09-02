@@ -4698,3 +4698,190 @@ fn delta_table_output_variant_encoding_test() {
         );
     }
 }
+
+/// A `VARIANT` nested in a `ROW`, an `ARRAY` and a `MAP` must be declared as a
+/// Delta `variant`, not as the struct of two binary buffers it is encoded as.
+///
+/// The data is written as a variant either way, so a Feldera-to-Feldera round
+/// trip cannot see the difference: the reader recognizes the buffers by name.
+/// Only the declared type tells another engine what the column holds.
+#[test]
+fn delta_output_nested_variant_type_test() {
+    use crate::integrated::delta_table::output::delta_variant_types;
+    use delta_kernel::engine::arrow_conversion::TryFromArrow;
+    use deltalake::kernel::DataType;
+    use feldera_types::program_schema::ColumnType;
+
+    let variant = || ColumnType::variant(true);
+    let cases = [
+        ("plain", variant()),
+        (
+            "row",
+            ColumnType::structure(true, &[Field::new("v".into(), variant())]),
+        ),
+        ("array", ColumnType::array(true, variant())),
+        (
+            "map",
+            ColumnType::map(true, ColumnType::varchar(false), variant()),
+        ),
+        (
+            "row_of_array",
+            ColumnType::structure(
+                true,
+                &[Field::new("a".into(), ColumnType::array(true, variant()))],
+            ),
+        ),
+    ];
+
+    for (name, sql_type) in cases {
+        let arrow = relation_to_arrow_fields(
+            &[Field::new(name.into(), sql_type.clone())],
+            delta_schema_options(),
+        );
+        let from_arrow = DataType::try_from_arrow(arrow[0].data_type()).unwrap();
+
+        // What the Arrow type alone says: the storage struct, at every depth.
+        let raw = serde_json::to_string(&from_arrow).unwrap();
+        assert!(
+            raw.contains("\"name\":\"metadata\""),
+            "{name} was expected to arrive as the storage struct: {raw}"
+        );
+
+        let json =
+            serde_json::to_string(&delta_variant_types(&sql_type, from_arrow).unwrap()).unwrap();
+        assert!(
+            json.contains("\"variant\""),
+            "{name} declares no variant: {json}"
+        );
+        assert!(
+            !json.contains("\"name\":\"metadata\""),
+            "{name} still declares the storage struct: {json}"
+        );
+    }
+}
+
+/// A typed value survives the Delta writer's serialization.
+///
+/// `DeltaTestStruct::variant` is always a map of strings, and the round trips
+/// feed their data through a JSON file, which turns a date into a string and
+/// binary into an array before the writer ever sees it. So nothing covered a
+/// date or a decimal reaching the Delta writer as itself. This drives the
+/// connector's own serde configuration over the connector's own Arrow schema,
+/// and reads the batch back the way the input connector does.
+#[test]
+fn delta_output_typed_variant_serialization_test() {
+    use chrono::NaiveDate;
+    use feldera_sqllib::{ByteArray, Date, SqlString, Timestamp};
+    use feldera_types::transport::delta_table::DeltaVariantEncoding;
+
+    init_logging();
+
+    let key = |k: &str| Variant::String(SqlString::from_ref(k));
+    let variant = Variant::Map(
+        BTreeMap::from([
+            (
+                key("date"),
+                Variant::Date(Date::from_date(
+                    NaiveDate::from_ymd_opt(2026, 9, 1).unwrap(),
+                )),
+            ),
+            (key("dec"), Variant::SqlDecimal((12_345, 2))),
+            (key("bin"), Variant::Binary(ByteArray::new(&[1, 2, 3]))),
+            (key("int"), Variant::BigInt(42)),
+            (
+                key("ts"),
+                Variant::Timestamp(Timestamp::from_microseconds(1_756_684_800_000_000)),
+            ),
+        ])
+        .into(),
+    );
+
+    let mut record = delta_test_record(0);
+    record.variant = variant.clone();
+
+    let arrow_schema = ArrowSchema::new(relation_to_arrow_fields(
+        &DeltaTestStruct::schema(),
+        delta_schema_options(),
+    ));
+    let batch = serde_arrow::to_record_batch(
+        arrow_schema.fields(),
+        &SerializeWithContextWrapper::new(
+            &vec![record.clone()],
+            &crate::integrated::delta_table::output::delta_output_serde_config(
+                DeltaVariantEncoding::Variant,
+            ),
+        ),
+    )
+    .unwrap();
+
+    // The column is the binary encoding, not JSON text.
+    assert!(
+        matches!(
+            batch
+                .schema()
+                .field_with_name("variant")
+                .unwrap()
+                .data_type(),
+            arrow::datatypes::DataType::Struct(_)
+        ),
+        "variant column is {:?}",
+        batch
+            .schema()
+            .field_with_name("variant")
+            .unwrap()
+            .data_type()
+    );
+
+    let deserializer = serde_arrow::Deserializer::from_record_batch(&batch).unwrap();
+    let read: Vec<DeltaTestStruct> =
+        Vec::deserialize_with_context(deserializer, &delta_input_serde_config()).unwrap();
+
+    assert_eq!(read.len(), 1);
+    assert_eq!(read[0].variant, variant);
+}
+
+/// Appending to a table an earlier Feldera created is the likeliest upgrade
+/// failure of the default flip, and nothing downstream catches it: `append`
+/// opens the existing table with `SaveMode::Ignore`, which keeps its schema,
+/// the writer validates each batch against the schema the connector computed
+/// itself, and the commit checks no schema at all. Without this guard the
+/// connector writes variant buffers into a column the table declares a
+/// `string`, with no error.
+#[tokio::test]
+async fn delta_output_variant_encoding_mismatch_test() {
+    use crate::integrated::delta_table::output::check_variant_encoding;
+    use feldera_types::transport::delta_table::DeltaVariantEncoding;
+
+    init_logging();
+
+    let string_column = StructField::new("v", DataType::STRING, true);
+    let variant_column = StructField::new("v", DataType::unshredded_variant(), true);
+
+    for (existing, configured, encoding, expected) in [
+        (
+            &string_column,
+            &variant_column,
+            DeltaVariantEncoding::Variant,
+            "'json_string'",
+        ),
+        (
+            &variant_column,
+            &string_column,
+            DeltaVariantEncoding::JsonString,
+            "'variant'",
+        ),
+    ] {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+        let table = create_table(&table_uri, &HashMap::new(), std::slice::from_ref(existing)).await;
+
+        let error = check_variant_encoding(&table, std::slice::from_ref(configured), encoding)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("column 'v'"), "{error}");
+        assert!(error.contains(expected), "{error}");
+
+        // The matching encoding is accepted.
+        check_variant_encoding(&table, std::slice::from_ref(existing), encoding).unwrap();
+    }
+}

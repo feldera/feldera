@@ -136,8 +136,10 @@ integers widen to the smallest signed type that holds them, and a `BIGINT
 UNSIGNED` too large for `BIGINT` becomes a decimal. SQL `NULL` and a `VARIANT`
 null share one encoding.
 
-Appending to a table whose `VARIANT` column is already a `string` requires this
-setting; without it the write fails on a schema mismatch.
+Appending to a table whose `VARIANT` column is already a `string` requires
+`variant_encoding: json_string`. The connector compares the two when it opens
+the table and refuses to start on a mismatch, naming the column and the setting
+to change.
 
 ## The small file problem and output buffer configuration
 

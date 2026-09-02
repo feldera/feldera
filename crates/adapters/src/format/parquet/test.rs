@@ -375,7 +375,7 @@ fn parquet_input_variant_test() {
     .unwrap();
 
     let key = |k: &str| Variant::String(SqlString::from_ref(k));
-    let expected = vec![
+    let expected = [
         VariantRecord {
             id: 1,
             // Every value keeps the type the writer encoded.

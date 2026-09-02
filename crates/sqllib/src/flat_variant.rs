@@ -784,8 +784,13 @@ pub(crate) fn sort_map_entries(out: &[u8], entries: &mut Vec<(Range<usize>, Rang
 fn encode_parquet_variant(
     w: &mut Writer,
     v: parquet_variant::Variant<'_, '_>,
+    depth: usize,
 ) -> Result<Range<usize>, String> {
     use parquet_variant::Variant as PqVariant;
+
+    if depth > crate::variant_binary::MAX_VARIANT_DEPTH {
+        return Err(crate::variant_binary::variant_too_deep());
+    }
 
     Ok(match v {
         PqVariant::Null => w.scalar(TAG_VARIANT_NULL, &[]),
@@ -833,7 +838,7 @@ fn encode_parquet_variant(
                 .map_err(|e| e.to_string())?;
             let mut children = Vec::with_capacity(elements.len());
             for element in elements {
-                children.push(encode_parquet_variant(w, element)?);
+                children.push(encode_parquet_variant(w, element, depth + 1)?);
             }
             w.array(&children)
         }
@@ -845,7 +850,7 @@ fn encode_parquet_variant(
             let mut entries = Vec::with_capacity(fields.len());
             for (name, value) in fields {
                 let key = w.scalar(TAG_STRING, name.as_bytes());
-                let value = encode_parquet_variant(w, value)?;
+                let value = encode_parquet_variant(w, value, depth + 1)?;
                 entries.push((key, value));
             }
             // A Parquet object's field order follows its metadata dictionary,
@@ -861,7 +866,11 @@ fn encode_parquet_variant(
 fn append_flat_variant<B: parquet_variant::VariantBuilderExt>(
     builder: &mut B,
     bytes: &[u8],
+    depth: usize,
 ) -> Result<(), String> {
+    if depth > crate::variant_binary::MAX_VARIANT_DEPTH {
+        return Err(crate::variant_binary::variant_too_deep());
+    }
     match bytes[0] {
         TAG_ARRAY => {
             let container = Container::new(bytes);
@@ -869,7 +878,7 @@ fn append_flat_variant<B: parquet_variant::VariantBuilderExt>(
                 .try_new_list()
                 .map_err(|e| format!("cannot start a variant list: {e}"))?;
             for i in 0..container.count {
-                append_flat_variant(&mut list, &bytes[container.element(i)])?;
+                append_flat_variant(&mut list, &bytes[container.element(i)], depth + 1)?;
             }
             list.finish();
         }
@@ -883,6 +892,7 @@ fn append_flat_variant<B: parquet_variant::VariantBuilderExt>(
                     &mut object,
                     &bytes[container.element(i)],
                     &bytes[container.map_value(i)],
+                    depth + 1,
                 )?;
             }
             object.finish();
@@ -898,7 +908,11 @@ fn insert_flat_variant<S: parquet_variant::BuilderSpecificState>(
     object: &mut parquet_variant::ObjectBuilder<'_, S>,
     key: &[u8],
     value: &[u8],
+    depth: usize,
 ) -> Result<(), String> {
+    if depth > crate::variant_binary::MAX_VARIANT_DEPTH {
+        return Err(crate::variant_binary::variant_too_deep());
+    }
     let key = flat_variant_object_key(key)?;
     let key = key.as_ref();
 
@@ -909,7 +923,7 @@ fn insert_flat_variant<S: parquet_variant::BuilderSpecificState>(
                 .try_new_list(key)
                 .map_err(|e| format!("cannot start a variant list: {e}"))?;
             for i in 0..container.count {
-                append_flat_variant(&mut list, &value[container.element(i)])?;
+                append_flat_variant(&mut list, &value[container.element(i)], depth + 1)?;
             }
             list.finish();
         }
@@ -923,11 +937,14 @@ fn insert_flat_variant<S: parquet_variant::BuilderSpecificState>(
                     &mut nested,
                     &value[container.element(i)],
                     &value[container.map_value(i)],
+                    depth + 1,
                 )?;
             }
             nested.finish();
         }
-        _ => object.insert(key, flat_scalar_to_parquet(value)?),
+        _ => object
+            .try_insert(key, flat_scalar_to_parquet(value)?)
+            .map_err(|e| crate::variant_binary::duplicate_variant_key(key, e))?,
     }
     Ok(())
 }
@@ -1010,8 +1027,9 @@ fn flat_scalar_to_parquet(bytes: &[u8]) -> Result<parquet_variant::Variant<'_, '
 /// Encode a `FlatVariant` into the Parquet variant binary encoding, walking
 /// the flat buffer with no intermediate enum tree.
 pub(crate) fn flat_variant_to_parquet(value: &FlatVariant) -> Result<(Vec<u8>, Vec<u8>), String> {
-    let mut builder = parquet_variant::VariantBuilder::new();
-    append_flat_variant(&mut builder, value.as_bytes())?;
+    // See `to_variant_binary`: without this a colliding key drops an entry.
+    let mut builder = parquet_variant::VariantBuilder::new().with_validate_unique_fields(true);
+    append_flat_variant(&mut builder, value.as_bytes(), 1)?;
     Ok(builder.finish())
 }
 
@@ -1020,7 +1038,7 @@ pub(crate) fn flat_variant_to_parquet(value: &FlatVariant) -> Result<(Vec<u8>, V
 pub(crate) fn flat_variant_from_parquet(
     v: parquet_variant::Variant<'_, '_>,
 ) -> Result<FlatVariant, String> {
-    build_document(|w| encode_parquet_variant(w, v))
+    build_document(|w| encode_parquet_variant(w, v, 1))
 }
 
 // Conversion from/to the enum Variant

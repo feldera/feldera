@@ -41,6 +41,116 @@ const SHREDDED_FIELD: &str = "typed_value";
 /// deserializer presents as a single-entry map.
 const JSON_NUMBER_TOKEN: &str = "$serde_json::private::Number";
 
+/// Maximum nesting depth of a `VARIANT` value.
+///
+/// Matches `serde_json`'s recursion limit, which bounded the JSON path this
+/// encoding sits beside.
+pub(crate) const MAX_VARIANT_DEPTH: usize = 128;
+
+pub(crate) fn variant_too_deep() -> String {
+    format!("VARIANT value is nested more than {MAX_VARIANT_DEPTH} levels deep")
+}
+
+/// Read `width` little-endian bytes at `at`.
+fn packed_int(bytes: &[u8], at: usize, width: usize) -> Option<usize> {
+    let raw = bytes.get(at..at.checked_add(width)?)?;
+    Some(raw.iter().enumerate().fold(0usize, |value, (i, byte)| {
+        value | (*byte as usize) << (8 * i)
+    }))
+}
+
+/// Reject a value nested deeper than [`MAX_VARIANT_DEPTH`].
+///
+/// `parquet_variant` validates a value by recursing once per level with no
+/// cap, so a deeply nested value overflows the stack and aborts the process
+/// before any error can be returned: 1000 nested arrays fit in 6 KB. This
+/// walks the encoding iteratively first, so every recursive walk that follows,
+/// upstream's included, is bounded.
+///
+/// Structure the walk cannot read is left alone rather than reported: decoding
+/// it is what produces the real error.
+fn check_variant_depth(value: &[u8]) -> Result<(), String> {
+    // Basic type, the low two bits of a value's header byte.
+    const OBJECT: u8 = 2;
+    const ARRAY: u8 = 3;
+
+    let mut pending = vec![(0usize, value.len(), 1usize)];
+    while let Some((start, len, depth)) = pending.pop() {
+        if depth > MAX_VARIANT_DEPTH {
+            return Err(variant_too_deep());
+        }
+        let Some(bytes) = value.get(start..start.saturating_add(len)) else {
+            continue;
+        };
+        let Some(&header) = bytes.first() else {
+            continue;
+        };
+        let basic = header & 0x03;
+        if basic != OBJECT && basic != ARRAY {
+            continue;
+        }
+
+        // Both containers end with an offset table and a data area; they
+        // differ in the header bits and in the field ids an object carries
+        // between the two.
+        let value_header = header >> 2;
+        let offset_size = (value_header & 0x03) as usize + 1;
+        let (is_large, field_ids_size) = if basic == ARRAY {
+            (value_header & 0x04 != 0, 0)
+        } else {
+            (
+                value_header & 0x10 != 0,
+                ((value_header >> 2) & 0x03) as usize + 1,
+            )
+        };
+        let count_size = if is_large { 4 } else { 1 };
+
+        let Some(count) = packed_int(bytes, 1, count_size) else {
+            continue;
+        };
+        // A count larger than the buffer cannot be real; leave it to decoding.
+        if count > bytes.len() {
+            continue;
+        }
+        let Some(first_offset) = 1usize
+            .checked_add(count_size)
+            .and_then(|at| at.checked_add(count.checked_mul(field_ids_size)?))
+        else {
+            continue;
+        };
+        let Some(data) = count
+            .checked_add(1)
+            .and_then(|slots| slots.checked_mul(offset_size))
+            .and_then(|table| first_offset.checked_add(table))
+        else {
+            continue;
+        };
+
+        for i in 0..count {
+            let (Some(from), Some(to)) = (
+                packed_int(bytes, first_offset + i * offset_size, offset_size),
+                packed_int(bytes, first_offset + (i + 1) * offset_size, offset_size),
+            ) else {
+                continue;
+            };
+            if to < from {
+                continue;
+            }
+            pending.push((start + data + from, to - from, depth + 1));
+        }
+    }
+    Ok(())
+}
+
+/// Decode the two buffers, rejecting a value too deeply nested to walk.
+fn parse_variant<'a>(
+    metadata: &'a [u8],
+    value: &'a [u8],
+) -> Result<ParquetVariant<'a, 'a>, String> {
+    check_variant_depth(value)?;
+    ParquetVariant::try_new(metadata, value).map_err(|e| e.to_string())
+}
+
 /// A `VARIANT` representation that can be built from either encoding.
 pub(crate) trait FromVariantEncoding: Sized {
     /// Parse JSON text, the encoding `VariantFormat::JsonString` names.
@@ -56,8 +166,7 @@ impl FromVariantEncoding for Variant {
     }
 
     fn from_binary(metadata: &[u8], value: &[u8]) -> Result<Self, String> {
-        let variant = ParquetVariant::try_new(metadata, value).map_err(|e| e.to_string())?;
-        to_variant(variant)
+        to_variant(parse_variant(metadata, value)?, 1)
     }
 }
 
@@ -67,8 +176,7 @@ impl FromVariantEncoding for FlatVariant {
     }
 
     fn from_binary(metadata: &[u8], value: &[u8]) -> Result<Self, String> {
-        let variant = ParquetVariant::try_new(metadata, value).map_err(|e| e.to_string())?;
-        crate::flat_variant::flat_variant_from_parquet(variant)
+        crate::flat_variant::flat_variant_from_parquet(parse_variant(metadata, value)?)
     }
 }
 
@@ -134,7 +242,10 @@ impl<'de, T: FromVariantEncoding> Visitor<'de> for VariantVisitor<T> {
     }
 
     fn visit_f64<E: serde::de::Error>(self, value: f64) -> Result<T, E> {
-        Self::from_json(&value.to_string())
+        // `Display` renders 1.0 as "1", which JSON then reads as an integer,
+        // and renders 1e300 in full; `Debug` keeps both the point and the
+        // exponent, so the value reads back as the number it was.
+        Self::from_json(&format!("{value:?}"))
     }
 
     fn visit_map<A>(self, mut map: A) -> Result<T, A::Error>
@@ -157,13 +268,15 @@ impl<'de, T: FromVariantEncoding> Visitor<'de> for VariantVisitor<T> {
                 SHREDDED_FIELD => {
                     return Err(A::Error::custom(
                         "shredded Parquet variants are not supported: the VARIANT column has a \
-                         'typed_value' field",
+                         'typed_value' field. Rewrite the column as an unshredded variant, or \
+                         store it as a JSON string",
                     ));
                 }
                 other => {
                     return Err(A::Error::custom(format!(
                         "expected a VARIANT encoded as a JSON string or as a Parquet variant, \
-                         found a struct with an unexpected field '{other}'"
+                         found a struct with an unexpected field '{other}'. A Parquet variant \
+                         is a struct of '{METADATA_FIELD}' and '{VALUE_FIELD}' binary fields"
                     )));
                 }
             }
@@ -253,21 +366,30 @@ where
 /// Encode a `VARIANT` into the Parquet variant binary encoding, returning the
 /// metadata and value buffers.
 pub(crate) fn to_variant_binary(value: &Variant) -> Result<(Vec<u8>, Vec<u8>), String> {
-    let mut builder = VariantBuilder::new();
-    append_variant(&mut builder, value)?;
+    // Two VARIANT map keys can render to one object field name, and the
+    // builder is otherwise last-write-wins, which drops an entry silently.
+    let mut builder = VariantBuilder::new().with_validate_unique_fields(true);
+    append_variant(&mut builder, value, 1)?;
     Ok(builder.finish())
 }
 
 /// Append `value` to any builder that takes an unnamed value: the top-level
 /// builder or a list.
-fn append_variant<B: VariantBuilderExt>(builder: &mut B, value: &Variant) -> Result<(), String> {
+fn append_variant<B: VariantBuilderExt>(
+    builder: &mut B,
+    value: &Variant,
+    depth: usize,
+) -> Result<(), String> {
+    if depth > MAX_VARIANT_DEPTH {
+        return Err(variant_too_deep());
+    }
     match value {
         Variant::Map(entries) => {
             let mut object = builder
                 .try_new_object()
                 .map_err(|e| format!("cannot start a variant object: {e}"))?;
             for (key, value) in entries.iter() {
-                insert_variant(&mut object, key, value)?;
+                insert_variant(&mut object, key, value, depth + 1)?;
             }
             object.finish();
         }
@@ -276,7 +398,7 @@ fn append_variant<B: VariantBuilderExt>(builder: &mut B, value: &Variant) -> Res
                 .try_new_list()
                 .map_err(|e| format!("cannot start a variant list: {e}"))?;
             for element in elements.iter() {
-                append_variant(&mut list, element)?;
+                append_variant(&mut list, element, depth + 1)?;
             }
             list.finish();
         }
@@ -291,7 +413,11 @@ fn insert_variant<S: parquet_variant::BuilderSpecificState>(
     object: &mut ObjectBuilder<'_, S>,
     key: &Variant,
     value: &Variant,
+    depth: usize,
 ) -> Result<(), String> {
+    if depth > MAX_VARIANT_DEPTH {
+        return Err(variant_too_deep());
+    }
     let key = variant_object_key(key)?;
     let key = key.as_ref();
 
@@ -301,7 +427,7 @@ fn insert_variant<S: parquet_variant::BuilderSpecificState>(
                 .try_new_object(key)
                 .map_err(|e| format!("cannot start a variant object: {e}"))?;
             for (key, value) in entries.iter() {
-                insert_variant(&mut nested, key, value)?;
+                insert_variant(&mut nested, key, value, depth + 1)?;
             }
             nested.finish();
         }
@@ -310,11 +436,13 @@ fn insert_variant<S: parquet_variant::BuilderSpecificState>(
                 .try_new_list(key)
                 .map_err(|e| format!("cannot start a variant list: {e}"))?;
             for element in elements.iter() {
-                append_variant(&mut list, element)?;
+                append_variant(&mut list, element, depth + 1)?;
             }
             list.finish();
         }
-        scalar => object.insert(key, to_parquet_scalar(scalar)?),
+        scalar => object
+            .try_insert(key, to_parquet_scalar(scalar)?)
+            .map_err(|e| duplicate_variant_key(key, e))?,
     }
     Ok(())
 }
@@ -370,6 +498,15 @@ pub(crate) fn parquet_u64(value: u64) -> Result<ParquetVariant<'static, 'static>
 pub(crate) fn unencodable_variant(type_string: &str) -> String {
     format!(
         "a VARIANT holding {type_string} cannot be encoded as a Parquet variant, which has no such type"
+    )
+}
+
+/// The error two map keys rendering to one object field name produce.
+pub(crate) fn duplicate_variant_key(key: &str, error: impl std::fmt::Display) -> String {
+    format!(
+        "cannot encode a VARIANT map: two keys name the same variant object field \
+         '{key}' ({error}); a variant object's field names are strings, so an \
+         integer key and the string of its digits collide"
     )
 }
 
@@ -461,7 +598,10 @@ fn to_parquet_scalar(value: &Variant) -> Result<ParquetVariant<'_, '_>, String> 
 ///
 /// The two type systems line up almost exactly. The one lossy step is a
 /// nanosecond timestamp, which [`Timestamp`] holds to microseconds.
-fn to_variant(value: ParquetVariant<'_, '_>) -> Result<Variant, String> {
+fn to_variant(value: ParquetVariant<'_, '_>, depth: usize) -> Result<Variant, String> {
+    if depth > MAX_VARIANT_DEPTH {
+        return Err(variant_too_deep());
+    }
     Ok(match value {
         ParquetVariant::Null => Variant::VariantNull,
         ParquetVariant::BooleanTrue => Variant::Boolean(true),
@@ -496,7 +636,7 @@ fn to_variant(value: ParquetVariant<'_, '_>) -> Result<Variant, String> {
         ParquetVariant::List(list) => {
             let mut elements = Vec::with_capacity(list.len());
             for element in list.iter_try() {
-                elements.push(to_variant(element.map_err(|e| e.to_string())?)?);
+                elements.push(to_variant(element.map_err(|e| e.to_string())?, depth + 1)?);
             }
             Variant::Array(elements.into())
         }
@@ -506,7 +646,7 @@ fn to_variant(value: ParquetVariant<'_, '_>) -> Result<Variant, String> {
                 let (key, value) = field.map_err(|e| e.to_string())?;
                 fields.insert(
                     Variant::String(SqlString::from_ref(key)),
-                    to_variant(value)?,
+                    to_variant(value, depth + 1)?,
                 );
             }
             Variant::Map(fields.into())
@@ -921,6 +1061,171 @@ mod test {
         );
     }
 
+    /// Wrap `child` in a one-element variant array.
+    fn wrap_array(child: &[u8]) -> Vec<u8> {
+        let data_size = child.len();
+        let offset_size: usize = match data_size {
+            0..=0xFF => 1,
+            0x100..=0xFFFF => 2,
+            0x1_0000..=0xFF_FFFF => 3,
+            _ => 4,
+        };
+        let mut out = vec![(((offset_size - 1) as u8) << 2) | 3, 1u8];
+        out.extend_from_slice(&0u32.to_le_bytes()[..offset_size]);
+        out.extend_from_slice(&(data_size as u32).to_le_bytes()[..offset_size]);
+        out.extend_from_slice(child);
+        out
+    }
+
+    /// `depth` nested single-element arrays around a variant null.
+    fn nested_arrays(depth: usize) -> (Vec<u8>, Vec<u8>) {
+        // Empty dictionary: version 1, unsorted, 1-byte offsets, no entries.
+        let metadata = vec![0x01, 0x00, 0x00];
+        let mut value = vec![0x00];
+        for _ in 0..depth {
+            value = wrap_array(&value);
+        }
+        (metadata, value)
+    }
+
+    /// Nesting within the limit decodes.
+    #[test]
+    fn nesting_within_the_limit_decodes() {
+        let (metadata, value) = nested_arrays(MAX_VARIANT_DEPTH - 1);
+        assert!(Variant::from_binary(&metadata, &value).is_ok());
+        assert!(FlatVariant::from_binary(&metadata, &value).is_ok());
+    }
+
+    /// Nesting past the limit is an error, not a crash.
+    ///
+    /// `parquet_variant` validates by recursing once per level with no cap, so
+    /// without the check 1000 levels - under 6 KB of input - overflowed the
+    /// stack and aborted the process, which no error handler can catch.
+    #[test]
+    fn nesting_past_the_limit_is_rejected() {
+        for depth in [MAX_VARIANT_DEPTH + 1, 1000] {
+            let (metadata, value) = nested_arrays(depth);
+            assert!(
+                value.len() < 6_000,
+                "{depth} levels is {} bytes",
+                value.len()
+            );
+            for error in [
+                Variant::from_binary(&metadata, &value).unwrap_err(),
+                FlatVariant::from_binary(&metadata, &value).unwrap_err(),
+            ] {
+                assert!(error.contains("nested more than"), "{error}");
+            }
+        }
+    }
+
+    /// The encoders are bounded too, so a value built in memory cannot take
+    /// the process down on the way out.
+    #[test]
+    fn encoding_past_the_limit_is_rejected() {
+        let mut value = Variant::VariantNull;
+        for _ in 0..MAX_VARIANT_DEPTH + 1 {
+            value = Variant::Array(vec![value].into());
+        }
+
+        let error = to_variant_binary(&value).unwrap_err();
+        assert!(error.contains("nested more than"), "{error}");
+        let error =
+            crate::flat_variant::flat_variant_to_parquet(&FlatVariant::from(&value)).unwrap_err();
+        assert!(error.contains("nested more than"), "{error}");
+    }
+
+    /// A variant object's field names are strings, so an integer key and the
+    /// string of its digits name the same field. The builder is otherwise
+    /// last-write-wins, which drops one entry with no error.
+    #[test]
+    fn colliding_map_keys_are_rejected() {
+        let value = Variant::Map(
+            BTreeMap::from([
+                (
+                    Variant::BigInt(1),
+                    Variant::String(SqlString::from_ref("int")),
+                ),
+                (key("1"), Variant::String(SqlString::from_ref("string"))),
+            ])
+            .into(),
+        );
+
+        for error in [
+            to_variant_binary(&value).unwrap_err(),
+            crate::flat_variant::flat_variant_to_parquet(&FlatVariant::from(&value)).unwrap_err(),
+        ] {
+            assert!(error.contains("two keys name the same"), "{error}");
+        }
+    }
+
+    /// Distinct keys still encode.
+    #[test]
+    fn distinct_map_keys_encode() {
+        let value = Variant::Map(
+            BTreeMap::from([
+                (
+                    Variant::BigInt(1),
+                    Variant::String(SqlString::from_ref("int")),
+                ),
+                (key("2"), Variant::String(SqlString::from_ref("string"))),
+            ])
+            .into(),
+        );
+        assert!(to_variant_binary(&value).is_ok());
+    }
+
+    /// Feed the visitor one map, the way an Arrow struct column reaches it.
+    fn deserialize_struct(fields: &[(&str, &[u8])]) -> Result<Variant, String> {
+        use serde::de::value::{Error, MapDeserializer};
+
+        let entries = fields
+            .iter()
+            .map(|(name, bytes)| (*name, serde_bytes_value(bytes)));
+        let deserializer = MapDeserializer::<_, Error>::new(entries);
+        deserialize_variant::<Variant, _>(deserializer).map_err(|e| e.to_string())
+    }
+
+    /// A byte string that survives `MapDeserializer`.
+    fn serde_bytes_value(
+        bytes: &[u8],
+    ) -> serde::de::value::SeqDeserializer<
+        std::iter::Copied<std::slice::Iter<'_, u8>>,
+        serde::de::value::Error,
+    > {
+        serde::de::value::SeqDeserializer::new(bytes.iter().copied())
+    }
+
+    /// The two branches a real third-party table is most likely to hit.
+    #[test]
+    fn shredded_and_unknown_fields_are_named() {
+        let (metadata, value) = encode(|b| b.append_value(42i64));
+
+        let error = deserialize_struct(&[
+            ("metadata", &metadata),
+            ("value", &value),
+            ("typed_value", &[0u8]),
+        ])
+        .unwrap_err();
+        assert!(error.contains("shredded"), "{error}");
+        assert!(error.contains("unshredded variant"), "{error}");
+
+        let error =
+            deserialize_struct(&[("metadata", &metadata), ("surprise", &value)]).unwrap_err();
+        assert!(error.contains("unexpected field 'surprise'"), "{error}");
+        assert!(error.contains("binary fields"), "{error}");
+
+        // A well-formed pair still decodes through the same path.
+        assert_eq!(
+            deserialize_struct(&[("metadata", &metadata), ("value", &value)]).unwrap(),
+            Variant::BigInt(42)
+        );
+
+        // And a missing buffer is named.
+        let error = deserialize_struct(&[("metadata", &metadata)]).unwrap_err();
+        assert!(error.contains("missing its 'value' field"), "{error}");
+    }
+
     /// A JSON deserializer reaches the same visitor, and a `VARIANT` column
     /// written as a JSON string must still parse exactly as before.
     #[test]
@@ -1002,5 +1307,223 @@ mod test {
         let variant = Variant::from_binary(&metadata, &value).unwrap();
         let flat = FlatVariant::from_binary(&metadata, &value).unwrap();
         assert_eq!(FlatVariant::from(&variant), flat);
+    }
+}
+
+/// Round trips a large volume of JSON through the binary encoding.
+///
+/// The other tests pin a fixed handful of values. Real JSON is where the
+/// shapes that break an encoder live: documents past the 1-, 2- and 4-byte
+/// offset widths, objects past 255 fields, keys that sort differently as text
+/// than as bytes, numbers at the edge of every width.
+///
+/// The property is the user-visible one: what goes into a `VARIANT` comes back
+/// out. It is checked on the JSON rendering rather than on `Variant` equality,
+/// because the encoding has no unsigned types, so a JSON `1` legitimately
+/// returns as `BigInt` rather than the `UBigInt` it parsed as.
+#[cfg(test)]
+mod json_round_trip {
+    use super::*;
+    use proptest::prelude::*;
+    use serde_json::Value;
+
+    /// `json` -> `Variant` -> binary -> `Variant` -> `json`, and the same
+    /// through `FlatVariant`. Returns the two renderings for comparison.
+    fn round_trip(json: &str) -> Result<(String, String, String), String> {
+        let variant = Variant::from_json(json)?;
+        let before = variant.to_json_string().map_err(|e| e.to_string())?;
+
+        let (metadata, value) = to_variant_binary(&variant)?;
+        let after = Variant::from_binary(&metadata, &value)?
+            .to_json_string()
+            .map_err(|e| e.to_string())?;
+
+        let flat = FlatVariant::from_json(json)?;
+        let (metadata, value) = crate::flat_variant::flat_variant_to_parquet(&flat)?;
+        let flat_after = FlatVariant::from_binary(&metadata, &value)?
+            .to_json_string()
+            .map_err(|e| e.to_string())?;
+
+        Ok((before, after, flat_after))
+    }
+
+    fn assert_round_trips(json: &str) {
+        match round_trip(json) {
+            Ok((before, after, flat_after)) => {
+                assert_eq!(before, after, "Variant changed:\n{json}");
+                assert_eq!(before, flat_after, "FlatVariant changed:\n{json}");
+            }
+            Err(e) => panic!("round trip failed: {e}\n{json}"),
+        }
+    }
+
+    /// Arbitrary JSON, nested.
+    fn json_value() -> impl Strategy<Value = Value> {
+        let leaf = prop_oneof![
+            Just(Value::Null),
+            any::<bool>().prop_map(Value::Bool),
+            any::<i64>().prop_map(|v| Value::Number(v.into())),
+            any::<u64>().prop_map(|v| Value::Number(v.into())),
+            (-1.0e12f64..1.0e12).prop_map(|v| serde_json::Number::from_f64(v)
+                .map(Value::Number)
+                .unwrap_or(Value::Null)),
+            "[^\\p{Cc}]{0,24}".prop_map(Value::String),
+        ];
+        leaf.prop_recursive(5, 512, 8, |inner| {
+            prop_oneof![
+                prop::collection::vec(inner.clone(), 0..8).prop_map(Value::Array),
+                prop::collection::btree_map("[^\\p{Cc}]{1,16}", inner, 0..8)
+                    .prop_map(|m| Value::Object(m.into_iter().collect())),
+            ]
+        })
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(512))]
+
+        #[test]
+        fn generated_json_round_trips(value in json_value()) {
+            assert_round_trips(&serde_json::to_string(&value).unwrap());
+        }
+    }
+
+    /// Round trip a real corpus of newline-delimited JSON.
+    ///
+    /// Generated JSON explores shapes; a corpus explores what people actually
+    /// write. Point `FELDERA_VARIANT_CORPUS` at a file or a directory of
+    /// `.json`, `.jsonl` or `.json.gz` files, such as a JSONBench bluesky
+    /// dump (`s3://clickhouse-public-datasets/bluesky`, which
+    /// `python/tests/workloads/test_jsonbench.py` caches under
+    /// `/mnt/data/jsonbench`) or a gharchive hour. `FELDERA_VARIANT_CORPUS_LINES`
+    /// caps the number of records.
+    ///
+    /// Unset, the test does nothing: the data is far too large to check in,
+    /// and CI should not depend on a download.
+    ///
+    /// Run against two gharchive hours either side of GitHub's schema
+    /// changes (`2015-01-01-15` and `2024-06-01-12`): 251,253 records,
+    /// 570 MiB of JSON, no mismatch.
+    #[test]
+    fn corpus_json_round_trips() {
+        use std::io::BufRead;
+
+        let Ok(path) = std::env::var("FELDERA_VARIANT_CORPUS") else {
+            eprintln!(
+                "set FELDERA_VARIANT_CORPUS to a file or directory of newline-delimited JSON \
+                 to run this"
+            );
+            return;
+        };
+        let limit: usize = std::env::var("FELDERA_VARIANT_CORPUS_LINES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(usize::MAX);
+
+        let path = std::path::Path::new(&path);
+        let mut files: Vec<std::path::PathBuf> = if path.is_dir() {
+            std::fs::read_dir(path)
+                .unwrap()
+                .filter_map(|entry| Some(entry.ok()?.path()))
+                .filter(|p| {
+                    let name = p.to_string_lossy();
+                    name.ends_with(".json") || name.ends_with(".jsonl") || name.ends_with(".gz")
+                })
+                .collect()
+        } else {
+            vec![path.to_path_buf()]
+        };
+        files.sort();
+        assert!(
+            !files.is_empty(),
+            "no corpus files under {}",
+            path.display()
+        );
+
+        let started = std::time::Instant::now();
+        let (mut records, mut bytes, mut rendered) = (0usize, 0usize, 0usize);
+
+        for file in &files {
+            let handle = std::fs::File::open(file).unwrap();
+            let reader: Box<dyn std::io::Read> = if file.to_string_lossy().ends_with(".gz") {
+                Box::new(flate2::read::MultiGzDecoder::new(handle))
+            } else {
+                Box::new(handle)
+            };
+
+            for (line_number, line) in std::io::BufReader::new(reader).lines().enumerate() {
+                if records >= limit {
+                    break;
+                }
+                let line = line.unwrap();
+                if line.trim().is_empty() {
+                    continue;
+                }
+
+                match round_trip(&line) {
+                    Ok((before, after, flat_after)) => {
+                        assert_eq!(
+                            before,
+                            after,
+                            "Variant changed at {}:{}",
+                            file.display(),
+                            line_number + 1
+                        );
+                        assert_eq!(
+                            before,
+                            flat_after,
+                            "FlatVariant changed at {}:{}",
+                            file.display(),
+                            line_number + 1
+                        );
+                        rendered += before.len();
+                    }
+                    Err(e) => panic!(
+                        "round trip failed at {}:{}: {e}\n{}",
+                        file.display(),
+                        line_number + 1,
+                        &line[..line.len().min(400)]
+                    ),
+                }
+                records += 1;
+                bytes += line.len();
+            }
+        }
+
+        let elapsed = started.elapsed();
+        eprintln!(
+            "{records} records from {} file(s): {:.1} MiB in, {:.1} MiB re-rendered, \
+             {:.1}s ({:.1} MiB/s)",
+            files.len(),
+            bytes as f64 / (1 << 20) as f64,
+            rendered as f64 / (1 << 20) as f64,
+            elapsed.as_secs_f64(),
+            bytes as f64 / (1 << 20) as f64 / elapsed.as_secs_f64().max(f64::EPSILON),
+        );
+        assert!(records > 0, "corpus produced no records");
+    }
+
+    /// Documents that cross the encoding's width boundaries, which a small
+    /// generated value never reaches: the offset table widens at 256 and
+    /// 65536 bytes, and an object or array past 255 entries switches to a
+    /// 4-byte count.
+    #[test]
+    fn wide_documents_round_trip() {
+        for count in [1, 255, 256, 300, 4096] {
+            let array: Vec<Value> = (0..count).map(|i| Value::from(i as i64)).collect();
+            assert_round_trips(&serde_json::to_string(&Value::Array(array)).unwrap());
+
+            let object: serde_json::Map<String, Value> = (0..count)
+                .map(|i| (format!("field_{i:06}"), Value::from(i as i64)))
+                .collect();
+            assert_round_trips(&serde_json::to_string(&Value::Object(object)).unwrap());
+        }
+
+        // Past 64 KB, which widens the offsets again.
+        let big = Value::Array(
+            (0..2000)
+                .map(|i| Value::String(format!("{i:0>40}")))
+                .collect(),
+        );
+        assert_round_trips(&serde_json::to_string(&big).unwrap());
     }
 }
