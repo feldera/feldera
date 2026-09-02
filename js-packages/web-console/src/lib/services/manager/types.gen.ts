@@ -456,6 +456,10 @@ export type ClusterMonitorEventId = string
  * If an optional field is not selected (i.e., is `None`), it will not be serialized.
  */
 export type ClusterMonitorEventSelectedInfo = {
+  /**
+   * Whether every service was healthy when this event was recorded. Says nothing about
+   * the cluster now: for that, read `stale` alongside it or call `GET /v0/cluster_healthz`.
+   */
   all_healthy: boolean
   api_resources_info?: string | null
   api_self_info?: string | null
@@ -468,6 +472,11 @@ export type ClusterMonitorEventSelectedInfo = {
   runner_resources_info?: string | null
   runner_self_info?: string | null
   runner_status: MonitorStatus
+  /**
+   * Whether the monitor stopped writing, making the statuses below the last recorded
+   * ones. Reported for the latest event only: older events are old by design.
+   */
+  stale?: boolean | null
 }
 
 /**
@@ -2481,12 +2490,21 @@ export type HeaderMatch = {
  */
 export type HealthStatus = {
   /**
-   * Whether every service is healthy.
+   * Whether every service is healthy and the monitoring data behind this report is fresh.
    */
   all_healthy: boolean
   api: ServiceStatus
   compiler: ServiceStatus
   runner: ServiceStatus
+  /**
+   * Whether the cluster monitor stopped writing events, which makes the statuses below
+   * the last recorded ones rather than current ones.
+   */
+  stale: boolean
+  /**
+   * Age at which monitoring data counts as stale.
+   */
+  stale_after_seconds: number
 }
 
 /**

@@ -373,7 +373,7 @@
           "Platform"
         ],
         "summary": "Check Cluster Health",
-        "description": "Required role: `read` or higher.\n\nDetermine the latest cluster health via the latest cluster monitor event.\nEach service's `unchanged_since` reports the approximate time it last transitioned\nbetween healthy and unhealthy, bounded by event retention.",
+        "description": "Required role: `read` or higher.\n\nDetermine the latest cluster health via the latest cluster monitor event.\nEach service's `unchanged_since` reports the approximate time it last transitioned\nbetween healthy and unhealthy, bounded by event retention.\n\nThe cluster monitor is the only writer of these events, and it runs within the runner\nprocess. When it stops writing, the newest event keeps describing a cluster that no\nlonger exists, so this endpoint additionally checks how old that event is. A `stale`\nresponse repeats the last recorded statuses instead of describing the cluster now, and\ncounts as unhealthy: monitoring that has died cannot vouch for anything.",
         "operationId": "get_cluster_health",
         "responses": {
           "200": {
@@ -8980,7 +8980,8 @@
         ],
         "properties": {
           "all_healthy": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "Whether every service was healthy when this event was recorded. Says nothing about\nthe cluster now: for that, read `stale` alongside it or call `GET /v0/cluster_healthz`."
           },
           "api_resources_info": {
             "type": "string",
@@ -9021,6 +9022,11 @@
           },
           "runner_status": {
             "$ref": "#/components/schemas/MonitorStatus"
+          },
+          "stale": {
+            "type": "boolean",
+            "description": "Whether the monitor stopped writing, making the statuses below the last recorded\nones. Reported for the latest event only: older events are old by design.",
+            "nullable": true
           }
         }
       },
@@ -11150,6 +11156,8 @@
         "description": "Health of the cluster as a whole and of each of its services.",
         "required": [
           "all_healthy",
+          "stale",
+          "stale_after_seconds",
           "api",
           "compiler",
           "runner"
@@ -11157,7 +11165,7 @@
         "properties": {
           "all_healthy": {
             "type": "boolean",
-            "description": "Whether every service is healthy."
+            "description": "Whether every service is healthy and the monitoring data behind this report is fresh."
           },
           "api": {
             "$ref": "#/components/schemas/ServiceStatus"
@@ -11167,6 +11175,16 @@
           },
           "runner": {
             "$ref": "#/components/schemas/ServiceStatus"
+          },
+          "stale": {
+            "type": "boolean",
+            "description": "Whether the cluster monitor stopped writing events, which makes the statuses below\nthe last recorded ones rather than current ones."
+          },
+          "stale_after_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Age at which monitoring data counts as stale.",
+            "minimum": 0
           }
         }
       },

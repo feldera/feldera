@@ -10,8 +10,11 @@
   import PipelineBreadcrumbs from '$lib/components/layout/PipelineBreadcrumbs.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
+  import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
+  import { useClusterHealth } from '$lib/compositions/health/useClusterHealth.svelte'
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
   import { ServerDate } from '$lib/compositions/serverTime'
+  import { useIsEnterprise } from '$lib/compositions/useEdition.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { partition } from '$lib/functions/common/array'
   import { ceilToHour, dateMax } from '$lib/functions/common/date'
@@ -19,6 +22,7 @@
     type ClusterBucket,
     type ClusterEventType,
     groupHealthEvents,
+    staleMonitoringMessage,
     unpackCombinedEvent
   } from '$lib/functions/pipelines/health'
   import { resolve } from '$lib/functions/svelte'
@@ -55,6 +59,11 @@
   }
 
   const rawClusterEvents = $derived.by(() => events?.flatMap(unpackCombinedEvent) ?? [])
+
+  // Freshness comes from the polled latest event; this page's list is 72 hours of old ones.
+  const clusterHealth = useClusterHealth()
+  const staleSince = $derived(clusterHealth.current.stale ? clusterHealth.current.recordedAt : null)
+  const isEnterprise = useIsEnterprise()
 
   const healthWindowHours = 72
 
@@ -272,6 +281,11 @@
   >
     {#snippet main()}
       <div class="flex h-full flex-1 flex-col gap-8 rounded-container">
+        {#if staleSince}
+          <WarningBanner>
+            {staleMonitoringMessage(isEnterprise.value, staleSince)}
+          </WarningBanner>
+        {/if}
         <!-- Status Timelines for each Feldera service -->
         <div class="flex flex-col gap-2">
           {#each Object.entries(componentLabels) as [tag, label], i}
@@ -282,6 +296,8 @@
               startAt={firstTimestamp(events)}
               endAt={lastTimestamp(events)}
               unitDurationMs={60 * 60 * 1000}
+              stale={!!staleSince}
+              updatedAt={clusterHealth.current.recordedAt}
               class="flex flex-col gap-2"
               onBarClick={(group) => handleBarClick(tag as EventTag, group)}
               legend={i === 2

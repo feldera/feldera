@@ -43,6 +43,12 @@ def test_cluster_events():
     )
     specific_event_status = TEST_CLIENT.get_cluster_event(latest_event_status["id"])
     all_events_status = TEST_CLIENT.get_cluster_events()
+
+    # Only the latest event reports whether the cluster monitor is still writing events, and
+    # a cluster serving these requests has one that is. Drop the field to compare the rest.
+    assert latest_event_all.pop("stale") is False
+    assert latest_event_status.pop("stale") is False
+
     assert latest_event_status in all_events_status, (
         "Latest event is not in full events list"
     )

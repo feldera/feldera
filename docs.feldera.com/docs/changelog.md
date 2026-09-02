@@ -25,6 +25,15 @@ import TabItem from '@theme/TabItem';
           while a connector is paused is not replayed when it is started. See
           [connector orchestration](/connectors/orchestration#output-connectors).
 
+        - Cluster monitoring data that has gone stale is now reported as such
+          instead of being served as current. The cluster monitor is the only
+          writer of cluster monitor events and runs within the runner, so when
+          the runner dies, its last write kept reporting every service healthy
+          indefinitely. Once the latest event is older than 30 minutes it carries
+          `stale: true`, `GET /v0/cluster_healthz` reports `all_healthy: false`
+          and answers `503`, and the web console shows a banner instead of an
+          "Operational" status.
+
         - Python: `Pipeline.pause_input_connector` and
           `Pipeline.start_input_connector` (and their `FelderaClient`
           counterparts) name the kind of connector they act on, matching the new
