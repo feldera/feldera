@@ -17,14 +17,14 @@ use delta_kernel::engine::arrow_conversion::TryFromArrow;
 use delta_kernel::table_properties::DataSkippingNumIndexedCols;
 use deltalake::DeltaTable;
 use deltalake::kernel::transaction::{CommitBuilder, CommitProperties, TableReference};
-use deltalake::kernel::{Action, Add, DataType, StructField};
+use deltalake::kernel::{Action, Add, ArrayType, DataType, MapType, StructField, StructType};
 use deltalake::logstore::ObjectStoreRef;
 use deltalake::operations::create::CreateBuilder;
 use deltalake::operations::write::writer::{DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
 use feldera_adapterlib::catalog::SerCursorFlattened;
 use feldera_adapterlib::transport::OutputBatchType;
-use feldera_types::program_schema::SqlType;
+use feldera_types::program_schema::{ColumnType, SqlType};
 use feldera_types::serde_with_context::serde_config::{
     BinaryFormat, DecimalFormat, UuidFormat, VariantFormat,
 };
@@ -39,7 +39,7 @@ use serde::Serialize;
 use serde_arrow::ArrayBuilder;
 use serde_arrow::schema::SerdeArrowSchema;
 use std::cmp::min;
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::num::NonZeroU64;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
@@ -61,6 +61,115 @@ pub fn delta_output_serde_config(variant_encoding: DeltaVariantEncoding) -> SqlS
         binary_format: BinaryFormat::Array,
         uuid_format: UuidFormat::String,
     }
+}
+
+/// Restore the Delta `variant` type wherever the SQL schema says `VARIANT`.
+///
+/// `try_from_arrow` sees a Parquet variant as the struct of two binary buffers
+/// it is encoded as, and maps it to a Delta struct. Walking the SQL type
+/// alongside the Delta type puts the variants back, including the ones nested
+/// in a `ROW`, an `ARRAY` or a `MAP`, whose data is written as a variant
+/// either way.
+pub(crate) fn delta_variant_types(
+    sql_type: &ColumnType,
+    delta_type: DataType,
+) -> AnyResult<DataType> {
+    Ok(match sql_type.typ {
+        SqlType::Variant => DataType::unshredded_variant(),
+        SqlType::Struct => {
+            let (DataType::Struct(fields), Some(sql_fields)) =
+                (&delta_type, sql_type.fields.as_ref())
+            else {
+                return Ok(delta_type);
+            };
+            let mut nested = Vec::with_capacity(sql_fields.len());
+            for field in fields.fields() {
+                let Some(sql_field) = sql_fields.iter().find(|f| &f.name.name() == field.name())
+                else {
+                    nested.push(field.clone());
+                    continue;
+                };
+                nested.push(StructField::new(
+                    field.name(),
+                    delta_variant_types(&sql_field.columntype, field.data_type().clone())?,
+                    field.is_nullable(),
+                ));
+            }
+            DataType::Struct(Box::new(StructType::try_new(nested)?))
+        }
+        SqlType::Array => {
+            let (DataType::Array(array), Some(component)) =
+                (&delta_type, sql_type.component.as_ref())
+            else {
+                return Ok(delta_type);
+            };
+            DataType::Array(Box::new(ArrayType::new(
+                delta_variant_types(component, array.element_type().clone())?,
+                array.contains_null(),
+            )))
+        }
+        SqlType::Map => {
+            let (DataType::Map(map), Some(key), Some(value)) =
+                (&delta_type, sql_type.key.as_ref(), sql_type.value.as_ref())
+            else {
+                return Ok(delta_type);
+            };
+            DataType::Map(Box::new(MapType::new(
+                delta_variant_types(key, map.key_type().clone())?,
+                delta_variant_types(value, map.value_type().clone())?,
+                map.value_contains_null(),
+            )))
+        }
+        _ => delta_type,
+    })
+}
+
+/// Fail when an existing table stores a `VARIANT` column in the other encoding.
+///
+/// Appending to a table created before the connector wrote Delta `variant`
+/// columns is the likeliest upgrade failure, and nothing else catches it: the
+/// writer validates each batch against the schema it computed itself, and the
+/// commit does not check schemas at all, so the connector would write variant
+/// buffers into a column the table declares a `string`. The table stays
+/// readable by nobody, and the damage surfaces in someone else's query.
+pub(crate) fn check_variant_encoding(
+    table: &DeltaTable,
+    computed: &[StructField],
+    encoding: DeltaVariantEncoding,
+) -> AnyResult<()> {
+    let Ok(snapshot) = table.snapshot() else {
+        // A table the connector just created matches by construction.
+        return Ok(());
+    };
+    let existing = snapshot.schema();
+
+    for field in computed {
+        let Some(current) = existing.field(field.name()) else {
+            continue;
+        };
+        let wanted = matches!(field.data_type(), DataType::Variant(_));
+        let found = matches!(current.data_type(), DataType::Variant(_));
+        if wanted == found {
+            continue;
+        }
+
+        let (is, set) = if found {
+            ("the Delta `variant` type", "variant")
+        } else {
+            ("a `string`", "json_string")
+        };
+        return Err(anyhow!(
+            "column '{}' of the existing Delta table stores VARIANT as {is}, but the connector \
+             is configured to write it as {}. Set 'variant_encoding' to '{set}', or write to a \
+             new table.",
+            field.name(),
+            match encoding {
+                DeltaVariantEncoding::Variant => "the Delta `variant` type",
+                DeltaVariantEncoding::JsonString => "a `string`",
+            },
+        ));
+    }
+    Ok(())
 }
 
 struct DeltaTableWriterInner {
@@ -157,31 +266,35 @@ impl DeltaTableWriter {
 
         let mut struct_fields: Vec<_> = vec![];
 
-        // A Parquet variant is `struct<metadata, value>` in Arrow, which does
-        // not say "variant"; the Delta type has to come from the SQL schema.
-        let variant_columns: HashSet<String> = if parquet_variant {
-            value_schema
-                .fields
-                .iter()
-                .filter(|f| f.columntype.typ == SqlType::Variant)
-                .map(|f| f.name.name())
-                .collect()
-        } else {
-            HashSet::new()
-        };
+        // A Parquet variant is `struct<metadata, value>` in Arrow, which says
+        // nothing about being a variant, so the SQL schema has to put the
+        // variants back afterwards, at every depth.
+        let sql_types: HashMap<String, &ColumnType> = value_schema
+            .fields
+            .iter()
+            .map(|f| (f.name.name(), &f.columntype))
+            .collect();
 
         for f in arrow_schema.fields.iter() {
-            let data_type = if variant_columns.contains(f.name()) {
-                DataType::unshredded_variant()
-            } else {
-                DataType::try_from_arrow(f.data_type()).map_err(|e| {
+            let mut data_type = DataType::try_from_arrow(f.data_type()).map_err(|e| {
+                ControllerError::output_transport_error(
+                    endpoint_name,
+                    true,
+                    anyhow!("error converting arrow field '{f}' to a Delta Lake field: {e}"),
+                )
+            })?;
+            if parquet_variant && let Some(sql_type) = sql_types.get(f.name()) {
+                data_type = delta_variant_types(sql_type, data_type).map_err(|e| {
                     ControllerError::output_transport_error(
                         endpoint_name,
                         true,
-                        anyhow!("error converting arrow field '{f}' to a Delta Lake field: {e}"),
+                        anyhow!(
+                            "error declaring the Delta type of column '{}': {e}",
+                            f.name()
+                        ),
                     )
-                })?
-            };
+                })?;
+            }
             struct_fields.push(StructField::new(f.name(), data_type, f.is_nullable()));
         }
 
@@ -439,6 +552,16 @@ impl WriterTask {
                 }
             }
         };
+
+        // `SaveMode::Ignore` keeps an existing table's schema and throws away
+        // the one computed here, and nothing downstream compares the two, so a
+        // mismatched VARIANT column would be written as the wrong encoding
+        // with no error at all.
+        check_variant_encoding(
+            &delta_table,
+            &inner.struct_fields,
+            inner.config.variant_encoding,
+        )?;
 
         info!(
             "delta_table {}: opened delta table '{}' (current table version {})",

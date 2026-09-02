@@ -539,15 +539,21 @@ true,bar,buzz"#;
         positive: Variant,
         negative: Variant,
         float: Variant,
+        integral_float: Variant,
+        huge: Variant,
+        huge_negative: Variant,
         boolean: Variant,
         null: Variant,
     }
 
-    deserialize_table_record!(VariantRow["VariantRow", Variant, 6] {
+    deserialize_table_record!(VariantRow["VariantRow", Variant, 9] {
     (object, "object", true, Variant, |_| None),
     (positive, "positive", true, Variant, |_| None),
     (negative, "negative", true, Variant, |_| None),
     (float, "float", true, Variant, |_| None),
+    (integral_float, "integral_float", true, Variant, |_| None),
+    (huge, "huge", true, Variant, |_| None),
+    (huge_negative, "huge_negative", true, Variant, |_| None),
     (boolean, "boolean", true, Variant, |_| None),
     (null, "null", true, Variant, |_| None)
     });
@@ -558,7 +564,8 @@ true,bar,buzz"#;
     /// JSON produces.
     #[test]
     fn csv_variant() {
-        let data = r#""{""a"": 1}",123,-4,1.5,true,null"#;
+        let data =
+            r#""{""a"": 1}",123,-4,1.5,1.0,20000000000000000000,-20000000000000000000,true,null"#;
         let rdr = csv::ReaderBuilder::new()
             .has_headers(false)
             .from_reader(data.as_bytes());
@@ -582,8 +589,15 @@ true,bar,buzz"#;
                 negative: Variant::BigInt(-4),
                 // `serde_json` with `arbitrary_precision` reports a fractional
                 // number through its private token, so a CSV float has always
-                // arrived as a decimal.
+                // arrived as a decimal. That holds for a float whose value is
+                // integral too, which is only true while the visitor renders
+                // it with `Debug`.
                 float: Variant::SqlDecimal((15, 1)),
+                integral_float: Variant::SqlDecimal((1, 0)),
+                // Outside `u64`/`i64`, which the csv crate reports as a 128-bit
+                // integer rather than as text.
+                huge: Variant::SqlDecimal((20_000_000_000_000_000_000, 0)),
+                huge_negative: Variant::SqlDecimal((-20_000_000_000_000_000_000, 0)),
                 boolean: Variant::Boolean(true),
                 null: Variant::VariantNull,
             }
