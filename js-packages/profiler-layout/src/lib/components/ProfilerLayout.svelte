@@ -25,7 +25,8 @@
     diagramClass?: string
     /** Snippet for toolbar start (Load Profile button and snapshot selector) */
     toolbarStart?: import('svelte').Snippet
-    /** Called to highlight the range of code corresponding to the selected diagram node */
+    /** Called to highlight the range of code corresponding to the selected diagram node. Each range's
+     *  `end` names the last character of the range, not the position after it. */
     onHighlightSourceRanges?: (sourceRanges: SourcePositionRange[]) => void
   }
 
