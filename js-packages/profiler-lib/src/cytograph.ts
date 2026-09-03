@@ -14,6 +14,7 @@ import { MetadataSelection } from './metadataSelection.js';
 import { type NodeAttributes, type TooltipCell, type ProfilerCallbacks } from './profiler.js';
 import { buildGraphStyle, type DiagramTheme, labelWidth } from './diagramTheme.js';
 import { nodeChips } from './chips.js';
+import { installNodeText } from './nodeText.js';
 import { elkNodeLayoutOptions, regionMinWidth } from './regionSize.js';
 
 /** A measurement together with a normalized [0, 100] percentile for color scaling. The original
@@ -463,6 +464,7 @@ export class CytographRendering {
         });
         // double-clicking on the navigator will adjust the graph to fit
         this.navigator.setOnDoubleClick(() => this.cy.fit());
+        installNodeText(this.cy, () => this.theme);
         this.cy.style(buildGraphStyle(this.theme));
         this.lastNode = Option.none();
     }
