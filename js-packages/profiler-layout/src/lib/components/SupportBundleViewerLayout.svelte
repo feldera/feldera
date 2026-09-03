@@ -16,6 +16,7 @@
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
   import type {
     Dataflow,
+    DiagramTheme,
     JsonProfiles,
     MetricOption,
     NodeAttributes,
@@ -54,6 +55,8 @@
      *  tab. Absent when the bundle carried no config. */
     runtimeConfig?: unknown
     triageResults: TriageResults
+    /** Palette the circuit diagram is drawn with; follows the application theme */
+    theme?: DiagramTheme
     profileFiles: [Date, ZipItem[]][]
     selectedTimestamp: Date | null
     onSelectTimestamp: (timestamp: Date) => void
@@ -78,6 +81,7 @@
     globalMetrics,
     runtimeConfig,
     triageResults,
+    theme = 'light',
     profileFiles,
     selectedTimestamp,
     onSelectTimestamp,
@@ -618,6 +622,7 @@
       {dataflowData}
       {programCode}
       {callbacks}
+      {theme}
     />
   </PersistentContent>
 {/if}
