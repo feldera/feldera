@@ -265,6 +265,25 @@ export class Cytograph {
         return profile.rankNodes(metric, displayed);
     }
 
+    /** The node drawn in place of `nodeId`: the outermost region around it that is collapsed, or the
+     *  node itself when every region around it is expanded. Walking from the outside in is what lets a
+     *  region inside an expanded one be collapsed on its own, since collapsing an outer region hides the
+     *  inner ones whatever state they are in. */
+    static drawnNode(profile: CircuitProfile, selection: CircuitSelection, nodeId: NodeId): NodeId {
+        let regions: Array<NodeId> = [];
+        let parent = profile.parents.get(nodeId);
+        while (parent.isSome()) {
+            regions.unshift(parent.unwrap());
+            parent = profile.parents.get(parent.unwrap());
+        }
+        for (const region of regions) {
+            if (!selection.regionsExpanded.contains(region)) {
+                return region;
+            }
+        }
+        return nodeId;
+    }
+
     // Create a Cytograph from a CircuitProfile filtered by the specified selection.
     static fromProfile(profile: CircuitProfile, selection: CircuitSelection): Cytograph {
         let g = this.createUnderlyingGraph(profile);
@@ -274,25 +293,23 @@ export class Cytograph {
 
         let visibleParents = new Set<NodeId>();
         for (let [nodeId, node] of profile.simpleNodes.entries()) {
-            // Find out whether we display this node or only its parent.
-            // If the parent is expanded, we display this node.
-            let topParent = profile.getTopParent(nodeId);
-            const expand = selection.regionsExpanded.contains(topParent);
-            if (nodeId !== topParent && !expand) {
-                let set = result.nodeChildren.get(topParent);
+            // Find out whether we display this node or the innermost region that hides it.
+            const drawn = Cytograph.drawnNode(profile, selection, nodeId);
+            if (drawn !== nodeId) {
+                let set = result.nodeChildren.get(drawn);
                 if (set.isSome())
                     set.unwrap().add(nodeId);
                 else {
-                    result.nodeChildren.set(topParent, new Set(nodeId));
+                    result.nodeChildren.set(drawn, new Set([nodeId]));
                 }
             }
 
             let hasChildren = false;
-            if (!expand && nodeId !== topParent) {
-                if (inserted.has(topParent))
-                    // Another child has inserted this parent
+            if (drawn !== nodeId) {
+                if (inserted.has(drawn))
+                    // Another child has inserted this region
                     continue;
-                nodeId = topParent;
+                nodeId = drawn;
                 hasChildren = true;
                 node = profile.complexNodes.get(nodeId).unwrap();
                 // Note: above we switched the nodeId/node that we are processing.
@@ -300,8 +317,13 @@ export class Cytograph {
 
             let parent = profile.parents.get(node.id);
             if (parent.isSome()) {
-                const p = parent.unwrap();
-                visibleParents.add(p);
+                // Every region around the drawn node is drawn too, expanded: cytoscape needs each
+                // `parent` it is given to be a node on the graph, up to the outermost one.
+                let ancestor = parent;
+                while (ancestor.isSome()) {
+                    visibleParents.add(ancestor.unwrap());
+                    ancestor = profile.parents.get(ancestor.unwrap());
+                }
             }
             let src = sources.toString(node.sourcePositions);
             let operation = node instanceof ComplexNode
@@ -312,7 +334,9 @@ export class Cytograph {
                 // These nodes were modified in the profile.fixZ1Nodes() function.
                 operation = CircuitProfile.Z1_TRACE;
             const leafCount = node instanceof ComplexNode ? node.leafCount : 0;
-            let graphNode = new GraphNode(nodeId, node.persistentId, operation, hasChildren, expand && hasChildren, parent, src, leafCount);
+            // Never expanded: a region is only drawn here when it is collapsed, and the expanded ones
+            // are added by the loop below.
+            let graphNode = new GraphNode(nodeId, node.persistentId, operation, hasChildren, false, parent, src, leafCount);
             result.addNode(graphNode);
             inserted.set(nodeId, graphNode);
         }
@@ -338,18 +362,14 @@ export class Cytograph {
             let target = edge.target;
             let originalEdge = result.createEdge(source, target, edge.back);
 
-            let sourceParent = profile.getTopParent(source);
-            let targetParent = profile.getTopParent(target);
-            let expandSource = selection.regionsExpanded.contains(sourceParent);
-            let expandTarget = selection.regionsExpanded.contains(targetParent);
             if (profile.complexNodes.has(target))
                 // Do not add edges to complex nodes.
                 continue;
 
-            if (!expandSource)
-                source = sourceParent;
-            if (!expandTarget)
-                target = targetParent;
+            // An edge to or from a node that is not drawn lands on the region drawn in its place.
+            source = Cytograph.drawnNode(profile, selection, source);
+            target = Cytograph.drawnNode(profile, selection, target);
+            const targetCollapsed = target !== edge.target;
 
             let sourceNode = inserted.get(source).expect(`Node ${source} not found in visible map`);
             let targetNode = inserted.get(target).expect(`Node ${target} not found in visible map`);
@@ -361,7 +381,7 @@ export class Cytograph {
 
             // Detect whether an edge represents the same channel as a previous edge
             // (only suppressed if the edge goes to a complex node)
-            if (!expandTarget) {
+            if (targetCollapsed) {
                 let pair = edge.source.toString() + "," + targetNode.id.toString();
                 if (insertedEdges.has(pair)) {
                     continue;
