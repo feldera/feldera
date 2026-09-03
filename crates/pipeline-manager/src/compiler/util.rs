@@ -150,6 +150,56 @@ pub async fn recreate_file_with_content(file_path: &Path, content: &str) -> Resu
     Ok(())
 }
 
+/// Writes `content` to `file_path` via a sibling temp file and rename.
+///
+/// Unlike [`recreate_file_with_content`], this never removes the destination
+/// first. A failed write leaves the previous file intact, which the Rust
+/// compilation cleanup state file depends on (#6791, #6742).
+pub async fn write_file_atomically(file_path: &Path, content: &[u8]) -> Result<(), UtilError> {
+    let tmp_path = {
+        let mut name = file_path.file_name().unwrap_or_default().to_os_string();
+        name.push(".tmp");
+
+        file_path.with_file_name(name)
+    };
+
+    if let Err(e) = write_tmp_file(&tmp_path, content).await {
+        let _ = fs::remove_file(&tmp_path).await;
+
+        return Err(e);
+    }
+
+    if let Err(e) = fs::rename(&tmp_path, file_path).await {
+        let _ = fs::remove_file(&tmp_path).await;
+
+        return Err(UtilError::IoError(
+            format!(
+                "renaming '{}' to '{}'",
+                tmp_path.display(),
+                file_path.display()
+            ),
+            e,
+        ));
+    }
+
+    Ok(())
+}
+
+/// Create or replace `tmp_path` and flush `content` to it.
+async fn write_tmp_file(tmp_path: &Path, content: &[u8]) -> Result<(), UtilError> {
+    let mut file = File::create(tmp_path).await.map_err(|e| {
+        UtilError::IoError(format!("creating new file '{}'", tmp_path.display()), e)
+    })?;
+    file.write_all(content)
+        .await
+        .map_err(|e| UtilError::IoError(format!("writing file '{}'", tmp_path.display()), e))?;
+    file.flush()
+        .await
+        .map_err(|e| UtilError::IoError(format!("flushing file '{}'", tmp_path.display()), e))?;
+
+    Ok(())
+}
+
 /// Reads the content of the file as a UTF-8 string.
 pub async fn read_file_content(file_path: &Path) -> Result<String, UtilError> {
     fs::read_to_string(file_path)
@@ -738,6 +788,7 @@ mod test {
         create_new_file, create_new_file_with_content, decode_string_as_dir, encode_dir_as_string,
         pipeline_binary_filename, read_file_content, read_file_content_bytes, recreate_dir,
         recreate_file_with_content, sha256, truncate_sha256_checksum, validate_is_sha256_checksum,
+        write_file_atomically,
     };
     use crate::db::types::pipeline::PipelineId;
     use crate::db::types::version::Version;
@@ -831,6 +882,39 @@ mod test {
         assert!(dir2.is_dir());
         create_dir_if_not_exists(&dir2).await.unwrap();
         assert!(dir2.is_dir());
+    }
+
+    /// A failed atomic write must leave the previous destination intact.
+    /// `recreate_file_with_content` deletes first, so a flush error there
+    /// zeros `target_cleanup.json` (#6791).
+    #[tokio::test]
+    async fn atomic_write_leaves_previous_file_on_rename_failure() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let dest = tempdir.path().join("target_cleanup.json");
+        write_file_atomically(&dest, b"{\"keep\":true}")
+            .await
+            .unwrap();
+        assert_eq!(read_file_content(&dest).await.unwrap(), "{\"keep\":true}");
+
+        write_file_atomically(&dest, b"{\"next\":true}")
+            .await
+            .unwrap();
+        assert_eq!(read_file_content(&dest).await.unwrap(), "{\"next\":true}");
+        assert!(
+            !tempdir.path().join("target_cleanup.json.tmp").exists(),
+            "temp file must be renamed away on success"
+        );
+
+        // Occupying the temp path makes the write fail before rename.
+        // The destination must still hold the last successful content.
+        fs::create_dir(tempdir.path().join("target_cleanup.json.tmp"))
+            .await
+            .unwrap();
+        write_file_atomically(&dest, b"{\"lost\":true}")
+            .await
+            .expect_err("creating the temp file over a directory must fail");
+
+        assert_eq!(read_file_content(&dest).await.unwrap(), "{\"next\":true}");
     }
 
     #[tokio::test]
