@@ -41,6 +41,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.CreateRuntimeErrorWrappers;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareIndexes;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.ShareWindowIntegrals;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareInputIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.intern.Intern;
@@ -99,6 +100,7 @@ public class CircuitOptimizer extends Passes {
                 g -> new OptimizeProjections(compiler, true, g, operatorsAnalyzed), 1));
         this.add(new FuseExpensiveMaps(compiler));
         this.add(new RemoveViewOperators(compiler, false));
+        this.add(new LeftJoinChains(compiler));
         this.add(new UnusedFields(compiler));
         this.add(new RemoveUselessLeftJoins(compiler));
         this.add(new Intern(compiler));

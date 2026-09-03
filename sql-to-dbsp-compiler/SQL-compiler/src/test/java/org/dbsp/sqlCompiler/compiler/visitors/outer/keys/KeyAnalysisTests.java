@@ -18,7 +18,7 @@ public class KeyAnalysisTests extends SqlIoTest {
             """;
 
     /** Compile the program and return the analysis log */
-    String compileLog(String view) {
+    private String compileLog(String view) {
         StringBuilder builder = new StringBuilder();
         Appendable save = Logger.INSTANCE.setDebugStream(builder);
         Logger.INSTANCE.setLoggingLevel(KeyAnalysis.class, 1);
@@ -34,22 +34,25 @@ public class KeyAnalysisTests extends SqlIoTest {
     }
 
     /** Compile the program and return the keys the analysis reported for view {@code v}. */
-    String viewKeys(String view) {
+    private String viewKeys(String view) {
         String log = this.compileLog(view);
         String marker = "view v keys ";
+        String found = null;
         for (String line : log.split("\n")) {
             String lower = line.toLowerCase(Locale.ENGLISH);
             if (lower.startsWith(marker))
-                return line.substring(marker.length()).trim();
+                found = line.substring(marker.length()).trim();
         }
-        throw new AssertionError("No keys reported for view v:\n" + log);
+        if (found == null)
+            throw new AssertionError("No keys reported for view v:\n" + log);
+        return found;
     }
 
-    void assertKeys(String view, String expected) {
+    private void assertKeys(String view, String expected) {
         Assert.assertEquals(expected, this.viewKeys(view));
     }
 
-    void assertNoKeys(String view) {
+    private void assertNoKeys(String view) {
         this.assertKeys(view, "[]");
     }
 
@@ -270,11 +273,7 @@ public class KeyAnalysisTests extends SqlIoTest {
     }
 
     /** A LEFT JOIN without an equality is expanded into a join and an antijoin whose outputs
-     * are added.  The right side here holds a single row, so each left row matches at most
-     * once and both branches keep the key of t, as the two assertions on the log show.  The
-     * branches hold disjoint sets of left rows, so (a, b) is a key of their sum as well, but
-     * no rule makes a key out of a sum and the view reports none.  Recognizing the expansion
-     * would report [[0, 1]] here. */
+     * are added; the compiler currently cannot recognize the key for this pattern. */
     @Test
     public void nonEquiLeftJoinLosesTheKeyAtTheUnion() {
         String view = """
