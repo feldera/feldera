@@ -88,6 +88,11 @@ record Provenance(Map<Column, Source> sources) {
         sources = Map.copyOf(sources);
     }
 
+    /** Whether the output column {@code output} is a plain copy of a parameter column. */
+    boolean isCopy(Column output) {
+        return this.sources.containsKey(output);
+    }
+
     /** The output columns that copy {@code source}. */
     List<Column> columnsReading(Source source) {
         List<Column> result = new ArrayList<>();

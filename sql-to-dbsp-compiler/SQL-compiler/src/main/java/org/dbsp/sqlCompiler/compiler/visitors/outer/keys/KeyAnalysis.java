@@ -84,7 +84,13 @@ public class KeyAnalysis extends CircuitVisitor {
      * its columns hold the same data. */
     private record PortKeys(Keys keys, ColumnEquivalence equivalence) {}
 
+    /** A transform applied to the columns of a port. */
+    record PortTransform(OutputPort port, ColumnCopyTransform transform) {}
+
     private final Map<OutputPort, PortKeys> keys = new HashMap<>();
+    /** For a port whose operator computes each output row from a single input row, the
+     * input those rows come from and where how the input's columns are copied. */
+    private final Map<OutputPort, PortTransform> portTransforms = new HashMap<>();
 
     public KeyAnalysis(DBSPCompiler compiler) {
         super(compiler);
@@ -104,6 +110,7 @@ public class KeyAnalysis extends CircuitVisitor {
     @Override
     public Token startVisit(IDBSPOuterNode node) {
         this.keys.clear();
+        this.portTransforms.clear();
         return super.startVisit(node);
     }
 
@@ -169,7 +176,7 @@ public class KeyAnalysis extends CircuitVisitor {
     /** The provenance of the rows produced by a closure: for each column that is a
      * plain copy of a parameter column, that parameter column.
      * @param outputShape shape of the produced rows */
-    private Provenance provenance(CollectionShape outputShape, DBSPClosureExpression closure) {
+    Provenance provenance(CollectionShape outputShape, DBSPClosureExpression closure) {
         Lineage.ValueSource result = new Lineage.InnerLineage(this.compiler(), null).analyze(closure, initialValues(closure));
         List<Lineage.ValueSource> columns = new ArrayList<>();
         if (closure.body.getType().is(DBSPTypeRawTuple.class)) {
@@ -194,7 +201,7 @@ public class KeyAnalysis extends CircuitVisitor {
 
     /** The expression each output column is built from, in the column order of {@code shape}.
      * If the closure has an unexpected shape, the expression may be null. */
-    private static List<DBSPExpression> outputExpressions(
+    static List<DBSPExpression> outputExpressions(
             CollectionShape shape, DBSPClosureExpression closure) {
         List<DBSPExpression> result = new ArrayList<>();
         if (shape instanceof IndexedShape indexed) {
@@ -306,7 +313,7 @@ public class KeyAnalysis extends CircuitVisitor {
     /** The function an operator applies to its rows, when it has one and it is a closure.
      * Some operators carry another kind of expression, a comparator for instance. */
     @Nullable
-    private static DBSPClosureExpression closureOf(DBSPSimpleOperator operator) {
+    static DBSPClosureExpression closureOf(DBSPSimpleOperator operator) {
         if (operator.function == null || !operator.function.is(DBSPClosureExpression.class))
             return null;
         return operator.function.to(DBSPClosureExpression.class);
@@ -316,6 +323,16 @@ public class KeyAnalysis extends CircuitVisitor {
     private void copy(DBSPUnaryOperator operator) {
         OutputPort input = operator.input();
         this.set(operator, this.getKeys(input), this.getEquivalence(input));
+    }
+
+    /** Where the columns of {@code port} come from: the input port its operator reads, and
+     * for each column of that input the columns of {@code port} that copy it.  Recorded only
+     * for operators that compute each output row from a single input row, as a projection, a
+     * filter or a distinct does; null for an aggregate or a join, whose output rows combine
+     * several input rows, and for a sum, whose rows come from several inputs. */
+    @Nullable
+    PortTransform getPortSourceTransform(OutputPort port) {
+        return this.portTransforms.get(port);
     }
 
     /** Keys of a map or map_index output: the input keys whose columns are all copied. */
@@ -330,6 +347,7 @@ public class KeyAnalysis extends CircuitVisitor {
         ColumnEquivalence inputEquivalence = this.getEquivalence(operator.input()).after(transform);
         ColumnEquivalence equivalence = outputEquivalence(output, closure, provenance).merge(inputEquivalence);
         this.set(operator, keys, equivalence);
+        this.portTransforms.put(operator.outputPort(), new PortTransform(operator.input(), transform));
     }
 
     /** A table with a PRIMARY KEY is keyed by it, whichever operator implements the table. */
@@ -360,6 +378,8 @@ public class KeyAnalysis extends CircuitVisitor {
         if (!fixed.isEmpty())
             keys = keys.without(fixed);
         this.set(node, keys, this.getEquivalence(node.input()));
+        // A filter drops rows and moves no column
+        this.portTransforms.put(node.outputPort(), new PortTransform(node.input(), ColumnCopyTransform.identity()));
     }
 
     /** Columns of the filter's input that the condition equates with a constant. */
@@ -421,6 +441,7 @@ public class KeyAnalysis extends CircuitVisitor {
     @Override
     public void postorder(DBSPNoopOperator node) {
         this.copy(node);
+        this.portTransforms.put(node.outputPort(), new PortTransform(node.input(), ColumnCopyTransform.identity()));
     }
 
     /** Negating weights leaves every row in place. */
@@ -429,7 +450,7 @@ public class KeyAnalysis extends CircuitVisitor {
         this.copy(node);
     }
 
-    /** Keeps the rows with a positive weight and drops the others, leaving the rest in place. */
+    /** Keeps the rows with a positive weight and drops the others, leaving the unmatched in place. */
     @Override
     public void postorder(DBSPPositiveOperator node) {
         this.copy(node);
@@ -446,14 +467,18 @@ public class KeyAnalysis extends CircuitVisitor {
                 .newline();
     }
 
+    /** Integration changes which rows are present, not their columns. */
     @Override
     public void postorder(DBSPIntegrateOperator node) {
         this.copy(node);
+        this.portTransforms.put(node.outputPort(), new PortTransform(node.input(), ColumnCopyTransform.identity()));
     }
 
+    /** Differentiation changes which rows are present, not their columns. */
     @Override
     public void postorder(DBSPDifferentiateOperator node) {
         this.copy(node);
+        this.portTransforms.put(node.outputPort(), new PortTransform(node.input(), ColumnCopyTransform.identity()));
     }
 
     @Override
@@ -483,6 +508,8 @@ public class KeyAnalysis extends CircuitVisitor {
             return;
         ColumnEquivalence equivalence = this.getEquivalence(node.input());
         this.set(node, this.getKeys(node.input()).plus(equivalence.keyOf(shape.columns())), equivalence);
+        // A distinct collapses equal rows and moves no column
+        this.portTransforms.put(node.outputPort(), new PortTransform(node.input(), ColumnCopyTransform.identity()));
     }
 
     @Override
@@ -592,7 +619,7 @@ public class KeyAnalysis extends CircuitVisitor {
     /** Where the columns of one join input end up in the output.  A column of the shared
      * index is read through parameter 0, a value column through the parameter carrying that
      * input's values. */
-    private static ColumnCopyTransform sideTransform(Provenance provenance, int valueParameter) {
+    static ColumnCopyTransform sideTransform(Provenance provenance, int valueParameter) {
         return column -> provenance.columnsReading(new Provenance.Source(
                 column.part() == Part.INDEX ? 0 : valueParameter, Column.none(column.field())));
     }

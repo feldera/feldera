@@ -39,6 +39,14 @@ public record KeyColumns(SortedSet<EquivalentColumnSet> sets) implements Compara
         return true;
     }
 
+    /** Whether some set of the key holds {@code column}. */
+    public boolean contains(Column column) {
+        for (EquivalentColumnSet set : this.sets)
+            if (set.contains(column))
+                return true;
+        return false;
+    }
+
     /** True if this key includes every value of {@code other}, and at least one more */
     public boolean strictlyContains(KeyColumns other) {
         return this.sets.containsAll(other.sets) && this.size() > other.size();
