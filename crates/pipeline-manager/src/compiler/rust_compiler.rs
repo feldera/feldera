@@ -5,6 +5,7 @@ use crate::compiler::util::{
     crate_name_pipeline_main, create_dir_if_not_exists, create_new_file, decode_string_as_dir,
     pipeline_binary_filename, program_info_filename, read_file_content, recreate_dir,
     recreate_file_with_content, sha256, truncate_sha256_checksum, write_file,
+    write_file_atomically,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::error::DBError;
@@ -21,7 +22,6 @@ use crate::db::types::version::Version;
 use crate::error::source_error;
 use crate::has_unstable_feature;
 use aws_lc_rs::digest;
-use chrono::{DateTime, Utc};
 use feldera_types::config::PipelineConfigProgramInfo;
 use futures_util::stream;
 use indoc::formatdoc;
@@ -82,6 +82,118 @@ const THRESHOLD_COMPILATION_TARGET_WARNING: f64 = 0.7;
 /// directory to make space.
 const THRESHOLD_COMPILATION_TARGET_CLEAR: f64 = 0.9;
 
+/// How often cleanup may run when the compilation volume is already under
+/// pressure. The regular interval is 120s; waiting that long at 85% used
+/// leaves little room to delete anything (#6791).
+const CLEANUP_PRESSURE_INTERVAL: Duration = Duration::from_secs(30);
+
+/// Disk used-fraction at which cleanup runs on the pressure interval
+/// instead of waiting for [`CLEANUP_INTERVAL`].
+const THRESHOLD_COMPILATION_TARGET_CLEANUP: f64 = 0.85;
+
+/// Retention clocks for unused compilation artifacts.
+///
+/// `target_cleanup.json` is only a restart hint. The live map in the compiler
+/// task is the source of truth, so a failed write cannot reset newly
+/// discovered artifacts (#6791, #6742).
+#[derive(Debug, Default)]
+struct ArtifactCleanupState {
+    /// When each unused artifact was first seen. The clock is not reset on
+    /// later cycles while the name remains unused.
+    marked_unused_at: BTreeMap<String, SystemTime>,
+    /// Whether this process has already tried to read `target_cleanup.json`.
+    /// After that, the in-memory map wins even if a later persist fails.
+    hydrated_from_disk: bool,
+}
+
+/// Whether this tick should run Rust compilation cleanup.
+///
+/// Runs on the first tick, after [`CLEANUP_INTERVAL`], or after
+/// [`CLEANUP_PRESSURE_INTERVAL`] when `disk_used_fraction` is at least
+/// [`THRESHOLD_COMPILATION_TARGET_CLEANUP`].
+fn should_run_cleanup(elapsed: Option<Duration>, disk_used_fraction: Option<f64>) -> bool {
+    match elapsed {
+        None => true,
+        Some(elapsed) if elapsed >= CLEANUP_INTERVAL => true,
+        Some(elapsed) if elapsed >= CLEANUP_PRESSURE_INTERVAL => {
+            disk_used_fraction.is_some_and(|used| used >= THRESHOLD_COMPILATION_TARGET_CLEANUP)
+        }
+        _ => false,
+    }
+}
+
+/// Names whose unused mark is at least [`CLEANUP_RETENTION`] old.
+///
+/// A mark in the future (clock skew) is not expired: `duration_since` fails
+/// and the artifact waits for the next cycle.
+fn expired_artifact_names(state: &BTreeMap<String, SystemTime>, now: SystemTime) -> Vec<String> {
+    state
+        .iter()
+        .filter(|(_, marked_unused_at)| {
+            now.duration_since(**marked_unused_at)
+                .is_ok_and(|duration| duration >= CLEANUP_RETENTION)
+        })
+        .map(|(name, _)| name.clone())
+        .collect()
+}
+
+/// Drop artifacts that are in use again, record newly found unused ones
+/// without resetting an existing clock, and forget names no longer on disk.
+fn reconcile_cleanup_state(
+    state: &mut BTreeMap<String, SystemTime>,
+    found: &HashSet<String>,
+    in_use: &HashSet<String>,
+    now: SystemTime,
+) {
+    for artifact_name in in_use {
+        state.remove(artifact_name);
+    }
+
+    for artifact_name in found {
+        if !in_use.contains(artifact_name) && !state.contains_key(artifact_name) {
+            state.insert(artifact_name.clone(), now);
+        }
+    }
+
+    state.retain(|artifact_name, _| found.contains(artifact_name));
+}
+
+/// Read `target_cleanup.json`. A missing, unreadable, or corrupt file
+/// yields an empty map so cleanup can still run; the next persist rewrites it.
+async fn load_cleanup_state_from_disk(path: &Path) -> BTreeMap<String, SystemTime> {
+    match read_file_content(path).await {
+        Ok(content) => serde_json::from_str(&content).unwrap_or_else(|e| {
+            error!("Unable to deserialize cleanup state due to: {e}");
+            BTreeMap::new()
+        }),
+        Err(e) => {
+            if !path.exists() {
+                debug!(
+                    "Cleanup state file does not yet exist -- \
+                    it will be created at the end of the first cleanup cycle"
+                );
+            } else {
+                error!("Unable to read cleanup state file due to: {e}");
+            }
+
+            BTreeMap::new()
+        }
+    }
+}
+
+/// Best-effort atomic write of the retention map. Errors are logged; the
+/// caller keeps using the in-memory `state` either way.
+async fn persist_cleanup_state(path: &Path, state: &BTreeMap<String, SystemTime>) {
+    match serde_json::to_string_pretty(state) {
+        Ok(s) => {
+            if let Err(e) = write_file_atomically(path, s.as_bytes()).await {
+                error!("Unable to write cleanup state to file due to: {e}");
+            }
+        }
+        Err(e) => error!("Unable to serialize cleanup state due to: {e}"),
+    }
+}
+
 /// Rust compilation task that wakes up periodically.
 /// Sleeps inbetween ticks which affects the response time of Rust compilation.
 /// This task only returns if the Rust compiler wants to be restarted to have any precompilation
@@ -96,12 +208,22 @@ pub async fn rust_compiler_task(
     allow_exit_upon_target_cleared: bool,
 ) -> Result<(), ()> {
     let mut last_cleanup: Option<Instant> = None;
+    let mut cleanup_state = ArtifactCleanupState::default();
     loop {
         let mut unexpected_error = false;
 
         // Clean up
-        if last_cleanup.is_none_or(|ts| ts.elapsed() >= CLEANUP_INTERVAL) {
-            if let Err(e) = cleanup_rust_compilation(&config, db.clone()).await {
+        let rust_compilation_dir = config.working_dir().join("rust-compilation");
+        let elapsed = last_cleanup.map(|ts| ts.elapsed());
+        let disk_used_fraction = match elapsed {
+            Some(elapsed) if elapsed >= CLEANUP_PRESSURE_INTERVAL && elapsed < CLEANUP_INTERVAL => {
+                DiskSpace::new_from_path(&rust_compilation_dir).map(|disk| disk.used_fraction)
+            }
+            _ => None,
+        };
+        if should_run_cleanup(elapsed, disk_used_fraction) {
+            if let Err(e) = cleanup_rust_compilation(&config, db.clone(), &mut cleanup_state).await
+            {
                 match e {
                     RustCompilationCleanupError::Database(e) => {
                         error!(
@@ -2135,6 +2257,7 @@ pub(crate) async fn cleanup_pipeline_binaries(
 async fn cleanup_rust_compilation(
     config: &CompilerConfig,
     db: Arc<Mutex<StoragePostgres>>,
+    cleanup_state: &mut ArtifactCleanupState,
 ) -> Result<(), RustCompilationCleanupError> {
     trace!("Performing Rust cleanup...");
 
@@ -2163,32 +2286,14 @@ async fn cleanup_rust_compilation(
         .map(|(_, pipeline_id)| pipeline_id)
         .collect();
 
-    // Location of the cleanup state file
+    // Location of the cleanup state file. Read only on the first cycle;
+    // afterward the in-memory map is authoritative even if this write fails.
     let cleanup_state_file_path = rust_compilation_dir.join("target_cleanup.json");
-
-    // Attempt to read cleanup state from file.
-    // If it fails, an error is written to log and the cleanup state is wiped.
-    // The wipe means that all retention expirations will be reset.
-    // The cleanup state includes the artifact names that are planned
-    // to be deleted: "<crate>" and "lib<crate>".
-    let mut cleanup_state: BTreeMap<String, SystemTime> =
-        match read_file_content(&cleanup_state_file_path).await {
-            Ok(content) => serde_json::from_str(&content).unwrap_or_else(|e| {
-                error!("Unable to deserialize cleanup state due to: {e}");
-                BTreeMap::new()
-            }),
-            Err(e) => {
-                if !cleanup_state_file_path.exists() {
-                    debug!(
-                        "Cleanup state file does not yet exist -- \
-                        it will be created at the end of the first cleanup cycle"
-                    );
-                } else {
-                    error!("Unable to read cleanup state file due to: {e}");
-                }
-                BTreeMap::new()
-            }
-        };
+    if !cleanup_state.hydrated_from_disk {
+        cleanup_state.marked_unused_at =
+            load_cleanup_state_from_disk(&cleanup_state_file_path).await;
+        cleanup_state.hydrated_from_disk = true;
+    }
 
     // Determine all the crates and their artifact names that are currently in use
     let mut crates_in_use: HashSet<String> = HashSet::new();
@@ -2242,28 +2347,17 @@ async fn cleanup_rust_compilation(
     // Current timestamp at which the cleanup takes place
     let current_timestamp = SystemTime::now();
 
-    // Remove any artifact which is in use again
-    for artifact_name in &artifacts_in_use {
-        if cleanup_state.remove(artifact_name).is_some() {
-            trace!("Rust compilation cleanup: artifact '{artifact_name}' is in use again")
-        }
+    // In-use artifacts must not be deleted even if an old clock remains.
+    let deletion: Vec<String> =
+        expired_artifact_names(&cleanup_state.marked_unused_at, current_timestamp)
+            .into_iter()
+            .filter(|artifact_name| !artifacts_in_use.contains(artifact_name))
+            .collect();
+    for artifact_name in &deletion {
+        trace!(
+            "Rust compilation cleanup: retention for artifact '{artifact_name}' has expired -- marked for deletion"
+        );
     }
-
-    // The ones that have been marked longer ago than the retention period will be deleted
-    let mut deletion = HashSet::<String>::new();
-    for (artifact_name, expiration) in cleanup_state.iter() {
-        if current_timestamp
-            .duration_since(*expiration)
-            .is_ok_and(|duration| duration >= CLEANUP_RETENTION)
-        {
-            deletion.insert(artifact_name.clone());
-            trace!(
-                "Rust compilation cleanup: retention for artifact '{}' has expired -- marked for deletion",
-                artifact_name
-            );
-        }
-    }
-    let deletion: Vec<String> = deletion.into_iter().collect();
 
     // All found artifacts during the decisions, which is used later to update the cleanup state
     let mut found = Vec::<String>::new();
@@ -2466,48 +2560,25 @@ async fn cleanup_rust_compilation(
         }
     }
 
-    // Any artifact name that was found which:
-    // (1) is not an artifact in use
-    // (2) AND is not already in the cleanup state
-    // ... will be added to the cleanup state.
-    let found = HashSet::<String>::from_iter(found.into_iter());
-    for artifact_name in found.iter() {
-        if !artifacts_in_use.contains(artifact_name) && !cleanup_state.contains_key(artifact_name) {
-            let expiration_datetime: DateTime<Utc> = (current_timestamp + CLEANUP_RETENTION).into();
-            trace!(
-                "Rust compilation cleanup: artifact '{}' will be deleted some time after retention expires (currently: {})",
-                artifact_name,
-                expiration_datetime.format("%Y-%m-%d %H:%M:%S")
-            );
-            cleanup_state.insert(artifact_name.clone(), current_timestamp);
-        }
-    }
-
-    // Remove any artifact in the cleanup state which is no longer found
-    let mut artifacts_removed: u64 = 0;
-    for artifact_name in cleanup_state.clone().keys() {
-        if !found.contains(artifact_name) {
-            artifacts_removed += 1;
-            cleanup_state.remove(artifact_name);
-        }
-    }
-    if artifacts_removed > 0 {
+    // Update the in-memory clocks first. Persist afterward as best-effort:
+    // a failed write must not reset newly discovered artifacts (#6791, #6742).
+    let found = HashSet::<String>::from_iter(found);
+    let prior_len = cleanup_state.marked_unused_at.len();
+    reconcile_cleanup_state(
+        &mut cleanup_state.marked_unused_at,
+        &found,
+        &artifacts_in_use,
+        current_timestamp,
+    );
+    if cleanup_state.marked_unused_at.len() < prior_len {
         info!(
-            "Rust compilation cleanup: removed {artifacts_removed} artifacts; {} artifacts remain",
+            "Rust compilation cleanup: removed {} artifacts; {} artifacts remain",
+            prior_len - cleanup_state.marked_unused_at.len(),
             found.len()
         );
     }
 
-    // Attempt to write cleanup state to file.
-    // If it fails, an error is written to log and the cleanup state changes will be lost.
-    // The changes being lost means that new retention expirations are not set, and old ones remain.
-    match serde_json::to_string_pretty(&cleanup_state) {
-        Ok(s) => match recreate_file_with_content(&cleanup_state_file_path, &s).await {
-            Ok(()) => {}
-            Err(e) => error!("Unable to write cleanup state to file due to: {e}"),
-        },
-        Err(e) => error!("Unable to serialize cleanup state due to: {e}"),
-    }
+    persist_cleanup_state(&cleanup_state_file_path, &cleanup_state.marked_unused_at).await;
 
     // Result on what to do next
     if removed_target_dir {
@@ -2522,9 +2593,11 @@ mod test {
     use crate::auth::TenantRecord;
     use crate::compiler::rust_compiler::prepare_workspace;
     use crate::compiler::rust_compiler::{
-        STALE_TEMP_UPLOAD_MAX_AGE, calculate_source_checksum, decide_cleanup,
-        decide_pipeline_binary_cleanup, is_permanent_upload_rejection, program_info_filename,
-        sccache_message, valid_pipeline_binary_filenames, valid_program_info_filenames,
+        CLEANUP_INTERVAL, CLEANUP_PRESSURE_INTERVAL, CLEANUP_RETENTION, STALE_TEMP_UPLOAD_MAX_AGE,
+        THRESHOLD_COMPILATION_TARGET_CLEANUP, calculate_source_checksum, decide_cleanup,
+        decide_pipeline_binary_cleanup, expired_artifact_names, is_permanent_upload_rejection,
+        program_info_filename, reconcile_cleanup_state, sccache_message, should_run_cleanup,
+        valid_pipeline_binary_filenames, valid_program_info_filenames,
     };
     use crate::compiler::test::{CompilerTest, list_content_as_sorted_names};
     use crate::compiler::util::{
@@ -2537,7 +2610,8 @@ mod test {
     };
     use crate::db::types::utils::validate_program_info;
     use crate::db::types::version::Version;
-    use std::collections::HashSet;
+    use std::collections::{BTreeMap, HashSet};
+    use std::time::{Duration, SystemTime};
 
     /// Tests that sccache's report is picked out of real `cargo build` output, that the
     /// diagnostics quoting the user's program are left out of it, and that a compilation
@@ -3141,5 +3215,68 @@ mod test {
         );
         // Unrelated file is ignored
         assert_eq!(decide("unrelated.txt", None), CleanupDecision::Ignore);
+    }
+
+    #[test]
+    fn cleanup_runs_immediately_then_on_interval_or_disk_pressure() {
+        assert!(should_run_cleanup(None, None));
+        assert!(!should_run_cleanup(
+            Some(CLEANUP_PRESSURE_INTERVAL - Duration::from_secs(1)),
+            Some(0.99)
+        ));
+        assert!(!should_run_cleanup(
+            Some(CLEANUP_PRESSURE_INTERVAL),
+            Some(THRESHOLD_COMPILATION_TARGET_CLEANUP - 0.01)
+        ));
+        assert!(should_run_cleanup(
+            Some(CLEANUP_PRESSURE_INTERVAL),
+            Some(THRESHOLD_COMPILATION_TARGET_CLEANUP)
+        ));
+        assert!(should_run_cleanup(Some(CLEANUP_INTERVAL), Some(0.1)));
+    }
+
+    /// Newly unused artifacts keep their first-seen clock across a failed
+    /// persist. Reloading the file each cycle was resetting that clock (#6791).
+    #[test]
+    fn cleanup_state_survives_a_failed_persist() {
+        let now = SystemTime::now();
+        let mut state = BTreeMap::new();
+        let found = HashSet::from(["feldera_pipe_new".to_string()]);
+        let in_use = HashSet::new();
+
+        reconcile_cleanup_state(&mut state, &found, &in_use, now);
+        assert_eq!(state.get("feldera_pipe_new").copied(), Some(now));
+
+        // Persist fails: the next cycle must not treat the artifact as new.
+        let later = now + Duration::from_secs(10);
+        reconcile_cleanup_state(&mut state, &found, &in_use, later);
+
+        assert_eq!(state.get("feldera_pipe_new").copied(), Some(now));
+        assert!(expired_artifact_names(&state, later).is_empty());
+
+        let after_retention = now + CLEANUP_RETENTION;
+        assert_eq!(
+            expired_artifact_names(&state, after_retention),
+            vec!["feldera_pipe_new".to_string()]
+        );
+    }
+
+    #[test]
+    fn cleanup_state_forgets_artifacts_back_in_use_or_gone() {
+        let now = SystemTime::now();
+        let mut state = BTreeMap::from([("feldera_pipe_old".to_string(), now - CLEANUP_RETENTION)]);
+
+        reconcile_cleanup_state(
+            &mut state,
+            &HashSet::from(["feldera_pipe_old".to_string()]),
+            &HashSet::from(["feldera_pipe_old".to_string()]),
+            now,
+        );
+        assert!(state.is_empty());
+
+        state.insert("feldera_pipe_gone".to_string(), now);
+        reconcile_cleanup_state(&mut state, &HashSet::new(), &HashSet::new(), now);
+
+        assert!(state.is_empty());
     }
 }
