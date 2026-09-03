@@ -72,6 +72,18 @@ import TabItem from '@theme/TabItem';
           Identity. See
           [Kafka input connector](/connectors/sources/kafka#how-to-write-connector-config) (#6886).
 
+        - The NATS input connector implements the authentication methods its
+          schema already declared: a bare `nkey` seed (Ed25519
+          challenge-response), `jwt` with the seed that signs the connection
+          nonce (decentralized/operator-mode auth with the JWT and seed as two
+          secrets rather than one `.creds` file), `token`, and
+          `user_and_password`. Previously only `credentials` took effect and
+          the rest were silently ignored; configuring more than one method is
+          now rejected. A new `tls` section in `connection_config` sets
+          `require_tls` and `root_certificates_file` for servers whose
+          certificates a private CA signs. See
+          [NATS input connector](/connectors/sources/nats).
+
         ## v0.337.0
 
         - Breaking change (SQL): comparing a `UUID` with a character or binary value
