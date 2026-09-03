@@ -1300,10 +1300,16 @@ fn committed_connector_input_does_not_spin_the_circuit() {
         DEFAULT_TIMEOUT_MS,
     )
     .expect("the backlog was never consumed after the transaction committed");
-    assert_eq!(
-        controller.inner.get_transaction_state(),
-        TransactionState::None
-    );
+
+    // The step that drains the backlog is not the one that ends the
+    // transaction: the circuit thread clears the state on a later pass, once
+    // it sees the commit finished. Waiting for that is not the same as
+    // asserting it, which raced the commit under load.
+    wait(
+        || controller.inner.get_transaction_state() == TransactionState::None,
+        DEFAULT_TIMEOUT_MS,
+    )
+    .expect("the transaction never finished committing");
 
     controller.stop().unwrap();
 }
