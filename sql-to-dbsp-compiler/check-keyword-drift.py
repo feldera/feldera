@@ -27,15 +27,21 @@ WORD = re.compile(r'"([A-Z_0-9-]+)"')
 KEYWORD_MARKER = "KEYWORDS:  anything in this list"
 
 # Four token names differ from the SQL text.  The lists use the text.
-TOKEN_TEXT = {"DEFAULT_": "DEFAULT", "SKIP_": "SKIP",
-              "SET_MINUS": "MINUS", "END_EXEC": "END-EXEC"}
+TOKEN_TEXT = {
+    "DEFAULT_": "DEFAULT",
+    "SKIP_": "SKIP",
+    "SET_MINUS": "MINUS",
+    "END_EXEC": "END-EXEC",
+}
 
 
 def fail(message: str) -> NoReturn:
     """Report a file that does not have the expected shape, and give up."""
     print(f"keyword check: {message}", file=sys.stderr)
-    print("The file format probably changed; this script needs an update.",
-          file=sys.stderr)
+    print(
+        "The file format probably changed; this script needs an update.",
+        file=sys.stderr,
+    )
     sys.exit(1)
 
 
@@ -92,7 +98,9 @@ def main() -> int:
         print(__doc__)
         return 0
     if len(sys.argv) != 2:
-        print(f"usage: {program} [-h][--help] CALCITE_SOURCE_DIRECTORY", file=sys.stderr)
+        print(
+            f"usage: {program} [-h][--help] CALCITE_SOURCE_DIRECTORY", file=sys.stderr
+        )
         return 1
 
     calcite = Path(sys.argv[1])
@@ -126,8 +134,10 @@ def main() -> int:
 
     for list_name, words in forgotten.items():
         print(f"{CONFIG}:")
-        print(f"    the list '{list_name}' is missing {len(words)} word(s) that "
-              f"{sources[list_name]} does not reserve:")
+        print(
+            f"    the list '{list_name}' is missing {len(words)} word(s) that "
+            f"{sources[list_name]} does not reserve:"
+        )
         print("    " + " ".join(words))
     print("The SQL compiler reserves each word above.  Add it to the list to allow it")
     print("as a name.  Comment it out to reserve it on purpose.")
