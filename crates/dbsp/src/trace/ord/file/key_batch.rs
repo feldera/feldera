@@ -273,6 +273,12 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    fn is_empty(&self) -> bool {
+        // `len_upper_bound` counts a (key, value) pair once per time for this batch
+        // type, so it can exceed the pair count, but it is zero exactly when the
+        // batch is empty.
+        self.len_upper_bound() == 0
+    }
     type Factories = FileKeyBatchFactories<K, T, R>;
     type Key = K;
     type Val = DynUnit;
@@ -289,12 +295,12 @@ where
     }
 
     #[inline]
-    fn key_count(&self) -> usize {
+    fn key_count_upper_bound(&self) -> usize {
         self.file.n_rows(0) as usize
     }
 
     #[inline]
-    fn len(&self) -> usize {
+    fn len_upper_bound(&self) -> usize {
         self.file.n_rows(1) as usize
     }
 
@@ -327,7 +333,7 @@ where
     where
         RG: Rng,
     {
-        let size = self.key_count();
+        let size = self.key_count_upper_bound();
         let mut cursor = self.cursor();
         if sample_size >= size {
             output.reserve(size);
@@ -710,7 +716,11 @@ where
         B: Batch<Key = K, Val = DynUnit, Time = T, R = R>,
         I: IntoIterator<Item = &'a B> + Clone,
     {
-        let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
+        let key_capacity = batches
+            .clone()
+            .into_iter()
+            .map(|b| b.key_count_upper_bound())
+            .sum();
         let key_filter = if collect_roaring_metadata() {
             let filter_plan = FilterPlan::from_batches(batches.clone());
             filter_plan.map_or_else(

@@ -369,7 +369,7 @@ fn main() {
             });
             let outputs = outputs.clone();
             joined.inspect(move |batch| {
-                outputs.fetch_add(batch.len() as u64, Ordering::Relaxed);
+                outputs.fetch_add(batch.len_upper_bound() as u64, Ordering::Relaxed);
             });
             joined.accumulate_integrate_trace();
             Ok((left_input, right_input))

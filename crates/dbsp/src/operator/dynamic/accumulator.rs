@@ -270,11 +270,12 @@ where
     }
 
     fn clock_start(&mut self, _scope: Scope) {
-        debug_assert!(self.state.is_empty());
+        // The state holds no batches at all, not merely batches that cancel.
+        debug_assert!(self.state.len_upper_bound() == 0);
     }
 
     fn clock_end(&mut self, _scope: Scope) {
-        debug_assert!(self.state.is_empty());
+        debug_assert!(self.state.len_upper_bound() == 0);
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -311,7 +312,7 @@ where
         // after the last one that was flushed, since the accumulator should not receive any
         // non-empty batches from the previous transaction at that point (in the top-level circuit).
         // This may not be the first batch in the transaction, but it's ok to admit some empty batches.
-        let len = batch.len();
+        let len = batch.len_upper_bound();
 
         if len > 0 {
             if self.enabled_during_current_transaction.is_none() {
@@ -331,7 +332,7 @@ where
             let mut spine = self.new_spine();
             std::mem::swap(&mut self.state, &mut spine);
 
-            self.output_batch_stats.add_batch(spine.len());
+            self.output_batch_stats.add_batch(spine.len_upper_bound());
             Some(spine)
         } else {
             None
