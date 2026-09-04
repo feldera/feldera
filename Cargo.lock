@@ -4201,6 +4201,7 @@ dependencies = [
  "csv",
  "csv-core",
  "dashmap 6.1.0",
+ "data-encoding",
  "datafusion",
  "dbsp",
  "dbsp_nexmark",
