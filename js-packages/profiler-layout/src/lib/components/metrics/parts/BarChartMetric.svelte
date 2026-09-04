@@ -14,10 +14,17 @@
      * maxima, flags and settings, whose column stays blank. `percentile` is where the total
      * stands, which `profiler-lib` computes; it drives the cell's heat-map background. */
     total?: TooltipCell | undefined
+    /** True for the current metric. */
+    current?: boolean
     expanded: boolean
     onToggle: () => void
   }
-  const { label, metricId, cells, total, expanded, onToggle }: Props = $props()
+  const { label, metricId, cells, total, current = false, expanded, onToggle }: Props = $props()
+
+  // The cells of a row are placed by the block's grid. To paint one unbroken band behind
+  // them, gaps included, they sit in a subgrid row that borrows the block's columns and
+  // carries the background itself. The per-worker histogram drawn below keeps the card's own background.
+  const band = $derived(current ? 'bg-[var(--current-bg)]' : '')
 
   /**
    * Collapsed-view preview style (avg/min/max numbers show in both):
@@ -112,52 +119,56 @@
   const showValues = true
 </script>
 
-<!-- Col 1: label -->
-<div class="col-span-1 flex min-w-0 items-baseline gap-3 pt-1">
-  <span class="truncate text-sm font-medium text-surface-900-100">{label}</span>
-  <Popover>
-    <div>{label}</div>
-    <div class="text-sm text-surface-700-300">{metricId}</div>
-  </Popover>
-</div>
-<!-- Cols 2-4: avg / min / max. Always rendered (same grid slots), opacity-driven visibility so
-     collapse/expand doesn't reflow the grid mid-transition. -->
-{#each [display.avg, display.min, display.max] as stat}
-<div
-  class="value-cell text-right text-sm tabular-nums text-surface-900-100 {showValues ? 'opacity-100' : 'opacity-0'}"
-  aria-hidden={!showValues}
->
-  {stat.toString()}
-</div>
-{/each}
-<!-- Col 5: total, blank for metrics that do not add up. Its background is a heat map over the
-     standing `profiler-lib` computed: the largest saturates to `--bar-high`, the smallest stays
-     at `--bar-low`. Past the top of that range the fill is dark enough that the text turns
-     white to stay readable. -->
-<div
-  class="value-cell rounded-sm px-1 text-right text-sm tabular-nums text-surface-900-100 {showValues ? 'opacity-100' : 'opacity-0'}"
-  style:background-color={total ? heatColor(total.percentile / 100) : 'transparent'}
-  style:color={total ? heatTextColor(total.percentile / 100) : undefined}
-  aria-hidden={!showValues}
->
-  {total ? total.value.toString() : ''}
-</div>
-<!-- Col 5: skew toggle — always present, always pinned to the top-right -->
-<div class="flex items-center justify-end">
-  <button
-    type="button"
-    onclick={onToggle}
-    class="flex items-center gap-1 text-sm"
+<!-- One grid row: the six cells, on a subgrid so the band behind them is unbroken. -->
+<div class="col-span-6 grid grid-cols-subgrid items-baseline {band}" aria-current={current ? 'true' : undefined}>
+  <!-- Col 1: label -->
+  <div class="col-span-1 flex min-w-0 items-baseline gap-3 pt-1">
+    <span class="truncate text-sm text-surface-900-100 {current ? 'font-semibold' : 'font-medium'}"
+    >{label}</span>
+    <Popover>
+      <div>{label}</div>
+      <div class="text-sm text-surface-700-300">{metricId}</div>
+    </Popover>
+  </div>
+  <!-- Cols 2-4: avg / min / max. Always rendered (same grid slots), opacity-driven visibility so
+       collapse/expand doesn't reflow the grid mid-transition. -->
+  {#each [display.avg, display.min, display.max] as stat}
+  <div
+    class="value-cell text-right text-sm tabular-nums text-surface-900-100 {showValues ? 'opacity-100' : 'opacity-0'}"
+    aria-hidden={!showValues}
   >
-    <span class="tabular-nums text-nowrap" style:color={skewTextColor(skew)}>
-      Skew {skew.toFixed(0)}%
-    </span>
-    <span
-      class="fd fd-chevron-down text-[16px] chevron text-surface-600-400"
-      class:rotate-180={expanded}
-      aria-hidden="true"
-    ></span>
-  </button>
+    {stat.toString()}
+  </div>
+  {/each}
+  <!-- Col 5: total, blank for metrics that do not add up. Its background is a heat map over the
+       standing `profiler-lib` computed: the largest saturates to `--bar-high`, the smallest stays
+       at `--bar-low`. Past the top of that range the fill is dark enough that the text turns
+       white to stay readable. -->
+  <div
+    class="value-cell rounded-sm px-1 text-right text-sm tabular-nums text-surface-900-100 {showValues ? 'opacity-100' : 'opacity-0'}"
+    style:background-color={total ? heatColor(total.percentile / 100) : 'transparent'}
+    style:color={total ? heatTextColor(total.percentile / 100) : undefined}
+    aria-hidden={!showValues}
+  >
+    {total ? total.value.toString() : ''}
+  </div>
+  <!-- Col 5: skew toggle — always present, always pinned to the top-right -->
+  <div class="flex items-center justify-end">
+    <button
+      type="button"
+      onclick={onToggle}
+      class="flex items-center gap-1 text-sm"
+    >
+      <span class="tabular-nums text-nowrap" style:color={skewTextColor(skew)}>
+        Skew {skew.toFixed(0)}%
+      </span>
+      <span
+        class="fd fd-chevron-down text-[16px] chevron text-surface-600-400"
+        class:rotate-180={expanded}
+        aria-hidden="true"
+      ></span>
+    </button>
+  </div>
 </div>
 
 <!-- Bar chart row spans full block width; container height + each bar height animate.

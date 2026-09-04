@@ -45,21 +45,27 @@ export function buildBlocks(attrs: NodeAttributes, showAdvanced: boolean): Rende
     })
   }
 
-  // Sort metrics inside each block by their displayed label so users can scan a long block
-  // without re-reading the whole thing. `compareMetrics` is the order the metric selector uses
-  // as well, so a metric sits in the same relative position in both.
+  // Sort metrics inside each block by their displayed label, placing the current metric first.
+  // `compareMetrics` is the order the metric selector uses as well, so a metric sits in the same
+  // relative position in both.
   for (const entries of byCategory.values()) {
-    entries.sort((a, b) =>
-      compareMetrics(
-        { id: a.row.metric, label: a.label },
-        { id: b.row.metric, label: b.label }
-      )
+    entries.sort(
+      (a, b) =>
+        Number(b.row.isCurrentMetric) - Number(a.row.isCurrentMetric) ||
+        compareMetrics({ id: a.row.metric, label: a.label }, { id: b.row.metric, label: b.label })
     )
   }
 
   const out: RenderableBlock[] = []
   for (const [category, entries] of byCategory) {
     out.push({ id: `category-${slugify(category)}`, title: category, entries })
+  }
+  // Its block leads the panel, so the current metric's value is the first on screen.
+  const holdsCurrent = out.findIndex((block) =>
+    block.entries.some((entry) => entry.row.isCurrentMetric)
+  )
+  if (holdsCurrent > 0) {
+    out.unshift(...out.splice(holdsCurrent, 1))
   }
   return out
 }

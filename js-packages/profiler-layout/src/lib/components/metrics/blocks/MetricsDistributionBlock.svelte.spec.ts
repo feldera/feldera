@@ -8,7 +8,7 @@
  */
 
 import { CountValue, PercentValue, type TooltipRow } from 'profiler-lib'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { render } from 'vitest-browser-svelte'
 import type { RenderableMetric } from '../dispatch'
 import MetricsDistributionBlock from './MetricsDistributionBlock.svelte'
@@ -170,5 +170,100 @@ describe('MetricsDistributionBlock total column', () => {
     })
     // The rate's Avg is the pooled 2/6, not the mean of the two rates.
     expect(texts(container)).toEqual(['20', '10', '30', '40', '33.3%', '25.0%', '50.0%', ''])
+  })
+})
+
+// Issue 6990: the diagram is colored by one metric, and reading its value meant hunting for the
+// row. That row is banded so it stands out; `dispatch` also floats it to the top.
+//
+// The band's color comes from a theme token through a custom property. Asserting the class
+// string cannot catch a typo in the property name or a token leaving the theme, so these tests
+// load the real stylesheets and read the color the browser resolved.
+describe('MetricsDistributionBlock selected metric', () => {
+  const rows = [
+    entry('records', { cells: cells([new CountValue(10)]), isCurrentMetric: true }),
+    entry('bytes', { cells: cells([new CountValue(20)]) })
+  ]
+
+  const themed = async (theme: 'light' | 'dark') => {
+    await import('../../../../routes/layout.css')
+    await import('feldera-theme/feldera-modern.css')
+    document.documentElement.dataset.theme = 'feldera-modern-theme'
+    document.documentElement.classList.toggle('dark', theme === 'dark')
+    return render(MetricsDistributionBlock, {
+      props: { id: 'b', title: 'State', entries: rows }
+    })
+  }
+
+  afterEach(() => {
+    document.documentElement.classList.remove('dark')
+    delete document.documentElement.dataset.theme
+  })
+
+  // One subgrid element per row, marked for assistive technology as the current one.
+  const rowElements = (container: HTMLElement) =>
+    Array.from(container.querySelectorAll('.metrics-block > div > div > div')).filter((el) =>
+      el.className.includes('grid-cols-subgrid')
+    ) as HTMLElement[]
+
+  it('marks the current metric and no other', async () => {
+    const { container } = await themed('light')
+    expect(
+      rowElements(container).map((row) => [
+        row.textContent?.trim().startsWith('records') ? 'records' : 'bytes',
+        row.getAttribute('aria-current')
+      ])
+    ).toEqual([
+      ['records', 'true'],
+      ['bytes', null]
+    ])
+  })
+
+  it('paints the current row in the theme blue and leaves the rest unpainted', async () => {
+    const { container } = await themed('light')
+    const [selected, other] = rowElements(container)
+    // tertiary-50, the palette's palest blue; primary is pink in this theme.
+    expect(getComputedStyle(selected!).backgroundColor).toBe('oklch(0.9535 0.02 274.08)')
+    expect(getComputedStyle(other!).backgroundColor).toBe('rgba(0, 0, 0, 0)')
+  })
+
+  it('paints it a dark blue in dark mode', async () => {
+    const { container } = await themed('dark')
+    const [selected] = rowElements(container)
+    expect(getComputedStyle(selected!).backgroundColor).toBe('oklch(0.3449 0.13 266.38)')
+  })
+
+  it('bands the row in one piece, its columns lining up with the header', async () => {
+    const { container } = await themed('light')
+    const [selected] = rowElements(container)
+    // A subgrid row borrows the block's columns, so one background covers the cells and the gaps
+    // between them, and the cells stay under their headers.
+    expect(getComputedStyle(selected!).display).toBe('grid')
+    const header = Array.from(container.querySelectorAll('.sticky')).find(
+      (h) => h.textContent?.trim() === 'Total'
+    ) as HTMLElement
+    const totalCell = selected!.querySelectorAll('.value-cell')[3] as HTMLElement
+    expect(totalCell.getBoundingClientRect().left).toBeCloseTo(
+      header.getBoundingClientRect().left,
+      0
+    )
+  })
+
+  it('leaves the histogram under the current row uncolored', async () => {
+    const { container } = await themed('light')
+    // The bars carry their own scale; a band behind them would compete with it.
+    for (const chart of container.querySelectorAll('.bar-chart')) {
+      expect(getComputedStyle(chart).backgroundColor).toBe('rgba(0, 0, 0, 0)')
+    }
+  })
+
+  it('paints nothing when no metric is current', async () => {
+    document.documentElement.dataset.theme = 'feldera-modern-theme'
+    const { container } = render(MetricsDistributionBlock, {
+      props: { id: 'b', title: 'State', entries: [rows[1]!] }
+    })
+    const [only] = rowElements(container)
+    expect(only!.getAttribute('aria-current')).toBeNull()
+    expect(getComputedStyle(only!).backgroundColor).toBe('rgba(0, 0, 0, 0)')
   })
 })

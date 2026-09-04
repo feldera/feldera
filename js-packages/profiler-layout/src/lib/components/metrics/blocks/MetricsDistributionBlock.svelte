@@ -59,6 +59,7 @@
         metricId={entry.row.metric}
         cells={entry.row.cells}
         total={entry.row.total}
+        current={entry.row.isCurrentMetric}
         expanded={isExpanded(entry)}
         onToggle={() => toggle(entry)}
       />
@@ -82,6 +83,7 @@
     --skew-low: var(--color-surface-600);
     --skew-high: var(--color-error-500);
     --header-bg: white;
+    --current-bg: var(--color-tertiary-50);
   }
   :global(.dark) .metrics-block,
   :global(body.dark) .metrics-block {
@@ -89,5 +91,6 @@
     --bar-high: var(--color-error-700);
     --skew-low: var(--color-surface-400);
     --header-bg: var(--color-dark);
+    --current-bg: var(--color-tertiary-950);
   }
 </style>
