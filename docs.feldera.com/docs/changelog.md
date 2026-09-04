@@ -14,6 +14,25 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        ## v0.344.0
+
+        - The Delta Lake and Iceberg input connectors read a `VARIANT` column
+          stored in the Parquet variant binary encoding, which is how Delta
+          Lake's `variant` type stores one. Values keep the types the writer
+          encoded, so a date inside a `VARIANT` arrives as a date rather than
+          as a string. A `VARIANT` column stored as JSON text still reads as
+          before, and the two can sit side by side in one table.
+
+        - Breaking change (Delta Lake output connector): a `VARIANT` column is
+          now written as the Delta `variant` type rather than as JSON text in a
+          `string` column, so values keep the types they have in Feldera. Set
+          `variant_encoding` to `json_string` for the previous encoding, which
+          is also what appending to a table whose `VARIANT` column is already a
+          `string` requires. See
+          [VARIANT](/connectors/sinks/delta#variant).
+
+        ## v0.343.0
+
         - The `bloom_false_positive_rate` storage setting now applies when a
           Bloom filter is read as well as when it is written.  Lowering it and
           restarting a pipeline reduces Bloom filter memory without rewriting
@@ -24,6 +43,8 @@ import TabItem from '@theme/TabItem';
           a checkpoint written by this or a later version cannot be resumed by
           an earlier version.  Checkpoints written by earlier versions continue
           to be read.
+
+        ## v0.340.0
 
         - Output connectors can be paused, like input connectors: a paused
           output connector discards the output of its view instead of writing it
@@ -49,21 +70,6 @@ import TabItem from '@theme/TabItem';
           token, which `fda` reads once per invocation; `feldera/oidc-auth-action`
           v3.0.1 and later export that variable. For a command that prints a
           token, pass its output as `--auth "$(...)"`.
-
-        - The Delta Lake and Iceberg input connectors read a `VARIANT` column
-          stored in the Parquet variant binary encoding, which is how Delta
-          Lake's `variant` type stores one. Values keep the types the writer
-          encoded, so a date inside a `VARIANT` arrives as a date rather than
-          as a string. A `VARIANT` column stored as JSON text still reads as
-          before, and the two can sit side by side in one table.
-
-        - Breaking change (Delta Lake output connector): a `VARIANT` column is
-          now written as the Delta `variant` type rather than as JSON text in a
-          `string` column, so values keep the types they have in Feldera. Set
-          `variant_encoding` to `json_string` for the previous encoding, which
-          is also what appending to a table whose `VARIANT` column is already a
-          `string` requires. See
-          [VARIANT](/connectors/sinks/delta#variant).
 
         ## v0.337.0
 
