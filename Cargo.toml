@@ -127,6 +127,7 @@ crossbeam = "0.8.4"
 crossbeam-utils = "0.8.6"
 csv = "1.2.2"
 csv-core = "0.1.10"
+data-encoding = "2.9.0"
 dashmap = "6.1.0"
 datafusion = "53.1"
 dbsp = { path = "crates/dbsp", version = "0.346.0" }

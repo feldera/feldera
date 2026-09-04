@@ -1,8 +1,49 @@
 use anyhow::{Result as AnyResult, anyhow, bail};
 use async_nats::jetstream::consumer as nats;
+use aws_lc_rs::signature::Ed25519KeyPair;
 use feldera_types::transport::nats as cfg;
 use std::sync::Arc;
 use std::time::Duration;
+
+/// Decodes a NATS seed ("SU..." for users) to the raw 32-byte Ed25519 seed.
+///
+/// The container format — RFC 4648 base32 without padding over two prefix
+/// bytes, the 32-byte seed, and a trailing little-endian CRC-16/XMODEM — is
+/// data framing, not cryptography; decoding it here lets the Ed25519 signing
+/// itself go through aws-lc-rs.
+fn decode_seed(seed: &str) -> AnyResult<[u8; 32]> {
+    let raw = data_encoding::BASE32_NOPAD
+        .decode(seed.as_bytes())
+        .map_err(|e| anyhow!("invalid NATS nkey seed: {e}"))?;
+    // Two prefix bytes + 32-byte seed + two CRC bytes.
+    if raw.len() != 36 {
+        bail!("invalid NATS nkey seed: decoded to {} bytes, expected 36", raw.len());
+    }
+    let (payload, crc) = raw.split_at(raw.len() - 2);
+    if crc16_xmodem(payload) != u16::from_le_bytes([crc[0], crc[1]]) {
+        bail!("invalid NATS nkey seed: checksum mismatch");
+    }
+    // The seed prefix (18 << 3) occupies the top five bits of the first
+    // byte; the remaining bits carry the public-key prefix, which does not
+    // matter for signing.
+    if payload[0] & 0xF8 != 0x90 {
+        bail!("invalid NATS nkey seed: not a seed");
+    }
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&payload[2..34]);
+    Ok(out)
+}
+
+fn crc16_xmodem(data: &[u8]) -> u16 {
+    let mut crc: u16 = 0;
+    for &byte in data {
+        crc ^= (byte as u16) << 8;
+        for _ in 0..8 {
+            crc = if crc & 0x8000 != 0 { (crc << 1) ^ 0x1021 } else { crc << 1 };
+        }
+    }
+    crc
+}
 
 pub async fn translate_connect_options(
     config: &cfg::ConnectOptions,
@@ -68,16 +109,24 @@ async fn apply_auth(
                 "NATS `jwt` authentication requires `nkey` (the seed that signs the connection nonce)"
             );
         };
+        // The Ed25519 signing goes through aws-lc-rs so that FIPS builds
+        // (`--features fips`) execute only AWS-LC primitives on this path
+        // (EdDSA is FIPS 186-5, included in the AWS-LC FIPS module).
+        let seed = decode_seed(seed)?;
         let key_pair = Arc::new(
-            nkeys::KeyPair::from_seed(seed).map_err(|e| anyhow!("invalid NATS nkey seed: {e}"))?,
+            Ed25519KeyPair::from_seed_unchecked(&seed)
+                .map_err(|e| anyhow!("invalid NATS nkey seed: {e}"))?,
         );
         return Ok(options.jwt(jwt.clone(), move |nonce| {
             let key_pair = key_pair.clone();
-            async move { key_pair.sign(&nonce).map_err(async_nats::AuthError::new) }
+            async move { Ok(key_pair.sign(&nonce).as_ref().to_vec()) }
         }));
     }
 
     if let Some(seed) = auth.nkey.as_ref() {
+        // Validated here for a precise error; the nonce signing itself
+        // happens inside async-nats (which uses the nkeys crate).
+        decode_seed(seed)?;
         return Ok(options.nkey(seed.clone()));
     }
 
@@ -132,5 +181,35 @@ fn translate_deliver_policy(p: &cfg::DeliverPolicy) -> nats::DeliverPolicy {
             start_time: *start_time,
         },
         cfg::DeliverPolicy::LastPerSubject => nats::DeliverPolicy::LastPerSubject,
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::decode_seed;
+
+    #[test]
+    fn decode_seed_roundtrip() {
+        // A seed framing the 32-byte sequence 00..1f, generated with the
+        // reference nkeys encoding (user public prefix).
+        let seed = "SUAAAAICAMCAKBQHBAEQUCYMBUHA6EARCIJRIFIWC4MBSGQ3DQOR4H776Y";
+        let raw = decode_seed(seed).unwrap();
+        assert_eq!(raw, core::array::from_fn(|i| i as u8));
+        // Agrees with the nkeys crate's own decoding: same seed, same key.
+        let ours = aws_lc_rs::signature::Ed25519KeyPair::from_seed_unchecked(&raw).unwrap();
+        let theirs = nkeys::KeyPair::from_seed(seed).unwrap();
+        let msg = b"nonce";
+        theirs
+            .verify(msg, ours.sign(msg).as_ref())
+            .expect("aws-lc-rs signature must verify under the nkeys-derived public key");
+    }
+
+    #[test]
+    fn decode_seed_rejects() {
+        assert!(decode_seed("not base32!").is_err());
+        assert!(decode_seed("SUAAAAICAMCAKBQHBAEQUCYMBUHA6EARCIJRIFIWC4MBSGQ3DQOR4H777Y").is_err()); // bad crc
+        // A public key (prefix 'U', not a seed) must be rejected.
+        let public = nkeys::KeyPair::new_user().public_key();
+        assert!(decode_seed(&public).is_err());
     }
 }
