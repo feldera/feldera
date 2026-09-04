@@ -423,6 +423,40 @@ public class RecursiveTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue7038() {
+        // Removing unused fields needs one round per operator around the recursion
+        var ccs = this.getCCS("""
+                CREATE TABLE l1(k INT NOT NULL, v1 VARCHAR);
+                CREATE TABLE edge(src INT NOT NULL, dst INT NOT NULL);
+                DECLARE RECURSIVE VIEW reach(src INT NOT NULL, dst INT NOT NULL, v1 VARCHAR);
+                CREATE VIEW reach AS
+                SELECT src, dst, CAST(NULL AS VARCHAR) AS v1 FROM edge
+                UNION
+                SELECT r.src, e.dst, l1.v1 FROM reach r
+                LEFT JOIN l1 ON r.dst = l1.k
+                JOIN edge e ON r.dst = e.src;""");
+        // Results validated using postgres:
+        // WITH RECURSIVE edge(src, dst) AS (VALUES (1, 2), (2, 3), (3, 4)),
+        //   l1(k, v1) AS (VALUES (2, 'A'), (3, 'B')),
+        //   reach(src, dst, v1) AS (
+        //     SELECT src, dst, NULL::text FROM edge
+        //     UNION
+        //     SELECT r.src, e.dst, l1.v1 FROM reach r LEFT JOIN l1 ON r.dst = l1.k JOIN edge e ON r.dst = e.src)
+        // SELECT * FROM reach ORDER BY src, dst, v1;
+        ccs.stepWeightOne("""
+                INSERT INTO edge VALUES (1, 2), (2, 3), (3, 4);
+                INSERT INTO l1 VALUES (2, 'A'), (3, 'B');""", """
+                 src | dst | v1
+                ----------------
+                 1   | 2   |NULL
+                 1   | 3   | A
+                 1   | 4   | B
+                 2   | 3   |NULL
+                 2   | 4   | B
+                 3   | 4   |NULL""");
+    }
+
+    @Test
     public void issue7039() {
         var ccs = this.getCCS("""
                 CREATE TABLE l1(k INT NOT NULL, v1 VARCHAR);

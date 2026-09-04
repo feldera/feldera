@@ -123,6 +123,11 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         return this.viewByName.get(name);
     }
 
+    /** The number of operators in this nested circuit. */
+    public int size() {
+        return this.allOperators.size();
+    }
+
     @Override
     public Iterable<DBSPOperator> getAllOperators() {
         return this.allOperators;
