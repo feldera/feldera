@@ -95,6 +95,11 @@ public class RemoveIdentityOperators extends Passes {
                 return false;
             if (!expression.getResultType().is(DBSPTypeRawTuple.class))
                 return false;
+            DBSPTypeRawTuple result = expression.getResultType().to(DBSPTypeRawTuple.class);
+            if (result.size() != 2 ||
+                    !raw.tupFields[0].deref().sameType(result.tupFields[0]) ||
+                    !raw.tupFields[1].deref().sameType(result.tupFields[1]))
+                return false;
             DBSPVariablePath var = paramType.var();
             DBSPClosureExpression id = new DBSPRawTupleExpression(
                     new DBSPTupleExpression(DBSPTypeTupleBase.flatten(var.field(0).deref()), false),
@@ -112,6 +117,9 @@ public class RemoveIdentityOperators extends Passes {
             return false;
         DBSPSimpleOperator simple = operator.to(DBSPSimpleOperator.class);
         if (simple.function == null || !simple.function.is(DBSPClosureExpression.class))
+            return false;
+        DBSPUnaryOperator unary = operator.to(DBSPUnaryOperator.class);
+        if (!unary.input().outputType().sameType(unary.outputType()))
             return false;
         return isIdentityFunction(simple.getClosureFunction());
     }
@@ -171,7 +179,7 @@ public class RemoveIdentityOperators extends Passes {
                 return;
             OutputPort input = operator.input();
             this.candidates.add(new Candidate(operator, input,
-                    this.getGCKinds(operator.outputPort()), 
+                    this.getGCKinds(operator.outputPort()),
                     this.getGCKinds(input)));
         }
 

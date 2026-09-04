@@ -423,6 +423,39 @@ public class RecursiveTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue7039() {
+        var ccs = this.getCCS("""
+                CREATE TABLE l1(k INT NOT NULL, v1 VARCHAR);
+                CREATE TABLE edge(src INT NOT NULL, dst INT NOT NULL);
+                DECLARE RECURSIVE VIEW reach(src INT NOT NULL, dst INT NOT NULL);
+                CREATE VIEW reach AS
+                SELECT src, dst FROM edge
+                UNION
+                SELECT r.src, e.dst FROM reach r
+                LEFT JOIN l1 ON r.dst = l1.k
+                JOIN edge e ON r.dst = e.src;""");
+        // Results validated using postgres:
+        // WITH RECURSIVE edge(src, dst) AS (VALUES (1, 2), (2, 3), (3, 4)),
+        //   l1(k, v1) AS (VALUES (2, 'A')),
+        //   reach(src, dst) AS (
+        //     SELECT src, dst FROM edge
+        //     UNION
+        //     SELECT r.src, e.dst FROM reach r LEFT JOIN l1 ON r.dst = l1.k JOIN edge e ON r.dst = e.src)
+        // SELECT * FROM reach ORDER BY src, dst;
+        ccs.stepWeightOne("""
+                INSERT INTO edge VALUES (1, 2), (2, 3), (3, 4);
+                INSERT INTO l1 VALUES (2, 'A');""", """
+                 src | dst
+                -----------
+                 1   | 2
+                 1   | 3
+                 1   | 4
+                 2   | 3
+                 2   | 4
+                 3   | 4""");
+    }
+
+    @Test
     public void testRecursive() {
         String sql = """
                 DECLARE RECURSIVE VIEW V(v INT);
