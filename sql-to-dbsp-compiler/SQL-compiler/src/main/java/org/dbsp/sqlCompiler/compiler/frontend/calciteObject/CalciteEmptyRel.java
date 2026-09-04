@@ -4,6 +4,7 @@ import org.apache.calcite.rel.RelNode;
 import org.dbsp.util.IIndentStream;
 
 import java.util.Map;
+import java.util.List;
 
 /** Represents a CalciteObject that does not exist.
  * Similar to {@link CalciteObject#EMPTY}, but this is a subclass of {@link CalciteRelNode}. */
@@ -50,5 +51,10 @@ public class CalciteEmptyRel extends CalciteRelNode {
     @Override
     public long getId() {
         return 0;
+    }
+
+    @Override
+    public List<RelNode> getRelNodes() {
+        return List.of();
     }
 }

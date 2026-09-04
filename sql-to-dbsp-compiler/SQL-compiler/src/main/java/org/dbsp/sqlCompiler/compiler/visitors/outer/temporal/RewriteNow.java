@@ -182,7 +182,10 @@ public class RewriteNow extends CircuitCloneVisitor {
         super(compiler, false);
     }
 
-    DBSPSimpleOperator createJoin(DBSPSimpleOperator input, DBSPUnaryOperator operator) {
+    /** Join {@code input} with the NOW stream; {@code operator} is the operator being rewritten,
+     * and {@code nowCall} the NOW() call that requires the join. */
+    DBSPSimpleOperator createJoin(DBSPSimpleOperator input, DBSPUnaryOperator operator,
+                                  DBSPExpression nowCall) {
         DBSPType inputType = input.getOutputZSetElementType();
         DBSPVariablePath var = inputType.ref().var();
         DBSPExpression indexFunction = new DBSPRawTupleExpression(
@@ -204,7 +207,10 @@ public class RewriteNow extends CircuitCloneVisitor {
         DBSPExpression joinFunction = new DBSPTupleExpression(fields, false)
                 .closure(key, left, right);
         Utilities.enforce(nowIndexed != null);
-        DBSPSimpleOperator result = new DBSPStreamJoinOperator(operator.getRelNode(), joinType,
+        // The join has no SQL counterpart; use the NOW() source code position
+        CalciteRelNode joinNode = operator.getRelNode().copy();
+        joinNode.addSourcePositions(List.of(nowCall.getSourcePosition()));
+        DBSPSimpleOperator result = new DBSPStreamJoinOperator(joinNode, joinType,
                 joinFunction, operator.isMultiset, index.outputPort(), nowIndexed.outputPort(), false);
         this.addOperator(result);
         return result;
@@ -225,7 +231,8 @@ public class RewriteNow extends CircuitCloneVisitor {
         if (cn.found()) {
             OutputPort input = this.mapped(operator.input());
             this.warnExpensive(cn.nowExpression);
-            DBSPSimpleOperator join = this.createJoin(input.simpleNode(), operator);
+            DBSPSimpleOperator join = this.createJoin(
+                    input.simpleNode(), operator, Objects.requireNonNull(cn.nowExpression));
             RewriteNowClosure rn = new RewriteNowClosure(this.compiler());
             function = rn.apply(function).to(DBSPExpression.class);
             DBSPSimpleOperator result = new DBSPMapOperator(
@@ -451,9 +458,12 @@ public class RewriteNow extends CircuitCloneVisitor {
 
         if (leftOver.is(NonTemporalFilter.class)) {
             // Implement leftover as a join
-            DBSPSimpleOperator join = this.createJoin(result, operator);
-            RewriteNowClosure rn = new RewriteNowClosure(this.compiler());
             DBSPExpression filterBody = leftOver.to(NonTemporalFilter.class).expression().wrapBoolIfNeeded();
+            ContainsNow cn = new ContainsNow(this.compiler(), true);
+            cn.apply(filterBody);
+            DBSPSimpleOperator join = this.createJoin(
+                    result, operator, Objects.requireNonNull(cn.nowExpression));
+            RewriteNowClosure rn = new RewriteNowClosure(this.compiler());
             this.warnExpensive(filterBody);
             function = filterBody.closure(function.parameters);
             function = rn.apply(function).to(DBSPClosureExpression.class);
