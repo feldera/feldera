@@ -16,11 +16,83 @@ import {
     SimpleNode,
     StringValue,
     TimeValue,
+    compareMetrics,
+    measurementLabel,
     totalShare,
     type JsonProfiles
 } from './profile.js'
 import type { Dataflow } from './dataflow.js'
 import { NumericRange, Option } from './util.js'
+
+// Issue 6991: the metric selector showed `spine_storage_size_bytes` while the table of values
+// showed "Spine storage size bytes". One helper now names a metric for every place on screen.
+describe('measurementLabel', () => {
+    it('spells out a metric id', () => {
+        expect(measurementLabel('spine_storage_size_bytes')).toBe('Spine storage size bytes')
+        expect(measurementLabel('runtime_percent')).toBe('Runtime percent')
+    })
+
+    it('spells out the parts of a composite metric', () => {
+        // Suffixes are joined with a dot, and labels the runtime attaches carry a colon.
+        expect(measurementLabel('input_batches_stats.min_size')).toBe('Input batches stats min size')
+        expect(measurementLabel('completed_merges.slot:0.steps')).toBe('Completed merges slot:0 steps')
+    })
+
+    it('leaves a legacy name readable', () => {
+        // Legacy ids are spelled with spaces and slashes already.
+        expect(measurementLabel('input batches/min size')).toBe('Input batches/min size')
+        expect(measurementLabel('time%')).toBe('Time%')
+    })
+
+    it('returns the id when there is nothing to spell out', () => {
+        expect(measurementLabel('')).toBe('')
+        expect(measurementLabel('_')).toBe('_')
+    })
+})
+
+// What the transformation cannot know, pinned so a change to it is deliberate. The runtime
+// attaches labels as `key:value` pairs joined with dots (`slot` and `input` today, both numeric),
+// and the label spells every `_` and `.` as a space.
+describe('measurementLabel on names it cannot parse', () => {
+    it('spells out an underscore inside a label value too', () => {
+        // Nothing in the id says which underscores separate words and which belong to a value.
+        expect(measurementLabel('completed_merges.endpoint:kafka_input.steps'))
+            .toBe('Completed merges endpoint:kafka input steps')
+    })
+
+    it('spells two different ids the same way', () => {
+        // `_` and `.` both become spaces, so ids that differ only in their separator collide.
+        // Selection travels by id, so the two stay distinct everywhere but on screen.
+        expect(measurementLabel('a_b')).toBe(measurementLabel('a.b'))
+    })
+})
+
+describe('compareMetrics', () => {
+    const metric = (id: string) => ({ id, label: measurementLabel(id) })
+    const order = (ids: string[]) => ids.map(metric).sort(compareMetrics).map((m) => m.id)
+
+    it('reads digit runs as numbers', () => {
+        expect(order([
+            'loose_batches_count.slot:10',
+            'loose_batches_count.slot:2',
+            'loose_batches_count.slot:1'
+        ])).toEqual([
+            'loose_batches_count.slot:1',
+            'loose_batches_count.slot:2',
+            'loose_batches_count.slot:10'
+        ])
+    })
+
+    it('breaks a tie on the id, so ids that spell one label still have a fixed order', () => {
+        // Which of the two leads is the collator's business; that the answer does not depend on
+        // the order they arrived in is what a list needs.
+        expect(order(['a.b', 'a_b'])).toEqual(order(['a_b', 'a.b']))
+    })
+
+    it('ignores case, as the tables do', () => {
+        expect(order(['beta_count', 'Alpha_count'])).toEqual(['Alpha_count', 'beta_count'])
+    })
+})
 
 describe('CircuitProfile.isTop', () => {
     it('recognises the toplevel node by the parsed root id', () => {

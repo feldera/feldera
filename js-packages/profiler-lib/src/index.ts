@@ -15,6 +15,8 @@ export {
 export {
     measurementCategory,
     measurementDescription,
+    measurementLabel,
+    compareMetrics,
     CircuitProfile,
     PropertyValue,
     MissingValue,

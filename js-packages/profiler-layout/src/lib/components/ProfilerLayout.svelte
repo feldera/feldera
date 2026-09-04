@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Select } from 'common-ui'
+  import { measurementLabel } from 'profiler-lib'
   import type {
     Dataflow,
     JsonProfiles,
@@ -65,7 +66,9 @@
       tooltipData = data.match({
         some: (topNodes) => ({
           genericTable: {
-            header: `Nodes with highest values for the metric "${selectedMetricId}"`,
+            header: `Nodes with highest values for the metric "${measurementLabel(
+              selectedMetricId
+            )}"`,
             columns: ['Node', 'Value', 'Operation'],
             rows: topNodes.map((n) => ({
               stub: { text: n.nodeId, onclick: () => profilerDiagram?.search(n.nodeId) },

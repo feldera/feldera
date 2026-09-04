@@ -14,6 +14,7 @@
     useShortcut
   } from 'common-ui'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
+  import { measurementLabel } from 'profiler-lib'
   import type {
     Dataflow,
     JsonProfiles,
@@ -184,7 +185,7 @@
       tooltipData = data.match({
         some: (topNodes) => ({
           genericTable: {
-            header: `Nodes with highest values for "${selectedMetricId}"`,
+            header: `Nodes with highest values for "${measurementLabel(selectedMetricId)}"`,
             columns: ['Node', 'Value', 'Operation'],
             rows: topNodes.map((n) => ({
               stub: { text: n.nodeId, onclick: () => profilerDiagram?.search(n.nodeId) },

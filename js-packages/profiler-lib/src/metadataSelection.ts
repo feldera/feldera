@@ -1,7 +1,7 @@
 // Selector tool to decide which circuit metadata to use for visualizations
 
 import { SubList } from "./util.js";
-import { CircuitProfile } from "./profile.js";
+import { CircuitProfile, compareMetrics, measurementLabel } from "./profile.js";
 import type { ProfilerCallbacks, MetricOption, WorkerOption } from "./profiler.js";
 
 /** Describes which metadata from a circuit to display. */
@@ -63,10 +63,11 @@ export class MetadataSelector {
     }
 
     notifyMetricsChanged() {
-        const metrics: MetricOption[] = Array.from(this.allMetrics).sort().map(metric => ({
-            id: metric,
-            label: metric
-        }));
+        // Ordered the way the metrics tables order their rows: by the name shown, and by id
+        // where two ids spell the same name.
+        const metrics: MetricOption[] = Array.from(this.allMetrics)
+            .map(metric => ({ id: metric, label: measurementLabel(metric) }))
+            .sort(compareMetrics);
         this.callbacks.onMetricsChanged(metrics, this.selectedMetric);
     }
 
