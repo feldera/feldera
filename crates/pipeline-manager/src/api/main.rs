@@ -2,7 +2,7 @@ use crate::api::demo::{Demo, read_demos_from_directories};
 use crate::api::endpoints;
 use crate::api::support_data_collector::SupportDataCollector;
 use crate::auth::{IssuerJwkCache, JwkCache};
-use crate::config::{ApiServerConfig, CommonConfig};
+use crate::config::{ApiServerConfig, BasePath, CommonConfig};
 use crate::db::probe::DbProbe;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::error::ManagerError;
@@ -26,7 +26,9 @@ use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
 use anyhow::Result as AnyResult;
 use futures_util::FutureExt;
+use std::collections::HashMap;
 use std::io::Write;
+use std::sync::OnceLock;
 use std::time::Duration;
 use std::{env, io, net::TcpListener, sync::Arc};
 use termbg::{Theme, theme};
@@ -551,6 +553,96 @@ pub struct ApiDoc;
 // `static_files` magic.
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
+/// Placeholder base path baked into the embedded web console bundle at build
+/// time (see `crates/pipeline-manager/build.rs`, which sets
+/// `WEBCONSOLE_BASE_PATH` to this value, and `js-packages/web-console`'s
+/// `svelte.config.js`, which reads it into `kit.paths.base`).
+///
+/// At serve time the manager rewrites every occurrence of this string in the
+/// bundle to the operator-configured base path (or the empty string for a root
+/// deployment), so a single prebuilt binary can be served from any subpath
+/// without a rebuild. The string is deliberately distinctive so the rewrite is
+/// an unambiguous substring replacement.
+const WEBCONSOLE_BASE_PATH_PLACEHOLDER: &str = "/__FELDERA_BASE_PATH__";
+
+/// One file of the embedded console bundle after the base-path rewrite, holding
+/// what `static_files::Resource` needs to serve it. Kept as owned `&'static`
+/// data so every worker's resource map borrows the same bytes.
+struct RewrittenResource {
+    name: &'static str,
+    data: &'static [u8],
+    modified: u64,
+    mime_type: &'static str,
+}
+
+/// Build the embedded web console resource map with the base-path placeholder
+/// rewritten to `base_path` (empty string for a root deployment).
+///
+/// The rewrite is computed once for the lifetime of the process — `base_path`
+/// is a process constant derived from configuration, and `HttpServer` invokes
+/// the app factory once per worker thread — so the rewritten bytes are leaked a
+/// single time and every worker rebuilds a fresh (but cheap, pointer-only)
+/// `HashMap` over the same `&'static` data.
+fn webconsole_resources(base_path: &str) -> HashMap<&'static str, static_files::Resource> {
+    static REWRITTEN: OnceLock<Vec<RewrittenResource>> = OnceLock::new();
+
+    let entries = REWRITTEN.get_or_init(|| {
+        debug_assert!(
+            base_path.is_empty() || base_path.starts_with('/'),
+            "base path must be empty or start with '/'"
+        );
+        let mut rewrote_placeholder = false;
+        let entries = generate()
+            .into_iter()
+            .map(|(name, resource)| {
+                let data: &'static [u8] = match std::str::from_utf8(resource.data) {
+                    Ok(text) if text.contains(WEBCONSOLE_BASE_PATH_PLACEHOLDER) => {
+                        rewrote_placeholder = true;
+                        let rewritten = text.replace(WEBCONSOLE_BASE_PATH_PLACEHOLDER, base_path);
+                        Box::leak(rewritten.into_bytes().into_boxed_slice())
+                    }
+                    // Binary asset, or text without the placeholder: serve the
+                    // embedded bytes unchanged.
+                    _ => resource.data,
+                };
+                RewrittenResource {
+                    name,
+                    data,
+                    modified: resource.modified,
+                    mime_type: resource.mime_type,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        // A non-empty base path that the bundle can't carry is a
+        // misconfiguration the operator must see: the console will load its
+        // assets and call the API from the wrong paths and silently fail.
+        if !base_path.is_empty() && !rewrote_placeholder {
+            error!(
+                "--http-base-path is set to '{base_path}', but the embedded web console bundle \
+                 does not contain the expected base-path placeholder '{WEBCONSOLE_BASE_PATH_PLACEHOLDER}'. \
+                 The console was built without subpath support; the UI will not work under the subpath. \
+                 Rebuild the bundle with WEBCONSOLE_BASE_PATH={WEBCONSOLE_BASE_PATH_PLACEHOLDER}."
+            );
+        }
+        entries
+    });
+
+    entries
+        .iter()
+        .map(|entry| {
+            (
+                entry.name,
+                static_files::Resource {
+                    data: entry.data,
+                    modified: entry.modified,
+                    mime_type: entry.mime_type,
+                },
+            )
+        })
+        .collect()
+}
+
 /// Middleware to add aggressive caching headers for immutable static files
 /// (files with hashes in their names from web-console build)
 async fn add_cache_headers(
@@ -624,7 +716,17 @@ fn build_app(
     > + use<>,
 > {
     let cors = api_config.cors();
+    // URL prefix the API and console are served under (empty for a root
+    // deployment, e.g. `/feldera` behind a reverse proxy). Threaded into every
+    // scope below so a single binary serves any subpath.
+    let base_path = api_config.normalized_http_base_path();
     let app = App::new()
+        // Middleware inside the prefixed scopes matches root-relative paths
+        // (the RBAC route table, the session-endpoint exemption), so it needs
+        // the prefix to strip. App data rather than a captured argument
+        // because the consumers sit behind `HttpAuthentication`, which hands
+        // its validator nothing but the request.
+        .app_data(BasePath(base_path.clone()))
         .wrap_fn(|req, srv| {
             let log_level = if req.method() == Method::GET && req.path() == "/healthz" {
                 Level::TRACE
@@ -646,7 +748,7 @@ fn build_app(
             // first), then auth (installs the principal), then the RBAC check
             // (reads it), then the handler.
             app.app_data(auth_configuration.clone()).service(
-                api_scope()
+                api_scope(&base_path)
                     .wrap(middleware::from_fn(crate::api::rbac::rbac_middleware))
                     .wrap(auth_middleware)
                     .wrap(middleware::from_fn(
@@ -656,7 +758,7 @@ fn build_app(
             )
         }
         None => app.service(
-            api_scope()
+            api_scope(&base_path)
                 .wrap(middleware::from_fn(crate::api::rbac::rbac_middleware))
                 .wrap_fn(|req, srv| {
                     let req = crate::auth::tag_with_default_tenant_id(req);
@@ -666,43 +768,51 @@ fn build_app(
         ),
     };
 
+    // These stay at the root regardless of the base path: direct liveness probes
+    // (load balancers, k8s) must keep working when Feldera is mounted on a
+    // subpath behind a proxy that only forwards `<base-path>/*`, and crawlers
+    // fetch `/robots.txt` only from the origin root, never from a subpath.
+    let app = app.service(healthz).service(robots_txt);
+
     // `public_scope` MUST be the last `.service()` registered: it contains an
     // empty-prefix sub-scope (the catch-all that serves the bundled
     // web-console static files) that would shadow any service registered
     // after it. The `public_scope_shadows_anything_registered_after_it` test
     // pins this contract.
-    app.service(public_scope(api_config))
+    app.service(public_scope(api_config, &base_path))
 }
 
-// Unauthenticated public endpoints and static UI assets. CORS is scoped to
-// `/config/*` only — it's the unauthenticated API surface that browser clients
-// may need to reach cross-origin. Every other route here is same-origin in practice
-// (healthz monitoring, static bundle), and keeping CORS off them
-// is what allows Firefox to honor `Cache-Control: immutable` on the bundle
-// (no `Vary: Origin`, no `Access-Control-Allow-Credentials`).
+// Unauthenticated public endpoints and static UI assets, served under the
+// configured base path (empty for a root deployment). CORS is scoped to
+// `<base>/config/*` only — it's the unauthenticated API surface that browser
+// clients may need to reach cross-origin. The static bundle is same-origin in
+// practice, and keeping CORS off it is what allows Firefox to honor
+// `Cache-Control: immutable` on the bundle (no `Vary: Origin`, no
+// `Access-Control-Allow-Credentials`).
 //
 // Must be registered LAST in the App: the inner empty-prefix scope acts as the
 // SPA fallback and would otherwise shadow other top-level scopes.
-fn public_scope(api_config: &ApiServerConfig) -> Scope {
-    web::scope("")
+fn public_scope(api_config: &ApiServerConfig, base_path: &str) -> Scope {
+    web::scope(base_path)
         .service(
             web::scope("/config")
                 .wrap(api_config.cors())
                 .service(endpoints::config::get_config_authentication),
         )
-        .service(healthz)
-        .service(robots_txt)
         .service(
             web::scope("")
                 .wrap(middleware::from_fn(add_cache_headers))
-                .service(ResourceFiles::new("/", generate()).resolve_not_found_to_root()),
+                .service(
+                    ResourceFiles::new("/", webconsole_resources(base_path))
+                        .resolve_not_found_to_root(),
+                ),
         )
 }
 
 // The scope for all authenticated API endpoints
-fn api_scope() -> Scope {
-    // Make APIs available under the /v0/ prefix
-    web::scope("/v0")
+fn api_scope(base_path: &str) -> Scope {
+    // Make APIs available under the `<base-path>/v0/` prefix
+    web::scope(&format!("{base_path}/v0"))
         // Pipeline management endpoints
         .service(endpoints::pipeline_management::list_pipelines)
         .service(endpoints::pipeline_management::get_pipeline)
@@ -1032,6 +1142,10 @@ pub async fn run(
         common_config.api_port,
         common_config.http_workers,
     );
+    let base_path = api_config.normalized_http_base_path();
+    if !base_path.is_empty() {
+        info!("Serving the API and web console under base path '{base_path}'");
+    }
 
     let banner = if theme(Duration::from_millis(500)).unwrap_or(Theme::Light) == Theme::Dark {
         include_str!("../../light-banner.ascii")
@@ -1039,15 +1153,19 @@ pub async fn run(
         include_str!("../../dark-banner.ascii")
     };
     let addr = env::var("BANNER_ADDR").unwrap_or("127.0.0.1".to_string());
+    // The base path is part of the reachable URL: with `--http-base-path` set,
+    // the console lives at `<origin><base>/` and the API at `<origin><base>/v0`,
+    // so a bare origin printed here would send the reader to a 404.
     let url = format!(
-        "{}://{}:{}",
+        "{}://{}:{}{}",
         if common_config.enable_https {
             "https"
         } else {
             "http"
         },
         addr,
-        common_config.api_port
+        common_config.api_port,
+        base_path
     );
 
     // Lock both out streams so that the banner is printed in one go
@@ -1519,6 +1637,112 @@ mod tests {
             &body[..],
             b"LEAKED",
             "a route registered after build_app() was reached — public_scope's SPA catch-all must shadow it",
+        );
+    }
+
+    /// Base-path normalization is lenient: whitespace and trailing slashes are
+    /// trimmed and a leading slash is added when missing, so both `/feldera`
+    /// and `feldera/` resolve to the same prefix and `""`/`"/"` mean "root".
+    // `#[actix_web::test]` (not `#[test]`) because `use actix_web::test`
+    // shadows the built-in test attribute in this module; the body is pure.
+    #[actix_web::test]
+    async fn base_path_normalization() {
+        let normalized = |raw: &str| {
+            let mut cfg = ApiServerConfig::test_config();
+            cfg.http_base_path = raw.to_string();
+            cfg.normalized_http_base_path()
+        };
+        assert_eq!(normalized(""), "");
+        assert_eq!(normalized("/"), "");
+        assert_eq!(normalized("  "), "");
+        assert_eq!(normalized("/feldera"), "/feldera");
+        assert_eq!(normalized("/feldera/"), "/feldera");
+        assert_eq!(normalized("feldera"), "/feldera");
+        assert_eq!(normalized("  /feldera/  "), "/feldera");
+        assert_eq!(normalized("/a/b/"), "/a/b");
+    }
+
+    /// With a configured base path, the API and the `/config` bootstrap mount
+    /// under the prefix, the un-prefixed paths stop routing, and `/healthz`
+    /// stays at the root for infrastructure probes. Drives the production
+    /// `build_app`, so a regression in the scope wiring fails here.
+    #[actix_web::test]
+    async fn base_path_mounts_scopes_under_prefix() {
+        use actix_web::http::StatusCode;
+
+        let mut cfg = ApiServerConfig::test_config();
+        cfg.http_base_path = "/feldera".to_string();
+        let app = test::init_service(build_app(&cfg, &None)).await;
+
+        // The API moves under the prefix: a credentialed CORS preflight to
+        // `/feldera/v0/*` succeeds, exactly as `/v0/*` does at the root.
+        let req = test::TestRequest::default()
+            .method(Method::OPTIONS)
+            .uri("/feldera/v0/pipelines")
+            .insert_header((header::ORIGIN, "http://example.com"))
+            .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "GET"))
+            .to_request();
+        assert!(
+            test::call_service(&app, req).await.status().is_success(),
+            "/feldera/v0/* preflight failed — API not mounted under the base path",
+        );
+
+        // The `/config` auth bootstrap moves under the prefix too.
+        let req = test::TestRequest::default()
+            .method(Method::OPTIONS)
+            .uri("/feldera/config/authentication")
+            .insert_header((header::ORIGIN, "http://example.com"))
+            .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "GET"))
+            .to_request();
+        assert!(
+            test::call_service(&app, req).await.status().is_success(),
+            "/feldera/config/authentication preflight failed — config not mounted under the base path",
+        );
+
+        // The un-prefixed API path no longer routes to anything.
+        let req = test::TestRequest::get().uri("/v0/pipelines").to_request();
+        assert_eq!(
+            test::call_service(&app, req).await.status(),
+            StatusCode::NOT_FOUND,
+            "/v0/* still routed despite a configured base path",
+        );
+
+        // Liveness stays at the root for direct infrastructure probes (a
+        // missing `ServerState` makes the handler error, but it must still be
+        // routed — i.e. not a 404).
+        let req = test::TestRequest::get().uri("/healthz").to_request();
+        assert_ne!(
+            test::call_service(&app, req).await.status(),
+            StatusCode::NOT_FOUND,
+            "/healthz must remain at the root regardless of the base path",
+        );
+    }
+
+    /// A real API request under the base path must clear the RBAC guard. The
+    /// route table is authored root-relative (`/v0/pipelines`), so a guard that
+    /// classified the raw `/feldera/v0/pipelines` finds no entry and denies the
+    /// whole API — invisible to a preflight or a 404 probe, which is why this
+    /// drives a GET. Dropping the `BasePath` strip in `rbac_middleware` turns
+    /// this into a 403 and fails here.
+    #[actix_web::test]
+    async fn base_path_api_request_clears_rbac() {
+        use actix_web::http::StatusCode;
+
+        let mut cfg = ApiServerConfig::test_config();
+        cfg.http_base_path = "/feldera".to_string();
+        let app = test::init_service(build_app(&cfg, &None)).await;
+
+        // With no auth configured the request carries the default admin
+        // principal, which satisfies every route's role floor. `ServerState` is
+        // absent, so the handler itself fails — but with a server error, not the
+        // 403 an unclassified route returns.
+        let req = test::TestRequest::get()
+            .uri("/feldera/v0/pipelines")
+            .to_request();
+        assert_ne!(
+            test::call_service(&app, req).await.status(),
+            StatusCode::FORBIDDEN,
+            "RBAC denied a base-path API request; the route table matches root-relative paths",
         );
     }
 }

@@ -9,6 +9,7 @@
 //! cannot ship silently world-accessible.
 
 use crate::auth::AuthenticatedPrincipal;
+use crate::config::BasePath;
 use crate::db::error::DBError;
 use crate::db::types::role::Role;
 use actix_web::body::{BoxBody, MessageBody};
@@ -274,6 +275,11 @@ fn audit(method: &Method, pattern: &str, principal: Option<&AuthenticatedPrincip
 /// Refuse any `/v0` request whose principal is below the role its route
 /// requires, and record the ones that pass. Runs after `auth_validator` has
 /// installed the principal, so the role is already resolved here.
+///
+/// The route table is authored against root-relative patterns, so a deployment
+/// mounted on a subpath has its base path stripped off the request path first:
+/// `/feldera/v0/pipelines` classifies as `/v0/pipelines`. Left on, the prefix
+/// makes every path miss the table and denies the entire API.
 pub(crate) async fn rbac_middleware(
     req: ServiceRequest,
     next: Next<impl MessageBody + 'static>,
@@ -281,7 +287,7 @@ pub(crate) async fn rbac_middleware(
     let principal = req.extensions().get::<AuthenticatedPrincipal>().cloned();
     let method = req.method().clone();
     let routed = req.match_pattern().is_some();
-    let path = req.path().to_string();
+    let path = BasePath::root_relative(&req).to_string();
 
     match authorize(method.as_str(), routed, &path, principal.as_ref()) {
         Ok(pattern) => {

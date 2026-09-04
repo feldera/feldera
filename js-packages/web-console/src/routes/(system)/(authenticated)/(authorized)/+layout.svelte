@@ -25,6 +25,7 @@
   import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { closedIntervalAction } from '$lib/functions/common/promise'
+  import { resolve } from '$lib/functions/svelte'
   import type { Snippet } from '$lib/types/svelte'
   import type { LayoutData } from './$types'
 
@@ -142,13 +143,13 @@
     ? ''
     : 'disabled pointer-events-auto select-text [&_.monaco-editor-background]:pointer-events-none [&_[role="button"]]:pointer-events-none [&_[role="separator"]]:pointer-events-none [&_a]:pointer-events-none [&_button]:pointer-events-none'}"
 >
-  {#if healthMessage && !page.url.pathname.startsWith('/health')}
+  {#if healthMessage && !page.url.pathname.startsWith(resolve('/health'))}
     <LineBanner variant="error">
       {#snippet start()}
         <span>{healthMessage}</span>
         {@render BannerButton({
           text: 'See details',
-          href: '/health/'
+          href: resolve('/health/')
         })}
       {/snippet}
     </LineBanner>

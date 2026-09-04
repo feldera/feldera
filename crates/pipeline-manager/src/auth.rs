@@ -75,7 +75,7 @@ use utoipa::ToSchema;
 use uuid::Uuid;
 
 use crate::api::main::ServerState;
-use crate::config::ApiServerConfig;
+use crate::config::{ApiServerConfig, BasePath};
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
@@ -141,8 +141,16 @@ pub(crate) struct LoginIdentity {
 pub(crate) struct UnresolvedActingTenant;
 
 /// Whether this request may be answered without a resolved acting tenant.
+///
+/// The path is compared root-relative, so the exemption holds for a deployment
+/// mounted on a subpath: `/feldera/v0/config/session` matches. Comparing the
+/// raw path would strand such a login, since the picker's own endpoint would be
+/// the one request it could not make.
 fn is_session_request(req: &ServiceRequest) -> bool {
-    req.method() == actix_web::http::Method::GET && req.path() == "/v0/config/session"
+    if req.method() != actix_web::http::Method::GET {
+        return false;
+    }
+    BasePath::root_relative(req) == "/v0/config/session"
 }
 
 /// Returns true if the given OIDC identity is configured as a platform owner.
@@ -1798,7 +1806,7 @@ mod test {
     use crate::{
         api::main::ServerState,
         auth::{self, AuthConfiguration, AuthProvider, OidcClaim},
-        config::ApiServerConfig,
+        config::{ApiServerConfig, BasePath},
         db::storage::Storage,
         ensure_default_crypto_provider,
     };
@@ -1806,6 +1814,39 @@ mod test {
     use rsa::pkcs1::{EncodeRsaPrivateKey, LineEnding};
     use rsa::pkcs8::EncodePublicKey;
     use rsa::{RsaPrivateKey, RsaPublicKey};
+
+    /// The session endpoint is the one route a login with no resolvable acting
+    /// tenant may reach, so the console can drive its tenant picker. The
+    /// exemption compares the path root-relative and therefore survives a
+    /// subpath deployment; comparing `req.path()` raw would strand such a login
+    /// at the very endpoint meant to unstick it. Removing the `BasePath` strip
+    /// in `is_session_request` flips the `/feldera` case to false.
+    // `#[actix_web::test]` (not `#[test]`) because `use actix_web::test`
+    // shadows the built-in test attribute in this module; the body is pure.
+    #[actix_web::test]
+    async fn session_request_is_recognized_under_a_base_path() {
+        let session_request = |base_path: &str, uri: &str| {
+            auth::is_session_request(
+                &test::TestRequest::get()
+                    .uri(uri)
+                    .app_data(BasePath(base_path.to_string()))
+                    .to_srv_request(),
+            )
+        };
+
+        assert!(session_request("", "/v0/config/session"));
+        assert!(session_request("/feldera", "/feldera/v0/config/session"));
+        // No other endpoint is exempt, prefixed or not, and neither is a write
+        // to the session path.
+        assert!(!session_request("", "/v0/pipelines"));
+        assert!(!session_request("/feldera", "/feldera/v0/pipelines"));
+        assert!(!auth::is_session_request(
+            &test::TestRequest::post()
+                .uri("/feldera/v0/config/session")
+                .app_data(BasePath("/feldera".to_string()))
+                .to_srv_request()
+        ));
+    }
 
     async fn setup(claim: OidcClaim) -> (String, DecodingKey) {
         let rsa = RsaPrivateKey::new(&mut rand::thread_rng(), 2048).unwrap();
@@ -1859,6 +1900,7 @@ mod test {
             default_role: Role::Read,
             first_user_role: Role::Admin,
             provision_on_login: true,
+            http_base_path: String::new(),
         }
     }
 
