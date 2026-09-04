@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.circuit;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
@@ -272,6 +273,15 @@ public final class DBSPCircuit extends DBSPNode
     /** Number of operators in the circuit. */
     public int size() {
         return this.allOperators.size();
+    }
+
+    /** The number of operators in the largest nested operator or in this circuit */
+    public int largestComponentSize() {
+        int result = this.allOperators.size();
+        for (DBSPOperator operator : this.allOperators)
+            if (operator.is(DBSPNestedOperator.class))
+                result = Math.max(result, operator.to(DBSPNestedOperator.class).size());
+        return result;
     }
 
     @Override
