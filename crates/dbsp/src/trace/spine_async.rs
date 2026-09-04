@@ -336,7 +336,7 @@ where
                 .iter()
                 .fold((0u64, 0u64), |(records, negative), batch| {
                     (
-                        records + batch.len() as u64,
+                        records + batch.approximate_len() as u64,
                         negative + batch.negative_weight_count().unwrap_or(0),
                     )
                 });
@@ -576,8 +576,8 @@ where
         let cache_stats = batches.iter().fold(CacheStats::default(), |stats, batch| {
             stats + batch.cache_stats()
         });
-        let pre_len = batches.iter().map(|b| b.len()).sum();
-        let post_len = new_batch.len();
+        let pre_len = batches.iter().map(|b| b.approximate_len()).sum();
+        let post_len = new_batch.approximate_len();
         self.spine_stats
             .report_merge(pre_len, post_len, cache_stats);
         let n_merged_batches = batches.len();
@@ -1172,7 +1172,7 @@ where
                 if !batches.is_empty() {
                     let mut tuple_counts = EnumMap::<BatchLocation, usize>::default();
                     for batch in batches {
-                        tuple_counts[batch.location()] += batch.len();
+                        tuple_counts[batch.location()] += batch.approximate_len();
                     }
 
                     let mut facts = Vec::with_capacity(3);
@@ -1266,7 +1266,7 @@ where
                 membership_filter_stats[kind] += batch.membership_filter_stats();
             }
             if kind == FilterKind::Bloom {
-                bloom_filter_records += batch.key_count();
+                bloom_filter_records += batch.approximate_key_count();
             }
             range_filter_stats += batch.range_filter_stats();
             let on_storage = batch.location() == BatchLocation::Storage;
@@ -1927,7 +1927,7 @@ where
         self.merger
             .get_batches()
             .iter()
-            .map(|batch| batch.len())
+            .map(|batch| batch.approximate_len())
             .sum()
     }
 
@@ -1940,6 +1940,9 @@ impl<B> BatchReader for Spine<B>
 where
     B: Batch,
 {
+    fn is_empty(&self) -> bool {
+        self.approximate_len() == 0
+    }
     type Key = B::Key;
     type Val = B::Val;
     type Time = B::Time;
@@ -1952,19 +1955,19 @@ where
         self.factories.clone()
     }
 
-    fn key_count(&self) -> usize {
+    fn approximate_key_count(&self) -> usize {
         self.merger
             .get_batches()
             .iter()
-            .map(|batch| batch.key_count())
+            .map(|batch| batch.approximate_key_count())
             .sum()
     }
 
-    fn len(&self) -> usize {
+    fn approximate_len(&self) -> usize {
         self.merger
             .get_batches()
             .iter()
-            .map(|batch| batch.len())
+            .map(|batch| batch.approximate_len())
             .sum()
     }
 
@@ -2517,7 +2520,7 @@ where
         debug_assert_eq!(MAX_LEVELS, 9);
         debug_assert!(max_level0_batch_size_records > 0 && max_level0_batch_size_records <= 99_999);
 
-        let len = batch.len();
+        let len = batch.approximate_len();
 
         let effective_len = if merge {
             // Merge batches with many negative weights more aggressively. Negative updates are likely to cancel
@@ -2611,8 +2614,8 @@ where
                     format!(
                         "Eagerly spill {} batch with {} keys and {} values",
                         HumanBytes::from(batch.approximate_byte_size()),
-                        batch.key_count(),
-                        batch.len()
+                        batch.approximate_key_count(),
+                        batch.approximate_len()
                     )
                 });
             match Arc::try_unwrap(batch) {
@@ -2827,8 +2830,12 @@ mod merge_rule_test {
         }
         assert!(merge.done, "a merge of one batch did not finish");
         let merged = merge.builder.done();
-        assert_eq!(merged.len(), one.len(), "records");
-        assert_eq!(merged.key_count(), one.key_count(), "keys");
+        assert_eq!(merged.approximate_len(), one.approximate_len(), "records");
+        assert_eq!(
+            merged.approximate_key_count(),
+            one.approximate_key_count(),
+            "keys"
+        );
     }
 
     /// Compaction is not subject to any of this: it takes the whole level.
@@ -3342,7 +3349,7 @@ mod merge_threshold_test {
                         slot.merging_batches.is_some(),
                         slot.loose_batches
                             .iter()
-                            .map(|batch| batch.len())
+                            .map(|batch| batch.approximate_len())
                             .sum::<usize>(),
                     )
                 };
@@ -3405,7 +3412,7 @@ mod merge_threshold_test {
                         slot.merging_batches.is_some(),
                         slot.loose_batches
                             .iter()
-                            .map(|batch| batch.len())
+                            .map(|batch| batch.approximate_len())
                             .sum::<usize>(),
                     )
                 };

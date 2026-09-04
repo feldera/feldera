@@ -167,7 +167,11 @@ where
 {
     fn distinct(&self) -> Self {
         let factories = self.factories();
-        let mut builder = Self::Builder::with_capacity(&factories, self.key_count(), self.len());
+        let mut builder = Self::Builder::with_capacity(
+            &factories,
+            self.approximate_key_count(),
+            self.approximate_len(),
+        );
         let mut cursor = self.cursor();
 
         while cursor.key_valid() {
@@ -275,7 +279,11 @@ where
     #[cfg(test)]
     fn positive(&self) -> Self {
         let factories = self.factories();
-        let mut builder = Self::Builder::with_capacity(&factories, self.key_count(), self.len());
+        let mut builder = Self::Builder::with_capacity(
+            &factories,
+            self.approximate_key_count(),
+            self.approximate_len(),
+        );
         let mut cursor = self.cursor();
 
         while cursor.key_valid() {

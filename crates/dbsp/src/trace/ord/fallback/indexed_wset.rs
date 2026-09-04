@@ -251,19 +251,23 @@ where
         }
     }
 
+    fn is_empty(&self) -> bool {
+        self.approximate_len() == 0
+    }
+
     #[inline]
-    fn key_count(&self) -> usize {
+    fn approximate_key_count(&self) -> usize {
         match &self.inner {
-            Inner::File(file) => file.key_count(),
-            Inner::Vec(vec) => vec.key_count(),
+            Inner::File(file) => file.approximate_key_count(),
+            Inner::Vec(vec) => vec.approximate_key_count(),
         }
     }
 
     #[inline]
-    fn len(&self) -> usize {
+    fn approximate_len(&self) -> usize {
         match &self.inner {
-            Inner::File(file) => file.len(),
-            Inner::Vec(vec) => vec.len(),
+            Inner::File(file) => file.approximate_len(),
+            Inner::Vec(vec) => vec.approximate_len(),
         }
     }
 
@@ -358,8 +362,8 @@ where
             Inner::Vec(vec) => {
                 let mut file = FileIndexedWSetBuilder::with_capacity(
                     &self.factories,
-                    vec.key_count(),
-                    vec.len(),
+                    vec.approximate_key_count(),
+                    vec.approximate_len(),
                 );
                 copy_to_builder(&mut file, vec.cursor());
                 Some(Self {
@@ -543,8 +547,16 @@ where
         B: Batch<Key = K, Val = V, Time = (), R = R>,
         I: IntoIterator<Item = &'a B> + Clone,
     {
-        let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
-        let value_capacity = batches.clone().into_iter().map(|b| b.len()).sum();
+        let key_capacity = batches
+            .clone()
+            .into_iter()
+            .map(|b| b.approximate_key_count())
+            .sum();
+        let value_capacity = batches
+            .clone()
+            .into_iter()
+            .map(|b| b.approximate_len())
+            .sum();
         Self {
             factories: factories.clone(),
             inner: match pick_merge_destination(batches.clone(), location) {

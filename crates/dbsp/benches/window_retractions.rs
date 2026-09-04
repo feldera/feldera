@@ -188,7 +188,7 @@ fn main() {
             let window = stream.window((true, false), &bounds);
             let outputs = outputs.clone();
             window.inspect(move |batch| {
-                outputs.fetch_add(batch.len() as u64, Ordering::Relaxed);
+                outputs.fetch_add(batch.approximate_len() as u64, Ordering::Relaxed);
             });
             window.accumulate_integrate_trace();
             Ok((input, bounds_handle))

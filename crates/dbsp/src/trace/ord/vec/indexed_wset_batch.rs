@@ -427,6 +427,9 @@ where
     R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
+    fn is_empty(&self) -> bool {
+        self.approximate_len() == 0
+    }
     type Key = K;
     type Val = V;
     type Time = ();
@@ -469,12 +472,12 @@ where
     }*/
 
     #[inline]
-    fn key_count(&self) -> usize {
+    fn approximate_key_count(&self) -> usize {
         self.layer.keys()
     }
 
     #[inline]
-    fn len(&self) -> usize {
+    fn approximate_len(&self) -> usize {
         self.layer.tuples()
     }
 

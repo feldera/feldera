@@ -358,7 +358,7 @@ where
                 return;
             };
 
-            self.input_batch_stats.borrow_mut().add_batch(delta.len());
+            self.input_batch_stats.borrow_mut().add_batch(delta.approximate_len());
 
             //           ┌────────────────────────────────────────┐
             //           │       previous window                  │
@@ -404,7 +404,7 @@ where
 
                         if tuples.len() >= chunk_size {
                             let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
-                            self.output_batch_stats.borrow_mut().add_batch(result.len());
+                            self.output_batch_stats.borrow_mut().add_batch(result.approximate_len());
                             yield (result, false, None);
                             tuples = self.factories.weighted_items_factory().default_box();
                             tuples.reserve(chunk_size);
@@ -435,7 +435,7 @@ where
 
                             if tuples.len() >= chunk_size {
                                 let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
-                                self.output_batch_stats.borrow_mut().add_batch(result.len());
+                                self.output_batch_stats.borrow_mut().add_batch(result.approximate_len());
                                 yield (result, false, None);
                                 tuples = self.factories.weighted_items_factory().default_box();
                                 tuples.reserve(chunk_size);
@@ -467,7 +467,7 @@ where
 
                         if tuples.len() >= chunk_size {
                             let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
-                            self.output_batch_stats.borrow_mut().add_batch(result.len());
+                            self.output_batch_stats.borrow_mut().add_batch(result.approximate_len());
                             yield (result, false, None);
                             tuples = self.factories.weighted_items_factory().default_box();
                             tuples.reserve(chunk_size);
@@ -495,7 +495,7 @@ where
 
                     if tuples.len() >= chunk_size {
                         let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
-                        self.output_batch_stats.borrow_mut().add_batch(result.len());
+                        self.output_batch_stats.borrow_mut().add_batch(result.approximate_len());
                         yield (result, false, None);
                         tuples = self.factories.weighted_items_factory().default_box();
                         tuples.reserve(chunk_size);
@@ -509,7 +509,7 @@ where
             *self.window.borrow_mut() = Some((start1, end1));
 
             let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats.borrow_mut().add_batch(result.approximate_len());
             yield (result, true, None);
         }
     }
