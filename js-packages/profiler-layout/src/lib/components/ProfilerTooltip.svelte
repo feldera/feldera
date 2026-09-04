@@ -1,6 +1,11 @@
 <script lang="ts" module>
   import type { NodeAttributes, TooltipRow } from 'profiler-lib'
-  import { measurementCategory, measurementDescription, shadeOfRed } from 'profiler-lib'
+  import {
+    measurementCategory,
+    measurementDescription,
+    measurementLabel,
+    shadeOfRed
+  } from 'profiler-lib'
   import { SvelteSet } from 'svelte/reactivity'
   import { groupBy } from '$lib/functions/array'
 
@@ -116,7 +121,9 @@
                                                 class:current-metric={row.isCurrentMetric}
                                                 title={measurementDescription(
                                                     row.metric,
-                                                ).description}>{row.metric}</td
+                                                ).description}>{measurementLabel(
+                                                    row.metric,
+                                                )}</td
                                             >
                                             {#each row.cells as cell}
                                                 {@const percent =

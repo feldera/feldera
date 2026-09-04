@@ -1006,6 +1006,30 @@ export function measurementCategory(prop: string): string {
     return legacyMeasurementCategory(prop);
 }
 
+/** The name of a measurement as shown to a user: the metric id with its separators turned into
+ * spaces and the first letter capitalized, so `spine_storage_size_bytes` reads "Spine storage
+ * size bytes".  Every place that names a metric on screen uses this, so the metric selector and
+ * the tables agree. */
+export function measurementLabel(prop: string): string {
+    const spelled = prop.replace(/[_.]/g, " ").replace(/\s+/g, " ").trim();
+    if (spelled.length === 0) {
+        return prop;
+    }
+    return spelled.charAt(0).toUpperCase() + spelled.slice(1);
+}
+
+/** Compares the names a reader sees, with digit runs read as numbers so "Slot 2" comes before
+ * "Slot 10", and case ignored. */
+const metricCollator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+
+/** Order two metrics the way every list of them is ordered.  The id breaks a tie: two ids can
+ * spell one label, since `measurementLabel` turns both `_` and `.` into spaces. */
+export function compareMetrics(
+    a: { id: string, label: string },
+    b: { id: string, label: string }): number {
+    return metricCollator.compare(a.label, b.label) || metricCollator.compare(a.id, b.id);
+}
+
 /** Return a description of the measurement and a boolean indicating whether the measurements is "advanced" */
 export function measurementDescription(prop: string): { description: string, advanced: boolean } {
     let info = MetricDescriptions.getMetricInfo(stripSuffix(prop));
