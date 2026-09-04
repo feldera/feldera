@@ -21,7 +21,8 @@ pub use saturating_cursor::SaturatingCursor;
 pub use reverse::ReverseKeyCursor;
 use size_of::SizeOf;
 
-use crate::dynamic::{DataTrait, Factory};
+use crate::Timestamp;
+use crate::dynamic::{DataTrait, Factory, WeightTrait};
 
 use super::BatchReader;
 use super::{Filter, GroupFilter};
@@ -1309,6 +1310,37 @@ impl<V: DataTrait + ?Sized> GroupFilterCursor<V> {
                 }
             }
         }
+    }
+}
+
+/// Wraps `cursor` in whichever merge cursor `key_filter` and `value_filter` call for.
+///
+/// This is the body of [`BatchReader::merge_cursor`], factored out so that a
+/// batch which builds its cursor itself, rather than delegating to
+/// [`BatchReader::cursor`], can reuse the same filter dispatch.
+///
+/// [`BatchReader::merge_cursor`]: crate::trace::BatchReader::merge_cursor
+/// [`BatchReader::cursor`]: crate::trace::BatchReader::cursor
+pub fn merge_cursor_over<'a, K, V, T, R, C>(
+    cursor: C,
+    key_filter: Option<Filter<K>>,
+    value_filter: Option<GroupFilter<V>>,
+) -> Box<dyn MergeCursor<K, V, T, R> + Send + 'a>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    T: Timestamp,
+    C: Cursor<K, V, T, R> + Send + 'a,
+{
+    if key_filter.is_none() && value_filter.is_none() {
+        Box::new(UnfilteredMergeCursor::new(cursor))
+    } else if let Some(GroupFilter::Simple(filter)) = value_filter {
+        Box::new(FilteredMergeCursor::new(cursor, key_filter, Some(filter)))
+    } else {
+        // Other forms of GroupFilter cannot be evaluated without a trace
+        // snapshot -- don't filter values in such cursors.
+        Box::new(FilteredMergeCursor::new(cursor, key_filter, None))
     }
 }
 
