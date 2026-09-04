@@ -165,3 +165,62 @@ Two details of the query matter for correctness:
 * The polarity filter `is_delete IS NOT TRUE` must be outside the subquery
   that ranks the changes. Filtering out the deletions before ranking would
   "resurrect" the previous insertion of a deleted key.
+
+## Unbounded state warnings
+
+The compiler analyzes programs to find operators whose state is
+likely to grow without bound: joins, aggregates, `DISTINCT`, window functions,
+and the indexes of tables with a `PRIMARY KEY`.  This is a static analysis,
+not based on actual data.  In consequence the analysis is
+best effort, and can err in both directions:
+it can report as unbounded an operator whose state stays small in
+practice, and it can miss state that grows very large, such as a
+chain of joins that can produce an output exponentially larger than the inputs.
+
+The compiler performs this analysis only if it infers that the compiled
+program performs stream processing, i.e., when one of the following holds:
+
+- a table or view column has a [`LATENESS`](#lateness-expressions) annotation,
+- a table is declared [`append_only`](#append_only-tables),
+- a [temporal filter](/tutorials/time-series#now-and-temporal-filters)
+  compares a column with `NOW()`.
+
+For streaming programs the compiler assumes that every table can grow without bound,
+even a table that is not part of a stream, such as a dimension table.  The
+[`expected_size`](/sql/grammar#size-hints) table property can be used to inform the
+compiler that the size of the table is bounded.  Operators downstream
+of such tables are generally considered bounded too, so they are not
+reported (even if the table size is actually very large).
+
+### Annotating dimension tables
+
+A common streaming pattern joins a stream of events, kept bounded by a
+temporal filter or by lateness, with a dimension table, such as a list
+of products or customers.  The compiler cannot tell a dimension table
+from a table that grows without bound, so without further information
+it reports the join and every operator downstream of the join.  Declare
+the expected size of each dimension table:
+
+```sql
+CREATE TABLE products (
+    sku VARCHAR NOT NULL PRIMARY KEY,
+    name VARCHAR
+) WITH ('expected_size' = '100000');
+```
+
+With this annotation the join with `products` and the operators
+downstream of the join are no longer reported, and the remaining
+warnings point at state that really grows with the stream, such as the
+index of an event table that has a `PRIMARY KEY` but no `LATENESS`.
+The analysis treats [recursive views](/sql/recursion) conservatively
+and is likely to report false positives for them.
+
+Sometimes the warnings cannot point precisely to the SQL construct that
+is responsible for the actual state, and then they will provide only
+an approximate position.
+
+You can silence these warnings with `SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON`.
+
+The [time series guide](/tutorials/time-series) explains how lateness,
+`append_only`, and temporal filters let the compiler garbage-collect
+state.

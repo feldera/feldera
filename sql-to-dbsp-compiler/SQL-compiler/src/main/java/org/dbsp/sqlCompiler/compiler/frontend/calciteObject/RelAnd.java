@@ -107,4 +107,9 @@ public class RelAnd extends CalciteRelNode {
     public long getId() {
         return this.nodes.isEmpty() ? 0 : this.nodes.iterator().next().getId();
     }
+
+    @Override
+    public List<RelNode> getRelNodes() {
+        return Linq.map(this.sort(), last -> last.relNode);
+    }
 }
