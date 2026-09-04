@@ -22,12 +22,14 @@
 //!   cdc_scenarios -- --ignored --test-threads=1 --nocapture
 //! ```
 
-use super::cdc_tests::{CdcTestTable, cdc_connector_url, count_inserts, read_output_json};
+use super::cdc_tests::{CdcTestTable, cdc_connector_url};
 use super::*;
 use crossbeam::channel::Receiver;
 use feldera_types::config::PipelineConfig;
 use std::collections::{BTreeMap, BTreeSet};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+use std::sync::Mutex;
 use std::time::Duration;
 use tempfile::{NamedTempFile, TempDir};
 
@@ -39,6 +41,43 @@ struct Run {
     controller: Controller,
     errors: Receiver<String>,
     output: NamedTempFile,
+    /// Inserted ids parsed from `output` so far, and the file offset after
+    /// the last complete line.
+    tail: Mutex<OutputTail>,
+}
+
+/// Incremental reader for the JSON-lines output file. Wait predicates poll
+/// every 10 ms, and scenario 2 writes 300k lines, so re-parsing the whole
+/// file per poll would dominate the test's wall clock.
+#[derive(Default)]
+struct OutputTail {
+    offset: u64,
+    ids: Vec<i64>,
+}
+
+impl OutputTail {
+    /// Parse the lines appended since the last call. A trailing partial line
+    /// is left for the next call.
+    fn refresh(&mut self, path: &Path) {
+        let mut file = std::fs::File::open(path).unwrap();
+        file.seek(SeekFrom::Start(self.offset)).unwrap();
+        let mut buf = String::new();
+        file.read_to_string(&mut buf).unwrap();
+        let Some(complete) = buf.rfind('\n') else {
+            return;
+        };
+        for line in buf[..=complete].lines().filter(|l| !l.is_empty()) {
+            let row: serde_json::Value = serde_json::from_str(line).unwrap();
+            if let Some(id) = row
+                .get("insert")
+                .and_then(|r| r.get("id"))
+                .and_then(|v| v.as_i64())
+            {
+                self.ids.push(id);
+            }
+        }
+        self.offset += (complete + 1) as u64;
+    }
 }
 
 impl Run {
@@ -108,28 +147,34 @@ impl Run {
             controller,
             errors,
             output,
+            tail: Mutex::new(OutputTail::default()),
         }
     }
 
-    fn rows(&self) -> Vec<serde_json::Value> {
-        read_output_json(self.output.path())
+    /// Ids of all inserts written to the output so far.
+    fn inserted_ids(&self) -> Vec<i64> {
+        let mut tail = self.tail.lock().unwrap();
+        tail.refresh(self.output.path());
+        tail.ids.clone()
     }
 
-    fn inserted_ids(&self) -> Vec<i64> {
-        inserted_ids(&self.rows())
+    fn insert_count(&self) -> usize {
+        let mut tail = self.tail.lock().unwrap();
+        tail.refresh(self.output.path());
+        tail.ids.len()
     }
 
     /// Wait until the output holds at least `n` inserts. Panics on a
     /// connector error or a timeout.
     fn wait_for_inserts(&self, n: usize, what: &str) {
         wait(
-            || count_inserts(&self.rows()) >= n || !self.errors.is_empty(),
+            || self.insert_count() >= n || !self.errors.is_empty(),
             WAIT_MS,
         )
         .unwrap_or_else(|_| {
             panic!(
                 "timeout waiting for {what}: expected {n} inserts, got {}",
-                count_inserts(&self.rows())
+                self.insert_count()
             )
         });
         self.assert_no_errors(what);
@@ -149,12 +194,6 @@ impl Run {
         std::thread::sleep(Duration::from_secs(1));
         self.output
     }
-}
-
-fn inserted_ids(rows: &[serde_json::Value]) -> Vec<i64> {
-    rows.iter()
-        .filter_map(|r| r.get("insert")?.get("id")?.as_i64())
-        .collect()
 }
 
 /// Count how many times each id was inserted across `runs`.
@@ -241,7 +280,7 @@ fn test_snapshot_replayed_when_stopped_before_checkpoint() {
     insert_range(&mut table, 4, 4);
     run2.wait_for_inserts(1, "run 2 first row");
     // Give the snapshot replay a moment to land after the streamed row.
-    let _ = wait(|| count_inserts(&run2.rows()) >= 4, 10_000);
+    let _ = wait(|| run2.insert_count() >= 4, 10_000);
 
     let ids = run2.inserted_ids();
     run2.stop();
@@ -307,7 +346,7 @@ fn test_checkpoint_mid_snapshot_loses_nothing() {
         panic!(
             "timeout: run 2 delivered {} rows, run 1 checkpointed {}, expected {N} distinct ids; \
              etl states after run 1: {states:?}",
-            count_inserts(&run2.rows()),
+            run2.insert_count(),
             checkpointed.len()
         )
     });

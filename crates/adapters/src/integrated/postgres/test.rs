@@ -4104,7 +4104,7 @@ mod cdc_tests {
     }
 
     /// Helper: read output file lines as JSON values.
-    pub(super) fn read_output_json(path: &Path) -> Vec<serde_json::Value> {
+    fn read_output_json(path: &Path) -> Vec<serde_json::Value> {
         let content = std::fs::read_to_string(path).unwrap_or_default();
         content
             .lines()
@@ -4114,7 +4114,7 @@ mod cdc_tests {
     }
 
     /// Helper: count the number of "insert" entries in the output.
-    pub(super) fn count_inserts(rows: &[serde_json::Value]) -> usize {
+    fn count_inserts(rows: &[serde_json::Value]) -> usize {
         rows.iter().filter(|r| r.get("insert").is_some()).count()
     }
 
