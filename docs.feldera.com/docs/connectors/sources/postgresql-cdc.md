@@ -176,3 +176,15 @@ replication identity and can cause a new snapshot.
 
 Rotating the PostgreSQL username or password does not change the replication
 identity.
+
+With [fault tolerance](/pipelines/fault-tolerance) enabled, the connector
+delivers every change at least once. The replication slot advances only past
+changes that a Feldera checkpoint contains. The initial snapshot follows the
+same rule: if the pipeline stops before a checkpoint has captured the whole
+snapshot, the next start reads the table again. Rows that the earlier
+checkpoint already held are then delivered a second time. Define a primary key
+on the Feldera table so the repeated rows replace the originals instead of
+appearing twice.
+
+Without fault tolerance, a restart resumes from the replication slot and does
+not read the snapshot again.

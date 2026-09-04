@@ -19,9 +19,10 @@ use etl::etl_error;
 use etl::pipeline::Pipeline;
 use etl::state::{TableRetryPolicy, TableState};
 use etl::store::both::postgres::PostgresStore;
+use etl::store::schema::SchemaStore;
 use etl::store::state::StateStore;
 use etl::types::{
-    ArrayCell, Cell, Event, OldTableRow, ReplicatedTableSchema, TableRow, UpdatedTableRow,
+    ArrayCell, Cell, Event, OldTableRow, ReplicatedTableSchema, TableId, TableRow, UpdatedTableRow,
 };
 use feldera_adapterlib::catalog::{DeCollectionStream, InputCollectionHandle};
 use feldera_adapterlib::format::ParseError;
@@ -32,6 +33,7 @@ use feldera_types::format::json::JsonFlavor;
 use feldera_types::transport::postgres::{PostgresCdcReaderConfig, PostgresTlsConfig};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use tokio::select;
@@ -45,6 +47,19 @@ use super::tls::make_etl_tls_config;
 
 /// Deferred async result senders waiting for step completion.
 type DeferredSenders = Vec<WriteEventsResult<()>>;
+
+/// Error the destination returns when Feldera terminates the connector while
+/// etl is waiting to hand over a batch. etl persists it as a table error, so
+/// the next start rolls it back (see [`reconcile_table_state`]).
+const TERMINATED_BEFORE_BATCH: &str =
+    "Postgres CDC input connector terminated before accepting batch";
+
+/// Key in the checkpointed resume metadata recording that the checkpoint
+/// contains the whole initial snapshot.
+const SNAPSHOT_COMPLETE_KEY: &str = "snapshot_complete";
+
+/// Upper bound on stacked shutdown errors rolled back at startup.
+const MAX_ERROR_ROLLBACKS: usize = 32;
 
 /// Integrated input connector that reads from Postgres via logical replication (CDC).
 pub struct PostgresCdcInputEndpoint {
@@ -81,11 +96,12 @@ impl IntegratedInputEndpoint for PostgresCdcInputEndpoint {
     fn open(
         self: Box<Self>,
         input_handle: &InputCollectionHandle,
-        _resume_info: Option<serde_json::Value>,
+        resume_info: Option<serde_json::Value>,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(PostgresCdcInputReader::new(
             &self.inner,
             input_handle,
+            resume_info,
         )?))
     }
 }
@@ -99,7 +115,16 @@ impl PostgresCdcInputReader {
     fn new(
         endpoint: &Arc<PostgresCdcInputInner>,
         input_handle: &InputCollectionHandle,
+        resume_info: Option<serde_json::Value>,
     ) -> AnyResult<Self> {
+        // Whether the checkpoint we resume from holds the complete initial
+        // snapshot. Absent metadata means no checkpoint or one taken before
+        // the connector reported completion.
+        let snapshot_in_checkpoint = resume_info
+            .as_ref()
+            .and_then(|v| v.get(SNAPSHOT_COMPLETE_KEY))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let (sender, receiver) = channel(PipelineState::Paused);
         let endpoint_clone = endpoint.clone();
 
@@ -130,6 +155,7 @@ impl PostgresCdcInputReader {
                             feldera_required_columns,
                             receiver,
                             init_status_sender,
+                            snapshot_in_checkpoint,
                         )
                         .await;
                 })
@@ -173,12 +199,12 @@ impl InputReader for PostgresCdcInputReader {
                     .map(|(ts, _)| Watermark::new(*ts, None))
                     .collect();
 
-                // Build resume metadata so Feldera can checkpoint our position.
-                // The actual resume state is managed by etl's PostgresStore;
-                // we just need a stable identifier so the controller knows we
-                // support resumption.
+                // etl's PostgresStore holds the replication position. The
+                // checkpoint only records whether it contains the complete
+                // initial snapshot, so a restart knows whether to redo it.
                 let resume_metadata = json!({
                     "pipeline_id": self.inner.pipeline_id,
+                    SNAPSHOT_COMPLETE_KEY: self.inner.snapshot_complete_for_resume(),
                 });
                 let resume = Resume::Seek {
                     seek: resume_metadata,
@@ -257,6 +283,14 @@ struct PostgresCdcInputInner {
     /// etl shutdown handle for the currently running pipeline.
     /// Used to stop etl workers when Feldera terminates the connector.
     etl_shutdown_tx: Mutex<Option<ShutdownTx>>,
+    /// Set by [`TableErrorMonitor`] once etl records the initial copy of the
+    /// source table as finished.
+    copy_finished: Arc<AtomicBool>,
+    /// Latched once a `Queue` flush has put the whole snapshot into the
+    /// circuit; reported in the resume metadata from then on.
+    snapshot_complete: AtomicBool,
+    /// Fault tolerance is enabled: the slot advances only past checkpoints.
+    strict: bool,
 }
 
 impl PostgresCdcInputInner {
@@ -276,6 +310,7 @@ impl PostgresCdcInputInner {
             Some(rx) => Some(WatcherReceiver::Strict(rx)),
             None => step_completion_rx.clone().map(WatcherReceiver::Fast),
         };
+        let strict = matches!(watcher_rx, Some(WatcherReceiver::Strict(_)));
 
         let (completion_task_tx, completion_task_rx) = if watcher_rx.is_some() {
             let (tx, rx) = mpsc::unbounded_channel();
@@ -296,7 +331,32 @@ impl PostgresCdcInputInner {
             completion_task_tx,
             completion_task_rx: Mutex::new(completion_task_rx),
             etl_shutdown_tx: Mutex::new(None),
+            copy_finished: Arc::new(AtomicBool::new(false)),
+            snapshot_complete: AtomicBool::new(false),
+            strict,
         }
+    }
+
+    /// Whether fault tolerance gates the replication slot on checkpoints.
+    fn strict(&self) -> bool {
+        self.strict
+    }
+
+    /// Whether every snapshot row is in the circuit as of the step the
+    /// current `Queue` flush feeds. Called right after the flush: if etl had
+    /// already finished the copy and nothing is left queued, the flush (or an
+    /// earlier one) carried the last snapshot row.
+    fn snapshot_complete_for_resume(&self) -> bool {
+        if self.snapshot_complete.load(Ordering::Acquire) {
+            return true;
+        }
+        // Read the flag before checking the queue: rows etl pushed before
+        // finishing the copy are either flushed or still queued.
+        if self.copy_finished.load(Ordering::Acquire) && self.queue.is_empty() {
+            self.snapshot_complete.store(true, Ordering::Release);
+            return true;
+        }
+        false
     }
 
     async fn worker_task(
@@ -305,6 +365,7 @@ impl PostgresCdcInputInner {
         feldera_required_columns: Vec<String>,
         receiver: Receiver<PipelineState>,
         init_status_sender: tokio::sync::oneshot::Sender<Result<(), ControllerError>>,
+        snapshot_in_checkpoint: bool,
     ) {
         self.clone()
             .worker_task_inner(
@@ -312,6 +373,7 @@ impl PostgresCdcInputInner {
                 feldera_required_columns,
                 receiver,
                 init_status_sender,
+                snapshot_in_checkpoint,
             )
             .await;
         debug!(
@@ -326,6 +388,7 @@ impl PostgresCdcInputInner {
         feldera_required_columns: Vec<String>,
         receiver: Receiver<PipelineState>,
         init_status_sender: tokio::sync::oneshot::Sender<Result<(), ControllerError>>,
+        snapshot_in_checkpoint: bool,
     ) {
         let pg_conn = match parse_pg_uri(&self.config.uri, &self.config.tls, &self.endpoint_name) {
             Ok(conn) => conn,
@@ -372,6 +435,22 @@ impl PostgresCdcInputInner {
             }
         };
 
+        if let Err(e) = reconcile_table_state(
+            &store,
+            &self.config.source_table,
+            self.strict() && !snapshot_in_checkpoint,
+            &self.endpoint_name,
+        )
+        .await
+        {
+            let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
+                &self.endpoint_name,
+                true,
+                anyhow!("failed to reconcile etl table state: {e}"),
+            )));
+            return;
+        }
+
         let pending_senders = if self.step_completion_rx.is_some() {
             Some(Arc::clone(&self.pending_senders))
         } else {
@@ -392,6 +471,8 @@ impl PostgresCdcInputInner {
             endpoint_name: self.endpoint_name.clone(),
             consumer: self.consumer.clone(),
             store: store.clone(),
+            source_table: self.config.source_table.clone(),
+            copy_finished: Arc::clone(&self.copy_finished),
         };
         let mut pipeline = Pipeline::new(pipeline_config, store, destination);
         self.set_etl_shutdown_tx(pipeline.shutdown_tx());
@@ -440,7 +521,14 @@ impl PostgresCdcInputInner {
         tokio::pin!(pipeline_wait);
         let (pipeline_result, report_error) = select! {
             result = &mut pipeline_wait => (result, true),
-            _ = receiver_clone.wait_for(|state| state == &PipelineState::Terminated) => {
+            // Drop the watch guard inside the block: holding it while awaiting
+            // `pipeline_wait` blocks etl tasks that read the same watch in
+            // `wait_unpaused`, once the reader's `Drop` queues another write.
+            _ = async {
+                let _ = receiver_clone
+                    .wait_for(|state| state == &PipelineState::Terminated)
+                    .await;
+            } => {
                 debug!(
                     "postgres_cdc {}: received termination command; shutting down etl pipeline",
                     &self.endpoint_name
@@ -498,6 +586,9 @@ struct TableErrorMonitor {
     endpoint_name: String,
     consumer: Box<dyn InputConsumer>,
     store: PostgresStore,
+    source_table: String,
+    /// Raised once the source table's state is past its initial copy.
+    copy_finished: Arc<AtomicBool>,
 }
 
 impl TableErrorMonitor {
@@ -514,7 +605,7 @@ impl TableErrorMonitor {
     /// left alone: etl retries them and, once retries are exhausted, the apply
     /// worker propagates the failure through `pipeline.wait`.
     async fn run(self) {
-        const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+        const POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
 
         loop {
             tokio::time::sleep(POLL_INTERVAL).await;
@@ -530,6 +621,17 @@ impl TableErrorMonitor {
                 }
             };
 
+            if !self.copy_finished.load(Ordering::Relaxed)
+                && let Ok(Some(table_id)) = target_table_id(&self.store, &self.source_table).await
+                && states.get(&table_id).is_some_and(copy_is_finished)
+            {
+                self.copy_finished.store(true, Ordering::Release);
+                // A step makes the reader report the completed snapshot in its
+                // resume metadata, so the next checkpoint records it even if
+                // no change arrives for a while.
+                self.consumer.request_step();
+            }
+
             for (table_id, state) in states.iter() {
                 let TableState::Errored {
                     reason,
@@ -543,6 +645,10 @@ impl TableErrorMonitor {
 
                 // A timed retry clears on its own; leave it to etl.
                 if matches!(retry_policy, TableRetryPolicy::TimedRetry { .. }) {
+                    continue;
+                }
+                // Our own shutdown error, rolled back on the next start.
+                if reason.contains(TERMINATED_BEFORE_BATCH) {
                     continue;
                 }
 
@@ -809,7 +915,7 @@ impl FelderaDestination {
             Ok(state) if *state == PipelineState::Running => Ok(()),
             Ok(_) => Err(etl_error!(
                 ErrorKind::DestinationError,
-                "Postgres CDC input connector terminated before accepting batch"
+                TERMINATED_BEFORE_BATCH
             )),
             Err(_) => Err(etl_error!(
                 ErrorKind::DestinationError,
@@ -819,10 +925,7 @@ impl FelderaDestination {
     }
 
     fn is_target_table(&self, schema_name: &str, table_name: &str) -> bool {
-        let qualified = format!("{schema_name}.{table_name}");
-        self.source_table == qualified
-            || self.source_table == table_name
-            || self.source_table == format!("\"{schema_name}\".\"{table_name}\"")
+        is_target_table(&self.source_table, schema_name, table_name)
     }
 
     /// Resolve the replicated column names for `schema`.
@@ -874,6 +977,94 @@ impl FelderaDestination {
             )
         ))
     }
+}
+
+fn is_target_table(source_table: &str, schema_name: &str, table_name: &str) -> bool {
+    let qualified = format!("{schema_name}.{table_name}");
+    source_table == qualified
+        || source_table == table_name
+        || source_table == format!("\"{schema_name}\".\"{table_name}\"")
+}
+
+/// Whether etl has finished the initial copy for a table in `state`.
+fn copy_is_finished(state: &TableState) -> bool {
+    matches!(
+        state,
+        TableState::FinishedCopy
+            | TableState::SyncWait { .. }
+            | TableState::Catchup { .. }
+            | TableState::SyncDone { .. }
+            | TableState::Ready
+    )
+}
+
+/// Postgres OID of `source_table`, if etl has stored its schema.
+async fn target_table_id(store: &PostgresStore, source_table: &str) -> EtlResult<Option<TableId>> {
+    Ok(store
+        .get_table_schemas()
+        .await?
+        .iter()
+        .find(|schema| is_target_table(source_table, &schema.name.schema, &schema.name.name))
+        .map(|schema| schema.id))
+}
+
+/// Bring etl's persisted state for `source_table` in line with what Feldera
+/// has durably ingested, before etl starts.
+///
+/// 1. Roll back errors etl recorded because Feldera terminated the connector
+///    mid-batch. Those writes were never acknowledged, so replaying them is
+///    safe and the previous state is the right one to resume from.
+/// 2. With `redo_snapshot`, reset a finished copy to `Init`. Fault tolerance
+///    resumes from a checkpoint that does not hold the whole snapshot (or from
+///    none), while etl would skip the copy and stream from the slot. Redoing
+///    the copy keeps at-least-once delivery; rows already checkpointed are
+///    delivered twice.
+async fn reconcile_table_state(
+    store: &PostgresStore,
+    source_table: &str,
+    redo_snapshot: bool,
+    endpoint_name: &str,
+) -> EtlResult<()> {
+    store.load_table_states().await?;
+    store.load_table_schemas().await?;
+    let Some(table_id) = target_table_id(store, source_table).await? else {
+        return Ok(());
+    };
+    let Some(mut state) = store.get_table_state(table_id).await? else {
+        return Ok(());
+    };
+
+    let mut rollbacks = 0;
+    while let TableState::Errored { reason, .. } = &state
+        && reason.contains(TERMINATED_BEFORE_BATCH)
+    {
+        if rollbacks == MAX_ERROR_ROLLBACKS {
+            warn!(
+                "postgres_cdc {endpoint_name}: giving up rolling back shutdown errors for table \
+                 {table_id}; restarting its copy"
+            );
+            state = TableState::Init;
+            store.update_table_state(table_id, state.clone()).await?;
+            break;
+        }
+        state = store.rollback_table_state(table_id).await?;
+        rollbacks += 1;
+    }
+    if rollbacks > 0 {
+        info!(
+            "postgres_cdc {endpoint_name}: rolled back {rollbacks} shutdown error(s) for table \
+             {table_id}; resuming from state {state:?}"
+        );
+    }
+
+    if redo_snapshot && copy_is_finished(&state) {
+        warn!(
+            "postgres_cdc {endpoint_name}: the checkpoint does not contain the complete initial \
+             snapshot of table {table_id}; reading it again"
+        );
+        store.update_table_state(table_id, TableState::Init).await?;
+    }
+    Ok(())
 }
 
 /// Replicated column names of `schema`, in the order etl emits cell values for
