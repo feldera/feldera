@@ -135,6 +135,19 @@ pub enum CorruptionError {
         u64,
     ),
 
+    /// A layer file's value layout does not match the factories opening it.
+    #[error(
+        "File value column is {} but the factories opening it expect {}",
+        if *found { "stamped" } else { "plain" },
+        if *expected { "stamped" } else { "plain" }
+    )]
+    ValueStampMismatch {
+        /// Whether the factories describe a stamped value column.
+        expected: bool,
+        /// Whether the file's value column is stamped.
+        found: bool,
+    },
+
     /// The hidden-value-column feature bit and the metadata flag disagree.
     #[error(
         "File trailer is inconsistent: hidden-value-column feature bit is {bit} but the value stamp is {stamp}"
@@ -1953,6 +1966,74 @@ where
     }
 }
 
+/// Reads and validates a layer file's trailer.
+///
+/// The trailer needs no factories, so a caller can learn a file's layout from
+/// [`read_metadata`] before it picks the factories that decode the file.
+fn read_trailer(
+    cache: fn() -> Option<Arc<BufferCache>>,
+    file: &dyn FileReader,
+    stats: &AtomicCacheStats,
+) -> Result<Arc<FileTrailer>, Error> {
+    let file_size = file.get_size()?;
+    if file_size < 512 || (file_size % 512) != 0 {
+        return Err(CorruptionError::InvalidFileSize(file_size).into());
+    }
+
+    let file_trailer = FileTrailer::new(
+        cache,
+        file,
+        BlockLocation::new(file_size - 512, 512).unwrap(),
+        stats,
+    )?;
+
+    if file_trailer.version < MIN_SUPPORTED_VERSION {
+        return Err(CorruptionError::InvalidVersion {
+            version: file_trailer.version,
+            min_supported_version: MIN_SUPPORTED_VERSION,
+        }
+        .into());
+    }
+
+    if let Some(features) = file_trailer.unsupported_compatible_features() {
+        info!(
+            "{}: storage file uses unsupported compatible features {features:#x}",
+            file.path(),
+        );
+    }
+
+    if let Some(features) = file_trailer.unknown_incompatible_features() {
+        return Err(CorruptionError::UnsupportedIncompatibleFeatures(features).into());
+    }
+
+    // The bit and the flag are written together.  If they disagree the file is
+    // damaged, and the dangerous direction is bit-set-flag-clear: a reader would
+    // treat a stamped value column as a plain one.
+    let stamp = file_trailer.metadata.value_stamp.is_stamped();
+    let bit = file_trailer.has_incompatible_feature(INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN);
+    if stamp != bit {
+        return Err(CorruptionError::InconsistentValueStamp { bit, stamp }.into());
+    }
+
+    Ok(file_trailer)
+}
+
+/// Reads a layer file's metadata without opening its columns.
+///
+/// Opening a file requires factories for the types its columns hold, and a
+/// batch type whose value layout varies has to know which it is looking at
+/// before it can choose them.  The metadata records the layout and lives in the
+/// trailer, so this answers that question in one block read.
+pub fn read_metadata(
+    cache: fn() -> Option<Arc<BufferCache>>,
+    storage_backend: &dyn StorageBackend,
+    path: &StoragePath,
+) -> Result<BatchMetadata, Error> {
+    let file = storage_backend.open(path)?;
+    let stats = AtomicCacheStats::default();
+    Ok(read_trailer(cache, &*file, &stats)?.metadata.clone())
+}
+
 impl<T> Reader<T>
 where
     T: ColumnSpec,
@@ -1973,46 +2054,8 @@ where
         file: Arc<dyn FileReader>,
         membership_filter: Option<BatchKeyFilter>,
     ) -> Result<(Self, Option<BatchKeyFilter>), Error> {
-        let file_size = file.get_size()?;
-        if file_size < 512 || (file_size % 512) != 0 {
-            return Err(CorruptionError::InvalidFileSize(file_size).into());
-        }
-
         let stats = AtomicCacheStats::default();
-        let file_trailer = FileTrailer::new(
-            cache,
-            &*file,
-            BlockLocation::new(file_size - 512, 512).unwrap(),
-            &stats,
-        )?;
-
-        if file_trailer.version < MIN_SUPPORTED_VERSION {
-            return Err(CorruptionError::InvalidVersion {
-                version: file_trailer.version,
-                min_supported_version: MIN_SUPPORTED_VERSION,
-            }
-            .into());
-        }
-
-        if let Some(features) = file_trailer.unsupported_compatible_features() {
-            info!(
-                "{}: storage file uses unsupported compatible features {features:#x}",
-                file.path(),
-            );
-        }
-
-        if let Some(features) = file_trailer.unknown_incompatible_features() {
-            return Err(CorruptionError::UnsupportedIncompatibleFeatures(features).into());
-        }
-
-        // The bit and the flag are written together.  If they disagree the file
-        // is damaged, and the dangerous direction is bit-set-flag-clear: this
-        // reader would treat a stamped value column as a plain one.
-        let stamp = file_trailer.metadata.value_stamp.is_stamped();
-        let bit = file_trailer.has_incompatible_feature(INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN);
-        if stamp != bit {
-            return Err(CorruptionError::InconsistentValueStamp { bit, stamp }.into());
-        }
+        let file_trailer = read_trailer(cache, &*file, &stats)?;
 
         assert_eq!(factories.len(), file_trailer.columns.len());
 
