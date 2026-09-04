@@ -47,9 +47,10 @@ import Dayjs, { isDayjs } from 'dayjs'
 import { describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import Query, { type Row } from '$lib/components/adhoc/Query.svelte'
+import Query from '$lib/components/adhoc/Query.svelte'
 import { arrowIpcBatchToJS, arrowSchemaToFelderaFields } from '$lib/functions/apacheArrow'
 import { enclosure } from '$lib/functions/common/function'
+import type { Row } from '$lib/types/adhocQuery'
 import type { SQLValueJS } from '$lib/types/sql'
 
 // Wraps a single value into a typed Arrow Vector.
@@ -434,5 +435,95 @@ describe('adhoc-query Query.svelte table — arrowIpcValueToJS serialization', (
     expect(topDecimal.columntype.type).toBe('DECIMAL')
     expect(topDecimal.columntype.precision).toBe(38)
     expect(topDecimal.columntype.scale).toBe(10)
+  })
+})
+
+// Issue 6771: an ad-hoc query streams its rows, and the panel reported "No rows returned" while
+// the query was still executing.
+describe('Query row count', () => {
+  const show = (rows: Row[], progress: boolean, stopped = false) => {
+    const { container } = render(Query, {
+      query: 'SELECT * FROM t',
+      result: {
+        rows: enclosure(rows),
+        columns: [{ name: 'x', case_sensitive: false, columntype: { type: 'BIGINT' } } as never],
+        totalSkippedBytes: 0,
+        endResultStream: () => {}
+      },
+      progress,
+      stopped,
+      onSubmitQuery: () => {},
+      onDeleteQuery: () => {},
+      disabled: false,
+      isLastQuery: true
+    })
+    return container
+  }
+
+  const row = (value: number): Row => ({ cells: [value as unknown as SQLValueJS] })
+
+  it('says nothing has arrived yet while the query runs', () => {
+    expect(show([], true).textContent).toContain('No rows returned yet')
+  })
+
+  it('counts the rows so far while the query runs', () => {
+    expect(show([row(1), row(2)], true).textContent).toContain('2 rows so far')
+  })
+
+  it('counts a single row so far while the query runs', () => {
+    expect(show([row(1)], true).textContent).toContain('1 row so far')
+  })
+
+  it('reports an empty answer only once the query has ended', () => {
+    const text = show([], false).textContent ?? ''
+    expect(text).toContain('No rows returned')
+    expect(text).not.toContain('yet')
+  })
+
+  it('counts a single row, which showed no count at all', () => {
+    expect(show([row(1)], false).textContent).toContain('1 row')
+  })
+
+  it('counts several rows', () => {
+    expect(show([row(1), row(2), row(3)], false).textContent).toContain('3 rows')
+  })
+
+  it('counts neither the failure nor the truncation notice as a row', () => {
+    // Both travel in `rows` and the table prints them in place of a row.
+    expect(
+      show([row(1), row(2), { warning: 'only the first 1000 are shown' }], false).textContent
+    ).toContain('2 rows')
+  })
+
+  it('counts a row whose value is the word "error"', () => {
+    // The row's shape decides, not its contents: a cell's value lives inside `cells`, so it
+    // cannot look like the failure row the table prints in place of a row.
+    const text = show([{ cells: ['error' as unknown as SQLValueJS] }, row(2)], false).textContent
+    expect(text).toContain('2 rows')
+  })
+
+  it('says nothing about rows when the query failed before any arrived', () => {
+    const text = show([{ error: 'syntax error at or near "SELCT"' }], false).textContent ?? ''
+    expect(text).toContain('syntax error')
+    expect(text).not.toContain('row')
+  })
+
+  it('keeps the count of the rows that arrived before the query failed', () => {
+    // A failure mid-stream leaves the delivered rows in the table; the count says how far it got.
+    const text = show([row(1), row(2), { error: 'division by zero' }], false).textContent ?? ''
+    expect(text).toContain('2 rows, then the query failed')
+  })
+
+  it('marks a result cut at the row cap as a prefix', () => {
+    const text = show(
+      [row(1), row(2), { warning: 'only the first 2 are shown' }],
+      false
+    ).textContent
+    expect(text).toContain('First 2 rows')
+  })
+
+  it('marks a result the user stopped as a prefix', () => {
+    expect(show([row(1), row(2)], false, true).textContent).toContain('2 rows, then stopped')
+    expect(show([], false, true).textContent).toContain('Stopped before any row arrived')
   })
 })
