@@ -5,6 +5,7 @@ import { match } from 'ts-pattern'
 import type { QueryResult } from '$lib/components/adhoc/Query.svelte'
 import { nonNull } from '$lib/functions/common/function'
 import type { ColumnType, SqlType } from '$lib/services/manager'
+import { isDataRow } from '$lib/types/adhocQuery'
 import type { SQLValueJS } from '$lib/types/sql'
 
 /**
@@ -174,11 +175,10 @@ export const tableToCSJV = (result: QueryResult): string => {
   // Build the header row with column names as JSON strings
   lines[0] = columns.map((col) => JSONbig.stringify(col.name)).join(',')
 
-  // Build data rows in a single pass: data rows have a `cells` property,
-  // while error/warning rows use `error` or `warning`. Only data rows are exported.
+  // Build data rows in a single pass; the failure and truncation rows are not exported.
   let lineIndex = 0
   for (const row of rows) {
-    if ('cells' in row) {
+    if (isDataRow(row)) {
       lines[++lineIndex] = row.cells.map(serializeSQLValue).join(',')
     }
   }

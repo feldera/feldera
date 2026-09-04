@@ -2,8 +2,7 @@
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
   import type { Field } from '$lib/services/manager'
   import type { SQLValueJS } from '$lib/types/sql'
-
-  export type Row = { cells: SQLValueJS[] } | { error: string } | { warning: string }
+  import { isDataRow, isErrorRow, isWarningRow, type Row } from '$lib/types/adhocQuery'
 
   export type QueryResult = {
     rows: () => Row[]
@@ -15,6 +14,8 @@
   export type QueryData = {
     query: string
     progress?: boolean
+    /** The user stopped the query before its stream ended, so `result` holds a prefix. */
+    stopped?: boolean
     result?: QueryResult
   }
 
@@ -51,6 +52,7 @@
     query = $bindable(),
     result,
     progress,
+    stopped,
     onSubmitQuery,
     onDeleteQuery,
     onCancelQuery,
@@ -87,6 +89,30 @@
     rows = result?.rows() ?? []
   })
   const reverseScroll = useReverseScrollContainer({ observeContentSize: () => rows.length })
+
+  const returned = $derived(rows.filter(isDataRow).length)
+  const failed = $derived(rows.some(isErrorRow))
+  const truncated = $derived(rows.some(isWarningRow))
+  const counted = $derived(returned === 1 ? '1 row' : `${returned} rows`)
+
+  // A query streams its rows, so until it ends the count is a running total. A result cut short,
+  // by a failure, by the row cap or by the user, is explicit.
+  const rowCount = $derived.by(() => {
+    if (progress) {
+      return returned === 0 ? 'No rows returned yet' : `${counted} so far`
+    }
+    if (failed) {
+      // With no rows, the failure message the table prints says it all.
+      return returned === 0 ? '' : `${counted}, then the query failed`
+    }
+    if (truncated) {
+      return `First ${counted}`
+    }
+    if (stopped) {
+      return returned === 0 ? 'Stopped before any row arrived' : `${counted}, then stopped`
+    }
+    return returned === 0 ? 'No rows returned' : counted
+  })
 </script>
 
 <SQLValueTooltip bind:popupRef tooltipData={tooltip.data}></SQLValueTooltip>
@@ -138,8 +164,7 @@
           </div>
           <div class="flex h-6 w-full flex-nowrap items-center gap-4 whitespace-nowrap">
             {#if result}
-              {@const len = rows.length}
-              {len > 1 ? `${len} rows` : len === 0 ? 'No rows returned' : ''}
+              {rowCount}
             {/if}
             {#if progress}
               <Progress class="h-1 max-w-[1000px]" value={null}>
@@ -205,7 +230,7 @@
             {/snippet}
             {#snippet item({ index, style }: { index: number; style?: string })}
               {@const row = rows[index]}
-              {#if !row}{:else if 'cells' in row}
+              {#if !row}{:else if isDataRow(row)}
                 <tr {style} class="{itemHeight} whitespace-nowrap odd:bg-white odd:dark:bg-black">
                   <td class="text-right font-mono select-none">{index}</td>
                   {#each row.cells as value}
@@ -219,7 +244,7 @@
                     ></SQLValue>
                   {/each}
                 </tr>
-              {:else if 'error' in row}
+              {:else if isErrorRow(row)}
                 <tr {style} class={itemHeight} use:selectScope tabindex={-1}>
                   <td colspan="99999999"
                     ><div class="rounded bg-error-50-950/50 px-2">{row.error}</div></td
