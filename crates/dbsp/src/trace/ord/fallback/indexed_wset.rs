@@ -2,14 +2,19 @@ use super::utils::{copy_to_builder, pick_merge_destination};
 use crate::storage::file::SerializerInner;
 use crate::storage::file::{FilterKind, FilterStats, TouchedWindowCount};
 use crate::{
-    DBWeight, Error, NumEntries,
+    DBData, DBWeight, Error, NumEntries,
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
     circuit::checkpointer::Checkpoint,
-    dynamic::{DataTrait, DynVec, Erase, WeightTrait, WeightTraitTyped},
+    dynamic::{
+        DataTrait, DynData, DynDataTyped, DynPair, DynVec, DynWeightedPairs, Erase, Factory,
+        WeightTrait, WeightTraitTyped,
+    },
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
+    utils::Tup2,
     trace::{
-        Batch, BatchLocation, BatchReader, Builder, FallbackValBatch, FileIndexedWSet,
-        FileIndexedWSetFactories, Filter, GroupFilter, MergeCursor,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
+        FallbackValBatch, FileIndexedWSet, FileIndexedWSetFactories, Filter, GroupFilter,
+        MergeCursor, WeightedItem,
         cursor::{CursorFactory, DelegatingCursor, PushCursor},
         deserialize_indexed_wset, merge_batches_by_reference,
         ord::{
@@ -31,7 +36,142 @@ use std::{
     sync::Arc,
 };
 
-pub type FallbackIndexedWSetFactories<K, V, R> = FileIndexedWSetFactories<K, V, R>;
+/// Factories for [`FallbackIndexedWSet`].
+///
+/// `plain` describes the batch's own value type.  `projected` is present only for
+/// a batch that may adopt a value column carrying a hidden trailing column, and
+/// describes that wider value type.
+pub struct FallbackIndexedWSetFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    plain: FileIndexedWSetFactories<K, V, R>,
+    projected: Option<FileIndexedWSetFactories<K, DynPair<V, DynData>, R>>,
+}
+
+impl<K, V, R> Clone for FallbackIndexedWSetFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn clone(&self) -> Self {
+        Self {
+            plain: self.plain.clone(),
+            projected: self.projected.clone(),
+        }
+    }
+}
+
+impl<K, V, R> FallbackIndexedWSetFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    /// Factories for a batch that may adopt a value column carrying a hidden
+    /// trailing `u32`.
+    pub fn with_projection<KType, VType, RType>() -> Self
+    where
+        KType: DBData + Erase<K>,
+        VType: DBData + Erase<V>,
+        RType: DBWeight + Erase<R>,
+        Tup2<VType, u32>: DBData + Erase<DynPair<V, DynData>>,
+    {
+        Self {
+            plain: FileIndexedWSetFactories::new::<KType, VType, RType>(),
+            projected: Some(
+                FileIndexedWSetFactories::new::<KType, Tup2<VType, u32>, RType>(),
+            ),
+        }
+    }
+
+    /// Factories for the projected representation, whose values carry a hidden
+    /// trailing column.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless this bundle came from [`Self::with_projection`].  A batch
+    /// only ever holds a projected variant when its factories describe one, so
+    /// reaching this on a `None` bundle means a projected batch escaped into a
+    /// trace that cannot interpret it.
+    pub fn projected(&self) -> &FileIndexedWSetFactories<K, DynPair<V, DynData>, R> {
+        self.projected.as_ref().expect(
+            "projected batch requires factories built with `FallbackIndexedWSetFactories::with_projection`",
+        )
+    }
+
+    /// True if this bundle can describe projected batches.
+    pub fn has_projection(&self) -> bool {
+        self.projected.is_some()
+    }
+}
+
+impl<K, V, R> BatchReaderFactories<K, V, (), R> for FallbackIndexedWSetFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn new<KType, VType, RType>() -> Self
+    where
+        KType: DBData + Erase<K>,
+        VType: DBData + Erase<V>,
+        RType: DBWeight + Erase<R>,
+    {
+        Self {
+            plain: FileIndexedWSetFactories::new::<KType, VType, RType>(),
+            projected: None,
+        }
+    }
+
+    fn key_factory(&self) -> &'static dyn Factory<K> {
+        self.plain.key_factory()
+    }
+
+    fn keys_factory(&self) -> &'static dyn Factory<DynVec<K>> {
+        self.plain.keys_factory()
+    }
+
+    fn val_factory(&self) -> &'static dyn Factory<V> {
+        self.plain.val_factory()
+    }
+
+    fn weight_factory(&self) -> &'static dyn Factory<R> {
+        self.plain.weight_factory()
+    }
+}
+
+impl<K, V, R> BatchFactories<K, V, (), R> for FallbackIndexedWSetFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn item_factory(&self) -> &'static dyn Factory<DynPair<K, V>> {
+        self.plain.item_factory()
+    }
+
+    fn weighted_item_factory(&self) -> &'static dyn Factory<WeightedItem<K, V, R>> {
+        self.plain.weighted_item_factory()
+    }
+
+    fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>> {
+        self.plain.weighted_items_factory()
+    }
+
+    fn weighted_vals_factory(&self) -> &'static dyn Factory<DynWeightedPairs<V, R>> {
+        self.plain.weighted_vals_factory()
+    }
+
+    fn time_diffs_factory(
+        &self,
+    ) -> Option<&'static dyn Factory<DynWeightedPairs<DynDataTyped<()>, R>>> {
+        None
+    }
+}
 
 #[derive(SizeOf)]
 pub struct FallbackIndexedWSet<K, V, R>
@@ -198,7 +338,7 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    type Factories = FileIndexedWSetFactories<K, V, R>;
+    type Factories = FallbackIndexedWSetFactories<K, V, R>;
     type Key = K;
     type Val = V;
     type Time = ();
@@ -357,7 +497,7 @@ where
         match &self.inner {
             Inner::Vec(vec) => {
                 let mut file = FileIndexedWSetBuilder::with_capacity(
-                    &self.factories,
+                    &self.factories.plain,
                     vec.key_count(),
                     vec.len(),
                 );
@@ -381,7 +521,7 @@ where
     fn from_path(factories: &Self::Factories, path: &StoragePath) -> Result<Self, ReaderError> {
         Ok(FallbackIndexedWSet {
             factories: factories.clone(),
-            inner: Inner::File(FileIndexedWSet::from_path(factories, path)?),
+            inner: Inner::File(FileIndexedWSet::from_path(&factories.plain, path)?),
         })
     }
 
@@ -434,7 +574,7 @@ where
         vec: &VecIndexedWSetBuilder<K, V, R, usize>,
     ) -> BuilderInner<K, V, R> {
         let mut file =
-            FileIndexedWSetBuilder::with_capacity(factories, vec.num_keys(), vec.num_tuples());
+            FileIndexedWSetBuilder::with_capacity(&factories.plain, vec.num_keys(), vec.num_tuples());
         vec.copy_to_builder(&mut file);
         BuilderInner::File(file)
     }
@@ -481,7 +621,7 @@ where
         match build_to {
             BuildTo::Memory => Self::Vec(Self::new_vec(factories, key_capacity, value_capacity)),
             BuildTo::Storage => Self::File(FileIndexedWSetBuilder::with_capacity(
-                factories,
+                &factories.plain,
                 key_capacity,
                 value_capacity,
             )),
@@ -499,7 +639,7 @@ where
         value_capacity: usize,
     ) -> VecIndexedWSetBuilder<K, V, R, usize> {
         VecIndexedWSetBuilder::with_capacity(
-            &factories.vec_indexed_wset_factory,
+            &factories.plain.vec_indexed_wset_factory,
             key_capacity,
             value_capacity,
         )
@@ -545,12 +685,12 @@ where
             factories: factories.clone(),
             inner: match pick_merge_destination(batches.clone(), location) {
                 BatchLocation::Memory => BuilderInner::Vec(VecIndexedWSetBuilder::with_capacity(
-                    &factories.vec_indexed_wset_factory,
+                    &factories.plain.vec_indexed_wset_factory,
                     key_capacity,
                     value_capacity,
                 )),
                 BatchLocation::Storage => BuilderInner::File(FileIndexedWSetBuilder::for_merge(
-                    factories, batches, location,
+                    &factories.plain, batches, location,
                 )),
             },
         }
