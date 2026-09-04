@@ -1233,7 +1233,7 @@ fn test_fork_spine_metadata() {
 /// This is necessary because the batches in `crate::trace::ord::file` require
 /// access to storage, which they get per-thread from a [Runtime], and which is
 /// only available within a circuit initialized with storage.
-fn run_in_circuit_with_storage<F>(f: F)
+pub(crate) fn run_in_circuit_with_storage<F>(f: F)
 where
     F: FnOnce() + Clone + Send + 'static,
 {

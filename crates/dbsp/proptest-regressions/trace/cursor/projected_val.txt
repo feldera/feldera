@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 5646e611a05e69e65f140fac8d873c537e6d08e0d736bd69bd0a0a5ad392ec0c # shrinks to rows = [(0, 0, 0, -1)], ops = [StepKey]
+cc 0320b5253e3c72ead284cef0bd69be74b8d963ecb2db051b59c8efa55642c52e # shrinks to rows = [(0, 0, 0, -1)], ops = [SeekKeyExact(-1)]
+cc e409e082f8246daff5421f5dbcc7c2c744808d7cb72c608284295a90cbf20ef5 # shrinks to rows = [(0, 0, 0, 1), (0, 1, 0, -1)], ops = [SeekKeyWith(1), RewindVals]
