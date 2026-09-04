@@ -1995,6 +1995,10 @@ pub(crate) async fn get_next_sql_compilation(
 
 /// Retrieves the pipeline which is stopped, whose program status has been SqlCompiled
 /// for the longest, and is of the current platform version. Returns `None` if none is found.
+///
+/// `FOR UPDATE SKIP LOCKED` lets a second compiler server take the next row
+/// instead of waiting on, or double-claiming, a row another worker already
+/// holds (#6496).
 pub(crate) async fn get_next_rust_compilation(
     txn: &Transaction<'_>,
     platform_version: &str,
@@ -2012,6 +2016,7 @@ pub(crate) async fn get_next_rust_compilation(
                    AND ({PIPELINE_ID_SQL_HASH_FUNCTION_CALL} % $2) = $3
              ORDER BY p.program_status_since ASC, p.id ASC
              LIMIT 1
+             FOR UPDATE SKIP LOCKED
             "
         ))
         .await?;
@@ -2032,6 +2037,39 @@ pub(crate) async fn get_next_rust_compilation(
             parse_pipeline_row_all(&row)?,
         ))),
     }
+}
+
+/// Lock the next `SqlCompiled` pipeline and mark it `CompilingRust` in the
+/// same transaction so the rust worker actually starts work (#6496).
+pub(crate) async fn claim_next_rust_compilation(
+    txn: &Transaction<'_>,
+    platform_version: &str,
+    worker_id: usize,
+    total_workers: usize,
+) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
+    let Some((tenant_id, pipeline)) =
+        get_next_rust_compilation(txn, platform_version, worker_id, total_workers).await?
+    else {
+        return Ok(None);
+    };
+
+    set_program_status(
+        txn,
+        tenant_id,
+        pipeline.id,
+        pipeline.program_version,
+        &ProgramStatus::CompilingRust,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+    )
+    .await?;
+
+    Ok(Some((tenant_id, pipeline)))
 }
 
 /// Counts pipelines with outstanding compilation work.
