@@ -183,6 +183,31 @@ impl TouchedWindowCount {
     }
 }
 
+/// Whether a file's value column carries a trailing column that the reader hides.
+///
+/// A newtype over `u32` rather than an enum: an unknown code must reach the
+/// incompatible-feature check as data, not fail the trailer parse first, so
+/// that an old binary reports "unsupported feature" instead of "corrupt file".
+#[binrw]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ValueStampFlag {
+    stamp: u32,
+}
+
+impl ValueStampFlag {
+    /// An ordinary file: values are exactly the declared value type.
+    pub const NONE: Self = Self { stamp: 0 };
+
+    /// Values are `Tup2<V, u32>`, where the `u32` is an arrival index that the
+    /// reader projects away.  Written by the lazy input upsert operator.
+    pub const UPSERT_INDEX: Self = Self { stamp: 1 };
+
+    /// True if the value column carries a hidden trailing column.
+    pub fn is_stamped(self) -> bool {
+        self.stamp != Self::NONE.stamp
+    }
+}
+
 /// Additional metadata added to the file by the writer.
 #[binrw]
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -197,6 +222,13 @@ pub struct BatchMetadata {
     /// e.g. because its key type is not roaring-compatible or its span exceeds
     /// `u32`.
     pub touched_window_count: TouchedWindowCount,
+
+    /// Whether the value column carries a trailing column the reader hides.
+    ///
+    /// Appended after `touched_window_count`.  The trailer block is zero-padded
+    /// to 4 kB, so a trailer written before this field existed reads back as
+    /// [`ValueStampFlag::NONE`], exactly as `negative_weight_count` was added.
+    pub value_stamp: ValueStampFlag,
 }
 
 /// File trailer block.
@@ -300,11 +332,17 @@ impl FileTrailer {
         (self.compatible_features & feature) != 0
     }
 
+    /// Returns true if `feature` is set in the incompatible feature bitmap.
+    pub fn has_incompatible_feature(&self, feature: u64) -> bool {
+        (self.incompatible_features & feature) != 0
+    }
+
     /// Returns the unknown incompatible features, if any.
     pub fn unknown_incompatible_features(&self) -> Option<u64> {
         let unknown_incompatible_features = self.incompatible_features
             & !INCOMPATIBLE_FEATURE_ROARING_FILTERS
-            & !INCOMPATIBLE_FEATURE_MODULAR_FILTERS;
+            & !INCOMPATIBLE_FEATURE_MODULAR_FILTERS
+            & !INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN;
         if unknown_incompatible_features != 0 {
             Some(unknown_incompatible_features)
         } else {
@@ -337,6 +375,15 @@ pub const INCOMPATIBLE_FEATURE_ROARING_FILTERS: u64 = 1 << 0;
 /// Bit set to 1 in [FileTrailer::incompatible_features] if the file contains a
 /// Bloom filter with more than one module.
 pub const INCOMPATIBLE_FEATURE_MODULAR_FILTERS: u64 = 1 << 1;
+
+/// Bit set to 1 in [FileTrailer::incompatible_features] if the file's value
+/// column carries a trailing column that only a reader which knows to hide it
+/// can interpret.
+///
+/// Incompatible rather than compatible: a reader that ignored the stamp would
+/// deserialize `Tup2<V, u32>` bytes as `V` through unchecked rkyv, which is
+/// silent corruption rather than an error.
+pub const INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN: u64 = 1 << 2;
 
 /// Information about a column.
 ///

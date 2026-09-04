@@ -15,8 +15,8 @@ use crate::storage::{
     buffer_cache::{BufferCache, FBuf},
     file::format::{
         BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, DataBlockHeader, FileTrailerColumn, FixedLen,
-        IndexBlockHeader, MIN_SUPPORTED_VERSION, NodeType, ROARING_BITMAP_FILTER_BLOCK_MAGIC,
-        VERSION_NUMBER, Varint,
+        INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN, IndexBlockHeader, MIN_SUPPORTED_VERSION,
+        NodeType, ROARING_BITMAP_FILTER_BLOCK_MAGIC, VERSION_NUMBER, Varint,
     },
     file::item::ArchivedItem,
 };
@@ -134,6 +134,17 @@ pub enum CorruptionError {
         /// Unsupported incompatible features
         u64,
     ),
+
+    /// The hidden-value-column feature bit and the metadata flag disagree.
+    #[error(
+        "File trailer is inconsistent: hidden-value-column feature bit is {bit} but the value stamp is {stamp}"
+    )]
+    InconsistentValueStamp {
+        /// Whether [`INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN`] is set.
+        bit: bool,
+        /// Whether the metadata records a stamped value column.
+        stamp: bool,
+    },
 
     /// [`mod@binrw`] reported a format violation.
     #[error("Binary read/write error reading {block_type} block ({location}): {inner}")]
@@ -1992,6 +2003,15 @@ where
 
         if let Some(features) = file_trailer.unknown_incompatible_features() {
             return Err(CorruptionError::UnsupportedIncompatibleFeatures(features).into());
+        }
+
+        // The bit and the flag are written together.  If they disagree the file
+        // is damaged, and the dangerous direction is bit-set-flag-clear: this
+        // reader would treat a stamped value column as a plain one.
+        let stamp = file_trailer.metadata.value_stamp.is_stamped();
+        let bit = file_trailer.has_incompatible_feature(INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN);
+        if stamp != bit {
+            return Err(CorruptionError::InconsistentValueStamp { bit, stamp }.into());
         }
 
         assert_eq!(factories.len(), file_trailer.columns.len());
