@@ -17,6 +17,7 @@ public class ContainsNow extends InnerVisitor {
     public boolean found;
     /** If true the 'found' is reset for each invocation. */
     public final boolean perExpression;
+    /** The last now() call found */
     @Nullable
     DBSPExpression nowExpression = null;
 

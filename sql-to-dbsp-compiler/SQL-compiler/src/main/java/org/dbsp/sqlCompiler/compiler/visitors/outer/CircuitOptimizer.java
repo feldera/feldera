@@ -140,6 +140,8 @@ public class CircuitOptimizer extends Passes {
         this.add(new OptimizeWithGraph(compiler, g -> new CloneOperatorsWithFanout(compiler, g)));
         this.add(new LinearPostprocessRetainKeys(compiler));
         this.add(new ExpandIndexedInputs(compiler));
+        // Needs the GC operators of MonotoneAnalyzer and the primary-key indexes of ExpandIndexedInputs
+        this.add(new FindUnboundedState(compiler));
         this.add(new Conditional(compiler, new InsertWeightValidation(compiler),
                 this.compiler.metadata::enforcePositiveInputs));
         this.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
@@ -192,7 +194,6 @@ public class CircuitOptimizer extends Passes {
         this.add(new MerkleOuter(compiler, true));
         this.add(new MerkleOuter(compiler, false));
         this.add(new TagRegions(compiler));
-        this.add(new FindUnboundedState(compiler));
         this.add(new CircuitStatistics(compiler));
     }
 

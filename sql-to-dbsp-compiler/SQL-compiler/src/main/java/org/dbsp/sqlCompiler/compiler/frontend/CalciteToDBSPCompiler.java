@@ -3085,6 +3085,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     private DBSPNode compileCreateView(CreateViewStatement view) {
         RelNode rel = view.getRel();
+        SourcePositionRange viewPosition = new SourcePositionRange(view.getParserPosition());
+        this.compiler().viewOrigins.add(rel, view.relationName, viewPosition);
         this.go(rel);
         DBSPSimpleOperator op = this.getOperator(rel);
 
