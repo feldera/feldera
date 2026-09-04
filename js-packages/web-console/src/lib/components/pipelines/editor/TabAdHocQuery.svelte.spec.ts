@@ -163,4 +163,51 @@ describe('TabAdHocQuery.svelte — arrow_ipc result rendering', () => {
 
     await expect.element(page.getByText(message)).toBeInTheDocument()
   })
+
+  it('marks a query the user stopped, so its result does not read as complete', async () => {
+    // A stream that delivers nothing until the stop button cancels it.
+    let close = () => {}
+    adHocQueryMock.mockResolvedValueOnce({
+      stream: new ReadableStream<Uint8Array>({
+        start(controller) {
+          close = () => controller.close()
+        }
+      }),
+      cancel: () => close(),
+      error: (): Error | undefined => undefined
+    })
+
+    render(TabAdHocQuery, { pipeline: pipelineProp('p-adhoc-stop') })
+    await page.getByRole('textbox').first().fill('SELECT * FROM slow_view')
+    await page.getByRole('button', { name: 'Run query' }).first().click()
+    await page.getByRole('button', { name: 'Stop query' }).first().click()
+
+    await expect.element(page.getByText('Stopped before any row arrived')).toBeInTheDocument()
+  })
+
+  it('drops the stop mark when the same query is run again', async () => {
+    // The mark lives on the result, which every run rebuilds, so a later run cannot inherit it.
+    let close = () => {}
+    adHocQueryMock.mockResolvedValueOnce({
+      stream: new ReadableStream<Uint8Array>({
+        start(controller) {
+          close = () => controller.close()
+        }
+      }),
+      cancel: () => close(),
+      error: (): Error | undefined => undefined
+    })
+
+    render(TabAdHocQuery, { pipeline: pipelineProp('p-adhoc-rerun') })
+    await page.getByRole('textbox').first().fill('SELECT * FROM slow_view')
+    await page.getByRole('button', { name: 'Run query' }).first().click()
+    await page.getByRole('button', { name: 'Stop query' }).first().click()
+    await expect.element(page.getByText('Stopped before any row arrived')).toBeInTheDocument()
+
+    // The second run falls through to the default mock, which delivers the one-row fixture.
+    await page.getByRole('button', { name: 'Run query' }).first().click()
+    await expect.element(page.getByText('1 row', { exact: true })).toBeInTheDocument()
+    expect(page.getByText('then stopped').elements()).toHaveLength(0)
+    expect(page.getByText('Stopped before any row arrived').elements()).toHaveLength(0)
+  })
 })
