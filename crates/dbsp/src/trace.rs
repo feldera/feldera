@@ -36,7 +36,7 @@ pub use crate::storage::file::{DbspSerializer, Deserializable, Deserializer, Rky
 use crate::storage::file::{FilterKind, FilterStats};
 use crate::trace::cursor::{
     DefaultPushCursor, FilteredMergeCursor, FilteredMergeCursorWithSnapshot, PushCursor,
-    UnfilteredMergeCursor,
+    UnfilteredMergeCursor, merge_cursor_over,
 };
 use crate::utils::{IsNone, SupportsRoaring};
 use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
@@ -503,19 +503,7 @@ where
         key_filter: Option<Filter<Self::Key>>,
         value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
-        if key_filter.is_none() && value_filter.is_none() {
-            Box::new(UnfilteredMergeCursor::new(self.cursor()))
-        } else if let Some(GroupFilter::Simple(filter)) = value_filter {
-            Box::new(FilteredMergeCursor::new(
-                self.cursor(),
-                key_filter,
-                Some(filter),
-            ))
-        } else {
-            // Other forms of GroupFilters cannot be evaluated without a trace snapshot -- don't filter values
-            // in such cursors.
-            Box::new(FilteredMergeCursor::new(self.cursor(), key_filter, None))
-        }
+        merge_cursor_over(self.cursor(), key_filter, value_filter)
     }
 
     /// Similar to `merge_cursor`, but invoked in the context of a spine merger.
@@ -676,9 +664,12 @@ where
     /// * The output sample can only contain keys present in `self` (with
     ///   non-zero weights).
     ///
-    /// * If `sample_size` is greater than or equal to the number of keys
-    ///   present in `self` (with non-zero weights), the resulting sample must
-    ///   contain all such keys.
+    /// * If `sample_size` is at least [`Self::key_count_upper_bound`], the
+    ///   output sample contains all keys present in `self` (with non-zero
+    ///   weights).  A smaller `sample_size` can miss some of them even if it
+    ///   is no smaller than their number, since an implementation may draw
+    ///   from every key the bound counts, including keys whose weights
+    ///   cancel, and discard the cancelled ones afterwards.
     ///
     /// * The output sample contains keys sorted in ascending order.
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)

@@ -2,15 +2,25 @@ use super::utils::{copy_to_builder, pick_merge_destination};
 use crate::storage::file::SerializerInner;
 use crate::storage::file::{FilterKind, FilterStats, TouchedWindowCount};
 use crate::{
-    DBWeight, Error, NumEntries,
+    DBData, DBWeight, Error, NumEntries, Runtime,
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
     circuit::checkpointer::Checkpoint,
-    dynamic::{DataTrait, DynVec, Erase, WeightTrait, WeightTraitTyped},
-    storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
+    dynamic::{
+        DataTrait, DynData, DynDataTyped, DynPair, DynVec, DynWeightedPairs, Erase, Factory,
+        WeightTrait, WeightTraitTyped,
+    },
+    storage::{
+        buffer_cache::CacheStats,
+        file::reader::{Error as ReaderError, read_metadata},
+    },
     trace::{
-        Batch, BatchLocation, BatchReader, Builder, FallbackValBatch, FileIndexedWSet,
-        FileIndexedWSetFactories, Filter, GroupFilter, MergeCursor,
-        cursor::{CursorFactory, DelegatingCursor, PushCursor},
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
+        FallbackValBatch, FileIndexedWSet, FileIndexedWSetFactories, Filter, GroupFilter,
+        MergeCursor, WeightedItem,
+        cursor::{
+            Cursor, CursorFactory, DefaultPushCursor, DelegatingCursor, ProjectedCursorFactory,
+            ProjectedValCursor, PushCursor, merge_cursor_over,
+        },
         deserialize_indexed_wset, merge_batches_by_reference,
         ord::{
             fallback::utils::BuildTo,
@@ -20,6 +30,7 @@ use crate::{
         },
         serialize_indexed_wset,
     },
+    utils::Tup2,
 };
 use feldera_storage::{FileReader, StoragePath};
 use rand::Rng;
@@ -28,10 +39,198 @@ use size_of::SizeOf;
 use std::ops::Neg;
 use std::{
     fmt::{self, Debug},
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
-pub type FallbackIndexedWSetFactories<K, V, R> = FileIndexedWSetFactories<K, V, R>;
+/// Factories for [`FallbackIndexedWSet`].
+pub struct FallbackIndexedWSetFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    /// Factories for the batch's own value type.
+    plain: FileIndexedWSetFactories<K, V, R>,
+
+    /// Factories for the wider value type that carries a hidden trailing column.
+    /// Present only for a batch that may adopt such a value column.
+    projected: Option<FileIndexedWSetFactories<K, DynPair<V, DynData>, R>>,
+}
+
+impl<K, V, R> Clone for FallbackIndexedWSetFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn clone(&self) -> Self {
+        Self {
+            plain: self.plain.clone(),
+            projected: self.projected.clone(),
+        }
+    }
+}
+
+impl<K, V, R> FallbackIndexedWSetFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    /// Factories for a batch that may adopt a value column carrying a hidden
+    /// trailing `u32`.
+    pub fn with_projection<KType, VType, RType>() -> Self
+    where
+        KType: DBData + Erase<K>,
+        VType: DBData + Erase<V>,
+        RType: DBWeight + Erase<R>,
+        Tup2<VType, u32>: DBData + Erase<DynPair<V, DynData>>,
+    {
+        Self {
+            plain: FileIndexedWSetFactories::new::<KType, VType, RType>(),
+            projected: Some(FileIndexedWSetFactories::stamped::<
+                KType,
+                Tup2<VType, u32>,
+                RType,
+            >()),
+        }
+    }
+
+    /// Factories for the projected representation, whose values carry a hidden
+    /// trailing column.
+    ///
+    /// # Returns
+    ///
+    /// Factories for the wider value type, which describe a projected variant's inner
+    /// batch.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless these factories came from [`Self::with_projection`].  A
+    /// batch only ever holds a projected variant when its factories describe one,
+    /// so reaching this without projected factories means a projected batch
+    /// escaped into a trace that cannot interpret it.
+    pub fn projected(&self) -> &FileIndexedWSetFactories<K, DynPair<V, DynData>, R> {
+        self.projected.as_ref().expect(
+            "projected batch requires factories built with `FallbackIndexedWSetFactories::with_projection`",
+        )
+    }
+
+    /// True if `self` contains factories that describe projected batches.
+    ///
+    /// We only instantiate these factories inside the lazy upsert circuit, where
+    /// they are actually used, to avoid increased compilation times.
+    ///
+    /// # Returns
+    ///
+    /// True if [`Self::projected`] will answer rather than panic.
+    pub fn has_projection(&self) -> bool {
+        self.projected.is_some()
+    }
+
+    /// Returns a cursor that hides the trailing value.
+    ///
+    /// # Arguments
+    ///
+    /// * `inner` - a cursor over the wider value type.
+    ///
+    /// # Returns
+    ///
+    /// A cursor over the `V` column alone, consolidating the records that only the
+    /// trailing column distinguished.
+    fn project<C>(&self, inner: C) -> ProjectedValCursor<K, V, DynData, R, C>
+    where
+        C: Cursor<K, DynPair<V, DynData>, (), R>,
+    {
+        ProjectedValCursor::new(inner, self.plain.val_factory())
+    }
+
+    /// Projects what a projected variant's inner batch returned from `fetch`, so
+    /// that the fetched records hide the trailing value too.
+    ///
+    /// # Arguments
+    ///
+    /// * `fetched` - the inner batch's `fetch` result.
+    ///
+    /// # Returns
+    ///
+    /// A cursor factory over the `V` column alone, or `None` if the inner batch
+    /// fetched nothing, which leaves the caller to read the batch through its
+    /// cursor.
+    fn project_fetched(
+        &self,
+        fetched: Option<Box<dyn CursorFactory<K, DynPair<V, DynData>, (), R>>>,
+    ) -> Option<Box<dyn CursorFactory<K, V, (), R>>> {
+        fetched.map(|inner| {
+            Box::new(ProjectedCursorFactory::new(inner, self.plain.val_factory()))
+                as Box<dyn CursorFactory<K, V, (), R>>
+        })
+    }
+}
+
+impl<K, V, R> BatchReaderFactories<K, V, (), R> for FallbackIndexedWSetFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn new<KType, VType, RType>() -> Self
+    where
+        KType: DBData + Erase<K>,
+        VType: DBData + Erase<V>,
+        RType: DBWeight + Erase<R>,
+    {
+        Self {
+            plain: FileIndexedWSetFactories::new::<KType, VType, RType>(),
+            projected: None,
+        }
+    }
+
+    fn key_factory(&self) -> &'static dyn Factory<K> {
+        self.plain.key_factory()
+    }
+
+    fn keys_factory(&self) -> &'static dyn Factory<DynVec<K>> {
+        self.plain.keys_factory()
+    }
+
+    fn val_factory(&self) -> &'static dyn Factory<V> {
+        self.plain.val_factory()
+    }
+
+    fn weight_factory(&self) -> &'static dyn Factory<R> {
+        self.plain.weight_factory()
+    }
+}
+
+impl<K, V, R> BatchFactories<K, V, (), R> for FallbackIndexedWSetFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    fn item_factory(&self) -> &'static dyn Factory<DynPair<K, V>> {
+        self.plain.item_factory()
+    }
+
+    fn weighted_item_factory(&self) -> &'static dyn Factory<WeightedItem<K, V, R>> {
+        self.plain.weighted_item_factory()
+    }
+
+    fn weighted_items_factory(&self) -> &'static dyn Factory<DynWeightedPairs<DynPair<K, V>, R>> {
+        self.plain.weighted_items_factory()
+    }
+
+    fn weighted_vals_factory(&self) -> &'static dyn Factory<DynWeightedPairs<V, R>> {
+        self.plain.weighted_vals_factory()
+    }
+
+    fn time_diffs_factory(
+        &self,
+    ) -> Option<&'static dyn Factory<DynWeightedPairs<DynDataTyped<()>, R>>> {
+        None
+    }
+}
 
 #[derive(SizeOf)]
 pub struct FallbackIndexedWSet<K, V, R>
@@ -43,6 +242,13 @@ where
     #[size_of(skip)]
     factories: FallbackIndexedWSetFactories<K, V, R>,
     inner: Inner<K, V, R>,
+
+    /// Whether a projected batch is empty, found by the first `is_empty` call
+    /// and kept, since the batch never changes.  Finding it takes a cursor,
+    /// which skips every leading key whose values all cancel.  Unset for the
+    /// representations that count their records instead.
+    #[size_of(skip)]
+    projected_is_empty: OnceLock<bool>,
 }
 
 #[derive(SizeOf)]
@@ -55,6 +261,88 @@ where
 {
     Vec(VecIndexedWSet<K, V, R>),
     File(FileIndexedWSet<K, V, R>),
+
+    /// In memory, over values that carry a trailing column this batch hides.
+    VecProj(VecIndexedWSet<K, DynPair<V, DynData>, R>),
+
+    /// On storage, over values that carry a trailing column this batch hides.
+    FileProj(FileIndexedWSet<K, DynPair<V, DynData>, R>),
+}
+
+impl<K, V, R> FallbackIndexedWSet<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    /// Converts an in-memory batch, whose values carry a trailing column, into a batch
+    /// over the `V` column alone.
+    ///
+    /// # Arguments
+    ///
+    /// * `factories` - factories describing both value types.
+    /// * `inner` - the batch to convert, whose values carry the trailing column.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless `factories` came from
+    /// [`FallbackIndexedWSetFactories::with_projection`].
+    pub fn from_projected_vec(
+        factories: &FallbackIndexedWSetFactories<K, V, R>,
+        inner: VecIndexedWSet<K, DynPair<V, DynData>, R>,
+    ) -> Self {
+        factories.projected();
+        Self {
+            factories: factories.clone(),
+            inner: Inner::VecProj(inner),
+            projected_is_empty: OnceLock::new(),
+        }
+    }
+
+    /// Converts a file-based batch, whose values carry a trailing column, into a batch
+    /// over the leading column alone.
+    ///
+    /// # Arguments
+    ///
+    /// * `factories` - factories describing both value types.
+    /// * `inner` - the batch to convert, whose values carry the trailing column.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless `factories` came from
+    /// [`FallbackIndexedWSetFactories::with_projection`].
+    pub fn from_projected_file(
+        factories: &FallbackIndexedWSetFactories<K, V, R>,
+        inner: FileIndexedWSet<K, DynPair<V, DynData>, R>,
+    ) -> Self {
+        factories.projected();
+        Self {
+            factories: factories.clone(),
+            inner: Inner::FileProj(inner),
+            projected_is_empty: OnceLock::new(),
+        }
+    }
+
+    /// Appends to `sample` the keys of `drawn` that are present in the batch.
+    ///
+    /// A projected batch draws its key sample from its inner batch, which can
+    /// hold keys whose values all cancel once the hidden column is gone.
+    /// A sample must not contain those keys, so this keeps only the keys that
+    /// the projection still holds.
+    ///
+    /// # Arguments
+    ///
+    /// * `drawn` - keys drawn from the inner batch, in ascending order.
+    /// * `sample` - receives the keys that this batch holds, in ascending order.
+    fn append_projected_keys(&self, drawn: &DynVec<K>, sample: &mut DynVec<K>) {
+        let mut cursor = self.cursor();
+        for key in drawn.dyn_iter() {
+            cursor.seek_key(key);
+            if cursor.get_key() == Some(key) {
+                sample.push_ref(key);
+            }
+        }
+    }
 }
 
 impl<K, V, R> Debug for FallbackIndexedWSet<K, V, R>
@@ -67,6 +355,8 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.fmt(f),
             Inner::File(file) => file.fmt(f),
+            Inner::VecProj(vec) => vec.fmt(f),
+            Inner::FileProj(file) => file.fmt(f),
         }
     }
 }
@@ -83,7 +373,10 @@ where
             inner: match &self.inner {
                 Inner::Vec(vec) => Inner::Vec(vec.clone()),
                 Inner::File(file) => Inner::File(file.clone()),
+                Inner::VecProj(vec) => Inner::VecProj(vec.clone()),
+                Inner::FileProj(file) => Inner::FileProj(file.clone()),
             },
+            projected_is_empty: self.projected_is_empty.clone(),
         }
     }
 }
@@ -121,6 +414,8 @@ where
         match &self.inner {
             Inner::File(file) => file.num_entries_shallow(),
             Inner::Vec(vec) => vec.num_entries_shallow(),
+            Inner::FileProj(file) => file.num_entries_shallow(),
+            Inner::VecProj(vec) => vec.num_entries_shallow(),
         }
     }
 
@@ -128,6 +423,8 @@ where
         match &self.inner {
             Inner::File(file) => file.num_entries_deep(),
             Inner::Vec(vec) => vec.num_entries_deep(),
+            Inner::FileProj(file) => file.num_entries_deep(),
+            Inner::VecProj(vec) => vec.num_entries_deep(),
         }
     }
 }
@@ -146,7 +443,10 @@ where
             inner: match &self.inner {
                 Inner::File(file) => Inner::File(file.neg_by_ref()),
                 Inner::Vec(vec) => Inner::Vec(vec.neg_by_ref()),
+                Inner::FileProj(file) => Inner::FileProj(file.neg_by_ref()),
+                Inner::VecProj(vec) => Inner::VecProj(vec.neg_by_ref()),
             },
+            projected_is_empty: OnceLock::new(),
         }
     }
 }
@@ -198,7 +498,7 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    type Factories = FileIndexedWSetFactories<K, V, R>;
+    type Factories = FallbackIndexedWSetFactories<K, V, R>;
     type Key = K;
     type Val = V;
     type Time = ();
@@ -217,6 +517,8 @@ where
         DelegatingCursor(match &self.inner {
             Inner::Vec(vec) => Box::new(vec.cursor()),
             Inner::File(file) => Box::new(file.cursor()),
+            Inner::VecProj(vec) => Box::new(self.factories.project(vec.cursor())),
+            Inner::FileProj(file) => Box::new(self.factories.project(file.cursor())),
         })
     }
 
@@ -226,6 +528,12 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.push_cursor(),
             Inner::File(file) => file.push_cursor(),
+            Inner::VecProj(vec) => {
+                Box::new(DefaultPushCursor::new(self.factories.project(vec.cursor())))
+            }
+            Inner::FileProj(file) => Box::new(DefaultPushCursor::new(
+                self.factories.project(file.cursor()),
+            )),
         }
     }
 
@@ -237,6 +545,16 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.merge_cursor(key_filter, value_filter),
             Inner::File(file) => file.merge_cursor(key_filter, value_filter),
+            Inner::VecProj(vec) => merge_cursor_over(
+                self.factories.project(vec.cursor()),
+                key_filter,
+                value_filter,
+            ),
+            Inner::FileProj(file) => merge_cursor_over(
+                self.factories.project(file.cursor()),
+                key_filter,
+                value_filter,
+            ),
         }
     }
 
@@ -245,15 +563,35 @@ where
         key_filter: Option<Filter<Self::Key>>,
         value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
-        match &mut self.inner {
+        // Destructured so the projection can borrow the factories while the
+        // match holds `inner` mutably.
+        let Self {
+            factories, inner, ..
+        } = self;
+        match inner {
             Inner::Vec(vec) => vec.consuming_cursor(key_filter, value_filter),
             Inner::File(file) => file.consuming_cursor(key_filter, value_filter),
+            // A consuming cursor is a `MergeCursor`, and the projection wraps a
+            // `Cursor`, so these arms read the batch rather than drain it.
+            Inner::VecProj(vec) => {
+                merge_cursor_over(factories.project(vec.cursor()), key_filter, value_filter)
+            }
+            Inner::FileProj(file) => {
+                merge_cursor_over(factories.project(file.cursor()), key_filter, value_filter)
+            }
         }
     }
 
     fn is_empty(&self) -> bool {
-        // `len_upper_bound` is exact for both representations of this batch type.
-        self.len_upper_bound() == 0
+        match &self.inner {
+            // `len_upper_bound` is exact for both unprojected representations.
+            Inner::Vec(_) | Inner::File(_) => self.len_upper_bound() == 0,
+            // A projected batch counts the records whose weights cancel once the
+            // hidden column is gone, so only its cursor can tell.
+            Inner::VecProj(_) | Inner::FileProj(_) => *self
+                .projected_is_empty
+                .get_or_init(|| !self.cursor().key_valid()),
+        }
     }
 
     #[inline]
@@ -261,6 +599,8 @@ where
         match &self.inner {
             Inner::File(file) => file.key_count_upper_bound(),
             Inner::Vec(vec) => vec.key_count_upper_bound(),
+            Inner::FileProj(file) => file.key_count_upper_bound(),
+            Inner::VecProj(vec) => vec.key_count_upper_bound(),
         }
     }
 
@@ -269,6 +609,8 @@ where
         match &self.inner {
             Inner::File(file) => file.len_upper_bound(),
             Inner::Vec(vec) => vec.len_upper_bound(),
+            Inner::FileProj(file) => file.len_upper_bound(),
+            Inner::VecProj(vec) => vec.len_upper_bound(),
         }
     }
 
@@ -277,6 +619,8 @@ where
         match &self.inner {
             Inner::File(file) => file.approximate_byte_size(),
             Inner::Vec(vec) => vec.approximate_byte_size(),
+            Inner::FileProj(file) => file.approximate_byte_size(),
+            Inner::VecProj(vec) => vec.approximate_byte_size(),
         }
     }
 
@@ -285,6 +629,8 @@ where
         match &self.inner {
             Inner::File(file) => file.membership_filter_stats(),
             Inner::Vec(vec) => vec.membership_filter_stats(),
+            Inner::FileProj(file) => file.membership_filter_stats(),
+            Inner::VecProj(vec) => vec.membership_filter_stats(),
         }
     }
 
@@ -292,6 +638,8 @@ where
         match &self.inner {
             Inner::File(file) => file.membership_filter_kind(),
             Inner::Vec(vec) => vec.membership_filter_kind(),
+            Inner::FileProj(file) => file.membership_filter_kind(),
+            Inner::VecProj(vec) => vec.membership_filter_kind(),
         }
     }
 
@@ -299,6 +647,8 @@ where
         match &self.inner {
             Inner::File(file) => file.range_filter_stats(),
             Inner::Vec(vec) => vec.range_filter_stats(),
+            Inner::FileProj(file) => file.range_filter_stats(),
+            Inner::VecProj(vec) => vec.range_filter_stats(),
         }
     }
 
@@ -307,6 +657,8 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.location(),
             Inner::File(file) => file.location(),
+            Inner::VecProj(vec) => vec.location(),
+            Inner::FileProj(file) => file.location(),
         }
     }
 
@@ -314,6 +666,8 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.cache_stats(),
             Inner::File(file) => file.cache_stats(),
+            Inner::VecProj(vec) => vec.cache_stats(),
+            Inner::FileProj(file) => file.cache_stats(),
         }
     }
 
@@ -324,6 +678,16 @@ where
         match &self.inner {
             Inner::File(file) => file.sample_keys(rng, sample_size, sample),
             Inner::Vec(vec) => vec.sample_keys(rng, sample_size, sample),
+            Inner::FileProj(file) => {
+                let mut drawn = self.factories.keys_factory().default_box();
+                file.sample_keys(rng, sample_size, drawn.as_mut());
+                self.append_projected_keys(&*drawn, sample);
+            }
+            Inner::VecProj(vec) => {
+                let mut drawn = self.factories.keys_factory().default_box();
+                vec.sample_keys(rng, sample_size, drawn.as_mut());
+                self.append_projected_keys(&*drawn, sample);
+            }
         }
     }
 
@@ -337,6 +701,8 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.fetch(keys).await,
             Inner::File(file) => file.fetch(keys).await,
+            Inner::VecProj(vec) => self.factories.project_fetched(vec.fetch(keys).await),
+            Inner::FileProj(file) => self.factories.project_fetched(file.fetch(keys).await),
         }
     }
 
@@ -344,6 +710,8 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.keys(),
             Inner::File(file) => file.keys(),
+            Inner::VecProj(vec) => vec.keys(),
+            Inner::FileProj(file) => file.keys(),
         }
     }
 }
@@ -362,7 +730,7 @@ where
         match &self.inner {
             Inner::Vec(vec) => {
                 let mut file = FileIndexedWSetBuilder::with_capacity(
-                    &self.factories,
+                    &self.factories.plain,
                     vec.key_count_upper_bound(),
                     vec.len_upper_bound(),
                 );
@@ -370,9 +738,24 @@ where
                 Some(Self {
                     inner: Inner::File(file.done()),
                     factories: self.factories.clone(),
+                    projected_is_empty: OnceLock::new(),
                 })
             }
-            Inner::File(_) => None,
+            Inner::VecProj(vec) => {
+                // Drop the stamp column when writing the batch to disk.
+                let mut file = FileIndexedWSetBuilder::with_capacity(
+                    &self.factories.plain,
+                    vec.key_count_upper_bound(),
+                    vec.len_upper_bound(),
+                );
+                copy_to_builder(&mut file, self.factories.project(vec.cursor()));
+                Some(Self {
+                    inner: Inner::File(file.done()),
+                    factories: self.factories.clone(),
+                    projected_is_empty: OnceLock::new(),
+                })
+            }
+            Inner::File(_) | Inner::FileProj(_) => None,
         }
     }
 
@@ -380,13 +763,29 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.file_reader(),
             Inner::File(file) => file.file_reader(),
+            Inner::VecProj(vec) => vec.file_reader(),
+            Inner::FileProj(file) => file.file_reader(),
         }
     }
 
     fn from_path(factories: &Self::Factories, path: &StoragePath) -> Result<Self, ReaderError> {
+        // The file records whether its values carry the trailing column, so the
+        // layout is known before the factories that decode it are chosen.
+        let stamped = read_metadata(Runtime::buffer_cache, &*Runtime::storage_backend()?, path)?
+            .value_stamp
+            .is_stamped();
+
+        // A stamped file that these factories cannot describe is opened with the
+        // plain factories, and `FileIndexedWSet::from_path` reports the mismatch.
+        let inner = if stamped && factories.has_projection() {
+            Inner::FileProj(FileIndexedWSet::from_path(factories.projected(), path)?)
+        } else {
+            Inner::File(FileIndexedWSet::from_path(&factories.plain, path)?)
+        };
         Ok(FallbackIndexedWSet {
             factories: factories.clone(),
-            inner: Inner::File(FileIndexedWSet::from_path(factories, path)?),
+            inner,
+            projected_is_empty: OnceLock::new(),
         })
     }
 
@@ -394,6 +793,8 @@ where
         match &self.inner {
             Inner::File(file) => file.key_bounds(),
             Inner::Vec(vec) => vec.key_bounds(),
+            Inner::FileProj(file) => file.key_bounds(),
+            Inner::VecProj(vec) => vec.key_bounds(),
         }
     }
 
@@ -401,6 +802,8 @@ where
         match &self.inner {
             Inner::File(file) => file.negative_weight_count(),
             Inner::Vec(vec) => vec.negative_weight_count(),
+            Inner::FileProj(file) => file.negative_weight_count(),
+            Inner::VecProj(vec) => vec.negative_weight_count(),
         }
     }
 
@@ -408,6 +811,8 @@ where
         match &self.inner {
             Inner::File(file) => file.touched_window_count(),
             Inner::Vec(vec) => vec.touched_window_count(),
+            Inner::FileProj(file) => file.touched_window_count(),
+            Inner::VecProj(vec) => vec.touched_window_count(),
         }
     }
 }
@@ -438,8 +843,11 @@ where
         factories: &FallbackIndexedWSetFactories<K, V, R>,
         vec: &VecIndexedWSetBuilder<K, V, R, usize>,
     ) -> BuilderInner<K, V, R> {
-        let mut file =
-            FileIndexedWSetBuilder::with_capacity(factories, vec.num_keys(), vec.num_tuples());
+        let mut file = FileIndexedWSetBuilder::with_capacity(
+            &factories.plain,
+            vec.num_keys(),
+            vec.num_tuples(),
+        );
         vec.copy_to_builder(&mut file);
         BuilderInner::File(file)
     }
@@ -486,7 +894,7 @@ where
         match build_to {
             BuildTo::Memory => Self::Vec(Self::new_vec(factories, key_capacity, value_capacity)),
             BuildTo::Storage => Self::File(FileIndexedWSetBuilder::with_capacity(
-                factories,
+                &factories.plain,
                 key_capacity,
                 value_capacity,
             )),
@@ -508,7 +916,7 @@ where
         value_capacity: usize,
     ) -> VecIndexedWSetBuilder<K, V, R, usize> {
         VecIndexedWSetBuilder::with_capacity(
-            &factories.vec_indexed_wset_factory,
+            &factories.plain.vec_indexed_wset_factory,
             key_capacity,
             value_capacity,
         )
@@ -562,12 +970,14 @@ where
             factories: factories.clone(),
             inner: match pick_merge_destination(batches.clone(), location) {
                 BatchLocation::Memory => BuilderInner::Vec(VecIndexedWSetBuilder::with_capacity(
-                    &factories.vec_indexed_wset_factory,
+                    &factories.plain.vec_indexed_wset_factory,
                     key_capacity,
                     value_capacity,
                 )),
                 BatchLocation::Storage => BuilderInner::File(FileIndexedWSetBuilder::for_merge(
-                    factories, batches, location,
+                    &factories.plain,
+                    batches,
+                    location,
                 )),
             },
         }
@@ -729,6 +1139,7 @@ where
                     Inner::Vec(vec.done())
                 }
             },
+            projected_is_empty: OnceLock::new(),
         }
     }
 
