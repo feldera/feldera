@@ -588,8 +588,8 @@ where
 
                 let mut delta = <O::Builder>::with_capacity(
                     &output_factories,
-                    batch.key_count(),
-                    batch.key_count(),
+                    batch.approx_key_count(),
+                    batch.approx_key_count(),
                 );
                 let mut cursor = batch.cursor();
                 while cursor.key_valid() {
@@ -743,7 +743,7 @@ where
     Acc: DataTrait + ?Sized,
 {
     async fn eval(&mut self, i: &Z) -> O {
-        let n = i.key_count();
+        let n = i.approx_key_count();
         let mut builder = O::Builder::with_capacity(&self.factories, n, n);
         let mut agg = self.option_output_factory.default_box();
 
@@ -1066,7 +1066,7 @@ where
                 return;
             };
 
-            self.input_batch_stats.borrow_mut().add_batch(delta.len());
+            self.input_batch_stats.borrow_mut().add_batch(delta.approx_len());
 
             // println!(
             //     "{}: AggregateIncremental::eval @{:?}\ndelta:{delta}",

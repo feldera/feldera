@@ -552,7 +552,9 @@ impl<Z: IndexedZSet, I, S> DistinctIncrementalTotal<Z, I, S> {
             );
 
             let result = builder.done();
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats
+                .borrow_mut()
+                .add_batch(result.approx_len());
 
             Some((result, false, delta_cursor.position()))
         } else {
@@ -614,7 +616,7 @@ where
                 return
             };
 
-            self.input_batch_stats.borrow_mut().add_batch(delta.len());
+            self.input_batch_stats.borrow_mut().add_batch(delta.approx_len());
 
             // Limit the initial capacity of the builder in case the chunk size
             // is bigger than memory (e.g. `usize::MAX`).
@@ -692,7 +694,7 @@ where
             }
 
             let result = builder.done();
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
 
             yield (result, true, delta_cursor.position())
         }
@@ -955,7 +957,9 @@ where
             let result = builder.done();
             self.empty_output
                 .update(|empty_output| empty_output & result.is_empty());
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats
+                .borrow_mut()
+                .add_batch(result.approx_len());
 
             Some((result, false, delta_cursor.position()))
         } else {
@@ -1101,7 +1105,7 @@ where
             };
 
             let time = self.clock.time();
-            self.input_batch_stats.borrow_mut().add_batch(delta.len());
+            self.input_batch_stats.borrow_mut().add_batch(delta.approx_len());
 
             Self::init_distinct_vals(&mut self.distinct_vals.borrow_mut(), Some(time.clone()));
             self.empty_input.set(delta.is_empty());
@@ -1305,7 +1309,7 @@ where
 
             let result = result_builder.done();
             self.empty_output.update(|empty_output| empty_output & result.is_empty());
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
             yield (result, true, delta_cursor.position());
         }
     }

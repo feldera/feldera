@@ -304,7 +304,7 @@ fn merge_with_list_merger<K: BenchKey, V: BenchValue>(
             .map(|batch| batch.consuming_cursor(None, None))
             .collect(),
     );
-    let output_len = output.len();
+    let output_len = output.approx_len();
     let actual_location = output.location();
     (output, output_len, actual_location)
 }

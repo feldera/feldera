@@ -641,8 +641,8 @@ where
             let delta1 = self.delta1.take().unwrap();
             let delta2 = self.delta2.take().unwrap();
 
-            self.delta1_batch_stats.borrow_mut().add_batch(delta1.len());
-            self.delta2_batch_stats.borrow_mut().add_batch(delta2.len());
+            self.delta1_batch_stats.borrow_mut().add_batch(delta1.approx_len());
+            self.delta2_batch_stats.borrow_mut().add_batch(delta2.approx_len());
 
             let mut delta1_cursor = delta1.cursor();
             let mut delta2_cursor = delta2.cursor();
@@ -718,7 +718,7 @@ where
 
                 if output_tuples.len() >= chunk_size {
                     let result = Z::dyn_from_tuples(&self.factories.output_factories, (), &mut output_tuples);
-                    self.output_batch_stats.borrow_mut().add_batch(result.len());
+                    self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
                     yield (result, false, delta1_cursor.position());
                     output_tuples = weighted_items_factory.default_box();
                     output_tuples.reserve(chunk_size);
@@ -740,7 +740,7 @@ where
 
                 if output_tuples.len() >= chunk_size {
                     let result = Z::dyn_from_tuples(&self.factories.output_factories, (), &mut output_tuples);
-                    self.output_batch_stats.borrow_mut().add_batch(result.len());
+                    self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
                     yield (result, false, delta1_cursor.position());
                     output_tuples = weighted_items_factory.default_box();
                     output_tuples.reserve(chunk_size);
@@ -762,7 +762,7 @@ where
 
                 if output_tuples.len() >= chunk_size {
                     let result = Z::dyn_from_tuples(&self.factories.output_factories, (), &mut output_tuples);
-                    self.output_batch_stats.borrow_mut().add_batch(result.len());
+                    self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
                     yield (result, false, delta1_cursor.position());
                     output_tuples = weighted_items_factory.default_box();
                     output_tuples.reserve(chunk_size);
@@ -770,7 +770,7 @@ where
             }
 
             let result = Z::dyn_from_tuples(&self.factories.output_factories, (), &mut output_tuples);
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
             yield (result, true, delta1_cursor.position());
         }
     }

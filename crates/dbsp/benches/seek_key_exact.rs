@@ -252,7 +252,7 @@ fn bench<K: BenchKey>(args: &Args, storage: Storage, seek: Seek) {
                 .collect();
             let zset = OrdZSet::<K>::from_tuples((), tuples);
             let (elapsed_ns, hits) = time_lookups(&zset, &lookups, seek);
-            *result.lock().unwrap() = Some((elapsed_ns, hits, zset.key_count()));
+            *result.lock().unwrap() = Some((elapsed_ns, hits, zset.approx_key_count()));
         })
         .expect("failed to start DBSP runtime")
     };

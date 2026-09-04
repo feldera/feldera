@@ -424,11 +424,11 @@ where
                 return;
             };
 
-            self.input_batch_stats.borrow_mut().add_batch(delta.len());
+            self.input_batch_stats.borrow_mut().add_batch(delta.approx_len());
 
             // Limit the initial capacity of the builder in case the chunk size
             // is bigger than memory (e.g. `usize::MAX`).
-            let key_capacity = min(delta.key_count(), splitter_output_first_chunk_size() + 2);
+            let key_capacity = min(delta.approx_key_count(), splitter_output_first_chunk_size() + 2);
             let value_capacity = 2 * key_capacity;
             let mut builder =
                 O::Builder::with_capacity(&self.factories.output_factories, key_capacity, value_capacity);
@@ -551,9 +551,9 @@ where
                     if builder.num_tuples() >= chunk_size && any_values {
                         builder.push_key(&*key);
                         let result = builder.done();
-                        self.output_batch_stats.borrow_mut().add_batch(result.len());
+                        self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
                         yield (result, false, delta_cursor.position());
-                        let key_capacity = min(delta.key_count(), chunk_size + 2);
+                        let key_capacity = min(delta.approx_key_count(), chunk_size + 2);
                         let value_capacity = 2 * key_capacity;
                         builder =
                             O::Builder::with_capacity(&self.factories.output_factories, key_capacity, value_capacity);
@@ -568,7 +568,7 @@ where
             }
 
             let result = builder.done();
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
             yield (result, true, delta_cursor.position())
         }
     }

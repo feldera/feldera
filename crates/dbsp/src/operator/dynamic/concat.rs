@@ -219,7 +219,7 @@ impl<Z: IndexedZSet> StreamingNaryOperator<Option<Spine<Z>>, Z> for AccumulateCo
             if let Some(snapshot) = snapshot {
                 let mut input_batch_stats = self.input_batch_stats.borrow_mut();
                 input_batch_stats.resize_with(inputs.len(), BatchSizeStats::new);
-                input_batch_stats[i].add_batch(snapshot.len());
+                input_batch_stats[i].add_batch(snapshot.approx_len());
 
                 snapshots[i] = Some(snapshot);
             }
@@ -273,7 +273,7 @@ impl<Z: IndexedZSet> StreamingNaryOperator<Option<Spine<Z>>, Z> for AccumulateCo
                         has_val = false;
 
                         let result = builder.done();
-                        self.output_batch_stats.borrow_mut().add_batch(result.len());
+                        self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
                         yield (result, false, cursor.position());
                         builder = Z::Builder::with_capacity(&factories, chunk_size, chunk_size);
                     }
@@ -286,7 +286,7 @@ impl<Z: IndexedZSet> StreamingNaryOperator<Option<Spine<Z>>, Z> for AccumulateCo
             }
 
             let result = builder.done();
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
 
             yield (result, true, cursor.position())
         }

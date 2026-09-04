@@ -1187,8 +1187,8 @@ mod test {
                 let mut cursor = batch.inner().cursor();
                 let mut result = <DynOrdZSet<DynData> as DynBatch>::Builder::with_capacity(
                     &BatchReaderFactories::new::<u64, (), ZWeight>(),
-                    batch.len(),
-                    batch.len(),
+                    batch.approx_len(),
+                    batch.approx_len(),
                 );
 
                 while cursor.key_valid() {
@@ -2206,10 +2206,10 @@ mod test {
 
         let output = output_handle.concat().consolidate();
         assert_eq!(
-            output.len(),
+            output.approx_len(),
             KEYS as usize,
             "join with {workers} workers lost {} of {KEYS} keys",
-            KEYS as usize - output.len(),
+            KEYS as usize - output.approx_len(),
         );
 
         dbsp.kill().unwrap();

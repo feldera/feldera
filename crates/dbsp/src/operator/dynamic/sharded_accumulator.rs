@@ -662,7 +662,7 @@ where
         // after the last one that was flushed, since the accumulator should not receive any
         // non-empty batches from the previous transaction at that point (in the top-level circuit).
         // This may not be the first batch in the transaction, but it's ok to admit some empty batches.
-        let len = batch.len();
+        let len = batch.approx_len();
         if (len > 0 || self.flushed) && self.enabled_during_current_transaction.is_none() {
             self.enabled_during_current_transaction = Some(self.exchange.enable_count.is_enabled());
         }
@@ -892,7 +892,7 @@ where
     async fn eval(&mut self) -> Option<Spine<B>> {
         let output = self.exchange.receive();
         if let Some(spine) = &output {
-            self.output_batch_stats.add_batch(spine.len());
+            self.output_batch_stats.add_batch(spine.approx_len());
             spine.backpressure_wait().await;
             self.flushed = true;
         }

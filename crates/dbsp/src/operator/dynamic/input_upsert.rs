@@ -992,7 +992,7 @@ where
         self.error_stream_val.put(errors);
 
         let result = builder.done();
-        self.output_batch_stats.add_batch(result.len());
+        self.output_batch_stats.add_batch(result.approx_len());
         result
     }
 

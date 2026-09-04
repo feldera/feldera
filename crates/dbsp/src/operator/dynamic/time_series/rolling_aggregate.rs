@@ -883,7 +883,7 @@ where
             }
 
             let input_delta = self.input_delta.borrow_mut().take().unwrap();
-            self.input_batch_stats.borrow_mut().add_batch(input_delta.len());
+            self.input_batch_stats.borrow_mut().add_batch(input_delta.approx_len());
 
             let mut delta_cursor = input_delta.cursor();
             let mut output_trace_cursor = output_trace.unwrap().cursor();
@@ -935,7 +935,7 @@ where
                             if retraction_builder.num_tuples() >= chunk_size {
                                 retraction_builder.push_key(delta_cursor.key());
                                 let result = retraction_builder.done();
-                                self.output_batch_stats.borrow_mut().add_batch(result.len());
+                                self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
                                 yield (result, false, delta_cursor.position());
                                 any_values = false;
                                 retraction_builder = O::Builder::with_capacity(&self.output_factories, chunk_size, chunk_size);
@@ -1002,7 +1002,7 @@ where
                                     any_values = false;
 
                                     let result = insertion_builder.done();
-                                    self.output_batch_stats.borrow_mut().add_batch(result.len());
+                                    self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
 
                                     yield (result, false, delta_cursor.position());
                                     insertion_builder =
@@ -1030,7 +1030,7 @@ where
             let insertions = insertion_builder.done();
 
             let result = merge_batches(&insertions.factories(), [insertions,retractions], &None, &None);
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
             yield (result, true, delta_cursor.position());
         }
     }
@@ -1148,7 +1148,7 @@ mod test {
                     .gather(0)
                     .integrate()
                     .apply(move |batch: &TypedBatch<_, _, _, DataBatch>| {
-                        let mut tuples = Vec::with_capacity(batch.len());
+                        let mut tuples = Vec::with_capacity(batch.approx_len());
 
                         let mut cursor = batch.cursor();
 

@@ -198,7 +198,7 @@ where
     async fn eval(&mut self, batch: &B) -> Option<Spine<B>> {
         let mut inner = self.0.borrow_mut();
 
-        let len = batch.len();
+        let len = batch.approx_len();
 
         if len > 0 {
             inner.input_batch_stats.add_batch(len);
@@ -212,7 +212,7 @@ where
                 Spine::<B>::new(&inner.factories, inner.name.get(), TraceRole::Accumulator);
             std::mem::swap(&mut inner.state, &mut spine);
 
-            inner.output_batch_stats.add_batch(spine.len());
+            inner.output_batch_stats.add_batch(spine.approx_len());
             Some(spine)
         } else {
             None
@@ -233,7 +233,7 @@ where
     async fn eval_owned(&mut self, batch: B) -> Option<Spine<B>> {
         let mut inner = self.0.borrow_mut();
 
-        let len = batch.len();
+        let len = batch.approx_len();
 
         if len > 0 {
             inner.input_batch_stats.add_batch(len);
@@ -247,7 +247,7 @@ where
                 Spine::<B>::new(&inner.factories, inner.name.get(), TraceRole::Accumulator);
             std::mem::swap(&mut inner.state, &mut spine);
 
-            inner.output_batch_stats.add_batch(spine.len());
+            inner.output_batch_stats.add_batch(spine.approx_len());
             Some(spine)
         } else {
             None

@@ -799,7 +799,7 @@ where
 {
     async fn eval(&mut self, val: &Option<Spine<B>>) {
         if let Some(val) = val {
-            self.output_batch_stats.add_batch(val.len());
+            self.output_batch_stats.add_batch(val.approx_len());
             // Deliver even empty outputs: cohort completion requires one
             // emission per worker per transaction.
             self.deliver(val.ro_snapshot());
@@ -808,7 +808,7 @@ where
 
     async fn eval_owned(&mut self, val: Option<Spine<B>>) {
         if let Some(val) = val {
-            self.output_batch_stats.add_batch(val.len());
+            self.output_batch_stats.add_batch(val.approx_len());
             self.deliver(val.ro_snapshot());
         }
     }
@@ -998,7 +998,10 @@ mod test {
                 let batches = output.take_from_all();
                 if !batches.is_empty() {
                     assert_eq!(batches.len(), WORKERS);
-                    assert_eq!(batches.iter().map(|b| b.len()).sum::<usize>(), expected);
+                    assert_eq!(
+                        batches.iter().map(|b| b.approx_len()).sum::<usize>(),
+                        expected
+                    );
                     cohorts += 1;
                 }
 

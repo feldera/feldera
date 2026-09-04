@@ -2147,8 +2147,8 @@ fn a_merge_splices_values_it_does_not_have_to_decode() {
             ListMerger::merge(&factories, builder, cursors);
         let spliced = SPLICED_VALUES.load(Ordering::Relaxed) - before;
 
-        assert_eq!(merged.key_count(), 800);
-        assert_eq!(merged.len(), 800);
+        assert_eq!(merged.approx_key_count(), 800);
+        assert_eq!(merged.approx_len(), 800);
         assert!(
             spliced > 0,
             "the merge decoded and rewrote every value; nothing was copied",
@@ -2221,8 +2221,8 @@ fn a_merge_splices_keys_it_does_not_have_to_decode() {
         let merged: Keys = ListMerger::merge(&factories, builder, cursors);
         let spliced = SPLICED_KEYS.load(Ordering::Relaxed) - before;
 
-        assert_eq!(merged.key_count(), 800);
-        assert_eq!(merged.len(), 800);
+        assert_eq!(merged.approx_key_count(), 800);
+        assert_eq!(merged.approx_len(), 800);
         assert!(
             spliced > 0,
             "the merge decoded and rewrote every key; nothing was copied",
@@ -2362,7 +2362,7 @@ fn run_indexed_wset_storage_merges(
 
         // Sanity check that each input batch resides where we requested it to be.
         for (input, (_tuples, requested_loc)) in inputs.iter().zip(batches.iter()) {
-            if input.key_count() > 0 {
+            if input.approx_key_count() > 0 {
                 assert_eq!(input.location(), *requested_loc);
             }
         }
@@ -2440,7 +2440,7 @@ fn run_indexed_wset_storage_merges_dense(batches: MergeInputBatches, fc: FilterC
             .collect();
 
         for (input, (_tuples, requested_loc)) in inputs.iter().zip(batches.iter()) {
-            if input.key_count() > 0 {
+            if input.approx_key_count() > 0 {
                 assert_eq!(input.location(), *requested_loc);
             }
         }

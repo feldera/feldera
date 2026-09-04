@@ -130,7 +130,7 @@ where
             .apply2_owned(num_quantiles, move |sample, num_quantiles| {
                 let num_quantiles = min(*num_quantiles, MAX_QUANTILES);
 
-                let sample_size = sample.key_count();
+                let sample_size = sample.approx_key_count();
 
                 if sample_size <= num_quantiles {
                     sample
@@ -165,7 +165,7 @@ where
             .apply2_owned(num_quantiles, move |sample, num_quantiles| {
                 let num_quantiles = min(*num_quantiles, MAX_QUANTILES);
 
-                let sample_size = sample.key_count();
+                let sample_size = sample.approx_key_count();
 
                 if sample_size <= num_quantiles {
                     sample
@@ -490,8 +490,8 @@ mod test {
                 }
                 let all_keys_set = all_keys.iter().cloned().collect::<BTreeSet<_>>();
 
-                assert!(output_sample.key_count() <= all_keys_set.len());
-                assert!(output_sample.key_count() <= sample_size);
+                assert!(output_sample.approx_key_count() <= all_keys_set.len());
+                assert!(output_sample.approx_key_count() <= sample_size);
 
                 let mut cursor = output_sample.cursor();
                 while cursor.key_valid() {
@@ -499,8 +499,8 @@ mod test {
                     cursor.step_key();
                 }
 
-                assert!(output_quantile.key_count() <= all_keys_set.len());
-                assert!(output_quantile.key_count() <= sample_size);
+                assert!(output_quantile.approx_key_count() <= all_keys_set.len());
+                assert!(output_quantile.approx_key_count() <= sample_size);
 
                 let mut cursor = output_quantile.cursor();
                 while cursor.key_valid() {
@@ -551,8 +551,8 @@ mod test {
                 }
                 let all_keys_set = all_keys.iter().cloned().collect::<BTreeSet<_>>();
 
-                assert!(output_sample.key_count() <= all_keys_set.len());
-                assert!(output_sample.key_count() <= sample_size);
+                assert!(output_sample.approx_key_count() <= all_keys_set.len());
+                assert!(output_sample.approx_key_count() <= sample_size);
 
                 let mut cursor = output_sample.cursor();
                 while cursor.key_valid() {
@@ -560,8 +560,8 @@ mod test {
                     cursor.step_key();
                 }
 
-                assert!(output_quantile.key_count() <= all_keys_set.len());
-                assert!(output_quantile.key_count() <= sample_size);
+                assert!(output_quantile.approx_key_count() <= all_keys_set.len());
+                assert!(output_quantile.approx_key_count() <= sample_size);
 
                 let mut cursor = output_quantile.cursor();
                 while cursor.key_valid() {

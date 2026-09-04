@@ -248,12 +248,12 @@ fn main() -> Result<()> {
                 .unwrap();
             outp.gather(0).inspect(|zs: &OrdZSet<_>| {
                 if Runtime::worker_index() == 0 {
-                    assert_eq!(zs.len(), 7560179);
+                    assert_eq!(zs.approx_len(), 7560179);
                 }
             });
             outq.gather(0).inspect(|zs: &OrdZSet<_>| {
                 if Runtime::worker_index() == 0 {
-                    assert_eq!(zs.len(), 16595494);
+                    assert_eq!(zs.approx_len(), 16595494);
                 }
             });
             Ok(())

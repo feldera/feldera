@@ -261,7 +261,7 @@ where
         };
 
         let mut updates = self.radix_tree_factories.node_updates_factory.default_box();
-        updates.reserve(delta.key_count());
+        updates.reserve(delta.approx_key_count());
 
         radix_tree_update::<TS, Z::Val, Acc, Out, _, _, _>(
             &self.radix_tree_factories,

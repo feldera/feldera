@@ -4221,7 +4221,7 @@ fn delta_table_s3_people_2m() {
     println!("reading output file");
     let zset = file_to_zset::<DatabricksPeople>(json_file.as_file_mut());
 
-    assert_eq!(zset.len(), 2_000_000);
+    assert_eq!(zset.approx_len(), 2_000_000);
 
     forget(json_file);
 }
@@ -4384,7 +4384,7 @@ fn delta_table_unity_people_2m() {
     println!("reading output file");
     let zset = file_to_zset::<DatabricksPeople>(json_file.as_file_mut());
 
-    assert_eq!(zset.len(), 2_000_000);
+    assert_eq!(zset.approx_len(), 2_000_000);
 
     forget(json_file);
 }
