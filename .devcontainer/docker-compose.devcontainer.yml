@@ -28,6 +28,8 @@ services:
   postgres-dev:
     image: postgres:15-alpine
     restart: always
+    # Logical replication for the Postgres CDC connector tests.
+    command: postgres -c wal_level=logical
     ports:
       - 5435:5432
     environment:

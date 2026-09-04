@@ -3439,6 +3439,9 @@ fn test_pg_non_unique_keys_skipped() {
 // ===================================================================
 
 #[cfg(feature = "with-postgres-cdc")]
+mod cdc_scenarios;
+
+#[cfg(feature = "with-postgres-cdc")]
 mod cdc_tests {
     use super::*;
     use crate::test::wait;
@@ -3448,15 +3451,15 @@ mod cdc_tests {
     /// Helper: creates a table, publication, and sets REPLICA IDENTITY FULL.
     /// Returns a connected client for further DML operations.
     /// On drop, cleans up the publication and table.
-    struct CdcTestTable {
-        client: postgres::Client,
-        table_name: String,
-        publication_name: String,
-        url: String,
+    pub(super) struct CdcTestTable {
+        pub(super) client: postgres::Client,
+        pub(super) table_name: String,
+        pub(super) publication_name: String,
+        pub(super) url: String,
     }
 
     impl CdcTestTable {
-        fn new_simple(table_name: &str, publication_name: &str, url: &str) -> Self {
+        pub(super) fn new_simple(table_name: &str, publication_name: &str, url: &str) -> Self {
             Self::new_simple_with_tls(table_name, publication_name, url, None)
         }
 
@@ -3571,7 +3574,7 @@ mod cdc_tests {
             }
         }
 
-        fn execute(&mut self, query: &str) {
+        pub(super) fn execute(&mut self, query: &str) {
             self.client
                 .execute(query, &[])
                 .unwrap_or_else(|e| panic!("failed to execute '{query}': {e}"));
@@ -3655,7 +3658,7 @@ mod cdc_tests {
         }
     }
 
-    fn cdc_connector_url(url: &str) -> String {
+    pub(super) fn cdc_connector_url(url: &str) -> String {
         let Ok(mut url) = url::Url::parse(url) else {
             return url.to_string();
         };
@@ -4101,7 +4104,7 @@ mod cdc_tests {
     }
 
     /// Helper: read output file lines as JSON values.
-    fn read_output_json(path: &Path) -> Vec<serde_json::Value> {
+    pub(super) fn read_output_json(path: &Path) -> Vec<serde_json::Value> {
         let content = std::fs::read_to_string(path).unwrap_or_default();
         content
             .lines()
@@ -4111,7 +4114,7 @@ mod cdc_tests {
     }
 
     /// Helper: count the number of "insert" entries in the output.
-    fn count_inserts(rows: &[serde_json::Value]) -> usize {
+    pub(super) fn count_inserts(rows: &[serde_json::Value]) -> usize {
         rows.iter().filter(|r| r.get("insert").is_some()).count()
     }
 
