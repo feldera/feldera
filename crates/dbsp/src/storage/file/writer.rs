@@ -15,10 +15,10 @@ use crate::storage::{
             BatchMetadata, BlockHeader, BloomFilterBlockRef, COMPATIBLE_FEATURE_FILTER64,
             COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT, DATA_BLOCK_MAGIC, DataBlockHeader,
             FILE_TRAILER_BLOCK_MAGIC, FileTrailer, FileTrailerColumn, FixedLen,
-            INCOMPATIBLE_FEATURE_MODULAR_FILTERS, INCOMPATIBLE_FEATURE_ROARING_FILTERS,
-            INDEX_BLOCK_MAGIC, IndexBlockHeader, MODULAR_BLOOM_FILTER_BLOCK_MAGIC,
-            ModularBloomFilterBlockRef, NodeType, ROARING_BITMAP_FILTER_BLOCK_MAGIC,
-            RoaringBitmapFilterBlockRef, VERSION_NUMBER, Varint,
+            INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN, INCOMPATIBLE_FEATURE_MODULAR_FILTERS,
+            INCOMPATIBLE_FEATURE_ROARING_FILTERS, INDEX_BLOCK_MAGIC, IndexBlockHeader,
+            MODULAR_BLOOM_FILTER_BLOCK_MAGIC, ModularBloomFilterBlockRef, NodeType,
+            ROARING_BITMAP_FILTER_BLOCK_MAGIC, RoaringBitmapFilterBlockRef, VERSION_NUMBER, Varint,
         },
         reader::TreeNode,
     },
@@ -1292,6 +1292,12 @@ impl Writer {
         } else {
             BlockLocation { offset: 0, size: 0 }
         };
+
+        // A stamped value column is unreadable to a binary that does not know to
+        // hide the trailing column, so advertise it as incompatible.
+        if metadata.value_stamp.is_stamped() {
+            incompatible_features |= INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN;
+        }
 
         // Write the file trailer block.
 

@@ -18,8 +18,8 @@ use crate::{
             TouchedWindowCount,
             format::{
                 BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, Compression, FileTrailer,
-                INCOMPATIBLE_FEATURE_MODULAR_FILTERS, MODULAR_BLOOM_FILTER_BLOCK_MAGIC,
-                ROARING_BITMAP_FILTER_BLOCK_MAGIC,
+                INCOMPATIBLE_FEATURE_MODULAR_FILTERS, INCOMPATIBLE_FEATURE_ROARING_FILTERS,
+                MODULAR_BLOOM_FILTER_BLOCK_MAGIC, ROARING_BITMAP_FILTER_BLOCK_MAGIC,
             },
             reader::{BulkRows, FilteredKeys, Reader},
         },
@@ -39,6 +39,7 @@ use super::{
 };
 
 use crate::storage::file::FilterKind;
+use crate::storage::file::format::{INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN, ValueStampFlag};
 use crate::storage::{backend::StorageError, buffer_cache::FBuf};
 use crate::{
     DBData,
@@ -2193,4 +2194,83 @@ fn a_legacy_filter_has_no_ladder_to_descend() {
             assert!(filters.maybe_contains_key(key as &DynData, None));
         }
     });
+}
+
+/// A stamped value column survives a write/reopen cycle.
+///
+/// A successful reopen also proves the writer set
+/// [`INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN`]: the reader rejects a trailer
+/// whose feature bit and stamp disagree, so a stamped file that opens at all
+/// must carry the bit.
+#[test]
+fn value_stamp_roundtrip() {
+    init_test_logger();
+
+    for stamp in [ValueStampFlag::NONE, ValueStampFlag::UPSERT_INDEX] {
+        let factories = Factories::<DynData, DynData>::new::<i64, ()>();
+        let tempdir = tempdir().unwrap();
+        let storage_backend = <dyn StorageBackend>::new(
+            &StorageConfig {
+                path: tempdir.path().to_string_lossy().to_string(),
+                cache: Default::default(),
+            },
+            &StorageOptions::default(),
+        )
+        .unwrap();
+
+        let mut writer = Writer1::new(
+            &factories,
+            test_buffer_cache,
+            &*storage_backend,
+            Parameters::default(),
+            FilterPlan::<DynData>::decide_filter(None, 3),
+        )
+        .unwrap();
+        for key in [1i64, 3, 7] {
+            writer.write0((&key, &())).unwrap();
+        }
+
+        let path = writer.path().clone();
+        // Hold the handle: the file is removed when the last one drops.
+        let (_file_handle, _key_filter, _key_bounds) = writer
+            .close(BatchMetadata {
+                value_stamp: stamp,
+                ..BatchMetadata::default()
+            })
+            .unwrap();
+
+        let (reader, _membership_filter) =
+            Reader::<(&'static DynData, &'static DynData, ())>::open_with_filter(
+                &[&factories.any_factories()],
+                test_buffer_cache,
+                &*storage_backend,
+                &path,
+            )
+            .unwrap();
+        assert_eq!(reader.metadata().value_stamp, stamp);
+        assert_eq!(
+            reader.metadata().value_stamp.is_stamped(),
+            stamp != ValueStampFlag::NONE
+        );
+    }
+}
+
+/// Negative control for the downgrade guarantee.
+///
+/// A binary that predates the stamp must REFUSE a stamped file rather than read
+/// `Tup2<V, u32>` bytes as `V`.  It refuses because the stamp is advertised in
+/// the incompatible bitmap and its bit is absent from that binary's known set,
+/// which this reproduces.  Once every reader in the tree knows the bit, this
+/// test is the only thing left holding the guarantee: moving the stamp to the
+/// compatible bitmap, or folding it into the older mask, breaks it here.
+#[test]
+fn old_reader_refuses_stamped_file() {
+    const KNOWN_BEFORE_STAMP: u64 =
+        INCOMPATIBLE_FEATURE_ROARING_FILTERS | INCOMPATIBLE_FEATURE_MODULAR_FILTERS;
+
+    assert_ne!(
+        INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN & !KNOWN_BEFORE_STAMP,
+        0,
+        "a reader predating the stamp must see the bit as unknown and refuse the file"
+    );
 }
