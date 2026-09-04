@@ -29,7 +29,10 @@ use feldera_adapterlib::transport::{Resume, Watermark};
 use feldera_types::config::FtModel;
 use feldera_types::coordination::Completion;
 use feldera_types::format::json::JsonFlavor;
-use feldera_types::transport::postgres::{PostgresCdcReaderConfig, PostgresTlsConfig};
+use feldera_types::transport::postgres::{
+    PostgresCdcBatchConfig, PostgresCdcMemoryBackpressureConfig, PostgresCdcReaderConfig,
+    PostgresTlsConfig,
+};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
@@ -346,13 +349,15 @@ impl PostgresCdcInputInner {
             // etl stores its replication state in the source database itself, so
             // the state store reuses the source connection.
             store_pg_connection: None,
-            batch: BatchConfig::default(),
+            batch: batch_config_from(&self.config.batch),
             table_error_retry_delay_ms: PipelineConfig::DEFAULT_TABLE_ERROR_RETRY_DELAY_MS,
             table_error_retry_max_attempts: PipelineConfig::DEFAULT_TABLE_ERROR_RETRY_MAX_ATTEMPTS,
             max_table_sync_workers: PipelineConfig::DEFAULT_MAX_TABLE_SYNC_WORKERS,
             max_copy_connections_per_table: PipelineConfig::DEFAULT_MAX_COPY_CONNECTIONS_PER_TABLE,
             memory_refresh_interval_ms: PipelineConfig::DEFAULT_MEMORY_REFRESH_INTERVAL_MS,
-            memory_backpressure: Some(MemoryBackpressureConfig::default()),
+            memory_backpressure: Some(memory_backpressure_config_from(
+                &self.config.memory_backpressure,
+            )),
             table_sync_copy: TableSyncCopyConfig::IncludeAllTables,
             invalidated_slot_behavior: InvalidatedSlotBehavior::default(),
         };
@@ -1240,6 +1245,26 @@ fn parse_pg_uri(
     })
 }
 
+/// Convert the connector's batch configuration into etl's `BatchConfig`.
+fn batch_config_from(config: &PostgresCdcBatchConfig) -> BatchConfig {
+    BatchConfig {
+        max_fill_ms: config.max_fill_ms,
+        memory_budget_ratio: config.memory_budget_ratio,
+        max_bytes: config.max_bytes,
+    }
+}
+
+/// Convert the connector's memory backpressure configuration into etl's
+/// `MemoryBackpressureConfig`.
+fn memory_backpressure_config_from(
+    config: &PostgresCdcMemoryBackpressureConfig,
+) -> MemoryBackpressureConfig {
+    MemoryBackpressureConfig {
+        activate_threshold: config.activate_threshold,
+        resume_threshold: config.resume_threshold,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1774,6 +1799,61 @@ mod tests {
         assert_eq!(
             missing_required(&["id", "name"], &["c0", "c1"]),
             vec!["c0", "c1"]
+        );
+    }
+
+    #[test]
+    fn test_batch_config_from_maps_all_fields() {
+        let config = PostgresCdcBatchConfig {
+            max_fill_ms: 5_000,
+            memory_budget_ratio: 0.3,
+            max_bytes: 1024,
+        };
+
+        let etl_config = batch_config_from(&config);
+
+        assert_eq!(etl_config.max_fill_ms, 5_000);
+        assert_eq!(etl_config.memory_budget_ratio, 0.3);
+        assert_eq!(etl_config.max_bytes, 1024);
+    }
+
+    #[test]
+    fn test_batch_config_from_default_matches_connector_default() {
+        let etl_config = batch_config_from(&PostgresCdcBatchConfig::default());
+
+        assert_eq!(etl_config.max_fill_ms, BatchConfig::default().max_fill_ms);
+        assert_eq!(
+            etl_config.memory_budget_ratio,
+            BatchConfig::default().memory_budget_ratio
+        );
+        assert_eq!(etl_config.max_bytes, BatchConfig::default().max_bytes);
+    }
+
+    #[test]
+    fn test_memory_backpressure_config_from_maps_all_fields() {
+        let config = PostgresCdcMemoryBackpressureConfig {
+            activate_threshold: 0.6,
+            resume_threshold: 0.4,
+        };
+
+        let etl_config = memory_backpressure_config_from(&config);
+
+        assert_eq!(etl_config.activate_threshold, 0.6);
+        assert_eq!(etl_config.resume_threshold, 0.4);
+    }
+
+    #[test]
+    fn test_memory_backpressure_config_from_default_matches_connector_default() {
+        let etl_config =
+            memory_backpressure_config_from(&PostgresCdcMemoryBackpressureConfig::default());
+
+        assert_eq!(
+            etl_config.activate_threshold,
+            MemoryBackpressureConfig::default().activate_threshold
+        );
+        assert_eq!(
+            etl_config.resume_threshold,
+            MemoryBackpressureConfig::default().resume_threshold
         );
     }
 }

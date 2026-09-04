@@ -786,6 +786,131 @@ public class ConnectorTests extends BaseSQLTests {
     }
 
     @Test
+    public void postgresCdcReaderValidBatchAndMemoryBackpressure() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "postgres_cdc_input",
+                  "config": {
+                    "uri": "postgres://localhost/db",
+                    "publication": "my_pub",
+                    "source_table": "public.orders",
+                    "batch": {
+                      "max_fill_ms": 5000,
+                      "memory_budget_ratio": 0.3,
+                      "max_bytes": 4194304
+                    },
+                    "memory_backpressure": {
+                      "activate_threshold": 0.9,
+                      "resume_threshold": 0.6
+                    }
+                  }
+                }""");
+    }
+
+    @Test
+    public void postgresCdcReaderRejectsZeroBatchMemoryBudgetRatio() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "postgres_cdc_input",
+                  "config": {
+                    "uri": "postgres://localhost/db",
+                    "publication": "my_pub",
+                    "source_table": "public.orders",
+                    "batch": {
+                      "memory_budget_ratio": 0.0
+                    }
+                  }
+                }""",
+                "\"batch.memory_budget_ratio\" must be in the (0.0, 1.0] interval");
+    }
+
+    @Test
+    public void postgresCdcReaderRejectsOutOfRangeBatchMemoryBudgetRatio() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "postgres_cdc_input",
+                  "config": {
+                    "uri": "postgres://localhost/db",
+                    "publication": "my_pub",
+                    "source_table": "public.orders",
+                    "batch": {
+                      "memory_budget_ratio": 1.5
+                    }
+                  }
+                }""",
+                "\"batch.memory_budget_ratio\" must be in the (0.0, 1.0] interval");
+    }
+
+    @Test
+    public void postgresCdcReaderRejectsZeroBatchMaxBytes() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "postgres_cdc_input",
+                  "config": {
+                    "uri": "postgres://localhost/db",
+                    "publication": "my_pub",
+                    "source_table": "public.orders",
+                    "batch": {
+                      "max_bytes": 0
+                    }
+                  }
+                }""",
+                "\"batch.max_bytes\" must be greater than 0");
+    }
+
+    @Test
+    public void postgresCdcReaderRejectsZeroActivateThreshold() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "postgres_cdc_input",
+                  "config": {
+                    "uri": "postgres://localhost/db",
+                    "publication": "my_pub",
+                    "source_table": "public.orders",
+                    "memory_backpressure": {
+                      "activate_threshold": 0.0
+                    }
+                  }
+                }""",
+                "\"memory_backpressure.activate_threshold\" must be in the (0.0, 1.0] interval");
+    }
+
+    @Test
+    public void postgresCdcReaderRejectsResumeThresholdOfOne() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "postgres_cdc_input",
+                  "config": {
+                    "uri": "postgres://localhost/db",
+                    "publication": "my_pub",
+                    "source_table": "public.orders",
+                    "memory_backpressure": {
+                      "resume_threshold": 1.0
+                    }
+                  }
+                }""",
+                "\"memory_backpressure.resume_threshold\" must be in the [0.0, 1.0) interval");
+    }
+
+    @Test
+    public void postgresCdcReaderRejectsResumeGteActivateThreshold() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "postgres_cdc_input",
+                  "config": {
+                    "uri": "postgres://localhost/db",
+                    "publication": "my_pub",
+                    "source_table": "public.orders",
+                    "memory_backpressure": {
+                      "activate_threshold": 0.5,
+                      "resume_threshold": 0.5
+                    }
+                  }
+                }""",
+                "must be lower than");
+    }
+
+    @Test
     public void postgresWriterCdcMissingOpColumn() {
         viewConnectorTest("""
                 "transport": {
