@@ -13,7 +13,9 @@
   import '$assets/fonts/generic-icons.css'
 
   import { page } from '$app/state'
+  import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { ServerDate } from '$lib/compositions/serverTime'
   import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
   import { getLicenseMessage } from '$lib/functions/license'
@@ -21,6 +23,9 @@
 
   const { children } = $props()
   const darkMode = useDarkMode()
+  // Rendered here so the header's profile menu can open its dialogs on every page, the pages
+  // outside the app shell (tenant picker, profile viewer) included.
+  const dialog = useGlobalDialog()
 
   if (browser) {
     beforeNavigate(() => posthog.capture('$pageleave'))
@@ -63,6 +68,7 @@
   }}
 ></Toaster>
 {@render children?.()}
+<GlobalModal dialog={dialog.dialog}></GlobalModal>
 
 {#if shouldTrack}
   <img src={scarfTrackingUrl} alt="" aria-hidden="true" style="display: none;" />

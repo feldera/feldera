@@ -18,12 +18,16 @@
   const {
     compactBreakpoint = '',
     healthStatus
-  }: { compactBreakpoint?: string; healthStatus: ClusterHealthStatus } = $props()
+  }: { compactBreakpoint?: string; healthStatus: ClusterHealthStatus | undefined } = $props()
   const auth = page.data.auth as AuthDetails | undefined
 
   const globalDialog = useGlobalDialog()
 
-  let combinedStatus: ClusterEventType = $derived.by(() => {
+  // Undefined while no poll has answered; the dot then shows no verdict.
+  let combinedStatus: ClusterEventType | undefined = $derived.by(() => {
+    if (!healthStatus) {
+      return undefined
+    }
     const all = Object.values(healthStatus)
     return all.some((e) => e === 'major_issue')
       ? 'major_issue'
@@ -87,11 +91,13 @@
         {/snippet}
         {#snippet healthIcon()}
           <div
-            class="m-2 h-2.5 w-2.5 rounded-full text-[64px] {combinedStatus === 'healthy'
-              ? 'bg-success-500'
-              : combinedStatus === 'unhealthy'
-                ? 'bg-warning-500'
-                : 'bg-error-500'}"
+            class="m-2 h-2.5 w-2.5 rounded-full text-[64px] {combinedStatus === undefined
+              ? 'border-2 border-surface-400'
+              : combinedStatus === 'healthy'
+                ? 'bg-success-500'
+                : combinedStatus === 'unhealthy'
+                  ? 'bg-warning-500'
+                  : 'bg-error-500'}"
           ></div>
         {/snippet}
 
