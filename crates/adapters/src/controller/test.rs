@@ -2,7 +2,7 @@ use super::OutputEndpointControl;
 use crate::{
     Controller, InputConsumer, InputEndpoint, OutputEndpoint, PipelineConfig,
     TransportInputEndpoint,
-    controller::{ControllerStatusContext, TransactionInfo, TransactionState},
+    controller::{ControllerError, ControllerStatusContext, TransactionInfo, TransactionState},
     preprocess::{DecryptionPreprocessorFactory, PassthroughPreprocessorFactory},
     test::{
         DEFAULT_TIMEOUT_MS, TestStruct, generate_test_batch, init_test_logger, test_circuit,
@@ -18,9 +18,13 @@ use chrono::Utc;
 use crossbeam::sync::Parker;
 use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
 use feldera_adapterlib::format::{BufferSize, InputBuffer, Parser};
+use feldera_storage::{
+    StorageBackend as FelderaStorageBackend, checkpoint_synchronizer::CheckpointSynchronizer,
+};
 use feldera_types::{
     adapter_stats::ExternalOutputEndpointMetrics,
-    config::{FtModel, InputEndpointConfig, OutputEndpointConfig},
+    checkpoint::{CheckpointMetadata, CheckpointSyncMetrics, HostInfo, RemoteCheckpoint},
+    config::{FtModel, InputEndpointConfig, OutputEndpointConfig, PipelineIdentity, SyncConfig},
     constants::STATE_FILE,
     memory_pressure::MemoryPressure,
     program_schema::Relation,
@@ -36,7 +40,7 @@ use std::{
     ops::Range,
     path::{Path, PathBuf},
     sync::{
-        Arc, Mutex,
+        Arc, Mutex, MutexGuard,
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
@@ -7102,4 +7106,263 @@ fn sample_views(controller: &Controller) -> Option<Sample> {
             counts: column(1),
         })
     })
+}
+
+/// How long the tests below wait for a push or a suspend to make progress.
+///
+/// Long enough for a loaded machine to write a checkpoint, short enough that a
+/// suspend that never pushes fails the test rather than stalling the suite.
+const SYNC_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Stands in for object storage in the tests below.
+///
+/// Registering it is what makes a pipeline with a `sync` config push its
+/// checkpoints: enterprise builds get their synchronizer from the
+/// checkpoint-sync crate, which this crate cannot depend on.
+struct TestSynchronizer;
+
+inventory::submit! { &TestSynchronizer as &dyn CheckpointSynchronizer }
+
+/// What [TestSynchronizer] talks to the test through.
+struct PushHooks {
+    /// Announces each push as it starts.
+    started: mpsc::Sender<uuid::Uuid>,
+
+    /// Holds each push until the test answers it.
+    release: mpsc::Receiver<Result<(), String>>,
+}
+
+static PUSH_HOOKS: Mutex<Option<PushHooks>> = Mutex::new(None);
+
+/// Locks [PUSH_HOOKS], ignoring the poison a failing test leaves behind.
+fn lock_push_hooks() -> MutexGuard<'static, Option<PushHooks>> {
+    PUSH_HOOKS.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn take_push_hooks() -> Option<PushHooks> {
+    lock_push_hooks().take()
+}
+
+/// Serializes the tests that drive [TestSynchronizer], which share [PUSH_HOOKS].
+static PUSH_HOOKS_IN_USE: Mutex<()> = Mutex::new(());
+
+impl CheckpointSynchronizer for TestSynchronizer {
+    fn push(
+        &self,
+        checkpoint: uuid::Uuid,
+        _storage: Arc<dyn FelderaStorageBackend>,
+        _remote_config: SyncConfig,
+        _host_info: Option<HostInfo>,
+        _pipeline: PipelineIdentity,
+    ) -> anyhow::Result<Option<CheckpointSyncMetrics>> {
+        // The hooks come out of the static for the duration of the push, so
+        // that a push blocked waiting for the test does not hold the lock a
+        // failing test needs to clear them.
+        let hooks = take_push_hooks().expect("push with no test to answer it");
+        hooks.started.send(checkpoint).unwrap();
+        let result = hooks
+            .release
+            .recv()
+            .unwrap_or_else(|_| Err(String::from("the test dropped the pipeline")));
+        *lock_push_hooks() = Some(hooks);
+        match result {
+            Ok(()) => Ok(None),
+            Err(error) => Err(anyhow!(error)),
+        }
+    }
+
+    fn pull(
+        &self,
+        _storage: Arc<dyn FelderaStorageBackend>,
+        _remote_config: SyncConfig,
+        _host_info: Option<HostInfo>,
+        _standby: bool,
+        _pipeline: PipelineIdentity,
+    ) -> anyhow::Result<(CheckpointMetadata, Option<CheckpointSyncMetrics>)> {
+        unimplemented!("these tests only push")
+    }
+
+    fn list_remote(&self, _remote_config: SyncConfig) -> anyhow::Result<Vec<RemoteCheckpoint>> {
+        unimplemented!("these tests only push")
+    }
+}
+
+/// A pipeline that syncs checkpoints, plus the ends of [PUSH_HOOKS] the test
+/// drives its pushes with.
+struct SyncingPipeline {
+    controller: Controller,
+    push_started: mpsc::Receiver<uuid::Uuid>,
+    release_push: mpsc::Sender<Result<(), String>>,
+
+    /// Errors the controller reported, in place of the panic the other tests
+    /// install, since a failed push is reported as one.
+    errors: Arc<Mutex<Vec<String>>>,
+
+    _tempdir: TempDir,
+}
+
+impl SyncingPipeline {
+    /// Starts a pipeline configured to push checkpoints to object storage.
+    fn start() -> Self {
+        init_test_logger();
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        create_dir(&storage_dir).unwrap();
+        let input_path = tempdir.path().join("input.csv");
+        File::create(&input_path).unwrap();
+
+        let config: PipelineConfig = serde_json::from_value(json!({
+            "name": "test",
+            "workers": 4,
+            "storage_config": {
+                "path": storage_dir,
+            },
+            "storage": {
+                "backend": {
+                    "name": "file",
+                    "config": {
+                        "sync": {
+                            "bucket": "test-bucket",
+                        }
+                    }
+                }
+            },
+            "clock_resolution_usecs": null,
+            "inputs": {
+                "test_input1": {
+                    "stream": "test_input1",
+                    "transport": {
+                        "name": "file_input",
+                        "config": {
+                            "path": input_path,
+                            "follow": true
+                        }
+                    },
+                    "format": {
+                        "name": "csv"
+                    }
+                }
+            },
+        }))
+        .unwrap();
+
+        let (started, push_started) = mpsc::channel();
+        let (release_push, release) = mpsc::channel();
+        *lock_push_hooks() = Some(PushHooks { started, release });
+
+        let errors = Arc::new(Mutex::new(Vec::new()));
+        let error_sink = errors.clone();
+        let controller = Controller::with_test_config(
+            |circuit_config| {
+                Ok(test_circuit::<TestStruct>(
+                    circuit_config,
+                    &[],
+                    &[Some("output")],
+                ))
+            },
+            &config,
+            Box::new(move |error, _| error_sink.lock().unwrap().push(error.to_string())),
+        )
+        .unwrap();
+        controller.start();
+
+        Self {
+            controller,
+            push_started,
+            release_push,
+            errors,
+            _tempdir: tempdir,
+        }
+    }
+
+    /// Asks the pipeline to suspend, and returns the channel its outcome
+    /// arrives on.
+    fn start_suspend(&self) -> mpsc::Receiver<Result<(), Arc<ControllerError>>> {
+        let (sender, receiver) = mpsc::channel();
+        self.controller
+            .start_suspend(Box::new(move |result| sender.send(result).unwrap()));
+        receiver
+    }
+
+    fn suspended(&self) -> bool {
+        self.controller.status().global_metrics.suspended()
+    }
+
+    /// Stops the pipeline.  The clone is only to satisfy `stop`, which consumes
+    /// the [Controller]; it takes the circuit thread's handle out of state the
+    /// clones share, so the copy left here has nothing left to stop.
+    fn stop(&self) {
+        self.controller.clone().stop().unwrap();
+    }
+}
+
+impl Drop for SyncingPipeline {
+    fn drop(&mut self) {
+        *lock_push_hooks() = None;
+    }
+}
+
+/// A suspend pushes the checkpoint it just wrote, and reports the pipeline
+/// suspended only once that push finishes.
+#[test]
+fn suspend_pushes_its_checkpoint() {
+    let _in_use = PUSH_HOOKS_IN_USE.lock().unwrap_or_else(|e| e.into_inner());
+    let pipeline = SyncingPipeline::start();
+
+    let suspend = pipeline.start_suspend();
+    let pushed = pipeline
+        .push_started
+        .recv_timeout(SYNC_TIMEOUT)
+        .expect("suspend should push its checkpoint");
+
+    // The push is what the suspend is waiting for: until it finishes, the
+    // pipeline must not report itself suspended, because the runner tears it
+    // down as soon as it does.
+    assert!(!pipeline.suspended());
+    assert!(suspend.try_recv().is_err());
+
+    pipeline.release_push.send(Ok(())).unwrap();
+    suspend.recv_timeout(SYNC_TIMEOUT).unwrap().unwrap();
+    assert!(pipeline.suspended());
+    assert_eq!(
+        pipeline.controller.last_checkpoint_sync().id,
+        Some(pushed),
+        "the suspend's checkpoint is the one that was pushed"
+    );
+    assert_eq!(
+        pipeline.errors.lock().unwrap().as_slice(),
+        [] as [String; 0]
+    );
+
+    pipeline.stop();
+}
+
+/// A stop-time push that fails is logged, not fatal: the checkpoint is safe in
+/// local storage, so the stop the user asked for still succeeds.
+#[test]
+fn suspend_survives_a_failed_push() {
+    let _in_use = PUSH_HOOKS_IN_USE.lock().unwrap_or_else(|e| e.into_inner());
+    let pipeline = SyncingPipeline::start();
+
+    let suspend = pipeline.start_suspend();
+    pipeline
+        .push_started
+        .recv_timeout(SYNC_TIMEOUT)
+        .expect("suspend should push its checkpoint");
+    pipeline
+        .release_push
+        .send(Err("bucket is unreachable".into()))
+        .unwrap();
+
+    suspend
+        .recv_timeout(SYNC_TIMEOUT)
+        .unwrap()
+        .expect("a failed push should not fail the suspend");
+    assert!(pipeline.suspended());
+    assert_eq!(
+        pipeline.errors.lock().unwrap().as_slice(),
+        [] as [String; 0]
+    );
+
+    pipeline.stop();
 }

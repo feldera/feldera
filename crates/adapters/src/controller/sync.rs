@@ -60,6 +60,18 @@ pub static CHECKPOINT_SYNC_PUSH_FAILURES: AtomicU64 = AtomicU64::new(0);
 pub static CHECKPOINT_SYNC_PUSH_DURATION_SECONDS: ExponentialHistogram =
     ExponentialHistogram::new();
 
+/// Whether a checkpoint synchronizer is registered, that is, whether this
+/// pipeline can push checkpoints to and pull them from object storage.
+///
+/// Enterprise builds get theirs from the checkpoint-sync crate; tests register
+/// their own.
+pub(super) fn synchronizer_available() -> bool {
+    inventory::iter::<&dyn CheckpointSynchronizer>
+        .into_iter()
+        .next()
+        .is_some()
+}
+
 /// Lazily resolves the checkpoint synchronizer.
 ///
 /// This panic is safe as all enterprise builds must include the checkpoint-sync

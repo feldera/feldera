@@ -29,6 +29,7 @@ use crate::controller::sync::{
     CHECKPOINT_SYNC_PULL_TRANSFERRED_BYTES, CHECKPOINT_SYNC_PUSH_DURATION_SECONDS,
     CHECKPOINT_SYNC_PUSH_FAILURES, CHECKPOINT_SYNC_PUSH_SUCCESS,
     CHECKPOINT_SYNC_PUSH_TRANSFER_SPEED, CHECKPOINT_SYNC_PUSH_TRANSFERRED_BYTES, SYNCHRONIZER,
+    synchronizer_available,
 };
 use crate::panic::N_PANICS;
 use crate::server::metrics::{HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, Value};
@@ -2686,6 +2687,22 @@ impl RunningCheckpointSync {
     }
 }
 
+/// A suspend waiting for the checkpoint it wrote to reach object storage.
+struct SuspendSync {
+    /// The checkpoint being pushed.
+    uuid: uuid::Uuid,
+
+    /// The suspend requests to answer once the push finishes.
+    callbacks: Vec<SuspendCallbackFn>,
+}
+
+/// Answers every suspend request in `callbacks` with `result`.
+fn reply_to_suspend(callbacks: Vec<SuspendCallbackFn>, result: Result<(), Arc<ControllerError>>) {
+    for callback in callbacks {
+        callback(result.clone());
+    }
+}
+
 enum SyncCheckpointRequest {
     Scheduled(uuid::Uuid),
     Requested {
@@ -2738,6 +2755,10 @@ struct CircuitThread {
 
     /// Active checkpoint sync.
     running_checkpoint_sync: Option<RunningCheckpointSync>,
+
+    /// A suspend deferred until the checkpoint it wrote is pushed to object
+    /// storage.
+    suspend_sync: Option<SuspendSync>,
 
     /// Storage backend for writing checkpoints.
     storage: Option<Arc<dyn StorageBackend>>,
@@ -3255,6 +3276,7 @@ impl CircuitThread {
             running_checkpoint: None,
             running_checkpoint_sync: None,
             sync_checkpoint_requests: Vec::new(),
+            suspend_sync: None,
             step,
             step_sender,
             checkpoint_sender,
@@ -3357,6 +3379,15 @@ impl CircuitThread {
 
             if self.controller.state() == PipelineState::Terminated {
                 break Ok(());
+            }
+
+            // A suspend is waiting for its checkpoint to reach object storage.
+            // Stepping now would only add state that the checkpoint being
+            // pushed predates, so wait for the push instead; the thread running
+            // it unparks this one when it finishes.
+            if self.suspend_sync.is_some() {
+                self.parker.park_timeout(Duration::from_secs(1));
+                continue;
             }
 
             // Backpressure in the output pipeline: wait for room in output buffers to
@@ -4133,31 +4164,91 @@ impl CircuitThread {
 
         // Apply the result to all the requests.
         let result = result.map_err(Arc::new);
+        let mut suspend_callbacks = Vec::new();
         for request in self.checkpoint_requests.drain(..) {
             match request {
                 CheckpointRequest::Scheduled => (),
                 CheckpointRequest::CheckpointCommand(callback) => callback(result.clone()),
-                CheckpointRequest::SuspendCommand(callback) => {
-                    // Terminate the circuit only on a *successful* suspend, and
-                    // record that the suspend is the reason: that is what lets
-                    // `/status` tell a completed suspend apart from a pipeline
-                    // that died (see `terminated_status`). A failed suspend
-                    // leaves the circuit intact and running; the `/suspend`
-                    // handler reports it as `PipelinePhase::Failed` and stops the
-                    // pipeline.
-                    match &result {
-                        Ok(_) => self.controller.status.set_suspended(),
-                        Err(e) => self.controller.error(e.clone(), None),
-                    }
-                    callback(result.clone().map(|_| ()))
-                }
+                CheckpointRequest::SuspendCommand(callback) => suspend_callbacks.push(callback),
             }
+        }
+        if !suspend_callbacks.is_empty() {
+            self.complete_suspend(result, suspend_callbacks);
         }
 
         // We may have disabled FT during backfill. Re-enable it after
         // reaching a checkpoint.
         if let Some(ft) = &mut self.ft {
             ft.enable();
+        }
+    }
+
+    /// Finishes the suspend that the just-completed checkpoint was taken for,
+    /// or defers it until that checkpoint reaches object storage.
+    ///
+    /// Terminate the circuit only on a *successful* suspend, and record that the
+    /// suspend is the reason: that is what lets `/status` tell a completed
+    /// suspend apart from a pipeline that died (see `terminated_status`). A
+    /// failed suspend leaves the circuit intact and running; the `/suspend`
+    /// handler reports it as `PipelinePhase::Failed` and stops the pipeline.
+    ///
+    /// A pipeline that syncs checkpoints to object storage pushes this one
+    /// before reporting itself suspended: the runner tears the pipeline down as
+    /// soon as it sees that status, so a push started any later never finishes,
+    /// and the remote falls behind local storage on every stop.  The push is
+    /// best effort, and [Self::finish_suspend_sync] suspends either way.
+    fn complete_suspend(
+        &mut self,
+        result: Result<Checkpoint, Arc<ControllerError>>,
+        callbacks: Vec<SuspendCallbackFn>,
+    ) {
+        match &result {
+            Ok(checkpoint) => {
+                if let Some(uuid) = checkpoint.circuit.as_ref().map(|c| c.uuid)
+                    && self.syncs_checkpoints()
+                {
+                    info!("suspend: pushing checkpoint {uuid} to object storage");
+                    self.sync_checkpoint_requests
+                        .push(SyncCheckpointRequest::Scheduled(uuid));
+                    self.suspend_sync = Some(SuspendSync { uuid, callbacks });
+                    return;
+                }
+                self.controller.status.set_suspended();
+            }
+            Err(error) => self.controller.error(error.clone(), None),
+        }
+        reply_to_suspend(callbacks, result.map(|_| ()));
+    }
+
+    /// Completes a suspend that [Self::complete_suspend] deferred until the
+    /// push of checkpoint `uuid`, which finished with `result`.
+    ///
+    /// The suspend succeeds whether or not the push did.
+    fn finish_suspend_sync(&mut self, uuid: uuid::Uuid, result: Result<(), Arc<ControllerError>>) {
+        let Some(suspend) = self.suspend_sync.take_if(|suspend| suspend.uuid == uuid) else {
+            return;
+        };
+        // A failed push leaves the remote behind local storage, so say so; the
+        // checkpoint itself is safe locally and the pipeline stops either way,
+        // so the stop the user asked for still succeeds.
+        if let Err(error) = &result {
+            warn!("suspend: pushing checkpoint {uuid} to object storage failed: {error}");
+        }
+        self.controller.status.set_suspended();
+        reply_to_suspend(suspend.callbacks, Ok(()));
+    }
+
+    /// Whether this pipeline pushes checkpoints to object storage.
+    fn syncs_checkpoints(&self) -> bool {
+        if !synchronizer_available() {
+            return false;
+        }
+        match self.controller.status.pipeline_config.storage() {
+            Some((_, options)) => match &options.backend {
+                StorageBackendConfig::File(file) => file.sync.is_some(),
+                _ => false,
+            },
+            None => false,
         }
     }
 
@@ -4211,6 +4302,12 @@ impl CircuitThread {
     fn flush_commands_and_requests(&mut self) {
         for request in self.checkpoint_requests.drain(..) {
             request.flush();
+        }
+        if let Some(suspend) = self.suspend_sync.take() {
+            reply_to_suspend(
+                suspend.callbacks,
+                Err(Arc::new(ControllerError::ControllerExit)),
+            );
         }
         for command in self.command_receiver.try_iter() {
             command.flush();
@@ -4781,22 +4878,21 @@ impl CircuitThread {
             return;
         };
 
-        match running_sync {
+        let (uuid, result) = match running_sync {
             RunningCheckpointSync::Waiting(uuid, _, _) => {
                 let Some(result) = running_sync.poll(self) else {
                     self.running_checkpoint_sync = Some(running_sync);
                     return;
                 };
 
-                process_sync_requests(&mut self.sync_checkpoint_requests, uuid, result);
+                (uuid, result)
             }
-            RunningCheckpointSync::Error(uuid, result) => {
-                process_sync_requests(&mut self.sync_checkpoint_requests, uuid, Err(result));
-            }
-            RunningCheckpointSync::Done(uuid) => {
-                process_sync_requests(&mut self.sync_checkpoint_requests, uuid, Ok(()));
-            }
+            RunningCheckpointSync::Error(uuid, error) => (uuid, Err(error)),
+            RunningCheckpointSync::Done(uuid) => (uuid, Ok(())),
         };
+
+        process_sync_requests(&mut self.sync_checkpoint_requests, uuid, result.clone());
+        self.finish_suspend_sync(uuid, result);
     }
 
     fn sync_checkpoint(&mut self) {

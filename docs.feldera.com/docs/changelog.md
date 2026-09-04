@@ -14,6 +14,16 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - Stopping a pipeline without `force` now pushes the checkpoint the stop
+          writes to object storage before the pipeline stops, for every pipeline
+          with a `sync` configuration.  Until now only a periodic
+          (`push_interval`) or manually requested sync pushed anything, so a
+          graceful stop left object storage behind local storage, and a pipeline
+          restored from object storage afterwards lost everything the two
+          differed by.  The stop waits for the push, and logs a warning and
+          stops anyway if it fails.  See
+          [Checkpoint sync](/pipelines/checkpoint-sync#sync-on-stop).
+
         - The `bloom_false_positive_rate` storage setting now applies when a
           Bloom filter is read as well as when it is written.  Lowering it and
           restarting a pipeline reduces Bloom filter memory without rewriting

@@ -415,9 +415,14 @@ class TestCheckpointSync(SharedTestPipeline):
         strict: bool = False,
         standby: bool = False,
         clear_storage: bool = True,
+        force: bool = True,
     ):
-        """Stop the running pipeline and restart it from *start_from*."""
-        self.pipeline.stop(force=True)
+        """Stop the running pipeline and restart it from *start_from*.
+
+        A non-forced stop checkpoints on the way out, so *force* decides
+        whether the restart can see that last checkpoint.
+        """
+        self.pipeline.stop(force=force)
         if clear_storage:
             self.pipeline.clear_storage()
 
@@ -614,6 +619,30 @@ class TestCheckpointSync(SharedTestPipeline):
         self._wait_for_automated_sync(chk_uuid, chk_steps)
 
         self._restart_from_checkpoint("latest")
+
+        got_after = list(self.pipeline.query("SELECT * FROM v0"))
+        print(
+            f"{self.pipeline.name}: after: {len(got_after)}, {got_after}",
+            file=sys.stderr,
+        )
+        self.assertCountEqual(got_before, got_after)
+        self.pipeline.stop(force=True)
+        self.pipeline.clear_storage()
+
+    @enterprise_only
+    # Multihost pipelines checkpoint through the coordinator, which does not
+    # push on stop.
+    @single_host_only
+    def test_sync_on_stop(self):
+        # No push interval and no manual sync: the stop is the only thing that
+        # can put a checkpoint in the bucket.
+        self._configure_and_start()
+        _, got_before = self._insert_data_and_wait()
+
+        # A non-forced stop checkpoints, and that checkpoint has to reach the
+        # bucket.  Clearing local storage leaves the bucket as the only copy,
+        # and `strict` fails the restart outright if it holds nothing.
+        self._restart_from_checkpoint("latest", force=False, strict=True)
 
         got_after = list(self.pipeline.query("SELECT * FROM v0"))
         print(

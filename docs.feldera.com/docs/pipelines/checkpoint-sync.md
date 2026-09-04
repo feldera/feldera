@@ -261,6 +261,20 @@ following conditions are met:
 - A valid checkpoint exists.
 - The checkpoint has not already been synced.
 
+## Sync on stop
+
+Stopping a pipeline without `force` checkpoints it on the way out, and that
+checkpoint is pushed to the object store before the pipeline reports itself
+stopped.  Every pipeline configured with `sync` does this; there is nothing to
+enable, and it happens whether or not `push_interval` is set.  Without it, a
+graceful stop would leave the object store behind local storage, and a pipeline
+later restored from the object store would lose everything the two differ by.
+
+The stop waits for the push, so stopping a pipeline takes as long as uploading
+its last checkpoint does.  The push is best effort: one that fails is logged and
+the pipeline stops anyway, leaving that checkpoint in local storage only.
+Stopping with `force` skips the checkpoint, and so the push, altogether.
+
 ## Triggering a checkpoint sync
 
 A sync operation can be triggered by making a `POST` request to:
