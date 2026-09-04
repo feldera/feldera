@@ -522,7 +522,7 @@ fn main() {
                     RelRange::new(RelOffset::Before(window_millis), RelOffset::Before(0)),
                 )
                 .inspect(move |batch| {
-                    outputs.fetch_add(batch.len() as u64, Ordering::Relaxed);
+                    outputs.fetch_add(batch.len_upper_bound() as u64, Ordering::Relaxed);
                 });
             Ok(input)
         })

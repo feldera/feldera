@@ -280,11 +280,11 @@ impl MatchStats {
     }
 
     pub fn add_output_batch<Z: ZBatch>(&mut self, batch: &Z) {
-        self.output_batch_stats.add_batch(batch.len())
+        self.output_batch_stats.add_batch(batch.len_upper_bound())
     }
 
     pub fn add_prefix_batch<Z: BatchReader>(&mut self, batch: &Z) {
-        self.prefix_batch_stats.add_batch(batch.len())
+        self.prefix_batch_stats.add_batch(batch.len_upper_bound())
     }
 }
 
@@ -331,9 +331,13 @@ where
         let smallest_snapshot_index = snapshots
             .iter()
             .enumerate()
-            .min_by_key(
-                |(_, (s, _factory, saturate))| if *saturate { usize::MAX } else { s.key_count() },
-            )
+            .min_by_key(|(_, (s, _factory, saturate))| {
+                if *saturate {
+                    usize::MAX
+                } else {
+                    s.key_count_upper_bound()
+                }
+            })
             .unwrap()
             .0;
 
@@ -345,7 +349,8 @@ where
             .collect::<Vec<_>>();
 
         let smallest_trace_cursor = if !snapshots[smallest_snapshot_index].2
-            && snapshots[smallest_snapshot_index].0.key_count() < prefix.key_count()
+            && snapshots[smallest_snapshot_index].0.key_count_upper_bound()
+                < prefix.key_count_upper_bound()
         {
             Some(smallest_snapshot_index)
         } else {
@@ -493,7 +498,7 @@ where
 
         stream! {
             self.stats.borrow_mut().add_prefix_batch(&prefix);
-            self.stats.borrow_mut().trace_sizes = snapshots.iter().map(|(s, _factories, _saturate)| s.len()).collect();
+            self.stats.borrow_mut().trace_sizes = snapshots.iter().map(|(s, _factories, _saturate)| s.len_upper_bound()).collect();
 
             self.empty_input.set(prefix.is_empty());
             self.empty_output.set(true);
@@ -761,7 +766,7 @@ where
             .future_outputs
             .borrow()
             .values()
-            .map(|spine| spine.len())
+            .map(|spine| spine.len_upper_bound())
             .sum();
 
         // let batch_sizes = MetaItem::Array(

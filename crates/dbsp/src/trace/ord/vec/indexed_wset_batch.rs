@@ -427,6 +427,11 @@ where
     R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
+    fn is_empty(&self) -> bool {
+        // `len_upper_bound` is exact for this batch type, which stores only the
+        // (key, value) pairs that its cursor yields.
+        self.len_upper_bound() == 0
+    }
     type Key = K;
     type Val = V;
     type Time = ();
@@ -469,12 +474,12 @@ where
     }*/
 
     #[inline]
-    fn key_count(&self) -> usize {
+    fn key_count_upper_bound(&self) -> usize {
         self.layer.keys()
     }
 
     #[inline]
-    fn len(&self) -> usize {
+    fn len_upper_bound(&self) -> usize {
         self.layer.tuples()
     }
 

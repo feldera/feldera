@@ -317,6 +317,11 @@ where
 }
 
 impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, R> {
+    fn is_empty(&self) -> bool {
+        // `len_upper_bound` is exact for this batch type, which stores only the
+        // (key, value) pairs that its cursor yields.
+        self.len_upper_bound() == 0
+    }
     type Key = K;
     type Val = DynUnit;
     type Time = ();
@@ -360,12 +365,12 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
     }*/
 
     #[inline]
-    fn key_count(&self) -> usize {
+    fn key_count_upper_bound(&self) -> usize {
         Trie::keys(&self.layer)
     }
 
     #[inline]
-    fn len(&self) -> usize {
+    fn len_upper_bound(&self) -> usize {
         self.layer.tuples()
     }
 

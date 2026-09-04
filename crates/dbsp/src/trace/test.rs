@@ -11,6 +11,7 @@ use std::{
 };
 
 use feldera_storage::tokio::TOKIO;
+use feldera_types::config::dev_tweaks::DevTweaks;
 use feldera_types::memory_pressure::MemoryPressure;
 use proptest::{collection::vec, prelude::*, strategy::BoxedStrategy};
 use size_of::SizeOf;
@@ -29,7 +30,7 @@ use crate::{
         Batch, BatchLocation, BatchReader, BatchReaderFactories, Builder, FileIndexedWSetFactories,
         FileWSetFactories, GroupFilter, ListMerger, Spine, Trace, TraceRole, VecIndexedWSet,
         VecIndexedWSetFactories, VecKeyBatch, VecKeyBatchFactories, VecValBatch,
-        VecValBatchFactories, VecWSet, VecWSetFactories,
+        VecValBatchFactories, VecWSet, VecWSetFactories, WithSnapshot,
         cursor::{Cursor, CursorPair},
         ord::{
             FileIndexedWSet, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
@@ -38,7 +39,7 @@ use crate::{
         },
         test::test_batch::{
             TestBatch, TestBatchFactories, assert_batch_cursors_eq, assert_batch_eq,
-            assert_trace_eq, test_batch_sampling, test_trace_sampling,
+            assert_bounds_match_cursor, assert_trace_eq, test_batch_sampling, test_trace_sampling,
         },
     },
     utils::{Tup1, Tup2, Tup3, Tup4},
@@ -1235,6 +1236,49 @@ fn test_fork_spine_metadata() {
     .unwrap();
 }
 
+/// A spine whose separate batches cancel each other yields nothing through its
+/// cursor, so it and its snapshot are empty although every batch holds updates.
+///
+/// The topmost level of a spine merges early once enough of its records have
+/// negative weights.  That merge runs in the background and may cancel the
+/// batches before the test looks at them, so the test turns it off.
+#[test]
+fn spine_is_empty_when_its_batches_cancel() {
+    let config = CircuitConfig::with_workers(1).with_dev_tweaks(DevTweaks {
+        top_level_negative_weight_fraction: Some(1.0),
+        ..DevTweaks::default()
+    });
+    Runtime::run(config, move |_parker| {
+        let factories = <OrdZSetFactories<DynI32>>::new::<i32, (), ZWeight>();
+        let batch = |tuples: Vec<Tup2<i32, ZWeight>>| {
+            OrdZSet::<DynI32>::dyn_from_tuples(&factories, (), &mut zset_tuples(tuples))
+        };
+        let mut spine: Spine<OrdZSet<DynI32>> = Spine::new(
+            &factories,
+            Arc::new(String::from("Test")),
+            TraceRole::Integral,
+        );
+        assert!(spine.is_empty());
+
+        TOKIO.block_on(spine.insert(batch(vec![Tup2(1, 1), Tup2(2, 1)])));
+        assert!(!spine.is_empty());
+        TOKIO.block_on(spine.insert(batch(vec![Tup2(1, -1)])));
+        assert!(!spine.is_empty());
+        assert!(!spine.ro_snapshot().is_empty());
+        TOKIO.block_on(spine.insert(batch(vec![Tup2(2, -1)])));
+
+        // The batches have not been merged, so their counts still add up.
+        assert_eq!(spine.len_upper_bound(), 4);
+        assert!(spine.is_empty());
+        assert!(spine.ro_snapshot().is_empty());
+        assert_bounds_match_cursor(&spine);
+        assert_bounds_match_cursor(&spine.ro_snapshot());
+    })
+    .unwrap()
+    .join()
+    .unwrap();
+}
+
 /// Executes `f`, once, inside a circuit initialized so that it has access to
 /// storage.
 ///
@@ -2325,7 +2369,7 @@ fn run_indexed_wset_storage_merges(
 
         // Sanity check that each input batch resides where we requested it to be.
         for (input, (_tuples, requested_loc)) in inputs.iter().zip(batches.iter()) {
-            if input.key_count() > 0 {
+            if input.key_count_upper_bound() > 0 {
                 assert_eq!(input.location(), *requested_loc);
             }
         }
@@ -2413,7 +2457,7 @@ fn run_indexed_wset_storage_merges_dense(batches: MergeInputBatches, fc: FilterC
             .collect();
 
         for (input, (_tuples, requested_loc)) in inputs.iter().zip(batches.iter()) {
-            if input.key_count() > 0 {
+            if input.key_count_upper_bound() > 0 {
                 assert_eq!(input.location(), *requested_loc);
             }
         }
