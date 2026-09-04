@@ -112,4 +112,12 @@ public class RelSequence extends CalciteRelNode {
     public long getId() {
         return this.nodes.isEmpty() ? 0 : Utilities.last(this.nodes).getId();
     }
+
+    @Override
+    public List<RelNode> getRelNodes() {
+        List<RelNode> result = new ArrayList<>();
+        for (CalciteRelNode node : this.nodes)
+            result.addAll(node.getRelNodes());
+        return result;
+    }
 }

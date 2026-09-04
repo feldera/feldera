@@ -14,6 +14,16 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - Behavior change (SQL compiler): a program that declares `LATENESS`,
+          declares an `append_only` table, or filters with `NOW()` now gets an
+          `Unbounded state` warning for each join, aggregate, `DISTINCT`,
+          window function, or primary-key index whose state may grow without
+          bound. Existing pipelines of this kind compile with warnings, and a
+          program that sets `FELDERA_WARNINGS_ARE_ERRORS = ON` fails to compile
+          until the state is bounded or the warning is silenced with
+          `SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON`. See
+          [Unbounded state warnings](/sql/streaming#unbounded-state-warnings).
+
         ## v0.344.0
 
         - The Delta Lake and Iceberg input connectors read a `VARIANT` column

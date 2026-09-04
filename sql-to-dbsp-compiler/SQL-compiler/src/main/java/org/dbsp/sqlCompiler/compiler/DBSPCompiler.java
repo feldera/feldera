@@ -102,6 +102,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Objects;
 import java.util.Map;
 import java.util.regex.Pattern;
@@ -318,9 +319,13 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         return this.metadata.hasValue(WARNINGS_ARE_ERRORS) && !this.metadata.isFalsy(WARNINGS_ARE_ERRORS);
     }
 
+    /** Name of the SET variable that silences all warnings with the given error type */
+    public static String silencingVariable(String errorType) {
+        return "FELDERA_IGNORE_WARNING_" + errorType.toUpperCase(Locale.ENGLISH).replace(" ", "_");
+    }
+
     boolean warningIsSilenced(String warning) {
-        String variable = warning.replace(" ", "_");
-        variable = "FELDERA_IGNORE_WARNING_" + variable;
+        String variable = silencingVariable(warning);
         return this.metadata.hasValue(variable) && !this.metadata.isFalsy(variable);
     }
 

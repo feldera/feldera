@@ -108,4 +108,9 @@ public class LastRel extends CalciteRelNode {
     public long getId() {
         return this.relNode.getId();
     }
+
+    @Override
+    public List<RelNode> getRelNodes() {
+        return List.of(this.relNode);
+    }
 }
