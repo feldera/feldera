@@ -589,6 +589,46 @@ fn test_file_wset_neg_by_ref_preserves_key_bounds() {
     });
 }
 
+/// A layer file records whether its value column carries a hidden trailing
+/// column, and opening one through factories that disagree is a loud error
+/// rather than a misdecode.
+///
+/// This is the guard that keeps a projected batch from being read as though its
+/// values were plain, which would deserialize `Tup2<V, u32>` bytes as `V`
+/// through unchecked rkyv.
+#[test]
+fn test_file_indexed_wset_value_stamp_guards_from_path() {
+    run_in_circuit_with_storage(|| {
+        let stamped =
+            <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::stamped::<i32, i32, ZWeight>();
+        let plain =
+            <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+
+        let mut tuples = indexed_zset_tuples(vec![Tup2(Tup2(1, 10), 1), Tup2(Tup2(2, 20), 1)]);
+        let batch = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+            &stamped,
+            (),
+            &mut tuples,
+        );
+
+        let path = batch.file_reader().unwrap().path().to_string().into();
+
+        // Same factories: reopens, and the contents survive. This also proves
+        // the builder wrote the stamp, since the guard compares the two.
+        let reopened = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::from_path(&stamped, &path)
+            .expect("a stamped file reopens through stamped factories");
+        assert_eq!(reopened.approx_len(), batch.approx_len());
+
+        // Plain factories: refused, not misdecoded.
+        let err = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::from_path(&plain, &path)
+            .expect_err("plain factories must refuse a stamped file");
+        assert!(
+            format!("{err}").contains("stamped"),
+            "expected a value-stamp mismatch, got: {err}"
+        );
+    });
+}
+
 #[test]
 fn test_file_indexed_wset_neg_by_ref_preserves_key_bounds() {
     run_in_circuit_with_storage(|| {

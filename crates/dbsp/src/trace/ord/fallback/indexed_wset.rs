@@ -82,7 +82,7 @@ where
     {
         Self {
             plain: FileIndexedWSetFactories::new::<KType, VType, RType>(),
-            projected: Some(FileIndexedWSetFactories::new::<
+            projected: Some(FileIndexedWSetFactories::stamped::<
                 KType,
                 Tup2<VType, u32>,
                 RType,
