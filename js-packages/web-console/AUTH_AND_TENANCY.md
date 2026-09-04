@@ -128,7 +128,7 @@ where `*` matches any run of characters. A match grants the trust's `role`.
 
 ## Admin dashboard
 
-Route `/admin` (`src/routes/(system)/(authenticated)/(authorized)/admin/+page.ts`). Gated in
+Route `/admin` (`src/routes/(system)/(authenticated)/(authorized)/(shell)/admin/+page.ts`). Gated in
 `load`: entry requires `role` of `admin` or `owner`; anyone else is redirected home.
 
 `AdminPage.svelte` composes:
