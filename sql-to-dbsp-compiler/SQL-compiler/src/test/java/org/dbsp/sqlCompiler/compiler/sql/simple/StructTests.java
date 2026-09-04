@@ -34,6 +34,41 @@ public class StructTests extends SqlIoTest {
     }
 
     @Test
+    public void issue7037() {
+        var ccs = this.getCCS("""
+                CREATE TYPE k AS (a VARCHAR NULL, b VARCHAR NULL);
+                CREATE TABLE t(before_json VARCHAR, after_json VARCHAR);
+                CREATE LOCAL VIEW typed AS
+                SELECT CAST(PARSE_JSON(t.after_json) AS k) AS after_key,
+                       CAST(PARSE_JSON(t.before_json) AS k) AS before_key
+                FROM t;
+                CREATE VIEW v AS
+                SELECT COALESCE(x.after_key.a, x.before_key.a) AS c,
+                       CASE WHEN x.after_key.a IS NULL THEN x.before_key.a ELSE x.after_key.a END AS w
+                FROM typed x;""");
+        // Results validated using postgres, with jsonb extraction standing in for the struct cast:
+        // WITH t(before_json, after_json) AS (VALUES ('{"a": "b1"}', '{"a": "a1"}'),
+        //   ('{"a": "b2"}', '{"b": "y"}'), (NULL, '{"a": "a3"}'), ('{"a": "b4"}', NULL), (NULL, NULL))
+        // SELECT COALESCE(after_json::jsonb->>'a', before_json::jsonb->>'a') AS c,
+        //   CASE WHEN after_json::jsonb->>'a' IS NULL THEN before_json::jsonb->>'a'
+        //        ELSE after_json::jsonb->>'a' END AS w
+        // FROM t;
+        ccs.withStringTrim().stepWeightOne("""
+                INSERT INTO t VALUES ('{"a": "b1"}', '{"a": "a1"}'),
+                                     ('{"a": "b2"}', '{"b": "y"}'),
+                                     (NULL, '{"a": "a3"}'),
+                                     ('{"a": "b4"}', NULL),
+                                     (NULL, NULL);""", """
+                 c  | w
+                ---------
+                 a1 | a1
+                 b2 | b2
+                 a3 | a3
+                 b4 | b4
+                NULL|NULL""");
+    }
+
+    @Test
     public void insertNullStructAmongConstructedRows() {
         var ccs = this.getCCS("""
                 CREATE TYPE point AS (x INT, y INT);
