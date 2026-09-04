@@ -1,4 +1,4 @@
-use crate::storage::file::format::BatchMetadata;
+use crate::storage::file::format::{BatchMetadata, ValueStampFlag};
 use crate::storage::file::{
     FilterKind, FilterStats, TouchedWindowCount, TouchedWindowCounter, collect_roaring_metadata,
 };
@@ -13,7 +13,9 @@ use crate::{
         buffer_cache::CacheStats,
         file::{
             Factories as FileFactories, FilterPlan,
-            reader::{BulkRows, Cursor as FileCursor, Error as ReaderError, Reader},
+            reader::{
+                BulkRows, CorruptionError, Cursor as FileCursor, Error as ReaderError, Reader,
+            },
             writer::Writer2,
         },
     },
@@ -48,6 +50,12 @@ where
     factories1: FileFactories<V, R>,
     opt_key_factory: &'static dyn Factory<DynOpt<K>>,
     pub vec_indexed_wset_factory: VecIndexedWSetFactories<K, V, R>,
+
+    /// Whether `V` is a value type that carries a trailing column readers hide.
+    ///
+    /// Files this bundle writes record it, and files it opens must agree, so a
+    /// stamped file can never be read as though its values were plain.
+    value_stamp: ValueStampFlag,
 }
 
 impl<K, V, R> Clone for FileIndexedWSetFactories<K, V, R>
@@ -62,7 +70,42 @@ where
             factories1: self.factories1.clone(),
             opt_key_factory: self.opt_key_factory,
             vec_indexed_wset_factory: self.vec_indexed_wset_factory.clone(),
+            value_stamp: self.value_stamp,
         }
+    }
+}
+
+impl<K, V, R> FileIndexedWSetFactories<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    /// Like [`BatchReaderFactories::new`], but for a `VType` that carries a
+    /// trailing column readers hide.
+    ///
+    /// Files written through these factories record the stamp, and opening one
+    /// through unstamped factories is an error rather than a misdecode.
+    pub fn stamped<KType, VType, RType>() -> Self
+    where
+        KType: DBData + Erase<K>,
+        VType: DBData + Erase<V>,
+        RType: DBWeight + Erase<R>,
+    {
+        Self {
+            value_stamp: ValueStampFlag::UPSERT_INDEX,
+            ..Self::new::<KType, VType, RType>()
+        }
+    }
+
+    /// Whether these factories describe a value type with a hidden column.
+    ///
+    /// # Returns
+    ///
+    /// [`ValueStampFlag::UPSERT_INDEX`] from a bundle built by [`Self::stamped`], and
+    /// [`ValueStampFlag::NONE`] otherwise.
+    pub fn value_stamp(&self) -> ValueStampFlag {
+        self.value_stamp
     }
 }
 
@@ -83,6 +126,7 @@ where
             factories1: FileFactories::new::<VType, RType>(),
             opt_key_factory: WithFactory::<Option<KType>>::FACTORY,
             vec_indexed_wset_factory: VecIndexedWSetFactories::new::<KType, VType, RType>(),
+            value_stamp: ValueStampFlag::NONE,
         }
     }
 
@@ -306,6 +350,8 @@ where
             negative_weight_count: (self.approximate_len() as u64)
                 .saturating_sub(self.metadata().negative_weight_count),
             touched_window_count: self.metadata().touched_window_count,
+            // Values are copied verbatim; only weights change sign.
+            value_stamp: self.metadata().value_stamp,
         };
         let (file, filters) = writer.into_reader(stats).unwrap_storage();
         Self::from_parts(self.factories.clone(), Arc::new(file), filters)
@@ -505,6 +551,19 @@ where
             &*Runtime::storage_backend().unwrap_storage(),
             path,
         )?;
+
+        // The file's layout must match what these factories expect. Reading a
+        // stamped column as plain, or the reverse, deserializes one type's
+        // bytes as another through unchecked rkyv.
+        let found = file.metadata().value_stamp;
+        if found != factories.value_stamp {
+            return Err(CorruptionError::ValueStampMismatch {
+                expected: factories.value_stamp.is_stamped(),
+                found: found.is_stamped(),
+            }
+            .into());
+        }
+
         let file = Arc::new(file);
         let key_range = file.key_range()?.map(Into::into);
         let filters = BatchFilters::from_file(key_range, membership_filter);
@@ -940,7 +999,10 @@ where
             .unwrap_storage(),
             weight: factories.weight_factory().default_box(),
             num_tuples: 0,
-            stats: BatchMetadata::default(),
+            stats: BatchMetadata {
+                value_stamp: factories.value_stamp,
+                ..BatchMetadata::default()
+            },
             touched_window_counter: collect_roaring_metadata().then(TouchedWindowCounter::default),
         }
     }
@@ -981,7 +1043,10 @@ where
             .unwrap_storage(),
             weight: factories.weight_factory().default_box(),
             num_tuples: 0,
-            stats: BatchMetadata::default(),
+            stats: BatchMetadata {
+                value_stamp: factories.value_stamp,
+                ..BatchMetadata::default()
+            },
             touched_window_counter: collect_roaring_metadata().then(TouchedWindowCounter::default),
         }
     }

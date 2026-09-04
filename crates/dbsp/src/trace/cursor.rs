@@ -6,6 +6,7 @@ pub mod cursor_group;
 pub mod cursor_list;
 pub mod cursor_pair;
 pub mod cursor_with_polarity;
+pub mod projected_val;
 mod reverse;
 pub mod saturating_cursor;
 
@@ -16,12 +17,14 @@ pub use cursor_group::CursorGroup;
 pub use cursor_list::CursorList;
 pub use cursor_pair::CursorPair;
 pub use cursor_with_polarity::CursorWithPolarity;
+pub use projected_val::ProjectedValCursor;
 pub use saturating_cursor::SaturatingCursor;
 
 pub use reverse::ReverseKeyCursor;
 use size_of::SizeOf;
 
-use crate::dynamic::{DataTrait, Factory};
+use crate::Timestamp;
+use crate::dynamic::{DataTrait, Factory, WeightTrait};
 
 use super::BatchReader;
 use super::{Filter, GroupFilter};
@@ -1309,6 +1312,40 @@ impl<V: DataTrait + ?Sized> GroupFilterCursor<V> {
                 }
             }
         }
+    }
+}
+
+/// Wraps `cursor` in whichever merge cursor `key_filter` and `value_filter` call for.
+///
+/// # Arguments
+///
+/// * `cursor` - the cursor to wrap.
+/// * `key_filter` - keys the merge cursor hides, or `None` to hide none.
+/// * `value_filter` - values the merge cursor hides, or `None` to hide none.
+///
+/// # Returns
+///
+/// `cursor` itself when neither filter is given, and a filtering wrapper otherwise.
+pub fn merge_cursor_over<'a, K, V, T, R, C>(
+    cursor: C,
+    key_filter: Option<Filter<K>>,
+    value_filter: Option<GroupFilter<V>>,
+) -> Box<dyn MergeCursor<K, V, T, R> + Send + 'a>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    T: Timestamp,
+    C: Cursor<K, V, T, R> + Send + 'a,
+{
+    if key_filter.is_none() && value_filter.is_none() {
+        Box::new(UnfilteredMergeCursor::new(cursor))
+    } else if let Some(GroupFilter::Simple(filter)) = value_filter {
+        Box::new(FilteredMergeCursor::new(cursor, key_filter, Some(filter)))
+    } else {
+        // Other forms of GroupFilter cannot be evaluated without a trace
+        // snapshot -- don't filter values in such cursors.
+        Box::new(FilteredMergeCursor::new(cursor, key_filter, None))
     }
 }
 
