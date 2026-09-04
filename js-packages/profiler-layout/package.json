@@ -14,7 +14,7 @@
     "check:watch": "svelte-kit sync && svelte-check --threshold error --watch",
     "test": "vitest --run",
     "test-watch": "vitest",
-    "test-unit": "vitest --run --project component --project unit",
+    "test-unit": "vitest --run --project unit --project component --project browser",
     "test-component": "vitest --run --project component",
     "format": "biome check --write ."
   },
