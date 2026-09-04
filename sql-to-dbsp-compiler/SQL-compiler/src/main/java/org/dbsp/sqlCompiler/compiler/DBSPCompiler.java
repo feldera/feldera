@@ -156,6 +156,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     public final SourceFileContents sources;
     public InputSource inputSources = InputSource.None;
     public final ProgramMetadata metadata;
+    /** The view that each Calcite relational operator was compiled for */
+    public final ViewOrigins viewOrigins = new ViewOrigins();
 
     public final TypeCompiler typeCompiler;
     public boolean hasWarnings;
