@@ -35,8 +35,8 @@ public class Repeat implements IWritesLogs, CircuitTransform, ICompilerComponent
         // In some cases more repeats are needed.
         // Some optimizations may require a number of iterations given by the size of the circuit
         // but some may require a number of iterations that depends on the complexity of the
-        // inner expressions.  ConvertCasts is such an example */
-        int maxRepeats = Math.max(circuit.size(), 10);
+        // inner expressions.  ConvertCasts is such an example.
+        int maxRepeats = Math.max(circuit.largestComponentSize(), 10);
         int repeats = 0;
         while (true) {
             Logger.INSTANCE.belowLevel(this, 1)

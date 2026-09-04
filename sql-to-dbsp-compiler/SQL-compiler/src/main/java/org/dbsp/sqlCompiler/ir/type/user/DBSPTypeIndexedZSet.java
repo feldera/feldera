@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.ir.type.user;
 
+import org.dbsp.sqlCompiler.ir.type.IndexedShape;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -33,10 +34,21 @@ import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.Utilities;
+import javax.annotation.Nullable;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 
 public class DBSPTypeIndexedZSet extends DBSPTypeUser {
     public final DBSPType keyType;
     public final DBSPType elementType;
+
+    /** The shape of the rows, or null if the key or the value is not a tuple */
+    @Nullable
+    public IndexedShape getShape() {
+        if (!this.keyType.is(DBSPTypeTupleBase.class) || !this.elementType.is(DBSPTypeTupleBase.class))
+            return null;
+        return new IndexedShape(this.keyType.to(DBSPTypeTupleBase.class).size(),
+                this.elementType.to(DBSPTypeTupleBase.class).size());
+    }
 
     public DBSPTypeIndexedZSet(CalciteObject node, DBSPType keyType,
                                DBSPType elementType) {

@@ -66,19 +66,6 @@ public class ReorderTemporalFilters extends Passes {
                 () -> !compiler.metadata.windowSharingDisabled()));
     }
 
-    /** Splits a tree of AND expressions into its operands. */
-    static void conjuncts(DBSPExpression expression, List<DBSPExpression> out) {
-        if (expression.is(DBSPBinaryExpression.class)) {
-            DBSPBinaryExpression binary = expression.to(DBSPBinaryExpression.class);
-            if (binary.opcode == DBSPOpcode.AND) {
-                conjuncts(binary.left, out);
-                conjuncts(binary.right, out);
-                return;
-            }
-        }
-        out.add(expression);
-    }
-
     /** The WRAP_BOOL around `expression`, or null if there is none. */
     @Nullable
     static DBSPUnaryExpression wrapper(DBSPExpression expression) {
@@ -88,14 +75,6 @@ public class ReorderTemporalFilters extends Passes {
                 return unary;
         }
         return null;
-    }
-
-    /** The top-level conjuncts of `condition`, with the WRAP_BOOL around it removed. */
-    static List<DBSPExpression> topLevelConjuncts(DBSPClosureExpression condition) {
-        DBSPUnaryExpression wrap = wrapper(condition.body);
-        List<DBSPExpression> all = new ArrayList<>();
-        conjuncts(wrap == null ? condition.body : wrap.source, all);
-        return all;
     }
 
     /** AND a list of Boolean expressions */
@@ -182,10 +161,7 @@ public class ReorderTemporalFilters extends Passes {
         if (policy == FilterOrderPolicy.KEEP)
             return body;
         DBSPUnaryExpression wrap = wrapper(body);
-        DBSPExpression inner = wrap == null ? body : wrap.source;
-
-        List<DBSPExpression> all = new ArrayList<>();
-        conjuncts(inner, all);
+        List<DBSPExpression> all = body.conjuncts();
         if (all.size() < 2)
             return body;
 
@@ -387,7 +363,7 @@ public class ReorderTemporalFilters extends Passes {
         if (source == null)
             return Map.of();
         Map<String, Integer> keys = new LinkedHashMap<>();
-        List<DBSPExpression> conjuncts = topLevelConjuncts(condition);
+        List<DBSPExpression> conjuncts = condition.body.conjuncts();
         for (int i = 0; i < conjuncts.size(); i++) {
             PortAndClosure pc = temporalFilterSource(
                     compiler, source, filter, condition.parameters[0], conjuncts.get(i));
@@ -504,7 +480,7 @@ public class ReorderTemporalFilters extends Passes {
             Function<DBSPExpression, String> fingerprint = conjunct ->
                     timestampFingerprint(this.compiler(), filter, parameter, conjunct);
             Integer chosen = this.chosenConjunct.get(filter);
-            List<DBSPExpression> conjuncts = topLevelConjuncts(condition);
+            List<DBSPExpression> conjuncts = condition.body.conjuncts();
 
             // If the input will NOT be shared, move all temporal filters last.
             // If the input will be shared, hoist only the conjuncts on the shared timestamp.

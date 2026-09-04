@@ -11,7 +11,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 
 /** Visitor which finds filters that contain NOW expressions and breaks them into
@@ -37,14 +36,7 @@ public class BreakFilters extends CircuitCloneVisitor {
         Simplify simplify = new Simplify(this.compiler());
         function = simplify.apply(function).to(DBSPClosureExpression.class);
 
-        DBSPExpression body = function.body;
-        if (body.is(DBSPUnaryExpression.class)) {
-            DBSPUnaryExpression unary = body.to(DBSPUnaryExpression.class);
-            if (unary.opcode == DBSPOpcode.WRAP_BOOL) {
-                body = unary.source;
-            }
-        }
-
+        DBSPExpression body = function.body.stripWrapBool();
         if (body.is(DBSPBinaryExpression.class)) {
             DBSPBinaryExpression bin = body.to(DBSPBinaryExpression.class);
             if (bin.opcode == DBSPOpcode.AND) {

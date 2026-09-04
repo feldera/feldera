@@ -59,6 +59,9 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapCustomOrdExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPHandleErrorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPReturnExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
@@ -70,6 +73,7 @@ import org.dbsp.util.ICastable;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -82,7 +86,9 @@ import java.util.TreeSet;
 /** Analyze dataflow graph and compute lineage for some output columns.
  * "Lineage" traces a column to a source table. */
 public class Lineage extends CircuitVisitor {
-    interface LatticeValue<T extends LatticeValue<T>> {
+    // Note: this interface has some implementations outside this class as well.
+    // We should not assume that all implementations reside here.
+    public interface LatticeValue<T extends LatticeValue<T>> {
         T union(T other);
         T intersect(T other);
         boolean isBottom();
@@ -97,7 +103,7 @@ public class Lineage extends CircuitVisitor {
     }
 
     /** Source of value is unknown */
-    record Unknown() implements ValueSource {
+    public record Unknown() implements ValueSource {
         public static final Unknown INSTANCE = new Unknown();
 
         @Override
@@ -112,7 +118,7 @@ public class Lineage extends CircuitVisitor {
     }
 
     /** These will be the atomic values we track through the dataflow analysis */
-    record TableColumn(String table, String column) implements Comparable<TableColumn> {
+    public record TableColumn(String table, String column) implements Comparable<TableColumn> {
         @Override
         public String toString() {
             return this.table + "." + this.column;
@@ -127,7 +133,7 @@ public class Lineage extends CircuitVisitor {
         }
     }
 
-    record ColumnSet(TreeSet<TableColumn> set) implements LatticeValue<ColumnSet> {
+    public record ColumnSet(TreeSet<TableColumn> set) implements LatticeValue<ColumnSet> {
         public ColumnSet(TableColumn value) {
             this(new TreeSet<>());
             this.set.add(value);
@@ -162,7 +168,7 @@ public class Lineage extends CircuitVisitor {
         }
     }
 
-    record Atom<A extends LatticeValue<A>>(A value) implements ValueSource {
+    public record Atom<A extends LatticeValue<A>>(A value) implements ValueSource {
         @Override public String toString() {
             return this.value.toString();
         }
@@ -194,7 +200,7 @@ public class Lineage extends CircuitVisitor {
     }
 
     /** A reference of another value */
-    record Ref(ValueSource value) implements ValueSource {
+    public record Ref(ValueSource value) implements ValueSource {
         @Override
         public ValueSource intersect(ValueSource other) {
             if (other.is(Ref.class)) {
@@ -219,7 +225,7 @@ public class Lineage extends CircuitVisitor {
     }
 
     /** A constant; value is usually a literal */
-    record Constant(DBSPExpression value) implements ValueSource {
+    public record Constant(DBSPExpression value) implements ValueSource {
         @Override
         public ValueSource intersect(ValueSource other) {
             if (other.is(Constant.class) && other.to(Constant.class).value.equivalent(this.value))
@@ -237,7 +243,7 @@ public class Lineage extends CircuitVisitor {
     }
 
     /** A tuple of other values */
-    record Tuple(List<ValueSource> fields) implements ValueSource {
+    public record Tuple(List<ValueSource> fields) implements ValueSource {
         @Override
         public ValueSource intersect(ValueSource other) {
             if (!other.is(Tuple.class))
@@ -284,7 +290,7 @@ public class Lineage extends CircuitVisitor {
     }
 
     /** Column compared against a literal, to distinctify comparisons */
-    record ColumnCompared(TableColumn col, DBSPOpcode opcode, DBSPLiteral constant) {
+    public record ColumnCompared(TableColumn col, DBSPOpcode opcode, DBSPLiteral constant) {
         @Override
         public boolean equals(Object o) {
             if (o == null || getClass() != o.getClass()) return false;
@@ -308,9 +314,13 @@ public class Lineage extends CircuitVisitor {
 
     final Map<OutputPort, ValueSource> lineage;
 
-    public Lineage(DBSPCompiler compiler) {
+    /** When true emit findings on stdout. */
+    private final boolean printReport;
+
+    public Lineage(DBSPCompiler compiler, boolean printReport) {
         super(compiler);
         this.lineage = new HashMap<>();
+        this.printReport = printReport;
     }
 
     void set(OutputPort port, ValueSource result) {
@@ -357,7 +367,7 @@ public class Lineage extends CircuitVisitor {
         }
 
         ValueSource value = this.borrow(node.input());
-        InnerLineage inner = new InnerLineage(this.compiler);
+        InnerLineage inner = new InnerLineage(this.compiler, this);
         var map = this.initialValues(node.getClosureFunction(), value);
         ValueSource result = inner.analyze(node.getClosureFunction(), map);
         this.set(node.outputPort(), result);
@@ -446,7 +456,7 @@ public class Lineage extends CircuitVisitor {
     @Override
     public void postorder(DBSPFilterOperator node) {
         ValueSource value = this.borrow(node.input());
-        InnerLineage inner = new InnerLineage(this.compiler);
+        InnerLineage inner = new InnerLineage(this.compiler, this);
         var map = this.initialValues(node.getClosureFunction(), value);
         inner.analyze(node.getClosureFunction(), map);
         this.copy(node);
@@ -615,7 +625,7 @@ public class Lineage extends CircuitVisitor {
         map.put(clo.parameters[0], key);
         map.put(clo.parameters[1], left);
         map.put(clo.parameters[2], right);
-        InnerLineage inner = new InnerLineage(this.compiler);
+        InnerLineage inner = new InnerLineage(this.compiler, this);
         ValueSource result = inner.analyze(clo, map);
         this.set(node.outputPort(), result);
 
@@ -634,7 +644,8 @@ public class Lineage extends CircuitVisitor {
                         if (this.emitted.contains(set))
                             continue;
                         this.emitted.add(set);
-                        System.out.println("[Correlated:] " + set);
+                        if (this.printReport)
+                            System.out.println("[Correlated:] " + set);
                     }
                 }
             }
@@ -664,12 +675,23 @@ public class Lineage extends CircuitVisitor {
         this.set(node.outputPort(), value);
     }
 
-    /** Computes lineage of an expression by tracking where each field of the expression is coming from. */
-    public class InnerLineage extends SymbolicInterpreter<ValueSource> {
-        final ResolveReferences resolver;
+    /** Report a column compared against a literal; each distinct comparison is reported once. */
+    void reportCompared(ColumnCompared compared) {
+        if (!this.compared.add(compared))
+            return;
+        if (this.printReport)
+            System.out.println("[Compared:] " + compared);
+    }
 
-        public InnerLineage(DBSPCompiler compiler) {
+    /** Computes lineage of an expression by tracking where each field of the expression is coming from. */
+    public static class InnerLineage extends SymbolicInterpreter<ValueSource> {
+        final ResolveReferences resolver;
+        /** Receives the columns compared against literals; null when nobody wants them */
+        @Nullable final Lineage report;
+
+        public InnerLineage(DBSPCompiler compiler, @Nullable Lineage report) {
             super(compiler);
+            this.report = report;
             this.resolver = new ResolveReferences(compiler, false);
             initialValues = new HashMap<>();
         }
@@ -748,20 +770,13 @@ public class Lineage extends CircuitVisitor {
                         right = left;
                         left = tmp;
                     }
-                    if (left.is(Constant.class) && right.is(Atom.class)) {
+                    if (this.report != null && left.is(Constant.class) && right.is(Atom.class)) {
                         Constant c = left.to(Constant.class);
-                        @SuppressWarnings("unchecked")
-                        Atom<ColumnSet> atom = (Atom<ColumnSet>) right;
-                        if (c.value.is(DBSPLiteral.class)) {
-                            for (TableColumn col : atom.value.set) {
-                                ColumnCompared compared = new ColumnCompared(
-                                        col, expression.opcode, c.value.to(DBSPLiteral.class));
-                                if (Lineage.this.compared.contains(compared))
-                                    continue;
-                                Lineage.this.compared.add(compared);
-                                System.out.println("[Compared:] " + compared);
-                            }
-                        }
+                        if (right.to(Atom.class).value() instanceof ColumnSet columns
+                                && c.value.is(DBSPLiteral.class))
+                            for (TableColumn col : columns.set)
+                                this.report.reportCompared(new ColumnCompared(
+                                        col, expression.opcode, c.value.to(DBSPLiteral.class)));
                     }
                 }
             } else {
@@ -865,6 +880,26 @@ public class Lineage extends CircuitVisitor {
         @Override
         public void postorder(DBSPUnwrapExpression expression) {
             ValueSource source = this.get(expression.expression);
+            this.set(expression, source);
+        }
+
+        /** A return makes the closure's result differ from its body's last expression,
+         * which is what the analysis takes as the result. */
+        @Override
+        public void postorder(DBSPReturnExpression expression) {
+            Utilities.fail("Lineage analysis does not support return: " + expression);
+        }
+
+        /** Wrapping a value in Some does not change where it comes from */
+        @Override
+        public void postorder(DBSPSomeExpression expression) {
+            ValueSource source = this.get(expression.expression);
+            this.set(expression, source);
+        }
+
+        @Override
+        public void postorder(DBSPHandleErrorExpression expression) {
+            ValueSource source = this.get(expression.source);
             this.set(expression, source);
         }
 
