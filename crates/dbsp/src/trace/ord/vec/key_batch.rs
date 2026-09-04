@@ -293,6 +293,9 @@ where
     R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
+    fn is_empty(&self) -> bool {
+        self.approx_len() == 0
+    }
     type Key = K;
     type Val = DynUnit;
     type Time = T;
@@ -319,11 +322,11 @@ where
         todo!()
     }*/
 
-    fn key_count(&self) -> usize {
+    fn approx_key_count(&self) -> usize {
         <VecKeyBatchLayer<K, T, R, O> as Trie>::keys(&self.layer)
     }
 
-    fn len(&self) -> usize {
+    fn approx_len(&self) -> usize {
         <VecKeyBatchLayer<K, T, R, O> as Trie>::tuples(&self.layer)
     }
 

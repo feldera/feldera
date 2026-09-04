@@ -287,7 +287,7 @@ where
             Runtime::buffer_cache,
             &*Runtime::storage_backend().unwrap_storage(),
             Runtime::file_writer_parameters(),
-            FilterPlan::<K>::decide_filter(None, self.key_count()),
+            FilterPlan::<K>::decide_filter(None, self.approx_key_count()),
         )
         .unwrap_storage();
 
@@ -303,7 +303,7 @@ where
             cursor.step_key();
         }
         let stats = BatchMetadata {
-            negative_weight_count: (self.len() as u64)
+            negative_weight_count: (self.approx_len() as u64)
                 .saturating_sub(self.metadata().negative_weight_count),
             touched_window_count: self.metadata().touched_window_count,
         };
@@ -359,6 +359,9 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    fn is_empty(&self) -> bool {
+        self.approx_len() == 0
+    }
     type Factories = FileIndexedWSetFactories<K, V, R>;
     type Key = K;
     type Val = V;
@@ -385,12 +388,12 @@ where
     }
 
     #[inline]
-    fn key_count(&self) -> usize {
+    fn approx_key_count(&self) -> usize {
         self.file.n_rows(0) as usize
     }
 
     #[inline]
-    fn len(&self) -> usize {
+    fn approx_len(&self) -> usize {
         self.file.n_rows(1) as usize
     }
 
@@ -423,7 +426,7 @@ where
     where
         RG: Rng,
     {
-        let size = self.key_count();
+        let size = self.approx_key_count();
         let mut cursor = self.cursor();
         if sample_size >= size {
             output.reserve(size);
@@ -456,7 +459,7 @@ where
             keys
         } else {
             keys_vec = self.factories.factories0.keys_factory.default_box();
-            keys_vec.reserve(keys.len());
+            keys_vec.reserve(keys.approx_len());
             let mut cursor = keys.cursor();
             while cursor.key_valid() {
                 keys_vec.push_ref(cursor.key());
@@ -951,7 +954,11 @@ where
         B: Batch<Key = K, Val = V, Time = (), R = R>,
         I: IntoIterator<Item = &'a B> + Clone,
     {
-        let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
+        let key_capacity = batches
+            .clone()
+            .into_iter()
+            .map(|b| b.approx_key_count())
+            .sum();
         let key_filter = if collect_roaring_metadata() {
             let filter_plan = FilterPlan::from_batches(batches.clone());
             filter_plan.map_or_else(

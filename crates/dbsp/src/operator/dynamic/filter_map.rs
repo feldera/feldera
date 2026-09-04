@@ -639,7 +639,7 @@ where
     B: Batch<Time = ()>,
 {
     async fn eval(&mut self, input: &B) -> B {
-        self.metrics.input_batch_stats.add_batch(input.len());
+        self.metrics.input_batch_stats.add_batch(input.approx_len());
 
         // We can use Builder because cursor yields ordered values.  This
         // is a nice property of the filter operation.
@@ -649,8 +649,11 @@ where
         // This is probably ok, because the batch will either get freed at the end
         // of the current clock tick or get added to the trace, where it will likely
         // get merged with other batches soon, at which point the waste is gone.
-        let mut builder =
-            B::Builder::with_capacity(&input.factories(), input.key_count(), input.len());
+        let mut builder = B::Builder::with_capacity(
+            &input.factories(),
+            input.approx_key_count(),
+            input.approx_len(),
+        );
 
         let mut cursor = input.cursor();
         while cursor.key_valid() {
@@ -666,7 +669,9 @@ where
         }
 
         let result = builder.done();
-        self.metrics.output_batch_stats.add_batch(result.len());
+        self.metrics
+            .output_batch_stats
+            .add_batch(result.approx_len());
         result
     }
 
@@ -758,7 +763,7 @@ where
     B: Batch<Time = ()>,
 {
     async fn eval(&mut self, input: &B) -> B {
-        self.metrics.input_batch_stats.add_batch(input.len());
+        self.metrics.input_batch_stats.add_batch(input.approx_len());
 
         // We can use Builder because cursor yields ordered values.  This
         // is a nice property of the filter operation.
@@ -768,8 +773,11 @@ where
         // This is probably ok, because the batch will either get freed at the end
         // of the current clock tick or get added to the trace, where it will likely
         // get merged with other batches soon, at which point the waste is gone.
-        let mut builder =
-            B::Builder::with_capacity(&input.factories(), input.key_count(), input.len());
+        let mut builder = B::Builder::with_capacity(
+            &input.factories(),
+            input.approx_key_count(),
+            input.approx_len(),
+        );
 
         let mut cursor = input.cursor();
         while cursor.key_valid() {
@@ -789,7 +797,9 @@ where
         }
 
         let result = builder.done();
-        self.metrics.output_batch_stats.add_batch(result.len());
+        self.metrics
+            .output_batch_stats
+            .add_batch(result.approx_len());
         result
     }
 
@@ -877,10 +887,10 @@ where
     CO: Batch<Time = (), R = CI::R>,
 {
     async fn eval(&mut self, i: &CI) -> CO {
-        self.metrics.input_batch_stats.add_batch(i.len());
+        self.metrics.input_batch_stats.add_batch(i.approx_len());
 
         let mut batch = self.output_factories.weighted_items_factory().default_box();
-        batch.reserve(i.len());
+        batch.reserve(i.approx_len());
         let mut item = self.output_factories.weighted_item_factory().default_box();
 
         let mut cursor = i.cursor();
@@ -898,7 +908,9 @@ where
         }
 
         let result = CO::dyn_from_tuples(&self.output_factories, (), &mut batch);
-        self.metrics.output_batch_stats.add_batch(result.len());
+        self.metrics
+            .output_batch_stats
+            .add_batch(result.approx_len());
 
         result
     }
@@ -964,10 +976,10 @@ where
     CO: Batch<Time = (), R = CI::R>,
 {
     async fn eval(&mut self, i: &CI) -> CO {
-        self.metrics.input_batch_stats.add_batch(i.len());
+        self.metrics.input_batch_stats.add_batch(i.approx_len());
 
         let mut batch = self.output_factories.weighted_items_factory().default_box();
-        batch.reserve(i.len());
+        batch.reserve(i.approx_len());
         let mut item = self.output_factories.weighted_item_factory().default_box();
 
         let mut cursor = i.cursor();
@@ -985,7 +997,9 @@ where
         }
 
         let result = CO::dyn_from_tuples(&self.output_factories, (), &mut batch);
-        self.metrics.output_batch_stats.add_batch(result.len());
+        self.metrics
+            .output_batch_stats
+            .add_batch(result.approx_len());
         result
     }
 }
@@ -1042,10 +1056,10 @@ where
     CO: Batch<Time = (), R = CI::R>,
 {
     async fn eval(&mut self, i: &CI) -> CO {
-        self.metrics.input_batch_stats.add_batch(i.len());
+        self.metrics.input_batch_stats.add_batch(i.approx_len());
 
         let mut batch = self.output_factories.weighted_items_factory().default_box();
-        batch.reserve(i.len());
+        batch.reserve(i.approx_len());
 
         let mut weight = self.output_factories.weight_factory().default_box();
 
@@ -1077,7 +1091,9 @@ where
         }
 
         let result = CO::dyn_from_tuples(&self.output_factories, (), &mut batch);
-        self.metrics.output_batch_stats.add_batch(result.len());
+        self.metrics
+            .output_batch_stats
+            .add_batch(result.approx_len());
         result
     }
 }
@@ -1141,10 +1157,10 @@ where
     CO: Batch<Time = (), R = CI::R>,
 {
     async fn eval(&mut self, i: &CI) -> CO {
-        self.metrics.input_batch_stats.add_batch(i.len());
+        self.metrics.input_batch_stats.add_batch(i.approx_len());
 
         let mut batch = self.output_factories.weighted_items_factory().default_box();
-        batch.reserve(i.len());
+        batch.reserve(i.approx_len());
 
         let mut weight = self.output_factories.weight_factory().default_box();
 
@@ -1176,7 +1192,9 @@ where
         }
 
         let result = CO::dyn_from_tuples(&self.output_factories, (), &mut batch);
-        self.metrics.output_batch_stats.add_batch(result.len());
+        self.metrics
+            .output_batch_stats
+            .add_batch(result.approx_len());
         result
     }
 }

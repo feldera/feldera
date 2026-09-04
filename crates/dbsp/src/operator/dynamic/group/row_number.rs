@@ -445,7 +445,7 @@ where
                 return;
             };
 
-            self.input_batch_stats.borrow_mut().add_batch(delta.len());
+            self.input_batch_stats.borrow_mut().add_batch(delta.approx_len());
 
             // println!("delta");
             // for (k, v, w) in delta.iter() {
@@ -585,7 +585,7 @@ where
                                 has_values = false;
                             }
                             let result = builder.done();
-                            self.output_batch_stats.borrow_mut().add_batch(result.len());
+                            self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
                             yield (result, false, joint_cursor.position());
                             builder = <RankedBatch::<K, V> as Batch>::Builder::with_capacity(&self.batch_factories, chunk_size + 1, chunk_size + 1);
                         }
@@ -611,7 +611,7 @@ where
                             builder.push_key(delta_cursor.key());
                             has_values = false;
                             let result = builder.done();
-                            self.output_batch_stats.borrow_mut().add_batch(result.len());
+                            self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
                             yield (result, false, delta_cursor.position());
                             builder = <RankedBatch::<K, V> as Batch>::Builder::with_capacity(&self.batch_factories, chunk_size + 1, chunk_size + 1);
                         }
@@ -627,7 +627,7 @@ where
             }
 
             let result = builder.done();
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
             yield (result, true, None);
         }
     }

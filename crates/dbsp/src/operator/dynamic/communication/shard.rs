@@ -431,8 +431,8 @@ pub(crate) fn shard_batch<IB, OB>(
     // XXX If `shards == 1` and `OB` and `IB` are the same, then we could
     // implement this more efficiently, without copying.
     let shards = workers.len();
-    let keys_per_shard = batch.key_count() / shards;
-    let values_per_shard = batch.len() / shards;
+    let keys_per_shard = batch.approx_key_count() / shards;
+    let values_per_shard = batch.approx_len() / shards;
     for (worker, location) in WorkerLocations::new().enumerate() {
         let (estimated_keys, estimated_values) = if workers.contains(&worker) {
             (keys_per_shard, values_per_shard)
@@ -731,7 +731,7 @@ mod tests {
                         if Runtime::worker_index() == 0 {
                             assert_eq!(batch, &test_data(0, 1))
                         } else {
-                            assert_eq!(batch.len(), 0);
+                            assert_eq!(batch.approx_len(), 0);
                         }
                     });
                 Ok(())

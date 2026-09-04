@@ -323,7 +323,7 @@ where
                     );
 
                     let result = builder.done();
-                    self.output_batch_stats.borrow_mut().add_batch(result.len());
+                    self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
 
                     yield (result, false, delta_cursor.position())
                 }
@@ -332,7 +332,7 @@ where
             }
 
             let result = builder.done();
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
 
             yield (result, true, delta_cursor.position())
         }

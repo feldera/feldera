@@ -495,7 +495,7 @@ mod tests {
             assert!(matches!(
                 FilterPlan::decide_filter(
                     Some(&filter_plan),
-                    batch1.key_count() + batch2.key_count()
+                    batch1.approx_key_count() + batch2.approx_key_count()
                 ),
                 Some(BatchKeyFilter::RoaringU32(_))
             ));
@@ -520,7 +520,7 @@ mod tests {
             assert!(matches!(
                 FilterPlan::decide_filter(
                     Some(&span_only_plan),
-                    batch1.key_count() + batch2.key_count()
+                    batch1.approx_key_count() + batch2.approx_key_count()
                 ),
                 Some(BatchKeyFilter::Bloom(_))
             ));
@@ -531,7 +531,7 @@ mod tests {
             assert!(matches!(
                 FilterPlan::decide_filter(
                     Some(&filter_plan),
-                    batch1.key_count() + batch2.key_count()
+                    batch1.approx_key_count() + batch2.approx_key_count()
                 ),
                 Some(BatchKeyFilter::RoaringU32(_))
             ));

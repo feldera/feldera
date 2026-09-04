@@ -818,7 +818,7 @@ where
     }
 
     async fn eval_owned_and_ref(&mut self, mut trace: T, batch: &T::Batch) -> T {
-        self.num_inputs += batch.len();
+        self.num_inputs += batch.approx_len();
         trace.insert(batch.clone()).await;
         trace
     }
@@ -830,7 +830,7 @@ where
     }
 
     async fn eval_owned(&mut self, mut trace: T, batch: T::Batch) -> T {
-        self.num_inputs += batch.len();
+        self.num_inputs += batch.approx_len();
 
         trace.insert(batch).await;
         trace
@@ -900,7 +900,7 @@ where
     async fn eval_owned_and_ref(&mut self, mut trace: T, batch: &B) -> T {
         // TODO: extend `trace` type to feed untimed batches directly
         // (adding fixed timestamp on the fly).
-        self.num_inputs += batch.len();
+        self.num_inputs += batch.approx_len();
         trace
             .insert(T::Batch::from_batch(
                 batch,
@@ -918,7 +918,7 @@ where
     }
 
     async fn eval_owned(&mut self, mut trace: T, batch: B) -> T {
-        self.num_inputs += batch.len();
+        self.num_inputs += batch.approx_len();
 
         if TypeId::of::<B>() == TypeId::of::<T::Batch>() {
             let mut batch = Some(batch);

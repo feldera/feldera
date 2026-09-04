@@ -460,11 +460,11 @@ where
     VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
 {
     fn key_count(&self) -> usize {
-        self.batch.inner().key_count()
+        self.batch.inner().approx_key_count()
     }
 
     fn len(&self) -> usize {
-        self.batch.inner().len()
+        self.batch.inner().approx_len()
     }
 
     fn cursor<'a>(

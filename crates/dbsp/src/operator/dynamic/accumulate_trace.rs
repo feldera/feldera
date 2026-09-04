@@ -855,7 +855,7 @@ where
 
     async fn eval_owned_and_ref(&mut self, mut trace: T, delta: &Option<Spine<T::Batch>>) -> T {
         if let Some(delta) = delta {
-            self.num_inputs += delta.len();
+            self.num_inputs += delta.approx_len();
             for batch in delta.ro_snapshot().batches() {
                 trace.insert(batch.clone()).await;
             }
@@ -940,7 +940,7 @@ where
         if let Some(delta) = delta {
             // TODO: extend `trace` type to feed untimed batches directly
             // (adding fixed timestamp on the fly).
-            self.num_inputs += delta.len();
+            self.num_inputs += delta.approx_len();
             for batch in delta.ro_snapshot().batches() {
                 trace
                     .insert(T::Batch::from_arc_batch(

@@ -464,13 +464,13 @@ where
                 return;
             };
 
-            self.input_batch_stats.borrow_mut().add_batch(delta.len());
+            self.input_batch_stats.borrow_mut().add_batch(delta.approx_len());
 
             let mut delta_cursor = delta.cursor();
             let mut input_trace_cursor = input_trace.unwrap().cursor();
             let mut output_trace_cursor = output_trace.unwrap().cursor();
 
-            let capacity = std::cmp::min(delta.len(), chunk_size);
+            let capacity = std::cmp::min(delta.approx_len(), chunk_size);
             let mut builder = TupleBuilder::new(
                 &self.output_factories,
                 OB::Builder::with_capacity(&self.output_factories, capacity, capacity),
@@ -589,7 +589,7 @@ where
 
                 if builder.num_tuples() >= chunk_size {
                     let result = builder.done();
-                    self.output_batch_stats.borrow_mut().add_batch(result.len());
+                    self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
                     yield (result, false, delta_cursor.position());
                     builder = TupleBuilder::new(
                         &self.output_factories,
@@ -601,7 +601,7 @@ where
             }
 
             let result = builder.done();
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats.borrow_mut().add_batch(result.approx_len());
             yield (result, true, delta_cursor.position())
         }
     }

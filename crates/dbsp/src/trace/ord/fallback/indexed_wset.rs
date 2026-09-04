@@ -10,7 +10,6 @@ use crate::{
         WeightTrait, WeightTraitTyped,
     },
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
-    utils::Tup2,
     trace::{
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
         FallbackValBatch, FileIndexedWSet, FileIndexedWSetFactories, Filter, GroupFilter,
@@ -25,6 +24,7 @@ use crate::{
         },
         serialize_indexed_wset,
     },
+    utils::Tup2,
 };
 use feldera_storage::{FileReader, StoragePath};
 use rand::Rng;
@@ -82,9 +82,11 @@ where
     {
         Self {
             plain: FileIndexedWSetFactories::new::<KType, VType, RType>(),
-            projected: Some(
-                FileIndexedWSetFactories::new::<KType, Tup2<VType, u32>, RType>(),
-            ),
+            projected: Some(FileIndexedWSetFactories::new::<
+                KType,
+                Tup2<VType, u32>,
+                RType,
+            >()),
         }
     }
 
@@ -338,6 +340,9 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    fn is_empty(&self) -> bool {
+        self.approx_len() == 0
+    }
     type Factories = FallbackIndexedWSetFactories<K, V, R>;
     type Key = K;
     type Val = V;
@@ -392,18 +397,18 @@ where
     }
 
     #[inline]
-    fn key_count(&self) -> usize {
+    fn approx_key_count(&self) -> usize {
         match &self.inner {
-            Inner::File(file) => file.key_count(),
-            Inner::Vec(vec) => vec.key_count(),
+            Inner::File(file) => file.approx_key_count(),
+            Inner::Vec(vec) => vec.approx_key_count(),
         }
     }
 
     #[inline]
-    fn len(&self) -> usize {
+    fn approx_len(&self) -> usize {
         match &self.inner {
-            Inner::File(file) => file.len(),
-            Inner::Vec(vec) => vec.len(),
+            Inner::File(file) => file.approx_len(),
+            Inner::Vec(vec) => vec.approx_len(),
         }
     }
 
@@ -498,8 +503,8 @@ where
             Inner::Vec(vec) => {
                 let mut file = FileIndexedWSetBuilder::with_capacity(
                     &self.factories.plain,
-                    vec.key_count(),
-                    vec.len(),
+                    vec.approx_key_count(),
+                    vec.approx_len(),
                 );
                 copy_to_builder(&mut file, vec.cursor());
                 Some(Self {
@@ -573,8 +578,11 @@ where
         factories: &FallbackIndexedWSetFactories<K, V, R>,
         vec: &VecIndexedWSetBuilder<K, V, R, usize>,
     ) -> BuilderInner<K, V, R> {
-        let mut file =
-            FileIndexedWSetBuilder::with_capacity(&factories.plain, vec.num_keys(), vec.num_tuples());
+        let mut file = FileIndexedWSetBuilder::with_capacity(
+            &factories.plain,
+            vec.num_keys(),
+            vec.num_tuples(),
+        );
         vec.copy_to_builder(&mut file);
         BuilderInner::File(file)
     }
@@ -679,8 +687,12 @@ where
         B: Batch<Key = K, Val = V, Time = (), R = R>,
         I: IntoIterator<Item = &'a B> + Clone,
     {
-        let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
-        let value_capacity = batches.clone().into_iter().map(|b| b.len()).sum();
+        let key_capacity = batches
+            .clone()
+            .into_iter()
+            .map(|b| b.approx_key_count())
+            .sum();
+        let value_capacity = batches.clone().into_iter().map(|b| b.approx_len()).sum();
         Self {
             factories: factories.clone(),
             inner: match pick_merge_destination(batches.clone(), location) {
@@ -690,7 +702,9 @@ where
                     value_capacity,
                 )),
                 BatchLocation::Storage => BuilderInner::File(FileIndexedWSetBuilder::for_merge(
-                    &factories.plain, batches, location,
+                    &factories.plain,
+                    batches,
+                    location,
                 )),
             },
         }

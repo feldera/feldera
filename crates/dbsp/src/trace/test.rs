@@ -1568,7 +1568,7 @@ fn run_indexed_wset_storage_merges(
 
         // Sanity check that each input batch resides where we requested it to be.
         for (input, (_tuples, requested_loc)) in inputs.iter().zip(batches.iter()) {
-            if input.key_count() > 0 {
+            if input.approx_key_count() > 0 {
                 assert_eq!(input.location(), *requested_loc);
             }
         }
@@ -1646,7 +1646,7 @@ fn run_indexed_wset_storage_merges_dense(batches: MergeInputBatches, fc: FilterC
             .collect();
 
         for (input, (_tuples, requested_loc)) in inputs.iter().zip(batches.iter()) {
-            if input.key_count() > 0 {
+            if input.approx_key_count() > 0 {
                 assert_eq!(input.location(), *requested_loc);
             }
         }

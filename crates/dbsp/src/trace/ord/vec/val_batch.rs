@@ -354,6 +354,9 @@ where
     T: Timestamp,
     O: OrdOffset,
 {
+    fn is_empty(&self) -> bool {
+        self.approx_len() == 0
+    }
     type Key = K;
     type Val = V;
     type Time = T;
@@ -381,11 +384,11 @@ where
         todo!()
     }*/
 
-    fn key_count(&self) -> usize {
+    fn approx_key_count(&self) -> usize {
         <VecValBatchLayer<K, V, T, R, O> as Trie>::keys(&self.layer)
     }
 
-    fn len(&self) -> usize {
+    fn approx_len(&self) -> usize {
         <VecValBatchLayer<K, V, T, R, O> as Trie>::tuples(&self.layer)
     }
 

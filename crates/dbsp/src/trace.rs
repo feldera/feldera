@@ -555,15 +555,19 @@ where
     }
     //fn consumer(self) -> Self::Consumer;
 
-    /// The number of keys in the batch.
-    // TODO: return `(usize, Option<usize>)`, similar to
-    // `Iterator::size_hint`, since not all implementations
-    // can compute the number of keys precisely.  Same for
-    // `len()`.
-    fn key_count(&self) -> usize;
+    /// An upper bound on the number of keys in the batch.
+    ///
+    /// Not all implementations can compute this precisely: a batch that hides a
+    /// value column consolidates runs of values as its cursor walks them, and a
+    /// key whose values all cancel disappears, so the count can only be an
+    /// over-estimate.  Use [`Self::is_empty`], which is exact, to test for
+    /// emptiness rather than comparing this against zero.
+    fn approx_key_count(&self) -> usize;
 
-    /// The number of updates in the batch.
-    fn len(&self) -> usize;
+    /// An upper bound on the number of updates in the batch.
+    ///
+    /// See [`Self::approx_key_count`] for why this is not exact.
+    fn approx_len(&self) -> usize;
 
     /// The memory or storage size of the batch in bytes.
     ///
@@ -614,10 +618,13 @@ where
         CacheStats::default()
     }
 
-    /// True if the batch is empty.
-    fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
+    /// True if the batch contains no updates.
+    ///
+    /// This must be exact even where [`Self::approx_len`] is not, because
+    /// fixed-point detection in nested scopes decides "nothing changed" from
+    /// it: a batch that reports itself non-empty while its cursor yields
+    /// nothing keeps a recursive scope from ever converging.
+    fn is_empty(&self) -> bool;
 
     /// Returns a uniform random sample of distincts keys from the batch.
     ///
@@ -676,7 +683,7 @@ where
             return;
         }
 
-        let sample_size = partition_sample_size(self.key_count(), num_partitions);
+        let sample_size = partition_sample_size(self.approx_key_count(), num_partitions);
 
         let mut sample = self.factories().keys_factory().default_box();
         self.sample_keys(&mut thread_rng(), sample_size, sample.as_mut());
@@ -768,11 +775,11 @@ where
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
         (**self).merge_cursor(key_filter, value_filter)
     }
-    fn key_count(&self) -> usize {
-        (**self).key_count()
+    fn approx_key_count(&self) -> usize {
+        (**self).approx_key_count()
     }
-    fn len(&self) -> usize {
-        (**self).len()
+    fn approx_len(&self) -> usize {
+        (**self).approx_len()
     }
     fn approximate_byte_size(&self) -> usize {
         (**self).approximate_byte_size()
@@ -887,8 +894,8 @@ where
                 batch.cursor(),
                 timestamp,
                 factories,
-                batch.key_count(),
-                batch.len(),
+                batch.approx_key_count(),
+                batch.approx_len(),
             )
         }
     }
@@ -912,8 +919,8 @@ where
                 batch.cursor(),
                 timestamp,
                 factories,
-                batch.key_count(),
-                batch.len(),
+                batch.approx_key_count(),
+                batch.approx_len(),
             ))
         }
     }
@@ -1162,8 +1169,12 @@ where
         B: Batch<Key = Output::Key, Val = Output::Val, Time = Output::Time, R = Output::R>,
         I: IntoIterator<Item = &'a B> + Clone,
     {
-        let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
-        let value_capacity = batches.into_iter().map(|b| b.len()).sum();
+        let key_capacity = batches
+            .clone()
+            .into_iter()
+            .map(|b| b.approx_key_count())
+            .sum();
+        let value_capacity = batches.into_iter().map(|b| b.approx_len()).sum();
         Self::with_capacity_in_location(factories, key_capacity, value_capacity, location)
     }
 
@@ -1505,7 +1516,7 @@ where
     R: WeightTrait + ?Sized,
 {
     SerializerInner::to_fbuf_with_thread_local(|s| {
-        let mut offsets = Vec::with_capacity(2 * batch.len());
+        let mut offsets = Vec::with_capacity(2 * batch.approx_len());
         let mut cursor = batch.cursor();
         while cursor.key_valid() {
             offsets.push(cursor.key().serialize(s)?);
@@ -1680,7 +1691,8 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    let mut serializer = IndexedWSetSerializer::with_capacity(batch.key_count(), batch.len());
+    let mut serializer =
+        IndexedWSetSerializer::with_capacity(batch.approx_key_count(), batch.approx_len());
     let mut cursor = batch.cursor();
 
     while cursor.key_valid() {

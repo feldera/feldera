@@ -498,8 +498,8 @@ where
         let cache_stats = batches.iter().fold(CacheStats::default(), |stats, batch| {
             stats + batch.cache_stats()
         });
-        let pre_len = batches.iter().map(|b| b.len()).sum();
-        let post_len = new_batch.len();
+        let pre_len = batches.iter().map(|b| b.approx_len()).sum();
+        let post_len = new_batch.approx_len();
         self.spine_stats
             .report_merge(pre_len, post_len, cache_stats);
         let n_merged_batches = batches.len();
@@ -988,7 +988,7 @@ where
                 if !batches.is_empty() {
                     let mut tuple_counts = EnumMap::<BatchLocation, usize>::default();
                     for batch in batches {
-                        tuple_counts[batch.location()] += batch.len();
+                        tuple_counts[batch.location()] += batch.approx_len();
                     }
 
                     let mut facts = Vec::with_capacity(3);
@@ -1082,7 +1082,7 @@ where
                 membership_filter_stats[kind] += batch.membership_filter_stats();
             }
             if kind == FilterKind::Bloom {
-                bloom_filter_records += batch.key_count();
+                bloom_filter_records += batch.approx_key_count();
             }
             range_filter_stats += batch.range_filter_stats();
             let on_storage = batch.location() == BatchLocation::Storage;
@@ -1743,7 +1743,7 @@ where
         self.merger
             .get_batches()
             .iter()
-            .map(|batch| batch.len())
+            .map(|batch| batch.approx_len())
             .sum()
     }
 
@@ -1756,6 +1756,9 @@ impl<B> BatchReader for Spine<B>
 where
     B: Batch,
 {
+    fn is_empty(&self) -> bool {
+        self.approx_len() == 0
+    }
     type Key = B::Key;
     type Val = B::Val;
     type Time = B::Time;
@@ -1768,19 +1771,19 @@ where
         self.factories.clone()
     }
 
-    fn key_count(&self) -> usize {
+    fn approx_key_count(&self) -> usize {
         self.merger
             .get_batches()
             .iter()
-            .map(|batch| batch.key_count())
+            .map(|batch| batch.approx_key_count())
             .sum()
     }
 
-    fn len(&self) -> usize {
+    fn approx_len(&self) -> usize {
         self.merger
             .get_batches()
             .iter()
-            .map(|batch| batch.len())
+            .map(|batch| batch.approx_len())
             .sum()
     }
 
@@ -2318,7 +2321,7 @@ where
         debug_assert_eq!(MAX_LEVELS, 9);
         debug_assert!(max_level0_batch_size_records > 0 && max_level0_batch_size_records <= 99_999);
 
-        let len = batch.len();
+        let len = batch.approx_len();
 
         let effective_len = if merge {
             // Merge batches with many negative weights more aggressively. Negative updates are likely to cancel
@@ -2405,8 +2408,8 @@ where
                     format!(
                         "Eagerly spill {} batch with {} keys and {} values",
                         HumanBytes::from(batch.approximate_byte_size()),
-                        batch.key_count(),
-                        batch.len()
+                        batch.approx_key_count(),
+                        batch.approx_len()
                     )
                 });
             match Arc::try_unwrap(batch) {

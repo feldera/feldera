@@ -301,7 +301,7 @@ where
         // after the last one that was flushed, since the accumulator should not receive any
         // non-empty batches from the previous transaction at that point (in the top-level circuit).
         // This may not be the first batch in the transaction, but it's ok to admit some empty batches.
-        let len = batch.len();
+        let len = batch.approx_len();
 
         if len > 0 {
             if self.enabled_during_current_transaction.is_none() {
@@ -321,7 +321,7 @@ where
             let mut spine = Spine::<B>::new(&self.factories, self.name.get());
             std::mem::swap(&mut self.state, &mut spine);
 
-            self.output_batch_stats.add_batch(spine.len());
+            self.output_batch_stats.add_batch(spine.approx_len());
             Some(spine)
         } else {
             None

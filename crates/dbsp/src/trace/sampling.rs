@@ -86,7 +86,10 @@ pub(crate) fn sample_keys_from_batches<B, RG>(
         return;
     }
 
-    let counts: Vec<usize> = batches.iter().map(|batch| batch.key_count()).collect();
+    let counts: Vec<usize> = batches
+        .iter()
+        .map(|batch| batch.approx_key_count())
+        .collect();
     let draws = apportion_draws(&counts, sample_size, rng);
     let total_draws = draws.iter().sum::<usize>();
     if total_draws == 0 {

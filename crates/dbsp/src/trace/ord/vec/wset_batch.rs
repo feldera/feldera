@@ -317,6 +317,9 @@ where
 }
 
 impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, R> {
+    fn is_empty(&self) -> bool {
+        self.approx_len() == 0
+    }
     type Key = K;
     type Val = DynUnit;
     type Time = ();
@@ -360,12 +363,12 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
     }*/
 
     #[inline]
-    fn key_count(&self) -> usize {
+    fn approx_key_count(&self) -> usize {
         Trie::keys(&self.layer)
     }
 
     #[inline]
-    fn len(&self) -> usize {
+    fn approx_len(&self) -> usize {
         self.layer.tuples()
     }
 
