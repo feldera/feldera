@@ -1324,6 +1324,37 @@ mod tests {
         );
     }
 
+    /// The console reads a resuming log stream's position from response headers, and a
+    /// browser cannot see a header the server has not exposed. Leaving them off fails
+    /// silently: the stream still works, but every reconnect replays from the beginning,
+    /// which is the whole cost the cursor exists to remove.
+    #[actix_web::test]
+    async fn logs_position_headers_are_exposed_cross_origin() {
+        let cfg = ApiServerConfig::test_config();
+        let app = test::init_service(build_app(&cfg, &None)).await;
+
+        let req = test::TestRequest::get()
+            .uri("/config/authentication")
+            .insert_header((header::ORIGIN, "http://example.com"))
+            .to_request();
+        let res = test::call_service(&app, req).await;
+
+        let exposed = res
+            .headers()
+            .get(header::ACCESS_CONTROL_EXPOSE_HEADERS)
+            .expect("response exposes no headers at all")
+            .to_str()
+            .expect("exposed headers are not text")
+            .to_ascii_lowercase();
+        for name in [
+            crate::runner::pipeline_logs::LOGS_EPOCH_HEADER,
+            crate::runner::pipeline_logs::LOGS_SEQ_HEADER,
+            crate::runner::pipeline_logs::LOGS_GAP_HEADER,
+        ] {
+            assert!(exposed.contains(name), "{name} is not exposed: {exposed}");
+        }
+    }
+
     /// `/config/authentication` is the one unauthenticated endpoint
     /// that must be reachable cross-origin (before any OIDC token is issued).
     /// Verifies CORS preflight succeeds with credentialed CORS.

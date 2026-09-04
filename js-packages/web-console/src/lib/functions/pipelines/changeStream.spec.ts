@@ -218,15 +218,15 @@ const runNewlineTextDecoder = (
   chunks: (Uint8Array | string)[],
   options?: { bufferSize?: number; bufferWindowMs?: number; flushIntervalMs?: number }
 ) =>
-  new Promise<{ values: string[]; skipped: number[] }>((resolve) => {
+  new Promise<{ values: string[]; skipped: { bytes: number; lines: number }[] }>((resolve) => {
     const values: string[] = []
-    const skipped: number[] = []
+    const skipped: { bytes: number; lines: number }[] = []
     parseStream<string>(
       { stream: makeMockStream(chunks), cancel: () => {} },
       newlineTextDecoder({
         bufferSize: options?.bufferSize,
         bufferWindowMs: options?.bufferWindowMs,
-        onBytesSkipped: (n) => skipped.push(n)
+        onSkipped: (s) => skipped.push(s)
       }),
       {
         pushChanges: (vs) => {
@@ -274,7 +274,7 @@ describe('newlineTextDecoder', () => {
     // Each 21-byte line is its own network chunk → its own parser chunk. With a
     // 25-byte budget, the first parser chunk fits (0+21≤25); the next two each
     // overflow (21+21>25) and must be dropped wholesale, with their lengths
-    // reported via `onBytesSkipped`. `bufferWindowMs` is set well beyond the
+    // reported via `onSkipped`. `bufferWindowMs` is set well beyond the
     // test's wall-clock so the budget never resets mid-test.
     const lineA = 'A'.repeat(20) + '\n'
     const lineB = 'B'.repeat(20) + '\n'
@@ -284,7 +284,10 @@ describe('newlineTextDecoder', () => {
       bufferWindowMs: 60_000
     })
     expect(values).toEqual([lineA])
-    expect(skipped).toEqual([lineB.length, lineC.length])
+    expect(skipped).toEqual([
+      { bytes: lineB.length, lines: 1 },
+      { bytes: lineC.length, lines: 1 }
+    ])
   })
 
   it("emits an empty line as just '\\n' (the line terminator is the whole record)", async () => {
@@ -324,13 +327,48 @@ describe('newlineTextDecoder', () => {
     // `MAX_LINE_SIZE` is private to the module; the value 16 MiB is fixed by the
     // implementation. One byte over the cap, with no newline anywhere, must
     // trigger the purge: nothing is emitted and the full leftover length is
-    // reported through `onBytesSkipped`.
+    // reported through `onSkipped`. No line counts as lost, because the record has
+    // no newline yet and the tail that finally arrives with one is still emitted.
     const MAX_LINE_SIZE = 16 * 1024 * 1024
     const runaway = new Uint8Array(MAX_LINE_SIZE + 1).fill(0x58) // 'X'
     const { values, skipped } = await runNewlineTextDecoder([runaway])
     expect(values).toEqual([])
-    expect(skipped).toEqual([MAX_LINE_SIZE + 1])
+    expect(skipped).toEqual([{ bytes: MAX_LINE_SIZE + 1, lines: 0 }])
   }, 30_000)
+
+  it("purging a runaway record still yields one line for the source's one line", async () => {
+    // The purge drops bytes, not whole records. A caller counting lines to keep its place
+    // must not be told a line went missing when none did.
+    const MAX_LINE_SIZE = 16 * 1024 * 1024
+    const runaway = 'X'.repeat(MAX_LINE_SIZE + 1)
+    const { values, skipped } = await runNewlineTextDecoder([runaway, 'tail\nafter\n'])
+    expect(values).toEqual(['tail\n', 'after\n'])
+    expect(skipped.reduce((n, s) => n + s.lines, 0)).toBe(0)
+  }, 30_000)
+
+  // The log viewer's cursor depends on this. It counts the lines it receives and adds the
+  // ones it is told were dropped, so between them they have to account for every line in
+  // the input, wherever the budget happens to run out.
+  //
+  // The lines are grouped into network chunks so that one dropped chunk takes several of
+  // them with it. With a line per chunk this would still pass if the count were always 1.
+  it.each([40, 100, 250, 1000])(
+    'accounts for every input line at a %i byte budget',
+    async (bufferSize) => {
+      const lines = Array.from({ length: 40 }, (_, i) => `line ${i}\n`)
+      const networkChunks = Array.from({ length: 4 }, (_, c) =>
+        lines.slice(c * 10, c * 10 + 10).join('')
+      )
+      const { values, skipped } = await runNewlineTextDecoder(networkChunks, {
+        bufferSize,
+        bufferWindowMs: 60_000
+      })
+      const skippedLines = skipped.reduce((n, s) => n + s.lines, 0)
+      expect(values.length + skippedLines).toBe(lines.length)
+      // Whole chunks are dropped in order, so whatever arrives is the start of the input.
+      expect(values).toEqual(lines.slice(0, values.length))
+    }
+  )
 })
 
 describe('appendRowsForRelation', () => {
