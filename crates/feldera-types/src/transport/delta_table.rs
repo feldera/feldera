@@ -88,6 +88,15 @@ impl Display for DeltaTableUpdateMode {
     }
 }
 
+/// Ceiling on `lookup_chunk_bytes`.
+///
+/// The chunk addresses its buffer with 32-bit offsets, so a buffer that reached 4 GiB would
+/// wrap one and mix up where a key ends: the lookup would then compare the wrong bytes and
+/// supersede the wrong rows. Half the addressable range leaves room for the keys a chunk
+/// accumulates between two budget checks, and the chunk fails the flush if a large key
+/// exhausts that room.
+pub const MAX_LOOKUP_CHUNK_BYTES: usize = (u32::MAX / 2) as usize;
+
 /// Default ceiling on the encoded lookup keys held in memory at once, in bytes.
 ///
 /// At roughly 21 bytes per encoded 8-byte key this holds about 12M keys, more than a
@@ -256,6 +265,15 @@ impl DeltaTableWriterConfig {
         }
         if self.lookup_chunk_bytes == 0 {
             return Err("lookup_chunk_bytes must be greater than 0".to_string());
+        }
+        if self.lookup_chunk_bytes > MAX_LOOKUP_CHUNK_BYTES {
+            return Err(format!(
+                "lookup_chunk_bytes is {} but must be at most {MAX_LOOKUP_CHUNK_BYTES} \
+                 ({} MiB): the connector locates rows in chunks addressed by 32-bit offsets. \
+                 A larger budget does not speed the lookup up; lower the value.",
+                self.lookup_chunk_bytes,
+                MAX_LOOKUP_CHUNK_BYTES >> 20,
+            ));
         }
         Ok(())
     }
@@ -1096,6 +1114,17 @@ mod log_retention_tests {
         cfg.lookup_chunk_bytes = 0;
         assert!(cfg.validate().unwrap_err().contains("lookup_chunk_bytes"));
     }
+
+    /// A budget past the chunk's 32-bit addressing has to be rejected rather than wrap.
+    #[test]
+    fn an_oversized_lookup_chunk_is_rejected() {
+        let mut cfg = make_config(None);
+        cfg.lookup_chunk_bytes = MAX_LOOKUP_CHUNK_BYTES;
+        assert!(cfg.validate().is_ok());
+
+        cfg.lookup_chunk_bytes = MAX_LOOKUP_CHUNK_BYTES + 1;
+        assert!(cfg.validate().unwrap_err().contains("lookup_chunk_bytes"));
+    }
 }
 
 impl DeltaTableReaderConfig {
@@ -1164,5 +1193,42 @@ impl DeltaTableReaderConfig {
     /// sense.
     pub fn requires_change_feed(&self) -> bool {
         self.change_feed() == DeltaTableChangeFeed::Require
+    }
+}
+
+#[cfg(test)]
+mod writer_config_tests {
+    use super::*;
+
+    /// The OpenAPI schema advertises `lookup_chunk_bytes`'s ceiling as a literal, because a
+    /// `#[schema]` attribute cannot name a constant. A drift would tell API clients a value
+    /// is acceptable that `validate` then rejects.
+    #[test]
+    fn schema_bounds_match_validation() {
+        assert_eq!(MAX_LOOKUP_CHUNK_BYTES, 2147483647);
+    }
+
+    /// A config that leaves the merge settings unset must serialize without them. The manager
+    /// re-serializes it for the runtime, and an older runtime would fail on the integers.
+    #[test]
+    fn unset_merge_settings_are_not_serialized() {
+        let parse = |json: &str| -> DeltaTableWriterConfig { serde_json::from_str(json).unwrap() };
+        let serialized = serde_json::to_string(&parse(r#"{"uri":"x"}"#)).unwrap();
+        for key in ["update_mode", "lookup_chunk_bytes", "max_concurrent_probes"] {
+            assert!(
+                !serialized.contains(key),
+                "{key} was serialized: {serialized}"
+            );
+        }
+        let set =
+            r#"{"uri":"x","update_mode":"merge","lookup_chunk_bytes":7,"max_concurrent_probes":3}"#;
+        let serialized = serde_json::to_string(&parse(set)).unwrap();
+        for value in [
+            r#""update_mode":"merge""#,
+            r#""lookup_chunk_bytes":7"#,
+            r#""max_concurrent_probes":3"#,
+        ] {
+            assert!(serialized.contains(value), "{value} was lost: {serialized}");
+        }
     }
 }
