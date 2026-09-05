@@ -130,6 +130,16 @@ import TabItem from '@theme/TabItem';
           v3.0.1 and later export that variable. For a command that prints a
           token, pass its output as `--auth "$(...)"`.
 
+        - The Delta Lake output connector can keep a table equal to its view
+          instead of appending a change log. Set `update_mode` to `merge`: the
+          connector appends each new row version and marks the old one deleted
+          in a deletion vector, so a reader sees one live row per key and no
+          data file is ever rewritten. The target table must have
+          `delta.enableDeletionVectors` set, and the pipeline must be the only
+          process writing rows to it. `optimize_interval_secs` has the
+          connector compact the table itself, which reclaims the superseded
+          rows. See [merge mode](/connectors/sinks/delta#merge-mode).
+
         ## v0.337.0
 
         - Breaking change (SQL): comparing a `UUID` with a character or binary value
