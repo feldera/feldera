@@ -188,6 +188,8 @@ These metrics accumulate across checkpoint and resume.
 | <a name='output_connector_buffered_records'>`output_connector_buffered_records`</a> |gauge | Number of records currently buffered by the output connector. |
 | <a name='output_connector_bytes_total'>`output_connector_bytes_total`</a> |counter | Total number of bytes of records sent by the output connector. |
 | <a name='output_connector_delta_merge_bytes_written_total'>`output_connector_delta_merge_bytes_written_total`</a> |counter | Bytes written to object storage: new data files plus deletion vectors. |
+| <a name='output_connector_delta_merge_compaction_failures_total'>`output_connector_delta_merge_compaction_failures_total`</a> |counter | Maintenance runs that failed. The table is left intact and the next run retries, but nothing was reclaimed by this one. |
+| <a name='output_connector_delta_merge_compactions_total'>`output_connector_delta_merge_compactions_total`</a> |counter | Maintenance runs the connector completed, when 'optimize_interval_secs' asks it to maintain the table. |
 | <a name='output_connector_delta_merge_files_appended_total'>`output_connector_delta_merge_files_appended_total`</a> |counter | Data files added to the target table. |
 | <a name='output_connector_delta_merge_files_dropped_total'>`output_connector_delta_merge_files_dropped_total`</a> |counter | Data files removed outright because every row in them was superseded. |
 | <a name='output_connector_delta_merge_keys_not_found_total'>`output_connector_delta_merge_keys_not_found_total`</a> |counter | Keys the lookup did not find in the target table. A delete of an absent row is a no-op, so this is not an error, but a sustained rate means the table has diverged from the view. |
