@@ -181,7 +181,7 @@ more than expected:
 - **A key that is not part of the table's clustering.** If changed keys are spread across the
   whole table, every file's range contains some of them and nothing is skipped. Partitioning
   or `ZORDER`ing the table on the key is what makes pruning effective.
-- **The files the connector itself appends.** A flush writes one file holding the new versions
+- **The files the connector itself appends.** A flush writes a file holding the new versions
   of whatever keys changed, so if those keys are spread across the key space, that one file's
   key range spans the key space too, and no later flush can prune it. Clustering the table
   therefore only helps for as long as it lasts: every file appended since the last `OPTIMIZE`
@@ -280,7 +280,7 @@ file its keys land in. Two things follow, and both matter more than the pipeline
 
 | Lever | Why it moves the cost |
 |-------|-----------------------|
-| Output buffering | Merge mode writes one data file per flush, and the pass over the file list is linear in the file count. Buffering cuts the number of flushes, which cuts both terms at once |
+| Output buffering | Merge mode writes at least one data file per flush, and the pass over the file list is linear in the file count. Buffering cuts the number of flushes, which cuts both terms at once |
 | `OPTIMIZE` | Fewer, larger files. The lookup reads one row group of one column, so a file 100x larger costs about 3x more to search -- far less than searching 100 files |
 
 Output buffering is a requirement of merge mode rather than a tuning knob. Measured on a local

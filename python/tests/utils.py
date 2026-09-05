@@ -1,5 +1,6 @@
 import contextlib
 import fcntl
+import json
 import logging
 import os
 import pathlib
@@ -252,14 +253,12 @@ class DeltaTestLocation:
         both local-filesystem and S3-backed (MinIO) tables; avoids the
         ``deltalake`` Python package, whose wheel aborts on aarch64 hosts.
         """
-        import json as _json
-
         import pyarrow as pa
 
         active: dict[str, None] = {}
         for log_path in self.log_json_paths():
             for line in self._read_text(log_path).splitlines():
-                action = _json.loads(line)
+                action = json.loads(line)
                 if (add := action.get("add")) is not None:
                     active[add["path"]] = None
                 if (remove := action.get("remove")) is not None:
@@ -294,15 +293,13 @@ class DeltaTestLocation:
         outright. Row-level cross-engine checks live in the Rust tests, which
         drive Delta Spark.
         """
-        import json as _json
-
         # Keyed by path: within one commit the connector emits the `remove` and
         # then the `add` for a file whose vector changed, so last write wins and
         # leaves the current `add`.
         active: dict[str, dict] = {}
         for log_path in self.log_json_paths():
             for line in self._read_text(log_path).splitlines():
-                action = _json.loads(line)
+                action = json.loads(line)
                 if (add := action.get("add")) is not None:
                     active[add["path"]] = add
                 elif (remove := action.get("remove")) is not None:
@@ -316,7 +313,7 @@ class DeltaTestLocation:
                     f"data file {add['path']!r} has no statistics, so its rows "
                     "cannot be counted from the log"
                 )
-            rows = _json.loads(stats)["numRecords"]
+            rows = json.loads(stats)["numRecords"]
             vector = add.get("deletionVector")
             total += rows - (vector["cardinality"] if vector else 0)
         return total
