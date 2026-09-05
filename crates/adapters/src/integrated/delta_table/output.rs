@@ -227,7 +227,7 @@ const CHUNK_SIZE: usize = 100_000;
 /// grows past that, and a table written as a handful of huge files is slow for
 /// readers to scan. 100 MiB is the size delta-rs itself used before the target
 /// became optional.
-const TARGET_FILE_SIZE: NonZeroU64 = NonZeroU64::new(100 * 1024 * 1024).unwrap();
+pub(super) const TARGET_FILE_SIZE: NonZeroU64 = NonZeroU64::new(100 * 1024 * 1024).unwrap();
 
 impl DeltaTableWriter {
     #[allow(clippy::too_many_arguments)]
@@ -1187,11 +1187,11 @@ impl DeltaTableWriter {
 
         loop {
             let mut cursor = batch.cursor(format.clone())?;
-            // First attempt only: a retry walks the same batch and would report the same
-            // keys again, once per attempt, for as long as the commit keeps conflicting.
-            let first_attempt = retry_count == 0;
+            let retrying = retry_count > 0;
             let mut report_violation = |e: anyhow::Error| {
-                if !first_attempt {
+                // First attempt only: a retry walks the same batch and would report the
+                // same keys again, once per attempt, for as long as the commit fails.
+                if retrying {
                     return;
                 }
                 #[cfg(test)]
@@ -1217,6 +1217,7 @@ impl DeltaTableWriter {
                         &mut task.delta_table,
                         object_store.clone(),
                         &mut *cursor,
+                        retrying,
                         &mut report_violation,
                     )
                     .instrument(span.clone()),
@@ -1728,6 +1729,39 @@ mod parallel {
             actual, expected,
             "after {step}: table diverged from the view"
         );
+    }
+
+    /// A merge flush bigger than `TARGET_FILE_SIZE` must land in more than one Parquet file.
+    ///
+    /// The append side of merge mode builds its own writer config, so it needs the target size
+    /// the cdc path sets for the same reason: without one delta-rs writes a single object per
+    /// flush, which an object store rejects once the multipart upload passes 10000 parts.
+    #[test]
+    fn merge_batch_larger_than_target_file_size_rolls_over() {
+        const PAYLOAD_LEN: usize = 8 * 1024;
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap().to_string();
+
+        let target = super::TARGET_FILE_SIZE.get() as usize;
+        let rows = (target * 5 / 4).div_ceil(PAYLOAD_LEN);
+        let records: Vec<DeltaTestStruct> = (0..rows)
+            .map(|i| DeltaTestStruct {
+                string: incompressible_string(i as u64, PAYLOAD_LEN),
+                ..make_record(i)
+            })
+            .collect();
+
+        let mut endpoint = make_merge_endpoint(&uri, DeltaTableWriteMode::Append);
+        encode_batch(&mut endpoint, &build_insert_batch(&records));
+
+        let files = list_files_recursive(Path::new(&uri), OsStr::from_bytes(b"parquet")).unwrap();
+        assert!(
+            files.len() > 1,
+            "{rows} rows of {PAYLOAD_LEN} bytes each exceed the {target} byte target \
+             but landed in {} file(s)",
+            files.len()
+        );
+        assert_eq!(read_merge_output(&uri).len(), rows);
     }
 
     /// Merge mode must leave the table equal to the view after every commit.

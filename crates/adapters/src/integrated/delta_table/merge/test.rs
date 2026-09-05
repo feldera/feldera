@@ -242,7 +242,10 @@ pub(super) async fn tombstone_ids(mut table: DeltaTable, ids: &[i64]) -> DeltaTa
     .unwrap();
 
     let dv = write_deletion_vectors(&tombstones, &table).await.unwrap();
-    commit(&mut table, dv.actions).await;
+    // Empty actions are not committed, as the flush does not commit them.
+    if !dv.actions.is_empty() {
+        commit(&mut table, dv.actions).await;
+    }
     table
 }
 
@@ -411,6 +414,25 @@ async fn later_flushes_keep_earlier_tombstones() {
     let table = tombstone_ids(table, &[4]).await;
 
     assert_eq!(live_ids(&table).await, vec![1, 3, 5]);
+}
+
+/// Tombstoning a row that is already tombstoned must write nothing.
+///
+/// A retried flush re-locates rows an earlier attempt already covered. Re-committing that
+/// vector unchanged would bump the table version and leave a second vector object behind for
+/// VACUUM, once per attempt.
+#[tokio::test]
+async fn tombstoning_an_already_tombstoned_row_is_a_no_op() {
+    let dir = TempDir::new().unwrap();
+    let table = fixture_table(&dir, &[1, 2, 3], true).await;
+    let table = tombstone_ids(table, &[2]).await;
+    let version = table.version();
+
+    let table = tombstone_ids(table, &[2]).await;
+
+    assert_eq!(table.version(), version, "the table gained an empty commit");
+    assert_eq!(deletion_vector_files(&dir).len(), 1);
+    assert_eq!(live_ids(&table).await, vec![1, 3]);
 }
 
 /// Vacuum in its default mode must not disturb a live deletion vector.

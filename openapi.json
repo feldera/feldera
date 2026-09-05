@@ -10128,7 +10128,8 @@
           "lookup_chunk_bytes": {
             "type": "integer",
             "description": "Ceiling, in bytes, on the encoded keys the connector holds while locating the rows\nto supersede.\n\nOnly used when `update_mode` is `merge`. A flush whose key set exceeds this budget\nis split into successive lookup passes, which bounds memory at the cost of\nre-scanning candidate files. Default: 256 MiB.",
-            "minimum": 0
+            "maximum": 2147483647,
+            "minimum": 1
           },
           "max_concurrent_probes": {
             "type": "integer",

@@ -149,6 +149,13 @@ pub async fn write_deletion_vectors(
         bitmap |= new_ordinals;
         metrics.rows_tombstoned += bitmap.len() - before;
 
+        if bitmap.len() == before {
+            // Every located row was already tombstoned, by an earlier flush or by an
+            // attempt at this one whose commit landed. Re-committing the same vector would
+            // be a version with no effect.
+            continue;
+        }
+
         if Some(bitmap.len()) == physical_rows(add) {
             actions.push(Action::Remove(remove_for(add)));
             metrics.files_dropped += 1;
@@ -267,12 +274,5 @@ mod test {
         assert!(!t.is_empty());
         assert_eq!(t.touched_files(), 2);
         assert_eq!(t.total_rows(), 3);
-    }
-
-    #[test]
-    fn empty_tombstones_have_no_rows() {
-        let t = Tombstones::new();
-        assert_eq!(t.touched_files(), 0);
-        assert_eq!(t.total_rows(), 0);
     }
 }

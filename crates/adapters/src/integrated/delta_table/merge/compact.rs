@@ -99,6 +99,9 @@ impl Compactor {
         let interval = self.interval;
 
         TOKIO.spawn(async move {
+            // A guard, not a call at the end: delta-rs and DataFusion can panic, and a
+            // claimed slot never given back would disable compaction for the whole run.
+            let _slot = Slot { schedule, interval };
             let started = Instant::now();
             match compact(&uri, storage_options).await {
                 Ok(outcome) => info!(
@@ -117,9 +120,19 @@ impl Compactor {
                     interval.as_secs(),
                 ),
             }
-
-            Self::release(&schedule, interval, Instant::now());
         });
+    }
+}
+
+/// Holds the compaction slot for as long as a compaction is in flight.
+struct Slot {
+    schedule: Arc<Mutex<Schedule>>,
+    interval: Duration,
+}
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        Compactor::release(&self.schedule, self.interval, Instant::now());
     }
 }
 
@@ -230,6 +243,35 @@ mod test {
             "the interval must be measured from when the last compaction finished"
         );
         assert!(compactor.claim(finished + Duration::from_secs(60)));
+    }
+
+    /// A compaction that panics must still give the slot back.
+    ///
+    /// delta-rs and DataFusion are not panic-free, and a slot never released would leave
+    /// `optimize_interval_secs` silently ignored for the life of the process.
+    #[test]
+    fn a_panicking_compaction_releases_the_slot() {
+        let compactor = Compactor::new(&config_with("memory://", Some(60)), "e").unwrap();
+        let due = Instant::now() + Duration::from_secs(60);
+        assert!(compactor.claim(due));
+
+        let slot = Slot {
+            schedule: compactor.schedule.clone(),
+            interval: compactor.interval,
+        };
+        let previous = std::panic::take_hook();
+        std::panic::set_hook(Box::new(|_| {}));
+        let unwound = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let _slot = slot;
+            panic!("compaction blew up");
+        }));
+        std::panic::set_hook(previous);
+
+        assert!(unwound.is_err(), "the fixture did not panic");
+        assert!(
+            !compactor.schedule.lock().running,
+            "the slot must be free again after a panic"
+        );
     }
 
     /// The compaction itself: it must rewrite files and lose no rows.

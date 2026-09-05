@@ -140,6 +140,9 @@ pub struct DeltaTableWriterConfig {
     /// is split into successive lookup passes, which bounds memory at the cost of
     /// re-scanning candidate files. Default: 256 MiB.
     #[serde(default = "default_lookup_chunk_bytes")]
+    // The bounds `validate` enforces. `maximum` is `MAX_LOOKUP_CHUNK_BYTES`, which the
+    // schema attribute cannot name; `schema_bounds_match_validation` keeps the two in step.
+    #[schema(minimum = 1, maximum = 2147483647)]
     pub lookup_chunk_bytes: usize,
 
     /// Number of data files read concurrently while locating the rows to supersede.
@@ -909,5 +912,18 @@ impl DeltaTableReaderConfig {
 
     pub fn is_cdc(&self) -> bool {
         matches!(&self.mode, DeltaTableIngestMode::Cdc)
+    }
+}
+
+#[cfg(test)]
+mod writer_config_tests {
+    use super::*;
+
+    /// The OpenAPI schema advertises `lookup_chunk_bytes`'s ceiling as a literal, because a
+    /// `#[schema]` attribute cannot name a constant. A drift would tell API clients a value
+    /// is acceptable that `validate` then rejects.
+    #[test]
+    fn schema_bounds_match_validation() {
+        assert_eq!(MAX_LOOKUP_CHUNK_BYTES, 2147483647);
     }
 }

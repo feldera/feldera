@@ -40,6 +40,7 @@ use crate::catalog::SerCursor;
 use crate::util::{IndexedOperationType, indexed_operation_type};
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 
+use super::super::output::TARGET_FILE_SIZE;
 use super::chunk::LookupChunk;
 use super::key::{self, KeyEncoder};
 use super::probe::Pruning;
@@ -135,11 +136,17 @@ impl MergeWriter {
     ///
     /// The caller rebuilds `cursor` on every attempt, because a retry has to re-run the lookup
     /// against whatever paths exist now.
+    ///
+    /// `retrying` must be set on every attempt after the first. A commit error can mean the
+    /// commit landed and only its response was lost, so the rows an earlier attempt appended
+    /// may be in the table: [`Regime::Owned`]'s insert shortcut is unsound from then on, and
+    /// skipping the lookup would leave two live rows for one key.
     pub async fn flush(
         &self,
         table: &mut DeltaTable,
         object_store: ObjectStoreRef,
         cursor: &mut dyn SerCursor,
+        retrying: bool,
         on_uniqueness_violation: &mut dyn FnMut(anyhow::Error),
     ) -> AnyResult<FlushMetrics> {
         let mut metrics = FlushMetrics::default();
@@ -171,7 +178,8 @@ impl MergeWriter {
                 continue;
             };
 
-            if self.needs_lookup(&op) {
+            if self.needs_lookup(&op, retrying) {
+                // A flattened cursor reads its key out of the current value.
                 cursor.rewind_vals();
                 keys.push(cursor, &mut metrics).await?;
             }
@@ -214,11 +222,12 @@ impl MergeWriter {
     /// Whether the row this operation supersedes has to be located in the table.
     ///
     /// Deletes and updates always. An insert supersedes nothing the view held, but the table
-    /// may hold a row for that key from an earlier run, so it skips the lookup only when the
-    /// table started empty.
-    fn needs_lookup(&self, op: &IndexedOperationType) -> bool {
+    /// may hold a row for that key from an earlier run or from an earlier attempt at this
+    /// same batch, so it skips the lookup only on a first attempt against a table that
+    /// started empty.
+    fn needs_lookup(&self, op: &IndexedOperationType, retrying: bool) -> bool {
         match op {
-            IndexedOperationType::Insert => self.regime.insert_needs_lookup(),
+            IndexedOperationType::Insert => retrying || self.regime.insert_needs_lookup(),
             IndexedOperationType::Delete | IndexedOperationType::Upsert => true,
         }
     }
@@ -265,7 +274,9 @@ impl MergeWriter {
             self.row_arrow_schema.clone(),
             self.partition_columns.clone(),
             None,
-            None,
+            // Without a target size delta-rs writes one object per flush, whatever its
+            // size, and an object store rejects a multipart upload past 10000 parts.
+            Some(TARGET_FILE_SIZE),
             None,
             self.stats_config.num_indexed_cols,
             self.stats_config.stats_columns.clone(),

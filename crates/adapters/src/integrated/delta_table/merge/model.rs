@@ -177,13 +177,23 @@ async fn live_rows(table: &DeltaTable) -> HashMap<i64, String> {
 
 /// Apply one batch through the real writer, failing on a uniqueness violation.
 async fn apply(writer: &MergeWriter, table: &mut DeltaTable, changes: &[Change]) {
+    apply_attempt(writer, table, changes, false).await
+}
+
+/// The same, choosing whether the writer treats this as a retry of an earlier attempt.
+async fn apply_attempt(
+    writer: &MergeWriter,
+    table: &mut DeltaTable,
+    changes: &[Change],
+    retrying: bool,
+) {
     let batch = build_batch(changes);
     let format = RecordFormat::Parquet(delta_output_serde_config(DeltaVariantEncoding::default()));
     let mut cursor = batch.cursor(format).unwrap();
     let object_store = table.object_store();
 
     writer
-        .flush(table, object_store, &mut *cursor, &mut |e| {
+        .flush(table, object_store, &mut *cursor, retrying, &mut |e| {
             panic!("unexpected uniqueness violation: {e}")
         })
         .await
@@ -360,6 +370,45 @@ async fn replaying_a_batch_converges_across_a_restart() {
             live_rows(&table).await,
             model.rows,
             "round {round}: replaying {changes:?} after a restart did not converge"
+        );
+    }
+}
+
+/// A retried batch must converge even in `Regime::Owned`.
+///
+/// A commit error can mean the commit landed and only its response was lost, so the retry
+/// re-walks a batch whose rows are already in the table. Nothing outside the writer can tell
+/// the two apart, so the retry must look up the row an insert supersedes even though the
+/// table was empty when the writer opened it. Skipping it leaves two live rows for one key,
+/// which `live_rows` panics on.
+#[tokio::test]
+async fn retrying_a_landed_batch_converges_in_the_owned_regime() {
+    let dir = TempDir::new().unwrap();
+    let mut table = create_table(&dir).await;
+    let (writer, regime) = writer_for(&table);
+    assert_eq!(
+        regime,
+        Regime::Owned,
+        "the fixture must exercise the insert shortcut"
+    );
+
+    let mut rng = SmallRng::seed_from_u64(7);
+    let mut model = Model::default();
+
+    for round in 0..8 {
+        let changes = model.next_batch(&mut rng, 12);
+        if changes.is_empty() {
+            continue;
+        }
+
+        // The attempt whose commit landed, and the retry that cannot know it did.
+        apply(&writer, &mut table, &changes).await;
+        apply_attempt(&writer, &mut table, &changes, true).await;
+
+        assert_eq!(
+            live_rows(&table).await,
+            model.rows,
+            "round {round}: retrying {changes:?} did not converge"
         );
     }
 }
