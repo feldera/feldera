@@ -4,9 +4,11 @@
 //! `AuthenticatedPrincipal` that `auth_validator` installed and compares its
 //! role against the minimum role declared for the matched route. The
 //! `ROUTE_MIN_ROLE` table below is the single source of truth for the
-//! access-control model. Enforcement is deny-by-default: a route that is
-//! reached but absent from the table is refused, so a newly added endpoint
-//! cannot ship silently world-accessible.
+//! access-control model. Enforcement is deny-by-default with no pass-through:
+//! a handler runs only after a table entry admits the request. A registered
+//! route absent from the table is refused, so a newly added endpoint cannot
+//! ship silently world-accessible, and a path no route claims is answered 404
+//! here rather than handed on.
 
 use crate::auth::AuthenticatedPrincipal;
 use crate::db::error::DBError;
@@ -181,6 +183,16 @@ fn candidates_by_shape() -> &'static HashMap<(&'static str, usize), Vec<(&'stati
     })
 }
 
+/// Whether any route pattern matches `path`, disregarding the method. Tells a
+/// wrong-method request for a real path apart from a path the table describes
+/// under no method at all.
+fn path_matches_any_route(path: &str) -> bool {
+    let segments: Vec<&str> = path.split('/').collect();
+    ROUTE_MIN_ROLE
+        .iter()
+        .any(|(_, pattern, _)| literal_segments_if_match(pattern, &segments).is_some())
+}
+
 /// How many literal segments `pattern` matches `segments` with, or `None` when
 /// it does not match. A `{name}` segment matches any one non-empty segment.
 fn literal_segments_if_match(pattern: &str, segments: &[&str]) -> Option<usize> {
@@ -212,11 +224,31 @@ fn forbidden(message: &str) -> HttpResponse<BoxBody> {
     }))
 }
 
+/// The 404 for a `/v0` path no route claims, answered by the guard itself so
+/// that an unknown path never reaches a handler. Carries the `details` field
+/// that `feldera_types::error::ErrorResponse` requires, so a strict client can
+/// deserialize it like any other API error.
+fn not_found(method: &str, path: &str) -> HttpResponse<BoxBody> {
+    HttpResponse::NotFound().json(serde_json::json!({
+        "message": format!(
+            "No endpoint for {method} {path}; see the API reference for the available /v0 endpoints"
+        ),
+        "error_code": "UnknownEndpoint",
+        "details": {},
+    }))
+}
+
 /// Decide whether the principal may proceed, returning the pattern the request
-/// resolved to for the audit line. `Ok` allows; `Err(resp)` is the 403 to return.
+/// resolved to for the audit line. `Ok` allows; `Err(resp)` is the response
+/// to return instead of calling the handler.
 ///
-/// `routed` says whether actix has a route for this path at all; the rule itself
-/// comes from [`classify`], which matches the request path against the table.
+/// The handler is reachable only through `Ok`, which requires a table entry
+/// for the request and a role that meets it. There is no pass-through: a path
+/// the table cannot classify for this method is answered here. It is a 404
+/// when no route serves that method on the path, whether the path is unknown
+/// or exists only for other methods, and a 403 only when the path is one actix
+/// would dispatch yet the table classifies under no method, a registered route
+/// missing from the table that the guard denies rather than serve unchecked.
 ///
 /// ```text
 /// // a writer posting a pipeline
@@ -225,31 +257,35 @@ fn forbidden(message: &str) -> HttpResponse<BoxBody> {
 /// authorize("POST", true,  "/v0/pipelines", Some(&reader))  => Err(403)
 /// // an admin listing tenants, which is owner-only
 /// authorize("GET",  true,  "/v0/tenants",   Some(&admin))   => Err(403)
-/// // no route matched, so this is a 404 for actix to answer, not a denial
-/// authorize("GET",  false, "/v0/nonesuch",  Some(&reader))  => Ok(..)
+/// // a real path, wrong method: answered 404, no error logged
+/// authorize("POST", true,  "/v0/cluster_healthz", Some(&r)) => Err(404)
+/// // no route and no table entry: answered as 404, never passed through
+/// authorize("GET",  false, "/v0/nonesuch",  Some(&reader))  => Err(404)
 /// ```
 fn authorize(
     method: &str,
     routed: bool,
     path: &str,
     principal: Option<&AuthenticatedPrincipal>,
-) -> Result<Option<&'static str>, HttpResponse<BoxBody>> {
-    // No route matched, so there is nothing to guard. Passing it through lets
-    // actix answer 404; denying here would report a missing route as a
-    // permission error.
-    if !routed {
-        return Ok(None);
-    }
+) -> Result<&'static str, HttpResponse<BoxBody>> {
     let Some((pattern, required)) = classify(method, path) else {
-        // A registered route with no table entry is a bug: deny it rather
-        // than serve it unguarded.
+        // No table entry for this method on this path. A path the table
+        // describes under other methods is a wrong-method request (`routed` is
+        // method-blind, so it is true here even for a method the path does not
+        // serve). Answer it 404 like an unknown path: neither reaches a
+        // handler, and a legitimate HEAD or an unsupported verb must not log an
+        // error. Only a path actix would dispatch yet the table classifies
+        // under no method is the registered-route bug.
+        if !routed || path_matches_any_route(path) {
+            return Err(not_found(method, path));
+        }
         error!("RBAC: route {method} {path} has no access-control entry; denying");
         return Err(forbidden(
             "This endpoint has no access-control classification and is denied",
         ));
     };
     match principal {
-        Some(p) if p.role.satisfies(required) => Ok(Some(pattern)),
+        Some(p) if p.role.satisfies(required) => Ok(pattern),
         Some(p) => Err(DBError::InsufficientPermissions {
             required,
             actual: p.role,
@@ -280,14 +316,18 @@ pub(crate) async fn rbac_middleware(
 ) -> Result<ServiceResponse<BoxBody>, actix_web::Error> {
     let principal = req.extensions().get::<AuthenticatedPrincipal>().cloned();
     let method = req.method().clone();
-    let routed = req.match_pattern().is_some();
-    let path = req.path().to_string();
+    // Classify the path actix routes on. actix dispatches on the
+    // percent-decoded path, so the guard reads that same view rather than the
+    // raw URI, which the router could spell differently. `match_info().as_str()`
+    // is actix's decoded path.
+    let path = req.match_info().as_str().to_string();
+    // Only picks 404 versus 403 for an unclassified path; it never lets a
+    // request through, so a wrong answer here cannot reach a handler.
+    let routed = req.resource_map().match_pattern(&path).is_some();
 
     match authorize(method.as_str(), routed, &path, principal.as_ref()) {
         Ok(pattern) => {
-            if let Some(pattern) = pattern {
-                audit(&method, pattern, principal.as_ref());
-            }
+            audit(&method, pattern, principal.as_ref());
             Ok(next.call(req).await?.map_into_boxed_body())
         }
         Err(resp) => Ok(req.into_response(resp)),
@@ -310,6 +350,26 @@ mod test {
     fn unknown_route_is_denied() {
         let p = AuthenticatedPrincipal::for_test(Role::Owner);
         assert!(authorize("GET", true, "/v0/does/not/exist", Some(&p)).is_err());
+    }
+
+    /// A path with no route and no table entry is answered by the guard as a
+    /// 404 rather than handed on, so nothing reaches a handler unclassified.
+    #[test]
+    fn unrouted_path_is_answered_not_passed_through() {
+        let p = AuthenticatedPrincipal::for_test(Role::Owner);
+        let resp = authorize("GET", false, "/v0/nonesuch", Some(&p)).unwrap_err();
+        assert_eq!(resp.status(), actix_web::http::StatusCode::NOT_FOUND);
+    }
+
+    /// A real path reached with a method it does not serve is a 404, not a 403:
+    /// `routed` is method-blind, but a wrong-method request is neither a
+    /// permission denial nor the registered-route bug that logs an error.
+    #[test]
+    fn wrong_method_on_a_real_path_is_not_found() {
+        let p = AuthenticatedPrincipal::for_test(Role::Owner);
+        // `/v0/cluster_healthz` exists for GET only.
+        let resp = authorize("POST", true, "/v0/cluster_healthz", Some(&p)).unwrap_err();
+        assert_eq!(resp.status(), actix_web::http::StatusCode::NOT_FOUND);
     }
 
     #[test]
@@ -429,7 +489,7 @@ mod test {
                 );
             }
             // A request with no principal at all is always refused on a
-            // classified route (fail closed).
+            // classified route.
             assert!(
                 authorize(method, true, &concrete_path(pattern), None).is_err(),
                 "{method} {pattern}: missing principal must be denied"
@@ -565,7 +625,10 @@ mod test {
                     .route(
                         "/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/completion_token",
                         web::get().to(|| async { HttpResponse::Ok().finish() }),
-                    ),
+                    )
+                    // Stands in for "a handler ran": a request the guard
+                    // passes through without classifying lands here as 200.
+                    .default_service(web::to(|| async { HttpResponse::Ok().finish() })),
             ),
         )
         .await;
@@ -604,6 +667,18 @@ mod test {
             .status(),
             200
         );
+
+        // An alternate spelling of a route that actix still dispatches to the
+        // same handler carries the same role floor: the guard classifies the
+        // decoded path the router uses, so it holds for either spelling.
+        assert_eq!(call("POST", "/v0/%70ipelines", "read").await.status(), 403);
+        assert_eq!(call("POST", "/v0/%70ipelines", "write").await.status(), 200);
+        assert_eq!(call("GET", "/v0/%74enants", "admin").await.status(), 403);
+        assert_eq!(call("GET", "/v0/%74enants", "owner").await.status(), 200);
+
+        // No pass-through: a path nothing routes is answered 404 by the guard
+        // and never reaches the scope's fallback handler, even for an owner.
+        assert_eq!(call("GET", "/v0/nonesuch", "owner").await.status(), 404);
     }
 
     /// The authenticated `/v0` surface, enumerated from the generated OpenAPI
