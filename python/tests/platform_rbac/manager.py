@@ -19,6 +19,7 @@ one they are driving.
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import socket
 import subprocess
@@ -424,6 +425,31 @@ class Manager:
                 self._proc.kill()
                 self._proc.wait(timeout=10)
             self._proc = None
+            # A killed manager can leave its embedded database running. Stop
+            # that database before restarting or removing its data directory.
+            # postmaster.opts records the exact binary used for this instance.
+            data_dir = self.state_dir / "pg"
+            if (data_dir / "postmaster.pid").exists():
+                postgres = Path(
+                    shlex.split((data_dir / "postmaster.opts").read_text())[0]
+                )
+                pg_ctl = str(postgres.with_name("pg_ctl"))
+                stopped = subprocess.run(
+                    [pg_ctl, "-D", str(data_dir), "-m", "fast", "-w", "stop"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                # The manager's shutdown may have stopped it concurrently.
+                status = subprocess.run(
+                    [pg_ctl, "-D", str(data_dir), "status"],
+                    capture_output=True,
+                    timeout=10,
+                )
+                if status.returncode != 3:
+                    raise RuntimeError(
+                        f"Could not stop test Postgres: {stopped.stderr}"
+                    )
         self.config = None
 
     def restart(self, config: AuthConfig) -> None:

@@ -236,6 +236,11 @@ def make_handler(
         if (groups := one("groups")) is not None:
             claims["groups"] = split_csv(groups)
 
+        # Negative auth tests need correctly signed tokens with invalid claims.
+        claims.update(json.loads(one("claims", "{}")))
+        for name in split_csv(one("omit_claims", "")):
+            claims.pop(name, None)
+
         return {
             "access_token": sign(claims),
             "token_type": "Bearer",
