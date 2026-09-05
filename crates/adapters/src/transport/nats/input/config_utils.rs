@@ -17,7 +17,10 @@ fn decode_seed(seed: &str) -> AnyResult<[u8; 32]> {
         .map_err(|e| anyhow!("invalid NATS nkey seed: {e}"))?;
     // Two prefix bytes + 32-byte seed + two CRC bytes.
     if raw.len() != 36 {
-        bail!("invalid NATS nkey seed: decoded to {} bytes, expected 36", raw.len());
+        bail!(
+            "invalid NATS nkey seed: decoded to {} bytes, expected 36",
+            raw.len()
+        );
     }
     let (payload, crc) = raw.split_at(raw.len() - 2);
     if crc16_xmodem(payload) != u16::from_le_bytes([crc[0], crc[1]]) {
@@ -39,7 +42,11 @@ fn crc16_xmodem(data: &[u8]) -> u16 {
     for &byte in data {
         crc ^= (byte as u16) << 8;
         for _ in 0..8 {
-            crc = if crc & 0x8000 != 0 { (crc << 1) ^ 0x1021 } else { crc << 1 };
+            crc = if crc & 0x8000 != 0 {
+                (crc << 1) ^ 0x1021
+            } else {
+                crc << 1
+            };
         }
     }
     crc
