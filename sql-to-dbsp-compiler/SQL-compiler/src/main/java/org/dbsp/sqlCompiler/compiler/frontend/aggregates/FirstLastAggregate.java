@@ -147,7 +147,7 @@ public class FirstLastAggregate extends WindowAggregates {
         DBSPClosureExpression makeKeys =
                 new DBSPRawTupleExpression(
                         new DBSPTupleExpression(
-                                Linq.map(this.partitionKeys,
+                                Linq.map(this.partition.keyFieldIndexes(),
                                         p -> rowVar.deref().field(p).applyCloneIfNeeded()), false),
                         new DBSPTupleExpression(this.node,
                                 lastOperator.getOutputZSetElementType().to(DBSPTypeTuple.class),
