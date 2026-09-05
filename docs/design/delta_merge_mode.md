@@ -19,7 +19,7 @@ deleted:
 | Update | The new row appended, the old row tombstoned by a deletion vector |
 | Delete | The old row tombstoned by a deletion vector |
 
-No data file is ever rewritten. One flush produces one commit.
+A flush never rewrites a data file. One flush produces one commit.
 
 The design targets tables administered by someone else. The connector is the only party
 writing data; external parties own the schema, the partitioning, the table properties, and

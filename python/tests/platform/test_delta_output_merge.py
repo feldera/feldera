@@ -21,6 +21,7 @@ to accept.
 import json
 import pathlib
 import tempfile
+import time
 
 import pytest
 from feldera import PipelineBuilder
@@ -85,6 +86,26 @@ def _active_adds(loc: DeltaTestLocation) -> dict[str, dict]:
             elif (remove := action.get("remove")) is not None:
                 active.pop(remove["path"], None)
     return active
+
+
+def _optimize_commits(loc: DeltaTestLocation) -> list[tuple[int, int]]:
+    """`(files added, files removed)` for each OPTIMIZE commit in the log.
+
+    Compaction is asynchronous, so a file count sampled from outside races it. The
+    commit it leaves behind does not move once written.
+    """
+    commits = []
+    for log_path in loc.log_json_paths():
+        actions = [json.loads(line) for line in loc._read_text(log_path).splitlines()]
+        info = next(
+            (a["commitInfo"] for a in actions if a.get("commitInfo") is not None), None
+        )
+        if info is None or info.get("operation") != "OPTIMIZE":
+            continue
+        added = sum(1 for a in actions if a.get("add") is not None)
+        removed = sum(1 for a in actions if a.get("remove") is not None)
+        commits.append((added, removed))
+    return commits
 
 
 # ─── tests ─────────────────────────────────────────────────────────────
@@ -289,6 +310,51 @@ def test_merge_requires_a_unique_key(pipeline_name):
         with pytest.raises(Exception) as caught:
             pipeline.start()
         assert "unique key" in str(caught.value), str(caught.value)
+    finally:
+        loc.cleanup()
+
+
+@enterprise_only
+def test_merge_compacts_when_asked_to(pipeline_name):
+    """`optimize_interval_secs` makes the connector compact its own table.
+
+    Merge mode never rewrites a data file, so a table nothing else maintains
+    grows one file per flush. The option hands that job to the connector.
+    """
+    loc = DeltaTestLocation.create(pipeline_name, mode="append")
+    try:
+        sql = _sql(loc, {"optimize_interval_secs": 1})
+        pipeline = _build_pipeline(pipeline_name, sql)
+        pipeline.start()
+
+        # One file per flush, enough of them that compacting has something to do. The
+        # interval is a second, so a compaction may fire at any point from here on.
+        for batch in range(3):
+            pipeline.input_json(
+                "t",
+                [{"id": batch * 10 + i, "tag": f"v{i}"} for i in range(5)],
+                wait=True,
+            )
+
+        # A compaction starts from a flush, so give the last one somewhere to hang off.
+        time.sleep(2)
+        pipeline.input_json("t", [{"id": 99, "tag": "last"}], wait=True)
+
+        # It runs in the background, so poll rather than assume it has landed.
+        deadline = time.time() + 60
+        while time.time() < deadline and not _optimize_commits(loc):
+            time.sleep(1)
+
+        commits = _optimize_commits(loc)
+        assert commits, "the connector left no OPTIMIZE commit: it never compacted"
+        # Compacting has to fold files together, not merely commit.
+        assert any(removed > added for added, removed in commits), (
+            f"OPTIMIZE rewrote no files together: {commits}"
+        )
+        # Rewriting the files must not lose the rows in them.
+        assert loc.live_row_count() == 16
+
+        pipeline.stop(force=True)
     finally:
         loc.cleanup()
 
