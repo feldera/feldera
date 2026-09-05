@@ -25,16 +25,45 @@ pub struct UserAndPassword {
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema, Default)]
 pub struct Auth {
+    /// Credentials in the NATS `.creds` format (user JWT + NKey seed).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credentials: Option<Credentials>,
+    /// User JWT for decentralized (operator-mode) authentication.
+    ///
+    /// Requires `nkey` to be set as well: the connection nonce is signed
+    /// with the NKey seed. Equivalent to `credentials`, for deployments
+    /// that store the JWT and seed separately (e.g. as two secrets)
+    /// rather than as one `.creds` file.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub jwt: Option<String>,
+    /// NKey seed (`SU...`) for NKey challenge-response authentication.
+    ///
+    /// On its own, authenticates as a bare NKey user (a `nkey:` user in
+    /// the server configuration). Combined with `jwt`, signs the
+    /// connection nonce for decentralized authentication.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub nkey: Option<String>,
+    /// Token for token-based authentication.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
+    /// Username and password for password-based authentication.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_and_password: Option<UserAndPassword>,
+}
+
+/// TLS options for connecting to a NATS server.
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema, Default)]
+pub struct Tls {
+    /// Require an encrypted connection; refuse to connect to servers that
+    /// do not offer TLS.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub require_tls: bool,
+    /// Path to a PEM file with additional root certificates to trust when
+    /// verifying the server certificate, for servers whose certificates
+    /// are not signed by a public CA.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = String, example = "/path/to/ca.crt")]
+    pub root_certificates_file: Option<PathBuf>,
 }
 
 pub const fn default_connection_timeout_secs() -> u64 {
@@ -62,6 +91,10 @@ pub struct ConnectOptions {
     /// Authentication configuration.
     #[serde(default, skip_serializing_if = "is_default")]
     pub auth: Auth,
+
+    /// TLS configuration.
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub tls: Tls,
 
     /// Connection timeout
     ///

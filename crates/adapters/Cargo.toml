@@ -93,6 +93,7 @@ awc = { workspace = true, features = [
 ] }
 async-nats = { workspace = true }
 async-stream = { workspace = true }
+data-encoding = { workspace = true }
 anyhow = { workspace = true, features = ["backtrace"] }
 bytestring = "1.4.0"
 circular-queue = { workspace = true, features = ["serde_support"] }
@@ -256,6 +257,8 @@ nix = { workspace = true, features = ["signal", "mman", "feature"] }
 vergen-gitcl = { workspace = true }
 
 [dev-dependencies]
+# Test key generation only; runtime signing goes through aws-lc-rs.
+nkeys = { workspace = true }
 actix-test = { workspace = true }
 flate2 = { workspace = true }
 rcgen = { workspace = true }
