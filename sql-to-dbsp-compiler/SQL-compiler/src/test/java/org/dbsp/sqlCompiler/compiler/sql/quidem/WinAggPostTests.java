@@ -226,20 +226,21 @@ public class WinAggPostTests extends PostBaseTests {
         // These tests are non-deterministic in SQL; they are
         // deterministic in our implementation, but they give a different result
         // than other SQL dialects.
-        // Here the sorting is implicit on ename, deptno, gender
+        // The implicit sort covers only the columns the window function reads:
+        // deptno in the first query, where NULL sorts first; ename in the others.
         this.qst("""
                 select *, first_value(deptno) over () from emp;
                  ename | deptno | gender | first_value
                 -------+--------+--------+-------------
-                 Jane  |     10 | F      |          50
-                 Bob   |     10 | M      |          50
-                 Eric  |     20 | M      |          50
-                 Susan |     30 | F      |          50
-                 Alice |     30 | F      |          50
-                 Adam  |     50 | M      |          50
-                 Eve   |     50 | F      |          50
-                 Grace |     60 | F      |          50
-                 Wilma |        | F      |          50
+                 Jane  |     10 | F      |
+                 Bob   |     10 | M      |
+                 Eric  |     20 | M      |
+                 Susan |     30 | F      |
+                 Alice |     30 | F      |
+                 Adam  |     50 | M      |
+                 Eve   |     50 | F      |
+                 Grace |     60 | F      |
+                 Wilma |        | F      |
                 (9 rows)
         
                 select *, first_value(ename) over () from emp;

@@ -304,7 +304,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || !input.equals(operator.input())) {
             result = new DBSPIndexedTopKOperator(operator.getRelNode(),
                     operator.numbering, function, limit, equalityComparator,
-                    outputProducer, input)
+                    outputProducer, operator.isMultiset, input)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);
