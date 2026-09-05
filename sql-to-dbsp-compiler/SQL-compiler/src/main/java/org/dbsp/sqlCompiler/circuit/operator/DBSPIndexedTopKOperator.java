@@ -9,24 +9,34 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.util.List;
 import java.util.Objects;
 
 /** Apply a topK operation to each of the groups in an indexed collection.
  * This always sorts the elements of each group.
  * To sort the entire collection just group by (). */
-public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator implements IContainsIntegrator, IIncremental {
+public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator
+    implements IContainsIntegrator, IIncremental {
     /** These values correspond to the SQL keywords
      * ROW, RANK, and DENSE RANK. */
     public enum Numbering {
@@ -69,15 +79,20 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator implements 
      * @param limit           Max number of records output in each group.
      * @param equalityComparator Another representation of the comparator; see above.
      * @param outputProducer  Optional function with signature (rank, tuple) which produces the output.
+     * @param isMultiset      True if the output may contain a value more than once within a group.
+     *                        A set requires {@link #emitsDistinctRows}.
      * @param source          Input operator.
      */
     public DBSPIndexedTopKOperator(CalciteRelNode node, Numbering numbering,
                                    DBSPExpression comparator, DBSPExpression limit,
                                    DBSPEqualityComparatorExpression equalityComparator,
-                                   DBSPClosureExpression outputProducer, OutputPort source) {
+                                   DBSPClosureExpression outputProducer, boolean isMultiset,
+                                   OutputPort source) {
         super(node, "topK", comparator,
                 outputType(source.getOutputIndexedZSetType(), outputProducer),
-                numbering.mayHaveDuplicates(), source);
+                isMultiset, source);
+        Utilities.enforce(isMultiset || emitsDistinctRows(numbering, limit, outputProducer),
+                () -> "TopK declared to produce a set, but its rows may repeat: " + outputProducer);
         Utilities.enforce(comparator.is(DBSPComparatorExpression.class) ||
                 comparator.is(DBSPPathExpression.class));
         this.limit = limit;
@@ -87,6 +102,50 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator implements 
         Utilities.enforce(this.limit.getType().is(DBSPTypeUSize.class));
         Utilities.enforce(this.outputType.is(DBSPTypeIndexedZSet.class),
                 () -> "Expected the input to be an IndexedZSet type" + source.outputType());
+    }
+
+    /** Create a TopK operator that is a set exactly when {@link #emitsDistinctRows}. */
+    public DBSPIndexedTopKOperator(CalciteRelNode node, Numbering numbering,
+                                   DBSPExpression comparator, DBSPExpression limit,
+                                   DBSPEqualityComparatorExpression equalityComparator,
+                                   DBSPClosureExpression outputProducer, OutputPort source) {
+        this(node, numbering, comparator, limit, equalityComparator, outputProducer,
+                !emitsDistinctRows(numbering, limit, outputProducer), source);
+    }
+
+    /** True if the output producer emits the rank parameter as one of its fields. */
+    public static boolean emitsRank(DBSPClosureExpression outputProducer) {
+        DBSPTupleExpression produced = outputProducer.body.as(DBSPTupleExpression.class);
+        if (produced == null || produced.fields == null)
+            return false;
+        String rank = outputProducer.parameters[0].name;
+        return Linq.any(List.of(produced.fields), field ->
+                field.is(DBSPVariablePath.class) && field.to(DBSPVariablePath.class).variable.equals(rank));
+    }
+
+    /** True if the limit is the constant 1.  ORDER BY ... LIMIT wraps the literal,
+     * whatever numeric type Calcite gave it, in a cast to USIZE; a limit computed
+     * from an OFFSET is no literal. */
+    static boolean isLimitOne(DBSPExpression limit) {
+        while (limit.is(DBSPCastExpression.class))
+            limit = limit.to(DBSPCastExpression.class).source;
+        if (limit.is(DBSPUSizeLiteral.class))
+            return BigInteger.ONE.equals(limit.to(DBSPUSizeLiteral.class).value);
+        if (limit.is(DBSPIntLiteral.class))
+            return BigInteger.ONE.equals(limit.to(DBSPIntLiteral.class).getValue());
+        if (limit.is(DBSPDecimalLiteral.class)) {
+            BigDecimal value = limit.to(DBSPDecimalLiteral.class).value;
+            return value != null && value.compareTo(BigDecimal.ONE) == 0;
+        }
+        return false;
+    }
+
+    /** True if the rows emitted within a group are distinct: ROW_NUMBER numbering
+     * with the rank emitted, or with at most one row per group.  RANK and DENSE_RANK
+     * repeat the rank for ties, and dropping the rank lets equal rows repeat. */
+    public static boolean emitsDistinctRows(Numbering numbering, DBSPExpression limit,
+                                            DBSPClosureExpression outputProducer) {
+        return !numbering.mayHaveDuplicates() && (emitsRank(outputProducer) || isLimitOne(limit));
     }
 
     @Override
@@ -120,7 +179,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator implements 
         if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPIndexedTopKOperator(this.getRelNode(), this.numbering,
                     Objects.requireNonNull(function).to(DBSPComparatorExpression.class),
-                    this.limit, this.equalityComparator, this.outputProducer,
+                    this.limit, this.equalityComparator, this.outputProducer, this.isMultiset,
                     newInputs.get(0)).copyAnnotations(this);
         }
         return this;
@@ -145,7 +204,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator implements 
                 fromJsonInner(node, "equalityComparator", decoder, DBSPEqualityComparatorExpression.class);
         return new DBSPIndexedTopKOperator(CalciteEmptyRel.INSTANCE, numbering,
                 info.getFunction(),
-                limit, equalityComparator, outputProducer, info.getInput(0))
+                limit, equalityComparator, outputProducer, info.isMultiset(), info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPIndexedTopKOperator.class);
     }
 }

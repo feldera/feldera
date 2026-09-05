@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
@@ -34,7 +35,11 @@ import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -326,6 +331,71 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         DBSPSimpleOperator result = new DBSPAggregateLinearPostprocessOperator(
                 operator.getRelNode(), operator.getOutputIndexedZSetType(), compressed,
                 operator.postProcess, adjust.outputPort());
+        this.map(operator, result);
+    }
+
+    /** Mark in 'rowFields' the fields of the sorted row that the comparator reads.
+     * @return false if the comparator is not a chain of field comparisons. */
+    static boolean setComparedFieldsToUsed(DBSPComparatorExpression comparator, FieldUseMap rowFields) {
+        while (!comparator.is(DBSPNoComparatorExpression.class)) {
+            DBSPFieldComparatorExpression byField = comparator.as(DBSPFieldComparatorExpression.class);
+            if (byField == null)
+                return false;
+            rowFields.setUsed(byField.fieldNo);
+            comparator = byField.source;
+        }
+        return true;
+    }
+
+    /** Rebuild a chain of field comparisons over the row type with the unused fields removed. */
+    static DBSPComparatorExpression remapComparedFields(
+            DBSPComparatorExpression comparator, FieldUseMap rowFields, DBSPType newRowType) {
+        if (comparator.is(DBSPNoComparatorExpression.class))
+            return new DBSPNoComparatorExpression(comparator.getNode(), newRowType);
+        DBSPFieldComparatorExpression byField = comparator.to(DBSPFieldComparatorExpression.class);
+        DBSPComparatorExpression source = remapComparedFields(byField.source, rowFields, newRowType);
+        int newFieldNo = rowFields.getNewIndex(byField.fieldNo);
+        return new DBSPFieldComparatorExpression(
+                byField.getNode(), source, newFieldNo, byField.ascending, byField.nullsFirst);
+    }
+
+    @Override
+    public void postorder(DBSPIndexedTopKOperator operator) {
+        // The TopK reads its input row both with 3 functions: the comparator, the equalityComparator,
+        // and the outputProducer
+        DBSPComparatorExpression comparator = operator.getFunction().as(DBSPComparatorExpression.class);
+        DBSPComparatorExpression equality = operator.equalityComparator.comparator;
+        if (comparator == null || this.done(operator)) {
+            super.postorder(operator);
+            return;
+        }
+
+        DBSPClosureExpression producer = operator.outputProducer
+                .ensureTree(this.compiler).to(DBSPClosureExpression.class);
+        Utilities.enforce(producer.parameters.length == 2);
+        ParameterFieldUse useMap = this.find.findUsedFields(producer);
+        // The rank (parameter 0) is a scalar; mark it used
+        useMap.get(producer.parameters[0]).setUsed();
+        FieldUseMap rowUse = useMap.get(producer.parameters[1]);
+        FieldUseMap rowFields = rowUse.deref();
+        if (!setComparedFieldsToUsed(comparator, rowFields) || // Marks used fields in rowUse
+            !setComparedFieldsToUsed(equality, rowFields) || // Marks used fields in rowUse
+            !rowUse.hasUnusedFields(1)) {
+            super.postorder(operator);
+            return;
+        }
+
+        RewriteFields rw = useMap.getFieldRewriter(this.compiler, 1);
+        DBSPClosureExpression newProducer = rw.rewriteClosure(producer);
+        DBSPMapIndexOperator adjust = this.projectValue(operator, rowUse);
+        DBSPType newRowType = adjust.getOutputIndexedZSetType().elementType;
+        DBSPComparatorExpression newComparator = remapComparedFields(comparator, rowFields, newRowType);
+        DBSPEqualityComparatorExpression newEquality = new DBSPEqualityComparatorExpression(
+                operator.equalityComparator.getNode(), remapComparedFields(equality, rowFields, newRowType));
+        DBSPSimpleOperator result = new DBSPIndexedTopKOperator(
+                operator.getRelNode(), operator.numbering, newComparator, operator.limit,
+                newEquality, newProducer, operator.isMultiset, adjust.outputPort())
+                .copyAnnotations(operator);
         this.map(operator, result);
     }
 
