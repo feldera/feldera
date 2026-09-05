@@ -10,7 +10,8 @@
 //! nesting.
 
 use anyhow::{Result as AnyResult, anyhow, bail};
-use arrow::array::{ArrayRef, RecordBatch};
+use arrow::array::{Array, ArrayRef, RecordBatch, StructArray};
+use arrow::compute::cast;
 use arrow::datatypes::{DataType as ArrowDataType, Schema as ArrowSchema};
 use arrow::row::{RowConverter, Rows, SortField};
 use feldera_types::program_schema::{ColumnType, Relation, SqlType};
@@ -102,6 +103,8 @@ pub struct KeyEncoder {
     /// projects through these, so a file's column order cannot change the encoding.
     column_indices: Vec<usize>,
     column_names: Vec<String>,
+    /// Arrow type the converter expects per column, for [`Self::encode_columns`] to check.
+    column_types: Vec<ArrowDataType>,
 }
 
 impl KeyEncoder {
@@ -114,6 +117,7 @@ impl KeyEncoder {
         let mut sort_fields = Vec::with_capacity(key_schema.fields.len());
         let mut column_indices = Vec::with_capacity(key_schema.fields.len());
         let mut column_names = Vec::with_capacity(key_schema.fields.len());
+        let mut column_types = Vec::with_capacity(key_schema.fields.len());
 
         for field in &key_schema.fields {
             let name = field.name.name();
@@ -134,6 +138,7 @@ impl KeyEncoder {
             sort_fields.push(SortField::new(arrow_field.data_type().clone()));
             column_indices.push(index);
             column_names.push(name);
+            column_types.push(arrow_field.data_type().clone());
         }
 
         let converter = RowConverter::new(sort_fields)
@@ -143,6 +148,7 @@ impl KeyEncoder {
             converter,
             column_indices,
             column_names,
+            column_types,
         })
     }
 
@@ -158,7 +164,14 @@ impl KeyEncoder {
 
     /// Encode the key columns of `batch`, found by name: a probe reads a projected batch
     /// whose column order follows the parquet file, not the table schema.
+    #[cfg(test)]
     pub fn encode_batch(&self, batch: &RecordBatch) -> AnyResult<Rows> {
+        self.encode_columns(&self.columns_of(batch)?)
+    }
+
+    /// The key columns of `batch`, in declaration order. Separate from [`Self::encode_batch`]
+    /// so a caller needing both the encoded key and the columns projects once.
+    pub fn columns_of(&self, batch: &RecordBatch) -> AnyResult<Vec<ArrayRef>> {
         let mut columns = Vec::with_capacity(self.column_names.len());
         for name in &self.column_names {
             let column = batch.column_by_name(name).ok_or_else(|| {
@@ -166,15 +179,95 @@ impl KeyEncoder {
             })?;
             columns.push(column.clone());
         }
-        self.encode_columns(&columns)
+        Ok(columns)
     }
 
     /// Encode key columns supplied directly, in declaration order.
     pub fn encode_columns(&self, columns: &[ArrayRef]) -> AnyResult<Rows> {
+        let columns = self.cast_to_declared_types(columns)?;
         self.converter
-            .convert_columns(columns)
+            .convert_columns(&columns)
             .map_err(|e| anyhow!("unable to encode key: {e}"))
     }
+
+    /// Cast each column to the type the converter expects.
+    ///
+    /// Feldera writes a BINARY column as arrow LargeBinary, while the Delta table declares
+    /// it as Binary. A Parquet file stores the arrow schema of whoever wrote it, so the
+    /// connector reads its own files back as LargeBinary. Casting to Binary leaves the bytes
+    /// alone, so both sides encode to the same key.
+    fn cast_to_declared_types(&self, columns: &[ArrayRef]) -> AnyResult<Vec<ArrayRef>> {
+        if columns.len() != self.column_types.len() {
+            return Err(anyhow!(
+                "the key has {} column(s) but {} were supplied to encode",
+                self.column_types.len(),
+                columns.len()
+            ));
+        }
+
+        let mut matched = Vec::with_capacity(columns.len());
+        for ((column, declared), name) in columns
+            .iter()
+            .zip(&self.column_types)
+            .zip(&self.column_names)
+        {
+            if column.data_type() == declared {
+                matched.push(column.clone());
+            } else if cast_preserves_values(column.data_type(), declared) {
+                matched.push(cast(column.as_ref(), declared).map_err(|e| {
+                    anyhow!("unable to cast key column '{name}' to {declared}: {e}")
+                })?);
+            } else {
+                // Fail rather than cast: arrow replaces a value that does not fit with null,
+                // and a null key would match the wrong row.
+                return Err(anyhow!(
+                    "key column '{name}' is {} in the data file but {declared} in the target \
+                     Delta table. The connector will not convert between these types, because \
+                     a value changed by the conversion would supersede the wrong row.",
+                    column.data_type()
+                ));
+            }
+        }
+        Ok(matched)
+    }
+}
+
+/// Whether casting `from` to `to` leaves every value unchanged.
+///
+/// Only LargeBinary to Binary qualifies. The bytes are the same and only the offset width
+/// shrinks, and a value too large for a 32-bit offset fails the cast instead of being
+/// truncated.
+fn cast_preserves_values(from: &ArrowDataType, to: &ArrowDataType) -> bool {
+    match (from, to) {
+        (ArrowDataType::LargeBinary, ArrowDataType::Binary) => true,
+        // A ROW key is a composite key, so check its leaves the same way.
+        (ArrowDataType::Struct(from), ArrowDataType::Struct(to)) => {
+            from.len() == to.len()
+                && from.iter().zip(to.iter()).all(|(from, to)| {
+                    from.name() == to.name()
+                        && (from.data_type() == to.data_type()
+                            || cast_preserves_values(from.data_type(), to.data_type()))
+                })
+        }
+        _ => false,
+    }
+}
+
+/// Whether any of these key values is null, at any depth.
+///
+/// Recurses into `ROW`: a struct that is itself non-null can still hold a null leaf.
+pub fn contains_null(columns: &[ArrayRef]) -> bool {
+    fn walk(array: &dyn Array) -> bool {
+        if array.null_count() > 0 {
+            return true;
+        }
+        match array.as_any().downcast_ref::<StructArray>() {
+            Some(structs) => structs.columns().iter().any(|c| walk(c.as_ref())),
+            None => false,
+        }
+    }
+
+    columns.iter().any(|c| walk(c.as_ref()))
 }
 
 /// Whether `arrow_row` can encode this type: nested structs and lists yes, maps no. Explicit
@@ -202,6 +295,28 @@ mod test {
     use feldera_types::program_schema::{Field, SqlIdentifier};
     use std::collections::BTreeMap;
     use std::sync::Arc;
+
+    /// A struct that is itself non-null can still hold a null leaf, which pruning must see.
+    #[test]
+    fn contains_null_sees_a_null_leaf_inside_a_row() {
+        let present: ArrayRef = Arc::new(Int64Array::from(vec![1i64, 2]));
+        assert!(!contains_null(std::slice::from_ref(&present)));
+
+        let absent: ArrayRef = Arc::new(Int64Array::from(vec![Some(1i64), None]));
+        assert!(contains_null(std::slice::from_ref(&absent)));
+
+        let row = |leaf: ArrayRef| -> ArrayRef {
+            Arc::new(StructArray::from(vec![(
+                Arc::new(ArrowField::new("leaf", DataType::Int64, true)),
+                leaf,
+            )]))
+        };
+        assert!(!contains_null(&[row(present)]));
+        assert!(
+            contains_null(&[row(absent)]),
+            "the struct is non-null but its leaf is not"
+        );
+    }
 
     fn relation(fields: Vec<Field>) -> Relation {
         Relation {
@@ -343,6 +458,75 @@ mod test {
         let rb = encoder.encode_batch(&b).unwrap();
         assert_eq!(ra.row(0), rb.row(0), "equal keys must encode identically");
         assert_ne!(ra.row(1), rb.row(1), "different keys must not collide");
+    }
+
+    /// A BINARY key is declared Binary but reads back from Parquet as LargeBinary. Both must
+    /// encode to the same bytes, or the lookup never finds the row to supersede.
+    #[test]
+    fn a_wider_column_encodes_the_same_as_the_declared_one() {
+        use arrow::array::{BinaryArray, LargeBinaryArray};
+
+        let rel = relation(vec![scalar("b", SqlType::Varbinary)]);
+        let schema = ArrowSchema::new(vec![ArrowField::new("b", DataType::Binary, false)]);
+        let encoder = KeyEncoder::new(&rel, &schema).unwrap();
+
+        let values: Vec<&[u8]> = vec![b"one", b"two"];
+        let declared: ArrayRef = Arc::new(BinaryArray::from(values.clone()));
+        let wider: ArrayRef = Arc::new(LargeBinaryArray::from(values));
+
+        let a = encoder.encode_columns(&[declared]).unwrap();
+        let b = encoder.encode_columns(&[wider]).unwrap();
+        assert_eq!(a.row(0), b.row(0), "the same value must encode identically");
+        assert_eq!(a.row(1), b.row(1));
+        assert_ne!(a.row(0), b.row(1), "different values must not collide");
+    }
+
+    /// The same, one level down, since a ROW key can hold a BINARY leaf.
+    #[test]
+    fn a_wider_leaf_inside_a_row_encodes_the_same() {
+        use arrow::array::{BinaryArray, LargeBinaryArray};
+        use arrow::datatypes::Fields;
+
+        let leaf = |t: DataType| Arc::new(ArrowField::new("b", t, false));
+        let declared_type = DataType::Struct(Fields::from(vec![leaf(DataType::Binary)]));
+        let rel = relation(vec![row_of("r", vec![scalar("b", SqlType::Varbinary)])]);
+        let schema = ArrowSchema::new(vec![ArrowField::new("r", declared_type, false)]);
+        let encoder = KeyEncoder::new(&rel, &schema).unwrap();
+
+        let values: Vec<&[u8]> = vec![b"one"];
+        let declared: ArrayRef = Arc::new(StructArray::from(vec![(
+            leaf(DataType::Binary),
+            Arc::new(BinaryArray::from(values.clone())) as ArrayRef,
+        )]));
+        let wider: ArrayRef = Arc::new(StructArray::from(vec![(
+            leaf(DataType::LargeBinary),
+            Arc::new(LargeBinaryArray::from(values)) as ArrayRef,
+        )]));
+
+        assert_eq!(
+            encoder.encode_columns(&[declared]).unwrap().row(0),
+            encoder.encode_columns(&[wider]).unwrap().row(0)
+        );
+    }
+
+    /// Any other type mismatch must fail rather than cast: arrow replaces an out-of-range
+    /// value with null, and a null key would match the wrong row.
+    #[test]
+    fn a_mismatch_that_could_change_a_value_is_refused() {
+        let rel = relation(vec![scalar("id", SqlType::Int)]);
+        let schema = ArrowSchema::new(vec![ArrowField::new("id", DataType::Int32, false)]);
+        let encoder = KeyEncoder::new(&rel, &schema).unwrap();
+
+        let too_wide: ArrayRef = Arc::new(Int64Array::from(vec![i64::from(i32::MAX) + 1]));
+        let err = encoder.encode_columns(&[too_wide]).unwrap_err().to_string();
+        assert!(
+            err.contains("will not convert between these types"),
+            "{err}"
+        );
+        assert!(
+            err.contains("'id'"),
+            "the error must name the column: {err}"
+        );
     }
 
     #[test]
