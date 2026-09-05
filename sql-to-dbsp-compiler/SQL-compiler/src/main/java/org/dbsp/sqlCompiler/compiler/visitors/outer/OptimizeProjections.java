@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
@@ -50,6 +51,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.Substitution;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FieldUseMap;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindUsedFields;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.ParameterFieldUse;
+import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.RewriteFields;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -210,6 +212,21 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
                 return;
             }
             boolean replaced = this.processAggregate(aggregate, operator);
+            if (!replaced)
+                super.postorder(operator);
+            return;
+        } else if (source.node().is(DBSPIndexedTopKOperator.class)) {
+            DBSPIndexedTopKOperator topK = source.node().to(DBSPIndexedTopKOperator.class);
+            Logger.INSTANCE.belowLevel(this, 2)
+                    .appendSupplier(() -> source.simpleNode().operation + " -> MapIndex")
+                    .newline();
+            Projection projection = new Projection(this.compiler(), true, true);
+            projection.apply(operator.getFunction());
+            if (!projection.isProjection) {
+                super.postorder(operator);
+                return;
+            }
+            boolean replaced = this.processTopK(topK, operator);
             if (!replaced)
                 super.postorder(operator);
             return;
@@ -496,6 +513,44 @@ public class OptimizeProjections extends CircuitCloneWithGraphsVisitor {
             }
         }
         return false;
+    }
+
+    /** Process a TopK followed by a MapIndex operator; return 'true' if the operators
+     * required changes, false if they are unchanged.  When the
+     * operators require change, they are inserted in the circuit and map is replaced. */
+    boolean processTopK(DBSPIndexedTopKOperator topK, DBSPMapIndexOperator map) {
+        DBSPClosureExpression topKClosure = topK.outputProducer
+                .ensureTree(this.compiler).to(DBSPClosureExpression.class);
+        DBSPTupleExpression produced = topKClosure.body.as(DBSPTupleExpression.class);
+        if (produced == null || produced.fields == null || produced.getType().mayBeNull)
+            return false;
+
+        FindUsedFields unused = new FindUsedFields(this.compiler);
+        DBSPClosureExpression function = map.getClosureFunction();
+        Utilities.enforce(function.parameters.length == 1);
+        ParameterFieldUse uses = unused.findUsedFields(function);
+        FieldUseMap useMap = uses.get(function.parameters[0]);
+        useMap.setUsed(0);
+        if (!useMap.hasUnusedFields(2))
+            return false;
+
+        List<Integer> keptOutputs = useMap.field(1).deref().getUsedFields();
+        List<DBSPExpression> kept = Linq.map(keptOutputs, i -> produced.fields[i].deepCopy());
+        DBSPClosureExpression newProducer = new DBSPTupleExpression(kept, false).closure(topKClosure.parameters);
+        // Dropping the rank column may let rows of a group repeat
+        boolean isMultiset = topK.isMultiset ||
+                !DBSPIndexedTopKOperator.emitsDistinctRows(topK.numbering, topK.limit, newProducer);
+        DBSPSimpleOperator newTopK = new DBSPIndexedTopKOperator(topK.getRelNode(), topK.numbering,
+                topK.getFunction(), topK.limit, topK.equalityComparator, newProducer, isMultiset, topK.input())
+                .copyAnnotations(topK).to(DBSPSimpleOperator.class);
+        this.addOperator(newTopK);
+
+        RewriteFields rewriter = uses.getFieldRewriter(this.compiler, 2);
+        DBSPClosureExpression post = rewriter.rewriteClosure(function);
+        DBSPSimpleOperator result = new DBSPMapIndexOperator(map.getRelNode(), post, newTopK.outputPort())
+                .copyAnnotations(map).to(DBSPSimpleOperator.class);
+        this.map(map, result);
+        return true;
     }
 
     @Override
