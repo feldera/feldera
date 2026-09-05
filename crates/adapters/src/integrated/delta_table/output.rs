@@ -2,6 +2,9 @@ use crate::catalog::{CursorWithPolarity, SerBatchReader, SplitCursorBuilder};
 use crate::controller::{ControllerInner, EndpointId};
 use crate::format::MAX_DUPLICATES;
 use crate::format::parquet::{ArrowSchemaOptions, relation_to_arrow_fields};
+use crate::integrated::delta_table::merge::flush::MergeWriter;
+use crate::integrated::delta_table::merge::metrics::MergeMetrics;
+use crate::integrated::delta_table::merge::startup;
 use crate::integrated::delta_table::register_storage_handlers;
 use crate::transport::Step;
 use crate::util::{IndexedOperationType, indexed_operation_type};
@@ -44,7 +47,7 @@ use std::num::NonZeroU64;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use tokio::time::{Duration, sleep};
-use tracing::{Instrument, info, info_span, warn};
+use tracing::{Instrument, debug, info, info_span, warn};
 
 /// Arrow serde config for writing Delta tables.
 pub fn delta_output_serde_config(variant_encoding: DeltaVariantEncoding) -> SqlSerdeConfig {
@@ -200,6 +203,14 @@ pub struct DeltaTableWriter {
     threads: usize,
     pending_actions: Vec<Add>,
     num_rows: usize,
+    /// Present in merge mode, which applies and commits a batch in `encode` rather than
+    /// writing files there and committing in `batch_end`.
+    merge: Option<MergeWriter>,
+    merge_metrics: Option<Arc<MergeMetrics>>,
+    /// Uniqueness violations handed to the controller, for the test that pins how often a
+    /// retried batch reports them. Tests build the endpoint with no controller to report to.
+    #[cfg(test)]
+    merge_violations: u64,
 }
 
 /// Limit on the number of records buffered in memory in the encoder.
@@ -245,14 +256,17 @@ impl DeltaTableWriter {
 
         register_storage_handlers();
 
-        // Create arrow schema
+        // Merge mode keeps the table in sync with the view, so it holds exactly the view's
+        // columns; cdc mode appends a change log, tagging each row with the operation.
         let parquet_variant = config.variant_encoding == DeltaVariantEncoding::Variant;
         let mut arrow_fields = relation_to_arrow_fields(
             &value_schema.fields,
             ArrowSchemaOptions::new(true).with_parquet_variant(parquet_variant),
         );
-        arrow_fields.push(ArrowField::new("__feldera_op", ArrowDataType::Utf8, true));
-        arrow_fields.push(ArrowField::new("__feldera_ts", ArrowDataType::Int64, true));
+        if !config.is_merge() {
+            arrow_fields.push(ArrowField::new("__feldera_op", ArrowDataType::Utf8, true));
+            arrow_fields.push(ArrowField::new("__feldera_ts", ArrowDataType::Int64, true));
+        }
 
         // Create serde arrow schema.
         let serde_arrow_schema =
@@ -338,6 +352,28 @@ impl DeltaTableWriter {
 
         let object_store = task.delta_table.object_store();
 
+        let merge = if config.is_merge() {
+            Some(
+                build_merge_writer(&inner, &task.delta_table, threads).map_err(|e| {
+                    ControllerError::invalid_transport_configuration(
+                        endpoint_name,
+                        &format!("{e:#}"),
+                    )
+                })?,
+            )
+        } else {
+            None
+        };
+
+        // Registered here rather than in the endpoint constructor: `add_output` has already
+        // run, so the metrics slot exists, and registering before it does drops them.
+        let merge_metrics = merge.is_some().then(MergeMetrics::new);
+        if let (Some(metrics), Some(controller)) = (&merge_metrics, inner.controller.upgrade()) {
+            controller
+                .status
+                .set_output_custom_metrics(inner.endpoint_id, metrics.clone());
+        }
+
         Ok(Self {
             inner,
             object_store,
@@ -345,8 +381,34 @@ impl DeltaTableWriter {
             threads,
             pending_actions: Vec::new(),
             num_rows: 0,
+            merge,
+            merge_metrics,
+            #[cfg(test)]
+            merge_violations: 0,
         })
     }
+}
+
+/// Check the target table and build the merge-mode writer.
+fn build_merge_writer(
+    inner: &DeltaTableWriterInner,
+    table: &DeltaTable,
+    threads: usize,
+) -> AnyResult<MergeWriter> {
+    let setup = startup::prepare(table, &inner.key_schema, &inner.struct_fields, threads)?;
+
+    MergeWriter::new(
+        setup,
+        inner
+            .key_schema
+            .as_ref()
+            .expect("startup::prepare rejects a missing key schema"),
+        inner.serde_arrow_schema.clone(),
+        inner.arrow_schema.clone(),
+        inner.config.lookup_chunk_bytes,
+        inner.config.max_concurrent_probes,
+        inner.value_schema.name.clone(),
+    )
 }
 
 struct WriterTask {
@@ -508,6 +570,14 @@ impl WriterTask {
                             .config
                             .enable_expired_log_cleanup
                             .map(|b| b.to_string()),
+                    )
+                    // A table merge mode creates must allow deletion vectors. delta-rs
+                    // applies creation properties only when it really creates the table, so
+                    // an existing one without the property fails the startup check instead,
+                    // which names the ALTER TABLE to run.
+                    .with_configuration_property(
+                        deltalake::TableProperty::EnableDeletionVectors,
+                        inner.config.is_merge().then_some("true"),
                     );
 
                 match tokio::time::timeout(operation_timeout, create_future).await {
@@ -1007,7 +1077,8 @@ impl OutputConsumer for DeltaTableWriter {
     }
 
     fn batch_end(&mut self) {
-        if self.pending_actions.is_empty() {
+        // Merge mode applied and committed the batch in `encode`, and reported it there.
+        if self.merge.is_some() || self.pending_actions.is_empty() {
             return;
         }
 
@@ -1070,12 +1141,166 @@ impl<'a> Meta<'a> {
     }
 }
 
+impl DeltaTableWriter {
+    /// Apply and commit one batch in merge mode, retrying transient failures.
+    ///
+    /// The whole flush happens here rather than committing in `batch_end` as cdc mode does,
+    /// because a retry re-runs the row lookup and that needs the batch, which lives only for
+    /// the duration of this call.
+    fn encode_merge(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
+        // Destructured so the merge writer and the table can be borrowed at once.
+        let Self {
+            inner,
+            object_store,
+            task,
+            merge,
+            merge_metrics,
+            #[cfg(test)]
+            merge_violations,
+            ..
+        } = self;
+        let merge = merge.as_ref().expect("caller checked for merge mode");
+        let metrics_sink = merge_metrics
+            .as_ref()
+            .expect("merge mode registers its metrics");
+
+        let span = info_span!(
+            "delta_output_merge",
+            endpoint = &*inner.endpoint_name,
+            table = &*inner.config.uri,
+        );
+        let format =
+            RecordFormat::Parquet(delta_output_serde_config(inner.config.variant_encoding));
+
+        let mut retry_count: u32 = 0;
+        let mut backoff = Duration::from_secs(1);
+        let max_backoff = Duration::from_secs(10);
+
+        loop {
+            let mut cursor = batch.cursor(format.clone())?;
+            // First attempt only: a retry walks the same batch and would report the same
+            // keys again, once per attempt, for as long as the commit keeps conflicting.
+            let first_attempt = retry_count == 0;
+            let mut report_violation = |e: anyhow::Error| {
+                if !first_attempt {
+                    return;
+                }
+                #[cfg(test)]
+                {
+                    *merge_violations += 1;
+                }
+                if let Some(controller) = inner.controller.upgrade() {
+                    controller.output_transport_error(
+                        inner.endpoint_id,
+                        &inner.endpoint_name,
+                        false,
+                        e,
+                        Some("delta_uniqueness_violation"),
+                    );
+                }
+            };
+
+            // Panic safety: block_on() panics if called from a tokio async context.
+            // encode() is called from the dedicated output thread (output_thread_func).
+            let result = TOKIO.block_on(
+                merge
+                    .flush(
+                        &mut task.delta_table,
+                        object_store.clone(),
+                        &mut *cursor,
+                        &mut report_violation,
+                    )
+                    .instrument(span.clone()),
+            );
+
+            match result {
+                Ok(metrics) => {
+                    metrics_sink.record(&metrics);
+                    metrics_sink.record_tombstone_ratio(
+                        metrics.table_live_rows,
+                        metrics.table_superseded_rows,
+                        &inner.endpoint_name,
+                        &inner.config.uri,
+                    );
+                    inner.records_written.store(0, Ordering::Relaxed);
+                    if let Some(controller) = inner.controller.upgrade() {
+                        controller.update_output_connector_health(
+                            inner.endpoint_id,
+                            ConnectorHealth::healthy(),
+                        );
+                        controller.status.output_buffer(
+                            inner.endpoint_id,
+                            metrics.bytes_written as usize,
+                            metrics.rows_appended as usize,
+                        );
+                    }
+                    debug!(
+                        "delta_table {}: merged batch ({} rows appended, {} rows tombstoned in \
+                         {} file(s), {} keys probed in {} pass(es), {} not found)",
+                        inner.endpoint_name,
+                        metrics.rows_appended,
+                        metrics.dv.rows_tombstoned,
+                        metrics.dv.files_touched + metrics.dv.files_dropped,
+                        metrics.keys_probed,
+                        metrics.lookup_passes,
+                        metrics.probe.keys_not_found,
+                    );
+                    return Ok(());
+                }
+                Err(e)
+                    if inner.config.max_retries.is_none()
+                        || retry_count < inner.config.max_retries.unwrap() =>
+                {
+                    retry_count += 1;
+                    let message = format!(
+                        "merging a batch into the Delta table failed (attempt {retry_count}, \
+                         retrying in {backoff:?}): {e:?}"
+                    );
+                    if let Some(controller) = inner.controller.upgrade() {
+                        controller.update_output_connector_health(
+                            inner.endpoint_id,
+                            ConnectorHealth::unhealthy(&message),
+                        );
+                    }
+                    warn!("delta_table {}: {message}", inner.endpoint_name);
+                    TOKIO.block_on(async {
+                        // Constructed inside the runtime, which `sleep` requires.
+                        sleep(backoff).await;
+
+                        // The retry must run against the table as it now stands: a conflict
+                        // means maintenance replaced the files this attempt addressed, so
+                        // redoing the lookup against the old snapshot would conflict for ever.
+                        if let Err(e) = task.delta_table.update_incremental(None).await {
+                            warn!(
+                                "delta_table {}: unable to reload the table before retrying: {e}",
+                                inner.endpoint_name
+                            );
+                        }
+                    });
+                    backoff = min(backoff * 2, max_backoff);
+                }
+                Err(e) => {
+                    inner.records_written.store(0, Ordering::Relaxed);
+                    return Err(anyhow!(
+                        "merging a batch into the Delta table failed after {retry_count} \
+                         retries: {e:#}"
+                    ));
+                }
+            }
+        }
+    }
+}
+
 impl Encoder for DeltaTableWriter {
     fn consumer(&mut self) -> &mut dyn OutputConsumer {
         self
     }
 
     fn encode(&mut self, batch: Arc<dyn SerBatchReader>) -> AnyResult<()> {
+        if self.merge.is_some() {
+            return self.encode_merge(batch);
+        }
+
         let threads = self.threads;
         let mut bounds = batch.keys_factory().default_box();
         batch.partition_keys(threads, &mut *bounds);
@@ -1225,7 +1450,9 @@ mod parallel {
     };
     use feldera_types::deserialize_table_record;
     use feldera_types::program_schema::{ColumnType, Relation, SqlIdentifier};
-    use feldera_types::transport::delta_table::{DeltaTableWriteMode, DeltaTableWriterConfig};
+    use feldera_types::transport::delta_table::{
+        DeltaTableUpdateMode, DeltaTableWriteMode, DeltaTableWriterConfig, DeltaVariantEncoding,
+    };
     use tempfile::TempDir;
 
     use crate::catalog::SerBatch;
@@ -1234,7 +1461,15 @@ mod parallel {
     use crate::format::parquet::test::load_parquet_file;
     use crate::integrated::delta_table::delta_input_serde_config;
     use crate::static_compile::seroutput::SerBatchImpl;
-    use crate::test::data::{DeltaTestKey, DeltaTestStruct, TestStruct};
+    use dbsp::DBData;
+    use dbsp::dynamic::{DynData, Erase};
+    use feldera_types::serde_with_context::{SerializeWithContext, SqlSerdeConfig};
+
+    use crate::test::data::{
+        DeltaTestKey, DeltaTestKeyBinary, DeltaTestKeyDecimal, DeltaTestKeyDouble, DeltaTestKeyInt,
+        DeltaTestKeyString, DeltaTestKeyStruct, DeltaTestKeyTimestamp, DeltaTestKeyUuid,
+        DeltaTestStruct, TestStruct,
+    };
     use crate::test::list_files_recursive;
     use feldera_adapterlib::transport::OutputBatchType;
 
@@ -1384,6 +1619,775 @@ mod parallel {
         )
         .expect("failed to create endpoint")
     }
+
+    // ── merge mode ──
+
+    fn make_merge_endpoint(table_uri: &str, mode: DeltaTableWriteMode) -> DeltaTableWriter {
+        make_merge_endpoint_ex(table_uri, mode, 1 << 20, 0, key_relation())
+    }
+
+    fn make_merge_endpoint_ex(
+        table_uri: &str,
+        mode: DeltaTableWriteMode,
+        lookup_chunk_bytes: usize,
+        max_retries: u32,
+        key_schema: Relation,
+    ) -> DeltaTableWriter {
+        DeltaTableWriter::new(
+            EndpointId::default(),
+            "test_merge_endpoint",
+            &DeltaTableWriterConfig {
+                uri: table_uri.to_string(),
+                mode,
+                variant_encoding: DeltaVariantEncoding::default(),
+                update_mode: DeltaTableUpdateMode::Merge,
+                max_retries: Some(max_retries),
+                threads: Some(1),
+                object_store_config: Default::default(),
+                checkpoint_interval: None,
+                log_retention_duration: None,
+                lookup_chunk_bytes,
+                max_concurrent_probes: 4,
+                enable_expired_log_cleanup: None,
+            },
+            &Some(key_schema),
+            &value_relation(),
+            Weak::new(),
+            false,
+            true,
+        )
+        .expect("failed to create merge endpoint")
+    }
+
+    /// Rows the table currently holds, as any reader would see them.
+    ///
+    /// Through DataFusion, so deletion vectors are applied. Reading the parquet files directly
+    /// as the cdc tests do would show every superseded row still present.
+    fn read_merge_output(table_uri: &str) -> Vec<DeltaTestStruct> {
+        use crate::integrated::delta_table::delta_input_serde_config;
+        use dbsp::circuit::tokio::TOKIO;
+        use deltalake::datafusion::prelude::SessionContext;
+        use deltalake::open_table;
+        use feldera_types::serde_with_context::DeserializeWithContext;
+
+        let url = url::Url::from_file_path(table_uri).unwrap();
+        TOKIO.block_on(async move {
+            let table = open_table(url).await.unwrap();
+            let ctx = SessionContext::new();
+            let provider = table.table_provider().await.unwrap();
+            let batches = ctx.read_table(provider).unwrap().collect().await.unwrap();
+
+            let mut rows = Vec::new();
+            for batch in batches.iter() {
+                let de = serde_arrow::Deserializer::from_record_batch(batch).unwrap();
+                let mut batch_rows = Vec::<DeltaTestStruct>::deserialize_with_context(
+                    de,
+                    &delta_input_serde_config(),
+                )
+                .unwrap();
+                rows.append(&mut batch_rows);
+            }
+            rows.sort();
+            rows
+        })
+    }
+
+    /// Assert the table holds exactly the model's rows.
+    fn assert_matches_model(table_uri: &str, model: &BTreeMap<i64, DeltaTestStruct>, step: &str) {
+        let actual = read_merge_output(table_uri);
+        let mut expected: Vec<_> = model.values().cloned().collect();
+        expected.sort();
+
+        assert_eq!(
+            actual.len(),
+            expected.len(),
+            "after {step}: table has {} row(s), the view has {}",
+            actual.len(),
+            expected.len()
+        );
+        assert_eq!(
+            actual, expected,
+            "after {step}: table diverged from the view"
+        );
+    }
+
+    /// Merge mode must leave the table equal to the view after every commit.
+    ///
+    /// Walks every transition a key can make -- absent to present, updated, deleted, deleted
+    /// again, reinserted -- then mixes them in one batch, where a per-key branch that works in
+    /// isolation tends to break.
+    #[test]
+    fn merge_tracks_the_view() {
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let mut endpoint = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
+        let mut model: BTreeMap<i64, DeltaTestStruct> = BTreeMap::new();
+
+        let records = make_records(12);
+        let updated: Vec<DeltaTestStruct> = (100..112).map(make_record).collect();
+
+        // An empty batch must not change the table.
+        encode_batch(&mut endpoint, &build_insert_batch(&[]));
+        assert_matches_model(uri, &model, "an empty batch");
+
+        // Inserts.
+        encode_batch(&mut endpoint, &build_insert_batch(&records[0..6]));
+        for r in &records[0..6] {
+            model.insert(r.bigint, r.clone());
+        }
+        assert_matches_model(uri, &model, "six inserts");
+
+        // Updates: the old row is superseded, not duplicated. `updated[i]` carries the same
+        // key as `records[i]` only if the key is the record index, so rebuild it here.
+        let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = (0..3)
+            .map(|i| {
+                let mut new = updated[i].clone();
+                new.bigint = records[i].bigint;
+                (records[i].clone(), new)
+            })
+            .collect();
+        encode_batch(&mut endpoint, &build_upsert_batch(&updates));
+        for (_, new) in &updates {
+            model.insert(new.bigint, new.clone());
+        }
+        assert_matches_model(uri, &model, "three updates");
+
+        // Deletes.
+        encode_batch(&mut endpoint, &build_delete_batch(&records[4..6]));
+        for r in &records[4..6] {
+            model.remove(&r.bigint);
+        }
+        assert_matches_model(uri, &model, "two deletes");
+
+        // Deleting a key the table does not hold is a no-op, not an error.
+        encode_batch(&mut endpoint, &build_delete_batch(&records[8..10]));
+        assert_matches_model(uri, &model, "deleting absent keys");
+
+        // Reinserting a deleted key must leave one live row, not two.
+        encode_batch(&mut endpoint, &build_insert_batch(&records[4..5]));
+        model.insert(records[4].bigint, records[4].clone());
+        assert_matches_model(uri, &model, "reinserting a deleted key");
+
+        // One batch mixing all three operations.
+        let mut mixed = Vec::new();
+        let mut new_third = updated[3].clone();
+        new_third.bigint = records[3].bigint;
+        mixed.push((records[3].clone(), new_third.clone()));
+        encode_batch(&mut endpoint, &build_upsert_batch(&mixed));
+        model.insert(new_third.bigint, new_third);
+        encode_batch(&mut endpoint, &build_insert_batch(&records[6..8]));
+        for r in &records[6..8] {
+            model.insert(r.bigint, r.clone());
+        }
+        assert_matches_model(uri, &model, "a mixed batch");
+
+        // Everything deleted: no live rows, and the table should hold no data files either.
+        let live: Vec<DeltaTestStruct> = model.values().cloned().collect();
+        encode_batch(&mut endpoint, &build_delete_batch(&live));
+        model.clear();
+        assert_matches_model(uri, &model, "deleting every row");
+    }
+
+    /// A connector that opens a table it did not fill must still supersede what is in it.
+    ///
+    /// The insert shortcut is only sound when the table started empty. Here a second connector
+    /// opens a populated table and is fed an *insert* for a key already in it; the old row
+    /// must be tombstoned anyway. This is also what a pipeline restart looks like.
+    #[test]
+    fn merge_supersedes_a_row_left_by_an_earlier_run() {
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let records = make_records(4);
+
+        {
+            let mut first = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
+            encode_batch(&mut first, &build_insert_batch(&records));
+        }
+
+        // A second connector on the same table sees data it did not write.
+        let mut second = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
+        let mut replacement = make_record(500);
+        replacement.bigint = records[1].bigint;
+        encode_batch(&mut second, &build_insert_batch(&[replacement.clone()]));
+
+        let mut model: BTreeMap<i64, DeltaTestStruct> =
+            records.iter().map(|r| (r.bigint, r.clone())).collect();
+        model.insert(replacement.bigint, replacement);
+        assert_matches_model(uri, &model, "an insert onto a row from an earlier run");
+    }
+
+    /// A key set larger than `lookup_chunk_bytes` is split into several lookup passes, and
+    /// the result must not depend on how many.
+    ///
+    /// The budget below is small enough that a few keys cross it, so the flush runs the
+    /// multi-pass path that a default-sized budget never reaches.
+    #[test]
+    fn merge_is_unaffected_by_chunking() {
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let records = make_records(40);
+
+        let mut endpoint =
+            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1, 0, key_relation());
+        encode_batch(&mut endpoint, &build_insert_batch(&records));
+
+        // Update half the rows in one batch, so the removal side spans many chunks.
+        let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = (0..20)
+            .map(|i| {
+                let mut new = make_record(1000 + i);
+                new.bigint = records[i].bigint;
+                (records[i].clone(), new)
+            })
+            .collect();
+        encode_batch(&mut endpoint, &build_upsert_batch(&updates));
+
+        let mut model: BTreeMap<i64, DeltaTestStruct> =
+            records.iter().map(|r| (r.bigint, r.clone())).collect();
+        for (_, new) in &updates {
+            model.insert(new.bigint, new.clone());
+        }
+        assert_matches_model(uri, &model, "20 updates across many lookup chunks");
+    }
+
+    /// Deletion vector objects at the table root.
+    fn vector_files(table_uri: &str) -> Vec<String> {
+        std::fs::read_dir(table_uri)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with("deletion_vector_"))
+            .collect()
+    }
+
+    /// Value of one of the connector's exported metrics.
+    fn merge_metric(endpoint: &DeltaTableWriter, name: &str) -> f64 {
+        use feldera_adapterlib::metrics::ConnectorMetrics;
+
+        endpoint
+            .merge_metrics
+            .as_ref()
+            .expect("not a merge-mode endpoint")
+            .metrics()
+            .into_iter()
+            .find(|(n, ..)| *n == name)
+            .unwrap_or_else(|| panic!("no metric named {name}"))
+            .3
+    }
+
+    /// An insert-only flush onto a table that started empty must not read the table at all.
+    /// That shortcut is what makes a bootstrap affordable.
+    #[test]
+    fn merge_skips_the_lookup_for_inserts_into_an_empty_table() {
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let mut endpoint = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
+
+        encode_batch(&mut endpoint, &build_insert_batch(&make_records(50)));
+
+        assert_eq!(
+            merge_metric(&endpoint, "delta_merge_rows_appended_total"),
+            50.0
+        );
+        assert_eq!(
+            merge_metric(&endpoint, "delta_merge_keys_probed_total"),
+            0.0,
+            "an insert-only flush onto an empty table looked rows up anyway"
+        );
+        assert_eq!(
+            merge_metric(&endpoint, "delta_merge_probe_files_scanned_total"),
+            0.0
+        );
+    }
+
+    /// The lookup must skip files whose key range cannot hold any changed key, or the cost of
+    /// a flush grows with the table rather than with the change.
+    ///
+    /// Five flushes leave five files with disjoint key ranges; a sixth updating two keys from
+    /// one of them must open that file and skip the other four.
+    #[test]
+    fn merge_prunes_files_outside_the_changed_key_range() {
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let mut endpoint = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
+
+        // Disjoint key ranges, one file each. `make_record(i)` keys on `i`.
+        for range in 0..5 {
+            let batch: Vec<DeltaTestStruct> =
+                (range * 100..range * 100 + 20).map(make_record).collect();
+            encode_batch(&mut endpoint, &build_insert_batch(&batch));
+        }
+        let scanned_before = merge_metric(&endpoint, "delta_merge_probe_files_scanned_total");
+
+        // Update two keys that live in the third file only.
+        let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = [205i64, 206]
+            .iter()
+            .map(|key| {
+                let old = make_record(*key as usize);
+                let mut new = make_record(9000 + *key as usize);
+                new.bigint = *key;
+                (old, new)
+            })
+            .collect();
+        encode_batch(&mut endpoint, &build_upsert_batch(&updates));
+
+        let scanned =
+            merge_metric(&endpoint, "delta_merge_probe_files_scanned_total") - scanned_before;
+        let pruned = merge_metric(&endpoint, "delta_merge_probe_files_pruned_total");
+        assert_eq!(scanned, 1.0, "opened {scanned} files, expected 1");
+        assert_eq!(pruned, 4.0, "pruned {pruned} files, expected 4");
+
+        // And the answer is still right, which is what makes the skipping meaningful.
+        let mut model: BTreeMap<i64, DeltaTestStruct> = BTreeMap::new();
+        for range in 0..5 {
+            for i in range * 100..range * 100 + 20 {
+                let record = make_record(i);
+                model.insert(record.bigint, record);
+            }
+        }
+        for (_, new) in &updates {
+            model.insert(new.bigint, new.clone());
+        }
+        assert_matches_model(uri, &model, "an update confined to one file");
+    }
+
+    /// A flush must converge after a compaction replaced the files it was addressing.
+    ///
+    /// The one concurrency claim merge mode makes to administrators: OPTIMIZE is safe to run
+    /// against a table a pipeline is writing. The commit conflicts and the flush redoes the
+    /// lookup against the new files. Without the reload it would conflict for ever, so this
+    /// fails rather than merely running slow.
+    #[test]
+    fn merge_converges_after_a_concurrent_compaction() {
+        use dbsp::circuit::tokio::TOKIO;
+        use deltalake::open_table;
+
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let mut endpoint =
+            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 2, key_relation());
+
+        let records = make_records(8);
+        encode_batch(&mut endpoint, &build_insert_batch(&records[0..4]));
+        encode_batch(&mut endpoint, &build_insert_batch(&records[4..8]));
+
+        // Compact behind the endpoint's back. Its in-memory snapshot still names the two
+        // files this replaces, which is exactly the state the retry has to recover from.
+        let url = url::Url::from_file_path(uri).unwrap();
+        let compacted = TOKIO.block_on(async move {
+            let table = open_table(url).await.unwrap();
+            table
+                .optimize()
+                .with_target_size(std::num::NonZeroU64::new(64 << 20).unwrap())
+                .await
+                .unwrap()
+                .1
+        });
+        assert!(
+            compacted.num_files_removed >= 2,
+            "the fixture did not compact anything: {compacted:?}"
+        );
+
+        let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = (0..2)
+            .map(|i| {
+                let mut new = make_record(500 + i);
+                new.bigint = records[i].bigint;
+                (records[i].clone(), new)
+            })
+            .collect();
+        encode_batch(&mut endpoint, &build_upsert_batch(&updates));
+
+        let mut model: BTreeMap<i64, DeltaTestStruct> =
+            records.iter().map(|r| (r.bigint, r.clone())).collect();
+        for (_, new) in &updates {
+            model.insert(new.bigint, new.clone());
+        }
+        assert_matches_model(uri, &model, "an update after a concurrent compaction");
+    }
+
+    /// A duplicate key must be reported once per batch, not once per attempt.
+    ///
+    /// The retry walks the same batch, so a conflicting commit would otherwise repeat every
+    /// violation on every attempt -- without a `max_retries` limit, for ever.
+    #[test]
+    fn a_uniqueness_violation_is_reported_once_across_retries() {
+        use dbsp::circuit::tokio::TOKIO;
+        use deltalake::open_table;
+
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        // One retry allowed, so a conflict produces exactly two attempts.
+        let mut endpoint =
+            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 1, key_relation());
+
+        let records = make_records(8);
+        encode_batch(&mut endpoint, &build_insert_batch(&records[0..4]));
+        encode_batch(&mut endpoint, &build_insert_batch(&records[4..8]));
+
+        // Compact behind the endpoint's back so its next commit conflicts and retries.
+        let url = url::Url::from_file_path(uri).unwrap();
+        TOKIO.block_on(async move {
+            let table = open_table(url).await.unwrap();
+            table
+                .optimize()
+                .with_target_size(std::num::NonZeroU64::new(64 << 20).unwrap())
+                .await
+                .unwrap();
+        });
+
+        // One real update (to force the conflicting commit) plus one key inserted twice.
+        let mut new = make_record(500);
+        new.bigint = records[0].bigint;
+        let mut tuples = vec![
+            Tup2(
+                Tup2(
+                    DeltaTestKey {
+                        bigint: records[0].bigint,
+                    },
+                    records[0].clone(),
+                ),
+                -1i64,
+            ),
+            Tup2(Tup2(DeltaTestKey { bigint: new.bigint }, new.clone()), 1i64),
+        ];
+        tuples.push(Tup2(
+            Tup2(
+                DeltaTestKey {
+                    bigint: records[5].bigint,
+                },
+                records[5].clone(),
+            ),
+            2i64,
+        ));
+        let zset = OrdIndexedZSet::from_tuples((), tuples);
+        let batch: Arc<dyn SerBatch> =
+            Arc::new(SerBatchImpl::<_, DeltaTestKey, DeltaTestStruct>::new(zset));
+
+        encode_batch(&mut endpoint, &batch);
+        assert_eq!(
+            endpoint.merge_violations, 1,
+            "the retry reported the same duplicate key again"
+        );
+    }
+
+    /// A failed commit must leave its deletion vector object alone.
+    ///
+    /// An error can also mean the commit landed and only its response was lost, in which case
+    /// the object is one the live version references and deleting it breaks every reader.
+    /// Forced here with a conflict, the one commit failure a test can produce on demand.
+    #[test]
+    fn a_failed_commit_keeps_its_deletion_vector_file() {
+        use dbsp::circuit::tokio::TOKIO;
+        use deltalake::open_table;
+
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        // No retries, so the conflicting attempt is the last one.
+        let mut endpoint =
+            make_merge_endpoint_ex(uri, DeltaTableWriteMode::Append, 1 << 20, 0, key_relation());
+
+        let records = make_records(8);
+        encode_batch(&mut endpoint, &build_insert_batch(&records[0..4]));
+        encode_batch(&mut endpoint, &build_insert_batch(&records[4..8]));
+
+        // Compact behind the endpoint's back so its next commit conflicts.
+        let url = url::Url::from_file_path(uri).unwrap();
+        TOKIO.block_on(async move {
+            let table = open_table(url).await.unwrap();
+            table
+                .optimize()
+                .with_target_size(std::num::NonZeroU64::new(64 << 20).unwrap())
+                .await
+                .unwrap();
+        });
+
+        let mut new = make_record(500);
+        new.bigint = records[0].bigint;
+        let batch = build_upsert_batch(&[(records[0].clone(), new)]);
+        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
+        assert!(
+            endpoint.encode(batch.arc_as_batch_reader()).is_err(),
+            "the fixture did not produce a conflicting commit"
+        );
+
+        assert_eq!(
+            vector_files(uri).len(),
+            1,
+            "the failed commit deleted its deletion vector file"
+        );
+    }
+
+    /// OPTIMIZE must drop the rows the connector's vectors mark deleted, not resurrect them.
+    ///
+    /// We tell administrators to run OPTIMIZE, and a compaction that rewrote a file while
+    /// ignoring its vector would bring every superseded row back. Nothing in the connector
+    /// could detect that afterwards.
+    #[test]
+    fn compaction_drops_the_rows_a_vector_marks_deleted() {
+        use dbsp::circuit::tokio::TOKIO;
+        use deltalake::open_table;
+
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let mut endpoint = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
+
+        // Five rows in one file, then supersede two of them. Superseding a strict subset is
+        // what leaves a vector behind: superseding all five would drop the file whole.
+        let records = make_records(5);
+        encode_batch(&mut endpoint, &build_insert_batch(&records));
+
+        let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = (0..2)
+            .map(|i| {
+                let mut new = make_record(900 + i);
+                new.bigint = records[i].bigint;
+                (records[i].clone(), new)
+            })
+            .collect();
+        encode_batch(&mut endpoint, &build_upsert_batch(&updates));
+
+        let mut model: BTreeMap<i64, DeltaTestStruct> =
+            records.iter().map(|r| (r.bigint, r.clone())).collect();
+        for (_, new) in &updates {
+            model.insert(new.bigint, new.clone());
+        }
+        assert_matches_model(uri, &model, "before compaction");
+
+        // Without this the test would pass on a table that has no vector to respect.
+        assert_eq!(
+            vector_files(uri).len(),
+            1,
+            "the fixture wrote no deletion vector"
+        );
+
+        let url = url::Url::from_file_path(uri).unwrap();
+        let compacted = TOKIO.block_on(async move {
+            let table = open_table(url).await.unwrap();
+            table
+                .optimize()
+                .with_target_size(std::num::NonZeroU64::new(64 << 20).unwrap())
+                .await
+                .unwrap()
+                .1
+        });
+        assert!(
+            compacted.num_files_removed >= 2,
+            "the fixture did not compact anything: {compacted:?}"
+        );
+
+        assert_matches_model(uri, &model, "after compaction");
+    }
+
+    /// No data file is ever rewritten, which is the point of the design. A file may leave the
+    /// table once every row in it is tombstoned, but no file's contents move to a new path.
+    #[test]
+    fn merge_never_rewrites_a_data_file() {
+        use dbsp::circuit::tokio::TOKIO;
+        use deltalake::open_table;
+
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let mut endpoint = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
+        let records = make_records(8);
+
+        let paths = |uri: &str| -> Vec<String> {
+            let url = url::Url::from_file_path(uri).unwrap();
+            TOKIO.block_on(async move {
+                let table = open_table(url).await.unwrap();
+                let mut paths: Vec<String> = table
+                    .snapshot()
+                    .unwrap()
+                    .log_data()
+                    .into_iter()
+                    .map(|f| f.path().to_string())
+                    .collect();
+                paths.sort();
+                paths
+            })
+        };
+
+        encode_batch(&mut endpoint, &build_insert_batch(&records[0..4]));
+        let after_insert = paths(uri);
+        assert_eq!(after_insert.len(), 1);
+
+        // Update every row in that file. Its path must survive, carrying a vector.
+        let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = (0..3)
+            .map(|i| {
+                let mut new = make_record(200 + i);
+                new.bigint = records[i].bigint;
+                (records[i].clone(), new)
+            })
+            .collect();
+        encode_batch(&mut endpoint, &build_upsert_batch(&updates));
+
+        let after_update = paths(uri);
+        assert!(
+            after_update.contains(&after_insert[0]),
+            "the original data file was rewritten: {after_insert:?} -> {after_update:?}"
+        );
+    }
+
+    // ── merge mode: key types ──
+
+    /// A key relation naming one column of the test schema.
+    ///
+    /// The column type comes from the view, so the test cannot drift from what the view
+    /// actually declares.
+    fn key_relation_on(column: &str) -> Relation {
+        let field = value_relation()
+            .fields
+            .into_iter()
+            .find(|f| f.name.name() == column)
+            .unwrap_or_else(|| panic!("no column '{column}' in the test schema"));
+        Relation {
+            name: SqlIdentifier::new("test_idx", false),
+            fields: vec![field],
+            materialized: false,
+            properties: BTreeMap::new(),
+            primary_key: None,
+        }
+    }
+
+    /// One batch of `(key, row, weight)` triples, for any key type.
+    fn keyed_batch<K>(tuples: Vec<Tup2<Tup2<K, DeltaTestStruct>, i64>>) -> Arc<dyn SerBatch>
+    where
+        K: DBData + Erase<DynData> + SerializeWithContext<SqlSerdeConfig> + Send + Sync,
+    {
+        let zset = OrdIndexedZSet::from_tuples((), tuples);
+        Arc::new(SerBatchImpl::<_, K, DeltaTestStruct>::new(zset))
+    }
+
+    /// Assert the table holds exactly `expected`, as a reader applying deletion vectors sees it.
+    fn assert_table_rows(table_uri: &str, expected: &[DeltaTestStruct], step: &str) {
+        let actual = read_merge_output(table_uri);
+        let mut expected = expected.to_vec();
+        expected.sort();
+        assert_eq!(
+            actual.len(),
+            expected.len(),
+            "after {step}: table has {} row(s), the view has {}",
+            actual.len(),
+            expected.len()
+        );
+        assert_eq!(
+            actual, expected,
+            "after {step}: table diverged from the view"
+        );
+    }
+
+    /// Drive one key type through insert, update and delete, and check that the table still
+    /// equals the view.
+    ///
+    /// `key_of` reads the key out of a row. `carry_key` copies the key column from the old
+    /// row to the new one, which is what makes an update an update instead of a second
+    /// insert.
+    fn merge_key_type_case<K>(
+        column: &str,
+        key_of: impl Fn(&DeltaTestStruct) -> K,
+        carry_key: impl Fn(&mut DeltaTestStruct, &DeltaTestStruct),
+    ) where
+        K: DBData + Erase<DynData> + SerializeWithContext<SqlSerdeConfig> + Send + Sync,
+    {
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let mut endpoint = make_merge_endpoint_ex(
+            uri,
+            DeltaTableWriteMode::Append,
+            1 << 20,
+            0,
+            key_relation_on(column),
+        );
+
+        // Small indices keep every column of `make_record` distinct, so whichever column
+        // the test keys on is unique across the batch.
+        let records = make_records(12);
+        encode_batch(
+            &mut endpoint,
+            &keyed_batch(
+                records
+                    .iter()
+                    .map(|r| Tup2(Tup2(key_of(r), r.clone()), 1i64))
+                    .collect(),
+            ),
+        );
+        assert_table_rows(uri, &records, &format!("12 inserts keyed on '{column}'"));
+
+        // Update the first four: same key, every other column different. A connector that
+        // did not find the old rows would leave 16 rows here instead of 12.
+        let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = (0..4)
+            .map(|i| {
+                let mut new = make_record(500 + i);
+                carry_key(&mut new, &records[i]);
+                (records[i].clone(), new)
+            })
+            .collect();
+        let mut tuples = Vec::new();
+        for (old, new) in &updates {
+            tuples.push(Tup2(Tup2(key_of(old), old.clone()), -1i64));
+            tuples.push(Tup2(Tup2(key_of(new), new.clone()), 1i64));
+        }
+        encode_batch(&mut endpoint, &keyed_batch(tuples));
+
+        let mut expected: Vec<DeltaTestStruct> =
+            updates.iter().map(|(_, new)| new.clone()).collect();
+        expected.extend_from_slice(&records[4..]);
+        assert_table_rows(uri, &expected, &format!("4 updates keyed on '{column}'"));
+
+        // Delete two rows the table really holds.
+        encode_batch(
+            &mut endpoint,
+            &keyed_batch(
+                records[10..12]
+                    .iter()
+                    .map(|r| Tup2(Tup2(key_of(r), r.clone()), -1i64))
+                    .collect(),
+            ),
+        );
+        expected.retain(|r| r.bigint != records[10].bigint && r.bigint != records[11].bigint);
+        assert_table_rows(uri, &expected, &format!("2 deletes keyed on '{column}'"));
+    }
+
+    /// One test per key type, so a failure names the type that broke.
+    ///
+    /// These types cover the distinct risks in the key path: integer encoding, variable
+    /// length, offset width, timestamp units, decimal precision and scale, pruning turned
+    /// off by a float, and a composite ROW key.
+    macro_rules! merge_key_type_test {
+        ($test:ident, $column:literal, $key:ident, $field:ident) => {
+            #[test]
+            fn $test() {
+                merge_key_type_case(
+                    $column,
+                    |r: &DeltaTestStruct| $key {
+                        $field: r.$field.clone(),
+                    },
+                    |new: &mut DeltaTestStruct, old: &DeltaTestStruct| {
+                        new.$field = old.$field.clone()
+                    },
+                );
+            }
+        };
+    }
+
+    merge_key_type_test!(merge_keyed_on_int, "int", DeltaTestKeyInt, int);
+    merge_key_type_test!(merge_keyed_on_string, "string", DeltaTestKeyString, string);
+    merge_key_type_test!(merge_keyed_on_binary, "binary", DeltaTestKeyBinary, binary);
+    merge_key_type_test!(
+        merge_keyed_on_timestamp,
+        "timestamp_ntz",
+        DeltaTestKeyTimestamp,
+        timestamp_ntz
+    );
+    merge_key_type_test!(
+        merge_keyed_on_decimal,
+        "decimal_10_3",
+        DeltaTestKeyDecimal,
+        decimal_10_3
+    );
+    merge_key_type_test!(merge_keyed_on_uuid, "uuid", DeltaTestKeyUuid, uuid);
+    merge_key_type_test!(merge_keyed_on_row, "struct1", DeltaTestKeyStruct, struct1);
+
+    // A DOUBLE key turns range pruning off, because NaN is left out of min/max statistics.
+    // Reading every file is slower but must give the same answer, which is what this checks.
+    merge_key_type_test!(merge_keyed_on_double, "double", DeltaTestKeyDouble, double);
 
     fn build_insert_batch(records: &[DeltaTestStruct]) -> Arc<dyn SerBatch> {
         let tuples: Vec<_> = records

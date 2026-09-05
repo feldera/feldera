@@ -295,6 +295,7 @@ rmpv = "1.3.0"
 # Pin `roaring` exactly because the crate only supports the current stable
 # Rust and may start requiring newer compiler features in patch releases.
 roaring = "=0.11.4"
+z85 = "3.0.6"
 rstest = "0.15"
 # Make sure this is the same rustls version used by the `tonic` crate.
 # See the `ensure_default_crypto_provider` function.
