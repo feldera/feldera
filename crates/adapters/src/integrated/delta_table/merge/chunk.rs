@@ -24,6 +24,8 @@ pub struct LookupChunk {
     order: Vec<u32>,
     sorted: bool,
     budget_bytes: usize,
+    /// Set when a key in this chunk is null in some column. See [`Self::note_null_key`].
+    has_null_key: bool,
 }
 
 impl LookupChunk {
@@ -34,6 +36,7 @@ impl LookupChunk {
             order: Vec::new(),
             sorted: false,
             budget_bytes,
+            has_null_key: false,
         }
     }
 
@@ -53,6 +56,17 @@ impl LookupChunk {
             self.push(rows.row(i))?;
         }
         Ok(())
+    }
+
+    /// Record that a key in this chunk is null in some column.
+    ///
+    /// Min/max statistics leave nulls out, so once this is set nothing prunes.
+    pub fn note_null_key(&mut self) {
+        self.has_null_key = true;
+    }
+
+    pub fn has_null_key(&self) -> bool {
+        self.has_null_key
     }
 
     pub fn len(&self) -> usize {
@@ -81,6 +95,7 @@ impl LookupChunk {
         self.offsets.push(0);
         self.order.clear();
         self.sorted = false;
+        self.has_null_key = false;
     }
 
     fn key_at(&self, index: usize) -> &[u8] {
@@ -114,12 +129,14 @@ impl LookupChunk {
     }
 
     /// The smallest key, or `None` when empty. Requires [`Self::sort`].
+    #[cfg(test)]
     pub fn min(&self) -> Option<&[u8]> {
         debug_assert!(self.sorted, "sort() before querying the chunk");
         self.order.first().map(|i| self.key_at(*i as usize))
     }
 
     /// The largest key, or `None` when empty. Requires [`Self::sort`].
+    #[cfg(test)]
     pub fn max(&self) -> Option<&[u8]> {
         debug_assert!(self.sorted, "sort() before querying the chunk");
         self.order.last().map(|i| self.key_at(*i as usize))
@@ -135,9 +152,18 @@ impl LookupChunk {
     }
 
     /// Whether `key` is present. Requires [`Self::sort`].
+    #[cfg(test)]
     pub fn contains(&self, key: &[u8]) -> bool {
+        self.position(key).is_some()
+    }
+
+    /// Index of `key` in sorted order, or `None` when absent. Requires [`Self::sort`].
+    ///
+    /// The lookup counts distinct indices found, which is what tells "this key is not in the
+    /// table" from "this key is in two files".
+    pub fn position(&self, key: &[u8]) -> Option<usize> {
         let i = self.lower_bound(key);
-        i < self.order.len() && self.key_at(self.order[i] as usize) == key
+        (i < self.order.len() && self.key_at(self.order[i] as usize) == key).then_some(i)
     }
 
     /// Whether any key falls within `[min, max]` inclusive. Requires [`Self::sort`].
@@ -244,7 +270,7 @@ mod test {
             pushed += 1;
             assert!(pushed <= rows.num_rows(), "budget never reached");
         }
-        assert!(chunk.len() > 0);
+        assert!(!chunk.is_empty());
 
         chunk.clear();
         assert!(chunk.is_empty());
