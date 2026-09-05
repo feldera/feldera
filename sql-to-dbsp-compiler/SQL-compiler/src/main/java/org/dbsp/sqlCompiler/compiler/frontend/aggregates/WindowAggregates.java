@@ -5,12 +5,15 @@ import org.apache.calcite.rel.core.Window;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.KeyFields;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.IntermediateRel;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -19,6 +22,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
@@ -43,7 +47,8 @@ public abstract class WindowAggregates implements ICastable {
     public final int windowFieldIndex;
     final DBSPTypeTuple windowResultType;
     final DBSPTypeTuple inputRowType;
-    public final List<Integer> partitionKeys;
+    /** The row fields that form the partition key, in key order. */
+    final KeyFields partition;
     final DBSPVariablePath inputRowRefVar;
     final ExpressionCompiler eComp;
 
@@ -67,7 +72,8 @@ public abstract class WindowAggregates implements ICastable {
                 window.getRowType(), false).to(DBSPTypeTuple.class);
         this.inputRowType = this.compiler.convertType(node.getPositionRange(),
                 window.getInput().getRowType(), false).to(DBSPTypeTuple.class);
-        this.partitionKeys = this.group.keys.toList();
+        this.partition = new KeyFields();
+        this.partition.addAll(this.group.keys.toList());
         this.inputRowRefVar = this.inputRowType.ref().var();
         this.eComp = new ExpressionCompiler(window, this.inputRowRefVar, window.constants, this.compiler.compiler());
     }
@@ -76,11 +82,16 @@ public abstract class WindowAggregates implements ICastable {
         return CalciteObject.create(this.window);
     }
 
+    /** Indexes of the row fields that form the partition key, in key order. */
+    public List<Integer> partitionKeyIndexes() {
+        return this.partition.keyFieldIndexes();
+    }
+
     OutputPort indexInput(DBSPSimpleOperator lastOperator, @Nullable List<Integer> previousPartitionKeys) {
-        if (!lastOperator.is(DBSPDeindexOperator.class) || !this.partitionKeys.equals(previousPartitionKeys)) {
+        if (!lastOperator.is(DBSPDeindexOperator.class) || !this.partition.keyFieldIndexes().equals(previousPartitionKeys)) {
             DBSPType inputRowType = lastOperator.getOutputZSetElementType();
             DBSPVariablePath firstInputVar = inputRowType.ref().var();
-            List<DBSPExpression> expressions = Linq.map(this.partitionKeys,
+            List<DBSPExpression> expressions = Linq.map(this.partition.keyFieldIndexes(),
                     f -> firstInputVar.deref().field(f).applyCloneIfNeeded());
             DBSPTupleExpression partition = new DBSPTupleExpression(this.node, expressions);
             DBSPExpression row = DBSPTupleExpression.flatten(firstInputVar.deref());
@@ -97,6 +108,24 @@ public abstract class WindowAggregates implements ICastable {
         }
     }
 
+    /** Put the fields of each row back in row order.  The input is an indexed collection whose key
+     * holds the partition fields and whose value holds the remaining fields, in row order, followed
+     * by any extra fields.  The result is a Map operator that emits the row followed by the extra fields.
+     * The map is not inserted in the circuit.
+     *
+     * <p>The key is the one {@link #indexInput} builds from the partition fields.
+     *
+     * @param node     Calcite node that the resulting operator implements.
+     * @param indexed  Indexed collection to rebuild the rows from. */
+    DBSPSimpleOperator reassembleFields(CalciteRelNode node, OutputPort indexed) {
+        DBSPTypeIndexedZSet indexedType = indexed.getOutputIndexedZSetType();
+        DBSPVariablePath keyValue = indexedType.getKVRefType().var();
+        List<DBSPExpression> fields = new ArrayList<>();
+        this.partition.unshuffleKeyAndDataFields(keyValue.field(0), keyValue.field(1), fields);
+        DBSPClosureExpression rebuild = new DBSPTupleExpression(fields, false).closure(keyValue);
+        return new DBSPMapOperator(node, rebuild, indexed);
+    }
+
     public abstract DBSPSimpleOperator implement(
             DBSPSimpleOperator input, DBSPSimpleOperator lastOperator,
             @Nullable List<Integer> previousPartitionKeys, boolean isLast);
@@ -106,7 +135,7 @@ public abstract class WindowAggregates implements ICastable {
     }
 
     public DBSPTupleExpression partitionKeys() {
-        List<DBSPExpression> expressions = Linq.map(this.partitionKeys,
+        List<DBSPExpression> expressions = Linq.map(this.partition.keyFieldIndexes(),
                 f -> this.inputRowRefVar.deref().field(f).applyCloneIfNeeded());
         return new DBSPTupleExpression(node, expressions);
     }
