@@ -229,6 +229,7 @@ The connector exports these alongside the standard connector metrics.
 | `output_connector_delta_merge_files_appended_total`, `output_connector_delta_merge_files_dropped_total` | Small-file growth, and the files reclaimed because every row in them was superseded |
 | `output_connector_delta_merge_lookup_passes_total` | Above one per flush only when a key set exceeded `lookup_chunk_bytes` |
 | `output_connector_delta_merge_bytes_written_total` | Bytes written: new data files plus deletion vectors |
+| `output_connector_delta_merge_compactions_total`, `output_connector_delta_merge_compaction_failures_total` | Maintenance runs, and how many failed. Only when `optimize_interval_secs` is set |
 
 ### Compaction is required
 

@@ -15,9 +15,11 @@
 //! | [`tombstone`] | Turning located row ordinals into deletion vectors and log actions |
 //! | [`startup`] | What the target table must satisfy before the first row moves |
 //! | [`flush`] | The walk that drives all of the above and commits the result |
+//! | [`compact`] | Optional connector-driven OPTIMIZE, for tables nothing else maintains |
 //! | [`metrics`] | What the connector reports, and when it says the table needs compacting |
 
 pub(crate) mod chunk;
+pub(crate) mod compact;
 pub(crate) mod flush;
 pub(crate) mod key;
 pub(crate) mod metrics;

@@ -105,7 +105,8 @@ impl MergeMetrics {
             "delta_table {endpoint}: {:.0}% of the rows in '{uri}' are superseded versions \
              ({superseded} superseded, {live} live). Merge mode supersedes a row without \
              rewriting the file that holds it, so reads stay proportional to the total until \
-             a compaction reclaims them. Run OPTIMIZE on the table, on a schedule.",
+             a compaction reclaims them. Run OPTIMIZE on the table, on a schedule, or set \
+             the connector's 'optimize_interval_secs' if Feldera is its only writer.",
             ratio * 100.0
         );
     }

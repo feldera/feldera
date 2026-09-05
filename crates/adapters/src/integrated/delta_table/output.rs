@@ -2,6 +2,7 @@ use crate::catalog::{CursorWithPolarity, SerBatchReader, SplitCursorBuilder};
 use crate::controller::{ControllerInner, EndpointId};
 use crate::format::MAX_DUPLICATES;
 use crate::format::parquet::{ArrowSchemaOptions, relation_to_arrow_fields};
+use crate::integrated::delta_table::merge::compact::Compactor;
 use crate::integrated::delta_table::merge::flush::MergeWriter;
 use crate::integrated::delta_table::merge::metrics::MergeMetrics;
 use crate::integrated::delta_table::merge::startup;
@@ -207,6 +208,8 @@ pub struct DeltaTableWriter {
     /// writing files there and committing in `batch_end`.
     merge: Option<MergeWriter>,
     merge_metrics: Option<Arc<MergeMetrics>>,
+    /// Present when `optimize_interval_secs` asks the connector to compact the table itself.
+    compactor: Option<Compactor>,
     /// Uniqueness violations handed to the controller, for the test that pins how often a
     /// retried batch reports them. Tests build the endpoint with no controller to report to.
     #[cfg(test)]
@@ -368,6 +371,10 @@ impl DeltaTableWriter {
         // Registered here rather than in the endpoint constructor: `add_output` has already
         // run, so the metrics slot exists, and registering before it does drops them.
         let merge_metrics = merge.is_some().then(MergeMetrics::new);
+        let compactor = merge
+            .is_some()
+            .then(|| Compactor::new(config, endpoint_name))
+            .flatten();
         if let (Some(metrics), Some(controller)) = (&merge_metrics, inner.controller.upgrade()) {
             controller
                 .status
@@ -383,6 +390,7 @@ impl DeltaTableWriter {
             num_rows: 0,
             merge,
             merge_metrics,
+            compactor,
             #[cfg(test)]
             merge_violations: 0,
         })
@@ -1155,6 +1163,7 @@ impl DeltaTableWriter {
             task,
             merge,
             merge_metrics,
+            compactor,
             #[cfg(test)]
             merge_violations,
             ..
@@ -1235,6 +1244,12 @@ impl DeltaTableWriter {
                             metrics.rows_appended as usize,
                         );
                     }
+                    // After the commit, never before: a compaction starting mid-flush would
+                    // replace the files that flush is addressing, forcing a needless retry.
+                    if let Some(compactor) = compactor {
+                        compactor.maybe_start();
+                    }
+
                     debug!(
                         "delta_table {}: merged batch ({} rows appended, {} rows tombstoned in \
                          {} file(s), {} keys probed in {} pass(es), {} not found)",
@@ -1604,6 +1619,8 @@ mod parallel {
                 mode,
                 max_retries: Some(0),
                 threads: Some(threads),
+                optimize_interval_secs: None,
+
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
                 log_retention_duration: None,
@@ -1644,6 +1661,8 @@ mod parallel {
                 update_mode: DeltaTableUpdateMode::Merge,
                 max_retries: Some(max_retries),
                 threads: Some(1),
+                optimize_interval_secs: None,
+
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
                 log_retention_duration: None,
@@ -2828,6 +2847,8 @@ mod parallel {
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(0),
                 threads: Some(4),
+                optimize_interval_secs: None,
+
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
                 log_retention_duration: None,
@@ -2974,6 +2995,8 @@ mod parallel {
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(1),
                 threads: Some(1),
+                optimize_interval_secs: None,
+
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
                 log_retention_duration: None,
@@ -3041,6 +3064,8 @@ mod parallel {
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(0),
                 threads: Some(1),
+                optimize_interval_secs: None,
+
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
                 log_retention_duration: Some("interval 7 days".to_string()),
@@ -3081,6 +3106,8 @@ mod parallel {
             mode: DeltaTableWriteMode::Truncate,
             max_retries: Some(0),
             threads: Some(0),
+            optimize_interval_secs: None,
+
             object_store_config: Default::default(),
             checkpoint_interval: None,
             log_retention_duration: None,
@@ -3245,6 +3272,8 @@ mod parallel {
                 mode: DeltaTableWriteMode::Truncate,
                 max_retries: Some(1),
                 threads: Some(1),
+                optimize_interval_secs: None,
+
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
                 log_retention_duration: None,
