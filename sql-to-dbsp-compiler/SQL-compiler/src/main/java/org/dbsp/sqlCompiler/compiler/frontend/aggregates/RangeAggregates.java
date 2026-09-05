@@ -377,12 +377,13 @@ public class RangeAggregates extends WindowAggregates {
 
         // Join the previous result with the aggregate
         DBSPSimpleOperator indexInput;
+        List<Integer> partitionKeyIndexes = this.partition.keyFieldIndexes();
         DBSPType lastPartAndOrderType;
         DBSPType lastCopiedFieldsType;
         {
             // Index the lastOperator
             DBSPVariablePath previousRowRefVar = lastTupleType.ref().var();
-            List<DBSPExpression> expressions = Linq.map(partitionKeys,
+            List<DBSPExpression> expressions = Linq.map(partitionKeyIndexes,
                     f -> previousRowRefVar.deref().field(f).applyCloneIfNeeded());
 
             DBSPExpression orderField = previousRowRefVar.deref().field(orderColumnIndex);
@@ -392,7 +393,7 @@ public class RangeAggregates extends WindowAggregates {
             // Copy all the fields from the previousRowRefVar except the partition fields.
             List<DBSPExpression> fields = new ArrayList<>();
             for (int i = 0; i < lastTupleType.size(); i++) {
-                if (partitionKeys.contains(i))
+                if (partitionKeyIndexes.contains(i))
                     continue;
                 if (orderColumnIndex == i)
                     continue;
@@ -418,8 +419,8 @@ public class RangeAggregates extends WindowAggregates {
                     lastTupleType.size() + aggResultType.size()];
             int indexField = 0;
             for (int i = 0; i < lastTupleType.size(); i++) {
-                if (partitionKeys.contains(i)) {
-                    int keyIndex = partitionKeys.indexOf(i);
+                if (partitionKeyIndexes.contains(i)) {
+                    int keyIndex = partitionKeyIndexes.indexOf(i);
                     // If the field is in the index, use it from the index
                     allFields[i] = key
                             .deref()
@@ -430,7 +431,7 @@ public class RangeAggregates extends WindowAggregates {
                     // If the field is the order key, use it from the index too; it's the last one
                     allFields[i] = key
                             .deref()
-                            .field(this.partitionKeys.size())
+                            .field(partitionKeyIndexes.size())
                             .applyCloneIfNeeded();
                     indexField++;
                 } else {

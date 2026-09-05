@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.keys;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
@@ -226,22 +225,18 @@ public class KeyAnalysisTests extends SqlIoTest {
                 QUALIFY row_number() OVER (PARTITION BY a + b ORDER BY c) = 1;""");
     }
 
-    /** The TOP-1 output is indexed by the seven partition columns and repeats them in its
-     * value tuple.  Each value of the key is named by both its columns. */
+    /** Each of the seven key columns is selected twice, so each value of the key is named
+     * by two columns.  Enumerating the namings would produce 2^7 keys, more than
+     * {@code Keys.MAX_KEYS}, so the equivalence sets must stay within one key. */
     @Test
     public void wideKeyOfDuplicatedColumnsStaysOneKey() {
-        String view = """
+        this.assertKeys("""
                 CREATE TABLE w(c1 INT NOT NULL, c2 INT NOT NULL, c3 INT NOT NULL, c4 INT NOT NULL,
-                               c5 INT NOT NULL, c6 INT NOT NULL, c7 INT NOT NULL, x INT);
-                CREATE VIEW v AS SELECT c1, c2, c3, c4, c5, c6, c7, x FROM w
-                QUALIFY row_number() OVER (PARTITION BY c1, c2, c3, c4, c5, c6, c7 ORDER BY x) = 1;""";
-        // The TOP-1 partition columns are its index, and its value tuple repeats them, so
-        // each of the seven values of the key is named by an index and a value column
-        // This is an approximation of the true key, which has 2^7 members
-        Analyzed analyzed = this.analyze(view);
-        Assert.assertEquals("[[i0=v0, i1=v1, i2=v2, i3=v3, i4=v4, i5=v5, i6=v6]]",
-                analyzed.keysOf(DBSPIndexedTopKOperator.class));
-        Assert.assertEquals("[[0, 1, 2, 3, 4, 5, 6]]", analyzed.viewKeys());
+                               c5 INT NOT NULL, c6 INT NOT NULL, c7 INT NOT NULL, x INT,
+                               PRIMARY KEY (c1, c2, c3, c4, c5, c6, c7));
+                CREATE VIEW v AS SELECT c1, c1 AS d1, c2, c2 AS d2, c3, c3 AS d3, c4, c4 AS d4,
+                                        c5, c5 AS d5, c6, c6 AS d6, c7, c7 AS d7 FROM w;""",
+                "[[0=1, 2=3, 4=5, 6=7, 8=9, 10=11, 12=13]]");
     }
 
     /** Two independent keys: the primary key of the table, and the partition column of a

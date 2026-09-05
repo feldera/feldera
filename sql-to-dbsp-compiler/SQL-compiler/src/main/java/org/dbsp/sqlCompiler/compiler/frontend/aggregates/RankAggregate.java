@@ -28,6 +28,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -148,12 +149,14 @@ public class RankAggregate extends WindowAggregates {
         DBSPComparatorExpression comparator = CalciteToDBSPCompiler.generateComparator(
                 node, this.group.orderKeys.getFieldCollations(), inputRowType, false);
 
-        // The rank must be added at the end of the input collection (that's how Calcite expects it).
+        // The partition fields already live in the key, so the value holds only the other row fields.
+        // The rank must be added at the end of the row (that's how Calcite expects it).
         DBSPVariablePath left = DBSPTypeInteger.getType(node, INT64, false).var();
         DBSPVariablePath right = inputRowType.ref().var();
-        List<DBSPExpression> flattened = DBSPTypeTupleBase.flatten(right.deref());
-        flattened.add(left);
-        DBSPTupleExpression tuple = new DBSPTupleExpression(flattened, false);
+        DBSPTupleExpression nonPartitionFields = this.partition.nonKeyFields(right.deref());
+        List<DBSPExpression> valueFields = Linq.list(nonPartitionFields.fields);
+        valueFields.add(left);
+        DBSPTupleExpression tuple = new DBSPTupleExpression(valueFields, false);
         DBSPClosureExpression outputProducer = tuple.closure(left, right);
 
         // TopK operator.
@@ -167,8 +170,7 @@ public class RankAggregate extends WindowAggregates {
         this.compiler.addOperator(topK);
         DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, topK.outputPort());
         this.compiler.addOperator(integral);
-        // We must drop the index we built.
-        return new DBSPDeindexOperator(node.maybeFinal(isLast), node, integral.outputPort());
+        return this.reassembleFields(node.maybeFinal(isLast), integral.outputPort());
     }
 
     @Override
