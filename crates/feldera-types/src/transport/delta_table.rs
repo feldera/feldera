@@ -52,6 +52,64 @@ pub enum DeltaVariantEncoding {
     JsonString,
 }
 
+/// How the Delta table connector applies pipeline updates to the target table.
+///
+/// This is orthogonal to `mode`, which governs what happens to an existing table
+/// when the connector starts.
+#[derive(Default, Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+pub enum DeltaTableUpdateMode {
+    /// Append a change log.
+    ///
+    /// Every insert and delete becomes a row carrying `__feldera_op` and `__feldera_ts`
+    /// metadata columns. The table is an append-only record of changes, which a
+    /// downstream job folds into a state table.
+    #[default]
+    #[serde(rename = "cdc")]
+    Cdc,
+
+    /// Keep the table in sync with the current contents of the view.
+    ///
+    /// New row versions are appended and superseded rows are tombstoned with Delta
+    /// deletion vectors, so no data file is ever rewritten. The table holds exactly the
+    /// view's columns, with no metadata columns.
+    ///
+    /// Requires the view to have a unique key (the connector's `index` property) and the
+    /// target table to have `delta.enableDeletionVectors` set to `true`.
+    #[serde(rename = "merge")]
+    Merge,
+}
+
+impl Display for DeltaTableUpdateMode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            DeltaTableUpdateMode::Cdc => write!(f, "cdc"),
+            DeltaTableUpdateMode::Merge => write!(f, "merge"),
+        }
+    }
+}
+
+/// Ceiling on `lookup_chunk_bytes`.
+///
+/// The chunk addresses its buffer with 32-bit offsets, so a buffer that reached 4 GiB would
+/// wrap one and mix up where a key ends: the lookup would then compare the wrong bytes and
+/// supersede the wrong rows. Half the addressable range leaves room for the keys a chunk
+/// accumulates between two budget checks, and the chunk fails the flush if a large key
+/// exhausts that room.
+pub const MAX_LOOKUP_CHUNK_BYTES: usize = (u32::MAX / 2) as usize;
+
+/// Default ceiling on the encoded lookup keys held in memory at once, in bytes.
+///
+/// At roughly 21 bytes per encoded 8-byte key this holds about 12M keys, more than a
+/// steady-state flush produces, so the common case is a single lookup pass.
+const fn default_lookup_chunk_bytes() -> usize {
+    256 * 1024 * 1024
+}
+
+/// Default number of data files read concurrently while locating rows to supersede.
+const fn default_max_concurrent_probes() -> usize {
+    4
+}
+
 /// Delta table output connector configuration.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct DeltaTableWriterConfig {
@@ -67,6 +125,33 @@ pub struct DeltaTableWriterConfig {
     /// Determines how the Delta table connector handles an existing table at the target location.
     #[serde(default)]
     pub mode: DeltaTableWriteMode,
+
+    /// Determines how the connector applies updates to the target table.
+    ///
+    /// See [`DeltaTableUpdateMode`]. When omitted, defaults to
+    /// [`DeltaTableUpdateMode::Cdc`], the historical behavior.
+    #[serde(default)]
+    pub update_mode: DeltaTableUpdateMode,
+
+    /// Ceiling, in bytes, on the encoded keys the connector holds while locating the rows
+    /// to supersede.
+    ///
+    /// Only used when `update_mode` is `merge`. A flush whose key set exceeds this budget
+    /// is split into successive lookup passes, which bounds memory at the cost of
+    /// re-scanning candidate files. Default: 256 MiB.
+    #[serde(default = "default_lookup_chunk_bytes")]
+    // The bounds `validate` enforces. `maximum` is `MAX_LOOKUP_CHUNK_BYTES`, which the
+    // schema attribute cannot name; `schema_bounds_match_validation` keeps the two in step.
+    #[schema(minimum = 1, maximum = 2147483647)]
+    pub lookup_chunk_bytes: usize,
+
+    /// Number of data files read concurrently while locating the rows to supersede.
+    ///
+    /// Only used when `update_mode` is `merge`. Each concurrent read holds one decoded
+    /// batch, so this bounds memory as well as request concurrency. Default: 4.
+    #[serde(default = "default_max_concurrent_probes")]
+    #[schema(minimum = 1)]
+    pub max_concurrent_probes: usize,
 
     /// Checkpoint interval (i.e., the number of commits after which a new checkpoint should be created) for newly created Delta tables.
     ///
@@ -136,6 +221,26 @@ pub struct DeltaTableWriterConfig {
     #[schema(minimum = 1)]
     pub threads: Option<usize>,
 
+    /// Compact the target table from the connector, at most once every this many seconds.
+    ///
+    /// Only used when `update_mode` is `merge`. Merge mode supersedes a row without rewriting
+    /// the file that holds it, so without compaction the table grows without bound and read
+    /// cost follows the number of updates rather than the number of live rows.
+    ///
+    /// Compacting is normally the table administrator's job, and an existing `OPTIMIZE`
+    /// schedule already does the right thing, which is why this is off by default. Set it for
+    /// tables where Feldera is the only writer.
+    ///
+    /// Each compaction starts after a flush and runs in the background: it does not hold up
+    /// that flush, and if it commits while another is in progress the connector redoes that
+    /// flush against the new files. It replaces files rather than deleting them, so `VACUUM`
+    /// is still what reclaims the space.
+    ///
+    /// Default: none, meaning the connector never compacts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(minimum = 1)]
+    pub optimize_interval_secs: Option<u64>,
+
     /// Storage options for configuring backend object store.
     ///
     /// For specific options available for different storage backends, see:
@@ -155,7 +260,44 @@ impl DeltaTableWriterConfig {
             validate_delta_interval(duration)
                 .map_err(|e| format!("invalid 'log_retention_duration' value '{duration}': {e}"))?;
         }
+        if self.max_concurrent_probes == 0 {
+            return Err("max_concurrent_probes must be greater than 0".to_string());
+        }
+        if self.lookup_chunk_bytes == 0 {
+            return Err("lookup_chunk_bytes must be greater than 0".to_string());
+        }
+        if self.optimize_interval_secs.is_some_and(|s| s == 0) {
+            return Err(
+                "optimize_interval_secs must be greater than 0; omit it to leave \
+                 compaction to the table's administrator"
+                    .to_string(),
+            );
+        }
+        if self.optimize_interval_secs.is_some() && self.update_mode != DeltaTableUpdateMode::Merge
+        {
+            return Err(
+                "optimize_interval_secs only applies to 'update_mode: merge', which \
+                 is the only mode that supersedes rows and therefore the only one that \
+                 needs compacting"
+                    .to_string(),
+            );
+        }
+        if self.lookup_chunk_bytes > MAX_LOOKUP_CHUNK_BYTES {
+            return Err(format!(
+                "lookup_chunk_bytes is {} but must be at most {MAX_LOOKUP_CHUNK_BYTES} \
+                 ({} MiB): the connector locates rows in chunks addressed by 32-bit offsets. \
+                 A larger budget does not speed the lookup up; lower the value.",
+                self.lookup_chunk_bytes,
+                MAX_LOOKUP_CHUNK_BYTES >> 20,
+            ));
+        }
         Ok(())
+    }
+
+    /// `true` if the connector keeps the target table in sync with the view rather than
+    /// appending a change log.
+    pub fn is_merge(&self) -> bool {
+        self.update_mode == DeltaTableUpdateMode::Merge
     }
 }
 
@@ -564,11 +706,15 @@ mod log_retention_tests {
             uri: "memory://".to_string(),
             mode: DeltaTableWriteMode::default(),
             variant_encoding: DeltaVariantEncoding::default(),
+            update_mode: DeltaTableUpdateMode::default(),
+            lookup_chunk_bytes: default_lookup_chunk_bytes(),
+            max_concurrent_probes: default_max_concurrent_probes(),
             checkpoint_interval: None,
             log_retention_duration: log_retention.map(str::to_string),
             enable_expired_log_cleanup: None,
             max_retries: None,
             threads: None,
+            optimize_interval_secs: None,
             object_store_config: HashMap::new(),
         }
     }
@@ -658,6 +804,90 @@ mod log_retention_tests {
         let cfg = make_config(None);
         assert!(cfg.validate().is_ok());
     }
+
+    #[test]
+    fn update_mode_defaults_to_cdc() {
+        let config: DeltaTableWriterConfig =
+            serde_json::from_str(r#"{"uri":"memory://"}"#).unwrap();
+        assert_eq!(config.update_mode, DeltaTableUpdateMode::Cdc);
+        assert!(!config.is_merge());
+        assert_eq!(config.lookup_chunk_bytes, default_lookup_chunk_bytes());
+        assert_eq!(
+            config.max_concurrent_probes,
+            default_max_concurrent_probes()
+        );
+    }
+
+    #[test]
+    fn update_mode_merge_round_trips() {
+        let config: DeltaTableWriterConfig =
+            serde_json::from_str(r#"{"uri":"memory://","update_mode":"merge"}"#).unwrap();
+        assert!(config.is_merge());
+
+        // The flattened `object_store_config` makes it easy to typo a field into storage
+        // options instead of failing; confirm the mode survives a round trip.
+        let reparsed: DeltaTableWriterConfig =
+            serde_json::from_str(&serde_json::to_string(&config).unwrap()).unwrap();
+        assert_eq!(reparsed.update_mode, DeltaTableUpdateMode::Merge);
+        assert!(reparsed.object_store_config.is_empty());
+    }
+
+    /// Connector-driven compaction is opt-in and merge-only, so a misconfiguration fails at
+    /// startup rather than quietly never compacting. `cdc` mode never supersedes a row, and
+    /// zero reads as "constantly" when the way to disable it is to omit it.
+    #[test]
+    fn validate_constrains_the_optimize_interval() {
+        let mut cfg = make_config(None);
+        cfg.update_mode = DeltaTableUpdateMode::Merge;
+        cfg.optimize_interval_secs = Some(3600);
+        assert!(cfg.validate().is_ok());
+
+        cfg.optimize_interval_secs = Some(0);
+        assert!(
+            cfg.validate()
+                .unwrap_err()
+                .contains("optimize_interval_secs must be greater than 0"),
+            "zero must be rejected rather than treated as a cadence"
+        );
+
+        cfg.update_mode = DeltaTableUpdateMode::Cdc;
+        cfg.optimize_interval_secs = Some(3600);
+        assert!(
+            cfg.validate()
+                .unwrap_err()
+                .contains("only applies to 'update_mode: merge'")
+        );
+
+        // Omitted is the default, and valid in either mode.
+        cfg.optimize_interval_secs = None;
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_zero_budgets() {
+        let mut cfg = make_config(None);
+        cfg.max_concurrent_probes = 0;
+        assert!(
+            cfg.validate()
+                .unwrap_err()
+                .contains("max_concurrent_probes")
+        );
+
+        let mut cfg = make_config(None);
+        cfg.lookup_chunk_bytes = 0;
+        assert!(cfg.validate().unwrap_err().contains("lookup_chunk_bytes"));
+    }
+
+    /// A budget past the chunk's 32-bit addressing has to be rejected rather than wrap.
+    #[test]
+    fn an_oversized_lookup_chunk_is_rejected() {
+        let mut cfg = make_config(None);
+        cfg.lookup_chunk_bytes = MAX_LOOKUP_CHUNK_BYTES;
+        assert!(cfg.validate().is_ok());
+
+        cfg.lookup_chunk_bytes = MAX_LOOKUP_CHUNK_BYTES + 1;
+        assert!(cfg.validate().unwrap_err().contains("lookup_chunk_bytes"));
+    }
 }
 
 impl DeltaTableReaderConfig {
@@ -682,5 +912,18 @@ impl DeltaTableReaderConfig {
 
     pub fn is_cdc(&self) -> bool {
         matches!(&self.mode, DeltaTableIngestMode::Cdc)
+    }
+}
+
+#[cfg(test)]
+mod writer_config_tests {
+    use super::*;
+
+    /// The OpenAPI schema advertises `lookup_chunk_bytes`'s ceiling as a literal, because a
+    /// `#[schema]` attribute cannot name a constant. A drift would tell API clients a value
+    /// is acceptable that `validate` then rejects.
+    #[test]
+    fn schema_bounds_match_validation() {
+        assert_eq!(MAX_LOOKUP_CHUNK_BYTES, 2147483647);
     }
 }

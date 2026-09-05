@@ -4294,6 +4294,7 @@ dependencies = [
  "uuid",
  "vergen-gitcl",
  "xxhash-rust",
+ "z85",
 ]
 
 [[package]]

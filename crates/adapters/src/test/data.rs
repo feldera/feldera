@@ -1579,3 +1579,53 @@ serialize_table_record!(DeltaTestKey[1]{
 deserialize_table_record!(DeltaTestKey["DeltaTestKey", Variant, 1] {
     (bigint, "bigint", false, i64, |_| None)
 });
+
+/// Single-column keys for the Delta merge-mode tests, one per key type under test.
+///
+/// Merge mode finds the row to supersede by comparing a key Feldera holds against the same
+/// value read back from Parquet. Whether that comparison works depends on the key's type,
+/// so each type needs its own key struct. Each one names its column the way the view does,
+/// so the connector's `index` property resolves to it.
+macro_rules! delta_test_key {
+    ($name:ident, $column:ident, $column_name:literal, $ty:ty) => {
+        #[derive(
+            Debug,
+            Default,
+            PartialEq,
+            Eq,
+            PartialOrd,
+            Ord,
+            Clone,
+            Hash,
+            SizeOf,
+            rkyv::Archive,
+            rkyv::Serialize,
+            rkyv::Deserialize,
+            IsNone,
+        )]
+        #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+        pub struct $name {
+            pub $column: $ty,
+        }
+
+        serialize_table_record!($name[1]{ $column[$column_name]: $ty });
+
+        deserialize_table_record!($name[$column_name, Variant, 1] {
+            ($column, $column_name, false, $ty, |_| None)
+        });
+    };
+}
+
+delta_test_key!(DeltaTestKeyInt, int, "int", i32);
+delta_test_key!(DeltaTestKeyString, string, "string", String);
+delta_test_key!(DeltaTestKeyBinary, binary, "binary", ByteArray);
+delta_test_key!(
+    DeltaTestKeyTimestamp,
+    timestamp_ntz,
+    "timestamp_ntz",
+    Timestamp
+);
+delta_test_key!(DeltaTestKeyDecimal, decimal_10_3, "decimal_10_3", SqlDecimal<10, 3>);
+delta_test_key!(DeltaTestKeyDouble, double, "double", F64);
+delta_test_key!(DeltaTestKeyUuid, uuid, "uuid", Uuid);
+delta_test_key!(DeltaTestKeyStruct, struct1, "struct1", TestStruct);

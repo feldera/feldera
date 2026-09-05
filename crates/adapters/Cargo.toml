@@ -35,6 +35,7 @@ with-deltalake = [
     "deltalake",
     "deltalake-catalog-unity",
     "roaring",
+    "z85",
     "parquet/async",
     "parquet/object_store",
 ]
@@ -235,6 +236,7 @@ parking_lot = { workspace = true }
 smallvec = { workspace = true }
 delta_kernel = { workspace = true }
 roaring = { workspace = true, optional = true }
+z85 = { workspace = true, optional = true }
 etl = { workspace = true, optional = true }
 
 [package.metadata.cargo-machete]

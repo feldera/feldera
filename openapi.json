@@ -10084,6 +10084,14 @@
           "catchup"
         ]
       },
+      "DeltaTableUpdateMode": {
+        "type": "string",
+        "description": "How the Delta table connector applies pipeline updates to the target table.\n\nThis is orthogonal to `mode`, which governs what happens to an existing table\nwhen the connector starts.",
+        "enum": [
+          "cdc",
+          "merge"
+        ]
+      },
       "DeltaTableWriteMode": {
         "type": "string",
         "description": "Delta table write mode.\n\nDetermines how the Delta table connector handles an existing table at the target location.",
@@ -10117,6 +10125,17 @@
             "description": "Log retention duration for newly created Delta tables.\n\nConfigures the `delta.logRetentionDuration` table property, which controls how long the\ntransaction log history of the table is kept.  Each time a checkpoint is written, Delta Lake\nautomatically cleans up log entries older than this interval (subject to\n`enable_expired_log_cleanup`).\n\nThe option is only available when creating the Delta table (`mode = append` and there is\nno existing table at the target location, or `mode = truncate`).\n\nThe value follows the Delta Lake interval syntax: `\"interval <N> <unit>\"`, where `<unit>`\nis one of `nanosecond[s]`, `microsecond[s]`, `millisecond[s]`, `second[s]`, `minute[s]`,\n`hour[s]`, `day[s]`, or `week[s]`.  Examples: `\"interval 30 days\"`, `\"interval 6 hours\"`.\n\nDefault: `\"interval 30 days\"` (Delta Lake default).",
             "nullable": true
           },
+          "lookup_chunk_bytes": {
+            "type": "integer",
+            "description": "Ceiling, in bytes, on the encoded keys the connector holds while locating the rows\nto supersede.\n\nOnly used when `update_mode` is `merge`. A flush whose key set exceeds this budget\nis split into successive lookup passes, which bounds memory at the cost of\nre-scanning candidate files. Default: 256 MiB.",
+            "maximum": 2147483647,
+            "minimum": 1
+          },
+          "max_concurrent_probes": {
+            "type": "integer",
+            "description": "Number of data files read concurrently while locating the rows to supersede.\n\nOnly used when `update_mode` is `merge`. Each concurrent read holds one decoded\nbatch, so this bounds memory as well as request concurrency. Default: 4.",
+            "minimum": 1
+          },
           "max_retries": {
             "type": "integer",
             "format": "int32",
@@ -10127,11 +10146,21 @@
           "mode": {
             "$ref": "#/components/schemas/DeltaTableWriteMode"
           },
+          "optimize_interval_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Compact the target table from the connector, at most once every this many seconds.\n\nOnly used when `update_mode` is `merge`. Merge mode supersedes a row without rewriting\nthe file that holds it, so without compaction the table grows without bound and read\ncost follows the number of updates rather than the number of live rows.\n\nCompacting is normally the table administrator's job, and an existing `OPTIMIZE`\nschedule already does the right thing, which is why this is off by default. Set it for\ntables where Feldera is the only writer.\n\nEach compaction starts after a flush and runs in the background: it does not hold up\nthat flush, and if it commits while another is in progress the connector redoes that\nflush against the new files. It replaces files rather than deleting them, so `VACUUM`\nis still what reclaims the space.\n\nDefault: none, meaning the connector never compacts.",
+            "nullable": true,
+            "minimum": 1
+          },
           "threads": {
             "type": "integer",
             "description": "Number of parallel threads used by the connector.\n\nIncreasing this value can improve Delta Lake write throughput\nby enabling concurrent writes. Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.\nValues above 1 require the view to have a unique key, so that the connector can order inserts and deletes correctly.\nDefine the key with `CREATE INDEX` and set the connector's `index` property to that index;\nsee [views with unique keys](https://docs.feldera.com/connectors/sinks/delta/#views-with-unique-keys) and\n[writing in parallel](https://docs.feldera.com/connectors/sinks/delta/#writing-in-parallel).\n\nDefault: 1.",
             "nullable": true,
             "minimum": 1
+          },
+          "update_mode": {
+            "$ref": "#/components/schemas/DeltaTableUpdateMode"
           },
           "uri": {
             "type": "string",
