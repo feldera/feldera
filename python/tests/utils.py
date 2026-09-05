@@ -278,6 +278,49 @@ class DeltaTestLocation:
             for row in pa.concat_tables(tables).to_pylist()
         ]
 
+    def live_row_count(self) -> int:
+        """Rows a reader sees, counting deletion vectors.
+
+        Replays ``_delta_log/*.json`` to find the current ``add`` per path, then
+        sums each file's ``numRecords`` less the cardinality of its deletion
+        vector. That is the arithmetic the Delta protocol defines for a live row
+        count, and it is what :meth:`row_count` gets wrong on a table written by
+        the merge-mode output connector, which supersedes rows with vectors
+        rather than by rewriting files.
+
+        Reads the log rather than the data because no Python Delta reader
+        available here applies deletion vectors: the pinned ``deltalake`` wheel
+        refuses a table that advertises the ``deletionVectors`` reader feature
+        outright. Row-level cross-engine checks live in the Rust tests, which
+        drive Delta Spark.
+        """
+        import json as _json
+
+        # Keyed by path: within one commit the connector emits the `remove` and
+        # then the `add` for a file whose vector changed, so last write wins and
+        # leaves the current `add`.
+        active: dict[str, dict] = {}
+        for log_path in self.log_json_paths():
+            for line in self._read_text(log_path).splitlines():
+                action = _json.loads(line)
+                if (add := action.get("add")) is not None:
+                    active[add["path"]] = add
+                elif (remove := action.get("remove")) is not None:
+                    active.pop(remove["path"], None)
+
+        total = 0
+        for add in active.values():
+            stats = add.get("stats")
+            if stats is None:
+                raise AssertionError(
+                    f"data file {add['path']!r} has no statistics, so its rows "
+                    "cannot be counted from the log"
+                )
+            rows = _json.loads(stats)["numRecords"]
+            vector = add.get("deletionVector")
+            total += rows - (vector["cardinality"] if vector else 0)
+        return total
+
     def row_count(self, missing_ok: bool = False) -> int:
         """Return the row count of the current Delta snapshot.
 
@@ -360,6 +403,31 @@ class DeltaTestLocation:
                 out.write(path.read_bytes())
         with fs.open_output_stream(f"{self.root_path}/{self.READY_MARKER}") as out:
             out.write(b"")
+
+    def fetch_tree(self, dest: pathlib.Path) -> pathlib.Path:
+        """Copy this location's Delta table to a local directory and return it.
+
+        The inverse of :meth:`_place_tree`, for a tool that speaks only the
+        local filesystem. Spark reading S3 would need an S3A stack on top of the
+        Delta JARs, and the bytes are the same either way.
+        """
+        dest.mkdir(parents=True, exist_ok=True)
+        if self.local_dir is not None:
+            shutil.copytree(self.local_dir, dest, dirs_exist_ok=True)
+            return dest
+
+        import pyarrow.fs as pafs
+
+        fs = self._s3_filesystem()
+        infos = fs.get_file_info(pafs.FileSelector(self.root_path, recursive=True))
+        for info in infos:
+            if info.type != pafs.FileType.File:
+                continue
+            target = dest / pathlib.PurePosixPath(info.path).relative_to(self.root_path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with fs.open_input_file(info.path) as handle:
+                target.write_bytes(handle.readall())
+        return dest
 
     def cleanup(self) -> None:
         """Remove the local temp directory, if any.
@@ -565,6 +633,60 @@ def _fixture_build_lock(key: str) -> Iterator[None]:
             fcntl.flock(handle, fcntl.LOCK_UN)
 
 
+def run_delta_spark(
+    script: str | os.PathLike[str],
+    args: Sequence[object] = (),
+    *,
+    delta_spark_spec: str = "delta-spark>=4.2,<5",
+    max_attempts: int = 3,
+    capture_output: bool = True,
+) -> str:
+    """Run a standalone Delta Spark script and return its stdout.
+
+    Runs under ``uv run --no-project --with <delta_spark_spec>``, so the PySpark
+    and JVM stack is pulled only when a test needs it. Retries because Spark
+    resolves delta-spark from Maven Central here, which fails transiently.
+
+    :param args: Positional arguments after the script path, each stringified.
+    :param capture_output: ``False`` lets output through to the test log.
+    """
+    if shutil.which("uv") is None:
+        raise RuntimeError(
+            "`uv` is required on PATH to run a Delta Spark script "
+            f"(runs via `uv run --with {delta_spark_spec}`)."
+        )
+
+    command = [
+        "uv",
+        "run",
+        "--no-project",
+        "--with",
+        delta_spark_spec,
+        "python",
+        str(script),
+        *(str(arg) for arg in args),
+    ]
+    for attempt in range(1, max_attempts + 1):
+        try:
+            completed = subprocess.run(
+                command, check=True, capture_output=capture_output, text=True
+            )
+            return completed.stdout if capture_output else ""
+        except subprocess.CalledProcessError as e:
+            if attempt == max_attempts:
+                raise
+            logging.warning(
+                "Delta Spark script %s failed (attempt %d/%d); retrying. "
+                "Usually a transient Maven/Ivy download failure.\n%s",
+                script,
+                attempt,
+                max_attempts,
+                e.stderr,
+            )
+            time.sleep(5 * attempt)
+    raise AssertionError("unreachable")
+
+
 def ensure_delta_spark_fixture(
     loc: DeltaTestLocation,
     builder_script: str | os.PathLike[str],
@@ -653,19 +775,12 @@ def _build_delta_spark_fixture(
         # leak a partial tree into the next attempt or the upload.
         staging = pathlib.Path(tempfile.mkdtemp(prefix="feldera_delta_fixture_"))
         try:
-            subprocess.run(
-                [
-                    "uv",
-                    "run",
-                    "--no-project",
-                    "--with",
-                    delta_spark_spec,
-                    "python",
-                    str(builder_script),
-                    str(staging),
-                    *(str(arg) for arg in builder_args),
-                ],
-                check=True,
+            run_delta_spark(
+                builder_script,
+                [staging, *builder_args],
+                delta_spark_spec=delta_spark_spec,
+                max_attempts=1,
+                capture_output=False,
             )
             loc._place_tree(staging)
             break
