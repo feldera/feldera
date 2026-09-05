@@ -27,4 +27,7 @@ pub(crate) mod startup;
 pub(crate) mod tombstone;
 
 #[cfg(test)]
+mod model;
+
+#[cfg(test)]
 mod test;
