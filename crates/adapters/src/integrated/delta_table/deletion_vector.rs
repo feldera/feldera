@@ -55,9 +55,22 @@ use std::sync::Arc;
 /// Reads a Parquet file out of an object store for [`ParquetRecordBatchStreamBuilder`].
 /// parquet 59 deprecates `ParquetObjectReader` and says to implement this trait (arrow-rs #10308).
 #[derive(Clone)]
-struct ObjectStoreReader {
+pub(super) struct ObjectStoreReader {
     store: Arc<dyn ObjectStore>,
     path: Path,
+    file_size: Option<u64>,
+    footer_size_hint: Option<usize>,
+}
+
+impl ObjectStoreReader {
+    pub(super) fn new(store: Arc<dyn ObjectStore>, path: Path) -> Self {
+        Self {
+            store,
+            path,
+            file_size: None,
+            footer_size_hint: None,
+        }
+    }
 }
 
 fn to_parquet_err(e: delta_kernel::object_store::Error) -> ParquetError {
@@ -90,10 +103,13 @@ impl AsyncFileReader for ObjectStoreReader {
         options: Option<&'a ArrowReaderOptions>,
     ) -> BoxFuture<'a, ParquetResult<Arc<ParquetMetaData>>> {
         async move {
-            let metadata = ParquetMetaDataReader::new()
+            let reader = ParquetMetaDataReader::new()
                 .with_arrow_reader_options(options)
-                .load_via_suffix_and_finish(self)
-                .await?;
+                .with_prefetch_hint(self.footer_size_hint);
+            let metadata = match self.file_size {
+                Some(size) => reader.load_and_finish(self, size).await?,
+                None => reader.load_via_suffix_and_finish(self).await?,
+            };
             Ok(Arc::new(metadata))
         }
         .boxed()
@@ -668,7 +684,7 @@ impl PartitionStream for MaskedParquetPartition {
             for file in files.iter() {
                 let path = &file.path;
                 let probe = ParquetRecordBatchStreamBuilder::new(
-                        ObjectStoreReader { store: Arc::clone(&store), path: path.clone() })
+                        ObjectStoreReader::new(Arc::clone(&store), path.clone()))
                     .await
                     .map_err(|e| DataFusionError::External(
                         format!("failed to open Parquet file '{path}': {e}").into()))?;
@@ -688,7 +704,7 @@ impl PartitionStream for MaskedParquetPartition {
                 // (which it did, just above).
                 let total_rows = metadata.metadata().file_metadata().num_rows() as u64;
                 let builder = ParquetRecordBatchStreamBuilder::new_with_metadata(
-                    ObjectStoreReader { store: Arc::clone(&store), path: path.clone() },
+                    ObjectStoreReader::new(Arc::clone(&store), path.clone()),
                     metadata,
                 );
                 // Decode only the columns the logical schema names.
