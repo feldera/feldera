@@ -211,11 +211,12 @@ impl PostgresInputEndpointInner {
             }) {
             Ok(rows) => rows,
             Err(e) => {
-                error!(
-                    "postgres {}: error reading from postgres: {e}",
-                    &self.endpoint_name
-                );
-                let _r = init_status_sender.send(Err(e)).await;
+                // Initialization already succeeded, so nobody is receiving on
+                // `init_status_sender` anymore.  Report the failure to the
+                // controller instead; sending it on the init channel would
+                // leave the pipeline stalled without an error.
+                self.consumer
+                    .error(true, anyhow!("error reading from Postgres: {e}"), None);
                 return;
             }
         };
