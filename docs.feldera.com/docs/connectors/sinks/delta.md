@@ -99,6 +99,7 @@ MERGE INTO {target_table} AS target
 | `update_mode` | <p>How the connector applies the view's changes to the table. Orthogonal to `mode`, which governs what happens to an existing table when the pipeline starts.</p><p>- `cdc`: append a change log with `__feldera_op` and `__feldera_ts` metadata columns, which a job of yours folds into a state table.</p><p>- `merge`: keep the table in sync with the view. See [Merge mode](#merge-mode).</p><p>Default: `cdc`.</p>|
 | `lookup_chunk_bytes` | <p>Ceiling, in bytes, on the encoded keys the connector holds while locating rows to supersede. `merge` mode only.</p><p>A flush whose key set exceeds this budget is split into successive lookup passes, which bounds memory at the cost of re-scanning candidate files. Default: 256 MiB.</p>|
 | `max_concurrent_probes` | <p>Number of data files read concurrently while locating rows to supersede. `merge` mode only.</p><p>Each concurrent read holds one decoded batch, so this bounds memory as well as request concurrency. Default: `4`.</p>|
+| `optimize_interval_secs` | <p>Compact the target table from the connector, at most once every this many seconds. `merge` mode only.</p><p>Off by default, because compacting is normally the table administrator's job and an existing `OPTIMIZE` schedule already does the right thing. Set it for tables where Feldera is the only writer and nothing else will compact them. The compaction runs in the background and does not hold up a flush.</p>|
 
 [*]: Required fields
 
@@ -237,13 +238,22 @@ bound, and read cost grows with the number of updates rather than the number of 
 Run `OPTIMIZE` on a schedule. Rewriting a file materializes its deletion vector, which every
 Delta engine implements, so an existing `OPTIMIZE` schedule already does the right thing. The
 connector warns, at most once an hour, when more than 20% of the table's rows are superseded
-versions. A file whose every row has been superseded is dropped outright rather than kept
-behind a full deletion vector, so a delete-heavy workload reclaims some space without
-`OPTIMIZE`, but an update-heavy one does not. The
-connector never rewrites a data file, changes the schema, changes the partitioning, alters a
-table property, or upgrades the protocol, so it does not conflict with that maintenance: if a
-compaction replaces a file mid-flush, the connector notices and redoes the flush against the
-new files.
+versions.
+
+If Feldera is the table's only writer and nothing else will compact it, set
+`optimize_interval_secs` and the connector runs the compaction itself, in the background, no
+more often than that interval. The first one happens one interval after the connector starts,
+not at startup, so adopting a large table does not rewrite it immediately. A compaction that
+fails leaves the table exactly as it was and is retried at the next interval. Each one starts
+after a flush, so a pipeline that stops writing stops compacting, and it replaces files
+rather than deleting them -- `VACUUM` still reclaims the space, as described below.
+
+A file whose every row has been superseded is dropped outright rather than kept behind a full
+deletion vector, so a delete-heavy workload reclaims some space without `OPTIMIZE`, but an
+update-heavy one does not. Writing to the table never rewrites a data file, changes the
+schema, changes the partitioning, alters a table property, or upgrades the protocol, so it
+does not conflict with that maintenance: if a compaction replaces a file mid-flush, the
+connector notices and redoes the flush against the new files.
 
 One file the connector writes needs mentioning. Deletion vectors go at the table root as
 `deletion_vector_<uuid>.bin`, which is where Delta Spark writes them and what the protocol

@@ -69,6 +69,8 @@ fn writer(uri: &str, mode: DeltaTableWriteMode) -> DeltaTableWriter {
         enable_expired_log_cleanup: None,
         max_retries: Some(0),
         threads: Some(1),
+        optimize_interval_secs: None,
+
         object_store_config: Default::default(),
     };
     let key_schema = Some(BenchKeyStruct::relation_schema());

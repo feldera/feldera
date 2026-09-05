@@ -21,6 +21,7 @@ to accept.
 import json
 import pathlib
 import tempfile
+import time
 
 import pytest
 from feldera import PipelineBuilder
@@ -289,6 +290,50 @@ def test_merge_requires_a_unique_key(pipeline_name):
         with pytest.raises(Exception) as caught:
             pipeline.start()
         assert "unique key" in str(caught.value), str(caught.value)
+    finally:
+        loc.cleanup()
+
+
+@enterprise_only
+def test_merge_compacts_when_asked_to(pipeline_name):
+    """`optimize_interval_secs` makes the connector compact its own table.
+
+    Merge mode never rewrites a data file, so a table nothing else maintains
+    grows one file per flush. The option hands that job to the connector.
+    """
+    loc = DeltaTestLocation.create(pipeline_name, mode="append")
+    try:
+        sql = _sql(loc, {"optimize_interval_secs": 1})
+        pipeline = _build_pipeline(pipeline_name, sql)
+        pipeline.start()
+
+        # One file per flush, and none of them can compact yet: the first
+        # compaction is due one interval after the connector starts.
+        for batch in range(3):
+            pipeline.input_json(
+                "t",
+                [{"id": batch * 10 + i, "tag": f"v{i}"} for i in range(5)],
+                wait=True,
+            )
+        before = len(_active_adds(loc))
+        assert before >= 2, f"the fixture wrote {before} file(s), nothing to compact"
+
+        # Past the interval, so the next flush is free to start a compaction.
+        time.sleep(2)
+        pipeline.input_json("t", [{"id": 99, "tag": "last"}], wait=True)
+
+        # It runs in the background, so poll rather than assume it has landed.
+        deadline = time.time() + 60
+        while time.time() < deadline and len(_active_adds(loc)) >= before:
+            time.sleep(1)
+
+        assert len(_active_adds(loc)) < before, (
+            f"the connector did not compact: still {len(_active_adds(loc))} file(s)"
+        )
+        # Rewriting the files must not lose the rows in them.
+        assert loc.live_row_count() == 16
+
+        pipeline.stop(force=True)
     finally:
         loc.cleanup()
 

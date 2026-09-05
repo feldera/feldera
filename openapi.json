@@ -10145,6 +10145,13 @@
           "mode": {
             "$ref": "#/components/schemas/DeltaTableWriteMode"
           },
+          "optimize_interval_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Compact the target table from the connector, at most once every this many seconds.\n\nOnly used when `update_mode` is `merge`. Merge mode supersedes a row without rewriting\nthe file that holds it, so without compaction the table grows without bound and read\ncost follows the number of updates rather than the number of live rows.\n\nCompacting is normally the table administrator's job, and an existing `OPTIMIZE`\nschedule already does the right thing, which is why this is off by default. Set it for\ntables where Feldera is the only writer.\n\nEach compaction starts after a flush and runs in the background: it does not hold up\nthat flush, and if it commits while another is in progress the connector redoes that\nflush against the new files. It replaces files rather than deleting them, so `VACUUM`\nis still what reclaims the space.\n\nDefault: none, meaning the connector never compacts.",
+            "nullable": true,
+            "minimum": 1
+          },
           "threads": {
             "type": "integer",
             "description": "Number of parallel threads used by the connector.\n\nIncreasing this value can improve Delta Lake write throughput\nby enabling concurrent writes. Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.\nValues above 1 require the view to have a unique key, so that the connector can order inserts and deletes correctly.\nDefine the key with `CREATE INDEX` and set the connector's `index` property to that index;\nsee [views with unique keys](https://docs.feldera.com/connectors/sinks/delta/#views-with-unique-keys) and\n[writing in parallel](https://docs.feldera.com/connectors/sinks/delta/#writing-in-parallel).\n\nDefault: 1.",

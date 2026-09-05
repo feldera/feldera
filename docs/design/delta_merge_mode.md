@@ -815,7 +815,7 @@ measurements rather than be built on the strength of the estimates here.
 | Key columns that are also partition columns | Done. Reconstructed from the log, and used as exact statistics |
 | Summaries (blooms, location cache) | Not built. The location cache should not be built as designed; see below |
 | Metrics export and threshold warnings | Done, in `metrics.rs` |
-| Connector-driven compaction (`optimize_interval_secs`) | Not started |
+| Connector-driven compaction (`optimize_interval_secs`) | Done, 4 tests. Background, opt-in, one at a time, first run one interval after startup |
 | Benchmarks | Not started |
 
 ### What the implementation established, and what it changed here
