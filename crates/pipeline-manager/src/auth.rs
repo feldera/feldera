@@ -54,7 +54,7 @@ use actix_web::http::header::{self, HeaderMap, HeaderName, HeaderValue};
 use actix_web::middleware::Next;
 use actix_web::{
     dev::{ServiceRequest, ServiceResponse},
-    error::ErrorUnauthorized,
+    error::{ErrorBadRequest, ErrorUnauthorized},
     web::Data,
 };
 use actix_web_httpauth::extractors::{
@@ -257,6 +257,11 @@ pub(crate) async fn auth_validator(
     req: ServiceRequest,
     credentials: BearerAuth,
 ) -> Result<ServiceRequest, (actix_web::error::Error, ServiceRequest)> {
+    // Reject ambiguous or malformed selectors before any auth path can treat
+    // one as an absent header and silently choose a different tenant.
+    if let Err(error) = tenant_selector(req.headers()) {
+        return Err((error, req));
+    }
     let token = credentials.token();
     if token.starts_with(API_KEY_PREFIX) {
         return api_key_auth(req, token).await;
@@ -275,6 +280,28 @@ pub(crate) async fn auth_validator(
             ))
         }
     }
+}
+
+/// A tenant selector is one non-empty header value. All credential types use
+/// this parser, including credentials promoted from WebSocket subprotocols.
+fn tenant_selector(headers: &HeaderMap) -> Result<Option<&str>, actix_web::Error> {
+    let invalid = || {
+        ErrorBadRequest(
+            "Invalid Feldera-Tenant header: send exactly one non-empty tenant name or UUID, or omit the header",
+        )
+    };
+    let mut values = headers.get_all(TENANT_HEADER);
+    let Some(value) = values.next() else {
+        return Ok(None);
+    };
+    if values.next().is_some() {
+        return Err(invalid());
+    }
+    let selector = value.to_str().map_err(|_| invalid())?;
+    if selector.trim().is_empty() {
+        return Err(invalid());
+    }
+    Ok(Some(selector))
 }
 
 /// Decode the JWT payload without verifying the signature and return the
@@ -435,13 +462,6 @@ async fn oidc_trust_auth(
     let label = format!("oidc:{}", token_data.claims.sub);
     let db_err =
         |e: DBError, req: ServiceRequest| Err((crate::error::ManagerError::from(e).into(), req));
-    let header_tenant = |req: &ServiceRequest| {
-        req.headers()
-            .get(TENANT_HEADER)
-            .and_then(|h| h.to_str().ok())
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-    };
 
     // An owner belongs to no tenant of its own, so it acts wherever the
     // Feldera-Tenant header points, and in the default tenant without one, as a
@@ -472,7 +492,11 @@ async fn oidc_trust_auth(
     // that happened to be its only match would let it act on a tenant it never
     // asked for, believing it acted on the one it did.
     let tenant_matches: Vec<(TenantId, Role)> = matches;
-    let (acting_tenant, role) = match header_tenant(&req) {
+    let selector = match tenant_selector(req.headers()) {
+        Ok(selector) => selector.map(str::to_string),
+        Err(e) => return Err((e, req)),
+    };
+    let (acting_tenant, role) = match selector {
         Some(selector) => {
             let selected = {
                 let db = state.db.lock().await;
@@ -517,13 +541,13 @@ async fn resolve_owner_acting_tenant(
     headers: &actix_web::http::header::HeaderMap,
     home: TenantId,
 ) -> Result<TenantId, actix_web::Error> {
-    match headers.get(TENANT_HEADER).and_then(|h| h.to_str().ok()) {
-        Some(selector) if !selector.is_empty() => db
+    match tenant_selector(headers)? {
+        Some(selector) => db
             .resolve_tenant_selector(selector)
             .await
             // DBError::UnknownTenantName maps to HTTP 404 through ResponseError.
             .map_err(|e| crate::error::ManagerError::from(e).into()),
-        _ => Ok(home),
+        None => Ok(home),
     }
 }
 
@@ -842,12 +866,10 @@ async fn bearer_auth(
 
             // Non-owner: the membership table is the authorization authority;
             // the tenancy strategy only provisions (see `provision_login`).
-            let selector = req
-                .headers()
-                .get(TENANT_HEADER)
-                .and_then(|h| h.to_str().ok())
-                .filter(|s| !s.is_empty())
-                .map(str::to_string);
+            let selector = match tenant_selector(req.headers()) {
+                Ok(selector) => selector.map(str::to_string),
+                Err(e) => return Err((e, req)),
+            };
 
             if let Err(e) = provision_login(
                 &state,
@@ -942,6 +964,29 @@ async fn api_key_auth(
     };
     match validate {
         Ok((tenant_id, role)) => {
+            let selector = match tenant_selector(req.headers()) {
+                Ok(selector) => selector,
+                Err(e) => return Err((e, req)),
+            };
+            if let Some(selector) = selector {
+                let selected = ad
+                    .unwrap()
+                    .db
+                    .lock()
+                    .await
+                    .resolve_tenant_selector(selector)
+                    .await;
+                match selected {
+                    Ok(selected) if selected == tenant_id => {}
+                    Ok(_) | Err(DBError::UnknownTenantName { .. }) => {
+                        let error = DBError::NotATenantMember {
+                            tenant: selector.to_string(),
+                        };
+                        return Err((crate::error::ManagerError::from(error).into(), req));
+                    }
+                    Err(e) => return Err((crate::error::ManagerError::from(e).into(), req)),
+                }
+            }
             AuthenticatedPrincipal {
                 acting_tenant: tenant_id,
                 role,
@@ -1235,8 +1280,22 @@ impl AuthProvider {
     }
 }
 
-pub(crate) fn aws_auth_config() -> AuthConfiguration {
+/// Shared login JWT checks. Generic OIDC requires an audience; Cognito access
+/// tokens bind to the client through `client_id`, checked after decoding.
+fn login_validation(issuer: &str, audience: Option<&str>) -> Validation {
     let mut validation = Validation::new(Algorithm::RS256);
+    validation.set_issuer(&[issuer]);
+    validation.set_required_spec_claims(&["exp", "iss", "sub"]);
+    validation.validate_nbf = true;
+    if let Some(audience) = audience {
+        validation.set_audience(&[audience]);
+        // set_audience checks a present claim but does not require one.
+        validation.required_spec_claims.insert("aud".to_string());
+    }
+    validation
+}
+
+pub(crate) fn aws_auth_config() -> AuthConfiguration {
     let client_id = env::var("FELDERA_AUTH_CLIENT_ID")
         .expect("Missing environment variable FELDERA_AUTH_CLIENT_ID");
     let iss =
@@ -1245,7 +1304,7 @@ pub(crate) fn aws_auth_config() -> AuthConfiguration {
     // We do not validate with set_audience because it is optional,
     // and AWS Cognito doesn't consistently claim it in JWT (e.g. via Hosted UI
     // auth)
-    validation.set_issuer(&[&iss]);
+    let validation = login_validation(&iss, None);
     AuthConfiguration {
         provider: AuthProvider::AwsCognito(ProviderAwsCognito {
             issuer: iss.clone(),
@@ -1264,7 +1323,6 @@ pub(crate) async fn generic_oidc_auth_config(
     api_config: &crate::config::ApiServerConfig,
     extra_roots: &[Certificate],
 ) -> Result<AuthConfiguration, Box<dyn std::error::Error>> {
-    let mut validation = Validation::new(Algorithm::RS256);
     let client_id = env::var("FELDERA_AUTH_CLIENT_ID")
         .expect("Missing environment variable FELDERA_AUTH_CLIENT_ID");
     let iss =
@@ -1279,9 +1337,7 @@ pub(crate) async fn generic_oidc_auth_config(
     )
     .await?;
 
-    validation.set_issuer(&[&iss]);
-    // Use configurable audience claim from API server configuration
-    validation.set_audience(&[&api_config.auth_audience]);
+    let validation = login_validation(&iss, Some(&api_config.auth_audience));
 
     // Add 'groups' scope if authorized_groups is configured
     let extra_oidc_scopes = if !api_config.authorized_groups.is_empty() {
@@ -1503,18 +1559,22 @@ async fn decode_token_with_validation(
 ) -> Result<TokenData<OidcClaim>, AuthError> {
     let token_data = decode_oidc_token(token, req, configuration).await?;
 
-    // Provider-specific validations based on optional fields
-
-    // Validate client_id if present (AWS Cognito puts it in a separate field)
-    if let Some(ref client_id) = token_data.claims.client_id
-        && configuration.client_id != *client_id
+    // Cognito requires both claims; other providers may omit them.
+    let is_cognito = matches!(configuration.provider, AuthProvider::AwsCognito(_));
+    if token_data
+        .claims
+        .client_id
+        .as_deref()
+        .map_or(is_cognito, |client_id| client_id != configuration.client_id)
     {
         return Err(jsonwebtoken::errors::ErrorKind::InvalidAudience.into());
     }
 
-    // Validate token_use if present (AWS Cognito requires "access" for access tokens)
-    if let Some(ref token_use) = token_data.claims.token_use
-        && token_use != "access"
+    if token_data
+        .claims
+        .token_use
+        .as_deref()
+        .map_or(is_cognito, |token_use| token_use != "access")
     {
         return Err(jsonwebtoken::errors::ErrorKind::InvalidToken.into());
     }
@@ -1831,9 +1891,8 @@ mod test {
     }
 
     fn validation(aud: &str, iss: &str) -> Validation {
-        let mut validation = Validation::new(Algorithm::RS256);
+        let mut validation = super::login_validation(iss, None);
         validation.set_audience(&[aud]);
-        validation.set_issuer(&[iss]);
         validation
     }
 
@@ -2029,7 +2088,8 @@ mod test {
     #[actix_web::test]
     async fn invalid_url() {
         ensure_default_crypto_provider();
-        let url = "http://localhost/doesnotexist".to_owned();
+        // Fail URL parsing without depending on whether localhost serves HTTP.
+        let url = "http://[invalid".to_owned();
         let res = fetch_jwk_oidc_keys(&url, &OidcClients::new(&[]).unwrap()).await;
         assert!(matches!(res.err().unwrap(), AuthError::JwkFetch(_)));
     }
@@ -2094,6 +2154,72 @@ mod test {
             .to_request();
         let res = run_test(req, Some(decoding_key), None, validation).await;
         assert_eq!(200, res.status());
+    }
+
+    #[tokio::test]
+    async fn cognito_requires_client_and_access_token_use() {
+        for missing in ["client_id", "token_use"] {
+            let mut claim = default_claim();
+            match missing {
+                "client_id" => claim.client_id = None,
+                "token_use" => claim.token_use = None,
+                _ => unreachable!(),
+            }
+            let (token, decoding_key) = setup(claim).await;
+            let req = test::TestRequest::get()
+                .uri("/")
+                .insert_header((http::header::AUTHORIZATION, format!("Bearer {token}")))
+                .to_request();
+            let res = run_test(
+                req,
+                Some(decoding_key),
+                None,
+                validation("some-client", "some-iss"),
+            )
+            .await;
+            assert_eq!(res.status(), 401, "accepted token without {missing}");
+        }
+    }
+
+    #[tokio::test]
+    async fn login_validation_requires_audience_and_enforces_nbf() {
+        for audience in [None, Some("some-client")] {
+            for nbf in [None, Some(serde_json::json!(Utc::now().timestamp() + 3600))] {
+                let mut claim = default_claim();
+                claim.aud = audience.map(|aud| serde_json::json!(aud));
+                if let Some(nbf) = &nbf {
+                    claim
+                        .additional_claims
+                        .insert("nbf".to_string(), nbf.clone());
+                }
+                let (token, key) = setup(claim).await;
+                let result = jsonwebtoken::decode::<OidcClaim>(
+                    &token,
+                    &key,
+                    &super::login_validation("some-iss", Some("some-client")),
+                );
+                assert_eq!(result.is_ok(), audience.is_some() && nbf.is_none());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn tenant_selector_rejects_ambiguous_or_malformed_headers() {
+        use actix_web::http::header::{HeaderMap, HeaderName, HeaderValue};
+        let name = HeaderName::from_static("feldera-tenant");
+        let mut headers = HeaderMap::new();
+        assert_eq!(super::tenant_selector(&headers).unwrap(), None);
+        for valid in ["tenant-x", "00000000-0000-0000-0000-000000000000"] {
+            headers.insert(name.clone(), HeaderValue::from_str(valid).unwrap());
+            assert_eq!(super::tenant_selector(&headers).unwrap(), Some(valid));
+        }
+        for invalid in [b"".as_slice(), b"   ", b"\xff"] {
+            headers.insert(name.clone(), HeaderValue::from_bytes(invalid).unwrap());
+            assert!(super::tenant_selector(&headers).is_err());
+        }
+        headers.insert(name.clone(), HeaderValue::from_static("tenant-x"));
+        headers.append(name, HeaderValue::from_static("tenant-y"));
+        assert!(super::tenant_selector(&headers).is_err());
     }
 
     #[tokio::test]

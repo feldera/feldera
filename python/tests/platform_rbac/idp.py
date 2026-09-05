@@ -16,6 +16,7 @@ the manager, and the manager trusts the CA behind it through `SSL_CERT_FILE`.
 
 from __future__ import annotations
 
+import json
 import subprocess
 import time
 from dataclasses import dataclass
@@ -45,6 +46,8 @@ class Issuer:
         tenants: list[str] | None = None,
         audience: str | None = DEFAULT_AUDIENCE,
         expires_in: int = 3600,
+        claims: dict | None = None,
+        omit_claims: tuple[str, ...] = (),
     ) -> str:
         """Mint an access token asserting these claims.
 
@@ -58,6 +61,10 @@ class Issuer:
             params["aud"] = audience
         if tenants:
             params["tenants"] = ",".join(tenants)
+        if claims is not None:
+            params["claims"] = json.dumps(claims)
+        if omit_claims:
+            params["omit_claims"] = ",".join(omit_claims)
         r = requests.get(
             f"{self.url}/token",
             params=params,

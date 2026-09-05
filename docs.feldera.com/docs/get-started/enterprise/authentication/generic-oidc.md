@@ -102,7 +102,7 @@ After setting up your OIDC provider, configure Feldera using the Helm chart valu
 |-----------|-------------|---------|
 | `auth.clientId` | Your OIDC application's client ID | `abc123xyz456` |
 | `auth.issuer` | Your OIDC provider's issuer URL | `https://auth.example.com` |
-| `authorization.authAudience` | Expected audience claim value in Access tokens | `feldera-api` |
+| `authorization.authAudience` | Required audience claim value in access tokens | `feldera-api` |
 
 :::tip
 
