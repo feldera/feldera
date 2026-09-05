@@ -242,6 +242,32 @@ class Api:
             verify=self.manager.verify,
         )
 
+    def raw_request(
+        self,
+        method: str,
+        raw_path: str,
+        *,
+        token: str | None = None,
+        tenant: str | None = None,
+        body: dict | None = None,
+    ) -> requests.Response:
+        """Send `raw_path` byte-for-byte, so percent-encodings reach the server
+        undecoded. `requests` requotes a path in `prepare()` (turning `%74` back
+        into `t`), so the URL is overwritten afterward; `send()` does not touch
+        it. Used to prove the server, not the client, decodes the path.
+        """
+        hdrs: dict[str, str] = {}
+        if token is not None:
+            hdrs["Authorization"] = f"Bearer {token}"
+        if tenant is not None:
+            hdrs[TENANT_HEADER] = tenant
+        session = requests.Session()
+        prepared = session.prepare_request(
+            requests.Request(method, self.manager.base_url, headers=hdrs, json=body)
+        )
+        prepared.url = f"{self.manager.base_url}{raw_path}"
+        return session.send(prepared, timeout=30, verify=self.manager.verify)
+
     def v0(self, method: str, path: str, **kwargs) -> requests.Response:
         return self.request(method, f"/v0{path}", **kwargs)
 
