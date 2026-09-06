@@ -31,7 +31,7 @@ from feldera.testutils import (
     FELDERA_TEST_NUM_WORKERS,
 )
 from tests import TEST_CLIENT, enterprise_only
-from tests.utils import DeltaTestLocation, run_delta_spark
+from tests.utils import DeltaTestLocation, run_delta_spark, wait_for_condition
 
 # ─── helpers ───────────────────────────────────────────────────────────
 
@@ -49,6 +49,7 @@ def _sql(loc: DeltaTestLocation, extra: dict | None = None) -> str:
     connectors = json.dumps(
         [
             {
+                "name": "out",
                 "index": "v_idx",
                 "transport": {"name": "delta_table_output", "config": config},
             }
@@ -86,6 +87,11 @@ def _active_adds(loc: DeltaTestLocation) -> dict[str, dict]:
             elif (remove := action.get("remove")) is not None:
                 active.pop(remove["path"], None)
     return active
+
+
+def _transmitted_records(pipeline) -> int:
+    """Records the merge connector has reported to the controller."""
+    return pipeline.output_connector_stats("v", "out").metrics.transmitted_records or 0
 
 
 def _optimize_commits(loc: DeltaTestLocation) -> list[tuple[int, int]]:
@@ -156,6 +162,9 @@ def test_merge_tracks_the_view_row_count(pipeline_name):
             "an update rewrote a data file instead of tombstoning rows in it"
         )
 
+        # A delete-only flush appends nothing, so the connector must report the rows it
+        # tombstoned or it looks idle while it is working.
+        before = _transmitted_records(pipeline)
         pipeline.input_json(
             "t",
             [{"delete": {"id": i, "tag": f"v1_{i}"}} for i in range(5, 8)],
@@ -163,6 +172,12 @@ def test_merge_tracks_the_view_row_count(pipeline_name):
             wait=True,
         )
         assert loc.live_row_count() == 7
+        wait_for_condition(
+            "the connector reports the rows it tombstoned",
+            lambda: _transmitted_records(pipeline) >= before + 3,
+            timeout_s=60.0,
+            poll_interval_s=0.5,
+        )
 
         # Deleting a key the view no longer holds is a no-op, not a double subtraction.
         pipeline.input_json(
