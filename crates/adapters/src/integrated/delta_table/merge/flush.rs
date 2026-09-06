@@ -243,7 +243,12 @@ impl MergeWriter {
             .log_data()
             .into_iter()
             .map(|file| {
-                Candidate::from_log(&file, self.partition_keys_of(&file), self.prune_on_stats)
+                Candidate::from_log(
+                    &file,
+                    self.partition_keys_of(&file),
+                    &self.key_encoder,
+                    self.prune_on_stats,
+                )
             })
             .collect())
     }
