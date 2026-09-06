@@ -702,8 +702,8 @@ Declared in `crates/feldera-types/src/transport/delta_table.rs`.
 | `optimize_interval_secs` | `Option<u64>` | none | Connector-driven maintenance: OPTIMIZE, then the reclamation pass. Off by default, because the table administrator normally maintains the table; set it where Feldera is the only writer. Runs in the background after a flush, one at a time, first run one interval after startup |
 
 Output buffering is a requirement of merge mode rather than a tuning knob, since the pass
-over the file list is per flush. The connector does not warn about it; the user
-documentation states it instead.
+over the file list is per flush. The connector says so once at startup when it is off, and
+the user documentation carries the measurements.
 
 ## Code layout
 
