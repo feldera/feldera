@@ -9,7 +9,7 @@
 //! one condition here worth a log line, at most once an hour, naming the remedy.
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use feldera_adapterlib::metrics::{ConnectorHistogram, ConnectorMetrics, ValueType};
@@ -48,11 +48,41 @@ pub struct MergeMetrics {
     /// how long the object store took to serve it.
     flush_latency: ExponentialHistogram,
     last_warning: Mutex<Option<Instant>>,
+    /// The connector was asked to maintain the table itself.
+    maintains_table: AtomicBool,
+    /// Set when a maintenance run fails, so the warning it suppresses comes back.
+    maintenance_failing: AtomicBool,
+    compactions: AtomicU64,
+    compaction_failures: AtomicU64,
+    reclaimed_rows: AtomicU64,
+    /// 1 while the last run left mostly-superseded files behind.
+    reclaim_incomplete: AtomicU64,
 }
 
 impl MergeMetrics {
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
+    }
+
+    /// The connector maintains this table itself, so the compaction advice below is moot.
+    pub fn maintains_the_table(&self) {
+        self.maintains_table.store(true, Ordering::Relaxed);
+    }
+
+    /// Fold in one maintenance run.
+    pub fn record_compaction(&self, rows_reclaimed: u64, incomplete: bool) {
+        self.compactions.fetch_add(1, Ordering::Relaxed);
+        self.reclaimed_rows
+            .fetch_add(rows_reclaimed, Ordering::Relaxed);
+        self.reclaim_incomplete
+            .store(incomplete as u64, Ordering::Relaxed);
+        self.maintenance_failing.store(false, Ordering::Relaxed);
+    }
+
+    /// Record a maintenance run that failed. The table is intact, but nothing was reclaimed.
+    pub fn record_compaction_failure(&self) {
+        self.compaction_failures.fetch_add(1, Ordering::Relaxed);
+        self.maintenance_failing.store(true, Ordering::Relaxed);
     }
 
     /// Record how long one flush took, whatever its outcome.
@@ -88,6 +118,9 @@ impl MergeMetrics {
     /// Record the table's superseded-row ratio, warning when it crosses the threshold.
     ///
     /// `live` and `superseded` describe the whole table, as the snapshot says after a commit.
+    /// The warning asks an operator to maintain the table, so it is suppressed while the
+    /// connector does that itself -- and due again as soon as that stops working. The gauge
+    /// is recorded either way.
     pub fn record_tombstone_ratio(&self, live: u64, superseded: u64, endpoint: &str, uri: &str) {
         let total = live + superseded;
         if total == 0 {
@@ -97,7 +130,9 @@ impl MergeMetrics {
         self.tombstone_ratio_permille
             .store((ratio * 1000.0) as u64, Ordering::Relaxed);
 
-        if ratio < TOMBSTONE_WARN_RATIO {
+        let maintained = self.maintains_table.load(Ordering::Relaxed)
+            && !self.maintenance_failing.load(Ordering::Relaxed);
+        if maintained || ratio < TOMBSTONE_WARN_RATIO {
             return;
         }
 
@@ -112,10 +147,10 @@ impl MergeMetrics {
 
         warn!(
             "delta_table {endpoint}: {:.0}% of the rows in '{uri}' are superseded versions \
-             ({superseded} superseded, {live} live). Merge mode supersedes a row without \
-             rewriting the file that holds it, so reads stay proportional to the total until \
-             a compaction reclaims them. Run OPTIMIZE on the table, on a schedule, or set \
-             the connector's 'optimize_interval_secs' if Feldera is its only writer.",
+             ({superseded} superseded, {live} live), and reads still scan them. Set the \
+             connector's 'optimize_interval_secs' to reclaim them automatically, or compact \
+             the table yourself. See 'Compaction is required' in the Delta output connector \
+             documentation.",
             ratio * 100.0
         );
     }
@@ -203,6 +238,33 @@ impl ConnectorMetrics for MergeMetrics {
                 "Bytes written to object storage: new data files plus deletion vectors.",
                 ValueType::Counter,
                 get(&self.bytes_written),
+            ),
+            (
+                "output_connector_delta_merge_compactions_total",
+                "Maintenance runs the connector completed, when \
+                 'optimize_interval_secs' asks it to maintain the table.",
+                ValueType::Counter,
+                get(&self.compactions),
+            ),
+            (
+                "output_connector_delta_merge_compaction_failures_total",
+                "Maintenance runs that failed. The table is left intact and the next run \
+                 retries, but nothing was reclaimed by this one.",
+                ValueType::Counter,
+                get(&self.compaction_failures),
+            ),
+            (
+                "output_connector_delta_merge_reclaimed_rows_total",
+                "Superseded rows the connector's own maintenance removed from storage.",
+                ValueType::Counter,
+                get(&self.reclaimed_rows),
+            ),
+            (
+                "output_connector_delta_merge_reclaim_incomplete",
+                "1 when the last maintenance run ran out of time with files still mostly \
+                 superseded. Sustained, it means reclamation is falling behind the writes.",
+                ValueType::Gauge,
+                get(&self.reclaim_incomplete),
             ),
             (
                 "output_connector_delta_merge_tombstone_ratio_permille",
@@ -304,17 +366,23 @@ mod test {
         );
     }
 
-    /// An empty table has no ratio to report, and must not divide by zero.
+    /// An empty table has no ratio. Without the guard it is NaN, and `NaN < threshold` is
+    /// false, so the connector would advise compacting a table with nothing in it.
     #[test]
     fn an_empty_table_reports_no_ratio() {
         let metrics = MergeMetrics::new();
         metrics.record_tombstone_ratio(0, 0, "e", "uri");
+
         assert_eq!(
             value(
                 &metrics,
                 "output_connector_delta_merge_tombstone_ratio_permille"
             ),
             0.0
+        );
+        assert!(
+            metrics.last_warning.lock().is_none(),
+            "nothing to advise on"
         );
     }
 
@@ -347,6 +415,92 @@ mod test {
             exported[0].snapshot.sum(),
             55_000,
             "the histogram must be exported in the microseconds its name claims"
+        );
+    }
+
+    /// A connector that maintains the table itself must not tell the operator to do it --
+    /// and must start telling them again the moment its own maintenance stops working.
+    #[test]
+    fn the_warning_follows_whether_maintenance_works() {
+        let metrics = MergeMetrics::new();
+        metrics.maintains_the_table();
+        metrics.record_tombstone_ratio(100, 900, "e", "uri");
+
+        assert!(metrics.last_warning.lock().is_none(), "no advice is due");
+        assert_eq!(
+            value(
+                &metrics,
+                "output_connector_delta_merge_tombstone_ratio_permille"
+            ),
+            900.0,
+            "the gauge is still recorded"
+        );
+
+        metrics.record_compaction_failure();
+        metrics.record_tombstone_ratio(100, 900, "e", "uri");
+        assert!(
+            metrics.last_warning.lock().is_some(),
+            "a table nothing is successfully maintaining needs the operator"
+        );
+
+        // A later run that works takes the advice back.
+        *metrics.last_warning.lock() = None;
+        metrics.record_compaction(4, false);
+        metrics.record_tombstone_ratio(100, 900, "e", "uri");
+        assert!(
+            metrics.last_warning.lock().is_none(),
+            "maintenance recovered"
+        );
+    }
+
+    /// What the maintenance runs report, so falling behind is visible without reading logs.
+    #[test]
+    fn maintenance_runs_are_counted() {
+        let metrics = MergeMetrics::new();
+        assert_eq!(
+            value(&metrics, "output_connector_delta_merge_compactions_total"),
+            0.0
+        );
+
+        metrics.record_compaction(40, true);
+        metrics.record_compaction_failure();
+
+        assert_eq!(
+            value(&metrics, "output_connector_delta_merge_compactions_total"),
+            1.0
+        );
+        assert_eq!(
+            value(
+                &metrics,
+                "output_connector_delta_merge_compaction_failures_total"
+            ),
+            1.0
+        );
+        assert_eq!(
+            value(
+                &metrics,
+                "output_connector_delta_merge_reclaimed_rows_total"
+            ),
+            40.0
+        );
+        assert_eq!(
+            value(&metrics, "output_connector_delta_merge_reclaim_incomplete"),
+            1.0,
+            "the run left work behind"
+        );
+
+        metrics.record_compaction(1, false);
+        assert_eq!(
+            value(&metrics, "output_connector_delta_merge_reclaim_incomplete"),
+            0.0,
+            "a run that finished clears it"
+        );
+        assert_eq!(
+            value(
+                &metrics,
+                "output_connector_delta_merge_reclaimed_rows_total"
+            ),
+            41.0
         );
     }
 
