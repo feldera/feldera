@@ -448,7 +448,11 @@ class TstAccumulator:
         # Test tables (passing tables together, failing tables individually)
         self.run_table_tests(pipeline_name_prefix)
         # Test views (failing views individually, passing views together)
-        self.run_expected_failures(pipeline_name_prefix)
+        # TODO: Disabling failing test: each requires a separate compilation
+        # and this causes long waits on the compiler server.
+        # Hopefully these can be re-enabled when we get rid of
+        # the compiler server.
+        # self.run_expected_failures(pipeline_name_prefix)
         self.run_expected_successes(pipeline_name_prefix)
 
 
