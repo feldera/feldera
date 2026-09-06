@@ -140,6 +140,10 @@ def test_suspend_enterprise(pipeline_name):
     """
     before_max_rss_mb = 64_000
     after_max_rss_mb = 65_000
+    # The pipeline carves the DataFusion pool out of `max_rss_mb` before sizing
+    # the circuit (`Controller::circuit_config` in crates/adapters); pinning the
+    # pool makes the expected circuit RSS exact.
+    datafusion_memory_mb = 1_000
 
     def runtime_config(max_rss_mb: int) -> dict:
         return {
@@ -147,7 +151,11 @@ def test_suspend_enterprise(pipeline_name):
             "hosts": FELDERA_TEST_NUM_HOSTS,
             "logging": "debug",
             "max_rss_mb": max_rss_mb,
+            "datafusion_memory_mb": datafusion_memory_mb,
         }
+
+    def expected_circuit_rss_bytes(max_rss_mb: int) -> int:
+        return (max_rss_mb - datafusion_memory_mb) * 1_000_000
 
     sql = r"""
     CREATE TABLE t1 (
@@ -208,7 +216,9 @@ def test_suspend_enterprise(pipeline_name):
     # Start pipeline (all connectors remain paused)
     start_pipeline(pipeline_name)
     wait_for_pipeline_reachable(pipeline_name)
-    assert _max_rss_bytes_metric(pipeline_name) == before_max_rss_mb * 1_000_000
+    assert _max_rss_bytes_metric(pipeline_name) == expected_circuit_rss_bytes(
+        before_max_rss_mb
+    )
     assert connector_paused(pipeline_name, "t1", "c1")
     assert connector_paused(pipeline_name, "t1", "c2")
     assert connector_paused(pipeline_name, "t1", "c3")
@@ -234,7 +244,9 @@ def test_suspend_enterprise(pipeline_name):
     assert resp.status_code == HTTPStatus.OK, resp.text
     start_pipeline(pipeline_name)
     wait_for_pipeline_reachable(pipeline_name)
-    assert _max_rss_bytes_metric(pipeline_name) == after_max_rss_mb * 1_000_000
+    assert _max_rss_bytes_metric(pipeline_name) == expected_circuit_rss_bytes(
+        after_max_rss_mb
+    )
     # After resume: c1 running (EOI), c2,c3 still paused
     assert not connector_paused(pipeline_name, "t1", "c1")
     assert connector_paused(pipeline_name, "t1", "c2")
