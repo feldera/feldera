@@ -26,14 +26,11 @@ use std::sync::Arc;
 use anyhow::{Result as AnyResult, anyhow};
 use arrow::datatypes::{Field as ArrowField, Schema as ArrowSchema};
 use delta_kernel::expressions::Scalar;
-use deltalake::kernel::transaction::{
-    CommitBuilder, CommitProperties, TableReference, TransactionError,
-};
-use deltalake::kernel::{Action, Add, DeletionVectorDescriptor, LogicalFileView};
+use deltalake::DeltaTable;
+use deltalake::kernel::{Action, Add, LogicalFileView};
 use deltalake::logstore::ObjectStoreRef;
 use deltalake::operations::write::writer::DeltaWriter;
 use deltalake::protocol::{DeltaOperation, SaveMode};
-use deltalake::{DeltaTable, DeltaTableError};
 use serde_arrow::ArrayBuilder;
 use serde_arrow::schema::SerdeArrowSchema;
 use tracing::debug;
@@ -44,6 +41,7 @@ use feldera_types::program_schema::{Relation, SqlIdentifier};
 
 use super::super::output::{TARGET_FILE_SIZE, bounded_writer_config};
 use super::chunk::LookupChunk;
+use super::commit_actions;
 use super::key::{self, KeyEncoder};
 use super::probe::Pruning;
 use super::probe::{Candidate, ProbeMetrics, locate};
@@ -311,91 +309,17 @@ impl MergeWriter {
             return Ok(());
         }
 
-        commit(table, actions).await
+        commit_actions(
+            table,
+            actions,
+            DeltaOperation::Write {
+                mode: SaveMode::Append,
+                partition_by: None,
+                predicate: None,
+            },
+        )
+        .await
     }
-}
-
-/// How often a commit moves onto a newer table version before the caller redoes its work.
-const COMMIT_ATTEMPTS: usize = 5;
-
-/// Commit a flush's actions and advance the table to the committed version.
-///
-/// Never trusts delta-rs's conflict checker: since delta-rs#4568 it lets a remove commit over
-/// an `OPTIMIZE` that already removed the same file, which revives the file and duplicates
-/// its rows. A commit lands only on the version it read, or on a newer one when
-/// [`first_stale_remove`] finds nothing it depends on changed.
-async fn commit(table: &mut DeltaTable, actions: Vec<Action>) -> AnyResult<()> {
-    let operation = DeltaOperation::Write {
-        mode: SaveMode::Append,
-        partition_by: None,
-        predicate: None,
-    };
-    for _ in 0..COMMIT_ATTEMPTS {
-        let read_snapshot = table.state.as_ref().map(|s| s as &dyn TableReference);
-        let committed = CommitBuilder::from(CommitProperties::default().with_max_retries(0))
-            .with_actions(actions.clone())
-            .build(read_snapshot, table.log_store(), operation.clone())
-            .await;
-        match committed {
-            Ok(finalized) => {
-                // The next flush looks up rows in this snapshot, so it must include what this
-                // one appended; otherwise an update to a row inserted here would duplicate it.
-                table.state = Some(finalized.snapshot);
-                return Ok(());
-            }
-            // `max_retries(0)` reports a newer version this way.
-            Err(DeltaTableError::Transaction {
-                source: TransactionError::MaxCommitAttempts(_),
-            }) => {
-                let read = table.snapshot()?;
-                let (metadata, protocol) = (read.metadata().clone(), read.protocol().clone());
-                table.update_state().await?;
-                let latest = table.snapshot()?;
-                if latest.metadata() != &metadata || latest.protocol() != &protocol {
-                    return Err(anyhow!(
-                        "a concurrent commit changed the Delta table's schema, properties, or \
-                         protocol since this commit read it"
-                    ));
-                }
-                if let Some(path) = first_stale_remove(table, &actions)? {
-                    return Err(anyhow!(
-                        "a concurrent commit (for example OPTIMIZE) removed or rewrote '{path}', \
-                         which this commit also changes"
-                    ));
-                }
-            }
-            Err(e) => {
-                return Err(anyhow!(
-                    "error committing to the Delta table (read version: {:?}): {e:?}",
-                    table.version()
-                ));
-            }
-        }
-    }
-    Err(anyhow!(
-        "the Delta table gained a newer version on each of {COMMIT_ATTEMPTS} attempts to commit"
-    ))
-}
-
-/// The first file `actions` removes that `table` no longer holds as the remove saw it: gone,
-/// or carrying a different deletion vector. `None` when every remove still applies.
-fn first_stale_remove(table: &DeltaTable, actions: &[Action]) -> AnyResult<Option<String>> {
-    let mut expected: HashMap<&str, &Option<DeletionVectorDescriptor>> = actions
-        .iter()
-        .filter_map(|action| match action {
-            Action::Remove(remove) => Some((remove.path.as_str(), &remove.deletion_vector)),
-            _ => None,
-        })
-        .collect();
-    for file in table.snapshot()?.log_data() {
-        let path = file.path();
-        if let Some(seen) = expected.get(path.as_ref())
-            && &file.deletion_vector_descriptor() == *seen
-        {
-            expected.remove(path.as_ref());
-        }
-    }
-    Ok(expected.into_keys().next().map(str::to_string))
 }
 
 /// Read the table's live and superseded row counts out of the committed snapshot.
