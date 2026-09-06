@@ -1258,10 +1258,13 @@ impl DeltaTableWriter {
                             inner.endpoint_id,
                             ConnectorHealth::healthy(),
                         );
+                        // Both sides, matching what cdc mode reports: it writes a row per
+                        // delete, so counting only appends would make a delete-only flush
+                        // look idle.
                         controller.status.output_buffer(
                             inner.endpoint_id,
                             metrics.bytes_written as usize,
-                            metrics.rows_appended as usize,
+                            (metrics.rows_appended + metrics.dv.rows_tombstoned) as usize,
                         );
                     }
                     // After the commit, never before: a compaction starting mid-flush would
