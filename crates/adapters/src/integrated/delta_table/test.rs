@@ -3494,7 +3494,9 @@ fn ci_object_store_config() -> Vec<(String, String)> {
 /// is deleted after 7 days.
 #[cfg(feature = "delta-s3-test")]
 fn ci_store_uri() -> String {
-    required_env("CI_OBJECT_STORE_URI").trim_end_matches('/').to_string()
+    required_env("CI_OBJECT_STORE_URI")
+        .trim_end_matches('/')
+        .to_string()
 }
 
 /// Store for read-only input data, which has no expiry rule. Fixtures that
@@ -4115,10 +4117,7 @@ fn delta_table_s3_people_2m() {
         .chain([("timeout".to_string(), "1000 secs".to_string())])
         .collect::<HashMap<_, _>>();
 
-    let table_uri = format!(
-        "{}/delta-connector-tests/people_2m/",
-        ci_inputs_store_uri()
-    );
+    let table_uri = format!("{}/delta-connector-tests/people_2m/", ci_inputs_store_uri());
     let table_uri = table_uri.as_str();
     let mut json_file = delta_table_snapshot_to_json::<DatabricksPeople>(
         table_uri,
