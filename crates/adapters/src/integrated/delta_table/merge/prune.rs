@@ -27,7 +27,7 @@
 //! | A key column has no statistic on this unit | Keep. A missing statistic is not an empty range |
 //! | A statistic is null | Keep |
 //! | The encoder rejects a statistic's type | Keep |
-//! | A key column is `FLOAT` or `DOUBLE` | Pruning is off for the whole key: Parquet and Delta conventionally leave NaN out of min/max, so a box test could exclude a NaN key that is present |
+//! | A key column is `FLOAT` or `DOUBLE` | Statistics pruning is off for the whole key: Parquet and Delta conventionally leave NaN out of min/max, so a box test could exclude a NaN key that is present |
 //! | A key being sought is null | Pruning is off for that lookup pass: nulls are left out of min/max too, so a null key falls below every range |
 //!
 //! String statistics are truncated by the writer -- minimum down, maximum up -- so the box
@@ -42,7 +42,7 @@ use arrow::row::{RowConverter, SortField};
 use delta_kernel::expressions::Scalar;
 
 use super::chunk::LookupChunk;
-use super::key::KeyEncoder;
+use super::key::{KeyEncoder, normalize_floats};
 
 /// Per-key-column `[min, max]` statistics for one file or row group.
 ///
@@ -124,10 +124,11 @@ impl PartitionFilter {
 
     /// Record the partitions a batch of keys belongs to, given its columns in declaration order.
     pub fn record(&mut self, key_columns: &[ArrayRef]) -> AnyResult<()> {
+        // Normalized like the key encoder, so a float partition matches either sign of zero.
         let projected: Vec<ArrayRef> = self
             .columns
             .iter()
-            .map(|i| key_columns[*i].clone())
+            .map(|i| normalize_floats(&key_columns[*i]))
             .collect();
         let rows = self
             .converter
@@ -148,7 +149,7 @@ impl PartitionFilter {
                 return true;
             };
             match value.to_array(1) {
-                Ok(array) if array.null_count() == 0 => columns.push(array),
+                Ok(array) if array.null_count() == 0 => columns.push(normalize_floats(&array)),
                 // Null is a legitimate partition, but not one this encoder is trusted to
                 // render identically, so keep the file.
                 _ => return true,
@@ -220,7 +221,7 @@ pub fn may_contain(chunk: &LookupChunk, encoder: &KeyEncoder, stats: &KeyStats) 
 mod test {
     use super::*;
     use crate::integrated::delta_table::merge::test::{arrow_schema, key_relation};
-    use arrow::array::{Int64Array, StringArray};
+    use arrow::array::{Float64Array, Int64Array, StringArray};
     use arrow::datatypes::{DataType, Field, Fields};
     use arrow::row::{RowConverter, Rows, SortField};
     use std::sync::Arc;
@@ -340,6 +341,43 @@ mod test {
         assert!(
             !stats_pruning_sound(&[nested]),
             "a float nested in a ROW key is still a float"
+        );
+    }
+
+    /// A float partition column must match either sign of zero, since the key encoder holds
+    /// them equal. A filter that did not would prune the file holding the row, leaving two
+    /// live rows for one key.
+    #[test]
+    fn a_float_partition_value_matches_either_zero() {
+        let names = vec!["d".to_string()];
+        let fields = vec![Field::new("d", DataType::Float64, false)];
+        let mut filter = PartitionFilter::new(&names, &fields, &names)
+            .unwrap()
+            .unwrap();
+
+        let key: ArrayRef = Arc::new(Float64Array::from(vec![0.0f64]));
+        filter.record(&[key]).unwrap();
+
+        let stored = HashMap::from([("d".to_string(), Scalar::Double(-0.0))]);
+        assert!(
+            filter.may_contain(&stored, &names),
+            "a row stored under -0.0 holds the key 0.0"
+        );
+
+        let elsewhere = HashMap::from([("d".to_string(), Scalar::Double(1.0))]);
+        assert!(
+            !filter.may_contain(&elsewhere, &names),
+            "a different value must still prune"
+        );
+
+        // The other direction, since either side may hold either sign.
+        let key: ArrayRef = Arc::new(Float64Array::from(vec![-0.0f64]));
+        filter.clear();
+        filter.record(&[key]).unwrap();
+        let stored = HashMap::from([("d".to_string(), Scalar::Double(0.0))]);
+        assert!(
+            filter.may_contain(&stored, &names),
+            "a row stored under 0.0 holds the key -0.0"
         );
     }
 }

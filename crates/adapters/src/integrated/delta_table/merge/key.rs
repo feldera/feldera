@@ -7,14 +7,19 @@
 //!
 //! A type is usable as a key only when equality survives that round trip. That is a per-type
 //! property, so [`validate_key_types`] names the types it rejects rather than testing for
-//! nesting.
+//! nesting. Floats survive it only after [`normalize_floats`] collapses the values Feldera
+//! holds equal but the encoding does not.
 
 use anyhow::{Result as AnyResult, anyhow, bail};
-use arrow::array::{Array, ArrayRef, RecordBatch, StructArray};
+use arrow::array::{Array, ArrayRef, AsArray, RecordBatch, StructArray};
 use arrow::compute::cast;
-use arrow::datatypes::{DataType as ArrowDataType, Schema as ArrowSchema};
+use arrow::compute::kernels::arity::unary;
+use arrow::datatypes::{
+    DataType as ArrowDataType, Float32Type, Float64Type, Schema as ArrowSchema,
+};
 use arrow::row::{RowConverter, Rows, SortField};
 use feldera_types::program_schema::{ColumnType, Relation, SqlType};
+use std::sync::Arc;
 
 /// Reject key types whose round trip through parquet does not preserve Feldera's equality.
 ///
@@ -23,8 +28,10 @@ use feldera_types::program_schema::{ColumnType, Relation, SqlType};
 ///
 /// `MAP` and `VARIANT` have no canonical physical form -- a parquet map keeps whatever entry
 /// order was written, a variant renders as JSON -- so on a table we do not administer,
-/// equality would be silently wrong rather than loudly unsupported. `ARRAY` would work but
-/// carries no statistics, so it waits until someone needs it.
+/// equality would be silently wrong rather than loudly unsupported.
+///
+/// `ARRAY` round trips correctly, but Delta collects no min/max for it, so an array key would
+/// turn file pruning off. Rejected until someone needs it.
 pub fn validate_key_types(key_schema: &Relation) -> Result<(), String> {
     for field in &key_schema.fields {
         validate_key_column(&field.name.name(), &field.columntype)?;
@@ -185,6 +192,7 @@ impl KeyEncoder {
     /// Encode key columns supplied directly, in declaration order.
     pub fn encode_columns(&self, columns: &[ArrayRef]) -> AnyResult<Rows> {
         let columns = self.cast_to_declared_types(columns)?;
+        let columns: Vec<ArrayRef> = columns.iter().map(normalize_floats).collect();
         self.converter
             .convert_columns(&columns)
             .map_err(|e| anyhow!("unable to encode key: {e}"))
@@ -229,6 +237,49 @@ impl KeyEncoder {
             }
         }
         Ok(matched)
+    }
+}
+
+/// Collapse the float values Feldera holds equal but the row encoding does not.
+///
+/// The encoding orders floats by their bits, so `-0.0` and `0.0`, and two `NaN`s with
+/// different payloads, encode differently. Feldera compares them equal, so without this a
+/// key stored as `-0.0` is never found again and the table keeps two live rows for it.
+///
+/// [`super::prune::PartitionFilter`] applies it too: it compares the same values.
+pub(super) fn normalize_floats(column: &ArrayRef) -> ArrayRef {
+    macro_rules! canonical {
+        ($arrow:ty, $native:ty) => {{
+            Arc::new(unary::<_, _, $arrow>(
+                column.as_primitive::<$arrow>(),
+                |v| {
+                    if v.is_nan() {
+                        <$native>::NAN
+                    } else if v == 0.0 {
+                        0.0
+                    } else {
+                        v
+                    }
+                },
+            ))
+        }};
+    }
+
+    match column.data_type() {
+        ArrowDataType::Float32 => canonical!(Float32Type, f32),
+        ArrowDataType::Float64 => canonical!(Float64Type, f64),
+        // A ROW key is a composite key, so normalize its leaves the same way.
+        ArrowDataType::Struct(fields) => {
+            let structs = column.as_any().downcast_ref::<StructArray>().unwrap();
+            let normalized: Vec<ArrayRef> =
+                structs.columns().iter().map(normalize_floats).collect();
+            Arc::new(StructArray::new(
+                fields.clone(),
+                normalized,
+                structs.nulls().cloned(),
+            ))
+        }
+        _ => column.clone(),
     }
 }
 
@@ -538,5 +589,175 @@ mod test {
             err.contains("not present in the target Delta table"),
             "{err}"
         );
+    }
+}
+
+#[cfg(test)]
+mod float_key_properties {
+    use super::*;
+    use arrow::array::{Float32Array, Float64Array};
+    use arrow::datatypes::{DataType, Field as ArrowField, Fields};
+    use proptest::prelude::*;
+    use std::sync::Arc;
+
+    /// Encode two values of one column and report whether they encode to the same bytes.
+    fn encode_equal(column: ArrayRef) -> bool {
+        let field = SortField::new(column.data_type().clone());
+        let converter = RowConverter::new(vec![field]).unwrap();
+        let rows = converter
+            .convert_columns(&[normalize_floats(&column)])
+            .unwrap();
+        rows.row(0) == rows.row(1)
+    }
+
+    /// Feldera holds two floats equal when they compare equal, or when both are NaN --
+    /// whatever payload each carries.
+    fn feldera_equal(a: f64, b: f64) -> bool {
+        a == b || (a.is_nan() && b.is_nan())
+    }
+
+    /// The `f64` bit patterns worth pairing up, and random ones besides.
+    ///
+    /// Uniform bits alone prove nothing here: the only pairs that can fail are the two
+    /// zeroes and two NaNs, and drawing either from 64 random bits essentially never
+    /// happens. Weighted so that most pairs come from this list.
+    fn interesting_f64_bits() -> impl Strategy<Value = u64> {
+        prop_oneof![
+            4 => prop::sample::select(vec![
+                0.0f64.to_bits(),
+                (-0.0f64).to_bits(),
+                f64::NAN.to_bits(),
+                (-f64::NAN).to_bits(),
+                0x7ff8_0000_0000_0001,  // quiet NaN, payload 1
+                0x7ff0_0000_0000_0001,  // signalling NaN
+                0xfff8_0000_dead_beef,  // negative NaN, another payload
+                f64::INFINITY.to_bits(),
+                f64::NEG_INFINITY.to_bits(),
+                f64::MIN_POSITIVE.to_bits(),
+                (-f64::MIN_POSITIVE).to_bits(),
+                1.0f64.to_bits(),
+                (-1.0f64).to_bits(),
+            ]),
+            1 => any::<u64>(),
+        ]
+    }
+
+    /// As [`interesting_f64_bits`], for `REAL`.
+    fn interesting_f32_bits() -> impl Strategy<Value = u32> {
+        prop_oneof![
+            4 => prop::sample::select(vec![
+                0.0f32.to_bits(),
+                (-0.0f32).to_bits(),
+                f32::NAN.to_bits(),
+                (-f32::NAN).to_bits(),
+                0x7fc0_0001,  // quiet NaN, payload 1
+                0x7f80_0001,  // signalling NaN
+                0xffc0_beef,  // negative NaN, another payload
+                f32::INFINITY.to_bits(),
+                f32::NEG_INFINITY.to_bits(),
+                f32::MIN_POSITIVE.to_bits(),
+                1.0f32.to_bits(),
+                (-1.0f32).to_bits(),
+            ]),
+            1 => any::<u32>(),
+        ]
+    }
+
+    /// The equivalence classes the encoding must collapse, named rather than drawn.
+    ///
+    /// The property test below explores far more, but what it finds depends on the draw: it
+    /// shrinks to a NaN pair, so the signed zeroes that caused the original bug would only
+    /// be pinned by luck. These are the cases that must never regress.
+    #[test]
+    fn the_encoding_collapses_exactly_feldera_s_float_equalities() {
+        let equal: [(f64, f64); 4] = [
+            (0.0, -0.0),
+            (f64::NAN, -f64::NAN),
+            (f64::from_bits(0x7ff8_0000_0000_0001), f64::NAN),
+            (
+                f64::from_bits(0x7ff8_0000_0000_0001),
+                f64::from_bits(0xfff8_0000_dead_beef),
+            ),
+        ];
+        for (a, b) in equal {
+            let column: ArrayRef = Arc::new(Float64Array::from(vec![a, b]));
+            assert!(
+                encode_equal(column),
+                "{a:?} and {b:?} are one key to Feldera but encode differently"
+            );
+        }
+
+        let distinct: [(f64, f64); 4] = [
+            (0.0, 1.0),
+            (-1.0, 1.0),
+            (f64::INFINITY, f64::NEG_INFINITY),
+            (f64::MIN_POSITIVE, -f64::MIN_POSITIVE),
+        ];
+        for (a, b) in distinct {
+            let column: ArrayRef = Arc::new(Float64Array::from(vec![a, b]));
+            assert!(
+                !encode_equal(column),
+                "{a:?} and {b:?} are different keys but encode the same"
+            );
+        }
+    }
+
+    proptest! {
+        /// Byte equality of encoded keys must mean exactly Feldera's equality, no more and
+        /// no less.
+        ///
+        /// This is the property the whole merge lookup rests on: it finds the row to
+        /// supersede by comparing encoded bytes, so a pair Feldera holds equal that encodes
+        /// differently leaves two live rows for one key, and a pair it holds distinct that
+        /// encodes the same supersedes the wrong row. Drawn from raw bits rather than from
+        /// `f64`, so `-0.0`, both infinities and NaNs of every payload all come up.
+        #[test]
+        fn encoded_f64_keys_are_equal_exactly_when_feldera_is(
+            a_bits in interesting_f64_bits(),
+            b_bits in interesting_f64_bits(),
+        ) {
+            let (a, b) = (f64::from_bits(a_bits), f64::from_bits(b_bits));
+            let column: ArrayRef = Arc::new(Float64Array::from(vec![a, b]));
+            prop_assert_eq!(
+                encode_equal(column),
+                feldera_equal(a, b),
+                "f64 {:?} ({:#x}) against {:?} ({:#x})", a, a_bits, b, b_bits
+            );
+        }
+
+        /// The same for `REAL`, which takes the `Float32` arm.
+        #[test]
+        fn encoded_f32_keys_are_equal_exactly_when_feldera_is(
+            a_bits in interesting_f32_bits(),
+            b_bits in interesting_f32_bits(),
+        ) {
+            let (a, b) = (f32::from_bits(a_bits), f32::from_bits(b_bits));
+            let column: ArrayRef = Arc::new(Float32Array::from(vec![a, b]));
+            prop_assert_eq!(
+                encode_equal(column),
+                feldera_equal(a as f64, b as f64),
+                "f32 {:?} ({:#x}) against {:?} ({:#x})", a, a_bits, b, b_bits
+            );
+        }
+
+        /// A ROW key is a composite key, so a float leaf inside one must normalize too.
+        /// The recursion is separate code from the scalar arm and can rot on its own.
+        #[test]
+        fn a_float_leaf_of_a_row_key_normalizes_like_a_scalar(
+            a_bits in interesting_f64_bits(),
+            b_bits in interesting_f64_bits(),
+        ) {
+            let (a, b) = (f64::from_bits(a_bits), f64::from_bits(b_bits));
+            let leaf: ArrayRef = Arc::new(Float64Array::from(vec![a, b]));
+            let fields: Fields =
+                vec![Arc::new(ArrowField::new("leaf", DataType::Float64, true))].into();
+            let column: ArrayRef =
+                Arc::new(StructArray::new(fields, vec![leaf], None));
+            prop_assert_eq!(
+                encode_equal(column),
+                feldera_equal(a, b),
+                "ROW(leaf) {:?} against {:?}", a, b
+            );
+        }
     }
 }
