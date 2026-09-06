@@ -43,6 +43,7 @@ fn create_indexed_writer(threads: usize, table_uri: &str) -> DeltaTableWriter {
         CancellationToken::new(),
         false,
         true,
+        true,
     )
     .unwrap()
 }
