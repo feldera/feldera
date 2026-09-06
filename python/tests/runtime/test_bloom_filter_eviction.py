@@ -34,7 +34,6 @@ from feldera.testutils import (
     FELDERA_TEST_NUM_HOSTS,
     FELDERA_TEST_NUM_WORKERS,
     log,
-    wait_end_of_input,
 )
 from tests import TEST_CLIENT, enterprise_only
 from tests.platform.helper import gen_pipeline_name
@@ -130,9 +129,9 @@ def runtime_config(rate: float) -> RuntimeConfig:
 def measure_at_rate(pipeline: Pipeline, rate: float) -> tuple[int, int]:
     """Reopens the checkpoint at `rate` and measures the filters it loads.
 
-    Starts paused so the datagen connector cannot run again: this pipeline is
-    not fault tolerant, so a running connector would re-ingest from scratch and
-    the filters would no longer describe the checkpointed batches.
+    Starts paused so that nothing runs on top of the checkpoint: a running
+    pipeline could write new batches, and the filters would then describe those
+    rather than the ones the checkpoint holds.
     """
     config = pipeline.runtime_config()
     config.storage = storage_config(rate).__dict__
@@ -167,7 +166,7 @@ def test_bloom_filter_eviction_follows_the_rate(pipeline_name: str) -> None:
     try:
         log(f"ingesting {ROW_LIMIT} records at the default rate {DEFAULT_RATE:g}")
         pipeline.start()
-        wait_end_of_input(pipeline)
+        pipeline.wait_for_completion(timeout_s=3600)
         # Checkpoints before stopping, which is the checkpoint every step below
         # reopens.
         pipeline.stop(force=False)
