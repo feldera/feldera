@@ -7,13 +7,13 @@
 //!
 //! Every vector a flush touches is packed into one object at the table root, named
 //! `deletion_vector_<uuid>.bin` as Delta Spark names it. Packing keeps the number of objects
-//! written independent of the number of files touched. VACUUM reclaims them like any other
-//! file the log stops referencing.
+//! written independent of the number of files touched. The object is written before the
+//! commit, as data files are; VACUUM protects an untracked object younger than the retention
+//! period, so that window is safe.
 //!
-//! Caveat: delta-rs `VacuumMode::Full` deletes these as orphans, because a vector is named
-//! only inside a descriptor, which resurrects every row they tombstoned. The fix is written
-//! but not in the pinned rev, so it is still live: use `Lite`, the default, which deletes
-//! only what an expired `remove` names, or Spark, which gets full mode right.
+//! Only Spark's VACUUM reclaims these. A vector is named inside a descriptor rather than as a
+//! path of its own, so delta-rs's `Lite` never sees one and leaves it for ever, while `Full`
+//! deletes live ones as orphans and resurrects every row they tombstoned.
 
 use std::collections::BTreeMap;
 
@@ -21,7 +21,7 @@ use anyhow::{Result as AnyResult, anyhow};
 use delta_kernel::actions::deletion_vector_writer::{
     KernelDeletionVector, StreamingDeletionVectorWriter,
 };
-use deltalake::kernel::{Action, Add, DeletionVectorDescriptor, StorageType};
+use deltalake::kernel::{Action, Add, DeletionVectorDescriptor, Remove, StorageType};
 use deltalake::logstore::object_store::ObjectStoreExt as _;
 use deltalake::{DeltaTable, Path};
 use roaring::RoaringTreemap;
@@ -44,6 +44,7 @@ impl Tombstones {
 
     /// Mark one row. Marking a row already marked in this flush is a no-op.
     pub fn insert(&mut self, path: &str, ordinal: u64) {
+        // `get_mut` first: `entry` would allocate the path on every row of a file.
         match self.files.get_mut(path) {
             Some(bitmap) => bitmap.insert(ordinal),
             None => self
@@ -134,7 +135,7 @@ pub async fn write_deletion_vectors(
     let mut metrics = DvWriteMetrics::default();
 
     for (path, new_ordinals) in &tombstones.files {
-        let add = live.get(path).ok_or_else(|| {
+        let (add, remove) = live.get(path).ok_or_else(|| {
             anyhow!(
                 "data file '{path}' is no longer in the Delta table snapshot; \
                  a concurrent maintenance job replaced it and the lookup must be redone"
@@ -157,7 +158,7 @@ pub async fn write_deletion_vectors(
         }
 
         if Some(bitmap.len()) == physical_rows(add) {
-            actions.push(Action::Remove(remove_for(add)));
+            actions.push(Action::Remove(remove.clone()));
             metrics.files_dropped += 1;
             continue;
         }
@@ -170,7 +171,7 @@ pub async fn write_deletion_vectors(
             .write_deletion_vector(dv)
             .map_err(|e| anyhow!("error serializing deletion vector for '{path}': {e}"))?;
 
-        actions.push(Action::Remove(remove_for(add)));
+        actions.push(Action::Remove(remove.clone()));
         actions.push(Action::Add(Add {
             deletion_vector: Some(DeletionVectorDescriptor {
                 storage_type: StorageType::UuidRelativePath,
@@ -205,14 +206,17 @@ pub async fn write_deletion_vectors(
     Ok(DvWrite { actions, metrics })
 }
 
-/// The `add` action of every file `tombstones` names, resolved against the snapshot.
+/// The `add` and matching `remove` of every file `tombstones` names, from the snapshot.
 ///
 /// Done before anything is written, so a flush naming a file that OPTIMIZE has since replaced
 /// fails without leaving a deletion vector object behind.
+///
+/// The `remove` carries the file's *current* vector: a file is identified by path plus vector
+/// id, so without it log replay cannot tell which version is being removed.
 fn resolve_live_files(
     tombstones: &Tombstones,
     table: &DeltaTable,
-) -> AnyResult<BTreeMap<String, Add>> {
+) -> AnyResult<BTreeMap<String, (Add, Remove)>> {
     let state = table
         .snapshot()
         .map_err(|e| anyhow!("Delta table has no snapshot to tombstone rows in: {e}"))?;
@@ -221,10 +225,11 @@ fn resolve_live_files(
     for view in state.log_data() {
         let path = view.path().to_string();
         if tombstones.files.contains_key(&path) {
-            // The re-added file keeps its size, partition values and statistics; only the
-            // deletion vector changes. The suggested replacement yields no re-committable `Add`.
+            // `add_action` is deprecated in favour of reading arrow directly, which yields
+            // no `Add` to re-commit, and the re-add must keep the file's size, partition
+            // values and statistics. `remove_action` is delta-rs's own and not deprecated.
             #[allow(deprecated)]
-            live.insert(path, view.add_action());
+            live.insert(path, (view.add_action(), view.remove_action(true)));
         }
     }
     Ok(live)
@@ -236,25 +241,6 @@ fn physical_rows(add: &Add) -> Option<u64> {
         .ok()
         .flatten()
         .map(|stats| stats.num_records as u64)
-}
-
-/// The `remove` half of a deletion vector update.
-///
-/// It carries the file's *current* vector: a file is identified by path plus vector id, so
-/// without it log replay cannot tell which version is being removed.
-fn remove_for(add: &Add) -> deltalake::kernel::Remove {
-    deltalake::kernel::Remove {
-        path: add.path.clone(),
-        deletion_timestamp: Some(chrono::Utc::now().timestamp_millis()),
-        data_change: true,
-        extended_file_metadata: Some(true),
-        partition_values: Some(add.partition_values.clone()),
-        size: Some(add.size),
-        deletion_vector: add.deletion_vector.clone(),
-        tags: add.tags.clone(),
-        base_row_id: add.base_row_id,
-        default_row_commit_version: add.default_row_commit_version,
-    }
 }
 
 #[cfg(test)]
