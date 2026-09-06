@@ -129,6 +129,15 @@ jobs:
           ICEBERG_TEST_AWS_SECRET_ACCESS_KEY: ${{ secrets.delta_table_test_aws_secret_access_key }}
           DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID: ${{ secrets.delta_table_test_aws_access_key_id }}
           DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY: ${{ secrets.delta_table_test_aws_secret_access_key }}
+          # GCS test buckets for the Delta S3 tests, reached over the S3-compatible
+          # API under the same names the Python Delta tests use. Tables the tests
+          # write go to CI_MINIO_BUCKET, which expires objects after 7 days;
+          # read-only fixtures live in CI_MINIO_INPUTS_BUCKET, which does not.
+          CI_K8S_MINIO_ACCESS_KEY_ID: ${{ secrets.CI_GCS_HMAC_ACCESS_KEY_ID }}
+          CI_K8S_MINIO_SECRET_ACCESS_KEY: ${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}
+          CI_MINIO_ENDPOINT: https://storage.googleapis.com
+          CI_MINIO_BUCKET: feldera-ci-test-feldera-ci
+          CI_MINIO_INPUTS_BUCKET: feldera-ci-inputs-feldera-ci
           POSTGRES_SSL_URL: postgres://postgres:${{ secrets.ci_postgres_password }}@ci-postgres-internal.postgres.svc.cluster.local:5432/postgres?sslmode=require
           POSTGRES_SSL_CA_PEM: ${{ secrets.ci_postgres_tls_crt }}
           POSTGRES_SSL_VERIFY_HOSTNAME: "false"
