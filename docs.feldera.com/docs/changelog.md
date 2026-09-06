@@ -14,6 +14,44 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - The Kafka connector's `sasl.mechanism = OAUTHBEARER` authentication can now
+          target GCP Managed Service for Apache Kafka, in addition to AWS MSK. Set the
+          new `oauth_provider` field to `gcp` to mint tokens from Google Application
+          Default Credentials, including the GKE metadata server under Workload
+          Identity. See
+          [Kafka input connector](/connectors/sources/kafka#how-to-write-connector-config) (#6886).
+
+        - The NATS input connector implements the authentication methods its
+          schema already declared: a bare `nkey` seed (Ed25519
+          challenge-response), `jwt` with the seed that signs the connection
+          nonce (decentralized/operator-mode auth with the JWT and seed as two
+          secrets rather than one `.creds` file), `token`, and
+          `user_and_password`. Previously only `credentials` took effect and
+          the rest were silently ignored; configuring more than one method is
+          now rejected. A new `tls` section in `connection_config` sets
+          `require_tls` and `root_certificates_file` for servers whose
+          certificates a private CA signs. See
+          [NATS input connector](/connectors/sources/nats).
+
+        ## v0.344.0
+
+        - The Delta Lake and Iceberg input connectors read a `VARIANT` column
+          stored in the Parquet variant binary encoding, which is how Delta
+          Lake's `variant` type stores one. Values keep the types the writer
+          encoded, so a date inside a `VARIANT` arrives as a date rather than
+          as a string. A `VARIANT` column stored as JSON text still reads as
+          before, and the two can sit side by side in one table.
+
+        - Breaking change (Delta Lake output connector): a `VARIANT` column is
+          now written as the Delta `variant` type rather than as JSON text in a
+          `string` column, so values keep the types they have in Feldera. Set
+          `variant_encoding` to `json_string` for the previous encoding, which
+          is also what appending to a table whose `VARIANT` column is already a
+          `string` requires. See
+          [VARIANT](/connectors/sinks/delta#variant).
+
+        ## v0.343.0
+
         - The `bloom_false_positive_rate` storage setting now applies when a
           Bloom filter is read as well as when it is written.  Lowering it and
           restarting a pipeline reduces Bloom filter memory without rewriting
@@ -24,6 +62,8 @@ import TabItem from '@theme/TabItem';
           a checkpoint written by this or a later version cannot be resumed by
           an earlier version.  Checkpoints written by earlier versions continue
           to be read.
+
+        ## v0.340.0
 
         - Output connectors can be paused, like input connectors: a paused
           output connector discards the output of its view instead of writing it
@@ -49,40 +89,6 @@ import TabItem from '@theme/TabItem';
           token, which `fda` reads once per invocation; `feldera/oidc-auth-action`
           v3.0.1 and later export that variable. For a command that prints a
           token, pass its output as `--auth "$(...)"`.
-
-        - The Delta Lake and Iceberg input connectors read a `VARIANT` column
-          stored in the Parquet variant binary encoding, which is how Delta
-          Lake's `variant` type stores one. Values keep the types the writer
-          encoded, so a date inside a `VARIANT` arrives as a date rather than
-          as a string. A `VARIANT` column stored as JSON text still reads as
-          before, and the two can sit side by side in one table.
-
-        - Breaking change (Delta Lake output connector): a `VARIANT` column is
-          now written as the Delta `variant` type rather than as JSON text in a
-          `string` column, so values keep the types they have in Feldera. Set
-          `variant_encoding` to `json_string` for the previous encoding, which
-          is also what appending to a table whose `VARIANT` column is already a
-          `string` requires. See
-          [VARIANT](/connectors/sinks/delta#variant).
-
-        - The Kafka connector's `sasl.mechanism = OAUTHBEARER` authentication can now
-          target GCP Managed Service for Apache Kafka, in addition to AWS MSK. Set the
-          new `oauth_provider` field to `gcp` to mint tokens from Google Application
-          Default Credentials, including the GKE metadata server under Workload
-          Identity. See
-          [Kafka input connector](/connectors/sources/kafka#how-to-write-connector-config) (#6886).
-
-        - The NATS input connector implements the authentication methods its
-          schema already declared: a bare `nkey` seed (Ed25519
-          challenge-response), `jwt` with the seed that signs the connection
-          nonce (decentralized/operator-mode auth with the JWT and seed as two
-          secrets rather than one `.creds` file), `token`, and
-          `user_and_password`. Previously only `credentials` took effect and
-          the rest were silently ignored; configuring more than one method is
-          now rejected. A new `tls` section in `connection_config` sets
-          `require_tls` and `root_certificates_file` for servers whose
-          certificates a private CA signs. See
-          [NATS input connector](/connectors/sources/nats).
 
         ## v0.337.0
 
