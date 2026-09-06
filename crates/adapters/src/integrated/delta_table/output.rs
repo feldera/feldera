@@ -367,11 +367,13 @@ impl DeltaTableWriter {
         // Registered here rather than in the endpoint constructor: `add_output` has already
         // run, so the metrics slot exists, and registering before it does drops them.
         let merge_metrics = merge.is_some().then(MergeMetrics::new);
-        let compactor = merge
-            .is_some()
-            .then(|| Compactor::new(config, endpoint_name))
-            .flatten();
+        let compactor = merge_metrics
+            .clone()
+            .and_then(|metrics| Compactor::new(config, endpoint_name, metrics));
         if let (Some(metrics), Some(controller)) = (&merge_metrics, inner.controller.upgrade()) {
+            if compactor.is_some() {
+                metrics.maintains_the_table();
+            }
             controller
                 .status
                 .set_output_custom_metrics(inner.endpoint_id, metrics.clone());

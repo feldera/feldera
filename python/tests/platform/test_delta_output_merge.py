@@ -347,6 +347,8 @@ def test_merge_compacts_when_asked_to(pipeline_name):
 
         commits = _optimize_commits(loc)
         assert commits, "the connector left no OPTIMIZE commit: it never compacted"
+        # Only bin-packing commits appear here: this test never updates a row, so no
+        # deletion vector exists for the reclaim pass to rewrite a file over.
         # Compacting has to fold files together, not merely commit.
         assert any(removed > added for added, removed in commits), (
             f"OPTIMIZE rewrote no files together: {commits}"

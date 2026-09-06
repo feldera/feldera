@@ -27,7 +27,6 @@ use anyhow::{Result as AnyResult, anyhow};
 use arrow::datatypes::{Field as ArrowField, Schema as ArrowSchema};
 use delta_kernel::expressions::Scalar;
 use deltalake::DeltaTable;
-use deltalake::kernel::transaction::{CommitBuilder, CommitProperties, TableReference};
 use deltalake::kernel::{Action, Add, LogicalFileView};
 use deltalake::logstore::ObjectStoreRef;
 use deltalake::operations::write::writer::{DeltaWriter, WriterConfig};
@@ -42,6 +41,7 @@ use feldera_types::program_schema::{Relation, SqlIdentifier};
 
 use super::super::output::TARGET_FILE_SIZE;
 use super::chunk::LookupChunk;
+use super::commit_actions;
 use super::key::{self, KeyEncoder};
 use super::probe::Pruning;
 use super::probe::{Candidate, ProbeMetrics, locate};
@@ -311,24 +311,9 @@ impl MergeWriter {
             return Ok(());
         }
 
-        commit(table, actions).await
-    }
-}
-
-/// Commit a flush's actions and advance the table to the committed version.
-///
-/// The table is deliberately *not* refreshed first: keeping the lookup's snapshot as the
-/// commit's read version is what lets delta-rs tell a concurrent append it can reorder from a
-/// compaction that replaced the files this flush addressed. The second comes back as a
-/// conflict and the flush retries from the top.
-async fn commit(table: &mut DeltaTable, actions: Vec<Action>) -> AnyResult<()> {
-    let read_snapshot = table.state.as_ref().map(|s| s as &dyn TableReference);
-
-    let finalized = CommitBuilder::from(CommitProperties::default())
-        .with_actions(actions)
-        .build(
-            read_snapshot,
-            table.log_store(),
+        commit_actions(
+            table,
+            actions,
             DeltaOperation::Write {
                 mode: SaveMode::Append,
                 partition_by: None,
@@ -336,17 +321,7 @@ async fn commit(table: &mut DeltaTable, actions: Vec<Action>) -> AnyResult<()> {
             },
         )
         .await
-        .map_err(|e| {
-            anyhow!(
-                "error committing to the Delta table (read version: {:?}): {e:?}",
-                table.version()
-            )
-        })?;
-
-    // The next flush looks up rows in this snapshot, so it must include what this one
-    // appended; otherwise an update to a row inserted here would duplicate it.
-    table.state = Some(finalized.snapshot);
-    Ok(())
+    }
 }
 
 /// Read the table's live and superseded row counts out of the committed snapshot.

@@ -99,7 +99,7 @@ MERGE INTO {target_table} AS target
 | `update_mode` | <p>How the connector applies the view's changes to the table. Orthogonal to `mode`, which governs what happens to an existing table when the pipeline starts.</p><p>- `cdc`: append a change log with `__feldera_op` and `__feldera_ts` metadata columns, which a job of yours folds into a state table.</p><p>- `merge`: keep the table in sync with the view. See [Merge mode](#merge-mode).</p><p>Default: `cdc`.</p>|
 | `lookup_chunk_bytes` | <p>Ceiling, in bytes, on the encoded keys the connector holds while locating rows to supersede. `merge` mode only.</p><p>A flush whose key set exceeds this budget is split into successive lookup passes, which bounds memory at the cost of re-scanning candidate files. Default: 256 MiB.</p>|
 | `max_concurrent_probes` | <p>Number of data files read concurrently while locating rows to supersede. `merge` mode only.</p><p>Each concurrent read holds one decoded batch, so this bounds memory as well as request concurrency. Default: `4`.</p>|
-| `optimize_interval_secs` | <p>Compact the target table from the connector, at most once every this many seconds. `merge` mode only.</p><p>Off by default, because compacting is normally the table administrator's job and an existing `OPTIMIZE` schedule already does the right thing. Set it for tables where Feldera is the only writer and nothing else will compact them. The compaction runs in the background and does not hold up a flush.</p>|
+| `optimize_interval_secs` | <p>Compact the target table from the connector, at most once every this many seconds. `merge` mode only.</p><p>Merge mode marks an old row version deleted but leaves it in place. Without compaction the table keeps growing and reads keep slowing down, however few live rows it holds. See [Compaction is required](#compaction-is-required).</p><p>Off by default, because maintenance is normally the table administrator's job. Set it for tables where Feldera is the only writer and nothing else will maintain them. Hourly (`3600`) or daily (`86400`) is typical. It runs in the background and does not hold up a flush.</p>|
 
 [*]: Required fields
 
@@ -231,24 +231,37 @@ The connector exports these alongside the standard connector metrics.
 | `output_connector_delta_merge_bytes_written_total` | Bytes written: new data files plus deletion vectors |
 | `output_connector_delta_merge_compactions_total`, `output_connector_delta_merge_compaction_failures_total` | Maintenance runs, and how many failed. Only when `optimize_interval_secs` is set |
 | `output_connector_delta_merge_flush_latency_microseconds` | Histogram of whole flushes. Where object-store latency shows up; no combination of the counters above reveals it |
+| `output_connector_delta_merge_reclaimed_rows_total` | Superseded rows that maintenance removed from storage |
+| `output_connector_delta_merge_reclaim_incomplete` | `1` while the last run ran out of time with files still mostly superseded. Sustained, reclamation is falling behind the writes |
 
 ### Compaction is required
 
 Every update adds a row and marks one deleted. Without compaction the table grows without
 bound, and read cost grows with the number of updates rather than the number of live rows.
 
-Run `OPTIMIZE` on a schedule. Rewriting a file materializes its deletion vector, which every
-Delta engine implements, so an existing `OPTIMIZE` schedule already does the right thing. The
-connector warns, at most once an hour, when more than 20% of the table's rows are superseded
-versions.
+The connector warns, at most once an hour, when more than 20% of the table's rows are
+superseded versions.
 
 If Feldera is the table's only writer and nothing else will compact it, set
-`optimize_interval_secs` and the connector runs the compaction itself, in the background, no
-more often than that interval. The first one happens one interval after the connector starts,
-not at startup, so adopting a large table does not rewrite it immediately. A compaction that
-fails leaves the table exactly as it was and is retried at the next interval. Each one starts
-after a flush, so a pipeline that stops writing stops compacting, and it replaces files
-rather than deleting them -- `VACUUM` still reclaims the space, as described below.
+`optimize_interval_secs`. The connector then compacts the table itself, in the background, no
+more often than that interval. How it is scheduled:
+
+- The first run comes one interval after the connector starts, not at startup, so adopting a
+  large table does not rewrite it immediately.
+- A run gives itself one interval and stops between files when that runs out, so a large
+  backlog is cleared over several runs rather than one very long one. Every file it does
+  rewrite is committed on its own, so a run that stops early loses no work.
+- A run that fails keeps whatever it had already compacted, and is retried at the next
+  interval.
+- Runs start after a flush, so a pipeline that stops writing stops compacting.
+- A run replaces files rather than deleting them, so `VACUUM` still reclaims the space, as
+  described below.
+
+Otherwise, maintain the table yourself. `OPTIMIZE` alone is not enough: it plans on file
+size, bin-packing files below the target size, so a file that has reached that size is never
+rewritten however many of its rows are dead. Run `REORG TABLE <table> APPLY (PURGE)`
+alongside it, which is the Delta command that rewrites files to drop the rows their deletion
+vectors mark deleted.
 
 A file whose every row has been superseded is dropped outright rather than kept behind a full
 deletion vector, so a delete-heavy workload reclaims some space without `OPTIMIZE`, but an

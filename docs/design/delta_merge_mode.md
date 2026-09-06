@@ -605,8 +605,10 @@ into two live rows for one key, permanently.
 
 ## Working alongside table maintenance
 
-What the connector never does: rewrite a data file, change the schema, change the
-partitioning, alter table properties, or upgrade the protocol.
+What a flush never does: rewrite a data file, change the schema, change the partitioning,
+alter table properties, or upgrade the protocol. The background pass described below does
+rewrite files, but only ones it has already read, and only when asked for by
+`optimize_interval_secs`.
 
 Concurrency, verified against delta-rs's conflict checker:
 
@@ -615,6 +617,7 @@ Concurrency, verified against delta-rs's conflict checker:
 | OPTIMIZE removes a file being tombstoned | `ConcurrentDeleteDelete`, retry against the new snapshot. The check does not filter on `data_change`, so compaction's `data_change: false` removes still conflict, which is wanted here |
 | OPTIMIZE adds compacted files | No conflict. The read and append checks consider only `data_change: true` files under the default isolation level |
 | VACUUM | Spark retains a vector a live `add` references and reclaims the rest. delta-rs does neither: a vector is named inside a descriptor, not as a path, so `Lite` never deletes one and `Full` deletes live ones as orphans |
+| The connector's own rewrite removes a file being tombstoned | A conflict either way, and which one depends on who commits first: the flush gets `ConcurrentDeleteDelete`, while the rewrite gets `ConcurrentDeleteRead`, because `Optimize` declares that it read the whole table. The flush retries; the rewrite fails and its pass ends. `rewrite.rs`'s `a_flush_during_a_rewrite_makes_the_rewrite_lose` pins this: without it the rewrite would commit rows the flush had deleted |
 | Schema or property change | The startup checks run once, so a mid-run change is caught by the next flush instead: a metadata change conflicts on commit, and a changed key column fails the key encoding rather than superseding the wrong row |
 
 A retry re-runs the lookup against the new snapshot, because file paths may have changed.
@@ -622,7 +625,7 @@ Retries reuse the existing `retry!` macro's backoff and health reporting.
 
 Because no other party writes data, the connector does not declare a read predicate on its
 commits. `DeltaOperation::Write { predicate }` stays `None` as it is today, in
-`flush::commit`.
+`merge::commit_actions`.
 
 ## Table maintenance obligations
 
@@ -630,10 +633,14 @@ This is the main operational risk and it should be stated plainly to users. Ever
 adds a row and tombstones one. Without compaction the table grows without bound and read
 cost grows with the number of updates rather than the number of live rows.
 
-By default the table's administrator compacts. Materializing deletion vectors during a
-rewrite is a protocol obligation every engine implements, so an existing OPTIMIZE schedule
-already does the right thing. The connector defaults its own compaction off for that reason
-and exposes `optimize_interval_secs` for tables where Feldera is the only maintainer.
+By default the table's administrator maintains it, which is why the connector's own
+compaction is off unless `optimize_interval_secs` asks for it.
+
+An OPTIMIZE schedule is not enough on its own, though. OPTIMIZE plans on file size: it
+bin-packs files below the target and drops a bin holding a single file, so a file that has
+reached the target size is never rewritten however many of its rows are dead. Its vector
+then grows without bound. Reclaiming those files needs a pass of its own, either
+`REORG TABLE ... APPLY (PURGE)` on the administrator's side or the one below on ours.
 
 What the connector reports so the administrator can schedule it. All are prefixed
 `output_connector_delta_merge_` and defined in `merge/metrics.rs`. The
@@ -651,9 +658,37 @@ template change, as the Delta input connector's `input_connector_delta_*` alread
 | `probe_row_groups_scanned_total`, `probe_row_groups_pruned_total` | The same, within the files that are opened |
 | `lookup_passes_total` | Above one per flush only when a key set exceeded `lookup_chunk_bytes` |
 | `bytes_written_total` | Data files plus deletion vectors |
+| `flush_latency_microseconds` | Histogram of whole flushes. Where object-store latency shows up; the counters above cannot show it |
+| `compactions_total`, `compaction_failures_total` | Connector-driven maintenance runs, and how many of them failed |
+| `reclaimed_rows_total` | Superseded rows the reclamation pass took out of storage |
+| `reclaim_incomplete` | 1 while the last run left mostly-superseded files behind, so the backlog is growing faster than the interval clears it |
 
 The connector warns at most once per hour when `tombstone_ratio_permille` exceeds 200, and
-names the remedy.
+names the remedy. The warning is suppressed while the connector performs that remedy itself
+and it is working: setting `optimize_interval_secs` suppresses it, and a maintenance run that
+fails brings it back, since a remedy that is not running is one the operator has to know
+about.
+
+## Reclaiming superseded rows
+
+`rewrite.rs` rewrites the files OPTIMIZE leaves behind: read the live rows, write them as a
+new file, commit the swap. It runs after the bin-packing, in the same background task, and
+only when `optimize_interval_secs` is set.
+
+| Decision | Why |
+|----------|-----|
+| Rewrite a file only once half its rows are superseded | At one half the bytes moved equal the bytes reclaimed, and the table settles at 1.33x its live bytes. Delta Spark's 0.05 default settles at 1.03x but rewrites 19x as much, and this connector writes continuously |
+| A file whose row count is unknown is never a candidate | A missing statistic is not "every row is dead". Reading it as one would rewrite a live file down to nothing |
+| One file per commit, re-planned against a fresh snapshot | Keeps the vector being applied current with the version the commit declares it read, so a flush that tombstones more rows in that file mid-rewrite loses the race rather than having its tombstones undone: both sides remove the path |
+| `data_change: false` on both actions, as OPTIMIZE sets it | The rows were already deleted as far as a reader is concerned, so a streaming reader must see nothing appear or disappear |
+| After the bin-packing, never before | A packed file loses its vector, so packing second would drop files from the pass. The other order would rewrite a file and then pack it again |
+| Stop between files when the interval's budget runs out | A file is what commits, so stopping between them loses no work. A large backlog clears over several runs instead of one very long one |
+
+A rewritten file carries no vector, so it cannot be picked again and the loop terminates.
+A failure ends the pass with what it had already committed intact, and the next run continues.
+
+The pass is the only part of merge mode that reads whole rows, so it is the only part that
+needs DataFusion.
 
 ## Configuration
 
@@ -664,7 +699,7 @@ Declared in `crates/feldera-types/src/transport/delta_table.rs`.
 | `update_mode` | `cdc \| merge` | `cdc` | Orthogonal to `mode`, which governs what happens to an existing table at startup |
 | `lookup_chunk_bytes` | `usize` | 256 MiB | Ceiling on encoded removal keys held at once. Capped at 2 GiB: the chunk addresses its buffer with 32-bit offsets |
 | `max_concurrent_probes` | `usize` | 4 | Caps the probe working set and its request concurrency |
-| `optimize_interval_secs` | `Option<u64>` | none | Connector-driven compaction. Off by default, because the table administrator normally compacts; set it where Feldera is the only writer. Runs in the background after a flush, one at a time, first run one interval after startup |
+| `optimize_interval_secs` | `Option<u64>` | none | Connector-driven maintenance: OPTIMIZE, then the reclamation pass. Off by default, because the table administrator normally maintains the table; set it where Feldera is the only writer. Runs in the background after a flush, one at a time, first run one interval after startup |
 
 Output buffering is a requirement of merge mode rather than a tuning knob, since the pass
 over the file list is per flush. The connector does not warn about it; the user
@@ -681,9 +716,10 @@ Merge mode lives under `crates/adapters/src/integrated/delta_table/merge/`.
 | `prune.rs` | Which files and row groups can be skipped: the interval test and the partition filter |
 | `probe.rs` | The key-column read that produces (path, ordinal) pairs |
 | `tombstone.rs` | Accumulating ordinals, reading and unioning existing vectors, packing them, and building the log actions |
+| `rewrite.rs` | Rewriting a file whose rows are mostly superseded, which is what reclaims their storage |
 | `startup.rs` | What the target table must satisfy before the first row moves |
 | `flush.rs` | The cursor walk that drives all of the above, and the commit |
-| `compact.rs` | The opt-in background `OPTIMIZE` behind `optimize_interval_secs` |
+| `compact.rs` | The opt-in background maintenance behind `optimize_interval_secs`: `OPTIMIZE`, then `rewrite.rs` |
 | `metrics.rs` | The exported counters, and the compaction warning |
 
 Changes to the existing connector, in `output.rs`:
@@ -698,8 +734,9 @@ Changes to the existing connector, in `output.rs`:
 
 `deletion_vector.rs::read_deletion_vector` is reused for the read side of a vector update.
 
-Merge mode involves no DataFusion, so the writer needs no `SessionContext` and does not draw
-on the pipeline memory pool.
+The flush path involves no DataFusion, so the writer needs no `SessionContext` and does not
+draw on the pipeline memory pool. `rewrite.rs` does use one, on the background compaction
+path, to read a file's live rows.
 
 External dependencies are pinned in the workspace `Cargo.toml`: delta-rs at rev
 `78a5d066d60feffcc7dcd9bae62d1c537dd9018c`, `delta_kernel` (package `buoyant_kernel`) at

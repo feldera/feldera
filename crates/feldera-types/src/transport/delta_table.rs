@@ -223,18 +223,21 @@ pub struct DeltaTableWriterConfig {
 
     /// Compact the target table from the connector, at most once every this many seconds.
     ///
-    /// Only used when `update_mode` is `merge`. Merge mode supersedes a row without rewriting
-    /// the file that holds it, so without compaction the table grows without bound and read
-    /// cost follows the number of updates rather than the number of live rows.
+    /// Only used when `update_mode` is `merge`. Merge mode marks an old row version deleted
+    /// but leaves it in place. Without compaction the table keeps growing and reads keep
+    /// slowing down, however few live rows it holds. Compacting also reclaims storage a
+    /// scheduled `OPTIMIZE` leaves behind.
     ///
-    /// Compacting is normally the table administrator's job, and an existing `OPTIMIZE`
-    /// schedule already does the right thing, which is why this is off by default. Set it for
-    /// tables where Feldera is the only writer.
+    /// Maintenance is normally the table administrator's job, which is why this is off by
+    /// default. Set it for tables where Feldera is the only writer. Hourly (`3600`) or daily
+    /// (`86400`) is typical. A short interval is safe: a run costs what needs doing, not the
+    /// size of the table, and two runs cannot overlap. A large backlog is cleared over
+    /// several runs.
     ///
-    /// Each compaction starts after a flush and runs in the background: it does not hold up
-    /// that flush, and if it commits while another is in progress the connector redoes that
-    /// flush against the new files. It replaces files rather than deleting them, so `VACUUM`
-    /// is still what reclaims the space.
+    /// A run starts after a flush and works in the background, so it never holds up a flush.
+    /// If it commits while a flush is in progress, the connector redoes that flush against
+    /// the new files. A run replaces files rather than deleting them, so `VACUUM` is still
+    /// what reclaims the space.
     ///
     /// Default: none, meaning the connector never compacts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
