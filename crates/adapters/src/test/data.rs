@@ -1629,5 +1629,8 @@ delta_test_key!(DeltaTestKeyDecimal, decimal_10_3, "decimal_10_3", SqlDecimal<10
 delta_test_key!(DeltaTestKeyDouble, double, "double", F64);
 delta_test_key!(DeltaTestKeyUuid, uuid, "uuid", Uuid);
 delta_test_key!(DeltaTestKeyDate, date, "date", Date);
+delta_test_key!(DeltaTestKeyTinyInt, tinyint, "tinyint", i8);
+delta_test_key!(DeltaTestKeySmallInt, smallint, "smallint", i16);
+delta_test_key!(DeltaTestKeyFloat, float, "float", F32);
 delta_test_key!(DeltaTestKeyUnused, unused, "unused", Option<String>);
 delta_test_key!(DeltaTestKeyStruct, struct1, "struct1", TestStruct);
