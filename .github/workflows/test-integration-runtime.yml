@@ -29,18 +29,9 @@ jobs:
     runs-on: ${{ matrix.runner }}
     env:
       FELDERA_RUNTIME_VERSION: ${{ github.sha }}
-      # GCS test bucket over the S3-interop endpoint; the env names are the
-      # standard ones the tests read (python/tests/utils.py).
-      CI_K8S_MINIO_ACCESS_KEY_ID: ${{ secrets.CI_GCS_HMAC_ACCESS_KEY_ID }}
-      CI_K8S_MINIO_SECRET_ACCESS_KEY: ${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}
-      CI_MINIO_ENDPOINT: https://storage.googleapis.com
-      CI_MINIO_BUCKET: feldera-ci-test-feldera-ci
-      # rclone quirks for GCS S3-interop; MinIO provider signing gets 403.
-      CI_MINIO_PROVIDER: GCS
-      # GCS S3-interop lacks x-amz checksums; newer AWS SDKs (pyarrow's C++
-      # SDK) fail GetObject with "Response checksums mismatch" otherwise.
-      AWS_REQUEST_CHECKSUM_CALCULATION: WHEN_REQUIRED
-      AWS_RESPONSE_CHECKSUM_VALIDATION: WHEN_REQUIRED
+      CI_OBJECT_STORE_URI: gs://feldera-ci-test-feldera-ci
+      # Long-lived datasets tests only read.
+      CI_OBJECT_STORE_INPUTS_URI: gs://feldera-ci-inputs-feldera-ci
     container:
       image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-6694c709e8a150203f56b80c5058286e4378e2ee
     steps:
