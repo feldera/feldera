@@ -58,25 +58,36 @@ pub struct Candidate {
     /// also a partition column is reconstructed from here. Its value is constant across the
     /// file, which also makes it an exact statistic for pruning.
     pub partition_keys: HashMap<String, Scalar>,
-    /// Per-column minima from the log, as a struct scalar. `None` when the log carries none
-    /// for this file, which makes the file unprunable.
-    pub min_values: Option<Scalar>,
-    /// Per-column maxima, as [`Self::min_values`].
-    pub max_values: Option<Scalar>,
+    /// Minimum of each key column, in key declaration order. `None` for a column the log
+    /// carries no usable statistic for, which makes the file unprunable on that column.
+    min_values: Vec<Option<Scalar>>,
+    /// Maximum of each key column, as [`Self::min_values`].
+    max_values: Vec<Option<Scalar>>,
 }
 
 impl Candidate {
     /// Build from a log entry. `with_stats` is false when the key's types make min/max
     /// untrustworthy, in which case nothing reads the bounds and parsing them is wasted.
+    ///
+    /// Only the key columns' bounds are kept. The log's statistics cover every indexed
+    /// column and name each one, so holding them whole would cost one field name per column
+    /// per file -- gigabytes on a wide table with many files, to read two of them.
+    /// Takes the encoder rather than a column list, so the bounds cannot end up in a
+    /// different order from the one pruning indexes them by.
     pub fn from_log(
         file: &LogicalFileView,
         partition_keys: HashMap<String, Scalar>,
+        encoder: &KeyEncoder,
         with_stats: bool,
     ) -> Self {
+        let key_columns = encoder.column_names();
         let (min_values, max_values) = if with_stats {
-            (as_struct(file.min_values()), as_struct(file.max_values()))
+            (
+                key_bounds(file.min_values(), key_columns),
+                key_bounds(file.max_values(), key_columns),
+            )
         } else {
-            (None, None)
+            (vec![None; key_columns.len()], vec![None; key_columns.len()])
         };
         Self {
             path: file.path().to_string(),
@@ -85,6 +96,34 @@ impl Candidate {
             max_values,
         }
     }
+
+    /// One-element array of key column `index`'s minimum, or `None` without one.
+    fn min_of(&self, index: usize) -> Option<ArrayRef> {
+        bound_array(self.min_values.get(index))
+    }
+
+    fn max_of(&self, index: usize) -> Option<ArrayRef> {
+        bound_array(self.max_values.get(index))
+    }
+}
+
+/// Pull each key column's bound out of a struct scalar of statistics, dropping the rest.
+fn key_bounds(stats: Option<Scalar>, key_columns: &[String]) -> Vec<Option<Scalar>> {
+    let Some(Scalar::Struct(data)) = stats else {
+        return vec![None; key_columns.len()];
+    };
+    key_columns
+        .iter()
+        .map(|name| {
+            let index = data.fields().iter().position(|f| f.name() == name)?;
+            let value = data.values().get(index)?;
+            (!value.is_null()).then(|| value.clone())
+        })
+        .collect()
+}
+
+fn bound_array(bound: Option<&Option<Scalar>>) -> Option<ArrayRef> {
+    bound?.as_ref()?.to_array(1).ok()
 }
 
 /// What one lookup pass did, for metrics and for the efficiency tests.
@@ -237,16 +276,13 @@ fn prune_files<'a>(
         // The log carries min/max only for the first `delta.dataSkippingNumIndexedCols`
         // columns. A key outside that prefix has no statistic, so its file is kept.
         let mut stats = KeyStats::with_capacity(names.len());
-        for name in names {
+        for (index, name) in names.iter().enumerate() {
             if let Some(value) = candidate.partition_keys.get(name) {
                 // Constant within the file, so an exact bound on both sides.
                 let array = value.to_array(1).ok();
                 stats.push(array.clone(), array);
             } else {
-                stats.push(
-                    field_array(candidate.min_values.as_ref(), name),
-                    field_array(candidate.max_values.as_ref(), name),
-                );
+                stats.push(candidate.min_of(index), candidate.max_of(index));
             }
         }
 
@@ -257,25 +293,6 @@ fn prune_files<'a>(
         }
     }
     keep
-}
-
-fn as_struct(scalar: Option<Scalar>) -> Option<Scalar> {
-    matches!(scalar, Some(Scalar::Struct(_)))
-        .then_some(scalar)
-        .flatten()
-}
-
-/// One-element array holding `name`'s value inside a struct scalar of statistics.
-fn field_array(stats: Option<&Scalar>, name: &str) -> Option<ArrayRef> {
-    let Some(Scalar::Struct(data)) = stats else {
-        return None;
-    };
-    let index = data.fields().iter().position(|f| f.name() == name)?;
-    let value = data.values().get(index)?;
-    if value.is_null() {
-        return None;
-    }
-    value.to_array(1).ok()
 }
 
 /// Rows one file contributed, plus what it cost to find them.
@@ -621,7 +638,10 @@ mod test {
             .unwrap()
             .log_data()
             .into_iter()
-            .map(|f| Candidate::from_log(&f, HashMap::new(), true))
+            .map(|f| {
+                let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
+                Candidate::from_log(&f, HashMap::new(), &encoder, true)
+            })
             .collect();
         candidates.sort_by(|a, b| a.path.cmp(&b.path));
         candidates
@@ -871,12 +891,11 @@ mod test {
         );
     }
 
-    /// Row group pruning must skip groups *and* keep ordinals physical.
+    /// Row group pruning must skip groups and still count ordinals over every row.
     ///
-    /// This is the pairing that a naive implementation gets wrong: skipping a row group
-    /// while counting ordinals over the rows actually read shifts every later ordinal, so
-    /// the tombstones land on rows nobody asked about. The ids here equal their own
-    /// ordinals, so a shift is visible.
+    /// Counting only the rows read shifts every later ordinal, so the tombstones land on
+    /// rows nobody asked about. Reading everything is the control: it fixes the expected
+    /// ordinals without the pruning path, so both paths cannot be wrong the same way.
     #[tokio::test]
     async fn row_group_pruning_keeps_ordinals_physical() {
         let dir = TempDir::new().unwrap();
@@ -886,46 +905,8 @@ mod test {
         // Keys in the last two groups only, so eight of ten groups must be skipped.
         let chunk = chunk_of(&[850, 999]);
 
-        let mut tombstones = Tombstones::new();
-        let metrics = locate(
-            &chunk,
-            &candidates,
-            &table,
-            &encoder,
-            1,
-            Pruning::new(true, None),
-            &mut tombstones,
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(metrics.row_groups_scanned, 2, "{metrics:?}");
-        assert_eq!(metrics.row_groups_pruned, 8, "{metrics:?}");
-        assert_eq!(
-            tombstones
-                .ordinals_for(&candidates[0].path)
-                .unwrap()
-                .iter()
-                .collect::<Vec<_>>(),
-            vec![850, 999],
-            "an ordinal shifted by the skipped row groups"
-        );
-    }
-
-    /// Reading with pruning off must give the same ordinals, on the same fixture.
-    ///
-    /// The negative control for the test above: it fixes the expected ordinals
-    /// independently of the pruning path.
-    #[tokio::test]
-    async fn row_group_pruning_agrees_with_reading_everything() {
-        let dir = TempDir::new().unwrap();
-        let ids: Vec<i64> = (0..1000).collect();
-        let (table, candidates) = table_with_row_groups(&dir, &ids, 100).await;
-        let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
-        let chunk = chunk_of(&[3, 250, 850, 999]);
-
         let mut pruned = Tombstones::new();
-        locate(
+        let metrics = locate(
             &chunk,
             &candidates,
             &table,
@@ -936,6 +917,7 @@ mod test {
         )
         .await
         .unwrap();
+
         let mut full = Tombstones::new();
         let full_metrics = locate(
             &chunk,
@@ -949,10 +931,13 @@ mod test {
         .await
         .unwrap();
 
-        assert_eq!(full_metrics.row_groups_scanned, 10);
+        assert_eq!(metrics.row_groups_scanned, 2, "{metrics:?}");
+        assert_eq!(metrics.row_groups_pruned, 8, "{metrics:?}");
+        assert_eq!(full_metrics.row_groups_scanned, 10, "{full_metrics:?}");
         assert_eq!(
             tombstone_summary(&pruned, &candidates),
-            tombstone_summary(&full, &candidates)
+            tombstone_summary(&full, &candidates),
+            "pruning changed which rows were located"
         );
         assert_eq!(
             pruned
@@ -960,7 +945,8 @@ mod test {
                 .unwrap()
                 .iter()
                 .collect::<Vec<_>>(),
-            vec![3, 250, 850, 999]
+            vec![850, 999],
+            "an ordinal shifted by the skipped row groups"
         );
     }
 
