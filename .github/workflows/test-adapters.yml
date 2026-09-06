@@ -127,12 +127,13 @@ jobs:
           PUBSUB_EMULATOR_HOST: 127.0.0.1:8681
           ICEBERG_TEST_AWS_ACCESS_KEY_ID: ${{ secrets.delta_table_test_aws_access_key_id }}
           ICEBERG_TEST_AWS_SECRET_ACCESS_KEY: ${{ secrets.delta_table_test_aws_secret_access_key }}
-          DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID: ${{ secrets.delta_table_test_aws_access_key_id }}
-          DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY: ${{ secrets.delta_table_test_aws_secret_access_key }}
-          # GCS test buckets for the Delta S3 tests, reached over the S3-compatible
-          # API under the same names the Python Delta tests use. Tables the tests
-          # write go to CI_MINIO_BUCKET, which expires objects after 7 days;
-          # read-only fixtures live in CI_MINIO_INPUTS_BUCKET, which does not.
+          # The Delta object-store tests read the same two buckets as the Python
+          # suite, but over the S3-compatible API with static keys rather than
+          # `gs://` with Workload Identity, so they need their own credentials.
+          # Variable names follow the S3-compatible shape in
+          # python/tests/utils.py. Tables the tests write go to CI_MINIO_BUCKET,
+          # which expires objects after 7 days; read-only fixtures live in
+          # CI_MINIO_INPUTS_BUCKET, which does not.
           CI_K8S_MINIO_ACCESS_KEY_ID: ${{ secrets.CI_GCS_HMAC_ACCESS_KEY_ID }}
           CI_K8S_MINIO_SECRET_ACCESS_KEY: ${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}
           CI_MINIO_ENDPOINT: https://storage.googleapis.com
