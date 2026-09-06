@@ -69,6 +69,7 @@ impl LookupChunk {
         self.has_null_key
     }
 
+    /// Key count. `offsets` always keeps its leading 0, so this cannot underflow.
     pub fn len(&self) -> usize {
         self.offsets.len() - 1
     }
@@ -128,20 +129,6 @@ impl LookupChunk {
         self.sorted = true;
     }
 
-    /// The smallest key, or `None` when empty. Requires [`Self::sort`].
-    #[cfg(test)]
-    pub fn min(&self) -> Option<&[u8]> {
-        debug_assert!(self.sorted, "sort() before querying the chunk");
-        self.order.first().map(|i| self.key_at(*i as usize))
-    }
-
-    /// The largest key, or `None` when empty. Requires [`Self::sort`].
-    #[cfg(test)]
-    pub fn max(&self) -> Option<&[u8]> {
-        debug_assert!(self.sorted, "sort() before querying the chunk");
-        self.order.last().map(|i| self.key_at(*i as usize))
-    }
-
     /// Index into sorted order of the first key not less than `key`.
     ///
     /// Requires [`Self::sort`].
@@ -180,7 +167,7 @@ impl LookupChunk {
 ///
 /// A wrapped offset would lose track of where a key ends and supersede the wrong rows, and
 /// `is_full` cannot prevent it: the flush encodes keys in batches and only consults the
-/// budget between them, so one batch of large keys can overshoot it by any amount.
+/// budget between them, so one batch of keys can overshoot it by however many bytes it holds.
 fn checked_end(len: usize, added: usize) -> AnyResult<u32> {
     u32::try_from(len.saturating_add(added)).map_err(|_| {
         anyhow!(
@@ -214,9 +201,12 @@ mod test {
         (chunk, rows)
     }
 
+    /// Membership must hold on encoded bytes rather than on insertion order, and a second
+    /// `sort` must not disturb it.
     #[test]
     fn contains_finds_members_and_rejects_others() {
-        let (chunk, _) = chunk_of(&[5, 1, 9, 3]);
+        let (mut chunk, _) = chunk_of(&[5, 1, 9, 3]);
+        chunk.sort();
         let probe = encode(&[1, 3, 5, 9, 0, 4, 10]);
         for i in 0..4 {
             assert!(chunk.contains(probe.row(i).as_ref()), "missing member {i}");
@@ -224,15 +214,6 @@ mod test {
         for i in 4..7 {
             assert!(!chunk.contains(probe.row(i).as_ref()), "false hit {i}");
         }
-    }
-
-    #[test]
-    fn sort_is_idempotent_and_order_is_by_encoded_bytes() {
-        let (mut chunk, _) = chunk_of(&[5, 1, 9, 3]);
-        chunk.sort();
-        let expected = encode(&[1, 9]);
-        assert_eq!(chunk.min().unwrap(), expected.row(0).as_ref());
-        assert_eq!(chunk.max().unwrap(), expected.row(1).as_ref());
     }
 
     #[test]
@@ -257,7 +238,6 @@ mod test {
         assert!(chunk.is_empty());
         assert!(!chunk.contains(probe.row(0).as_ref()));
         assert!(!chunk.intersects(probe.row(0).as_ref(), probe.row(1).as_ref()));
-        assert!(chunk.min().is_none());
     }
 
     #[test]

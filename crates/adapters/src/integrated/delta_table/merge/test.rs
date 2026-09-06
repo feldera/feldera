@@ -79,6 +79,14 @@ pub(super) fn partitioned_key_relation() -> Relation {
     relation
 }
 
+/// Key relation naming only the partition column `payload`, so no key column is stored in
+/// the data files.
+pub(super) fn partition_only_key_relation() -> Relation {
+    let mut relation = partitioned_key_relation();
+    relation.fields.remove(0);
+    relation
+}
+
 /// Delta columns of the fixture table.
 pub(super) fn fixture_columns() -> Vec<StructField> {
     vec![
@@ -158,12 +166,13 @@ pub(super) async fn append_ids(table: DeltaTable, ids: &[i64]) -> DeltaTable {
 
 /// Every data file in the current snapshot.
 pub(super) fn candidates(table: &DeltaTable) -> Vec<Candidate> {
+    let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
     table
         .snapshot()
         .unwrap()
         .log_data()
         .into_iter()
-        .map(|f| Candidate::from_log(&f, Default::default(), true))
+        .map(|f| Candidate::from_log(&f, Default::default(), &encoder, true))
         .collect()
 }
 
@@ -282,6 +291,29 @@ pub(super) async fn vacuum_everything(
         .unwrap()
 }
 
+/// Candidates carrying each file's `payload` partition value, which the log holds instead of
+/// the data file.
+fn partitioned_candidates(table: &DeltaTable, encoder: &KeyEncoder) -> Vec<Candidate> {
+    table
+        .snapshot()
+        .unwrap()
+        .log_data()
+        .into_iter()
+        .map(|file| {
+            let mut partition_keys = std::collections::HashMap::new();
+            if let Some(values) = file.partition_values() {
+                let index = values
+                    .fields()
+                    .iter()
+                    .position(|f| f.name() == "payload")
+                    .unwrap();
+                partition_keys.insert("payload".to_string(), values.values()[index].clone());
+            }
+            Candidate::from_log(&file, partition_keys, encoder, true)
+        })
+        .collect()
+}
+
 /// A key column that is also a partition column must still be found: its value is in the log,
 /// not the data file. Two partitions hold the same `id`, so a probe that ignored the column
 /// rather than reconstructing it would tombstone both rows.
@@ -317,25 +349,7 @@ async fn a_partition_column_key_is_reconstructed_from_the_log() {
     .unwrap();
     partitions.record(&key_columns).unwrap();
 
-    // Each candidate carries the partition value of its own file.
-    let candidates: Vec<Candidate> = table
-        .snapshot()
-        .unwrap()
-        .log_data()
-        .into_iter()
-        .map(|file| {
-            let mut partition_keys = std::collections::HashMap::new();
-            if let Some(values) = file.partition_values() {
-                let index = values
-                    .fields()
-                    .iter()
-                    .position(|f| f.name() == "payload")
-                    .unwrap();
-                partition_keys.insert("payload".to_string(), values.values()[index].clone());
-            }
-            Candidate::from_log(&file, partition_keys, true)
-        })
-        .collect();
+    let candidates = partitioned_candidates(&table, &encoder);
 
     let mut tombstones = Tombstones::new();
     let metrics = locate(
@@ -357,6 +371,63 @@ async fn a_partition_column_key_is_reconstructed_from_the_log() {
     assert_eq!(metrics.keys_not_found, 0);
     // The partition value is an exact statistic, so partition "a" is pruned from the log.
     assert_eq!(metrics.files_pruned, 1, "{metrics:?}");
+}
+
+/// Every key column being a partition column leaves the probe projecting no columns at all.
+///
+/// The row ordinals still have to be right, so the reader must report the file's real row
+/// count for an empty projection. If it ever reports zero, `probe_file`'s row-group invariant
+/// fires rather than tombstoning the wrong rows.
+#[tokio::test]
+async fn a_key_made_only_of_partition_columns_still_locates_rows() {
+    let dir = TempDir::new().unwrap();
+    // Partition "a" holds two rows, so a located ordinal has to distinguish them.
+    let table = partitioned_fixture_table(&dir, &[(1, "a"), (2, "a"), (3, "b")]).await;
+
+    let encoder = KeyEncoder::new(&partition_only_key_relation(), &arrow_schema()).unwrap();
+    let key_columns: Vec<ArrayRef> = vec![Arc::new(StringArray::from(vec!["a"]))];
+    let mut chunk = LookupChunk::new(usize::MAX);
+    chunk
+        .extend(&encoder.encode_columns(&key_columns).unwrap())
+        .unwrap();
+    chunk.sort();
+
+    let candidates = partitioned_candidates(&table, &encoder);
+    let mut tombstones = Tombstones::new();
+    let metrics = locate(
+        &chunk,
+        &candidates,
+        &table,
+        &encoder,
+        4,
+        Pruning::none(),
+        &mut tombstones,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        metrics.rows_located, 2,
+        "both rows of partition \"a\" share the key and must be located: {metrics:?}"
+    );
+    assert_eq!(metrics.keys_not_found, 0, "{metrics:?}");
+    assert_eq!(
+        metrics.row_groups_scanned, 2,
+        "pruning is off, so both partitions must be read rather than skipped: {metrics:?}"
+    );
+
+    let located: Vec<u64> = tombstones
+        .ordinals_for(
+            &candidates
+                .iter()
+                .find(|c| c.path.starts_with("payload=a/"))
+                .unwrap()
+                .path,
+        )
+        .expect("partition \"a\" contributed no rows")
+        .iter()
+        .collect();
+    assert_eq!(located, vec![0, 1], "ordinals must span the whole file");
 }
 
 /// A partition value needing percent-encoding must round-trip. delta-rs decodes the path when
