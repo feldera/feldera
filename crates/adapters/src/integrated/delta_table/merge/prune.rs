@@ -25,7 +25,7 @@
 //! | Situation | Behavior |
 //! |-----------|----------|
 //! | A key column has no statistic on this unit | Keep. A missing statistic is not an empty range |
-//! | A statistic is null | Keep |
+//! | A statistic is null, or a `ROW` statistic has a null leaf | Keep. Delta records no statistic for a `BINARY` leaf, and `delta.dataSkippingNumIndexedCols` can cut through a struct |
 //! | The encoder rejects a statistic's type | Keep |
 //! | A key column is `FLOAT` or `DOUBLE` | Statistics pruning is off for the whole key: Parquet and Delta conventionally leave NaN out of min/max, so a box test could exclude a NaN key that is present |
 //! | A key being sought is null | Pruning is off for that lookup pass: nulls are left out of min/max too, so a null key falls below every range |
@@ -42,7 +42,7 @@ use arrow::row::{RowConverter, SortField};
 use delta_kernel::expressions::Scalar;
 
 use super::chunk::LookupChunk;
-use super::key::{KeyEncoder, normalize_floats};
+use super::key::{KeyEncoder, contains_null, normalize_floats};
 
 /// Per-key-column `[min, max]` statistics for one file or row group.
 ///
@@ -67,12 +67,15 @@ impl KeyStats {
     }
 
     /// Both bounds present and non-null for every key column.
+    ///
+    /// Uses the same recursion as `contains_null`, because a `ROW` bound with a null leaf is
+    /// as unusable as a null bound: encoded, it sorts outside the box it is meant to bound.
     fn is_complete(&self) -> bool {
         self.mins
             .iter()
             .chain(self.maxes.iter())
             .all(|bound| match bound {
-                Some(array) => array.len() == 1 && array.null_count() == 0,
+                Some(array) => array.len() == 1 && !contains_null(std::slice::from_ref(array)),
                 None => false,
             })
     }
@@ -221,9 +224,12 @@ pub fn may_contain(chunk: &LookupChunk, encoder: &KeyEncoder, stats: &KeyStats) 
 mod test {
     use super::*;
     use crate::integrated::delta_table::merge::test::{arrow_schema, key_relation};
-    use arrow::array::{Float64Array, Int64Array, StringArray};
-    use arrow::datatypes::{DataType, Field, Fields};
+    use arrow::array::{BinaryArray, Float64Array, Int64Array, StringArray, StructArray};
+    use arrow::datatypes::{DataType, Field, Fields, Schema as ArrowSchema};
     use arrow::row::{RowConverter, Rows, SortField};
+    use feldera_types::program_schema::{
+        ColumnType, Field as SqlField, Relation, SqlIdentifier, SqlType,
+    };
     use std::sync::Arc;
 
     fn encoder() -> KeyEncoder {
@@ -238,6 +244,50 @@ mod test {
         chunk.extend(&rows).unwrap();
         chunk.sort();
         chunk
+    }
+
+    /// Encoder for a single `ROW` key column named `r` with the given leaves.
+    fn row_key_encoder(leaves: &Fields) -> KeyEncoder {
+        let schema = ArrowSchema::new(vec![Field::new(
+            "r",
+            DataType::Struct(leaves.clone()),
+            true,
+        )]);
+        let column = |typ| ColumnType {
+            typ,
+            nullable: true,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        };
+        let mut row = column(SqlType::Struct);
+        row.fields = Some(vec![
+            SqlField::new("a".into(), column(SqlType::BigInt)),
+            SqlField::new("b".into(), column(SqlType::Binary)),
+        ]);
+        let relation = Relation {
+            name: SqlIdentifier::new("k", false),
+            fields: vec![SqlField::new("r".into(), row)],
+            materialized: false,
+            properties: Default::default(),
+            primary_key: None,
+        };
+        KeyEncoder::new(&relation, &schema).unwrap()
+    }
+
+    /// One `ROW(a, b)` value. `b` is `None` where the statistic is absent.
+    fn row_key(leaves: &Fields, a: i64, b: Option<&[u8]>) -> ArrayRef {
+        Arc::new(StructArray::new(
+            leaves.clone(),
+            vec![
+                Arc::new(Int64Array::from(vec![a])),
+                Arc::new(BinaryArray::from(vec![b])),
+            ],
+            None,
+        ))
     }
 
     fn bounds(min: i64, max: i64) -> KeyStats {
@@ -293,6 +343,48 @@ mod test {
             Some(Arc::new(Int64Array::from(vec![5]))),
         );
         assert!(may_contain(&chunk, &encoder, &null));
+    }
+
+    /// A `ROW` key whose leaf has no statistic: the log gives a struct bound with a null
+    /// child, which encodes below every real key, so a box test would prune the file that
+    /// holds the key. Delta records nothing for a `BINARY` leaf, so this is reachable.
+    #[test]
+    fn a_struct_bound_with_a_null_leaf_keeps_the_unit() {
+        let leaves = Fields::from(vec![
+            Field::new("a", DataType::Int64, true),
+            Field::new("b", DataType::Binary, true),
+        ]);
+        let encoder = row_key_encoder(&leaves);
+
+        let mut chunk = LookupChunk::new(usize::MAX);
+        chunk
+            .extend(
+                &encoder
+                    .encode_columns(&[row_key(&leaves, 100, Some(b"\xab"))])
+                    .unwrap(),
+            )
+            .unwrap();
+        chunk.sort();
+
+        // Complete bounds still prune: the key is outside [1, 50].
+        let mut complete = KeyStats::with_capacity(1);
+        complete.push(
+            Some(row_key(&leaves, 1, Some(b"\x00"))),
+            Some(row_key(&leaves, 50, Some(b"\xff"))),
+        );
+        assert!(!may_contain(&chunk, &encoder, &complete));
+
+        // The same range with no statistic for `b` must keep the file, even though the key
+        // is inside the surviving `a` bound.
+        let mut null_leaf = KeyStats::with_capacity(1);
+        null_leaf.push(
+            Some(row_key(&leaves, 1, None)),
+            Some(row_key(&leaves, 100, None)),
+        );
+        assert!(
+            may_contain(&chunk, &encoder, &null_leaf),
+            "a struct bound with a null leaf must not prune the file holding the key"
+        );
     }
 
     #[test]
