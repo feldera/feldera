@@ -12,9 +12,7 @@ from feldera.testutils import (
 )
 from tests.utils import (
     KAFKA_BOOTSTRAP,
-    MINIO_BUCKET,
-    MINIO_ENDPOINT,
-    MINIO_REGION,
+    ObjectStore,
     env_truthy,
     required_env,
     runs_in_ci,
@@ -32,9 +30,7 @@ __all__ = [
     "BASE_URL",
     "FELDERA_REQUESTS_VERIFY",
     "KAFKA_BOOTSTRAP",
-    "MINIO_BUCKET",
-    "MINIO_ENDPOINT",
-    "MINIO_REGION",
+    "ObjectStore",
     "env_truthy",
     "required_env",
     "runs_in_ci",

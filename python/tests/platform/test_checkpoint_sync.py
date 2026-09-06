@@ -6,7 +6,6 @@ import sys
 import time
 import warnings
 from typing import Optional
-from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
 from feldera import Pipeline
@@ -19,57 +18,43 @@ from feldera.testutils import (
 )
 from tests import enterprise_only
 from tests.shared_test_pipeline import SharedTestPipeline
-from tests.utils import (
-    MINIO_BUCKET,
-    MINIO_ENDPOINT,
-    MINIO_PROVIDER,
-    MINIO_REGION,
-    required_env,
-)
+from tests.utils import ObjectStore
 
 from .helper import wait_for_condition
 
 
 LOGGER = logging.getLogger(__name__)
 
-# An S3 endpoint that cannot be reached: port 1 on the pipeline's own loopback,
-# where nothing listens.  A sync pointed here stays in progress for as long as
-# the test needs, because the sync retries a connection failure rather than
-# giving up on it.  A sync against a working endpoint, by contrast, can finish
-# before the first status request arrives, leaving no window to observe.
+# An object store endpoint that cannot be reached: port 1 on the pipeline's
+# own loopback, where nothing listens.  A sync pointed here stays in progress
+# for as long as the test needs, because the sync retries a connection failure
+# rather than giving up on it.  A sync against a working endpoint, by contrast,
+# can finish before the first status request arrives, leaving no window to
+# observe.
 #
 # The window comes from that retrying, not from how the network treats the
 # address, so this holds wherever the tests run.  An unroutable address (say
 # TEST-NET-1) would rely on the network dropping the packets rather than
 # rejecting them; loopback never leaves the pod and is refused immediately
 # everywhere, which the retry loop then rides out just the same.
-UNREACHABLE_S3_ENDPOINT = "http://127.0.0.1:1"
+UNREACHABLE_ENDPOINT = "http://127.0.0.1:1"
 _CHECKPOINT_SYNC_BUCKET_ARCH = platform.machine().lower()
 
 
 def checkpoint_sync_bucket(pipeline_name: str) -> str:
-    return f"{MINIO_BUCKET}/{_CHECKPOINT_SYNC_BUCKET_ARCH}/{pipeline_name}"
+    """``<bucket>/<prefix>`` a pipeline syncs its checkpoints to."""
+    return f"{ObjectStore.from_env().bucket}/{_CHECKPOINT_SYNC_BUCKET_ARCH}/{pipeline_name}"
 
 
 def checkpoint_sync_owner(bucket_name: str) -> Optional[dict]:
-    """Read the checkpoint-sync owner file from S3 if Python can access S3."""
+    """Read the checkpoint-sync owner file if Python can reach the object store."""
     try:
-        import pyarrow.fs as pafs
-
-        endpoint = MINIO_ENDPOINT.rstrip("/")
-        parsed = urlparse(endpoint)
-        s3 = pafs.S3FileSystem(  # type: ignore[attr-defined]
-            access_key=required_env("CI_K8S_MINIO_ACCESS_KEY_ID"),
-            secret_key=required_env("CI_K8S_MINIO_SECRET_ACCESS_KEY"),
-            endpoint_override=parsed.netloc,
-            scheme=parsed.scheme,
-            region=MINIO_REGION,
-        )
+        fs = ObjectStore.from_env().pyarrow_fs()
         owner_path = f"{checkpoint_sync_bucket(bucket_name)}/owner.json"
-        info = s3.get_file_info(owner_path)
+        info = fs.get_file_info(owner_path)
     except Exception as e:
         print(
-            f"S3 is not accessible from the Python SDK; skipping owner.json check: {e}",
+            f"object store not accessible from the Python SDK; skipping owner.json check: {e}",
             file=sys.stderr,
         )
         return None
@@ -77,7 +62,7 @@ def checkpoint_sync_owner(bucket_name: str) -> Optional[dict]:
     if not info.is_file:
         raise AssertionError(f"checkpoint ownership file not found: {owner_path}")
 
-    with s3.open_input_file(owner_path) as f:
+    with fs.open_input_file(owner_path) as f:
         owner = json.loads(f.read().decode("utf-8"))
 
     LOGGER.debug(
@@ -110,27 +95,24 @@ def storage_cfg(
             stacklevel=2,
         )
 
-    # MinIO credentials are read here (not at import time) so collection
-    # does not blow up in environments where they are unset.
-    access_key = required_env("CI_K8S_MINIO_ACCESS_KEY_ID")
-    secret_key = required_env("CI_K8S_MINIO_SECRET_ACCESS_KEY")
-
-    sync: dict = {
-        "bucket": checkpoint_sync_bucket(pipeline_name),
-        "access_key": access_key,
-        "secret_key": secret_key if not auth_err else secret_key + "extra",
-        "provider": MINIO_PROVIDER,
-        "endpoint": endpoint or MINIO_ENDPOINT,
-        "region": MINIO_REGION,
-        "start_from_checkpoint": start_from_checkpoint,
-        "fail_if_no_checkpoint": strict,
-        "pull_interval": pull_interval,
-        "push_interval": push_interval,
-        "retention_min_count": retention_min_count,
-        "retention_min_age": retention_min_age,
-    }
+    # The store (and any credentials it needs) is resolved here, not at
+    # import time, so collection does not blow up where the env is unset.
+    store = ObjectStore.from_env()
+    sync: dict = store.checkpoint_sync_connection(
+        checkpoint_sync_bucket(pipeline_name), auth_err=auth_err, endpoint=endpoint
+    )
+    sync.update(
+        {
+            "start_from_checkpoint": start_from_checkpoint,
+            "fail_if_no_checkpoint": strict,
+            "pull_interval": pull_interval,
+            "push_interval": push_interval,
+            "retention_min_count": retention_min_count,
+            "retention_min_age": retention_min_age,
+        }
+    )
     if read_bucket is not None:
-        sync["read_bucket"] = read_bucket
+        sync["read_bucket"] = store.sync_bucket(read_bucket)
     return {
         "backend": {
             "name": "file",
@@ -632,7 +614,9 @@ class TestCheckpointSync(SharedTestPipeline):
         time.sleep(1)
         self._sync_and_verify()
 
-        with self.assertRaisesRegex(RuntimeError, "SignatureDoesNotMatch|Forbidden"):
+        with self.assertRaisesRegex(
+            RuntimeError, ObjectStore.from_env().auth_error_pattern
+        ):
             self._restart_from_checkpoint("latest", auth_err=True, strict=True)
 
     @enterprise_only
@@ -643,7 +627,9 @@ class TestCheckpointSync(SharedTestPipeline):
         time.sleep(1)
         self._sync_and_verify()
 
-        with self.assertRaisesRegex(RuntimeError, "SignatureDoesNotMatch|Forbidden"):
+        with self.assertRaisesRegex(
+            RuntimeError, ObjectStore.from_env().auth_error_pattern
+        ):
             self._restart_from_checkpoint("latest", auth_err=True, strict=False)
 
     @enterprise_only
@@ -932,7 +918,7 @@ class TestCheckpointSync(SharedTestPipeline):
                 fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
                 storage=Storage(
                     config=storage_cfg(
-                        self.pipeline.name, endpoint=UNREACHABLE_S3_ENDPOINT
+                        self.pipeline.name, endpoint=UNREACHABLE_ENDPOINT
                     )
                 ),
                 checkpoint_interval_secs=60,

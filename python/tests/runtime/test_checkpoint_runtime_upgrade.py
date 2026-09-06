@@ -292,28 +292,11 @@ def _ensure_delta_source(source: DeltaTestLocation) -> None:
 
 
 def _cache_fs():
-    """Return ``(fs, bucket_path)`` for the synced-checkpoint cache."""
+    """pyarrow filesystem of the store holding the synced-checkpoint cache."""
 
-    from urllib.parse import urlparse
+    from tests.utils import ObjectStore
 
-    import pyarrow.fs as pafs
-
-    from tests.utils import (
-        MINIO_ENDPOINT,
-        MINIO_REGION,
-        required_env,
-    )
-
-    endpoint = MINIO_ENDPOINT.rstrip("/")
-    parsed = urlparse(endpoint)
-    s3 = pafs.S3FileSystem(
-        access_key=required_env("CI_K8S_MINIO_ACCESS_KEY_ID"),
-        secret_key=required_env("CI_K8S_MINIO_SECRET_ACCESS_KEY"),
-        endpoint_override=endpoint,
-        scheme=parsed.scheme,
-        region=MINIO_REGION,
-    )
-    return s3
+    return ObjectStore.from_env().pyarrow_fs()
 
 
 def _remote_checkpoint_exists(cache_name: str) -> bool:

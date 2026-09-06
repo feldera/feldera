@@ -522,12 +522,20 @@ pub struct SyncConfig {
     /// This is typically required for custom or local S3-compatible storage providers like MinIO.
     /// Example: `http://localhost:9000`
     ///
+    /// For a `gs://` bucket this is the Google Cloud Storage JSON API base URL;
+    /// a bare host gets `/storage/v1/` appended. Leave empty for the public service.
+    ///
     /// Relevant rclone config key: [`endpoint`](https://rclone.org/s3/#s3-endpoint)
     pub endpoint: Option<String>,
 
     /// The name of the storage bucket.
     ///
     /// This may include a path to a folder inside the bucket (e.g., `my-bucket/data`).
+    ///
+    /// Prefix it with `gs://` to sync to Google Cloud Storage through its native
+    /// API instead of S3. `provider`, `access_key`, and `secret_key` are then
+    /// ignored; rclone authenticates with Application Default Credentials, for
+    /// example a GKE Workload Identity.
     pub bucket: String,
 
     /// The region that this bucket is in.
@@ -666,7 +674,9 @@ pub struct SyncConfig {
     /// When the pipeline has no local checkpoint and `bucket` contains no
     /// checkpoint either, it will attempt to fetch the checkpoint from this
     /// location instead.  All connection settings (`endpoint`, `region`,
-    /// `provider`, `access_key`, `secret_key`) are shared with `bucket`.
+    /// `provider`, `access_key`, `secret_key`) are shared with `bucket`. The
+    /// scheme is not: a `gs://` `bucket` needs a `gs://` `read_bucket` too,
+    /// because the prefix alone selects the object store.
     ///
     /// The pipeline **never writes** to `read_bucket`.
     ///
@@ -700,17 +710,30 @@ impl SyncConfig {
             );
         }
 
-        if let Some(ref rb) = self.read_bucket
-            && rb == &self.bucket
-        {
-            return Err(
-                "invalid sync config: `read_bucket` and `bucket` must point to different locations"
-                    .to_owned(),
-            );
+        if let Some(ref rb) = self.read_bucket {
+            if rb == &self.bucket {
+                return Err(
+                    "invalid sync config: `read_bucket` and `bucket` must point to different locations"
+                        .to_owned(),
+                );
+            }
+            // The `gs://` prefix selects the object store, so a mismatch would
+            // send the fallback pull to the wrong service.
+            if is_gcs_bucket(rb) != is_gcs_bucket(&self.bucket) {
+                return Err(format!(
+                    "invalid sync config: `bucket` ('{}') and `read_bucket` ('{}') must use the same object store; prefix both with `gs://` for Google Cloud Storage or neither for S3",
+                    self.bucket, rb
+                ));
+            }
         }
 
         Ok(())
     }
+}
+
+/// Whether a sync `bucket` names Google Cloud Storage rather than S3.
+fn is_gcs_bucket(bucket: &str) -> bool {
+    bucket.starts_with("gs://")
 }
 
 /// Configuration for supplying a custom pipeline StatefulSet template via a Kubernetes ConfigMap.
@@ -2212,4 +2235,44 @@ pub struct ResourceConfig {
     // The type of this field should not be backward incompatibly changed, and its location in the
     // runtime configuration JSON (`runtime_config.resources.namespace`) should not be changed.
     pub namespace: Option<String>,
+}
+
+#[cfg(test)]
+mod sync_config_tests {
+    use super::SyncConfig;
+
+    fn config(bucket: &str, read_bucket: Option<&str>) -> SyncConfig {
+        SyncConfig {
+            bucket: bucket.to_owned(),
+            read_bucket: read_bucket.map(str::to_owned),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn read_bucket_must_differ_from_bucket() {
+        let err = config("ckpts/a", Some("ckpts/a")).validate().unwrap_err();
+        assert!(err.contains("different locations"), "{err}");
+    }
+
+    #[test]
+    fn read_bucket_must_use_the_same_object_store() {
+        let err = config("gs://ckpts/a", Some("ckpts/b"))
+            .validate()
+            .unwrap_err();
+        assert!(err.contains("same object store"), "{err}");
+        let err = config("ckpts/a", Some("gs://ckpts/b"))
+            .validate()
+            .unwrap_err();
+        assert!(err.contains("same object store"), "{err}");
+    }
+
+    #[test]
+    fn matching_object_stores_are_accepted() {
+        config("gs://ckpts/a", Some("gs://ckpts/b"))
+            .validate()
+            .unwrap();
+        config("ckpts/a", Some("s3://ckpts/b")).validate().unwrap();
+        config("gs://ckpts/a", None).validate().unwrap();
+    }
 }

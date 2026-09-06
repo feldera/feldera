@@ -20,13 +20,20 @@ if TYPE_CHECKING:
     from feldera.output_handler import OutputHandler
 
 
+# Environment variables naming the object stores tests use; see ObjectStore.
+OBJECT_STORE_URI_ENV = "CI_OBJECT_STORE_URI"
+INPUTS_STORE_URI_ENV = "CI_OBJECT_STORE_INPUTS_URI"
+
+# Settings of the s3:// shape of ObjectStore: a per-run MinIO, or any
+# S3-compatible store with static keys. Unused when OBJECT_STORE_URI_ENV names
+# a gs:// bucket.
+MINIO_ENDPOINT_ENV = "CI_MINIO_ENDPOINT"
 MINIO_BUCKET = os.environ.get("CI_MINIO_BUCKET", "ci-tests")
 MINIO_ENDPOINT = os.environ.get(
-    "CI_MINIO_ENDPOINT", "http://minio.minio.svc.cluster.local:9000"
+    MINIO_ENDPOINT_ENV, "http://minio.minio.svc.cluster.local:9000"
 )
 MINIO_REGION = os.environ.get("CI_MINIO_REGION", "us-east-1")
-# rclone S3 provider name for checkpoint sync; GCS S3-interop rejects
-# requests signed with MinIO provider quirks (403 on HeadObject).
+# rclone S3 provider name for checkpoint sync against the s3:// shape.
 MINIO_PROVIDER = os.environ.get("CI_MINIO_PROVIDER", "Minio")
 KAFKA_BOOTSTRAP = os.environ.get(
     "KAFKA_BOOTSTRAP_SERVERS", "ci-kafka-bootstrap.kafka:9092"
@@ -67,6 +74,184 @@ def runs_in_ci() -> bool:
     return env_truthy("CI")
 
 
+@dataclass(frozen=True)
+class ObjectStore:
+    """Object store the tests keep Delta and Iceberg tables in, and how the
+    pipeline pod and this test process authenticate to it.
+
+    Two stores are named through the environment: ``OBJECT_STORE_URI_ENV``
+    holds per-run test data (:meth:`from_env`) and ``INPUTS_STORE_URI_ENV``
+    holds long-lived datasets that tests only read (:func:`inputs_store`).
+    The URI scheme selects the shape:
+
+    * ``gs://<bucket>``: Google Cloud Storage reached with the Kubernetes
+      service account's Workload Identity on both sides. No credentials exist
+      in the environment or in any connector config.
+    * ``s3://<bucket>``: an S3-compatible store addressed by the ``MINIO_*``
+      settings above, whose static keys do end up in connector configs.
+    """
+
+    scheme: str
+    bucket: str
+    # S3 only; None for GCS.
+    endpoint: str | None = None
+    region: str = "us-east-1"
+    access_key: str | None = None
+    secret_key: str | None = None
+
+    @classmethod
+    def from_env(cls) -> "ObjectStore":
+        """The per-run test-data store: the URI in ``OBJECT_STORE_URI_ENV``,
+        or ``s3://`` plus ``MINIO_BUCKET`` when that variable is unset."""
+        return cls.from_uri(
+            os.environ.get(OBJECT_STORE_URI_ENV) or f"s3://{MINIO_BUCKET}"
+        )
+
+    @classmethod
+    def from_uri(cls, uri: str) -> "ObjectStore":
+        """Parse ``<scheme>://<bucket>[/<prefix>]``; a prefix stays part of
+        ``bucket`` so every path this store hands out lives under it."""
+        parsed = urlparse(uri)
+        if parsed.scheme not in {"gs", "s3"} or not parsed.netloc:
+            raise ValueError(
+                "an object store URI must look like 'gs://my-bucket' or "
+                f"'s3://my-bucket/prefix', got {uri!r}"
+            )
+        bucket = f"{parsed.netloc}{parsed.path}".rstrip("/")
+        if parsed.scheme == "gs":
+            return cls(scheme="gs", bucket=bucket)
+
+        endpoint = MINIO_ENDPOINT.rstrip("/")
+        parsed_endpoint = urlparse(endpoint)
+        if (
+            parsed_endpoint.scheme not in {"http", "https"}
+            or not parsed_endpoint.netloc
+        ):
+            raise ValueError(
+                f"{MINIO_ENDPOINT_ENV} must be a full URL, e.g. "
+                f"'http://minio.minio.svc.cluster.local:9000', got {endpoint!r}"
+            )
+        return cls(
+            scheme="s3",
+            bucket=bucket,
+            endpoint=endpoint,
+            region=MINIO_REGION,
+            access_key=required_env("CI_K8S_MINIO_ACCESS_KEY_ID"),
+            secret_key=required_env("CI_K8S_MINIO_SECRET_ACCESS_KEY"),
+        )
+
+    def uri(self, path: str) -> str:
+        return f"{self.scheme}://{self.bucket}/{path}"
+
+    def delta_storage_options(self) -> dict[str, str]:
+        """``object_store`` options shared by the Delta connector config and the
+        ``deltalake`` package. Empty for GCS: both sides use Workload Identity."""
+        if self.scheme == "gs":
+            return {}
+        assert self.endpoint and self.access_key and self.secret_key
+        return {
+            "aws_access_key_id": self.access_key,
+            "aws_secret_access_key": self.secret_key,
+            "aws_region": self.region,
+            "aws_endpoint": self.endpoint,
+            "aws_allow_http": str(urlparse(self.endpoint).scheme == "http").lower(),
+        }
+
+    def iceberg_fileio_config(self) -> dict[str, str]:
+        """``pyiceberg`` FileIO properties, also passed to the Iceberg connector.
+        Empty for GCS for the same reason as :meth:`delta_storage_options`."""
+        if self.scheme == "gs":
+            return {}
+        assert self.endpoint and self.access_key and self.secret_key
+        return {
+            "s3.endpoint": self.endpoint,
+            "s3.access-key-id": self.access_key,
+            "s3.secret-access-key": self.secret_key,
+            "s3.region": self.region,
+            "s3.path-style-access": "true",
+        }
+
+    def sync_bucket(self, bucket_path: str) -> str:
+        """``bucket`` value of a checkpoint-sync config for ``<bucket>/<prefix>``.
+
+        Checkpoint sync selects rclone's backend by the scheme: ``gs://`` is
+        Google Cloud Storage over its own API, anything else is S3.
+        """
+        return f"gs://{bucket_path}" if self.scheme == "gs" else bucket_path
+
+    def checkpoint_sync_connection(
+        self,
+        bucket_path: str,
+        *,
+        auth_err: bool = False,
+        endpoint: str | None = None,
+    ) -> dict:
+        """Connection half of a pipeline's checkpoint-sync ``sync`` config.
+
+        ``auth_err`` breaks authentication on purpose: anonymous requests for
+        GCS (denied on a private bucket), a corrupted secret key for S3.
+        """
+        sync: dict = {"bucket": self.sync_bucket(bucket_path)}
+        if self.scheme == "gs":
+            if endpoint is not None:
+                sync["endpoint"] = endpoint
+            if auth_err:
+                # rclone honors `anonymous` ahead of `env_auth`.
+                sync["flags"] = ["--gcs-anonymous"]
+            return sync
+        assert self.endpoint and self.access_key and self.secret_key
+        sync.update(
+            {
+                "access_key": self.access_key,
+                "secret_key": self.secret_key + ("extra" if auth_err else ""),
+                "provider": MINIO_PROVIDER,
+                "endpoint": endpoint or self.endpoint,
+                "region": self.region,
+            }
+        )
+        return sync
+
+    @property
+    def auth_error_pattern(self) -> str:
+        """Regex matching the error a pipeline reports for ``auth_err`` syncs."""
+        if self.scheme == "gs":
+            # Anchored: bare digits would also match UUIDs, ports and sizes.
+            return r"Anonymous caller|Forbidden|\bError 40[13]\b"
+        return "SignatureDoesNotMatch|Forbidden"
+
+    def pyarrow_fs(self):
+        """pyarrow filesystem for this store; paths are ``<bucket>/<key>``.
+
+        Imported lazily to keep test collection cheap on hosts that never
+        touch object storage.
+        """
+        import pyarrow.fs as pafs
+
+        if self.scheme == "gs":
+            from datetime import timedelta
+
+            # Credentials come from the GKE metadata server (Workload Identity).
+            # Without one the client retries indefinitely; bounding it lets
+            # callers fall back instead of hanging the run.
+            return pafs.GcsFileSystem(retry_time_limit=timedelta(seconds=30))
+        assert self.endpoint
+        parsed_endpoint = urlparse(self.endpoint)
+        return pafs.S3FileSystem(
+            access_key=self.access_key,
+            secret_key=self.secret_key,
+            region=self.region,
+            scheme=parsed_endpoint.scheme,
+            endpoint_override=parsed_endpoint.netloc,
+        )
+
+
+def inputs_store() -> ObjectStore | None:
+    """Store holding long-lived datasets the tests only read, or None where the
+    CI environment has none (the fresh-install CI runs a per-run MinIO only)."""
+    uri = os.environ.get(INPUTS_STORE_URI_ENV)
+    return ObjectStore.from_uri(uri) if uri else None
+
+
 @dataclass
 class DeltaTestLocation:
     """Describe where the Delta sink writes test data and how to read it back."""
@@ -79,6 +264,8 @@ class DeltaTestLocation:
     # honors this by leaving the directory in place so the next run reuses the
     # cached fixture instead of paying to rebuild it.
     stable: bool = False
+    # The remote store behind ``uri``; None for a local directory.
+    store: ObjectStore | None = None
 
     # Written last by ``_place_tree``: a builder killed mid-upload leaves a
     # tree that already satisfies ``delta_log_exists``.
@@ -92,7 +279,7 @@ class DeltaTestLocation:
         mode: str = "truncate",
         stable_subpath: str | None = None,
     ) -> "DeltaTestLocation":
-        """Use the local filesystem for local runs and MinIO-backed S3 in CI.
+        """Use the local filesystem for local runs and :class:`ObjectStore` in CI.
 
         :param mode: Value of the connector's ``mode`` field. Output
             connectors use ``"truncate"`` (the default); input connectors
@@ -112,37 +299,21 @@ class DeltaTestLocation:
         """
 
         if runs_in_ci():
-            access_key = required_env("CI_K8S_MINIO_ACCESS_KEY_ID")
-            secret_key = required_env("CI_K8S_MINIO_SECRET_ACCESS_KEY")
+            store = ObjectStore.from_env()
             if stable_subpath is not None:
                 prefix = f"_fixtures/{fixture_suite_dir()}/{stable_subpath}"
             else:
                 prefix = f"{pipeline_name}/{uuid.uuid4().hex}"
-            root_path = f"{MINIO_BUCKET}/{prefix}"
-            minio_endpoint = MINIO_ENDPOINT.rstrip("/")
-            parsed_endpoint = urlparse(minio_endpoint)
-            if (
-                parsed_endpoint.scheme not in {"http", "https"}
-                or not parsed_endpoint.netloc
-            ):
-                raise ValueError(
-                    "CI_MINIO_ENDPOINT must be a full URL, e.g. "
-                    "'http://minio.minio.svc.cluster.local:9000'"
-                )
-
             return cls(
-                uri=f"s3://{root_path}",
+                uri=store.uri(prefix),
                 connector_config={
-                    "uri": f"s3://{root_path}",
+                    "uri": store.uri(prefix),
                     "mode": mode,
-                    "aws_access_key_id": access_key,
-                    "aws_secret_access_key": secret_key,
-                    "aws_region": MINIO_REGION,
-                    "aws_endpoint": minio_endpoint,
-                    "aws_allow_http": str(parsed_endpoint.scheme == "http").lower(),
+                    **store.delta_storage_options(),
                 },
-                root_path=root_path,
+                root_path=f"{store.bucket}/{prefix}",
                 stable=stable_subpath is not None,
+                store=store,
             )
 
         if stable_subpath is not None:
@@ -162,6 +333,45 @@ class DeltaTestLocation:
             root_path=str(local_dir),
             local_dir=local_dir,
             stable=stable_subpath is not None,
+        )
+
+    @classmethod
+    def dataset(
+        cls, relative_path: str, *, mode: str = "snapshot"
+    ) -> "DeltaTestLocation":
+        """A read-only Delta dataset, addressed relative to the inputs store.
+
+        In CI the dataset lives in the store named by ``INPUTS_STORE_URI_ENV``;
+        a run without that store cannot serve it, so callers should skip on
+        the ``RuntimeError``. Locally, datasets are read from
+        ``LOCAL_FIXTURE_ROOT/datasets/<relative_path>``.
+        """
+        if runs_in_ci():
+            store = inputs_store()
+            if store is None:
+                raise RuntimeError(
+                    f"{INPUTS_STORE_URI_ENV} is not set: this environment has "
+                    f"no read-only datasets (wanted {relative_path!r})"
+                )
+            return cls(
+                uri=store.uri(relative_path),
+                connector_config={
+                    "uri": store.uri(relative_path),
+                    "mode": mode,
+                    **store.delta_storage_options(),
+                },
+                root_path=f"{store.bucket}/{relative_path}",
+                stable=True,
+                store=store,
+            )
+
+        local_dir = LOCAL_FIXTURE_ROOT / "datasets" / relative_path
+        return cls(
+            uri=f"file://{local_dir}",
+            connector_config={"uri": f"file://{local_dir}", "mode": mode},
+            root_path=str(local_dir),
+            local_dir=local_dir,
+            stable=True,
         )
 
     def delta_storage_options(self) -> dict[str, str]:
@@ -185,24 +395,10 @@ class DeltaTestLocation:
             opts.setdefault("aws_s3_allow_unsafe_rename", "true")
         return opts
 
-    def _s3_filesystem(self):
-        """Build a pyarrow ``S3FileSystem`` from the connector config.
-
-        Pyarrow imports are deferred to keep module-level test collection
-        cheap on hosts that don't read Delta tables.
-        """
-        import pyarrow.fs as pafs
-
-        cfg = self.connector_config
-        endpoint = str(cfg["aws_endpoint"]).rstrip("/")
-        parsed_endpoint = urlparse(endpoint)
-        return pafs.S3FileSystem(
-            access_key=str(cfg["aws_access_key_id"]),
-            secret_key=str(cfg["aws_secret_access_key"]),
-            region=str(cfg["aws_region"]),
-            scheme=parsed_endpoint.scheme,
-            endpoint_override=parsed_endpoint.netloc,
-        )
+    def _filesystem(self):
+        """pyarrow filesystem of the remote store behind this location."""
+        assert self.store is not None, "no remote store behind a local location"
+        return self.store.pyarrow_fs()
 
     def log_json_paths(self) -> list[str]:
         """List Delta transaction log JSON files in version order."""
@@ -214,7 +410,7 @@ class DeltaTestLocation:
 
         import pyarrow.fs as pafs
 
-        fs = self._s3_filesystem()
+        fs = self._filesystem()
         infos = fs.get_file_info(
             pafs.FileSelector(f"{self.root_path}/_delta_log", recursive=False)
         )
@@ -229,7 +425,7 @@ class DeltaTestLocation:
         if self.local_dir is not None:
             return pathlib.Path(path).read_text(encoding="utf-8")
 
-        with self._s3_filesystem().open_input_file(path) as handle:
+        with self._filesystem().open_input_file(path) as handle:
             return handle.readall().decode("utf-8")
 
     def _read_parquet(self, relative_path: str):
@@ -240,7 +436,7 @@ class DeltaTestLocation:
             return pq.read_table(self.local_dir / relative_path)
 
         return pq.read_table(
-            f"{self.root_path}/{relative_path}", filesystem=self._s3_filesystem()
+            f"{self.root_path}/{relative_path}", filesystem=self._filesystem()
         )
 
     def read_rows(self) -> list[dict]:
@@ -321,9 +517,7 @@ class DeltaTestLocation:
 
         import pyarrow.fs as pafs
 
-        info = self._s3_filesystem().get_file_info(
-            f"{self.root_path}/{self.READY_MARKER}"
-        )
+        info = self._filesystem().get_file_info(f"{self.root_path}/{self.READY_MARKER}")
         return info.type == pafs.FileType.File
 
     def _place_tree(self, staging: pathlib.Path) -> None:
@@ -348,7 +542,7 @@ class DeltaTestLocation:
             (self.local_dir / self.READY_MARKER).write_text("", encoding="utf-8")
             return
 
-        fs = self._s3_filesystem()
+        fs = self._filesystem()
         # Marker off before the first byte lands, on after the last, so a
         # reader that finds it never sees a half-replaced tree.
         with contextlib.suppress(FileNotFoundError):
@@ -416,34 +610,19 @@ class IcebergTestLocation:
 
     @classmethod
     def create(cls, pipeline_name: str) -> "IcebergTestLocation":
-        """Local filesystem for local runs, MinIO-backed S3 in CI."""
+        """Local filesystem for local runs, :class:`ObjectStore` in CI."""
         if runs_in_ci():
-            access_key = required_env("CI_K8S_MINIO_ACCESS_KEY_ID")
-            secret_key = required_env("CI_K8S_MINIO_SECRET_ACCESS_KEY")
+            store = ObjectStore.from_env()
             prefix = f"{pipeline_name}/{uuid.uuid4().hex}"
-            root = f"{MINIO_BUCKET}/{prefix}"
-            endpoint = MINIO_ENDPOINT.rstrip("/")
-            parsed = urlparse(endpoint)
-            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-                raise ValueError(
-                    "CI_MINIO_ENDPOINT must be a full URL, e.g. "
-                    "'http://minio.minio.svc.cluster.local:9000'"
-                )
-            fileio_config = {
-                "s3.endpoint": endpoint,
-                "s3.access-key-id": access_key,
-                "s3.secret-access-key": secret_key,
-                "s3.region": MINIO_REGION,
-                "s3.path-style-access": "true",
-            }
+            fileio_config = store.iceberg_fileio_config()
             # The SQLite catalog is only touched by the writer, so it stays
             # on local disk even when the warehouse is remote.
             catalog_dir = pathlib.Path(
                 tempfile.mkdtemp(prefix=f"{pipeline_name}_iceberg_cat_", dir="/tmp")
             )
             return cls(
-                warehouse=f"s3://{root}",
-                table_location=f"s3://{root}/{cls.TABLE}",
+                warehouse=store.uri(prefix),
+                table_location=store.uri(f"{prefix}/{cls.TABLE}"),
                 catalog_db=str(catalog_dir / "catalog.db"),
                 namespace=cls.NAMESPACE,
                 table_name=cls.TABLE,

@@ -15582,7 +15582,7 @@
           },
           "bucket": {
             "type": "string",
-            "description": "The name of the storage bucket.\n\nThis may include a path to a folder inside the bucket (e.g., `my-bucket/data`)."
+            "description": "The name of the storage bucket.\n\nThis may include a path to a folder inside the bucket (e.g., `my-bucket/data`).\n\nPrefix it with `gs://` to sync to Google Cloud Storage through its native\nAPI instead of S3. `provider`, `access_key`, and `secret_key` are then\nignored; rclone authenticates with Application Default Credentials, for\nexample a GKE Workload Identity."
           },
           "checkers": {
             "type": "integer",
@@ -15593,7 +15593,7 @@
           },
           "endpoint": {
             "type": "string",
-            "description": "The endpoint URL for the storage service.\n\nThis is typically required for custom or local S3-compatible storage providers like MinIO.\nExample: `http://localhost:9000`\n\nRelevant rclone config key: [`endpoint`](https://rclone.org/s3/#s3-endpoint)",
+            "description": "The endpoint URL for the storage service.\n\nThis is typically required for custom or local S3-compatible storage providers like MinIO.\nExample: `http://localhost:9000`\n\nFor a `gs://` bucket this is the Google Cloud Storage JSON API base URL;\na bare host gets `/storage/v1/` appended. Leave empty for the public service.\n\nRelevant rclone config key: [`endpoint`](https://rclone.org/s3/#s3-endpoint)",
             "nullable": true
           },
           "fail_if_no_checkpoint": {
@@ -15652,7 +15652,7 @@
           },
           "read_bucket": {
             "type": "string",
-            "description": "A read-only bucket used as a fallback checkpoint source.\n\nWhen the pipeline has no local checkpoint and `bucket` contains no\ncheckpoint either, it will attempt to fetch the checkpoint from this\nlocation instead.  All connection settings (`endpoint`, `region`,\n`provider`, `access_key`, `secret_key`) are shared with `bucket`.\n\nThe pipeline **never writes** to `read_bucket`.\n\nMust point to a different location than `bucket`.",
+            "description": "A read-only bucket used as a fallback checkpoint source.\n\nWhen the pipeline has no local checkpoint and `bucket` contains no\ncheckpoint either, it will attempt to fetch the checkpoint from this\nlocation instead.  All connection settings (`endpoint`, `region`,\n`provider`, `access_key`, `secret_key`) are shared with `bucket`. The\nscheme is not: a `gs://` `bucket` needs a `gs://` `read_bucket` too,\nbecause the prefix alone selects the object store.\n\nThe pipeline **never writes** to `read_bucket`.\n\nMust point to a different location than `bucket`.",
             "nullable": true
           },
           "region": {
