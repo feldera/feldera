@@ -127,18 +127,13 @@ jobs:
           PUBSUB_EMULATOR_HOST: 127.0.0.1:8681
           ICEBERG_TEST_AWS_ACCESS_KEY_ID: ${{ secrets.delta_table_test_aws_access_key_id }}
           ICEBERG_TEST_AWS_SECRET_ACCESS_KEY: ${{ secrets.delta_table_test_aws_secret_access_key }}
-          # The Delta object-store tests read the same two buckets as the Python
-          # suite, but over the S3-compatible API with static keys rather than
-          # `gs://` with Workload Identity, so they need their own credentials.
-          # Variable names follow the S3-compatible shape in
-          # python/tests/utils.py. Tables the tests write go to CI_MINIO_BUCKET,
-          # which expires objects after 7 days; read-only fixtures live in
-          # CI_MINIO_INPUTS_BUCKET, which does not.
-          CI_K8S_MINIO_ACCESS_KEY_ID: ${{ secrets.CI_GCS_HMAC_ACCESS_KEY_ID }}
-          CI_K8S_MINIO_SECRET_ACCESS_KEY: ${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}
-          CI_MINIO_ENDPOINT: https://storage.googleapis.com
-          CI_MINIO_BUCKET: feldera-ci-test-feldera-ci
-          CI_MINIO_INPUTS_BUCKET: feldera-ci-inputs-feldera-ci
+          # The Delta object-store tests, same stores and variables as the
+          # Python suite. No credentials: Workload Identity authenticates the
+          # runner. Tables the tests write go to the per-run store, which
+          # expires objects after 7 days.
+          CI_OBJECT_STORE_URI: gs://feldera-ci-test-feldera-ci
+          # Long-lived datasets tests only read.
+          CI_OBJECT_STORE_INPUTS_URI: gs://feldera-ci-inputs-feldera-ci
           POSTGRES_SSL_URL: postgres://postgres:${{ secrets.ci_postgres_password }}@ci-postgres-internal.postgres.svc.cluster.local:5432/postgres?sslmode=require
           POSTGRES_SSL_CA_PEM: ${{ secrets.ci_postgres_tls_crt }}
           POSTGRES_SSL_VERIFY_HOSTNAME: "false"

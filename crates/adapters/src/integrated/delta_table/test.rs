@@ -3479,64 +3479,39 @@ fn required_env(name: &str) -> String {
         .unwrap_or_else(|_| panic!("{name} must be set to run the delta-s3-test tests"))
 }
 
-/// Credentials, endpoint and region for the CI object store.
+/// Object-store options for the CI buckets.
 ///
-/// The store is a GCS bucket reached through its S3-compatible API, so the
-/// tables stay `s3://` URIs and only gain an endpoint.
-///
-/// The names are the S3-compatible shape that `python/tests/utils.py` defines
-/// (see its `MINIO_*` constants). The Python suite reads the same buckets, but
-/// over `gs://` with Workload Identity, so the two suites share the buckets
-/// rather than the credentials. Everything is required: a default that is right
-/// for one variable and stale for another fails obscurely, e.g. by resolving
-/// `s3://ci-tests/` against `storage.googleapis.com`.
+/// Empty: the buckets are GCS, and both the test process and the pipeline
+/// authenticate with Workload Identity in CI and application-default
+/// credentials locally, so no key ever reaches a connector config. Same
+/// reasoning as `delta_storage_options` in `python/tests/utils.py`.
 #[cfg(feature = "delta-s3-test")]
 fn ci_object_store_config() -> Vec<(String, String)> {
-    let endpoint = required_env("CI_MINIO_ENDPOINT");
-    vec![
-        (
-            "aws_access_key_id".to_string(),
-            required_env("CI_K8S_MINIO_ACCESS_KEY_ID"),
-        ),
-        (
-            "aws_secret_access_key".to_string(),
-            required_env("CI_K8S_MINIO_SECRET_ACCESS_KEY"),
-        ),
-        // Meaningless for GCS, but the S3 store insists on one
-        // (see https://github.com/delta-io/delta-rs/issues/1095). Defaulted,
-        // as `python/tests/utils.py` defaults it, because every store this
-        // talks to ignores it.
-        (
-            "aws_region".to_string(),
-            std::env::var("CI_MINIO_REGION").unwrap_or_else(|_| "us-east-1".to_string()),
-        ),
-        (
-            "aws_allow_http".to_string(),
-            (!endpoint.starts_with("https://")).to_string(),
-        ),
-        ("aws_endpoint".to_string(), endpoint),
-    ]
+    Vec::new()
 }
 
-/// Bucket for tables the tests write. Everything in it is deleted after 7 days.
+/// Store for per-run test data, as `gs://<bucket>[/<prefix>]`. Everything in it
+/// is deleted after 7 days.
 #[cfg(feature = "delta-s3-test")]
-fn ci_bucket() -> String {
-    required_env("CI_MINIO_BUCKET")
+fn ci_store_uri() -> String {
+    required_env("CI_OBJECT_STORE_URI").trim_end_matches('/').to_string()
 }
 
-/// Bucket for read-only input data, which has no expiry rule. Fixtures that
-/// cannot be regenerated from this repo have to live here: the scratch bucket
+/// Store for read-only input data, which has no expiry rule. Fixtures that
+/// cannot be regenerated from this repo have to live here: the per-run store
 /// deletes them a week after upload.
 #[cfg(feature = "delta-s3-test")]
-fn ci_inputs_bucket() -> String {
-    required_env("CI_MINIO_INPUTS_BUCKET")
+fn ci_inputs_store_uri() -> String {
+    required_env("CI_OBJECT_STORE_INPUTS_URI")
+        .trim_end_matches('/')
+        .to_string()
 }
 
 /// Location for a table the test writes. No test removes the table it creates;
 /// the bucket's lifecycle rule deletes objects after 7 days instead.
 #[cfg(feature = "delta-s3-test")]
 fn ci_scratch_table_uri(uuid: uuid::Uuid) -> String {
-    format!("s3://{}/rust-delta-tests/{uuid}/", ci_bucket())
+    format!("{}/rust-delta-tests/{uuid}/", ci_store_uri())
 }
 
 #[cfg(feature = "delta-s3-test")]
@@ -3557,7 +3532,6 @@ async fn delta_table_cdc_s3_test_suspend() {
     let object_store_config = ci_object_store_config()
         .into_iter()
         .map(|(key, value)| (key, value.into()))
-        .chain([("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".into())])
         .collect::<HashMap<String, Value>>();
 
     let input_table_uri = ci_scratch_table_uri(input_uuid);
@@ -3860,7 +3834,6 @@ async fn delta_table_follow_s3_test_common(snapshot: bool, suspend: bool) {
 
     let object_store_config = ci_object_store_config()
         .into_iter()
-        .chain([("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".to_string())])
         .collect::<HashMap<_, _>>();
 
     let input_table_uri = ci_scratch_table_uri(input_uuid);
@@ -4108,10 +4081,10 @@ proptest! {
 /// Read a large (2M records) dataset from the CI object store.
 ///
 /// Copied there from the Databricks workspace bucket it was created in, so CI
-/// can reach it with the same credentials as every other Delta test. It sits in
-/// the inputs bucket rather than the scratch one because nothing in this repo
-/// can rebuild it -- it came from a Databricks notebook (below) -- and the
-/// scratch bucket deletes everything after 7 days.
+/// can read it without credentials of its own. It sits in the inputs store
+/// rather than the per-run one because nothing in this repo can rebuild it --
+/// it came from a Databricks notebook (below) -- and the per-run store deletes
+/// everything after 7 days.
 ///
 /// This dataset was derived from
 /// `/databricks-datasets/learning-spark-v2/people/people-10m.delta`; however the full dataset
@@ -4143,8 +4116,8 @@ fn delta_table_s3_people_2m() {
         .collect::<HashMap<_, _>>();
 
     let table_uri = format!(
-        "s3://{}/delta-connector-tests/people_2m/",
-        ci_inputs_bucket()
+        "{}/delta-connector-tests/people_2m/",
+        ci_inputs_store_uri()
     );
     let table_uri = table_uri.as_str();
     let mut json_file = delta_table_snapshot_to_json::<DatabricksPeople>(
