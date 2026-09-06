@@ -614,7 +614,7 @@ Concurrency, verified against delta-rs's conflict checker:
 |------------------|---------|
 | OPTIMIZE removes a file being tombstoned | `ConcurrentDeleteDelete`, retry against the new snapshot. The check does not filter on `data_change`, so compaction's `data_change: false` removes still conflict, which is wanted here |
 | OPTIMIZE adds compacted files | No conflict. The read and append checks consider only `data_change: true` files under the default isolation level |
-| VACUUM | Retains a vector that a live `add` references, and reclaims the rest. True of Spark as written; true of delta-rs only in `Lite` mode until the fork fix described below lands in the pinned rev |
+| VACUUM | Spark retains a vector a live `add` references and reclaims the rest. delta-rs does neither: a vector is named inside a descriptor, not as a path, so `Lite` never deletes one and `Full` deletes live ones as orphans |
 | Schema or property change | The startup checks run once, so a mid-run change is caught by the next flush instead: a metadata change conflicts on commit, and a changed key column fails the key encoding rather than superseding the wrong row |
 
 A retry re-runs the lookup against the new snapshot, because file paths may have changed.

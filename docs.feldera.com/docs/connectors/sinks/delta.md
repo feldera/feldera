@@ -257,23 +257,15 @@ schema, changes the partitioning, alters a table property, or upgrades the proto
 does not conflict with that maintenance: if a compaction replaces a file mid-flush, the
 connector notices and redoes the flush against the new files.
 
-One file the connector writes needs mentioning. Deletion vectors go at the table root as
-`deletion_vector_<uuid>.bin`, which is where Delta Spark writes them and what the protocol
-describes. Every flush that tombstones rows writes one, and the vector each touched file
-named before is left unreferenced -- so `VACUUM` is required maintenance here, alongside
-`OPTIMIZE`, and for the same reason: without it the objects accumulate, one per flush.
+Every flush that supersedes rows writes one `deletion_vector_<uuid>.bin` at the table root,
+and leaves whichever vector file the data files it touched pointed at before unreferenced. So
+`VACUUM` is required maintenance here, alongside `OPTIMIZE`. It is also what reclaims a data
+file the connector drops whole, so a merge-mode table needs it either way.
 
-`VACUUM` is also what reclaims a data file the connector drops whole, so a merge-mode table
-needs it whether or not deletion vectors are in play. A `VACUUM` spares a vector that a live
-file still references, because it reads the path out of that file's `add` action, so running
-it is safe at any retention the table allows.
-
-One exception worth knowing if you maintain the table with delta-rs, through either the Rust
-crate or the `deltalake` Python package: its full-mode `VACUUM` deletes live deletion vectors,
-which brings back every row they marked deleted. Full mode lists the table directory and keeps
-only paths a live `add` names, and a vector is named inside a descriptor rather than as a path
-of its own. Do not pass `full=True`. The default mode is unaffected, and so is Delta Spark's
-`VACUUM`, which handles vectors correctly in either mode.
+Use Delta Spark's `VACUUM` if you can. delta-rs, and so the `deltalake` Python package, does
+not account for vector files: its default mode never deletes them, so they accumulate one per
+flush, and its full mode deletes ones that are still in use, which brings back every row they
+marked deleted. Never pass `full=True` to it.
 
 ### Flush cost, and how to size it
 
