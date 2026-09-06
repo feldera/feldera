@@ -26,7 +26,7 @@ public final class DBSPEqualityComparatorExpression extends DBSPExpression {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        visitor.property("source");
+        visitor.property("comparator");
         this.comparator.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);

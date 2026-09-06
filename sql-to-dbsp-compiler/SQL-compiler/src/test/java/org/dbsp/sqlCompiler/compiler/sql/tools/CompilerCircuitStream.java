@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.sql.tools;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.TestSerialize;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Linq;
 
@@ -63,6 +64,13 @@ public class CompilerCircuitStream extends CompilerCircuit {
      * separator, since trailing spaces are part of the value. */
     public CompilerCircuitStream withStringTrim() {
         this.trimStrings = true;
+        return this;
+    }
+
+    /** Replaces the circuit with the copy obtained by serializing it to JSON and decoding
+     * the JSON back, so the Rust code is generated from the decoded circuit. */
+    public CompilerCircuitStream setRoundTripThroughJson() {
+        this.circuit = new TestSerialize(this.compiler).apply(this.circuit);
         return this;
     }
 

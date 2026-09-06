@@ -24,6 +24,7 @@ import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import java.util.List;
+import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 
 /** Corresponds to input_map_with_waterline operator from DBSP.
  * This operator has 3 outputs: the data, the waterline, and the error stream
@@ -185,12 +186,8 @@ public class DBSPInputMapWithWaterlineOperator
 
     @SuppressWarnings("unused")
     public static DBSPInputMapWithWaterlineOperator fromJson(JsonNode node, JsonDecoder decoder) {
-        DBSPTypeIndexedZSet outputType = DBSPNode.fromJsonInner(node, "outputType", decoder, DBSPTypeIndexedZSet.class);
-        ProgramIdentifier name = ProgramIdentifier.fromJson(Utilities.getProperty(node, "tableName"));
         DBSPTypeStruct originalRowType = DBSPNode.fromJsonInner(node, "originalRowType", decoder, DBSPTypeStruct.class);
-        TableMetadata metadata = TableMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder);
-        List<Integer> keyFields = Linq.list(Linq.map(
-                Utilities.getProperty(node, "keyFields").elements(), JsonNode::asInt));
+        DBSPTypeIndexedZSet outputType = DBSPNode.fromJsonInner(node, "outputType", decoder, DBSPTypeIndexedZSet.class);
         DBSPClosureExpression initializer = DBSPNode.fromJsonInner(
                 node, "initializer", decoder, DBSPClosureExpression.class);
         DBSPClosureExpression timestamp = DBSPNode.fromJsonInner(
@@ -201,8 +198,13 @@ public class DBSPInputMapWithWaterlineOperator
                 node, "filter", decoder, DBSPClosureExpression.class);
         DBSPClosureExpression error = DBSPNode.fromJsonInner(
                 node, "error", decoder, DBSPClosureExpression.class);
+        ProgramIdentifier name = ProgramIdentifier.fromJson(Utilities.getProperty(node, "tableName"));
+        TableMetadata metadata = TableMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder);
+        List<Integer> keyFields = Linq.list(Linq.map(
+                Utilities.getProperty(node, "keyFields").elements(), JsonNode::asInt));
         return new DBSPInputMapWithWaterlineOperator(CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY, keyFields,
-                outputType, originalRowType, metadata, name, initializer, timestamp, lub, filter, error);
+                outputType, originalRowType, metadata, name, initializer, timestamp, lub, filter, error)
+                .addAnnotations(Annotations.fromJson(Utilities.getProperty(node, "annotations")), DBSPInputMapWithWaterlineOperator.class);
     }
 
     public DBSPInputMapWithWaterlineOperator withMetadata(TableMetadata metadata) {

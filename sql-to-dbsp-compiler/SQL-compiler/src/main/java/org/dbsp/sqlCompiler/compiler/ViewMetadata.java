@@ -47,7 +47,11 @@ public class ViewMetadata implements IJson {
         return Linq.any(this.columns, m -> m.lateness != null);
     }
 
-    public void asJson(ToJsonInnerVisitor visitor, boolean ignoreProperties) {
+    /** @param legacyHash True when producing the JSON that MerkleOuter hashes into the persistent
+     *                    id of the view for the legacy engine.  That JSON leaves out the properties
+     *                    and the column details, because deployed pipelines have ids computed
+     *                    without them. */
+    public void asJson(ToJsonInnerVisitor visitor, boolean legacyHash) {
         JsonStream stream = visitor.stream;
         stream.beginObject();
         stream.label("viewName");
@@ -56,12 +60,13 @@ public class ViewMetadata implements IJson {
         stream.label("emitFinalColumn").append(this.emitFinalColumn);
         stream.label("columns");
         stream.beginArray();
-        for (ViewColumnMetadata key: this.columns)
-            key.asJson(visitor);
+        if (!legacyHash)
+            for (ViewColumnMetadata key: this.columns)
+                key.asJson(visitor);
         stream.endArray();
         stream.label("recursive").append(this.recursive);
         stream.label("system").append(this.system);
-        if (!ignoreProperties) {
+        if (!legacyHash) {
             if (this.properties != null) {
                 stream.label("properties");
                 this.properties.asJson(visitor);

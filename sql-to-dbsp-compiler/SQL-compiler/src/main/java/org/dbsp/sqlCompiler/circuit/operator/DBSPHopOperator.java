@@ -16,6 +16,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 
 /** Implements the table function HOP.  This is desugared into a pair of
  * operators: map (computing the hop start window) followed by flat_map
@@ -42,6 +43,17 @@ public final class DBSPHopOperator extends DBSPUnaryOperator implements ILinear 
         DBSPType timestampType = inputType.getFieldType(this.timestampIndex);
         Utilities.enforce(timestampType.sameTypeIgnoringNullability(outputTuple.getFieldType(inputType.size())));
         Utilities.enforce(timestampType.sameTypeIgnoringNullability(outputTuple.getFieldType(inputType.size() + 1)));
+    }
+
+    @Override
+    public void accept(InnerVisitor visitor) {
+        super.accept(visitor);
+        visitor.property("interval");
+        this.interval.accept(visitor);
+        visitor.property("start");
+        this.start.accept(visitor);
+        visitor.property("size");
+        this.size.accept(visitor);
     }
 
     @Override
@@ -87,6 +99,7 @@ public final class DBSPHopOperator extends DBSPUnaryOperator implements ILinear 
         DBSPExpression start = fromJsonInner(node, "start", decoder, DBSPExpression.class);
         DBSPExpression size = fromJsonInner(node, "size", decoder, DBSPExpression.class);
         return new DBSPHopOperator(CalciteEmptyRel.INSTANCE, timestampIndex, interval, start, size,
-                info.getZsetType(), info.getInput(0));
+                info.getZsetType(), info.getInput(0))
+                .addAnnotations(info.annotations(), DBSPHopOperator.class);
     }
 }

@@ -5,6 +5,10 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.RESULT;
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.util.Utilities;
+import java.util.List;
 
 /** Represents the type SqlResult[T] from sqllib as a TypeUser. */
 public class DBSPTypeSqlResult extends DBSPTypeUser {
@@ -31,6 +35,13 @@ public class DBSPTypeSqlResult extends DBSPTypeUser {
 
     public DBSPType getWrappedType() {
         return this.getTypeArg(0);
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPTypeSqlResult fromJson(JsonNode node, JsonDecoder decoder) {
+        List<DBSPType> typeArgs = fromJsonInnerList(node, "typeArgs", decoder, DBSPType.class);
+        Utilities.enforce(typeArgs.size() == 1);
+        return new DBSPTypeSqlResult(typeArgs.get(0));
     }
 
     // sameType and hashCode inherited from TypeUser.

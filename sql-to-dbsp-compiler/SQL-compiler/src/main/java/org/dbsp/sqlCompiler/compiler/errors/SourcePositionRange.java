@@ -72,6 +72,17 @@ public class SourcePositionRange implements IHasSourcePositionRange {
         return result;
     }
 
+    /** The inverse of {@link #appendAsJson}. */
+    public static SourcePositionRange fromJson(JsonNode node) {
+        SourcePosition start = new SourcePosition(
+                Utilities.getIntProperty(node, "start_line_number"),
+                Utilities.getIntProperty(node, "start_column"));
+        SourcePosition end = new SourcePosition(
+                Utilities.getIntProperty(node, "end_line_number"),
+                Utilities.getIntProperty(node, "end_column"));
+        return new SourcePositionRange(start, end);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;

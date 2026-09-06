@@ -134,7 +134,6 @@ public class DBSPRankOperator extends DBSPUnaryOperator
     @SuppressWarnings("unused")
     public static DBSPRankOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = commonInfoFromJson(node, decoder);
-        DBSPExpression limit = fromJsonInner(node, "limit", decoder, DBSPExpression.class);
         DBSPIndexedTopKOperator.Numbering numbering = DBSPIndexedTopKOperator.Numbering.valueOf(Utilities.getStringProperty(node, "numbering"));
         DBSPClosureExpression projectionFunc = fromJsonInner(node, "projectionFunc", decoder, DBSPClosureExpression.class);
         DBSPClosureExpression outputProducer = fromJsonInner(node, "outputProducer", decoder, DBSPClosureExpression.class);

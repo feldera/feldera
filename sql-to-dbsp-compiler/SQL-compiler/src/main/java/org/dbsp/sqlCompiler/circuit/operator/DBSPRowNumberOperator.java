@@ -103,7 +103,6 @@ public class DBSPRowNumberOperator extends DBSPUnaryOperator
     @SuppressWarnings("unused")
     public static DBSPRowNumberOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = commonInfoFromJson(node, decoder);
-        DBSPExpression limit = fromJsonInner(node, "limit", decoder, DBSPExpression.class);
         DBSPClosureExpression outputProducer = fromJsonInner(node, "outputProducer", decoder, DBSPClosureExpression.class);
         return new DBSPRowNumberOperator(CalciteEmptyRel.INSTANCE,
                 info.getFunction(), outputProducer, info.getInput(0))

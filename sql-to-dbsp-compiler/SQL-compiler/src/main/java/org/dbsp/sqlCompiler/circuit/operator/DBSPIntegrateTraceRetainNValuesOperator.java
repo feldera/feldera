@@ -112,7 +112,6 @@ public final class DBSPIntegrateTraceRetainNValuesOperator
     @SuppressWarnings("unused")
     public static DBSPIntegrateTraceRetainNValuesOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = commonInfoFromJson(node, decoder);
-        boolean accumulate = Utilities.getBooleanProperty(node, "accumulate");
         int n = Utilities.getIntProperty(node, "n");
         WhichN which = WhichN.valueOf(Utilities.getStringProperty(node, "which"));
 

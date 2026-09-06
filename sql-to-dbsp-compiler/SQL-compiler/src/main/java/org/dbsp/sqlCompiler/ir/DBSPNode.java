@@ -42,13 +42,14 @@ import java.util.List;
 /** Base class for all DBSP nodes. */
 public abstract class DBSPNode
         implements IDBSPNode {
-    public static long innerId = 0;
-    public static long outerId = 0;
+    private static long innerId = 0;
+    private static long outerId = 0;
     public final long id;
 
     /** Original Calcite object node that produced this node.
      * This is essentially final; it can only be mutated for DBSPOperator nodes
-     * while the graph is still being constructed. */
+     * while the graph is still being constructed, and by the JSON decoder,
+     * which gives a decoded node its source position. */
     protected CalciteObject node;
 
     /** Controls the debugging for deterministic executions. */
@@ -155,7 +156,18 @@ public abstract class DBSPNode
             outerId--;
     }
 
+    /** Number of outer nodes allocated so far; passes use it to count the operators they create. */
+    public static long outerNodesAllocated() {
+        return outerId;
+    }
+
     public CalciteObject getNode() { return this.node; }
+
+    /** Gives a node decoded from JSON its source position.  The decoder cannot rebuild the
+     * Calcite object of the node, so the position is all the lineage the node keeps. */
+    public void setSourcePosition(SourcePositionRange range) {
+        this.node = CalciteObject.create(range);
+    }
 
     @Override
     public long getId() {

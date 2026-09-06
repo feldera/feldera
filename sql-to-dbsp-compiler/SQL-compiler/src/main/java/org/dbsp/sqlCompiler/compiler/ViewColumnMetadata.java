@@ -14,6 +14,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.Objects;
+import org.dbsp.util.JsonStream;
 
 /** Metadata for a column belonging to a view */
 public class ViewColumnMetadata
@@ -102,6 +103,20 @@ public class ViewColumnMetadata
 
     @Override
     public void asJson(ToJsonInnerVisitor visitor) {
-        // TODO
+        JsonStream stream = visitor.stream;
+        stream.beginObject();
+        stream.label("viewName");
+        this.viewName.asJson(visitor);
+        stream.label("columnName");
+        this.columnName.asJson(visitor);
+        Utilities.enforce(this.type != null,
+                () -> "Column " + this.columnName + " of view " + this.viewName + " has no type");
+        stream.label("type");
+        this.type.accept(visitor);
+        if (this.lateness != null) {
+            stream.label("lateness");
+            this.lateness.accept(visitor);
+        }
+        stream.endObject();
     }
 }

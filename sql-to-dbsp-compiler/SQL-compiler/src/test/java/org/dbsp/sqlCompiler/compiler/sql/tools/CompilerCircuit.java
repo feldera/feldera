@@ -15,7 +15,8 @@ import org.dbsp.util.IndentStreamBuilder;
  * - the circuit */
 public class CompilerCircuit {
     public final DBSPCompiler compiler;
-    final DBSPCircuit circuit;
+    // May be mutated by some JSON deserialization tests
+    DBSPCircuit circuit;
 
     public CompilerCircuit(DBSPCompiler compiler) {
         this.compiler = compiler;

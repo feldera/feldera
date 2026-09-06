@@ -96,10 +96,6 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
         super.accept(visitor);
         visitor.property("partitioningFunction");
         this.partitioningFunction.accept(visitor);
-        if (this.aggregateList != null) {
-            visitor.property("aggregate");
-            this.aggregateList.accept(visitor);
-        }
         visitor.property("lower");
         this.lower.accept(visitor);
         visitor.property("upper");
@@ -108,12 +104,13 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
 
     @SuppressWarnings("unused")
     public static DBSPPartitionedRollingAggregateOperator fromJson(JsonNode node, JsonDecoder decoder) {
-        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
-        DBSPClosureExpression partitioningFunction = fromJsonInner(
-                node, "partitioningFunction", decoder, DBSPClosureExpression.class);
+        // The aggregate list is written before the common properties, so it is read first
         DBSPAggregateList aggregate = null;
         if (node.has("aggregate"))
             aggregate = fromJsonInner(node, "aggregate", decoder, DBSPAggregateList.class);
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        DBSPClosureExpression partitioningFunction = fromJsonInner(
+                node, "partitioningFunction", decoder, DBSPClosureExpression.class);
         DBSPWindowBoundExpression lower = fromJsonInner(node, "lower", decoder, DBSPWindowBoundExpression.class);
         DBSPWindowBoundExpression upper = fromJsonInner(node, "upper", decoder, DBSPWindowBoundExpression.class);
         return new DBSPPartitionedRollingAggregateOperator(

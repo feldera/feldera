@@ -228,7 +228,7 @@ public class ToJsonInnerVisitor extends InnerVisitor {
         }
         this.endArrayProperty("leftInputIndexes");
         this.property("shuffle");
-        this.stream.append(node.shuffle.toString());
+        node.shuffle.asJson(this.stream);
         super.postorder(node);
     }
 

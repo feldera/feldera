@@ -44,6 +44,7 @@ public class DBSPDeltaOperator extends DBSPUnaryOperator implements ILinear {
     @SuppressWarnings("unused")
     public static DBSPDeltaOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
-        return new DBSPDeltaOperator(CalciteEmptyRel.INSTANCE, info.getInput(0));
+        return new DBSPDeltaOperator(CalciteEmptyRel.INSTANCE, info.getInput(0))
+                .addAnnotations(info.annotations(), DBSPDeltaOperator.class);
     }
 }

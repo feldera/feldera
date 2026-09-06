@@ -96,7 +96,7 @@ public class DBSPFold extends DBSPAggregator {
 
     @SuppressWarnings("unused")
     public static DBSPFold fromJson(JsonNode node, JsonDecoder decoder) {
-        DBSPTypeSemigroup semigroup = fromJsonInner(node, "semigroup", decoder, DBSPTypeSemigroup.class);
+        DBSPTypeUser semigroup = fromJsonInner(node, "semigroup", decoder, DBSPTypeUser.class);
         DBSPExpression zero = fromJsonInner(node, "zero", decoder, DBSPExpression.class);
         DBSPClosureExpression increment = fromJsonInner(node, "increment", decoder, DBSPClosureExpression.class);
         DBSPClosureExpression postProcess = fromJsonInner(

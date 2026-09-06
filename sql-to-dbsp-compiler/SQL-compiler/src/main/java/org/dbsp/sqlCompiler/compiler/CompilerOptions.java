@@ -237,6 +237,9 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Parameter(hidden = true, names = "--testing",
                 description = "Signals that compiler is invoked from a testing path: disables some warnings")
         public boolean testing = false;
+        /** Testing only: serialize the circuit to JSON and decode it back after every
+         * optimization pass.  SerializationTests sets this; the other tests do not. */
+        public boolean checkSerialization = false;
 
         // Used only for internal testing
         public boolean nowStream = true;

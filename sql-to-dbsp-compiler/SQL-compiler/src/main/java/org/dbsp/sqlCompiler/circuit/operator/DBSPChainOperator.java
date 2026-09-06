@@ -80,12 +80,6 @@ public class DBSPChainOperator extends DBSPUnaryOperator implements ILinear {
             return this.kind == o.kind && EquivalenceContext.equiv(this.closure, o.closure);
         }
 
-        public static Computation fromJson(JsonNode node, JsonDecoder decoder) {
-            ComputationKind kind = ComputationKind.valueOf(Utilities.getStringProperty(node, "kind"));
-            DBSPClosureExpression closure = fromJsonInner(node, "closure", decoder, DBSPClosureExpression.class);
-            return new Computation(kind, closure);
-        }
-
         public char summary() {
             return switch (this.kind) {
                 case Map -> 'M';
@@ -122,10 +116,17 @@ public class DBSPChainOperator extends DBSPUnaryOperator implements ILinear {
             return new ComputationChain(this.inputType, Linq.append(this.computations, computation));
         }
 
+        /** Decodes the chain from the JSON of the operator: the closures are in the "chain"
+         * array and their kinds in the "kinds" array. */
         public static ComputationChain fromJson(JsonNode node, JsonDecoder decoder) {
             DBSPType inputType = fromJsonInner(node, "inputType", decoder, DBSPType.class);
-            List<Computation> computations = Linq.list(Linq.map(
-                    node.elements(), e -> Computation.fromJson(e, decoder)));
+            List<DBSPClosureExpression> closures = fromJsonInnerList(node, "chain", decoder, DBSPClosureExpression.class);
+            List<ComputationKind> kinds = Linq.list(Linq.map(
+                    Utilities.getProperty(node, "kinds").elements(), k -> ComputationKind.valueOf(k.asText())));
+            Utilities.enforce(kinds.size() == closures.size());
+            List<Computation> computations = new ArrayList<>();
+            for (int i = 0; i < kinds.size(); i++)
+                computations.add(new Computation(kinds.get(i), closures.get(i)));
             return new ComputationChain(inputType, computations);
         }
 
@@ -354,6 +355,9 @@ public class DBSPChainOperator extends DBSPUnaryOperator implements ILinear {
 
     @Override
     public void accept(InnerVisitor visitor) {
+        super.accept(visitor);
+        visitor.property("inputType");
+        this.chain.inputType().accept(visitor);
         visitor.startArrayProperty("chain");
         for (var operation: this.chain.computations())
             operation.closure().accept(visitor);
@@ -373,7 +377,7 @@ public class DBSPChainOperator extends DBSPUnaryOperator implements ILinear {
     @SuppressWarnings("unused")
     public static DBSPChainOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
-        ComputationChain chain = ComputationChain.fromJson(node.get("chain"), decoder);
+        ComputationChain chain = ComputationChain.fromJson(node, decoder);
         return new DBSPChainOperator(CalciteEmptyRel.INSTANCE,
                 chain, info.isMultiset(), info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPChainOperator.class);

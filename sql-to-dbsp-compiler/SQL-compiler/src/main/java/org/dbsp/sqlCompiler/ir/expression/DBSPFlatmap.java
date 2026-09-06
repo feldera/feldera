@@ -344,10 +344,13 @@ public final class DBSPFlatmap extends DBSPExpression {
         List<Integer> leftInputIndexes = Linq.list(Linq.map(
                         Utilities.getProperty(node, "leftInputIndexes").elements(),
                         JsonNode::asInt));
+        // Read in the order accept(InnerVisitor) writes
+        DBSPType ordinalityIndexType = null;
+        if (node.has("ordinalityIndexType"))
+            ordinalityIndexType = fromJsonInner(node, "ordinalityIndexType", decoder, DBSPType.class);
         List<DBSPClosureExpression> rightProjections = null;
         if (node.has("rightProjections"))
             rightProjections = fromJsonInnerList(node, "rightProjections", decoder, DBSPClosureExpression.class);
-        DBSPType ordinalityIndexType = fromJsonInner(node, "ordinalityIndexType", decoder, DBSPType.class);
         Shuffle shuffle = Shuffle.fromJson(Utilities.getProperty(node, "shuffle"));
         return new DBSPFlatmap(CalciteObject.EMPTY, inputRowType,
                 collectionExpression, leftInputIndexes, rightProjections, ordinalityIndexType, shuffle);
