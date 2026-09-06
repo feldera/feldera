@@ -12,7 +12,7 @@ use crate::{Catalog, CircuitCatalog};
 use arrow::datatypes::Schema as ArrowSchema;
 use chrono::NaiveDate;
 use dbsp::circuit::CircuitConfig;
-#[cfg(feature = "delta-s3-test")]
+#[cfg(any(feature = "delta-s3-test", feature = "delta-unity-test"))]
 use dbsp::typed_batch::DynBatchReader;
 use dbsp::utils::Tup2;
 use dbsp::{DBData, DBSPHandle, OrdZSet, Runtime};
@@ -41,7 +41,7 @@ use proptest::proptest;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::TestRunner;
 use serde_json::{Value, json};
-#[cfg(feature = "delta-s3-test")]
+#[cfg(any(feature = "delta-s3-test", feature = "delta-unity-test"))]
 use serial_test::{parallel, serial};
 use size_of::SizeOf;
 use std::cmp::min;
@@ -3467,6 +3467,61 @@ fn except_all_unsupported_types_are_only_map() {
     );
 }
 
+/// Credentials, endpoint and region for the CI object store.
+///
+/// The store is a GCS bucket reached through its S3-compatible API, so the
+/// tables stay `s3://` URIs and only gain an endpoint. The variable names match
+/// `.github/workflows/test-integration-platform.yml`, so one set of secrets
+/// serves both these tests and the Python Delta tests.
+#[cfg(feature = "delta-s3-test")]
+fn ci_object_store_config() -> Vec<(String, String)> {
+    let endpoint = std::env::var("CI_MINIO_ENDPOINT")
+        .unwrap_or_else(|_| "https://storage.googleapis.com".to_string());
+    vec![
+        (
+            "aws_access_key_id".to_string(),
+            std::env::var("CI_K8S_MINIO_ACCESS_KEY_ID").unwrap(),
+        ),
+        (
+            "aws_secret_access_key".to_string(),
+            std::env::var("CI_K8S_MINIO_SECRET_ACCESS_KEY").unwrap(),
+        ),
+        // Meaningless for GCS, but the S3 store insists on one
+        // (see https://github.com/delta-io/delta-rs/issues/1095).
+        (
+            "aws_region".to_string(),
+            std::env::var("CI_MINIO_REGION").unwrap_or_else(|_| "us-east-1".to_string()),
+        ),
+        (
+            "aws_allow_http".to_string(),
+            (!endpoint.starts_with("https://")).to_string(),
+        ),
+        ("aws_endpoint".to_string(), endpoint),
+    ]
+}
+
+/// Bucket for tables the tests write. Everything in it is deleted after 7 days.
+#[cfg(feature = "delta-s3-test")]
+fn ci_bucket() -> String {
+    std::env::var("CI_MINIO_BUCKET").unwrap_or_else(|_| "ci-tests".to_string())
+}
+
+/// Bucket for read-only input data, which has no expiry rule. Fixtures that
+/// cannot be regenerated from this repo have to live here: the scratch bucket
+/// deletes them a week after upload.
+#[cfg(feature = "delta-s3-test")]
+fn ci_inputs_bucket() -> String {
+    std::env::var("CI_MINIO_INPUTS_BUCKET")
+        .unwrap_or_else(|_| "feldera-ci-inputs-feldera-ci".to_string())
+}
+
+/// Location for a table the test writes. No test removes the table it creates;
+/// the bucket's lifecycle rule deletes objects after 7 days instead.
+#[cfg(feature = "delta-s3-test")]
+fn ci_scratch_table_uri(uuid: uuid::Uuid) -> String {
+    format!("s3://{}/rust-delta-tests/{uuid}/", ci_bucket())
+}
+
 #[cfg(feature = "delta-s3-test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[parallel(delta_s3)]
@@ -3482,27 +3537,13 @@ async fn delta_table_cdc_s3_test_suspend() {
 
     let input_uuid = uuid::Uuid::new_v4();
 
-    let object_store_config = [
-        (
-            "aws_access_key_id".to_string(),
-            std::env::var("DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID")
-                .unwrap()
-                .into(),
-        ),
-        (
-            "aws_secret_access_key".to_string(),
-            std::env::var("DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY")
-                .unwrap()
-                .into(),
-        ),
-        // AWS region must be specified (see https://github.com/delta-io/delta-rs/issues/1095).
-        ("aws_region".to_string(), "us-east-2".into()),
-        ("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".into()),
-    ]
-    .into_iter()
-    .collect::<HashMap<String, Value>>();
+    let object_store_config = ci_object_store_config()
+        .into_iter()
+        .map(|(key, value)| (key, value.into()))
+        .chain([("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".into())])
+        .collect::<HashMap<String, Value>>();
 
-    let input_table_uri = format!("s3://feldera-delta-table-test/{input_uuid}/");
+    let input_table_uri = ci_scratch_table_uri(input_uuid);
 
     test_cdc(
         &relation_schema,
@@ -3800,24 +3841,13 @@ async fn delta_table_follow_s3_test_common(snapshot: bool, suspend: bool) {
     let input_uuid = uuid::Uuid::new_v4();
     let output_uuid = uuid::Uuid::new_v4();
 
-    let object_store_config = [
-        (
-            "aws_access_key_id".to_string(),
-            std::env::var("DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID").unwrap(),
-        ),
-        (
-            "aws_secret_access_key".to_string(),
-            std::env::var("DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY").unwrap(),
-        ),
-        // AWS region must be specified (see https://github.com/delta-io/delta-rs/issues/1095).
-        ("aws_region".to_string(), "us-east-2".to_string()),
-        ("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".to_string()),
-    ]
-    .into_iter()
-    .collect::<HashMap<_, _>>();
+    let object_store_config = ci_object_store_config()
+        .into_iter()
+        .chain([("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".to_string())])
+        .collect::<HashMap<_, _>>();
 
-    let input_table_uri = format!("s3://feldera-delta-table-test/{input_uuid}/");
-    let output_table_uri = format!("s3://feldera-delta-table-test/{output_uuid}/");
+    let input_table_uri = ci_scratch_table_uri(input_uuid);
+    let output_table_uri = ci_scratch_table_uri(output_uuid);
 
     test_follow(
         &relation_schema,
@@ -4040,16 +4070,9 @@ proptest! {
     fn delta_table_s3_output_proptest(data in delta_data(20_000))
     {
         let uuid = uuid::Uuid::new_v4();
-        let object_store_config = [
-            ("aws_access_key_id".to_string(), std::env::var("DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID").unwrap()),
-            ("aws_secret_access_key".to_string(), std::env::var("DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY").unwrap()),
-            // AWS region must be specified (see https://github.com/delta-io/delta-rs/issues/1095).
-            ("aws_region".to_string(), "us-east-2".to_string()),
-        ]
-            .into_iter()
-            .collect::<HashMap<_,_>>();
+        let object_store_config = ci_object_store_config().into_iter().collect::<HashMap<_,_>>();
 
-        let table_uri = format!("s3://feldera-delta-table-test/{uuid}/");
+        let table_uri = ci_scratch_table_uri(uuid);
         // TODO: enable verification when it's supported for S3.
         delta_table_output_test(data.clone(), &table_uri, &object_store_config, false, None, false);
         //delta_table_output_test(data.clone(), &table_uri, &object_store_config, false, None);
@@ -4065,7 +4088,14 @@ proptest! {
     }
 }
 
-/// Read a large (2M records) dataset created in S3 from Databricks.
+/// Read a large (2M records) dataset from the CI object store.
+///
+/// Copied there from the Databricks workspace bucket it was created in, so CI
+/// can reach it with the same credentials as every other Delta test. It sits in
+/// the inputs bucket rather than the scratch one because nothing in this repo
+/// can rebuild it -- it came from a Databricks notebook (below) -- and the
+/// scratch bucket deletes everything after 7 days.
+///
 /// This dataset was derived from
 /// `/databricks-datasets/learning-spark-v2/people/people-10m.delta`; however the full dataset
 /// is 200MB and can be slow to download, so we cut it down to 2M.
@@ -4089,25 +4119,17 @@ proptest! {
 fn delta_table_s3_people_2m() {
     use crate::test::DatabricksPeople;
 
-    let object_store_config = [
-        (
-            "aws_access_key_id".to_string(),
-            std::env::var("DELTA_TABLE_TEST_AWS_ACCESS_KEY_ID").unwrap(),
-        ),
-        (
-            "aws_secret_access_key".to_string(),
-            std::env::var("DELTA_TABLE_TEST_AWS_SECRET_ACCESS_KEY").unwrap(),
-        ),
-        // AWS region must be specified (see https://github.com/delta-io/delta-rs/issues/1095).
-        ("aws_region".to_string(), "us-west-1".to_string()),
-        // Set long timeout for reading large files from S3.
-        ("timeout".to_string(), "1000 secs".to_string()),
-    ]
-    .into_iter()
-    .collect::<HashMap<_, _>>();
+    let object_store_config = ci_object_store_config()
+        .into_iter()
+        // Set long timeout for reading large files.
+        .chain([("timeout".to_string(), "1000 secs".to_string())])
+        .collect::<HashMap<_, _>>();
 
-    //let table_uri = "s3://databricks-workspace-stack-d437e-bucket/unity-catalog/5496131495366467/__unitystorage/catalogs/d1e3a643-f243-4798-8554-d32bf5a7205a/tables/cee86cb4-a525-41b9-82fe-616ae62287fc/";
-    let table_uri = "s3://databricks-workspace-stack-d437e-bucket/unity-catalog/5496131495366467/__unitystorage/catalogs/d1e3a643-f243-4798-8554-d32bf5a7205a/tables/90cc5aba-25cd-4ed7-a498-8d08f0ddaa21/";
+    let table_uri = format!(
+        "s3://{}/delta-connector-tests/people_2m/",
+        ci_inputs_bucket()
+    );
+    let table_uri = table_uri.as_str();
     let mut json_file = delta_table_snapshot_to_json::<DatabricksPeople>(
         table_uri,
         &DatabricksPeople::schema(),
@@ -4122,7 +4144,10 @@ fn delta_table_s3_people_2m() {
     forget(json_file);
 }
 
-/// Read the same table using Unity Catalog path.
+/// Read the 2M-record dataset over a Unity Catalog path.
+///
+/// Behind `delta-unity-test`, not `delta-s3-test`: this one needs a Databricks
+/// workspace, so it stays out of CI while the rest of the S3 tests run there.
 // I haven't investigated this in depth but it appears that, when running
 // multiple delta connectors in parallel, some of which use unity catalog,
 // and others use direct S3 URL to connect to the table, this confuses the
@@ -4136,7 +4161,7 @@ fn delta_table_s3_people_2m() {
 // Running the unity test sequentially with S3 tests seems to solve this
 // reliably.
 
-#[cfg(feature = "delta-s3-test")]
+#[cfg(feature = "delta-unity-test")]
 #[test]
 #[serial(delta_s3)]
 fn delta_table_unity_people_2m() {

@@ -5,7 +5,7 @@ on:
 
 env:
   CARGO_FLAGS: "--release --locked --all-targets"
-  CARGO_FEATURES_BASE: "fips,pubsub-emulator-test,iceberg-tests-fs,iceberg-tests-glue"
+  CARGO_FEATURES_BASE: "fips,pubsub-emulator-test,iceberg-tests-fs,iceberg-tests-glue,delta-s3-test"
   FELDERA_PLATFORM_VERSION_SUFFIX: ${{ github.sha }}
   FELDERA_BUILD_ORIGIN: ci
   RUSTC_WRAPPER: sccache
