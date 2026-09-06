@@ -355,17 +355,29 @@ def test_merge_compacts_when_asked_to(pipeline_name):
         time.sleep(2)
         pipeline.input_json("t", [{"id": 99, "tag": "last"}], wait=True)
 
-        # It runs in the background, so poll rather than assume it has landed.
-        deadline = time.time() + 60
-        while time.time() < deadline and not _optimize_commits(loc):
-            time.sleep(1)
+        # It runs in the background, so poll rather than assume it has landed. Folding
+        # is the condition, not the first commit: `with_min_commit_interval` may split
+        # one run across commits, so a single commit can be a partial picture.
+        def folded() -> bool:
+            commits = _optimize_commits(loc)
+            return sum(r for _, r in commits) > sum(a for a, _ in commits)
+
+        wait_for_condition(
+            "the connector compacts, folding data files together",
+            folded,
+            timeout_s=60.0,
+            poll_interval_s=1.0,
+        )
 
         commits = _optimize_commits(loc)
-        assert commits, "the connector left no OPTIMIZE commit: it never compacted"
         # Only bin-packing commits appear here: this test never updates a row, so no
-        # deletion vector exists for the reclaim pass to rewrite a file over.
-        # Compacting has to fold files together, not merely commit.
-        assert any(removed > added for added, removed in commits), (
+        # deletion vector exists for the reclaim pass to rewrite a file over. Summing
+        # over every commit keeps the check independent of when compaction fired: a run
+        # that starts mid-seeding leaves fewer files for the next one, but the totals
+        # still show files going in and fewer coming out.
+        removed_total = sum(removed for _, removed in commits)
+        added_total = sum(added for added, _ in commits)
+        assert removed_total > added_total, (
             f"OPTIMIZE rewrote no files together: {commits}"
         )
         # Rewriting the files must not lose the rows in them.
