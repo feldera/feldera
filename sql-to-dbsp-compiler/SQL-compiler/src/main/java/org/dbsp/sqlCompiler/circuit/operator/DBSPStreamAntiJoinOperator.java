@@ -52,6 +52,7 @@ public final class DBSPStreamAntiJoinOperator extends DBSPBinaryOperator impleme
     @SuppressWarnings("unused")
     public static DBSPStreamAntiJoinOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
-        return new DBSPStreamAntiJoinOperator(CalciteEmptyRel.INSTANCE, info.getInput(0), info.getInput(1));
+        return new DBSPStreamAntiJoinOperator(CalciteEmptyRel.INSTANCE, info.getInput(0), info.getInput(1))
+                .addAnnotations(info.annotations(), DBSPStreamAntiJoinOperator.class);
     }
 }

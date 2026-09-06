@@ -88,8 +88,9 @@ public class DBSPMinMax extends DBSPAggregator {
     @SuppressWarnings("unused")
     public static DBSPMinMax fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPType type = fromJsonInner(node, "type", decoder, DBSPType.class);
-        DBSPClosureExpression postProcessing =
-                fromJsonInner(node, "postProcessing", decoder, DBSPClosureExpression.class);
+        DBSPClosureExpression postProcessing = null;
+        if (node.has("postProcessing"))
+            postProcessing = fromJsonInner(node, "postProcessing", decoder, DBSPClosureExpression.class);
         Aggregation aggregation = Aggregation.valueOf(Utilities.getStringProperty(node, "aggregation"));
         return new DBSPMinMax(CalciteObject.EMPTY, type, postProcessing, aggregation);
     }

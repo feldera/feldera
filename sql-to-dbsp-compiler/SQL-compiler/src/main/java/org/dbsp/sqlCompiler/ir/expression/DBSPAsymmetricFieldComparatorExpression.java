@@ -112,8 +112,8 @@ public final class DBSPAsymmetricFieldComparatorExpression extends DBSPExpressio
     public static DBSPAsymmetricFieldComparatorExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPType leftType = fromJsonInner(node, "leftType", decoder, DBSPType.class);
         DBSPType rightType = fromJsonInner(node, "rightType", decoder, DBSPType.class);
-        Utilities.enforce(node.isArray(), () -> "Node is not an array " + Utilities.toDepth(node, 1));
-        var comparisons = Linq.list(Linq.map(node.elements(), Collation::fromJson));
-        return new DBSPAsymmetricFieldComparatorExpression(CalciteObject.EMPTY, leftType, rightType, comparisons);
+        JsonNode comparisons = Utilities.getProperty(node, "comparisons");
+        var collations = Linq.list(Linq.map(comparisons.elements(), Collation::fromJson));
+        return new DBSPAsymmetricFieldComparatorExpression(CalciteObject.EMPTY, leftType, rightType, collations);
     }
 }

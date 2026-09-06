@@ -60,6 +60,8 @@ public class DBSPComparatorType extends DBSPTypeUser {
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
+        visitor.push(this);
+        visitor.pop(this);
         visitor.postorder(this);
     }
 

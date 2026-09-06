@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 
 /** The inverse of the map_index operator.  This operator simply drops the index
  * from an indexed z-set and keeps all the values.  It can be implemented by
@@ -34,6 +35,11 @@ public final class DBSPDeindexOperator extends DBSPUnaryOperator implements ILin
     public DBSPDeindexOperator(CalciteRelNode node, CalciteObject functionNode, OutputPort input) {
         super(node, "map", function(functionNode, input.outputType()),
                 outputType(input.getOutputIndexedZSetType()), true, input);
+    }
+
+    /** Rebuilds a decoded operator with its serialized function. */
+    DBSPDeindexOperator(CalciteRelNode node, DBSPClosureExpression function, DBSPType outputType, OutputPort input) {
+        super(node, "map", function, outputType, true, input);
     }
 
     @Override
@@ -61,6 +67,8 @@ public final class DBSPDeindexOperator extends DBSPUnaryOperator implements ILin
     @SuppressWarnings("unused")
     public static DBSPDeindexOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
-        return new DBSPDeindexOperator(CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY, info.getInput(0));
+        return new DBSPDeindexOperator(CalciteEmptyRel.INSTANCE,
+                info.getClosureFunction(), info.getZsetType(), info.getInput(0))
+                .addAnnotations(info.annotations(), DBSPDeindexOperator.class);
     }
 }

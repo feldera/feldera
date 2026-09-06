@@ -61,7 +61,7 @@ public class MinMaxAggregate extends NonLinearAggregate {
         }
         visitor.property("emptySetResult");
         this.emptySetResult.accept(visitor);
-        visitor.property("aggregatedValue");
+        visitor.property("comparedValue");
         this.comparedValue.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
@@ -106,14 +106,15 @@ public class MinMaxAggregate extends NonLinearAggregate {
 
     @SuppressWarnings("unused")
     public static MinMaxAggregate fromJson(JsonNode node, JsonDecoder decoder) {
+        // Read in the order accept(InnerVisitor) writes
+        DBSPTypeUser semigroup = fromJsonInner(node, "semigroup", decoder, DBSPTypeUser.class);
         DBSPExpression zero = fromJsonInner(node, "zero", decoder, DBSPExpression.class);
         DBSPClosureExpression increment = fromJsonInner(node, "increment", decoder, DBSPClosureExpression.class);
-        DBSPExpression emptySetResult = fromJsonInner(node, "emptySetResult", decoder, DBSPExpression.class);
-        DBSPTypeUser semigroup = fromJsonInner(node, "semigroup", decoder, DBSPTypeUser.class);
-        DBSPClosureExpression comparedValue = fromJsonInner(node, "comparedValue", decoder, DBSPClosureExpression.class);
         DBSPClosureExpression postProcessing = null;
-        if (node.has("postProcessing"))
-            postProcessing = fromJsonInner(node, "postProcessing", decoder, DBSPClosureExpression.class);
+        if (node.has("postProcess"))
+            postProcessing = fromJsonInner(node, "postProcess", decoder, DBSPClosureExpression.class);
+        DBSPExpression emptySetResult = fromJsonInner(node, "emptySetResult", decoder, DBSPExpression.class);
+        DBSPClosureExpression comparedValue = fromJsonInner(node, "comparedValue", decoder, DBSPClosureExpression.class);
         Operation operation = Operation.valueOf(Utilities.getStringProperty(node, "operation"));
         return new MinMaxAggregate(CalciteObject.EMPTY, zero, increment, emptySetResult, semigroup, comparedValue, postProcessing, operation);
     }

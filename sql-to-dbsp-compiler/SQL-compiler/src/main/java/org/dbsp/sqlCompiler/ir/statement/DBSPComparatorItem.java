@@ -7,6 +7,8 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 
 /** An item holding a comparator */
 public class DBSPComparatorItem extends DBSPItem {
@@ -60,5 +62,12 @@ public class DBSPComparatorItem extends DBSPItem {
     @Override
     public DBSPType getType() {
         return this.expression.getType();
+    }
+
+    @SuppressWarnings("unused")
+    public static DBSPComparatorItem fromJson(JsonNode node, JsonDecoder decoder) {
+        DBSPComparatorExpression expression =
+                fromJsonInner(node, "expression", decoder, DBSPComparatorExpression.class);
+        return new DBSPComparatorItem(expression);
     }
 }

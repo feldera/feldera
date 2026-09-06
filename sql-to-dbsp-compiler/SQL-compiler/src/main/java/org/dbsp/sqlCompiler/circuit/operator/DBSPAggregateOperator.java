@@ -78,10 +78,11 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase
 
     @SuppressWarnings("unused")
     public static DBSPAggregateOperator fromJson(JsonNode node, JsonDecoder decoder) {
-        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        // The aggregate list is written before the common properties, so it is read first
         DBSPAggregateList aggregate = null;
         if (node.has("aggregate"))
             aggregate = fromJsonInner(node, "aggregate", decoder, DBSPAggregateList.class);
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         return new DBSPAggregateOperator(
                 CalciteEmptyRel.INSTANCE, info.getIndexedZsetType(), (DBSPAggregator) info.function(),
                 aggregate, info.getInput(0))

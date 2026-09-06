@@ -42,6 +42,9 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
     static int dumped = 0;
     final long id;
     final String name;
+    /** Run TestSerialize on the circuit after each pass; the top-level optimizer sets this,
+     * because a circuit is serializable between optimization steps but not inside one. */
+    boolean checkSerialization = false;
 
     public Passes(String name, DBSPCompiler compiler, CircuitTransform... passes) {
         this(name, compiler, Linq.list(passes));
@@ -88,11 +91,13 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
                 .increase();
         for (CircuitTransform pass: this.passes) {
             long start = System.currentTimeMillis();
-            long startId = DBSPNode.outerId;
+            long startId = DBSPNode.outerNodesAllocated();
             circuit = pass.apply(circuit);
             if (this.compiler.messages.exitCode != 0)
                 break;
-            long endId = DBSPNode.outerId;
+            if (this.checkSerialization)
+                new TestSerialize(this.compiler).apply(circuit);
+            long endId = DBSPNode.outerNodesAllocated();
             long end = System.currentTimeMillis();
             Logger.INSTANCE.belowLevel(this, 2)
                     .append(pass.toString())

@@ -164,7 +164,12 @@ public class MerkleOuter extends CircuitVisitor {
             this.property("viewName");
             this.asJsonInner(operator.viewName);
             this.property("metadata");
-            operator.metadata.asJson(this.innerVisitor, true);
+            // The legacy hash leaves out the columns and
+            // the properties: pipelines were deployed with ids computed before those were
+            // serialized, and a changed persistent id would force these pipelines to bootstrap.
+            // For gen2 we don't care about preserving compatibility.
+            boolean legacyHash = !this.compiler.options.ioOptions.gen2;
+            operator.metadata.asJson(this.innerVisitor, legacyHash);
             return VisitDecision.CONTINUE;
         }
 

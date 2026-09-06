@@ -56,6 +56,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 public class CircuitOptimizer extends Passes {
     public CircuitOptimizer(DBSPCompiler compiler) {
         super("Optimizer", compiler);
+        this.checkSerialization = compiler.options.ioOptions.checkSerialization;
         this.createOptimizer();
     }
 

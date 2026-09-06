@@ -39,6 +39,10 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryDistinctOperator;
 
 /** Serializes an outer node as a JSON string */
 public class ToJsonOuterVisitor extends CircuitVisitor {
@@ -229,6 +233,26 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPInputMapWithWaterlineOperator operator) {
+        if (this.preorder(operator.to(DBSPOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.label("tableName");
+        this.asJsonInner(operator.tableName);
+        this.label("metadata");
+        this.asJsonInner(operator.metadata);
+        this.label("keyFields");
+        this.stream.beginArray();
+        int index = 0;
+        for (int i: operator.keyFields) {
+            this.propertyIndex(index);
+            index++;
+            this.stream.append(i);
+        }
+        this.stream.endArray();
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPSourceTableOperator operator) {
         if (this.preorder(operator.to(DBSPSourceBaseOperator.class)).stop())
             return VisitDecision.STOP;
@@ -335,6 +359,40 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         this.stream.append(operator.upperInclusive);
         this.property("lowerUnbounded");
         this.stream.append(operator.lowerUnbounded);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPHopOperator operator) {
+        if (this.preorder(operator.to(DBSPUnaryOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.property("timestampIndex");
+        this.stream.append(operator.timestampIndex);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPChainOperator operator) {
+        if (this.preorder(operator.to(DBSPUnaryOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.label("kinds");
+        this.stream.beginArray();
+        int index = 0;
+        for (var computation: operator.chain.computations()) {
+            this.propertyIndex(index);
+            index++;
+            this.stream.append(computation.kind().name());
+        }
+        this.stream.endArray();
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPBinaryDistinctOperator operator) {
+        if (this.preorder(operator.to(DBSPBinaryOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.property("positive");
+        this.stream.append(operator.positive);
         return VisitDecision.CONTINUE;
     }
 

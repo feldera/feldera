@@ -12,7 +12,6 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.RelAnd;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
-import org.dbsp.sqlCompiler.ir.NonCoreIR;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
@@ -27,7 +26,6 @@ import java.util.List;
 /** Operator used in the creation of recursive circuits.
  * Represents a recursive view declaration that is used in the definition of a set of other views.
  * In fact, this behaves exactly like a delay operator that closes a cycle. */
-@NonCoreIR
 public final class DBSPViewDeclarationOperator
         extends DBSPSourceTableOperator {
     public final CalciteObject viewDeclaration;

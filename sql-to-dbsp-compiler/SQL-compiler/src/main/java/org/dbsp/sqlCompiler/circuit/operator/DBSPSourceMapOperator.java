@@ -106,10 +106,11 @@ public final class DBSPSourceMapOperator
 
     @SuppressWarnings("unused")
     public static DBSPSourceMapOperator fromJson(JsonNode node, JsonDecoder decoder) {
-        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
-        ProgramIdentifier name = ProgramIdentifier.fromJson(Utilities.getProperty(node, "tableName"));
+        // Read in the order accept(InnerVisitor) writes: the original row type comes first
         DBSPTypeStruct originalRowType = DBSPNode.fromJsonInner(
                 node, "originalRowType", decoder, DBSPTypeStruct.class);
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        ProgramIdentifier name = ProgramIdentifier.fromJson(Utilities.getProperty(node, "tableName"));
         TableMetadata metadata = TableMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder);
         List<Integer> keyFields = Linq.list(Linq.map(
                 Utilities.getProperty(node, "keyFields").elements(), JsonNode::asInt));

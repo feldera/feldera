@@ -90,11 +90,12 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
 
     @SuppressWarnings("unused")
     public static DBSPStreamAggregateOperator fromJson(JsonNode node, JsonDecoder decoder) {
-        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
-        DBSPExpression function = info.function();
+        // The aggregate list is written before the common properties, so it is read first
         DBSPAggregateList aggregate = null;
         if (node.has("aggregate"))
             aggregate = fromJsonInner(node, "aggregate", decoder, DBSPAggregateList.class);
+        CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
+        DBSPExpression function = info.function();
         return new DBSPStreamAggregateOperator(CalciteEmptyRel.INSTANCE,
                 info.getIndexedZsetType(), (DBSPAggregator) function, aggregate, info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPStreamAggregateOperator.class);

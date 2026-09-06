@@ -255,10 +255,11 @@ public final class DBSPClosureExpression extends DBSPExpression {
 
     @SuppressWarnings("unused")
     public static DBSPClosureExpression fromJson(JsonNode node, JsonDecoder decoder) {
-        // Need to read the type even if we don't use it, to populate the cache
+        // Read in the order accept(InnerVisitor) writes; the type is read only to define the
+        // nodes that the parameters and the body refer to
         fromJsonInner(node, "type", decoder, DBSPType.class);
-        DBSPExpression body = fromJsonInner(node, "body", decoder, DBSPExpression.class);
         List<DBSPParameter> parameters = fromJsonInnerList(node, "parameters", decoder, DBSPParameter.class);
+        DBSPExpression body = fromJsonInner(node, "body", decoder, DBSPExpression.class);
         return new DBSPClosureExpression(CalciteObject.EMPTY, body, parameters.toArray(new DBSPParameter[0]));
     }
 }

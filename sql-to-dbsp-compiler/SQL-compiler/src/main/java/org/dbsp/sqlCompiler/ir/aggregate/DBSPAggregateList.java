@@ -72,12 +72,13 @@ public final class DBSPAggregateList extends DBSPNode
         visitor.push(this);
         visitor.property("rowVar");
         this.rowVar.accept(visitor);
-        visitor.property("aggregates");
+        visitor.startArrayProperty("aggregates");
         int index = 0;
         for (IAggregate impl : this.aggregates) {
             visitor.propertyIndex(index++);
             impl.accept(visitor);
         }
+        visitor.endArrayProperty("aggregates");
         visitor.pop(this);
         visitor.postorder(this);
     }

@@ -1,9 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -14,6 +11,9 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 
 /** This operator does not exist in DBSP, it is purely used while computing monotonicity */
 @NonCoreIR

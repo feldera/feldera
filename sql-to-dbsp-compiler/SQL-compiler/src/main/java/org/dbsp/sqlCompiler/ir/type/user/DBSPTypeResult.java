@@ -8,6 +8,10 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.RESULT;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
+import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.util.Utilities;
+import java.util.List;
 
 /** Represents the type of a Rust Result[T, Box[dyn Error]] type as a TypeUser. */
 @NonCoreIR
@@ -37,4 +41,12 @@ public class DBSPTypeResult extends DBSPTypeUser {
     }
 
     // sameType and hashCode inherited from TypeUser.
+
+    /** The first type argument is the result type; the second is the boxed error. */
+    @SuppressWarnings("unused")
+    public static DBSPTypeResult fromJson(JsonNode node, JsonDecoder decoder) {
+        List<DBSPType> typeArgs = fromJsonInnerList(node, "typeArgs", decoder, DBSPType.class);
+        Utilities.enforce(typeArgs.size() == 2);
+        return new DBSPTypeResult(typeArgs.get(0));
+    }
 }

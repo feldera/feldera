@@ -118,7 +118,7 @@ public final class DBSPMapIndexOperator extends DBSPUnaryOperator implements ILi
     public static DBSPMapIndexOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         return new DBSPMapIndexOperator(CalciteEmptyRel.INSTANCE,
-                info.getClosureFunction(), info.getIndexedZsetType(), info.getInput(0))
+                info.getClosureFunction(), info.getIndexedZsetType(), info.isMultiset(), info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPMapIndexOperator.class);
     }
 }

@@ -42,7 +42,7 @@ public class DBSPTypeLazy extends DBSPTypeUser {
     @SuppressWarnings("unused")
     public static DBSPTypeLazy fromJson(JsonNode node, JsonDecoder decoder) {
         List<DBSPType> typeArgs = fromJsonInnerList(node, "typeArgs", decoder, DBSPType.class);
-        Utilities.enforce(typeArgs.size() == 1);
+        Utilities.enforce(typeArgs.size() == 2);
         return new DBSPTypeLazy(typeArgs.get(0));
     }
 

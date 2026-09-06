@@ -58,6 +58,7 @@ public final class DBSPStreamJoinIndexOperator extends DBSPJoinBaseOperator impl
         boolean balanced = Utilities.getBooleanProperty(node, "balanced");
         DBSPExpression function = info.getFunction();
         return new DBSPStreamJoinIndexOperator(CalciteEmptyRel.INSTANCE, info.getIndexedZsetType(),
-                function, info.isMultiset(), info.getInput(0), info.getInput(1), balanced);
+                function, info.isMultiset(), info.getInput(0), info.getInput(1), balanced)
+                .addAnnotations(info.annotations(), DBSPStreamJoinIndexOperator.class);
     }
 }

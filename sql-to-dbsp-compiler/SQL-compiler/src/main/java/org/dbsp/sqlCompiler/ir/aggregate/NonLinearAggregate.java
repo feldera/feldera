@@ -283,11 +283,14 @@ public class NonLinearAggregate extends IAggregate {
 
     @SuppressWarnings("unused")
     public static NonLinearAggregate fromJson(JsonNode node, JsonDecoder decoder) {
+        // Read in the order accept(InnerVisitor) writes
+        DBSPTypeUser semigroup = fromJsonInner(node, "semigroup", decoder, DBSPTypeUser.class);
         DBSPExpression zero = fromJsonInner(node, "zero", decoder, DBSPExpression.class);
         DBSPClosureExpression increment = fromJsonInner(node, "increment", decoder, DBSPClosureExpression.class);
+        DBSPClosureExpression postProcess = null;
+        if (node.has("postProcess"))
+            postProcess = fromJsonInner(node, "postProcess", decoder, DBSPClosureExpression.class);
         DBSPExpression emptySetResult = fromJsonInner(node, "emptySetResult", decoder, DBSPExpression.class);
-        DBSPTypeUser semigroup = fromJsonInner(node, "semigroup", decoder, DBSPTypeUser.class);
-        DBSPClosureExpression postProcess = fromJsonInner(node, "postProcess", decoder, DBSPClosureExpression.class);
         return new NonLinearAggregate(CalciteObject.EMPTY, zero, increment, postProcess, emptySetResult, semigroup);
     }
 }
