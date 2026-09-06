@@ -41,8 +41,10 @@ use proptest::proptest;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::TestRunner;
 use serde_json::{Value, json};
-#[cfg(any(feature = "delta-s3-test", feature = "delta-unity-test"))]
-use serial_test::{parallel, serial};
+#[cfg(feature = "delta-s3-test")]
+use serial_test::parallel;
+#[cfg(feature = "delta-unity-test")]
+use serial_test::serial;
 use size_of::SizeOf;
 use std::cmp::min;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -3467,27 +3469,43 @@ fn except_all_unsupported_types_are_only_map() {
     );
 }
 
+/// Value of `name`, or a panic naming the variable that has to be set.
+///
+/// `env::var(..).unwrap()` reports only `NotPresent`, which does not say what
+/// to set. Mirrors `required_env` in `python/tests/utils.py`.
+#[cfg(feature = "delta-s3-test")]
+fn required_env(name: &str) -> String {
+    std::env::var(name)
+        .unwrap_or_else(|_| panic!("{name} must be set to run the delta-s3-test tests"))
+}
+
 /// Credentials, endpoint and region for the CI object store.
 ///
 /// The store is a GCS bucket reached through its S3-compatible API, so the
-/// tables stay `s3://` URIs and only gain an endpoint. The variable names match
-/// `.github/workflows/test-integration-platform.yml`, so one set of secrets
-/// serves both these tests and the Python Delta tests.
+/// tables stay `s3://` URIs and only gain an endpoint.
+///
+/// The names are the S3-compatible shape that `python/tests/utils.py` defines
+/// (see its `MINIO_*` constants). The Python suite reads the same buckets, but
+/// over `gs://` with Workload Identity, so the two suites share the buckets
+/// rather than the credentials. Everything is required: a default that is right
+/// for one variable and stale for another fails obscurely, e.g. by resolving
+/// `s3://ci-tests/` against `storage.googleapis.com`.
 #[cfg(feature = "delta-s3-test")]
 fn ci_object_store_config() -> Vec<(String, String)> {
-    let endpoint = std::env::var("CI_MINIO_ENDPOINT")
-        .unwrap_or_else(|_| "https://storage.googleapis.com".to_string());
+    let endpoint = required_env("CI_MINIO_ENDPOINT");
     vec![
         (
             "aws_access_key_id".to_string(),
-            std::env::var("CI_K8S_MINIO_ACCESS_KEY_ID").unwrap(),
+            required_env("CI_K8S_MINIO_ACCESS_KEY_ID"),
         ),
         (
             "aws_secret_access_key".to_string(),
-            std::env::var("CI_K8S_MINIO_SECRET_ACCESS_KEY").unwrap(),
+            required_env("CI_K8S_MINIO_SECRET_ACCESS_KEY"),
         ),
         // Meaningless for GCS, but the S3 store insists on one
-        // (see https://github.com/delta-io/delta-rs/issues/1095).
+        // (see https://github.com/delta-io/delta-rs/issues/1095). Defaulted,
+        // as `python/tests/utils.py` defaults it, because every store this
+        // talks to ignores it.
         (
             "aws_region".to_string(),
             std::env::var("CI_MINIO_REGION").unwrap_or_else(|_| "us-east-1".to_string()),
@@ -3503,7 +3521,7 @@ fn ci_object_store_config() -> Vec<(String, String)> {
 /// Bucket for tables the tests write. Everything in it is deleted after 7 days.
 #[cfg(feature = "delta-s3-test")]
 fn ci_bucket() -> String {
-    std::env::var("CI_MINIO_BUCKET").unwrap_or_else(|_| "ci-tests".to_string())
+    required_env("CI_MINIO_BUCKET")
 }
 
 /// Bucket for read-only input data, which has no expiry rule. Fixtures that
@@ -3511,8 +3529,7 @@ fn ci_bucket() -> String {
 /// deletes them a week after upload.
 #[cfg(feature = "delta-s3-test")]
 fn ci_inputs_bucket() -> String {
-    std::env::var("CI_MINIO_INPUTS_BUCKET")
-        .unwrap_or_else(|_| "feldera-ci-inputs-feldera-ci".to_string())
+    required_env("CI_MINIO_INPUTS_BUCKET")
 }
 
 /// Location for a table the test writes. No test removes the table it creates;
