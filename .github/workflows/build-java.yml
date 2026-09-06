@@ -16,13 +16,6 @@ jobs:
     runs-on: [gke-runners-amd64]
     permissions:
       contents: read
-    env:
-      # GCS HMAC credentials — feldera-gcs-cache reads these to talk to the
-      # actions-cache bucket. Scoped to this job: ambient AWS_* credentials
-      # confuse configure-aws-credentials in upload-jar, which must
-      # authenticate purely via OIDC.
-      AWS_ACCESS_KEY_ID: "${{ secrets.CI_GCS_HMAC_ACCESS_KEY_ID }}"
-      AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}"
     container:
       image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-6694c709e8a150203f56b80c5058286e4378e2ee
     steps:
@@ -67,9 +60,8 @@ jobs:
           path: build-artifacts
           retention-days: 7
 
-  # S3 upload runs in a separate job so the OIDC session token never enters
-  # the build-jar environment, where it would poison the cache save phase
-  # of runs-on/cache (MinIO rejects requests carrying a stray AWS_SESSION_TOKEN).
+  # S3 upload runs in a separate job so only this job holds id-token: write
+  # and the build job never carries AWS credentials.
   upload-jar:
     name: Upload JAR to S3
     needs: build-jar
