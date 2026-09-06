@@ -422,6 +422,14 @@ def check_end_of_input(pipeline: Pipeline) -> bool:
 
 
 def wait_end_of_input(pipeline: Pipeline, timeout_s: Optional[int] = None):
+    """Waits until every input connector has read its source to the end.
+
+    End of input is not completion: a connector reports it once it has read its
+    last record, and records it has already read may still be waiting to reach
+    the circuit. `Pipeline.wait_for_completion` waits for those to be processed
+    as well; this weaker wait is for the cases that cannot reach completion,
+    such as an open transaction.
+    """
     start_time = time.monotonic()
     # Reused by the warning message below so a stalled ingest can be told
     # apart from a slow one; check_end_of_input() would fetch and discard it.
