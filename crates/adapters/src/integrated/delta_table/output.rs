@@ -433,11 +433,13 @@ impl DeltaTableWriter {
         // Registered here rather than in the endpoint constructor: `add_output` has already
         // run, so the metrics slot exists, and registering before it does drops them.
         let merge_metrics = merge.is_some().then(MergeMetrics::new);
-        let compactor = merge
-            .is_some()
-            .then(|| Compactor::new(config, endpoint_name))
-            .flatten();
+        let compactor = merge_metrics
+            .clone()
+            .and_then(|metrics| Compactor::new(config, endpoint_name, metrics));
         if let (Some(metrics), Some(controller)) = (&merge_metrics, inner.controller.upgrade()) {
+            if compactor.is_some() {
+                metrics.maintains_the_table();
+            }
             controller
                 .status
                 .set_output_custom_metrics(inner.endpoint_id, metrics.clone());
@@ -2432,6 +2434,53 @@ mod parallel {
         );
 
         assert_matches_model(uri, &model, "after compaction");
+    }
+
+    /// Reclaiming storage must rewrite every column type unchanged.
+    ///
+    /// The rewrite reads the live rows back through DataFusion and casts them to the table's
+    /// schema, so a lossy cast would alter values with no row missing for its count check
+    /// to notice. `DeltaTestStruct` holds every type the connector writes.
+    #[test]
+    fn reclaim_rewrites_every_column_type_unchanged() {
+        use crate::integrated::delta_table::merge::rewrite::reclaim_superseded_rows;
+        use dbsp::circuit::tokio::TOKIO;
+        use deltalake::open_table;
+
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let mut endpoint = make_merge_endpoint(uri, DeltaTableWriteMode::Append);
+
+        // Supersede three of five rows: past the half that makes a file worth rewriting.
+        let records = make_records(5);
+        encode_batch(&mut endpoint, &build_insert_batch(&records));
+        let updates: Vec<(DeltaTestStruct, DeltaTestStruct)> = (0..3)
+            .map(|i| {
+                let mut new = make_record(900 + i);
+                new.bigint = records[i].bigint;
+                (records[i].clone(), new)
+            })
+            .collect();
+        encode_batch(&mut endpoint, &build_upsert_batch(&updates));
+
+        let mut model: BTreeMap<i64, DeltaTestStruct> =
+            records.iter().map(|r| (r.bigint, r.clone())).collect();
+        for (_, new) in &updates {
+            model.insert(new.bigint, new.clone());
+        }
+
+        let url = url::Url::from_file_path(uri).unwrap();
+        let reclaimed = TOKIO.block_on(async move {
+            let mut table = open_table(url).await.unwrap();
+            reclaim_superseded_rows(&mut table, std::time::Duration::from_secs(60))
+                .await
+                .unwrap()
+        });
+        assert_eq!(
+            reclaimed.files_rewritten, 1,
+            "the fixture left nothing to reclaim"
+        );
+        assert_matches_model(uri, &model, "reclaiming the superseded rows");
     }
 
     /// No data file is ever rewritten, which is the point of the design. A file may leave the
