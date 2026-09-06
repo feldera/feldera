@@ -213,7 +213,7 @@ async fn create_table(dir: &TempDir) -> DeltaTable {
 /// Build a writer against `table`, the way a starting pipeline would. The replay test calls
 /// it a second time, since building a fresh writer is what a restart does.
 fn writer_for(table: &DeltaTable) -> (MergeWriter, Regime) {
-    let setup = prepare(table, &Some(key_relation()), &fixture_columns(), 1).unwrap();
+    let setup = prepare(table, &Some(key_relation()), &fixture_columns()).unwrap();
     let regime = setup.regime;
     let schema = Arc::new(arrow_schema());
     let writer = MergeWriter::new(

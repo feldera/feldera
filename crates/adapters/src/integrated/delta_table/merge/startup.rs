@@ -31,8 +31,9 @@ use super::prune::stats_pruning_sound;
 /// which is what lets an insert skip the lookup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Regime {
-    /// The table was empty when the connector opened it, so a key new to the view is
-    /// absent from the table and an insert can skip the lookup.
+    /// The table was empty when the connector opened it, so a key new to the view cannot
+    /// already be in the table and an insert can skip the lookup. Only sound while Feldera
+    /// is the sole writer: another writer's append would not conflict, leaving two live rows.
     Owned,
     /// The table may hold a row for a key this run has never seen, so every changed key is
     /// looked up, inserts included.
@@ -85,7 +86,6 @@ pub fn prepare(
     table: &DeltaTable,
     key_schema: &Option<Relation>,
     columns: &[StructField],
-    threads: usize,
 ) -> AnyResult<MergeSetup> {
     let key_schema = key_schema.as_ref().ok_or_else(|| {
         anyhow!(
@@ -94,16 +94,6 @@ pub fn prepare(
              configuration. For more details, see: https://docs.feldera.com/connectors/unique_keys"
         )
     })?;
-
-    if threads > 1 {
-        // Each thread walks a disjoint key range and so would need its own pass over the
-        // candidate files: the dominant cost of a flush, multiplied by the thread count.
-        bail!(
-            "'update_mode: merge' does not support 'threads' > 1 (configured: {threads}). \
-             Merge mode already reads the target table concurrently while locating rows; \
-             splitting the batch as well would repeat that work per thread."
-        );
-    }
 
     validate_key_types(key_schema).map_err(|e| anyhow!("{e}"))?;
 
@@ -139,6 +129,8 @@ pub fn prepare(
         );
     }
 
+    // Also what rejects column mapping: delta-rs does not claim that writer feature, and both
+    // writers here address columns by name, which column mapping renames in the data file.
     PROTOCOL.can_write_to(snapshot).map_err(|e| {
         anyhow!(
             "delta-rs cannot write to the target Delta table's protocol, so merge mode \
@@ -380,7 +372,7 @@ mod test {
     async fn accepts_a_matching_deletion_vector_table() {
         let dir = TempDir::new().unwrap();
         let table = fixture_table(&dir, &[], true).await;
-        let setup = prepare(&table, &Some(key_relation()), &fixture_columns(), 1).unwrap();
+        let setup = prepare(&table, &Some(key_relation()), &fixture_columns()).unwrap();
 
         assert_eq!(setup.regime, Regime::Owned);
         assert!(setup.partition_columns.is_empty());
@@ -392,7 +384,7 @@ mod test {
     async fn populated_table_uses_the_default_regime() {
         let dir = TempDir::new().unwrap();
         let table = fixture_table(&dir, &[1, 2], true).await;
-        let setup = prepare(&table, &Some(key_relation()), &fixture_columns(), 1).unwrap();
+        let setup = prepare(&table, &Some(key_relation()), &fixture_columns()).unwrap();
 
         assert_eq!(setup.regime, Regime::Default);
         assert!(setup.regime.insert_needs_lookup());
@@ -404,7 +396,7 @@ mod test {
     async fn rejects_a_table_without_deletion_vectors() {
         let dir = TempDir::new().unwrap();
         let table = fixture_table(&dir, &[1], false).await;
-        let err = prepare(&table, &Some(key_relation()), &fixture_columns(), 1)
+        let err = prepare(&table, &Some(key_relation()), &fixture_columns())
             .unwrap_err()
             .to_string();
 
@@ -417,24 +409,12 @@ mod test {
     async fn rejects_a_view_without_a_unique_key() {
         let dir = TempDir::new().unwrap();
         let table = fixture_table(&dir, &[], true).await;
-        let err = prepare(&table, &None, &fixture_columns(), 1)
+        let err = prepare(&table, &None, &fixture_columns())
             .unwrap_err()
             .to_string();
 
         assert!(err.contains("unique key"), "{err}");
         assert!(err.contains("index"), "{err}");
-    }
-
-    /// Splitting the batch across threads would repeat the lookup per thread.
-    #[tokio::test]
-    async fn rejects_multiple_threads() {
-        let dir = TempDir::new().unwrap();
-        let table = fixture_table(&dir, &[], true).await;
-        let err = prepare(&table, &Some(key_relation()), &fixture_columns(), 4)
-            .unwrap_err()
-            .to_string();
-
-        assert!(err.contains("threads"), "{err}");
     }
 
     /// A key column that is also a partition column is supported; the probe reconstructs its
@@ -451,7 +431,6 @@ mod test {
             &table,
             &Some(partitioned_key_relation()),
             &fixture_columns(),
-            1,
         )
         .unwrap();
 
@@ -489,7 +468,7 @@ mod test {
             primary_key: None,
         };
 
-        let err = prepare(&table, &Some(key), &fixture_columns(), 1)
+        let err = prepare(&table, &Some(key), &fixture_columns())
             .unwrap_err()
             .to_string();
         assert!(err.contains("every column is a partition column"), "{err}");
@@ -508,20 +487,20 @@ mod test {
             DeltaDataType::Primitive(PrimitiveType::Long),
             true,
         ));
-        let err = prepare(&table, &Some(key_relation()), &extra, 1)
+        let err = prepare(&table, &Some(key_relation()), &extra)
             .unwrap_err()
             .to_string();
         assert!(err.contains("'extra' is missing from the table"), "{err}");
 
         let mut retyped = fixture_columns();
         retyped[0] = StructField::new("id", DeltaDataType::Primitive(PrimitiveType::Integer), true);
-        let err = prepare(&table, &Some(key_relation()), &retyped, 1)
+        let err = prepare(&table, &Some(key_relation()), &retyped)
             .unwrap_err()
             .to_string();
         assert!(err.contains("column 'id'"), "{err}");
 
         let fewer = fixture_columns()[..1].to_vec();
-        let err = prepare(&table, &Some(key_relation()), &fewer, 1)
+        let err = prepare(&table, &Some(key_relation()), &fewer)
             .unwrap_err()
             .to_string();
         assert!(

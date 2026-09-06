@@ -540,7 +540,7 @@ mod test {
             .await
             .unwrap();
 
-        let setup = prepare(&table, &Some(key_relation()), &fixture_columns(), 1).unwrap();
+        let setup = prepare(&table, &Some(key_relation()), &fixture_columns()).unwrap();
         let schema = Arc::new(arrow_schema());
         let writer = MergeWriter::new(
             setup,

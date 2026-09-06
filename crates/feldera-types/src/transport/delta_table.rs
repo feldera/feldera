@@ -209,9 +209,9 @@ pub struct DeltaTableWriterConfig {
 
     /// Number of parallel threads used by the connector.
     ///
-    /// Increasing this value can improve Delta Lake write throughput
-    /// by enabling concurrent writes. Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.
+    /// Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.
     /// Values above 1 require the view to have a unique key, so that the connector can order inserts and deletes correctly.
+    /// Must be 1 with `update_mode: merge`, where two threads would write conflicting deletion vectors for one data file.
     /// Define the key with `CREATE INDEX` and set the connector's `index` property to that index;
     /// see [views with unique keys](https://docs.feldera.com/connectors/sinks/delta/#views-with-unique-keys) and
     /// [writing in parallel](https://docs.feldera.com/connectors/sinks/delta/#writing-in-parallel).
@@ -270,6 +270,15 @@ impl DeltaTableWriterConfig {
             return Err(
                 "optimize_interval_secs must be greater than 0; omit it to leave \
                  compaction to the table's administrator"
+                    .to_string(),
+            );
+        }
+        if self.is_merge() && self.threads.is_some_and(|t| t > 1) {
+            return Err(
+                "'update_mode: merge' does not support 'threads' > 1. Threads split a batch \
+                 by key range, but the rows those keys name share data files, so two threads \
+                 would write conflicting deletion vectors for one file. Merge mode already \
+                 reads the target table concurrently while locating rows."
                     .to_string(),
             );
         }
@@ -860,6 +869,25 @@ mod log_retention_tests {
 
         // Omitted is the default, and valid in either mode.
         cfg.optimize_interval_secs = None;
+        assert!(cfg.validate().is_ok());
+    }
+
+    /// Two threads tombstoning rows in one file would write conflicting deletion vectors.
+    /// Rejected here rather than at connect time, so no table is created for a config that
+    /// cannot work.
+    #[test]
+    fn validate_rejects_threads_in_merge_mode() {
+        let mut cfg = make_config(None);
+        cfg.update_mode = DeltaTableUpdateMode::Merge;
+        cfg.threads = Some(4);
+        assert!(cfg.validate().unwrap_err().contains("threads"));
+
+        cfg.threads = Some(1);
+        assert!(cfg.validate().is_ok());
+
+        // cdc mode is unaffected: it appends, so nothing shares a deletion vector.
+        cfg.update_mode = DeltaTableUpdateMode::Cdc;
+        cfg.threads = Some(4);
         assert!(cfg.validate().is_ok());
     }
 

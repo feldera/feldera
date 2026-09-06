@@ -356,14 +356,9 @@ impl DeltaTableWriter {
         let object_store = task.delta_table.object_store();
 
         let merge = if config.is_merge() {
-            Some(
-                build_merge_writer(&inner, &task.delta_table, threads).map_err(|e| {
-                    ControllerError::invalid_transport_configuration(
-                        endpoint_name,
-                        &format!("{e:#}"),
-                    )
-                })?,
-            )
+            Some(build_merge_writer(&inner, &task.delta_table).map_err(|e| {
+                ControllerError::invalid_transport_configuration(endpoint_name, &format!("{e:#}"))
+            })?)
         } else {
             None
         };
@@ -398,12 +393,8 @@ impl DeltaTableWriter {
 }
 
 /// Check the target table and build the merge-mode writer.
-fn build_merge_writer(
-    inner: &DeltaTableWriterInner,
-    table: &DeltaTable,
-    threads: usize,
-) -> AnyResult<MergeWriter> {
-    let setup = startup::prepare(table, &inner.key_schema, &inner.struct_fields, threads)?;
+fn build_merge_writer(inner: &DeltaTableWriterInner, table: &DeltaTable) -> AnyResult<MergeWriter> {
+    let setup = startup::prepare(table, &inner.key_schema, &inner.struct_fields)?;
 
     MergeWriter::new(
         setup,
