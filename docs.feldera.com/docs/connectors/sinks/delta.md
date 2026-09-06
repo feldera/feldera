@@ -230,6 +230,7 @@ The connector exports these alongside the standard connector metrics.
 | `output_connector_delta_merge_lookup_passes_total` | Above one per flush only when a key set exceeded `lookup_chunk_bytes` |
 | `output_connector_delta_merge_bytes_written_total` | Bytes written: new data files plus deletion vectors |
 | `output_connector_delta_merge_compactions_total`, `output_connector_delta_merge_compaction_failures_total` | Maintenance runs, and how many failed. Only when `optimize_interval_secs` is set |
+| `output_connector_delta_merge_flush_latency_microseconds` | Histogram of whole flushes. Where object-store latency shows up; no combination of the counters above reveals it |
 
 ### Compaction is required
 

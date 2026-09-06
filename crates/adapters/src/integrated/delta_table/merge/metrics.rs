@@ -12,7 +12,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
+use feldera_adapterlib::metrics::{ConnectorHistogram, ConnectorMetrics, ValueType};
+use feldera_storage::histogram::ExponentialHistogram;
 use parking_lot::Mutex;
 use tracing::warn;
 
@@ -43,12 +44,20 @@ pub struct MergeMetrics {
     /// Live rows and superseded rows in the table as of the last flush, scaled by 1000 so
     /// the ratio survives an integer counter.
     tombstone_ratio_permille: AtomicU64,
+    /// Wall time of a whole flush. The counters say how much a lookup read; only this says
+    /// how long the object store took to serve it.
+    flush_latency: ExponentialHistogram,
     last_warning: Mutex<Option<Instant>>,
 }
 
 impl MergeMetrics {
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
+    }
+
+    /// Record how long one flush took, whatever its outcome.
+    pub fn record_flush_latency(&self, elapsed: Duration) {
+        self.flush_latency.record_duration(elapsed);
     }
 
     /// Fold one flush's counts in.
@@ -204,6 +213,16 @@ impl ConnectorMetrics for MergeMetrics {
             ),
         ]
     }
+
+    fn histograms(&self) -> Vec<ConnectorHistogram> {
+        vec![ConnectorHistogram {
+            name: "output_connector_delta_merge_flush_latency_microseconds",
+            help: "Wall time of one merge-mode flush: the row lookup, the writes and the \
+                   commit. The lookup dominates it, so this is where object-store latency \
+                   shows up -- the scanned and pruned counters cannot.",
+            snapshot: self.flush_latency.snapshot(),
+        }]
+    }
 }
 
 #[cfg(test)]
@@ -296,6 +315,38 @@ mod test {
                 "output_connector_delta_merge_tombstone_ratio_permille"
             ),
             0.0
+        );
+    }
+
+    /// The latency histogram must be exported and must reflect what was recorded.
+    #[test]
+    fn flush_latency_is_exported() {
+        let metrics = MergeMetrics::new();
+        let recorded = |m: &MergeMetrics| -> u64 {
+            m.histograms()[0]
+                .snapshot
+                .iter_buckets()
+                .map(|b| b.count)
+                .sum()
+        };
+
+        let empty = metrics.histograms();
+        assert_eq!(empty.len(), 1);
+        assert_eq!(recorded(&metrics), 0, "nothing recorded yet");
+
+        metrics.record_flush_latency(Duration::from_millis(5));
+        metrics.record_flush_latency(Duration::from_millis(50));
+
+        let exported = metrics.histograms();
+        assert_eq!(
+            exported[0].name,
+            "output_connector_delta_merge_flush_latency_microseconds"
+        );
+        assert_eq!(recorded(&metrics), 2);
+        assert_eq!(
+            exported[0].snapshot.sum(),
+            55_000,
+            "the histogram must be exported in the microseconds its name claims"
         );
     }
 

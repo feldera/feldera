@@ -47,6 +47,7 @@ use std::collections::HashMap;
 use std::num::NonZeroU64;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
+use std::time::Instant;
 use tokio::time::{Duration, sleep};
 use tracing::{Instrument, debug, info, info_span, warn};
 
@@ -1202,6 +1203,7 @@ impl DeltaTableWriter {
 
             // Panic safety: block_on() panics if called from a tokio async context.
             // encode() is called from the dedicated output thread (output_thread_func).
+            let started = Instant::now();
             let result = TOKIO.block_on(
                 merge
                     .flush(
@@ -1213,6 +1215,8 @@ impl DeltaTableWriter {
                     )
                     .instrument(span.clone()),
             );
+            // Recorded whatever the outcome: a flush that fails slowly is the interesting one.
+            metrics_sink.record_flush_latency(started.elapsed());
 
             match result {
                 Ok(metrics) => {
