@@ -1503,8 +1503,9 @@ mod parallel {
 
     use crate::test::data::{
         DeltaTestKey, DeltaTestKeyBinary, DeltaTestKeyDate, DeltaTestKeyDecimal,
-        DeltaTestKeyDouble, DeltaTestKeyInt, DeltaTestKeyString, DeltaTestKeyStruct,
-        DeltaTestKeyTimestamp, DeltaTestKeyUnused, DeltaTestKeyUuid, DeltaTestStruct, TestStruct,
+        DeltaTestKeyDouble, DeltaTestKeyFloat, DeltaTestKeyInt, DeltaTestKeySmallInt,
+        DeltaTestKeyString, DeltaTestKeyStruct, DeltaTestKeyTimestamp, DeltaTestKeyTinyInt,
+        DeltaTestKeyUnused, DeltaTestKeyUuid, DeltaTestStruct, TestStruct,
     };
     use crate::test::list_files_recursive;
     use feldera_adapterlib::transport::OutputBatchType;
@@ -2478,6 +2479,22 @@ mod parallel {
     // A DOUBLE key turns range pruning off, because NaN is left out of min/max statistics.
     // Reading every file is slower but must give the same answer, which is what this checks.
     merge_key_type_test!(merge_keyed_on_double, "double", DeltaTestKeyDouble, double);
+    merge_key_type_test!(merge_keyed_on_float, "float", DeltaTestKeyFloat, float);
+
+    // Parquet stores these as INT32, so the key comparison depends on the reader restoring
+    // the declared width. The encoder refuses a mismatch, so a regression fails loudly here.
+    merge_key_type_test!(
+        merge_keyed_on_tinyint,
+        "tinyint",
+        DeltaTestKeyTinyInt,
+        tinyint
+    );
+    merge_key_type_test!(
+        merge_keyed_on_smallint,
+        "smallint",
+        DeltaTestKeySmallInt,
+        smallint
+    );
 
     /// Merge mode without output buffering pays a lookup per step of the circuit, so it is
     /// worth a word at startup. Only merge mode, and only when buffering is off.
