@@ -2457,6 +2457,60 @@ mod parallel {
     // Reading every file is slower but must give the same answer, which is what this checks.
     merge_key_type_test!(merge_keyed_on_double, "double", DeltaTestKeyDouble, double);
 
+    /// `-0.0` and `0.0` are one key to Feldera, so they must locate one row.
+    ///
+    /// The row encoding orders floats by their bits, so without normalizing them the second
+    /// run looks up a key the table does not hold and leaves two live rows for it.
+    ///
+    /// Shaped as a second run over an existing table because that is what reproduces against
+    /// a live pipeline: within one run the view's index keeps whichever sign it saw first, so
+    /// the connector is handed a key that already matches what it wrote.
+    #[test]
+    fn merge_treats_signed_zeroes_as_one_key() {
+        use dbsp::algebra::F64;
+
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+
+        let key_of = |d: f64| DeltaTestKeyDouble {
+            double: F64::new(d),
+        };
+        let row_of = |i: usize, d: f64| {
+            let mut r = make_record(i);
+            r.double = F64::new(d);
+            r
+        };
+
+        let stored = row_of(1, -0.0);
+        let mut first = make_merge_endpoint_ex(
+            uri,
+            DeltaTableWriteMode::Append,
+            1 << 20,
+            0,
+            key_relation_on("double"),
+        );
+        encode_batch(
+            &mut first,
+            &keyed_batch(vec![Tup2(Tup2(key_of(-0.0), stored.clone()), 1i64)]),
+        );
+        assert_table_rows(uri, &[stored], "a first run writing -0.0");
+
+        // A second run adopts the table and knows only +0.0 for that key.
+        let updated = row_of(2, 0.0);
+        let mut second = make_merge_endpoint_ex(
+            uri,
+            DeltaTableWriteMode::Append,
+            1 << 20,
+            0,
+            key_relation_on("double"),
+        );
+        encode_batch(
+            &mut second,
+            &keyed_batch(vec![Tup2(Tup2(key_of(0.0), updated.clone()), 1i64)]),
+        );
+        assert_table_rows(uri, &[updated], "a second run inserting +0.0");
+    }
+
     /// A null key must still find its row. Statistics leave nulls out, so a chunk holding one
     /// turns pruning off; a flush that pruned anyway would leave two live rows for that key.
     #[test]

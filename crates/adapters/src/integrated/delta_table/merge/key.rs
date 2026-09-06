@@ -7,14 +7,19 @@
 //!
 //! A type is usable as a key only when equality survives that round trip. That is a per-type
 //! property, so [`validate_key_types`] names the types it rejects rather than testing for
-//! nesting.
+//! nesting. Floats survive it only after [`normalize_floats`] collapses the values Feldera
+//! holds equal but the encoding does not.
 
 use anyhow::{Result as AnyResult, anyhow, bail};
-use arrow::array::{Array, ArrayRef, RecordBatch, StructArray};
+use arrow::array::{Array, ArrayRef, AsArray, RecordBatch, StructArray};
 use arrow::compute::cast;
-use arrow::datatypes::{DataType as ArrowDataType, Schema as ArrowSchema};
+use arrow::compute::kernels::arity::unary;
+use arrow::datatypes::{
+    DataType as ArrowDataType, Float32Type, Float64Type, Schema as ArrowSchema,
+};
 use arrow::row::{RowConverter, Rows, SortField};
 use feldera_types::program_schema::{ColumnType, Relation, SqlType};
+use std::sync::Arc;
 
 /// Reject key types whose round trip through parquet does not preserve Feldera's equality.
 ///
@@ -23,8 +28,10 @@ use feldera_types::program_schema::{ColumnType, Relation, SqlType};
 ///
 /// `MAP` and `VARIANT` have no canonical physical form -- a parquet map keeps whatever entry
 /// order was written, a variant renders as JSON -- so on a table we do not administer,
-/// equality would be silently wrong rather than loudly unsupported. `ARRAY` would work but
-/// carries no statistics, so it waits until someone needs it.
+/// equality would be silently wrong rather than loudly unsupported.
+///
+/// `ARRAY` round trips correctly, but Delta collects no min/max for it, so an array key would
+/// turn file pruning off. Rejected until someone needs it.
 pub fn validate_key_types(key_schema: &Relation) -> Result<(), String> {
     for field in &key_schema.fields {
         validate_key_column(&field.name.name(), &field.columntype)?;
@@ -185,6 +192,7 @@ impl KeyEncoder {
     /// Encode key columns supplied directly, in declaration order.
     pub fn encode_columns(&self, columns: &[ArrayRef]) -> AnyResult<Rows> {
         let columns = self.cast_to_declared_types(columns)?;
+        let columns: Vec<ArrayRef> = columns.iter().map(normalize_floats).collect();
         self.converter
             .convert_columns(&columns)
             .map_err(|e| anyhow!("unable to encode key: {e}"))
@@ -229,6 +237,49 @@ impl KeyEncoder {
             }
         }
         Ok(matched)
+    }
+}
+
+/// Collapse the float values Feldera holds equal but the row encoding does not.
+///
+/// The encoding orders floats by their bits, so `-0.0` and `0.0`, and two `NaN`s with
+/// different payloads, encode differently. Feldera compares them equal, so without this a
+/// key stored as `-0.0` is never found again and the table keeps two live rows for it.
+///
+/// [`super::prune::PartitionFilter`] applies it too: it compares the same values.
+pub(super) fn normalize_floats(column: &ArrayRef) -> ArrayRef {
+    macro_rules! canonical {
+        ($arrow:ty, $native:ty) => {{
+            Arc::new(unary::<_, _, $arrow>(
+                column.as_primitive::<$arrow>(),
+                |v| {
+                    if v.is_nan() {
+                        <$native>::NAN
+                    } else if v == 0.0 {
+                        0.0
+                    } else {
+                        v
+                    }
+                },
+            ))
+        }};
+    }
+
+    match column.data_type() {
+        ArrowDataType::Float32 => canonical!(Float32Type, f32),
+        ArrowDataType::Float64 => canonical!(Float64Type, f64),
+        // A ROW key is a composite key, so normalize its leaves the same way.
+        ArrowDataType::Struct(fields) => {
+            let structs = column.as_any().downcast_ref::<StructArray>().unwrap();
+            let normalized: Vec<ArrayRef> =
+                structs.columns().iter().map(normalize_floats).collect();
+            Arc::new(StructArray::new(
+                fields.clone(),
+                normalized,
+                structs.nulls().cloned(),
+            ))
+        }
+        _ => column.clone(),
     }
 }
 
