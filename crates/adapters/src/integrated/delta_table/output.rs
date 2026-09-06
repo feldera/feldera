@@ -247,10 +247,15 @@ impl DeltaTableWriter {
         shutdown: CancellationToken,
         continue_previous_state: bool,
         is_index: bool,
+        output_buffered: bool,
     ) -> Result<Self, ControllerError> {
         config.validate().map_err(|e| {
             ControllerError::invalid_transport_configuration(endpoint_name, &e.to_string())
         })?;
+
+        if let Some(advice) = unbuffered_merge_advice(config, output_buffered) {
+            warn!("delta_table {endpoint_name}: {advice}");
+        }
 
         let threads = config.threads.unwrap_or(1);
 
@@ -400,6 +405,24 @@ impl DeltaTableWriter {
             merge_violations: 0,
         })
     }
+}
+
+/// What to tell an operator running merge mode without output buffering, if anything.
+///
+/// Not a configuration error: it works, and costs a whole lookup pass per step of the
+/// circuit rather than per batch. Returned rather than logged so the rule can be tested.
+fn unbuffered_merge_advice(
+    config: &DeltaTableWriterConfig,
+    output_buffered: bool,
+) -> Option<String> {
+    (config.is_merge() && !output_buffered).then(|| {
+        "'update_mode: merge' locates the rows to supersede once per flush, so without \
+         output buffering it pays that cost for every step of the circuit. Set \
+         'enable_output_buffer' on the connector, with 'max_output_buffer_time_millis', to \
+         flush on a cadence instead. See \
+         https://docs.feldera.com/connectors#configuring-the-output-buffer"
+            .to_string()
+    })
 }
 
 /// Check the target table and build the merge-mode writer.
@@ -1744,6 +1767,7 @@ mod parallel {
             CancellationToken::new(),
             continue_previous_state,
             indexed,
+            true,
         )
         .expect("failed to create endpoint")
     }
@@ -1785,6 +1809,7 @@ mod parallel {
             Weak::new(),
             CancellationToken::new(),
             false,
+            true,
             true,
         )
         .expect("failed to create merge endpoint")
@@ -2568,6 +2593,25 @@ mod parallel {
     // Reading every file is slower but must give the same answer, which is what this checks.
     merge_key_type_test!(merge_keyed_on_double, "double", DeltaTestKeyDouble, double);
 
+    /// Merge mode without output buffering pays a lookup per step of the circuit, so it is
+    /// worth a word at startup. Only merge mode, and only when buffering is off.
+    #[test]
+    fn unbuffered_merge_is_worth_a_word() {
+        let of = |mode: &str| -> DeltaTableWriterConfig {
+            serde_json::from_value(serde_json::json!({"uri": "/tmp/t", "update_mode": mode}))
+                .unwrap()
+        };
+        let config = of("merge");
+        assert!(super::unbuffered_merge_advice(&config, false).is_some());
+        assert!(super::unbuffered_merge_advice(&config, true).is_none());
+
+        assert!(
+            super::unbuffered_merge_advice(&of("cdc"), false).is_none(),
+            "cdc mode appends without reading the table, so buffering is only a file-size \
+             question and the existing documentation covers it"
+        );
+    }
+
     /// `-0.0` and `0.0` are one key to Feldera, so they must locate one row.
     ///
     /// The row encoding orders floats by their bits, so without normalizing them the second
@@ -3232,6 +3276,7 @@ mod parallel {
             CancellationToken::new(),
             false,
             false,
+            true,
         );
         assert!(
             result.is_err(),
@@ -3381,6 +3426,7 @@ mod parallel {
             CancellationToken::new(),
             false,
             true,
+            true,
         )
         .expect("failed to create endpoint");
 
@@ -3450,6 +3496,7 @@ mod parallel {
             Weak::new(),
             CancellationToken::new(),
             false,
+            true,
             true,
         )
         .expect("failed to create endpoint");
@@ -3659,6 +3706,7 @@ mod parallel {
             Weak::new(),
             CancellationToken::new(),
             false,
+            true,
             true,
         )
         .expect("failed to create endpoint");
