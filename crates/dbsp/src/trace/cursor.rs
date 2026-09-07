@@ -1178,11 +1178,17 @@ impl<V: DataTrait + ?Sized> GroupFilterCursor<V> {
                 }
 
                 if below_waterline + above_waterline > 0 {
-                    // Skip to the next value that belongs to the filtered cursor,
-                    // which is either the next value that satisfies the filter or `min_val`.
+                    // Skip to the first value the filtered cursor keeps: the next
+                    // one that satisfies the filter or `min_val`, whichever comes
+                    // first.  The disjunction is not monotonic, since `filter` is
+                    // arbitrary, so this cannot use `seek_val_with`.
                     if *min_val_valid {
-                        cursor
-                            .seek_val_with(&|val| (filter.filter_func())(val) || val >= &**min_val)
+                        while let Some(val) = cursor.get_val() {
+                            if (filter.filter_func())(val) || *val >= **min_val {
+                                break;
+                            }
+                            cursor.step_val();
+                        }
                     }
                     cursor.val_valid()
                 } else {
@@ -1216,7 +1222,23 @@ impl<V: DataTrait + ?Sized> GroupFilterCursor<V> {
                     trace_cursor.step_val();
                 }
 
-                below_waterline + above_waterline > 0
+                if below_waterline + above_waterline > 0 {
+                    // Skip to the first value the filtered cursor keeps: the next
+                    // one that satisfies the filter or `max_val`, whichever comes
+                    // first.  The disjunction is not monotonic, since `filter` is
+                    // arbitrary, so this cannot use `seek_val_with`.
+                    if *max_val_valid {
+                        while let Some(val) = cursor.get_val() {
+                            if (filter.filter_func())(val) || *val <= **max_val {
+                                break;
+                            }
+                            cursor.step_val();
+                        }
+                    }
+                    cursor.val_valid()
+                } else {
+                    false
+                }
             }
         }
     }

@@ -68,13 +68,20 @@ impl<V: ?Sized> Clone for Filter<V> {
 ///   last N values in the group.
 ///   Assumes that the predicate is monotonic: once it is satisfied for a value,
 ///   it is also satisfied for all subsequent values for the same key.
-///   Also assumed that the values are ordered in some way, so that the last N
-///   values under the cursor ate the ones that need to be preserved.
+///   Also assumes that the values are ordered in some way, so that the last N
+///   values under the cursor are the ones that need to be preserved.
 /// * `TopN` - retains all values that satisfy a predicate and up to a
 ///   constant number of largest values that do not satisfy the predicate.
 ///   This is similar to `LastN`, but it does not assume that the predicate is
 ///   monotonic.
+/// * `BottomN` - retains all values that satisfy a predicate and up to a
+///   constant number of smallest values that do not satisfy the predicate.
+///   Like `TopN`, it does not assume that the predicate is monotonic.
 ///
+/// Because `TopN` and `BottomN` admit a non-monotonic predicate, neither can
+/// locate the first value to retain with a galloping search such as
+/// `Cursor::seek_val_with`, which requires a predicate that stays true once it
+/// turns true.
 ///
 /// Note that the `LastN`, `TopN` and `BottomN` filters can not be evaluated against
 /// an individual batch and require access to the complete spine that the batch belongs
