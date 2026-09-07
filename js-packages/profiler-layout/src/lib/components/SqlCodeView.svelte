@@ -57,6 +57,8 @@
     }
     setSelections(
       editor,
+      // The compiler's `end` is the last character of the range; `setSelections` converts it to the
+      // caret position Monaco selects to, so pass the range through unchanged.
       highlightRanges.map((r) => ({ start: r.start, end: r.end }))
     )
   })
