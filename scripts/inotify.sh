@@ -11,22 +11,26 @@ set -euo pipefail
 
 MIN_WATCHES_TO_KILL=10000
 
+# Override with a fixture tree to check the watch accounting and the kill
+# decision on known input; the contents of live /proc change between runs.
+proc=${INOTIFY_PROC_ROOT:-/proc}
+
 # Watch counts per PID, summed over every inotify fd the process holds.
 declare -A watches=()
 unreadable=0
 while read -r fd_dir fd; do
-  pid=${fd_dir#/proc/}
+  pid=${fd_dir#"$proc"/}
   pid=${pid%/fd}
-  if [ -r "/proc/$pid/fdinfo/$fd" ]; then
-    n=$(grep -c '^inotify' "/proc/$pid/fdinfo/$fd" 2>/dev/null) || n=0
+  if [ -r "$proc/$pid/fdinfo/$fd" ]; then
+    n=$(grep -c '^inotify' "$proc/$pid/fdinfo/$fd" 2>/dev/null) || n=0
   else
     n=0
     unreadable=$((unreadable + 1))
   fi
   watches[$pid]=$((${watches[$pid]:-0} + n))
-done < <(find /proc/[0-9]*/fd -lname 'anon_inode:inotify' -printf '%h %f\n' 2>/dev/null)
+done < <(find "$proc"/[0-9]*/fd -lname 'anon_inode:inotify' -printf '%h %f\n' 2>/dev/null)
 
-limit=$(cat /proc/sys/fs/inotify/max_user_watches)
+limit=$(cat "$proc/sys/fs/inotify/max_user_watches")
 used=0
 for pid in "${!watches[@]}"; do
   if [ "${watches[$pid]}" -eq 0 ]; then
@@ -44,7 +48,7 @@ watchers_by_count() {
 }
 
 argv0() {
-  tr '\0' '\n' < "/proc/$1/cmdline" 2>/dev/null | head -1
+  tr '\0' '\n' < "$proc/$1/cmdline" 2>/dev/null | head -1
 }
 
 # node renames its main thread, so /proc/PID/comm cannot identify an interpreter.
@@ -69,10 +73,10 @@ short_cmd() {
       esac
     fi
     out+="$arg "
-  done 2>/dev/null < "/proc/$pid/cmdline" || true
+  done 2>/dev/null < "$proc/$pid/cmdline" || true
   if [ -z "$out" ]; then
-    if [ -e "/proc/$pid" ]; then
-      out="[$(cat "/proc/$pid/comm" 2>/dev/null || echo unknown)]"
+    if [ -e "$proc/$pid" ]; then
+      out="[$(cat "$proc/$pid/comm" 2>/dev/null || echo unknown)]"
     else
       out="(exited)"
     fi
@@ -87,7 +91,7 @@ short_cmd() {
 # kill, because the server respawns it.
 is_file_watcher() {
   local cmdline
-  cmdline=$(tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null) || return 1
+  cmdline=$(tr '\0' ' ' < "$proc/$1/cmdline" 2>/dev/null) || return 1
   case "$cmdline" in
     *--type=fileWatcher* | *watcherMain*) return 0 ;;
     *) return 1 ;;
@@ -164,6 +168,11 @@ free_watches() {
 
     if is_file_watcher "$pid"; then
       kill_watcher "$pid" "$count"
+    fi
+    # Prompting here would defeat --dry-run, whose caller may have no terminal.
+    if [ "$dry_run" = 1 ]; then
+      echo "Would ask before killing PID $pid: it is not the VS Code file watcher (--dry-run)."
+      exit 0
     fi
     if confirm_kill "$pid"; then
       kill_watcher "$pid" "$count"
