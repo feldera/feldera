@@ -1,15 +1,25 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.keys;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
-
-import org.dbsp.util.Logger;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
 import org.junit.Assert;
 import org.junit.Test;
 
-import java.util.Locale;
+import javax.annotation.Nullable;
+import java.util.List;
+import java.util.Objects;
 
-/** Tests for {@link KeyAnalysis}, using the logger to capture changes. */
+/** Tests for {@link KeyAnalysis}.  Each test compiles a program with a pass hooked into the
+ * optimizer before {@link LeftJoinChains}. */
 public class KeyAnalysisTests extends SqlIoTest {
     static final String TABLES = """
             CREATE TABLE t(a INT NOT NULL, b INT NOT NULL, c INT, PRIMARY KEY (a, b));
@@ -17,39 +27,57 @@ public class KeyAnalysisTests extends SqlIoTest {
             CREATE TABLE m(a INT NOT NULL, b INT, c INT);
             """;
 
-    /** Compile the program and return the analysis log */
-    private String compileLog(String view) {
-        StringBuilder builder = new StringBuilder();
-        Appendable save = Logger.INSTANCE.setDebugStream(builder);
-        Logger.INSTANCE.setLoggingLevel(KeyAnalysis.class, 1);
-        try {
-            DBSPCompiler compiler = this.testCompiler();
-            compiler.submitStatementsForCompilation(TABLES + view);
-            this.getCCS(compiler);
-        } finally {
-            Logger.INSTANCE.setLoggingLevel(KeyAnalysis.class, 0);
-            Logger.INSTANCE.setDebugStream(save);
+    /** A pass that analyzes the keys of the circuit it receives and keeps the circuit */
+    static class Analyzed implements CircuitTransform {
+        final KeyAnalysis keys;
+        @Nullable
+        DBSPCircuit circuit = null;
+
+        Analyzed(DBSPCompiler compiler) {
+            this.keys = new KeyAnalysis(compiler);
         }
-        return builder.toString();
+
+        @Override
+        public DBSPCircuit apply(DBSPCircuit circuit) {
+            this.keys.apply(circuit);
+            this.circuit = circuit;
+            return circuit;
+        }
+
+        @Override
+        public String getName() {
+            return "AnalyzeKeys";
+        }
+
+        /** The keys of view {@code v}, as printed */
+        String viewKeys() {
+            DBSPSinkOperator sink = Objects.requireNonNull(this.circuit).getSink(new ProgramIdentifier("v"));
+            Assert.assertNotNull("View v not found", sink);
+            return this.keys.getKeys(sink.input()).toString();
+        }
+
+        /** The keys of the only operator of class {@code clazz}, as printed */
+        <T extends DBSPSimpleOperator> String keysOf(Class<T> clazz) {
+            List<DBSPOperator> found = Objects.requireNonNull(this.circuit)
+                    .allOperators.stream().filter(clazz::isInstance).toList();
+            Assert.assertEquals("Operators of class " + clazz.getSimpleName(), 1, found.size());
+            return this.keys.getKeys(clazz.cast(found.get(0)).outputPort()).toString();
+        }
     }
 
-    /** Compile the program and return the keys the analysis reported for view {@code v}. */
-    private String viewKeys(String view) {
-        String log = this.compileLog(view);
-        String marker = "view v keys ";
-        String found = null;
-        for (String line : log.split("\n")) {
-            String lower = line.toLowerCase(Locale.ENGLISH);
-            if (lower.startsWith(marker))
-                found = line.substring(marker.length()).trim();
-        }
-        if (found == null)
-            throw new AssertionError("No keys reported for view v:\n" + log);
-        return found;
+    /** Compile the program and analyze its circuit as {@link LeftJoinChains} sees it */
+    private Analyzed analyze(String view) {
+        DBSPCompiler compiler = this.testCompiler();
+        Analyzed analyzed = new Analyzed(compiler);
+        compiler.optimizerHook = optimizer -> optimizer.insertBefore(LeftJoinChains.class, analyzed);
+        compiler.submitStatementsForCompilation(TABLES + view);
+        Assert.assertNotNull(compiler.getFinalCircuit(false));
+        Assert.assertNotNull("The optimizer did not reach LeftJoinChains", analyzed.circuit);
+        return analyzed;
     }
 
     private void assertKeys(String view, String expected) {
-        Assert.assertEquals(expected, this.viewKeys(view));
+        Assert.assertEquals(expected, this.analyze(view).viewKeys());
     }
 
     private void assertNoKeys(String view) {
@@ -210,9 +238,10 @@ public class KeyAnalysisTests extends SqlIoTest {
         // The TOP-1 partition columns are its index, and its value tuple repeats them, so
         // each of the seven values of the key is named by an index and a value column
         // This is an approximation of the true key, which has 2^7 members
-        String log = this.compileLog(view);
-        Assert.assertTrue(log, log.contains("[i0=v0, i1=v1, i2=v2, i3=v3, i4=v4, i5=v5, i6=v6]"));
-        this.assertKeys(view, "[[0, 1, 2, 3, 4, 5, 6]]");
+        Analyzed analyzed = this.analyze(view);
+        Assert.assertEquals("[[i0=v0, i1=v1, i2=v2, i3=v3, i4=v4, i5=v5, i6=v6]]",
+                analyzed.keysOf(DBSPIndexedTopKOperator.class));
+        Assert.assertEquals("[[0, 1, 2, 3, 4, 5, 6]]", analyzed.viewKeys());
     }
 
     /** Two independent keys: the primary key of the table, and the partition column of a
@@ -279,10 +308,10 @@ public class KeyAnalysisTests extends SqlIoTest {
         String view = """
                 CREATE VIEW v AS SELECT t.a, t.b, g.mx
                 FROM t LEFT JOIN (SELECT MAX(x) AS mx FROM s) g ON t.c < g.mx;""";
-        String log = this.compileLog(view);
-        Assert.assertTrue(log, log.contains("stream_join keys [[0, 1]]"));
-        Assert.assertTrue(log, log.contains("stream_antijoin keys [[v0, v1]]"));
-        this.assertNoKeys(view);
+        Analyzed analyzed = this.analyze(view);
+        Assert.assertEquals("[[0, 1]]", analyzed.keysOf(DBSPStreamJoinOperator.class));
+        Assert.assertEquals("[[v0, v1]]", analyzed.keysOf(DBSPStreamAntiJoinOperator.class));
+        Assert.assertEquals("[]", analyzed.viewKeys());
     }
 
     @Test

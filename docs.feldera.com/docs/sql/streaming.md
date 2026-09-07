@@ -198,8 +198,17 @@ A common streaming pattern joins a stream of events, kept bounded by a
 temporal filter or by lateness, with a dimension table, such as a list
 of products or customers.  The compiler cannot tell a dimension table
 from a table that grows without bound, so without further information
-it reports the join and every operator downstream of the join.  Declare
-the expected size of each dimension table:
+it reports the join, which retains the whole table.  When the join is
+on a key of the dimension table, such as its `PRIMARY KEY`, each event
+matches at most one row, so the output of the join is as bounded as the
+stream of events and the operators downstream of the join are not
+reported; a join on other columns reports them too.  The join columns
+must have the type of the key columns, or a lossless widening of it: a
+`VARCHAR` event column matched against a `VARCHAR(255)` key, or a
+`BIGINT` column against an `INT` key, is recognized, while a key of
+type `CHAR(n)`, whose comparison ignores trailing spaces, or a join
+column narrower than the key is not.  Declare the expected size of
+each dimension table:
 
 ```sql
 CREATE TABLE products (

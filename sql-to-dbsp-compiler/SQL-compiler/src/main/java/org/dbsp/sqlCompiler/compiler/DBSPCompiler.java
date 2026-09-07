@@ -106,6 +106,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Map;
 import java.util.regex.Pattern;
+import java.util.function.Consumer;
 
 /**
  * This class compiles SQL statements into DBSP circuits.
@@ -159,6 +160,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     public final ProgramMetadata metadata;
     /** The view that each Calcite relational operator was compiled for */
     public final ViewOrigins viewOrigins = new ViewOrigins();
+    /** Receives the optimizer before it runs and may insert passes into it.
+     * Testing hook, for observing intermediate circuits: production code must leave it null. */
+    @Nullable
+    public Consumer<CircuitOptimizer> optimizerHook = null;
 
     public final TypeCompiler typeCompiler;
     public boolean hasWarnings;
@@ -896,6 +901,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     @Nullable DBSPCircuit optimize(@Nullable DBSPCircuit circuit) {
         if (circuit == null) return null;
         CircuitOptimizer optimizer = new CircuitOptimizer(this);
+        if (this.optimizerHook != null)
+            this.optimizerHook.accept(optimizer);
         return optimizer.optimize(circuit);
     }
 
