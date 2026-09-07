@@ -2022,3 +2022,226 @@ fn file_val_batch_filter_follows_the_rate() {
         LADDER_KEYS,
     );
 }
+
+/// Retention by `LastN`, `TopN` and `BottomN`: every value satisfying the filter
+/// survives, along with a bounded number that do not.
+///
+/// `TopN` and `BottomN` accept a predicate that is not monotone, and most of
+/// what these tests pin came from treating one as monotone. `TopN` used to reach
+/// the first value to keep with `Cursor::seek_val_with`, a galloping search that
+/// holds only for a predicate staying true once it turns true, so it skipped
+/// values it had to keep. `BottomN` never positioned the batch cursor, so it
+/// kept values it had to collect, and, because the cursors of one merge then
+/// disagreed over a value, resurrected deleted rows. The snapshot key gate was a
+/// separate defect that needed no predicate at all.
+mod non_monotone_retention {
+    use std::sync::Arc;
+
+    use super::{CircuitConfig, DynI32, Filter, indexed_zset_tuples};
+    use crate::algebra::{OrdIndexedZSet, OrdIndexedZSetFactories};
+    use crate::dynamic::{DowncastTrait, DynData, WithFactory};
+    use crate::trace::{
+        Batch, BatchLocation, BatchReader, BatchReaderFactories, Builder, GroupFilter, ListMerger,
+        cursor::Cursor,
+    };
+    use crate::utils::Tup2;
+    use crate::{Runtime, ZWeight};
+
+    type Batched = OrdIndexedZSet<DynI32, DynI32>;
+
+    /// Every `(key, value, weight)` a batch holds.
+    fn contents_of(batch: &Batched) -> Vec<(i32, i32, ZWeight)> {
+        let mut out = Vec::new();
+        let mut cursor = batch.cursor();
+        while cursor.key_valid() {
+            while cursor.val_valid() {
+                out.push((
+                    *unsafe { cursor.key().downcast::<i32>() },
+                    *unsafe { cursor.val().downcast::<i32>() },
+                    **cursor.weight(),
+                ));
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+        out
+    }
+
+    /// Runs the filtered merge that actually performs retention, and reports
+    /// what survived.
+    ///
+    /// It has to be the merge path that takes a trace snapshot.
+    /// `Spine::complete_merges` goes through `merge_batches`, whose cursors come
+    /// from the `merge_cursor` default, and that default drops every group
+    /// filter except `Simple`: "Other forms of GroupFilters cannot be evaluated
+    /// without a trace snapshot". So forced compaction applies no `TopN` at all.
+    /// The spine's background merger instead calls `merge_cursor_with_snapshot`
+    /// (spine_async/list_merger.rs:53-58), which is what this mirrors, with a
+    /// batch of every value standing in for the spine snapshot.
+    fn retain(
+        filter: GroupFilter<DynI32>,
+        batches: &[&[(i32, ZWeight)]],
+    ) -> Vec<(i32, i32, ZWeight)> {
+        let batches: Vec<Vec<(i32, ZWeight)>> = batches.iter().map(|b| b.to_vec()).collect();
+        // The snapshot is the whole spine, so weights sum and anything that
+        // cancels becomes invisible to it, exactly as `CursorList` makes it.
+        let values: Vec<(i32, ZWeight)> = {
+            let mut v: Vec<(i32, ZWeight)> = batches.iter().flatten().copied().collect();
+            v.sort_unstable();
+            v
+        };
+        let result = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let out = result.clone();
+
+        Runtime::run(CircuitConfig::with_workers(1), move |_parker| {
+            let factories = <OrdIndexedZSetFactories<DynI32, DynI32>>::new::<i32, i32, ZWeight>();
+            let build_key = |key: i32, vals: &[(i32, ZWeight)]| {
+                let mut tuples =
+                    indexed_zset_tuples(vals.iter().map(|&(v, w)| Tup2(Tup2(key, v), w)).collect());
+                Batched::dyn_from_tuples(&factories, (), &mut tuples)
+            };
+
+            // How key 1's values are split across batches matters, so each
+            // caller chooses. The extra key exists only so that a merge of a
+            // single batch is not the identity.
+            let mut inputs: Vec<Batched> = batches.iter().map(|b| build_key(1, b)).collect();
+            inputs.push(build_key(2, &[(0, 1)]));
+
+            // Everything under key 1, as the spine snapshot would see it.
+            let snapshot = Some(Arc::new(build_key(1, &values)));
+
+            let builder = <Batched as Batch>::Builder::for_merge(
+                &factories,
+                inputs.iter(),
+                Some(BatchLocation::Memory),
+            );
+            let cursors = inputs
+                .iter()
+                .map(|b| b.merge_cursor_with_snapshot(None, Some(filter.clone()), &snapshot))
+                .collect();
+
+            let merged: Batched = ListMerger::merge(&factories, builder, cursors);
+            *out.lock().unwrap() = contents_of(&merged)
+                .into_iter()
+                .filter(|&(k, _, _)| k == 1)
+                .collect();
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+
+        result.lock().unwrap().clone()
+    }
+
+    /// A monotone predicate, which is all the in-tree tests use. The filters
+    /// behave correctly here, so this pins the baseline the bug is measured
+    /// against.
+    #[test]
+    fn top_n_is_correct_for_a_monotone_predicate() {
+        // Retain everything >= 8, plus the 2 largest below it.
+        let filter = GroupFilter::TopN(
+            2,
+            Filter::new(Box::new(|v: &DynI32| *unsafe { v.downcast::<i32>() } >= 8)),
+            <DynData as WithFactory<i32>>::FACTORY,
+        );
+        let all: Vec<(i32, ZWeight)> = (0..12).map(|v| (v, 1)).collect();
+        let survived = retain(filter, &[&all]);
+        let values: Vec<i32> = survived.iter().map(|&(_, v, _)| v).collect();
+        assert_eq!(values, vec![6, 7, 8, 9, 10, 11]);
+    }
+
+    /// The same shape of filter, but not monotone: it holds for value 3 and for
+    /// nothing else below the top. Value 3 satisfies the filter, so it survives.
+    /// The galloping seek used to skip it.
+    #[test]
+    fn top_n_keeps_a_retained_value_for_a_non_monotone_predicate() {
+        let filter = GroupFilter::TopN(
+            2,
+            Filter::new(Box::new(|v: &DynI32| *unsafe { v.downcast::<i32>() } == 3)),
+            <DynData as WithFactory<i32>>::FACTORY,
+        );
+        // One batch, so the seek runs over more than 8 values and `advance`
+        // takes its galloping path.
+        let all: Vec<(i32, ZWeight)> = (0..12).map(|v| (v, 1)).collect();
+        let survived = retain(filter, &[&all]);
+        let values: Vec<i32> = survived.iter().map(|&(_, v, _)| v).collect();
+
+        // Documented semantics: every value satisfying the filter, which is {3},
+        // plus the 2 largest that do not, which are {10, 11}.
+        assert_eq!(
+            values,
+            vec![3, 10, 11],
+            "value 3 satisfies the filter and must be retained"
+        );
+    }
+
+    /// `BottomN` resurrects a deleted row.
+    ///
+    /// This is the worst of the three, and it needs no non-monotonicity: the
+    /// filter here is a plain threshold. It follows purely from
+    /// `BottomN::on_step_key` never touching the batch cursor, so each batch's
+    /// FIRST value is emitted with no filter check at all.
+    ///
+    /// A value that cancels across the spine is invisible to the snapshot, so
+    /// the filter never reasons about it (`CursorList::seek_key_exact` skips
+    /// zero-weight values, cursor_list.rs:692-720) -- the situation
+    /// filter.rs:79-83 warns about. Here value 5 leads one batch and trails the
+    /// other. Both copies must reach the same verdict, or they stop cancelling
+    /// and the deleted row comes back; that is what happened while `BottomN`
+    /// left the leading copy unexamined.
+    #[test]
+    fn bottom_n_does_not_resurrect_a_deleted_value() {
+        // Nothing satisfies the filter, so retention keeps only the n smallest.
+        let filter = GroupFilter::BottomN(
+            1,
+            Filter::new(Box::new(|v: &DynI32| {
+                *unsafe { v.downcast::<i32>() } >= 100
+            })),
+            <DynData as WithFactory<i32>>::FACTORY,
+        );
+
+        // Spine total for key 1: {1: +1, 5: 0, 20: +1}. Value 5 is deleted.
+        // With n = 1 the only value to retain is 1, the smallest failing one.
+        let survived = retain(
+            filter,
+            &[
+                &[(5, 1), (20, 1)], // 5 leads this batch
+                &[(1, 1), (5, -1)], // and trails this one
+            ],
+        );
+
+        assert_eq!(
+            survived,
+            vec![(1, 1, 1)],
+            "value 5 was deleted; retention must not bring it back"
+        );
+    }
+
+    /// `BottomN` retains everything satisfying the filter plus the `n` smallest
+    /// that do not. Anything else is collected; it used to be kept.
+    #[test]
+    fn bottom_n_collects_a_collectable_value_for_a_non_monotone_predicate() {
+        let filter = GroupFilter::BottomN(
+            2,
+            Filter::new(Box::new(|v: &DynI32| *unsafe { v.downcast::<i32>() } == 8)),
+            <DynData as WithFactory<i32>>::FACTORY,
+        );
+        // Split so the second batch starts at 6. `BottomN`'s `on_step_key` does
+        // no seek, unlike `TopN`'s, so nothing ever skips the values leading
+        // each batch.
+        let survived = retain(
+            filter,
+            &[
+                &[(0, 1), (1, 1), (2, 1), (3, 1), (4, 1), (5, 1)],
+                &[(6, 1), (7, 1), (8, 1), (9, 1), (10, 1), (11, 1)],
+            ],
+        );
+        let values: Vec<i32> = survived.iter().map(|&(_, v, _)| v).collect();
+
+        assert_eq!(
+            values,
+            vec![0, 1, 8],
+            "6 fails the filter and is not among the 2 smallest that do"
+        );
+    }
+}
