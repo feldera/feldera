@@ -136,12 +136,10 @@ datafusion-functions-json = "0.53.1"
 dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.14.1"
 # Feldera fork of delta-rs: upstream tag `rust-v0.32.3` + 6 patches, on branch
-# `dv-async-load`. When bumping the pinned revision, preserve these patches:
+# `dv-scan-order-backport-0.32.3`. When bumping the pinned revision, preserve
+# these patches:
 #   - 7f8bb445 "Disable unsupported feature check." — relax the writer-side
 #     protocol-feature gate so we can write tables produced by newer clients.
-#   - 5b35c098 "delta-rs: round-robin pre-split unpartitioned scans into
-#     target_partitions FileGroups" — improves snapshot read parallelism for
-#     unpartitioned tables; pairs with the DataFusion knobs we tune in adapters.
 #   - 297f2dd1 "delta-rs: resolve column-mapped Uniform/Iceberg columns by
 #     Parquet field id." — fixes `col-<id> is missing from the physical schema`
 #     when reading UC-Uniform-over-Iceberg tables (columnMapping.mode=id). #6557.
@@ -157,10 +155,24 @@ deadpool-postgres = "0.14.1"
 #   - 78a5d066 "delta-rs: regression test for the deletion-vector blocking-pool
 #     deadlock": eight vectors against four blocking threads, which wedges
 #     without the patch above.
+#   - 9c858990 "delta-rs: backport delta-io/delta-rs#4692 onto 0.32.3" — the
+#     deletion-vector keep mask is consumed in physical row order, so a scan
+#     that splits, filters or reorders a file underneath it returns the right
+#     number of rows made of the wrong records. Onto 0.32.3 rather than a
+#     rebase, because #4692 targets DataFusion 54/55 and our iceberg fork pins
+#     53; one part of it needs `FileScanConfigBuilder::with_output_partitioning`,
+#     which 53 lacks, and is done with a file-source wrapper instead. The commit
+#     message lists what was and was not ported.
+#
+# Reverted along the way, do not reinstate without reading #4692:
+#   - 5b35c098 "round-robin pre-split unpartitioned scans into target_partitions
+#     FileGroups" — incompatible with #4692, which requires a single input
+#     partition wherever masks are applied. DataFusion's own
+#     repartition_file_scans covers the same ground.
 # Diff vs. upstream:
-#   https://github.com/delta-io/delta-rs/compare/rust-v0.32.3...feldera:delta-rs:dv-async-load
-deltalake = { git = "https://github.com/feldera/delta-rs.git", rev = "78a5d066d60feffcc7dcd9bae62d1c537dd9018c" }
-deltalake-catalog-unity = { git = "https://github.com/feldera/delta-rs.git", rev = "78a5d066d60feffcc7dcd9bae62d1c537dd9018c" }
+#   https://github.com/delta-io/delta-rs/compare/rust-v0.32.3...feldera:delta-rs:dv-scan-order-backport-0.32.3
+deltalake = { git = "https://github.com/feldera/delta-rs.git", rev = "9c85899091c75f5f3283e9628157f7b739807002" }
+deltalake-catalog-unity = { git = "https://github.com/feldera/delta-rs.git", rev = "9c85899091c75f5f3283e9628157f7b739807002" }
 
 delta_kernel = { package = "buoyant_kernel", version = "0.22" }
 derive_more = { version = "1.0.0" }
