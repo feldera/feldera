@@ -367,16 +367,19 @@ public class KeyAnalysis extends CircuitVisitor {
         this.set(node, Keys.of(ColumnEquivalence.NONE.keyOf(key)));
     }
 
-    /** A table with a PRIMARY KEY indexed by that key: the index identifies the row, and
-     * each index column duplicates the row column it was copied from. */
+    /** A table with a PRIMARY KEY indexed by that key: the index identifies the row, and,
+     * unless {@code --gen2} has dropped the key columns from the value, each index column
+     * duplicates the row column it was copied from. */
     @Override
     public void postorder(DBSPSourceMapOperator node) {
         if (!(node.outputPort().getShape() instanceof IndexedShape shape))
             return;
         List<Integer> keyFields = node.getKeyFields();
         List<List<Column>> groups = new ArrayList<>();
-        for (int i = 0; i < keyFields.size(); i++)
-            groups.add(List.of(Column.index(i), Column.value(keyFields.get(i))));
+        boolean valueIsWholeRow = shape.valueFields() == node.getOriginalRowType().getToplevelFieldCount();
+        if (valueIsWholeRow)
+            for (int i = 0; i < keyFields.size(); i++)
+                groups.add(List.of(Column.index(i), Column.value(keyFields.get(i))));
         ColumnEquivalence equivalence = ColumnEquivalence.of(groups);
         this.set(node, Keys.of(equivalence.keyOf(shape.indexColumns())), equivalence);
     }
