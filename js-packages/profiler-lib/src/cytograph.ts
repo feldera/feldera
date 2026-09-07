@@ -1,6 +1,6 @@
 // A cytograph is a graph representation suitable for the cytoscape graph layout and rendering tool
 
-import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeDefinition, type NodeSingular } from 'cytoscape';
+import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeCollection, type NodeDefinition, type NodeSingular } from 'cytoscape';
 import dblclick from 'cytoscape-dblclick';
 import { assert, Graph, OMap, Option, type EncodableAsString, NumericRange, Edge } from './util.js';
 import { categoryShares, CircuitProfile, ComplexNode, NodeAndMetric, PropertyValue, totalShare, type DisplayScales, type NodeId } from './profile.js';
@@ -14,6 +14,7 @@ import { MetadataSelection } from './metadataSelection.js';
 import { type NodeAttributes, type TooltipCell, type ProfilerCallbacks } from './profiler.js';
 import { buildGraphStyle, type DiagramTheme, labelWidth } from './diagramTheme.js';
 import { nodeChips } from './chips.js';
+import { installNodeShadows, SELECTED_NODE_CLASS } from './nodeShadow.js';
 import { installNodeText } from './nodeText.js';
 import { elkNodeLayoutOptions, regionMinWidth } from './regionSize.js';
 
@@ -464,6 +465,7 @@ export class CytographRendering {
         });
         // double-clicking on the navigator will adjust the graph to fit
         this.navigator.setOnDoubleClick(() => this.cy.fit());
+        installNodeShadows(this.cy);
         installNodeText(this.cy, () => this.theme);
         this.cy.style(buildGraphStyle(this.theme));
         this.lastNode = Option.none();
@@ -487,6 +489,7 @@ export class CytographRendering {
             return false;
         }
         this.center(Option.some(value));
+        this.markSelected(el.nodes());
         return true;
     }
 
@@ -809,18 +812,10 @@ export class CytographRendering {
             //.on('render', () => console.log("rendering"))
             //.on('layoutstart', () => console.log("start layout"))
             .on('layoutstop', () => this.layoutComplete())
-            .on('mouseover', 'node', event => this.displayEventTargetAttributes(event, false))
+            .on('mouseover', 'node', event => this.hoverNode(event))
             .on('mouseout', 'node', event => this.mouseOut(event))
             .on('zoom pan resize', () => this.updateNavigator(this.navigator))
-            .on('click', 'node', (e) => {
-                // Hide previous node information if any
-                this.hideNodeInformation();
-                // Fires before the attrs payload so consumers can switch view state without
-                // inferring it from data (distinguishes a click from a programmatic refresh).
-                this.callbacks.onNodeClick?.(e.target.id());
-                // Display current node
-                this.displayEventTargetAttributes(e, true);
-            })
+            .on('click', 'node', (e) => this.reportOn(e.target.id()))
             .on('dblclick', 'node', (e) => {
                 let node = e.target as NodeSingular;
                 let id = e.target.id();
@@ -837,6 +832,18 @@ export class CytographRendering {
                 this.lastNode = Option.some(id);
                 callbacks.onNodeDoubleClick?.(id, 'group');
             });
+    }
+
+    /** Report on a node: what a click on it comes down to. */
+    private reportOn(id: NodeId) {
+        // Whatever was reported before goes first, so nothing of it survives into this node's report.
+        this.hideNodeInformation();
+        // Fires before the attributes, so a consumer can tell a click from a programmatic refresh.
+        this.callbacks.onNodeClick?.(id);
+        // A click is deliberate, so what it reports stays on screen, and an expanded region reports as
+        // readily as an operator. A hover does neither, see `hoverNode`.
+        this.setStickyNodeInformation(true);
+        this.displayNodeAttributes(this.getRenderedNode(id));
     }
 
     layoutComplete() {
@@ -919,22 +926,61 @@ export class CytographRendering {
         return result;
     }
 
-    // Called when someones hovers over a node.
-    // If the previous display is sticky, do nothing.
-    // Currently it displays
-    // (1) the attributes of the node,
-    // (2) it highlights the edges reaching the node,
-    // (3) it displays the source position of the node.
-    displayEventTargetAttributes(event: EventObject, isSticky: boolean) {
-        let node: NodeSingular = event.target;
-        if (node.data("expanded") === true || (this.stickyInformation && !isSticky)) {
+    /** A callback that reports metrics of the node the pointer moved onto: its attributes, the edges that reach it,
+     * and its source position. `mouseOut` reports when the pointer leaves.
+     *
+     *  Two cases when a hover is ignored: an expanded node, and anything if a user selected a node with a click. */
+    private hoverNode(event: EventObject) {
+        const node: NodeSingular = event.target;
+        if (node.isParent()) {
             return;
         }
-
-        // Keep the information after mouse out
-        this.setStickyNodeInformation(isSticky);
-
+        if (this.stickyInformation) {
+            if (!this.reportIsMarked()) {
+                this.traceSelection(node);
+            }
+            return;
+        }
         this.displayNodeAttributes(node);
+    }
+
+    /** Whether the node the metrics report is about is the node the diagram marks with the glow and
+     * traces with the colored edges. When it is not, the mark is the pointer's to move: neither an
+     * expanded region nor the root node get marked, and neither has a report whose node
+     * a graph update has removed.
+     *
+     * Asked of the mark itself, so the two can never disagree about who holds it. */
+    private reportIsMarked(): boolean {
+        if (this.currentTooltipNode === null) {
+            return false;
+        }
+        return this.getRenderedNode(this.currentTooltipNode).hasClass(SELECTED_NODE_CLASS);
+    }
+
+    /** Mark `node` as the one the diagram reports on, whether reached by click, hover or search. At most
+     *  one node is marked, and `nodeShadow.ts` paints the mark as an accent glow in place of the node's
+     *  ambient shadow. */
+    markSelected(node: NodeSingular | NodeCollection | null) {
+        this.cy.nodes(`.${SELECTED_NODE_CLASS}`).removeClass(SELECTED_NODE_CLASS);
+        node?.addClass(SELECTED_NODE_CLASS);
+    }
+
+    /** Mark the node whose metrics are on display and color the edges reaching it.
+     * An expanded region and the root node can not be marked. */
+    private traceSelection(node: NodeSingular) {
+        this.clearTrace();
+        if (node.isParent() || node.id() === this.rootNodeId) {
+            return;
+        }
+        this.markSelected(node);
+        this.reachableFrom(node.id(), true).addClass('highlight-forward');
+        this.reachableFrom(node.id(), false).addClass('highlight-backward');
+    }
+
+    /** Take the mark and the edge coloring off the diagram, leaving what is reported where it is. */
+    private clearTrace() {
+        this.markSelected(null);
+        this.cy.edges().removeClass('highlight-forward highlight-backward');
     }
 
     displayNodeAttributes(node: NodeSingular) {
@@ -948,12 +994,7 @@ export class CytographRendering {
         // Track the current tooltip node for refreshing on metadata changes
         this.currentTooltipNode = nodeId;
         this.onTooltipContextChanged()
-
-        // highlight edges
-        let reachable = this.reachableFrom(nodeId, true);
-        reachable.addClass('highlight-forward');
-        reachable = this.reachableFrom(nodeId, false);
-        reachable.addClass('highlight-backward');
+        this.traceSelection(node);
 
         // Build structured tooltip data
         let visible = false;
@@ -1036,20 +1077,25 @@ export class CytographRendering {
         this.callbacks.displayNodeAttributes(Option.some(tooltipData), this.stickyInformation);
     }
 
-    // hide the information shown when hovering
+    /** The other half of a hover (see `hoverNode`): a report the pointer brought with it goes when the
+     *  pointer does. */
     mouseOut(_event: EventObject) {
         if (!this.stickyInformation) {
             this.hideNodeInformation();
+            return;
+        }
+        // What the pointer marked and traced goes with the pointer; the report itself was asked for,
+        // and stays.
+        if (!this.reportIsMarked()) {
+            this.clearTrace();
         }
     }
 
     hideNodeInformation() {
         this.currentTooltipNode = null;
+        this.clearTrace();
         this.onTooltipContextChanged()
         this.callbacks.displayNodeAttributes(Option.none(), false);
-        let reachable = this.cy.edges();
-        reachable.removeClass('highlight-forward');
-        reachable.removeClass('highlight-backward');
     }
 
     /**
