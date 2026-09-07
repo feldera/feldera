@@ -39,8 +39,8 @@ pub use circuit_builder::{
     OwnershipPreference, RegionName, RootCircuit, Scope, Stream, ThreadCpuTime, WithClock,
 };
 pub use dbsp_handle::{
-    CheckpointCommitter, CircuitConfig, CircuitStorageConfig, DBSPHandle, Host, Layout,
-    LayoutError, Mode, StepSize, StorageCacheConfig, StorageConfig, StorageOptions,
+    CheckpointCommitter, CheckpointPublisher, CircuitConfig, CircuitStorageConfig, DBSPHandle,
+    Host, Layout, LayoutError, Mode, StepSize, StorageCacheConfig, StorageConfig, StorageOptions,
     adaptive_joins_enabled, balancer_balance_tax, balancer_key_distribution_refresh_threshold,
     balancer_min_absolute_improvement_threshold, balancer_min_relative_improvement_threshold,
     max_level0_batch_size_records, negative_weight_multiplier, splitter_output_chunk_size,

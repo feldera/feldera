@@ -2620,13 +2620,20 @@ impl<'a> CheckpointBuilder<'a> {
         }
     }
 
-    /// Prepares and commits the checkpoint.
+    /// Prepares, commits, and publishes the checkpoint.
+    ///
+    /// This combines [prepare](Self::prepare) with
+    /// [CheckpointCommitter::commit] and [CheckpointPublisher::publish].
+    /// Callers can manually run the separate steps to do them in a separate
+    /// thread or to wait between committing and publishing.
     pub fn run(self) -> Result<CheckpointMetadata, DbspError> {
-        self.prepare().and_then(CheckpointCommitter::commit)
+        self.prepare()
+            .and_then(CheckpointCommitter::commit)
+            .and_then(CheckpointPublisher::publish)
     }
 
     /// Prepares the checkpoint and returns a committer that can be used to
-    /// commit it later.
+    /// commit and publish it later.
     pub fn prepare(self) -> Result<CheckpointCommitter, DbspError> {
         // Don't allow checkpointing during concurrent bootstrapping.
         // Both circuit copies derive checkpoint file names from the same
@@ -2665,8 +2672,8 @@ impl<'a> CheckpointBuilder<'a> {
             })?;
         Ok(CheckpointCommitter {
             checkpointer,
-            uuid,
             readers,
+            uuid,
             fingerprint: self.handle.fingerprint,
             name: self.name,
             steps: self.steps,
@@ -2675,7 +2682,14 @@ impl<'a> CheckpointBuilder<'a> {
     }
 }
 
-/// Committer for a checkpoint.
+/// First phase of checkpoint commit.
+///
+/// The first phase commits all operator data for the checkpoint and writes
+/// everything the checkpoint owns into its directory.  It does not update the
+/// checkpoint catalog, so the checkpoint is not yet visible.  This gives the
+/// client a chance to wait for output connectors to complete the output
+/// corresponding to the checkpoint, and to write its own state into the
+/// checkpoint directory, before publication in the second phase.
 pub struct CheckpointCommitter {
     checkpointer: Arc<Mutex<Checkpointer>>,
     uuid: Uuid,
@@ -2687,21 +2701,65 @@ pub struct CheckpointCommitter {
 }
 
 impl CheckpointCommitter {
-    /// Commits the checkpoint.
+    /// Executes the first phase of checkpoint commit.
     ///
     /// Committing a checkpoint ensures that its data is on stable storage.  It
     /// can run in the background while the circuit processes more steps.
-    pub fn commit(self) -> Result<CheckpointMetadata, DbspError> {
+    ///
+    /// This method commits the checkpoint and returns an object that carries
+    /// the checkpoint's metadata and publishes it.  In between, the client can
+    /// wait for output connectors to complete writing the output corresponding
+    /// to the checkpoint.
+    pub fn commit(self) -> Result<CheckpointPublisher, DbspError> {
         for reader in self.readers.into_iter().flatten() {
             reader.commit()?;
         }
-        self.checkpointer.lock().unwrap().commit(
+        let metadata = self.checkpointer.lock().unwrap().commit(
             self.uuid,
             self.fingerprint,
             self.name,
             self.steps,
             self.processed_records,
-        )
+        )?;
+        Ok(CheckpointPublisher {
+            checkpointer: self.checkpointer,
+            metadata,
+        })
+    }
+}
+
+/// Second phase of checkpoint commit.
+///
+/// The second phase adds the checkpoint to the checkpoint catalog, which makes
+/// it visible.
+///
+/// A publisher that is dropped instead leaves the committed checkpoint's
+/// directory on disk, costing the space of one checkpoint until the pipeline
+/// restarts: the running pipeline's GC visits only the checkpoints in the
+/// catalog, and this one never reached it, so `Checkpointer::gc_startup`
+/// reclaims the directory at the next start.
+pub struct CheckpointPublisher {
+    checkpointer: Arc<Mutex<Checkpointer>>,
+    metadata: CheckpointMetadata,
+}
+
+impl CheckpointPublisher {
+    /// Returns the metadata for the committed checkpoint.
+    ///
+    /// The metadata is complete before publication, so that a client that
+    /// records it elsewhere, such as in the checkpoint's own state file, can do
+    /// so while the checkpoint is still invisible.
+    pub fn metadata(&self) -> &CheckpointMetadata {
+        &self.metadata
+    }
+
+    /// Executes the final phase of checkpoint commit.
+    ///
+    /// This method updates the checkpoint catalog, which publishes the
+    /// checkpoint, and returns its metadata.
+    pub fn publish(self) -> Result<CheckpointMetadata, DbspError> {
+        self.checkpointer.lock().unwrap().publish(&self.metadata)?;
+        Ok(self.metadata)
     }
 }
 
@@ -3259,6 +3317,52 @@ pub(crate) mod tests {
             .gather_batches_for_checkpoint(&cpm)
             .expect("failed to gather batches");
         assert_eq!(batchfiles.len(), 1);
+    }
+
+    /// `commit` must leave the checkpoint out of the catalog; only `publish`
+    /// puts it there.
+    ///
+    /// The controller relies on this split: it commits operator data, waits for
+    /// output connectors to transmit the output the checkpoint covers, and only
+    /// then publishes.  Folding publication back into `commit` would make a
+    /// checkpoint restorable before its output was transmitted
+    /// (feldera/feldera#7031).
+    #[test]
+    fn commit_does_not_publish_checkpoint() {
+        let _temp = tempdir().expect("Can't create temp dir for storage");
+        let cconf = mkconfig(_temp.path());
+        let backend = cconf.storage.as_ref().unwrap().backend.clone();
+        let (mut dbsp, (input_handle, _, _)) = mkcircuit(cconf).unwrap();
+        let mut batch = vec![Tup2(1, Tup2(2, 1))];
+        input_handle.append(&mut batch);
+        dbsp.transaction().unwrap();
+
+        let publisher = dbsp
+            .checkpoint()
+            .prepare()
+            .expect("prepare failed")
+            .commit()
+            .expect("commit failed");
+        assert_eq!(
+            Checkpointer::read_checkpoints(&*backend)
+                .expect("failed to read catalog")
+                .len(),
+            0,
+            "commit published the checkpoint; it must stay out of the catalog until publish"
+        );
+
+        let metadata_uuid = publisher.metadata().uuid;
+        let cpm = publisher.publish().expect("publish failed");
+        assert_eq!(
+            metadata_uuid, cpm.uuid,
+            "the metadata reported before publication names a different checkpoint"
+        );
+        let published = Checkpointer::read_checkpoints(&*backend)
+            .expect("failed to read catalog")
+            .iter()
+            .map(|cpm| cpm.uuid)
+            .collect::<Vec<_>>();
+        assert_eq!(published, vec![cpm.uuid]);
     }
 
     /// If we call commit, we should preserve the checkpoint list across circuit

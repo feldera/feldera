@@ -20,8 +20,9 @@ use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
 use feldera_adapterlib::format::{BufferSize, InputBuffer, Parser};
 use feldera_types::{
     adapter_stats::ExternalOutputEndpointMetrics,
+    checkpoint::CheckpointMetadata,
     config::{FtModel, InputEndpointConfig, OutputEndpointConfig},
-    constants::STATE_FILE,
+    constants::{CHECKPOINT_FILE_NAME, STATE_FILE},
     memory_pressure::MemoryPressure,
     program_schema::Relation,
 };
@@ -29,9 +30,9 @@ use serde_json::json;
 use std::{
     borrow::Cow,
     cmp::min,
-    collections::BTreeMap,
+    collections::{BTreeMap, VecDeque},
     fs::{File, create_dir, remove_file},
-    io::Write,
+    io::{ErrorKind, Write},
     iter::repeat_n,
     ops::Range,
     path::{Path, PathBuf},
@@ -46,6 +47,7 @@ use std::{
 use tempfile::{NamedTempFile, TempDir};
 use tokio::sync::oneshot;
 use tracing::info;
+use uuid::Uuid;
 
 use arrow::array::{Array, Int64Array};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
@@ -2532,6 +2534,273 @@ fn output_connector_pause_lifts_backpressure() {
     assert_eq!(paused.transmitted_records, 0);
 
     hold.store(false, Ordering::Release);
+    controller.stop().unwrap();
+}
+
+/// The UUIDs in the checkpoint catalog, oldest first, or an empty list if the
+/// catalog does not exist yet.
+fn published_checkpoints(storage_dir: &Path) -> Vec<Uuid> {
+    match std::fs::read(storage_dir.join(CHECKPOINT_FILE_NAME)) {
+        Ok(bytes) => serde_json::from_slice::<VecDeque<CheckpointMetadata>>(&bytes)
+            .unwrap()
+            .iter()
+            .map(|metadata| metadata.uuid)
+            .collect(),
+        Err(error) if error.kind() == ErrorKind::NotFound => Vec::new(),
+        Err(error) => panic!("cannot read checkpoint catalog: {error}"),
+    }
+}
+
+/// True if a checkpoint directory exists in `storage_dir`, which means the
+/// operators have written their state for a checkpoint.
+fn checkpoint_dir_exists(storage_dir: &Path) -> bool {
+    std::fs::read_dir(storage_dir).unwrap().any(|entry| {
+        let entry = entry.unwrap();
+        entry.file_type().unwrap().is_dir()
+            && Uuid::parse_str(&entry.file_name().to_string_lossy()).is_ok()
+    })
+}
+
+/// A checkpoint reaches the catalog only after the output it covers has reached
+/// the output connectors.
+///
+/// The controller commits the checkpoint's operator data, waits for every
+/// output connector to transmit the output for the records the checkpoint
+/// covers, and publishes the checkpoint only then.  Publishing before the wait
+/// would leave a checkpoint that looks restorable but whose output never
+/// reached its sinks (feldera/feldera#7031).
+#[test]
+fn checkpoint_publishes_only_after_output_completes() {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let tempdir_path = tempdir.path();
+    let storage_dir = tempdir_path.join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_path = tempdir_path.join("input.csv");
+    File::create_new(&input_path).unwrap();
+
+    const RECORDS: usize = 100;
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "clock_resolution_usecs": null,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": input_path.display().to_string(), "follow": true },
+                },
+                "format": { "name": "csv" },
+            },
+        },
+        "outputs": {},
+    }))
+    .unwrap();
+
+    append_input(&input_path, 0..RECORDS);
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &[],
+                &[Some("output")],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    let blocked = Arc::new(AtomicBool::new(false));
+    let hold = Arc::new(AtomicBool::new(true));
+    let endpoint_config: OutputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_output1",
+        "transport": { "name": "null_output" },
+        "format": { "name": "csv", "config": {} },
+    }))
+    .unwrap();
+    controller
+        .add_output_endpoint(
+            "test_output1",
+            &endpoint_config,
+            Box::new(BlockedOutputEndpoint {
+                blocked: blocked.clone(),
+                hold: hold.clone(),
+            }),
+            None,
+        )
+        .unwrap();
+    controller.start();
+
+    // The pipeline processes every record, but the connector is stuck in a
+    // write that never finishes, so none of them can complete.
+    wait(|| blocked.load(Ordering::Acquire), DEFAULT_TIMEOUT_MS).unwrap();
+    wait(
+        || {
+            controller
+                .status()
+                .global_metrics
+                .num_total_processed_records()
+                >= RECORDS as u64
+        },
+        DEFAULT_TIMEOUT_MS,
+    )
+    .unwrap();
+    assert_eq!(
+        output_endpoint_metrics(&controller, "test_output1").transmitted_records,
+        0
+    );
+
+    let before = published_checkpoints(&storage_dir);
+    let (sender, receiver) = oneshot::channel();
+    controller.start_checkpoint(Box::new(move |result| sender.send(result).unwrap()));
+
+    // A checkpoint directory means the operators have written their state, so
+    // the checkpoint is past the point where it used to be published.  Give a
+    // premature publication time to appear: committing that state is a set of
+    // flushes on files that are already written, so it finishes long inside
+    // this window.
+    wait(|| checkpoint_dir_exists(&storage_dir), DEFAULT_TIMEOUT_MS).unwrap();
+    sleep(Duration::from_secs(2));
+
+    assert_eq!(
+        output_endpoint_metrics(&controller, "test_output1").transmitted_records,
+        0,
+        "the connector drained, so it never held the checkpoint back"
+    );
+    assert_eq!(
+        published_checkpoints(&storage_dir),
+        before,
+        "the checkpoint was published while its output was still stuck in a connector"
+    );
+
+    // Release the connector.  The output completes, and the checkpoint is
+    // published.
+    hold.store(false, Ordering::Release);
+    let checkpoint = receiver.blocking_recv().unwrap().unwrap();
+    let uuid = checkpoint.circuit.as_ref().unwrap().uuid;
+
+    let mut expected = before;
+    expected.push(uuid);
+    assert_eq!(published_checkpoints(&storage_dir), expected);
+    assert_eq!(
+        output_endpoint_metrics(&controller, "test_output1").transmitted_records,
+        RECORDS as u64
+    );
+
+    controller.stop().unwrap();
+}
+
+/// The `CheckpointMetadata` named by checkpoint `uuid`'s own `state.json`,
+/// read the way checkpoint sync reads it.
+fn checkpoint_state_circuit(storage_dir: &Path, uuid: Uuid) -> CheckpointMetadata {
+    let bytes = std::fs::read(storage_dir.join(uuid.to_string()).join(STATE_FILE)).unwrap();
+    let state: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    let circuit = state
+        .get("circuit")
+        .expect("the checkpoint's state.json has no `circuit` field")
+        .clone();
+    serde_json::from_value(circuit)
+        .expect("`circuit` in the checkpoint's state.json is not checkpoint metadata")
+}
+
+/// A checkpoint's own `state.json` names the circuit checkpoint it belongs to.
+///
+/// Checkpoint sync reads `circuit` from this file to describe the checkpoint it
+/// uploads, and a multihost host restoring a checkpoint the coordinator names
+/// reads it to find the circuit to open.  Taking the metadata from
+/// `CheckpointPublisher::metadata` puts it there; taking it from `publish`
+/// instead, now that the file is written first, records a null circuit, which
+/// fails the first reader and makes the second restore an empty circuit while
+/// replaying from the checkpoint's input offsets, with no error to show for it.
+///
+/// This guards the ordering that the fix for #7031 introduced.  It is not a
+/// regression test for the issue itself: before that fix the metadata was
+/// already in hand when this file was written, so `circuit` was never null.
+/// The other half of the fix, that the catalog entry appears only once this
+/// file is on disk, is a crash window that no test here covers.
+#[test]
+fn checkpoint_state_file_names_its_own_circuit() {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let tempdir_path = tempdir.path();
+    let storage_dir = tempdir_path.join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_path = tempdir_path.join("input.csv");
+    File::create_new(&input_path).unwrap();
+
+    const RECORDS: usize = 100;
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "clock_resolution_usecs": null,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": input_path.display().to_string(), "follow": true },
+                },
+                "format": { "name": "csv" },
+            },
+        },
+        "outputs": {},
+    }))
+    .unwrap();
+
+    append_input(&input_path, 0..RECORDS);
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &[],
+                &[Some("output")],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+    wait(
+        || {
+            controller
+                .status()
+                .global_metrics
+                .num_total_processed_records()
+                >= RECORDS as u64
+        },
+        DEFAULT_TIMEOUT_MS,
+    )
+    .unwrap();
+
+    // Two checkpoints, because a `state.json` that names the checkpoint before
+    // it is wrong in a way that only the second checkpoint can show.
+    for round in 0..2 {
+        append_input(&input_path, (round + 1) * RECORDS..(round + 2) * RECORDS);
+        let uuid = controller
+            .checkpoint()
+            .unwrap()
+            .circuit
+            .expect("the checkpoint the controller reports has no circuit metadata")
+            .uuid;
+        assert_eq!(
+            checkpoint_state_circuit(&storage_dir, uuid).uuid,
+            uuid,
+            "checkpoint {uuid}'s state.json names a different checkpoint"
+        );
+        assert!(published_checkpoints(&storage_dir).contains(&uuid));
+    }
+
     controller.stop().unwrap();
 }
 
