@@ -2086,11 +2086,27 @@ mod non_monotone_retention {
         filter: GroupFilter<DynI32>,
         batches: &[&[(i32, ZWeight)]],
     ) -> Vec<(i32, i32, ZWeight)> {
+        retain_within_spine(filter, batches, &[])
+    }
+
+    /// As `retain`, except that the spine also holds `elsewhere`, which the
+    /// merge does not cover. A merge takes some of the spine's batches, not all
+    /// of them, so this is the ordinary case rather than a corner of it.
+    fn retain_within_spine(
+        filter: GroupFilter<DynI32>,
+        batches: &[&[(i32, ZWeight)]],
+        elsewhere: &[(i32, ZWeight)],
+    ) -> Vec<(i32, i32, ZWeight)> {
         let batches: Vec<Vec<(i32, ZWeight)>> = batches.iter().map(|b| b.to_vec()).collect();
         // The snapshot is the whole spine, so weights sum and anything that
         // cancels becomes invisible to it, exactly as `CursorList` makes it.
         let values: Vec<(i32, ZWeight)> = {
-            let mut v: Vec<(i32, ZWeight)> = batches.iter().flatten().copied().collect();
+            let mut v: Vec<(i32, ZWeight)> = batches
+                .iter()
+                .flatten()
+                .chain(elsewhere.iter())
+                .copied()
+                .collect();
             v.sort_unstable();
             v
         };
@@ -2106,10 +2122,11 @@ mod non_monotone_retention {
             };
 
             // How key 1's values are split across batches matters, so each
-            // caller chooses. The extra key exists only so that a merge of a
-            // single batch is not the identity.
+            // caller chooses. The extra key keeps a single-batch merge from
+            // being the identity, and, since the snapshot never holds it, puts
+            // every run through `retain_whole_key`.
             let mut inputs: Vec<Batched> = batches.iter().map(|b| build_key(1, b)).collect();
-            inputs.push(build_key(2, &[(0, 1)]));
+            inputs.push(build_key(ABSENT_KEY, &ABSENT_KEY_VALUES));
 
             // Everything under key 1, as the spine snapshot would see it.
             let snapshot = Some(Arc::new(build_key(1, &values)));
@@ -2125,17 +2142,41 @@ mod non_monotone_retention {
                 .collect();
 
             let merged: Batched = ListMerger::merge(&factories, builder, cursors);
-            *out.lock().unwrap() = contents_of(&merged)
-                .into_iter()
-                .filter(|&(k, _, _)| k == 1)
-                .collect();
+            *out.lock().unwrap() = contents_of(&merged);
         })
         .unwrap()
         .join()
         .unwrap();
 
-        result.lock().unwrap().clone()
+        let contents = result.lock().unwrap().clone();
+
+        // The snapshot holds key 1 alone, so `ABSENT_KEY` reaches
+        // `retain_whole_key` on every run and must come back whole: nothing
+        // measures it, so nothing may be dropped from it. It carries several
+        // values, so a filter still holding the previous key's mark shows up.
+        let absent: Vec<(i32, i32, ZWeight)> = contents
+            .iter()
+            .copied()
+            .filter(|&(key, _value, _weight)| key == ABSENT_KEY)
+            .collect();
+        assert_eq!(
+            absent,
+            ABSENT_KEY_VALUES
+                .iter()
+                .map(|&(value, weight)| (ABSENT_KEY, value, weight))
+                .collect::<Vec<_>>(),
+            "a key the snapshot does not hold must survive the merge whole"
+        );
+
+        contents
+            .into_iter()
+            .filter(|&(key, _value, _weight)| key == 1)
+            .collect()
     }
+
+    /// A key the snapshot never holds, present in every merge.
+    const ABSENT_KEY: i32 = 2;
+    const ABSENT_KEY_VALUES: [(i32, ZWeight); 4] = [(0, 1), (5, 1), (9, 1), (14, 1)];
 
     /// A monotone predicate, which is all the in-tree tests use. The filters
     /// behave correctly here, so this pins the baseline the bug is measured
@@ -2269,6 +2310,57 @@ mod non_monotone_retention {
         )
     }
 
+    /// How the records outside the merge cancel the merged ones. Cancelling a
+    /// key's whole group is what empties the snapshot for it, and a free draw
+    /// essentially never does that, so it has to be constructed.
+    #[derive(Clone, Copy, Debug)]
+    enum Cancel {
+        Nothing,
+        Subset,
+        Everything,
+    }
+
+    fn cancellation() -> impl Strategy<Value = (Cancel, Vec<bool>)> {
+        (
+            prop::sample::select(vec![Cancel::Nothing, Cancel::Subset, Cancel::Everything]),
+            prop_vec(any::<bool>(), 0..32usize),
+        )
+    }
+
+    /// What the spine holds outside the merge: `extra`, drawn freely, plus exact
+    /// negations of some merged records.
+    fn spine_only(
+        entries: &[(i32, usize, ZWeight)],
+        extra: &[(i32, ZWeight)],
+        (cancel, mask): &(Cancel, Vec<bool>),
+    ) -> Vec<(i32, ZWeight)> {
+        let mut out = extra.to_vec();
+        for (i, &(value, _batch, weight)) in entries.iter().enumerate() {
+            let cancelled = match cancel {
+                Cancel::Nothing => false,
+                Cancel::Everything => true,
+                Cancel::Subset => mask.get(i).copied().unwrap_or(false),
+            };
+            if cancelled {
+                out.push((value, -weight));
+            }
+        }
+        out
+    }
+
+    /// Records the spine holds in batches the merge does not cover. They decide
+    /// retention without being emitted, and can cancel a merged record so that
+    /// the snapshot never sees it.
+    fn elsewhere() -> impl Strategy<Value = Vec<(i32, ZWeight)>> {
+        prop_vec(
+            (
+                0..VALUES,
+                prop::sample::select(vec![-2 as ZWeight, -1, 1, 2]),
+            ),
+            0..8usize,
+        )
+    }
+
     /// `fold` collapses the batch assignment onto fewer batches. Whether a key's
     /// values sit in one batch or are spread over several decides how far the
     /// cursor has to skip, and skipping is where the bugs are, so the property
@@ -2282,76 +2374,101 @@ mod non_monotone_retention {
         batches
     }
 
-    /// The values the spine snapshot holds: weights summed across batches, with
-    /// anything that cancels gone.
-    fn snapshot_of(entries: &[(i32, usize, ZWeight)]) -> BTreeMap<i32, ZWeight> {
-        let mut snapshot = BTreeMap::new();
-        for &(value, _batch, weight) in entries {
-            *snapshot.entry(value).or_insert(0) += weight;
+    /// The spine as the snapshot sees it: weights summed over every batch,
+    /// including the ones outside the merge, with anything that cancels gone.
+    fn spine_of(
+        merged: &[(i32, usize, ZWeight)],
+        elsewhere: &[(i32, ZWeight)],
+    ) -> BTreeMap<i32, ZWeight> {
+        let mut spine = BTreeMap::new();
+        for &(value, _batch, weight) in merged {
+            *spine.entry(value).or_insert(0) += weight;
         }
-        snapshot.retain(|_value, weight| *weight != 0);
-        snapshot
+        for &(value, weight) in elsewhere {
+            *spine.entry(value).or_insert(0) += weight;
+        }
+        spine.retain(|_value, weight| *weight != 0);
+        spine
     }
 
-    fn retained(
-        snapshot: &BTreeMap<i32, ZWeight>,
-        keep: impl Fn(&[i32]) -> Vec<bool>,
+    /// What the merge holds, and so all that it can emit. Retention is decided
+    /// against the whole spine, but only these records pass through the merge.
+    fn merged_of(merged: &[(i32, usize, ZWeight)]) -> BTreeMap<i32, ZWeight> {
+        let mut batch = BTreeMap::new();
+        for &(value, _batch, weight) in merged {
+            *batch.entry(value).or_insert(0) += weight;
+        }
+        batch.retain(|_value, weight| *weight != 0);
+        batch
+    }
+
+    fn expected(
+        merged: &BTreeMap<i32, ZWeight>,
+        keep: impl Fn(i32) -> bool,
     ) -> Vec<(i32, i32, ZWeight)> {
-        let values: Vec<i32> = snapshot.keys().copied().collect();
-        values
+        merged
             .iter()
-            .zip(keep(&values))
-            .filter(|&(_value, keep)| keep)
-            .map(|(&value, _keep)| (1, value, snapshot[&value]))
+            .filter(|&(&value, _weight)| keep(value))
+            .map(|(&value, &weight)| (1, value, weight))
             .collect()
     }
 
-    /// What `TopN`/`BottomN` must retain, derived from the documented semantics
-    /// rather than from the cursor: every value satisfying the filter, plus the
-    /// `n` failing values nearest the chosen end of the group.
-    fn model_n(
+    /// Which values `TopN` and `BottomN` must retain, from the semantics stated
+    /// in filter.rs rather than from the cursor: every value satisfying the
+    /// filter, plus the `n` failing values nearest the chosen end of the group.
+    fn keep_n(
+        spine: &BTreeMap<i32, ZWeight>,
         mask: u32,
         n: usize,
         keep_largest: bool,
-        entries: &[(i32, usize, ZWeight)],
-    ) -> Vec<(i32, i32, ZWeight)> {
-        let snapshot = snapshot_of(entries);
-        retained(&snapshot, |values| {
-            let mut keep = vec![false; values.len()];
-            let mut failing = 0;
-            let order: Box<dyn Iterator<Item = usize>> = if keep_largest {
-                Box::new((0..values.len()).rev())
-            } else {
-                Box::new(0..values.len())
-            };
-            for i in order {
-                if satisfies(mask, values[i]) {
-                    keep[i] = true;
-                } else if failing < n {
-                    keep[i] = true;
-                    failing += 1;
-                }
+    ) -> Box<dyn Fn(i32) -> bool> {
+        // The spine holds nothing for this key, so nothing measures it and all
+        // of it stays.
+        if spine.is_empty() {
+            return Box::new(|_value| true);
+        }
+
+        let failing: Vec<i32> = spine
+            .keys()
+            .copied()
+            .filter(|&value| !satisfies(mask, value))
+            .collect();
+        let bound = if keep_largest {
+            failing.iter().rev().nth(n - 1).copied()
+        } else {
+            failing.get(n - 1).copied()
+        };
+
+        match bound {
+            // Fewer than `n` values fail the filter, so all of them stay.
+            None => Box::new(|_value| true),
+            Some(bound) if keep_largest => {
+                Box::new(move |value| satisfies(mask, value) || value >= bound)
             }
-            keep
-        })
+            Some(bound) => Box::new(move |value| satisfies(mask, value) || value <= bound),
+        }
     }
 
-    /// What `LastN` must retain: every value from the `n`'th before the first
-    /// one satisfying the filter onwards, or the last `n` when none satisfies it.
-    fn model_last_n(
+    /// Which values `LastN` must retain: every one from the `n`'th before the
+    /// first satisfying value onwards, or the last `n` when none satisfies it.
+    fn keep_last_n(
+        spine: &BTreeMap<i32, ZWeight>,
         threshold: i32,
         n: usize,
-        entries: &[(i32, usize, ZWeight)],
-    ) -> Vec<(i32, i32, ZWeight)> {
-        let snapshot = snapshot_of(entries);
-        retained(&snapshot, |values| {
-            let first = values
-                .iter()
-                .position(|&value| value >= threshold)
-                .unwrap_or(values.len());
-            let from = first.saturating_sub(n);
-            (0..values.len()).map(|i| i >= from).collect()
-        })
+    ) -> Box<dyn Fn(i32) -> bool> {
+        if spine.is_empty() {
+            return Box::new(|_value| true);
+        }
+
+        let values: Vec<i32> = spine.keys().copied().collect();
+        let first = values
+            .iter()
+            .position(|&value| value >= threshold)
+            .unwrap_or(values.len());
+        // Fewer than `n` values precede the first satisfying one, so all of them
+        // are retained and nothing bounds the group from below.
+        let bound = (first >= n).then(|| values[first - n]);
+        Box::new(move |value| bound.is_none_or(|bound| value >= bound))
     }
 
     fn satisfies(mask: u32, value: i32) -> bool {
@@ -2374,9 +2491,78 @@ mod non_monotone_retention {
     fn run(
         filter: GroupFilter<DynI32>,
         batches: &[Vec<(i32, ZWeight)>],
+        elsewhere: &[(i32, ZWeight)],
     ) -> Vec<(i32, i32, ZWeight)> {
         let refs: Vec<&[(i32, ZWeight)]> = batches.iter().map(|b| b.as_slice()).collect();
-        retain(filter, &refs)
+        retain_within_spine(filter, &refs, elsewhere)
+    }
+
+    /// A merge covers some of the spine's batches. When the spine's weights for a
+    /// key cancel out, `on_step_key` cannot find the key in the snapshot and
+    /// drops every record it holds for that key. The records that cancel it live
+    /// in batches this merge does not cover, so they survive, and the retraction
+    /// they used to balance is gone.
+    #[test]
+    fn a_key_cancelled_elsewhere_in_the_spine_keeps_its_records() {
+        let filter = GroupFilter::TopN(
+            2,
+            Filter::new(Box::new(|v: &DynI32| {
+                *unsafe { v.downcast::<i32>() } >= 100
+            })),
+            <DynData as WithFactory<i32>>::FACTORY,
+        );
+        // 150 satisfies the filter, so retention must keep it and the operator
+        // will read it. The merge sees the insertion; the matching deletion sits
+        // in a batch outside the merge, so the spine nets to zero for key 1.
+        let survived = retain_within_spine(filter, &[&[(150, 1)]], &[(150, -1)]);
+
+        assert_eq!(
+            survived,
+            vec![(1, 150, 1)],
+            "the deletion that balances this record is in a batch the merge does \
+             not cover, so dropping the record leaves that deletion unbalanced"
+        );
+    }
+
+    /// The mirror of the case above: the merge holds the deletion and a batch
+    /// outside it holds the insertion. Dropping the deletion resurrects a row.
+    #[test]
+    fn a_key_cancelled_elsewhere_keeps_its_deletion() {
+        let filter = GroupFilter::TopN(
+            2,
+            Filter::new(Box::new(|v: &DynI32| {
+                *unsafe { v.downcast::<i32>() } >= 100
+            })),
+            <DynData as WithFactory<i32>>::FACTORY,
+        );
+        let survived = retain_within_spine(filter, &[&[(150, -1)]], &[(150, 1)]);
+
+        assert_eq!(survived, vec![(1, 150, -1)]);
+    }
+
+    /// The same for `BottomN`, which is what MIN and ARG_MIN install.
+    #[test]
+    fn bottom_n_keeps_a_key_cancelled_elsewhere() {
+        let filter = GroupFilter::BottomN(
+            1,
+            Filter::new(Box::new(|v: &DynI32| {
+                *unsafe { v.downcast::<i32>() } >= 100
+            })),
+            <DynData as WithFactory<i32>>::FACTORY,
+        );
+        let survived = retain_within_spine(filter, &[&[(150, 1)]], &[(150, -1)]);
+
+        assert_eq!(survived, vec![(1, 150, 1)]);
+    }
+
+    /// And for `LastN`. The gate runs before any arm, so its monotone predicate
+    /// makes no difference here.
+    #[test]
+    fn last_n_keeps_a_key_cancelled_elsewhere() {
+        let filter = GroupFilter::LastN(2, threshold_filter(100));
+        let survived = retain_within_spine(filter, &[&[(150, 1)]], &[(150, -1)]);
+
+        assert_eq!(survived, vec![(1, 150, 1)]);
     }
 
     /// `n = 0` denotes `Simple`, but the marking these filters rely on cannot
@@ -2440,16 +2626,21 @@ mod non_monotone_retention {
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(512))]
 
-        /// `n` starts at 1 because a zero limit is rejected.
         #[test]
         fn top_n_matches_the_documented_semantics(
             mask in any::<u32>(),
             n in 1usize..4,
             fold in 1usize..=BATCHES,
             entries in entries(),
+            extra in elsewhere(),
+            cancellation in cancellation(),
         ) {
+            let elsewhere = spine_only(&entries, &extra, &cancellation);
             let filter = GroupFilter::TopN(n, bitmask_filter(mask), <DynData as WithFactory<i32>>::FACTORY);
-            prop_assert_eq!(run(filter, &split(&entries, fold)), model_n(mask, n, true, &entries));
+            let spine = spine_of(&entries, &elsewhere);
+            prop_assert_eq!(
+                run(filter, &split(&entries, fold), &elsewhere),
+                expected(&merged_of(&entries), keep_n(&spine, mask, n, true)));
         }
 
         #[test]
@@ -2458,9 +2649,15 @@ mod non_monotone_retention {
             n in 1usize..4,
             fold in 1usize..=BATCHES,
             entries in entries(),
+            extra in elsewhere(),
+            cancellation in cancellation(),
         ) {
+            let elsewhere = spine_only(&entries, &extra, &cancellation);
             let filter = GroupFilter::BottomN(n, bitmask_filter(mask), <DynData as WithFactory<i32>>::FACTORY);
-            prop_assert_eq!(run(filter, &split(&entries, fold)), model_n(mask, n, false, &entries));
+            let spine = spine_of(&entries, &elsewhere);
+            prop_assert_eq!(
+                run(filter, &split(&entries, fold), &elsewhere),
+                expected(&merged_of(&entries), keep_n(&spine, mask, n, false)));
         }
 
         /// `LastN` is only defined for a monotone filter, so this drives it with
@@ -2471,9 +2668,15 @@ mod non_monotone_retention {
             n in 1usize..4,
             fold in 1usize..=BATCHES,
             entries in entries(),
+            extra in elsewhere(),
+            cancellation in cancellation(),
         ) {
+            let elsewhere = spine_only(&entries, &extra, &cancellation);
             let filter = GroupFilter::LastN(n, threshold_filter(threshold));
-            prop_assert_eq!(run(filter, &split(&entries, fold)), model_last_n(threshold, n, &entries));
+            let spine = spine_of(&entries, &elsewhere);
+            prop_assert_eq!(
+                run(filter, &split(&entries, fold), &elsewhere),
+                expected(&merged_of(&entries), keep_last_n(&spine, threshold, n)));
         }
     }
 }
