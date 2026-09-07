@@ -14,8 +14,11 @@ import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPrimitiveAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
@@ -25,7 +28,11 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
@@ -36,6 +43,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUpsertFeedbackOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
@@ -53,6 +61,8 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ViewOrigins;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRanges;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.KeyAnalysis;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LosslessCastKeyAnalysis;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
@@ -76,6 +86,9 @@ import java.util.Set;
  * <li>"bounded state", a property of operators.  An operator may internally
  * contain multiple integrators.</li>
  * </ul>
+ * Note that a join of a bounded stream with an unbounded table over a key of the
+ * table has a bounded output, at most one row per row of the stream, while its state
+ * is unbounded.
  * Stateful operators with unbounded state are collected in {@link #unbounded}.
  *
  * <p>Only stream-processing programs receive a warning for each unbounded operator. */
@@ -105,11 +118,15 @@ public class FindUnboundedState extends Passes {
     public final List<UnboundedOperator> unbounded = new ArrayList<>();
     /** True if the program declares LATENESS or append_only tables, or uses a temporal filter */
     boolean streaming = false;
+    /** The keys of every collection; a join over a key of one input has as many rows as the other */
+    final KeyAnalysis keys;
 
     public FindUnboundedState(DBSPCompiler compiler) {
         super("FindUnboundedState", compiler);
         this.add(new DetectStreamingOperations(compiler));
         this.add(new FindGCedStreams(compiler));
+        this.keys = new LosslessCastKeyAnalysis(compiler);
+        this.add(this.keys);
         FindBounded findBounded = new FindBounded(compiler);
         this.add(findBounded);
         // Second run for recursive circuits
@@ -200,6 +217,12 @@ public class FindUnboundedState extends Passes {
         return true;
     }
 
+    /** True if the index of the indexed collection {@code port} is a key of it: each index
+     * value occurs in at most one row. */
+    boolean indexIsKey(OutputPort port) {
+        return this.keys.getKeys(port).hasKeyWithinIndex();
+    }
+
     /** Detects whether the program declares that it processes unbounded streams.
      * NOW() counts only when it feeds a window operator, i.e., in a temporal filter. */
     class DetectStreamingOperations extends CircuitVisitor {
@@ -258,6 +281,10 @@ public class FindUnboundedState extends Passes {
 
         boolean isBounded(OutputPort port) {
             return FindUnboundedState.this.isBounded(port);
+        }
+
+        boolean indexIsKey(OutputPort port) {
+            return FindUnboundedState.this.indexIsKey(port);
         }
 
         /** Operators without a rule of their own propagate boundedness from all their inputs */
@@ -355,6 +382,77 @@ public class FindUnboundedState extends Passes {
         public void postorder(DBSPIndexedTopKOperator node) {
             boolean perGroup = node.limit.is(DBSPUSizeLiteral.class) && hasBoundedKey(node);
             if (perGroup || this.allInputsBounded(node))
+                this.markBounded(node);
+        }
+
+        /** A join produces at most one row per row of a bounded input when every such row
+         * matches at most one row of the other input */
+        @Override
+        public void postorder(DBSPJoinBaseOperator node) {
+            OutputPort left = node.left();
+            OutputPort right = node.right();
+            if (this.allInputsBounded(node)
+                    || (this.isBounded(left) && this.indexIsKey(right))
+                    || (this.isBounded(right) && this.indexIsKey(left)))
+                this.markBounded(node);
+        }
+
+        /** A left join also outputs every unmatched left row */
+        void leftJoin(DBSPJoinBaseOperator node) {
+            if (this.isBounded(node.left()) && (this.isBounded(node.right()) || this.indexIsKey(node.right())))
+                this.markBounded(node);
+        }
+
+        @Override
+        public void postorder(DBSPLeftJoinOperator node) {
+            this.leftJoin(node);
+        }
+
+        @Override
+        public void postorder(DBSPLeftJoinIndexOperator node) {
+            this.leftJoin(node);
+        }
+
+        @Override
+        public void postorder(DBSPLeftJoinFilterMapOperator node) {
+            this.leftJoin(node);
+        }
+
+        /** An ASOF join outputs at most one row per left row */
+        @Override
+        public void postorder(DBSPAsofJoinOperator node) {
+            if (this.isBounded(node.left()))
+                this.markBounded(node);
+        }
+
+        @Override
+        public void postorder(DBSPConcreteAsofJoinOperator node) {
+            if (this.isBounded(node.left()))
+                this.markBounded(node);
+        }
+
+        /** An anti join outputs a subset of its left input */
+        @Override
+        public void postorder(DBSPAntiJoinOperator node) {
+            if (this.isBounded(node.left()))
+                this.markBounded(node);
+        }
+
+        /** All inputs of a star join share the index.  At most one input may lack a key within
+         * it, and that input must be bounded; if every input has one, any bounded input suffices. */
+        @Override
+        public void postorder(DBSPStarJoinBaseOperator node) {
+            OutputPort unkeyed = null;
+            boolean anyBounded = false;
+            for (OutputPort input : node.inputs) {
+                anyBounded |= this.isBounded(input);
+                if (!this.indexIsKey(input)) {
+                    if (unkeyed != null)
+                        return;
+                    unkeyed = input;
+                }
+            }
+            if (unkeyed == null ? anyBounded : this.isBounded(unkeyed))
                 this.markBounded(node);
         }
 

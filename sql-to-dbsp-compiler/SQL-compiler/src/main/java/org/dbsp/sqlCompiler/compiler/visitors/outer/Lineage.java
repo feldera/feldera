@@ -84,7 +84,14 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /** Analyze dataflow graph and compute lineage for some output columns.
- * "Lineage" traces a column to a source table. */
+ * "Lineage" traces a column to a source table.
+ *
+ * <p>A value keeps its lineage only through operations that leave it unchanged: field
+ * access, tuple construction, references, and casts that change nothing but the nullability
+ * of the type.  Any other operation, including a cast to another width or precision, yields a
+ * value of unknown lineage.  Two values with the same lineage are therefore equal under the
+ * comparison of their common type.  A subclass of {@link InnerLineage} may relax the rule for
+ * casts. */
 public class Lineage extends CircuitVisitor {
     // Note: this interface has some implementations outside this class as well.
     // We should not assume that all implementations reside here.
@@ -683,7 +690,8 @@ public class Lineage extends CircuitVisitor {
             System.out.println("[Compared:] " + compared);
     }
 
-    /** Computes lineage of an expression by tracking where each field of the expression is coming from. */
+    /** Computes lineage of an expression by tracking where each field of the expression is coming
+     * from.  {@link Lineage} describes which operations preserve lineage. */
     public static class InnerLineage extends SymbolicInterpreter<ValueSource> {
         final ResolveReferences resolver;
         /** Receives the columns compared against literals; null when nobody wants them */
@@ -834,6 +842,11 @@ public class Lineage extends CircuitVisitor {
             return VisitDecision.STOP;
         }
 
+        /** Only a cast that changes nothing but nullability preserves lineage (see the class
+         * comment), because other casts may change the values or their comparison: a cast to
+         * or from {@code CHAR(n)} pads or trims, and {@code CHAR} comparisons ignore trailing
+         * spaces; a cast to a narrower {@code VARCHAR(n)} truncates; {@code DECIMAL} and
+         * {@code TIMESTAMP} casts round or truncate when the scale or precision shrinks. */
         @Override
         public void postorder(DBSPCastExpression expression) {
             DBSPType type = expression.getType();
