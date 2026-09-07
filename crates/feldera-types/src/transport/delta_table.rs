@@ -203,8 +203,6 @@ fn validate_delta_interval(value: &str) -> Result<(), String> {
 
 /// Delta table read mode.
 ///
-/// Three options are available:
-///
 /// * `snapshot` - read a snapshot of the table and stop.
 ///
 /// * `follow` - continuously ingest changes to the table, starting from a specified version
@@ -212,6 +210,7 @@ fn validate_delta_interval(value: &str) -> Result<(), String> {
 ///
 /// * `snapshot_and_follow` - read a snapshot of the table before switching to continuous ingestion
 ///   mode.
+///
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub enum DeltaTableIngestMode {
     /// Read a snapshot of the table and stop.
@@ -236,6 +235,9 @@ pub enum DeltaTableIngestMode {
     /// In this mode, the connector does not read the initial snapshot of the table
     /// and follows the transaction log starting from the version of the table
     /// specified by the `version` or `datetime` property.
+    ///
+    /// Note: this mode reads a change log the *user* encoded as table rows.  To read
+    /// the change log Delta Lake itself maintains, see the `change_feed` property.
     #[serde(rename = "cdc")]
     Cdc,
 }
@@ -249,6 +251,80 @@ impl Display for DeltaTableIngestMode {
             DeltaTableIngestMode::Cdc => write!(f, "cdc"),
         }
     }
+}
+
+/// Whether the connector reads a Delta table's
+/// [Change Data Feed](https://docs.delta.io/latest/delta-change-data-feed.html).
+///
+/// A table with the `delta.enableChangeDataFeed` property records the rows an
+/// `UPDATE`, `DELETE`, or `MERGE` changed, in a `_change_data` directory. The connector
+/// can read this data in the `follow` and `snapshot_and_follow` mode, which allows
+/// it to ingest the changes to the table more efficiently than by reconstructing
+/// them the data files a commit added and removed. For a
+/// commit that rewrites whole files, the difference is between reading the changed
+/// rows and reading every file those rows lived in.
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema, Default)]
+pub enum DeltaTableChangeFeed {
+    /// Read change data when a commit records it; otherwise read the commit's file
+    /// actions.
+    #[serde(rename = "auto")]
+    Auto,
+
+    /// Like `auto`, but fail at startup unless the table has
+    /// `delta.enableChangeDataFeed` set.
+    ///
+    /// Use this when the connector is provisioned for the cost of reading changed
+    /// rows rather than rewritten files: without the property the connector still
+    /// works, but reads as much as `off` does.
+    #[serde(rename = "require")]
+    Require,
+
+    /// Never read change data; reconstruct every change from the files a commit
+    /// added and removed.
+    ///
+    /// The default, until reading the change feed is supported end to end.
+    #[default]
+    #[serde(rename = "off")]
+    Off,
+}
+
+impl Display for DeltaTableChangeFeed {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        match self {
+            DeltaTableChangeFeed::Auto => write!(f, "auto"),
+            DeltaTableChangeFeed::Require => write!(f, "require"),
+            DeltaTableChangeFeed::Off => write!(f, "off"),
+        }
+    }
+}
+
+/// Environment override for the default [`DeltaTableChangeFeed`].
+///
+/// Undocumented and temporary; see [`DeltaTableReaderConfig::change_feed`].
+/// Named `DELTA_*` like the connector's other overrides, and deliberately not
+/// `FELDERA_*`, which pipelines may not set (see `ENV_VAR_PREFIX_BLOCKLIST`).
+const CHANGE_FEED_ENV: &str = "DELTA_CHANGE_FEED";
+
+/// The mode [`CHANGE_FEED_ENV`] names, or `off` if it names none.
+///
+/// Kept apart from the lookup so it can be tested without writing to the
+/// process environment, which races every other thread reading it.
+fn parse_change_feed(value: &str) -> DeltaTableChangeFeed {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => DeltaTableChangeFeed::Auto,
+        "require" => DeltaTableChangeFeed::Require,
+        "off" => DeltaTableChangeFeed::Off,
+        _ => {
+            log::warn!("ignoring {CHANGE_FEED_ENV}={value:?}: expected 'auto', 'require' or 'off'");
+            DeltaTableChangeFeed::Off
+        }
+    }
+}
+
+fn default_change_feed() -> DeltaTableChangeFeed {
+    std::env::var(CHANGE_FEED_ENV)
+        .map(|value| parse_change_feed(&value))
+        .unwrap_or_default()
 }
 
 fn default_num_parsers() -> u32 {
@@ -282,8 +358,9 @@ fn default_num_parsers() -> u32 {
 ///
 /// # How transaction log is ingested using transactions
 ///
-/// If the connector is configured in the `follow`, `snapshot_and_follow`, or `cdc` mode, and its
-/// `transaction_mode` is set to `catchup`, it ingests the transaction log in batches. When it starts a
+/// If the connector follows the transaction log (`follow`, `snapshot_and_follow`, or `cdc`
+/// mode), and its `transaction_mode` is set to `catchup`, it ingests the
+/// transaction log in batches. When it starts a
 /// Feldera transaction, it reads the latest available version of the Delta table (capped by `end_version` if set) and
 /// ingests all log entries up to and including that version in a single Feldera transaction before committing. It then
 /// repeats for subsequent versions as they appear in the log.
@@ -330,7 +407,8 @@ pub struct DeltaTableReaderConfig {
 
     /// Table column that serves as an event timestamp.
     ///
-    /// When this option is specified, and `mode` is one of `snapshot` or `snapshot_and_follow`,
+    /// When this option is specified, and `mode` takes an initial snapshot (`snapshot`
+    /// or `snapshot_and_follow`),
     /// table rows are ingested in the timestamp order, respecting the
     /// [`LATENESS`](https://docs.feldera.com/sql/streaming#lateness-expressions)
     /// property of the column: each ingested row has a timestamp no more than `LATENESS`
@@ -378,7 +456,8 @@ pub struct DeltaTableReaderConfig {
 
     /// Optional snapshot filter.
     ///
-    /// This option is only valid when `mode` is set to `snapshot` or `snapshot_and_follow`.
+    /// This option is only valid in a mode that takes an initial snapshot: `snapshot`
+    /// or `snapshot_and_follow`.
     ///
     /// When specified, only rows that satisfy the filter condition are included in the
     /// snapshot.  The condition must be a valid SQL Boolean expression that can be used in
@@ -398,9 +477,9 @@ pub struct DeltaTableReaderConfig {
     /// Optional table version.
     ///
     /// When this option is set, the connector finds and opens the specified version of the table.
-    /// In `snapshot` and `snapshot_and_follow` modes, it retrieves the snapshot of this version of
-    /// the table.  In `follow`, `snapshot_and_follow`, and `cdc` modes, it follows transaction log records
-    /// **after** this version.
+    /// In the snapshot-taking modes it retrieves the snapshot of this version of the table.
+    /// In the log-following modes (`follow`, `snapshot_and_follow`, `cdc`) it follows
+    /// transaction log records **after** this version.
     ///
     /// Note: at most one of `version` and `datetime` options can be specified.
     /// When neither of the two options is specified, the latest committed version of the table
@@ -413,9 +492,9 @@ pub struct DeltaTableReaderConfig {
     ///
     /// When this option is set, the connector finds and opens the version of the table as of the
     /// specified point in time (based on the server time recorded in the transaction log, not the
-    /// event time encoded in the data).  In `snapshot` and `snapshot_and_follow` modes, it
-    /// retrieves the snapshot of this version of the table.  In `follow`, `snapshot_and_follow`, and
-    /// `cdc` modes, it follows transaction log records **after** this version.
+    /// event time encoded in the data).  In the snapshot-taking modes it retrieves the snapshot
+    /// of this version of the table.  In the log-following modes (`follow`,
+    /// `snapshot_and_follow`, `cdc`) it follows transaction log records **after** this version.
     ///
     /// Note: at most one of `version` and `datetime` options can be specified.
     /// When neither of the two options is specified, the latest committed version of the table
@@ -425,11 +504,20 @@ pub struct DeltaTableReaderConfig {
 
     /// Optional final table version.
     ///
-    /// Valid only when the connector is configured in `follow`, `snapshot_and_follow`, or `cdc` mode.
+    /// Valid only when the connector follows the transaction log: `follow`,
+    /// `snapshot_and_follow`, or `cdc` mode.
     ///
     /// When set, the connector will stop scanning the table’s transaction log after reaching this version or any greater version.
     /// This bound is inclusive: if the specified version appears in the log, it will be processed before signaling end-of-input.
     pub end_version: Option<i64>,
+
+    /// How the connector reads changes: from the table's Change Data Feed, or from
+    /// the data files each commit added and removed.
+    ///
+    /// Valid only in the `follow` and `snapshot_and_follow` modes. See
+    /// [`DeltaTableChangeFeed`]. Defaults to `off`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub change_feed: Option<DeltaTableChangeFeed>,
 
     /// A predicate that determines whether the record represents a deletion.
     ///
@@ -473,7 +561,7 @@ pub struct DeltaTableReaderConfig {
     ///
     /// Supported values:
     /// * 0 - no verbose logging
-    /// * 1 - log all Delta log entries in follow and cdc modes.
+    /// * 1 - log all Delta log entries in the log-following modes.
     /// * >1 - reserved for future use
     #[serde(default)]
     pub verbose: u32,
@@ -509,6 +597,66 @@ impl DeltaTableReaderConfig {
 }
 
 #[cfg(test)]
+mod change_feed_default_tests {
+    use super::*;
+
+    /// Built by deserializing, so the test exercises the same path a pipeline
+    /// config takes, including the field's `serde(default)`.
+    fn config(change_feed: Option<&str>) -> DeltaTableReaderConfig {
+        let feed = change_feed
+            .map(|v| format!(r#","change_feed":"{v}""#))
+            .unwrap_or_default();
+        serde_json::from_str(&format!(r#"{{"uri":"memory://","mode":"follow"{feed}}}"#)).unwrap()
+    }
+
+    /// Reading the change feed is off unless something asks for it.
+    ///
+    /// Serde and the accessor must agree, or a config that omits the field
+    /// would behave differently from one that spells out the default.
+    #[test]
+    fn default_is_off() {
+        assert_eq!(DeltaTableChangeFeed::default(), DeltaTableChangeFeed::Off);
+        assert_eq!(config(Some("off")).change_feed(), DeltaTableChangeFeed::Off);
+        assert!(!config(Some("off")).reads_change_feed());
+    }
+
+    /// What `DELTA_CHANGE_FEED` means, tested on the parser rather than through
+    /// the variable itself: writing to the process environment races every
+    /// other thread reading it, and the 120 other tests in this binary share
+    /// that environment.
+    #[test]
+    fn env_value_selects_the_mode() {
+        for (value, expected) in [
+            ("auto", DeltaTableChangeFeed::Auto),
+            ("require", DeltaTableChangeFeed::Require),
+            ("off", DeltaTableChangeFeed::Off),
+            ("  AUTO  ", DeltaTableChangeFeed::Auto),
+            // Not a user-facing knob, so a typo warns and falls back rather
+            // than failing the connector.
+            ("sometimes", DeltaTableChangeFeed::Off),
+            ("", DeltaTableChangeFeed::Off),
+        ] {
+            assert_eq!(parse_change_feed(value), expected, "for {value:?}");
+        }
+    }
+
+    /// A configured value is returned as it stands, so the override can only
+    /// set the default, never replace an explicit choice.
+    #[test]
+    fn configured_value_is_not_defaulted() {
+        for (configured, expected) in [
+            ("auto", DeltaTableChangeFeed::Auto),
+            ("require", DeltaTableChangeFeed::Require),
+            ("off", DeltaTableChangeFeed::Off),
+        ] {
+            let config = config(Some(configured));
+            assert_eq!(config.change_feed, Some(expected));
+            assert_eq!(config.change_feed(), expected);
+        }
+    }
+}
+
+#[cfg(test)]
 #[test]
 fn test_delta_reader_config_serde() {
     let config_str = r#"{
@@ -531,6 +679,58 @@ fn test_delta_reader_config_serde() {
         serde_json::from_str::<serde_json::Value>(&serialized_config).unwrap(),
         serde_json::from_str::<serde_json::Value>(expected).unwrap()
     );
+}
+
+/// Each `change_feed` setting round-trips through JSON and reports the right
+/// `reads_change_feed` and `requires_change_feed`.
+///
+/// An unset field serializes back absent, so a manager that does not know the
+/// field can round-trip a config through it.
+#[cfg(test)]
+#[test]
+fn test_delta_change_feed_serde() {
+    let config: DeltaTableReaderConfig =
+        serde_json::from_str(r#"{"uri":"s3://bucket/t","mode":"snapshot_and_follow"}"#).unwrap();
+    // Only what serde does with an absent field: the resolved default belongs
+    // to `change_feed_default_tests`, which controls the environment it reads.
+    assert_eq!(config.change_feed, None);
+    assert!(
+        !serde_json::to_string(&config)
+            .unwrap()
+            .contains("change_feed"),
+        "an unset change_feed must not be serialized"
+    );
+
+    for (json, expected, reads, requires) in [
+        ("auto", DeltaTableChangeFeed::Auto, true, false),
+        ("require", DeltaTableChangeFeed::Require, true, true),
+        ("off", DeltaTableChangeFeed::Off, false, false),
+    ] {
+        let config: DeltaTableReaderConfig = serde_json::from_str(&format!(
+            r#"{{"uri":"s3://bucket/t","mode":"follow","change_feed":"{json}"}}"#
+        ))
+        .unwrap();
+        assert_eq!(config.change_feed(), expected);
+        assert_eq!(config.reads_change_feed(), reads);
+        assert_eq!(config.requires_change_feed(), requires);
+        assert_eq!(config.change_feed().to_string(), json);
+    }
+}
+
+/// `mode = cdc` follows the table without reading its change feed.
+///
+/// `cdc` reads a change log the user encoded as table rows, and Delta's own
+/// change data is a different answer to the same question, so the two modes do
+/// not combine.
+#[cfg(test)]
+#[test]
+fn test_delta_change_feed_excludes_cdc_mode() {
+    let config: DeltaTableReaderConfig = serde_json::from_str(
+        r#"{"uri":"s3://bucket/t","mode":"cdc","cdc_order_by":"ts","cdc_delete_filter":"op='d'","change_feed":"auto"}"#,
+    )
+    .unwrap();
+    assert!(config.follow());
+    assert!(!config.reads_change_feed());
 }
 
 #[cfg(test)]
@@ -680,7 +880,39 @@ impl DeltaTableReaderConfig {
         )
     }
 
+    /// `true` in the user-encoded change log mode (`cdc`), which is unrelated to
+    /// Delta Lake's own Change Data Feed ([`Self::change_feed`]).
     pub fn is_cdc(&self) -> bool {
         matches!(&self.mode, DeltaTableIngestMode::Cdc)
+    }
+
+    /// The configured [`DeltaTableChangeFeed`], or its default.
+    ///
+    /// With nothing configured the default is `off`, unless the environment
+    /// names another mode in `DELTA_CHANGE_FEED` (`auto`, `require` or `off`).
+    /// That override is a temporary way to reach the change feed until the
+    /// manager exposes `change_feed`, so it is deliberately absent from the
+    /// user documentation. An unparseable value is ignored with a warning
+    /// rather than failing the connector, since it is not a user-facing knob.
+    ///
+    /// A configured value always wins: the override sets the default, it does
+    /// not replace an explicit choice.
+    pub fn change_feed(&self) -> DeltaTableChangeFeed {
+        self.change_feed.unwrap_or_else(default_change_feed)
+    }
+
+    /// `true` if the connector reads a commit's change data when the commit records
+    /// any.
+    ///
+    /// The `cdc` mode is excluded: it reads a change log the user encoded as table
+    /// rows, taking each row's polarity from `cdc_delete_filter`.
+    pub fn reads_change_feed(&self) -> bool {
+        self.follow() && !self.is_cdc() && self.change_feed() != DeltaTableChangeFeed::Off
+    }
+
+    /// `true` if the table must record a change feed for the configuration to make
+    /// sense.
+    pub fn requires_change_feed(&self) -> bool {
+        self.change_feed() == DeltaTableChangeFeed::Require
     }
 }
