@@ -259,8 +259,6 @@ where
         TS: DataTrait + ?Sized,
         Box<TS>: Clone,
     {
-        // A group filter that retains no failing value is just `Simple`.
-        // Nothing should ask for that, so a zero limit is a caller bug.
         assert!(
             n > 0,
             "dyn_accumulate_integrate_trace_retain_values_last_n called with n = 0"
@@ -288,8 +286,6 @@ where
         TS: DataTrait + ?Sized,
         Box<TS>: Clone,
     {
-        // A group filter that retains no failing value is just `Simple`.
-        // Nothing should ask for that, so a zero limit is a caller bug.
         assert!(
             n > 0,
             "dyn_accumulate_integrate_trace_retain_values_top_n called with n = 0"
@@ -317,8 +313,6 @@ where
         TS: DataTrait + ?Sized,
         Box<TS>: Clone,
     {
-        // A group filter that retains no failing value is just `Simple`.
-        // Nothing should ask for that, so a zero limit is a caller bug.
         assert!(
             n > 0,
             "dyn_accumulate_integrate_trace_retain_values_bottom_n called with n = 0"

@@ -168,9 +168,6 @@ where
 }
 
 /// A key's tuples grouped by distinct value, in value order.
-///
-/// A value can occur at several times. `GroupFilterCursor` steps over distinct
-/// values, so it spends one of its `n` places on such a value, not one per time.
 fn by_value<V: DataTrait + ?Sized, T, R: WeightTrait + ?Sized>(
     tuples: Vec<(Box<V>, T, Box<R>)>,
 ) -> Vec<(Box<V>, Vec<(T, Box<R>)>)> {
@@ -1640,7 +1637,7 @@ mod tests {
 
     type Tuples = Vec<((Box<DynData>, Box<DynData>, u32), Box<DynZWeight>)>;
 
-    /// `(key, value, time, weight)` in the shape `filter` takes.
+    /// `(key, value, time, weight)` rows, boxed the way the model takes them.
     fn tuples(rows: &[(i32, i32, u32, ZWeight)]) -> Tuples {
         rows.iter()
             .map(|&(key, value, time, weight)| {
@@ -1666,13 +1663,12 @@ mod tests {
             .collect()
     }
 
-    fn keeps_8() -> Filter<DynData> {
+    fn keeps_at_least_8() -> Filter<DynData> {
         Filter::new(Box::new(|v: &DynData| *unsafe { v.downcast::<i32>() } >= 8))
     }
 
-    /// Nothing else drives this model, so pin the semantics it is supposed to
-    /// state: everything satisfying the filter, plus the `n` failing values
-    /// nearest the chosen end, and per key rather than across the batch.
+    /// Each key keeps every value that satisfies the filter, plus the `n`
+    /// failing values nearest the chosen end of that key's own group.
     #[test]
     fn retains_the_n_failing_values_nearest_each_end() {
         let rows = tuples(&[
@@ -1684,7 +1680,7 @@ mod tests {
             (2, 4, 0, 1),
         ]);
 
-        let top = retain_n_unsatisfying(rows.clone(), &keeps_8(), 2, Extreme::Largest);
+        let top = retain_n_unsatisfying(rows.clone(), &keeps_at_least_8(), 2, Extreme::Largest);
         assert_eq!(
             plain(&top),
             vec![
@@ -1697,7 +1693,7 @@ mod tests {
             "the two largest failing values of each key, plus everything >= 8"
         );
 
-        let bottom = retain_n_unsatisfying(rows, &keeps_8(), 2, Extreme::Smallest);
+        let bottom = retain_n_unsatisfying(rows, &keeps_at_least_8(), 2, Extreme::Smallest);
         assert_eq!(
             plain(&bottom),
             vec![
@@ -1711,15 +1707,14 @@ mod tests {
         );
     }
 
-    /// A value at several times is one value to the cursor, so it spends one of
-    /// the `n` places, not one per time.
+    /// A value occurring at several times still counts once against `n`.
     #[test]
     fn a_value_at_several_times_counts_once() {
-        // Value 5 occurs twice. Counting tuples would spend both places on it
-        // and drop value 3.
+        // Value 5 occurs twice. Counting tuples would account for it twice and
+        // drop value 3.
         let rows = tuples(&[(1, 3, 0, 1), (1, 5, 0, 1), (1, 5, 7, 1)]);
 
-        let top = retain_n_unsatisfying(rows, &keeps_8(), 2, Extreme::Largest);
+        let top = retain_n_unsatisfying(rows, &keeps_at_least_8(), 2, Extreme::Largest);
         assert_eq!(
             plain(&top),
             vec![(1, 3, 0, 1), (1, 5, 0, 1), (1, 5, 7, 1)],
@@ -1738,7 +1733,7 @@ mod tests {
             &None,
             &Some(GroupFilter::TopN(
                 1,
-                keeps_8(),
+                keeps_at_least_8(),
                 <DynData as WithFactory<i32>>::FACTORY,
             )),
         );
@@ -1749,7 +1744,7 @@ mod tests {
             &None,
             &Some(GroupFilter::BottomN(
                 1,
-                keeps_8(),
+                keeps_at_least_8(),
                 <DynData as WithFactory<i32>>::FACTORY,
             )),
         );

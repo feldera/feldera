@@ -2071,17 +2071,8 @@ mod non_monotone_retention {
         out
     }
 
-    /// Runs the filtered merge that actually performs retention, and reports
-    /// what survived.
-    ///
-    /// It has to be the merge path that takes a trace snapshot.
-    /// `Spine::complete_merges` goes through `merge_batches`, whose cursors come
-    /// from the `merge_cursor` default, and that default drops every group
-    /// filter except `Simple`: "Other forms of GroupFilters cannot be evaluated
-    /// without a trace snapshot". So forced compaction applies no `TopN` at all.
-    /// The spine's background merger instead calls `merge_cursor_with_snapshot`
-    /// (spine_async/list_merger.rs:53-58), which is what this mirrors, with a
-    /// batch of every value standing in for the spine snapshot.
+    /// `retain_within_spine` for a spine that holds nothing but the merged
+    /// batches.
     fn retain(
         filter: GroupFilter<DynI32>,
         batches: &[&[(i32, ZWeight)]],
@@ -2089,9 +2080,18 @@ mod non_monotone_retention {
         retain_within_spine(filter, batches, &[])
     }
 
-    /// As `retain`, except that the spine also holds `elsewhere`, which the
-    /// merge does not cover. A merge takes some of the spine's batches, not all
-    /// of them, so this is the ordinary case rather than a corner of it.
+    /// Runs the filtered merge that performs retention, and reports what
+    /// survived.
+    ///
+    /// `elsewhere` is what the spine holds in batches this merge does not cover.
+    /// That is the usual case: a merge takes some of the spine's batches, while
+    /// the snapshot it reads spans all of them.
+    ///
+    /// Retention only happens in the merge that reads a snapshot.
+    /// `Spine::complete_merges` does not read one, so it applies no `TopN` or
+    /// `BottomN` retention at all. The spine's background merger does, through
+    /// `merge_cursor_with_snapshot`, and that is the path this mirrors, with one
+    /// batch of every value standing in for the snapshot.
     fn retain_within_spine(
         filter: GroupFilter<DynI32>,
         batches: &[&[(i32, ZWeight)]],
@@ -2228,9 +2228,9 @@ mod non_monotone_retention {
     /// FIRST value is emitted with no filter check at all.
     ///
     /// A value that cancels across the spine is invisible to the snapshot, so
-    /// the filter never reasons about it (`CursorList::seek_key_exact` skips
-    /// zero-weight values, cursor_list.rs:692-720) -- the situation
-    /// filter.rs:79-83 warns about. Here value 5 leads one batch and trails the
+    /// the filter never reasons about it: `CursorList::seek_key_exact` skips
+    /// values whose weights sum to zero. This is what the `GroupFilter` docs
+    /// warn about. Here value 5 leads one batch and trails the
     /// other. Both copies must reach the same verdict, or they stop cancelling
     /// and the deleted row comes back; that is what happened while `BottomN`
     /// left the leading copy unexamined.

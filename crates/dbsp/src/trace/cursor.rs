@@ -1047,12 +1047,8 @@ where
 
 impl<V: DataTrait + ?Sized> GroupFilter<V> {
     fn new_cursor(&self) -> GroupFilterCursor<V> {
-        // These filters mark the n'th value that fails the filter and retain
-        // everything from there on, so "no n'th value" has to mean "the group
-        // holds fewer than `n` of them, and all of them stay". A limit of zero
-        // means the opposite and the marking cannot express it. Rather than
-        // reading it as `Simple`, which is what it denotes, reject it: the
-        // compiler never emits a zero limit, so one signals a bug upstream.
+        // A zero limit denotes `Simple`, and the compiler never emits one, so
+        // treat it as a caller bug rather than quietly substituting `Simple`.
         assert!(
             !matches!(
                 self,
@@ -1246,20 +1242,20 @@ impl<V: DataTrait + ?Sized> GroupFilterCursor<V> {
         }
     }
 
-    /// Positions the cursor on a key the spine snapshot does not hold.
+    /// Retains every value of a key that the spine snapshot does not hold.
     ///
-    /// The spine's weights for such a key cancel out, so there is no group to
-    /// measure against and no ground for dropping any of it. The records that
-    /// cancel the key live in batches this merge does not cover and so survive
-    /// it; dropping the records it does cover would leave those unbalanced, and
-    /// the trace would gain a retraction that matches nothing.
+    /// The spine's weights for such a key add up to zero, so the filter has no
+    /// group to find its n'th value in, and no reason to drop anything. The
+    /// records that cancel the key sit in batches outside this merge and survive
+    /// it, so dropping the ones inside it would leave those without their
+    /// counterpart and add a row to the trace.
     fn retain_whole_key<K: ?Sized, T, R: ?Sized>(
         &mut self,
         cursor: &mut dyn Cursor<K, V, T, R>,
     ) -> bool {
         match self {
-            // Retain the key whole. Clearing the mark stops `on_step_val`
-            // measuring this key against a previous key's value.
+            // Clearing the mark stops `on_step_val` comparing this key's
+            // values against the previous key's.
             Self::LastN { .. } => {}
             Self::TopN { min_val_valid, .. } => *min_val_valid = false,
             Self::BottomN { max_val_valid, .. } => *max_val_valid = false,
