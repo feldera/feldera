@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
@@ -46,9 +48,23 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
     /** Compile {@code sql} and check that the {@link FindUnboundedState#WARNING} warnings,
      * rendered as the compiler prints them, are exactly {@code expected}. */
     void assertUnboundedStateWarnings(String sql, String expected) {
-        var cc = this.getCC(sql);
+        this.assertUnboundedStateWarnings(this.getCC(sql).compiler, expected);
+    }
+
+    /** As {@link #assertUnboundedStateWarnings(String, String)}, compiling for the Gen-2 engine,
+     * whose indexed inputs drop the primary-key columns from the value. */
+    void assertUnboundedStateWarningsGen2(String sql, String expected) {
+        CompilerOptions options = this.testOptions();
+        options.ioOptions.gen2 = true;
+        DBSPCompiler compiler = new DBSPCompiler(options);
+        compiler.submitStatementsForCompilation(sql);
+        compiler.getFinalCircuit(false);
+        this.assertUnboundedStateWarnings(compiler, expected);
+    }
+
+    void assertUnboundedStateWarnings(DBSPCompiler compiler, String expected) {
         StringBuilder rendered = new StringBuilder();
-        for (CompilerMessages.Message message : cc.compiler.messages.messages)
+        for (CompilerMessages.Message message : compiler.messages.messages)
             if (message.warning && message.errorType.equals(FindUnboundedState.WARNING))
                 rendered.append(message);
         Assert.assertEquals(expected, rendered.toString());
@@ -120,6 +136,13 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
         this.assertNoUnboundedStateWarnings("""
                 CREATE TABLE input(id BIGINT NOT NULL, ts TIMESTAMP LATENESS INTERVAL 10 DAYS);
                 CREATE VIEW output AS SELECT COUNT(*) AS cnt FROM input;""");
+    }
+
+    @Test
+    public void aggregateOverEmptyInput() {
+        this.assertNoUnboundedStateWarnings("""
+                CREATE TABLE input(id BIGINT NOT NULL, ts TIMESTAMP LATENESS INTERVAL 10 DAYS);
+                CREATE VIEW output AS SELECT MIN(id) AS m FROM input WHERE false;""");
     }
 
     @Test
@@ -378,6 +401,179 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
                     4|DECLARE RECURSIVE VIEW R(x INT);
                     5|CREATE VIEW R AS SELECT x FROM recent UNION SELECT G.y FROM R JOIN G ON R.x = G.x;
                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                """);
+    }
+
+    /** A join of recent events with a table over its PRIMARY KEY, aggregated downstream */
+    static final String JOIN_ON_PRIMARY_KEY = """
+            CREATE TABLE events(id INT, customer INT, ts TIMESTAMP NOT NULL);
+            CREATE TABLE customers(id INT NOT NULL PRIMARY KEY, region_id INT, region VARCHAR);
+            CREATE LOCAL VIEW recent AS SELECT * FROM events WHERE ts >= NOW() - INTERVAL 1 HOUR;
+            CREATE VIEW V AS
+            SELECT c.region, COUNT(*) AS cnt FROM recent e JOIN customers c ON e.customer = c.id GROUP BY c.region;""";
+
+    /** The warnings for {@link #JOIN_ON_PRIMARY_KEY}: each recent event matches at most one
+     * customer, so the join output is bounded like its event input and the aggregate downstream
+     * is not reported; the join itself still retains the whole customers table */
+    static final String JOIN_ON_PRIMARY_KEY_WARNINGS = """
+            (no input file): Unbounded state
+            (no input file):2:14: warning: Unbounded state: The index of table 'customers' may grow without bound
+                2|CREATE TABLE customers(id INT NOT NULL PRIMARY KEY, region_id INT, region VARCHAR);
+                               ^^^^^^^^^
+                3|CREATE LOCAL VIEW recent AS SELECT * FROM events WHERE ts >= NOW() - INTERVAL 1 HOUR;
+            Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON
+            See https://docs.feldera.com/sql/streaming#unbounded-state-warnings
+            (no input file): Unbounded state
+            (no input file):5:68: warning: Unbounded state: The state of a JOIN in the code implementing view 'v' may grow without bound
+                4|CREATE VIEW V AS
+                5|SELECT c.region, COUNT(*) AS cnt FROM recent e JOIN customers c ON e.customer = c.id GROUP BY c.region;
+                                                                                     ^^^^^^^^^^^^^^^^^
+            """;
+
+    @Test
+    public void joinOnPrimaryKey() {
+        this.assertUnboundedStateWarnings(JOIN_ON_PRIMARY_KEY, JOIN_ON_PRIMARY_KEY_WARNINGS);
+    }
+
+    /** The Gen-2 engine keeps the key columns of an indexed input only in its index */
+    @Test
+    public void joinOnPrimaryKeyGen2() {
+        this.assertUnboundedStateWarningsGen2(JOIN_ON_PRIMARY_KEY, JOIN_ON_PRIMARY_KEY_WARNINGS);
+    }
+
+    @Test
+    public void joinOnNonKeyColumn() {
+        // A join on a column that is not a key of customers can multiply the events,
+        // so the aggregate downstream is reported as well
+        this.assertUnboundedStateWarnings("""
+                CREATE TABLE events(id INT, customer INT, ts TIMESTAMP NOT NULL);
+                CREATE TABLE customers(id INT NOT NULL PRIMARY KEY, region_id INT, region VARCHAR);
+                CREATE LOCAL VIEW recent AS SELECT * FROM events WHERE ts >= NOW() - INTERVAL 1 HOUR;
+                CREATE VIEW V AS
+                SELECT c.region, COUNT(*) AS cnt FROM recent e JOIN customers c ON e.customer = c.region_id GROUP BY c.region;""",
+                """
+                (no input file): Unbounded state
+                (no input file):2:14: warning: Unbounded state: The index of table 'customers' may grow without bound
+                    2|CREATE TABLE customers(id INT NOT NULL PRIMARY KEY, region_id INT, region VARCHAR);
+                                   ^^^^^^^^^
+                    3|CREATE LOCAL VIEW recent AS SELECT * FROM events WHERE ts >= NOW() - INTERVAL 1 HOUR;
+                Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON
+                See https://docs.feldera.com/sql/streaming#unbounded-state-warnings
+                (no input file): Unbounded state
+                (no input file):5:68: warning: Unbounded state: The state of a JOIN in the code implementing view 'v' may grow without bound
+                    4|CREATE VIEW V AS
+                    5|SELECT c.region, COUNT(*) AS cnt FROM recent e JOIN customers c ON e.customer = c.region_id GROUP BY c.region;
+                                                                                         ^^^^^^^^^^^^^^^^^^^^^^^^
+                (no input file): Unbounded state
+                (no input file):4:1: warning: Unbounded state: The state of an aggregate in the code implementing view 'v' may grow without bound
+                    4|CREATE VIEW V AS
+                    5|SELECT c.region, COUNT(*) AS cnt FROM recent e JOIN customers c ON e.customer = c.region_id GROUP BY c.region;
+                """);
+    }
+
+    @Test
+    public void leftJoinOnPrimaryKey() {
+        // A left join adds the unmatched left rows, which the bounded left input also bounds
+        this.assertUnboundedStateWarnings("""
+                CREATE TABLE events(id INT, customer INT, ts TIMESTAMP NOT NULL);
+                CREATE TABLE customers(id INT NOT NULL PRIMARY KEY, region_id INT, region VARCHAR);
+                CREATE LOCAL VIEW recent AS SELECT * FROM events WHERE ts >= NOW() - INTERVAL 1 HOUR;
+                CREATE VIEW V AS
+                SELECT c.region, COUNT(*) AS cnt FROM recent e LEFT JOIN customers c ON e.customer = c.id GROUP BY c.region;""",
+                """
+                (no input file): Unbounded state
+                (no input file):2:14: warning: Unbounded state: The index of table 'customers' may grow without bound
+                    2|CREATE TABLE customers(id INT NOT NULL PRIMARY KEY, region_id INT, region VARCHAR);
+                                   ^^^^^^^^^
+                    3|CREATE LOCAL VIEW recent AS SELECT * FROM events WHERE ts >= NOW() - INTERVAL 1 HOUR;
+                Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON
+                See https://docs.feldera.com/sql/streaming#unbounded-state-warnings
+                (no input file): Unbounded state
+                (no input file):5:73: warning: Unbounded state: The state of a JOIN in the code implementing view 'v' may grow without bound
+                    4|CREATE VIEW V AS
+                    5|SELECT c.region, COUNT(*) AS cnt FROM recent e LEFT JOIN customers c ON e.customer = c.id GROUP BY c.region;
+                                                                                              ^^^^^^^^^^^^^^^^^
+                """);
+    }
+
+    @Test
+    public void joinOnWidenedVarcharKey() {
+        // The join compares the VARCHAR(255) key cast to VARCHAR; the cast loses nothing,
+        // so the key analysis still sees the key and the aggregate is not reported
+        this.assertUnboundedStateWarnings("""
+                CREATE TABLE events(id INT, customer VARCHAR, ts TIMESTAMP NOT NULL);
+                CREATE TABLE customers(id VARCHAR(255) NOT NULL PRIMARY KEY, region VARCHAR);
+                CREATE LOCAL VIEW recent AS SELECT * FROM events WHERE ts >= NOW() - INTERVAL 1 HOUR;
+                CREATE VIEW V AS
+                SELECT c.region, COUNT(*) AS cnt FROM recent e JOIN customers c ON e.customer = c.id GROUP BY c.region;""",
+                """
+                (no input file): Unbounded state
+                (no input file):2:14: warning: Unbounded state: The index of table 'customers' may grow without bound
+                    2|CREATE TABLE customers(id VARCHAR(255) NOT NULL PRIMARY KEY, region VARCHAR);
+                                   ^^^^^^^^^
+                    3|CREATE LOCAL VIEW recent AS SELECT * FROM events WHERE ts >= NOW() - INTERVAL 1 HOUR;
+                Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON
+                See https://docs.feldera.com/sql/streaming#unbounded-state-warnings
+                (no input file): Unbounded state
+                (no input file):5:68: warning: Unbounded state: The state of a JOIN in the code implementing view 'v' may grow without bound
+                    4|CREATE VIEW V AS
+                    5|SELECT c.region, COUNT(*) AS cnt FROM recent e JOIN customers c ON e.customer = c.id GROUP BY c.region;
+                                                                                         ^^^^^^^^^^^^^^^^^
+                """);
+    }
+
+    @Test
+    public void joinOnWidenedIntegerKey() {
+        // An INT key cast to BIGINT keeps its value and its comparison
+        this.assertUnboundedStateWarnings("""
+                CREATE TABLE events(id INT, customer BIGINT, ts TIMESTAMP NOT NULL);
+                CREATE TABLE customers(id INT NOT NULL PRIMARY KEY, region VARCHAR);
+                CREATE LOCAL VIEW recent AS SELECT * FROM events WHERE ts >= NOW() - INTERVAL 1 HOUR;
+                CREATE VIEW V AS
+                SELECT c.region, COUNT(*) AS cnt FROM recent e JOIN customers c ON e.customer = c.id GROUP BY c.region;""",
+                """
+                (no input file): Unbounded state
+                (no input file):2:14: warning: Unbounded state: The index of table 'customers' may grow without bound
+                    2|CREATE TABLE customers(id INT NOT NULL PRIMARY KEY, region VARCHAR);
+                                   ^^^^^^^^^
+                    3|CREATE LOCAL VIEW recent AS SELECT * FROM events WHERE ts >= NOW() - INTERVAL 1 HOUR;
+                Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON
+                See https://docs.feldera.com/sql/streaming#unbounded-state-warnings
+                (no input file): Unbounded state
+                (no input file):5:68: warning: Unbounded state: The state of a JOIN in the code implementing view 'v' may grow without bound
+                    4|CREATE VIEW V AS
+                    5|SELECT c.region, COUNT(*) AS cnt FROM recent e JOIN customers c ON e.customer = c.id GROUP BY c.region;
+                                                                                         ^^^^^^^^^^^^^^^^^
+                """);
+    }
+
+    @Test
+    public void joinOnCharKey() {
+        // CHAR comparisons ignore trailing spaces, so the cast of the CHAR(10) key to VARCHAR
+        // does not preserve the key and the aggregate downstream is reported
+        this.assertUnboundedStateWarnings("""
+                CREATE TABLE events(id INT, customer VARCHAR, ts TIMESTAMP NOT NULL);
+                CREATE TABLE customers(id CHAR(10) NOT NULL PRIMARY KEY, region VARCHAR);
+                CREATE LOCAL VIEW recent AS SELECT * FROM events WHERE ts >= NOW() - INTERVAL 1 HOUR;
+                CREATE VIEW V AS
+                SELECT c.region, COUNT(*) AS cnt FROM recent e JOIN customers c ON e.customer = c.id GROUP BY c.region;""",
+                """
+                (no input file): Unbounded state
+                (no input file):2:14: warning: Unbounded state: The index of table 'customers' may grow without bound
+                    2|CREATE TABLE customers(id CHAR(10) NOT NULL PRIMARY KEY, region VARCHAR);
+                                   ^^^^^^^^^
+                    3|CREATE LOCAL VIEW recent AS SELECT * FROM events WHERE ts >= NOW() - INTERVAL 1 HOUR;
+                Silence these warnings with SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON
+                See https://docs.feldera.com/sql/streaming#unbounded-state-warnings
+                (no input file): Unbounded state
+                (no input file):5:68: warning: Unbounded state: The state of a JOIN in the code implementing view 'v' may grow without bound
+                    4|CREATE VIEW V AS
+                    5|SELECT c.region, COUNT(*) AS cnt FROM recent e JOIN customers c ON e.customer = c.id GROUP BY c.region;
+                                                                                         ^^^^^^^^^^^^^^^^^
+                (no input file): Unbounded state
+                (no input file):4:1: warning: Unbounded state: The state of an aggregate in the code implementing view 'v' may grow without bound
+                    4|CREATE VIEW V AS
+                    5|SELECT c.region, COUNT(*) AS cnt FROM recent e JOIN customers c ON e.customer = c.id GROUP BY c.region;
                 """);
     }
 

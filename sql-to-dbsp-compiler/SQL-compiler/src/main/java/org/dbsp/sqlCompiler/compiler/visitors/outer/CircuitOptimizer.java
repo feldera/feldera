@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.MerkleOuter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateDump;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyConditionals;
@@ -51,6 +52,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ImplementNow;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
+import org.dbsp.util.Utilities;
 
 /** All optimizations applied to circuits. */
 public class CircuitOptimizer extends Passes {
@@ -202,5 +204,46 @@ public class CircuitOptimizer extends Passes {
 
     public DBSPCircuit optimize(DBSPCircuit input) {
         return this.apply(input);
+    }
+
+    /** Index of the {@code occurrence}-th pass of class {@code anchor}, counting from 1 */
+    private int indexOf(Class<? extends CircuitTransform> anchor, int occurrence) {
+        Utilities.enforce(occurrence >= 1, () -> "Occurrence " + occurrence + " is not positive");
+        int seen = 0;
+        for (int i = 0; i < this.passes.size(); i++) {
+            if (!anchor.isInstance(this.passes.get(i)))
+                continue;
+            seen++;
+            if (seen == occurrence)
+                return i;
+        }
+        throw new InternalCompilerError("Only " + seen + " passes of class " + anchor.getSimpleName() +
+                " in " + this.name + ", occurrence " + occurrence + " requested");
+    }
+
+    /** Insert {@code pass} before the first pass of class {@code anchor}, which must be present.
+     * Testing hook: production code adds its passes in order and must not use it. */
+    public void insertBefore(Class<? extends CircuitTransform> anchor, CircuitTransform pass) {
+        this.insertBefore(anchor, 1, pass);
+    }
+
+    /** Insert {@code pass} before the {@code occurrence}-th pass of class {@code anchor}, counting
+     * from 1; at least that many must be present.  Testing hook, like
+     * {@link #insertBefore(Class, CircuitTransform)}. */
+    public void insertBefore(Class<? extends CircuitTransform> anchor, int occurrence, CircuitTransform pass) {
+        this.passes.add(this.indexOf(anchor, occurrence), pass);
+    }
+
+    /** Insert {@code pass} after the first pass of class {@code anchor}, which must be present.
+     * Testing hook, like {@link #insertBefore(Class, CircuitTransform)}. */
+    public void insertAfter(Class<? extends CircuitTransform> anchor, CircuitTransform pass) {
+        this.insertAfter(anchor, 1, pass);
+    }
+
+    /** Insert {@code pass} after the {@code occurrence}-th pass of class {@code anchor}, counting
+     * from 1; at least that many must be present.  Testing hook, like
+     * {@link #insertBefore(Class, CircuitTransform)}. */
+    public void insertAfter(Class<? extends CircuitTransform> anchor, int occurrence, CircuitTransform pass) {
+        this.passes.add(this.indexOf(anchor, occurrence) + 1, pass);
     }
 }

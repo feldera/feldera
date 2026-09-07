@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateZeroOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayOperator;
@@ -40,7 +41,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Lineage;
@@ -94,6 +94,11 @@ public class KeyAnalysis extends CircuitVisitor {
 
     public KeyAnalysis(DBSPCompiler compiler) {
         super(compiler);
+    }
+
+    /** The lineage interpreter that decides which output columns copy which input columns */
+    Lineage.InnerLineage interpreter() {
+        return new Lineage.InnerLineage(this.compiler(), null);
     }
 
     public Keys getKeys(OutputPort port) {
@@ -177,7 +182,7 @@ public class KeyAnalysis extends CircuitVisitor {
      * plain copy of a parameter column, that parameter column.
      * @param outputShape shape of the produced rows */
     Provenance provenance(CollectionShape outputShape, DBSPClosureExpression closure) {
-        Lineage.ValueSource result = new Lineage.InnerLineage(this.compiler(), null).analyze(closure, initialValues(closure));
+        Lineage.ValueSource result = this.interpreter().analyze(closure, initialValues(closure));
         List<Lineage.ValueSource> columns = new ArrayList<>();
         if (closure.body.getType().is(DBSPTypeRawTuple.class)) {
             // A (index, value) pair; either part may be unknown to the interpreter, e.g. when empty
@@ -319,9 +324,11 @@ public class KeyAnalysis extends CircuitVisitor {
         return operator.function.to(DBSPClosureExpression.class);
     }
 
-    /** The output carries the same rows as the input. */
-    private void copy(DBSPUnaryOperator operator) {
-        OutputPort input = operator.input();
+    /** The output carries the same rows as the operator's only input. */
+    private void copy(DBSPSimpleOperator operator) {
+        Utilities.enforce(operator.inputs.size() == 1,
+                () -> operator + " has " + operator.inputs.size() + " inputs");
+        OutputPort input = operator.inputs.get(0);
         this.set(operator, this.getKeys(input), this.getEquivalence(input));
     }
 
@@ -363,10 +370,27 @@ public class KeyAnalysis extends CircuitVisitor {
         this.set(node, Keys.of(ColumnEquivalence.NONE.keyOf(key)));
     }
 
-    /** Source maps are created by a later pass. */
+    /** A table with a PRIMARY KEY indexed by that key: the index identifies the row.  The value
+     * is either the whole row, in which case each index column duplicates the row column it was
+     * copied from, or the row without its key columns (--gen2 compiler flag). */
     @Override
     public void postorder(DBSPSourceMapOperator node) {
-        throw new InternalCompilerError("Unexpected operator", node);
+        if (!(node.outputPort().getShape() instanceof IndexedShape shape))
+            return;
+        List<Integer> keyFields = node.getKeyFields();
+        int rowFields = node.metadata.getColumns().size();
+        // This happens when `gen2` is false
+        boolean valueIsRow = shape.valueFields() == rowFields;
+        Utilities.enforce(valueIsRow || shape.valueFields() == rowFields - keyFields.size(),
+                () -> "Value of " + node + " has " + shape.valueFields() + " fields for a row of " + rowFields);
+        ColumnEquivalence equivalence = ColumnEquivalence.NONE;
+        if (valueIsRow) {
+            List<List<Column>> groups = new ArrayList<>();
+            for (int i = 0; i < keyFields.size(); i++)
+                groups.add(List.of(Column.index(i), Column.value(keyFields.get(i))));
+            equivalence = ColumnEquivalence.of(groups);
+        }
+        this.set(node, Keys.of(equivalence.keyOf(shape.indexColumns())), equivalence);
     }
 
     /** A filter keeps the input keys.  A column that a top-level conjunct equates with a
@@ -389,7 +413,7 @@ public class KeyAnalysis extends CircuitVisitor {
         DBSPClosureExpression closure = closureOf(node);
         if (input == null || closure == null)
             return result;
-        Lineage.InnerLineage inner = new Lineage.InnerLineage(this.compiler(), null);
+        Lineage.InnerLineage inner = this.interpreter();
         inner.analyze(closure, initialValues(closure));
         for (DBSPExpression conjunct : closure.body.conjuncts()) {
             conjunct = conjunct.stripWrapBool();
@@ -419,7 +443,7 @@ public class KeyAnalysis extends CircuitVisitor {
      * With one input the operator is the identity. */
     private void rowUnion(DBSPSimpleOperator node) {
         if (node.inputs.size() == 1) {
-            this.copy(node.to(DBSPUnaryOperator.class));
+            this.copy(node);
             return;
         }
         ColumnEquivalence equivalence = this.getEquivalence(node.inputs.get(0));
@@ -430,6 +454,11 @@ public class KeyAnalysis extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPSumOperator node) {
+        this.rowUnion(node);
+    }
+
+    @Override
+    public void postorder(DBSPAtomicSumOperator node) {
         this.rowUnion(node);
     }
 
