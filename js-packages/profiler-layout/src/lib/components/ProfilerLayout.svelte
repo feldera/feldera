@@ -3,6 +3,7 @@
   import { measurementLabel } from 'profiler-lib'
   import type {
     Dataflow,
+    DiagramTheme,
     JsonProfiles,
     MetricOption,
     ProfilerCallbacks,
@@ -24,6 +25,8 @@
     toolbarClass?: string
     /** Optional class for styling the diagram container */
     diagramClass?: string
+    /** Palette the diagram is drawn with; follows the application theme */
+    theme?: DiagramTheme
     /** Snippet for toolbar start (Load Profile button and snapshot selector) */
     toolbarStart?: import('svelte').Snippet
     /** Called to highlight the range of code corresponding to the selected diagram node. Each range's
@@ -37,6 +40,7 @@
     programCode,
     toolbarClass,
     diagramClass,
+    theme = 'light',
     toolbarStart,
     onHighlightSourceRanges
   }: Props = $props()
@@ -263,6 +267,7 @@
         {dataflowData}
         {programCode}
         {callbacks}
+        {theme}
       />
 
       <!-- Overlay menus (positioned on top of graph) -->
