@@ -17,15 +17,16 @@ use dbsp::typed_batch::DynBatchReader;
 use dbsp::utils::Tup2;
 use dbsp::{DBData, DBSPHandle, OrdZSet, Runtime};
 use delta_kernel::engine::arrow_conversion::TryFromArrow;
-use deltalake::datafusion::prelude::SessionContext;
+use deltalake::datafusion::prelude::{SessionContext, col, concat, lit, substr};
 use deltalake::kernel::{DataType, StructField};
 use deltalake::operations::create::CreateBuilder;
 use deltalake::protocol::SaveMode;
+use deltalake::table::config::TableProperty;
 use deltalake::{DeltaTable, DeltaTableBuilder, ensure_table_uri};
 use feldera_adapterlib::errors::controller::ControllerError;
 use feldera_macros::IsNone;
 use feldera_sqllib::Variant;
-use feldera_types::config::PipelineConfig;
+use feldera_types::config::{PipelineConfig, TransportConfig};
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::serde_with_context::serde_config::{DecimalFormat, VariantFormat};
@@ -33,6 +34,7 @@ use feldera_types::serde_with_context::serialize::SerializeWithContextWrapper;
 use feldera_types::serde_with_context::{
     DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimestampFormat,
 };
+use feldera_types::transport::delta_table::DeltaTableChangeFeed;
 use feldera_types::transport::delta_table::DeltaTableTransactionMode;
 use feldera_types::{deserialize_table_record, serialize_table_record};
 use proptest::collection::vec;
@@ -155,6 +157,44 @@ async fn append_table_version(
 
 fn delta_connector_counter(pipeline: &Controller, metric_name: &str) -> u64 {
     delta_connector_gauge(pipeline, metric_name) as u64
+}
+
+/// The `change_feed` the connector resolved from its configuration.
+///
+/// Use it where no observable distinguishes the settings: `auto` on a table that
+/// records no change feed reads exactly what `off` reads.
+fn delta_change_feed(pipeline: &Controller) -> DeltaTableChangeFeed {
+    let endpoint_id = pipeline
+        .input_endpoint_id_by_name(DELTA_TEST_INPUT_ENDPOINT)
+        .expect("delta input endpoint must exist");
+    let status = pipeline.status();
+    let input_status = status.input_status();
+    let config = &input_status
+        .get(&endpoint_id)
+        .expect("delta input endpoint must have status")
+        .config
+        .connector_config
+        .transport;
+    match config {
+        TransportConfig::DeltaTableInput(config) => config.change_feed(),
+        other => panic!("expected a delta input connector, got {other:?}"),
+    }
+}
+
+/// Fail unless the connector read at least one commit from change data.
+///
+/// A change feed test whose config omits `change_feed` reads every commit from
+/// file actions instead, which reaches the same rows and so passes every
+/// assertion about contents. This asserts the path the test means to cover was
+/// the one taken.
+fn assert_read_change_data(pipeline: &Controller) {
+    let from_change_data =
+        delta_connector_counter(pipeline, "input_connector_delta_commits_from_change_data");
+    assert!(
+        from_change_data > 0,
+        "no commit was read from change data, so this test covered the \
+         file-action path; is `change_feed` set on the connector?"
+    );
 }
 
 fn delta_connector_gauge(pipeline: &Controller, metric_name: &str) -> f64 {
@@ -4133,6 +4173,110 @@ fn delta_table_s3_people_2m() {
     forget(json_file);
 }
 
+/// Read a Unity Catalog table's change feed over a keyed relation whose rows all
+/// move between partitions, and check that each row arrives once, at its new key.
+///
+/// Each row starts in partition `b<nn>` and the merge moves it to `a<nn>`. The two
+/// images of a row therefore land in different change data files.
+///
+/// NOTE: this test requires a `uc://` table, which exercises the code path that
+/// loads files one at a time rather than via a `ListingTable`.
+///
+/// `python/tests/platform/fixtures/unity_change_feed.py` builds the table; the
+/// test is inert until `DELTA_TABLE_TEST_UNITY_CDF_TABLE` names it.
+#[cfg(feature = "delta-unity-test")]
+#[test]
+#[serial(delta_s3)]
+fn delta_table_unity_change_feed() {
+    use crate::test::TestStruct;
+
+    let Ok(table_uri) = std::env::var("DELTA_TABLE_TEST_UNITY_CDF_TABLE") else {
+        println!("DELTA_TABLE_TEST_UNITY_CDF_TABLE is unset; skipping");
+        return;
+    };
+
+    init_logging();
+
+    // Matches `unity_change_feed.py`: v0 creates, v1 inserts ROWS rows in
+    // partitions `b<nn>`, v2 merges every one into `a<nn>`.
+    const ROWS: u32 = 40;
+    const CREATE_VERSION: i64 = 0;
+    const MERGE_VERSION: i64 = 2;
+
+    let mut config: HashMap<String, Value> = [
+        (
+            "unity_client_id",
+            std::env::var("DELTA_TABLE_TEST_UNITY_CLIENT_ID").unwrap(),
+        ),
+        (
+            "unity_client_secret",
+            std::env::var("DELTA_TABLE_TEST_UNITY_CLIENT_SECRET").unwrap(),
+        ),
+        (
+            "databricks_host",
+            std::env::var("DELTA_TABLE_TEST_UNITY_HOST").unwrap(),
+        ),
+        // Must be set explicitly (delta-rs #1095), and long enough for a cold
+        // read of files the catalog vends credentials for.
+        ("aws_region", "us-west-1".to_string()),
+        ("timeout", "1000 secs".to_string()),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k.to_string(), Value::from(v)))
+    .collect();
+    config.insert("mode".into(), "snapshot_and_follow".into());
+    // `require` fails the connector if the table records no change feed, so a
+    // misconfigured fixture cannot pass through the file-action path.
+    config.insert("change_feed".into(), "require".into());
+    config.insert("version".into(), CREATE_VERSION.into());
+    config.insert("end_version".into(), MERGE_VERSION.into());
+
+    let storage_dir = TempDir::new().unwrap();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let errors_clone = errors.clone();
+    let pipeline = dbsp::circuit::tokio::TOKIO.block_on(async move {
+        delta_input_controller_keyed(
+            &table_uri,
+            Value::Object(config.into_iter().collect()),
+            &TestStruct::schema(),
+            storage_dir.path(),
+            &errors_clone,
+        )
+        .await
+    });
+    pipeline.start();
+
+    let expected: Vec<TestStruct> = (0..ROWS)
+        .map(|id| TestStruct {
+            id,
+            b: false,
+            i: None,
+            s: format!("a{id:02}"),
+        })
+        .collect();
+    dbsp::circuit::tokio::TOKIO.block_on(async {
+        wait_or_connector_error(
+            &pipeline,
+            &SqlIdentifier::from("test_output1"),
+            &expected,
+            &errors,
+        )
+        .await
+    });
+
+    let from_change_data =
+        delta_connector_counter(&pipeline, "input_connector_delta_commits_from_change_data");
+    pipeline.stop().unwrap();
+
+    // The merge must have been read from the change data it recorded. Reading
+    // it from the files the commit rewrote would give the same rows, so only
+    // this counter tells the two apart.
+    assert_eq!(
+        from_change_data, 1,
+        "expected the merge at v{MERGE_VERSION} to be read from its change data"
+    );
+}
+
 /// Read the 2M-record dataset over a Unity Catalog path.
 ///
 /// Behind `delta-unity-test`, not `delta-s3-test`: this one needs a Databricks
@@ -4628,6 +4772,1312 @@ async fn delta_table_cdc_partition_column_test() {
     read_pipeline.stop().unwrap();
 }
 
+/// A Delta table like [`create_table_from_arrow`], recording a change data feed.
+async fn create_change_feed_table(
+    table_uri: &str,
+    arrow_schema: &ArrowSchema,
+    partition_columns: &[&str],
+) -> DeltaTable {
+    let struct_fields: Vec<StructField> = arrow_schema
+        .fields()
+        .iter()
+        .map(|f| {
+            StructField::new(
+                f.name(),
+                DataType::try_from_arrow(f.data_type()).unwrap(),
+                f.is_nullable(),
+            )
+        })
+        .collect();
+
+    CreateBuilder::new()
+        .with_location(table_uri)
+        .with_save_mode(SaveMode::Ignore)
+        .with_columns(struct_fields)
+        .with_partition_columns(partition_columns.iter().copied())
+        .with_configuration_property(TableProperty::EnableChangeDataFeed, Some("true"))
+        .await
+        .unwrap()
+}
+
+/// Rows of [`crate::test::TestStruct`] shape, for the change-feed tests.
+fn change_feed_row(id: u32, s: &str) -> crate::test::TestStruct {
+    crate::test::TestStruct {
+        id,
+        b: false,
+        i: None,
+        s: s.to_string(),
+    }
+}
+
+/// The Arrow schema of [`crate::test::TestStruct`].
+fn change_feed_arrow_schema() -> Arc<ArrowSchema> {
+    arrow_schema_of(&crate::test::TestStruct::schema())
+}
+
+/// The Arrow schema of a SQL relation, as the Delta writer sees it.
+fn arrow_schema_of(relation: &[Field]) -> Arc<ArrowSchema> {
+    Arc::new(ArrowSchema::new(relation_to_arrow_fields(
+        relation,
+        delta_schema_options(),
+    )))
+}
+
+/// Start a pipeline whose input relation has a primary key, so the connector
+/// feeds an upsert handle.
+async fn delta_input_controller_keyed(
+    table_uri: &str,
+    mut transport_config: Value,
+    relation: &[Field],
+    storage_dir: &Path,
+    errors: &Arc<Mutex<Vec<String>>>,
+) -> Controller {
+    use crate::test::{TestStruct, test_circuit_with_index};
+
+    transport_config["uri"] = table_uri.into();
+    let pipeline_config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": { "path": storage_dir },
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "delta_table_input",
+                    "config": transport_config,
+                }
+            }
+        }
+    }))
+    .unwrap();
+
+    let relation = relation.to_vec();
+    let errors = errors.clone();
+    tokio::task::spawn_blocking(move || {
+        Controller::with_test_config(
+            move |workers| {
+                Ok(test_circuit_with_index::<TestStruct, u32, _>(
+                    workers,
+                    &relation,
+                    &[SqlIdentifier::from("id")],
+                    |t: &TestStruct| t.id,
+                    &[Some("output")],
+                    false,
+                ))
+            },
+            &pipeline_config,
+            Box::new(move |e, _| errors.lock().unwrap().push(e.to_string())),
+        )
+    })
+    .await
+    .unwrap()
+    .unwrap()
+}
+
+/// An `UPDATE` that moves every row between partitions leaves each row present
+/// once, at its new value, on a table with a primary key.
+///
+/// On a keyed relation a retraction is a delete *by key*, and `input_upsert`
+/// applies same-key updates in the order they arrive, so an update's two images
+/// do not commute: the retraction has to reach the circuit first.
+///
+/// [`delta_table_unity_change_feed`] pins the same property against a live
+/// Databricks table, where Spark rather than delta-rs writes the change data.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_change_feed_keyed_update_test() {
+    use crate::test::TestStruct;
+
+    init_logging();
+
+    let arrow_schema = change_feed_arrow_schema();
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    // Partitioned by `s`, the column the update below moves.
+    let mut delta = create_change_feed_table(&table_uri, &arrow_schema, &["s"]).await;
+
+    // Every row sits in its own partition, and the update below moves each into
+    // a sibling that sorts *before* it. The reader groups change data files by
+    // partition value in a `BTreeMap`, so every post-image group precedes its
+    // pre-image group. One such row would be a coin flip -- the groups become
+    // parallel scan partitions, so their batches race -- but forty of them lose
+    // rows on any scheduling.
+    const ROWS: u32 = 40;
+    let before = |id: u32| format!("b{id:02}");
+    let after = |id: u32| format!("a{id:02}");
+
+    let initial: Vec<TestStruct> = (0..ROWS)
+        .map(|id| change_feed_row(id, &before(id)))
+        .collect();
+    delta = write_data_to_table(delta, &arrow_schema, &initial).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let pipeline = delta_input_controller_keyed(
+        &table_uri,
+        json!({ "mode": "snapshot_and_follow", "change_feed": "auto" }),
+        &TestStruct::schema(),
+        storage_dir.path(),
+        &errors,
+    )
+    .await;
+    pipeline.start();
+
+    let output = SqlIdentifier::from("test_output1");
+    wait_or_connector_error(&pipeline, &output, &initial, &errors).await;
+
+    // One commit that moves every row into its earlier-sorting partition.
+    let _ = delta
+        .update()
+        .with_update("s", concat(vec![lit("a"), substr(col("s"), lit(2i64))]))
+        .await
+        .unwrap();
+
+    let expected: Vec<TestStruct> = (0..ROWS)
+        .map(|id| change_feed_row(id, &after(id)))
+        .collect();
+    wait_or_connector_error(&pipeline, &output, &expected, &errors).await;
+
+    assert_read_change_data(&pipeline);
+    pipeline.stop().unwrap();
+}
+
+/// Read a change feed under a `filter` that names columns the SQL table does
+/// not declare, optionally with the filter's column as the partition key.
+///
+/// The change data path resolves a filter the same way follow mode does -- read
+/// every column, filter, then project to the SQL columns -- with the
+/// physical-to-logical rename, the partition literals and a union in between. An
+/// unresolved column fails loudly ("No field named region"), so a clean run is
+/// itself the resolution assertion; the rows then say the filter was applied and
+/// not merely parsed.
+async fn run_change_feed_filter_test(filter_expr: &str, partition_by_region: bool) {
+    use crate::test::TestStruct;
+    use arrow::array::{Array, BooleanArray, Int64Array, RecordBatch, StringArray, StructArray};
+    use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Fields as ArrowFields};
+
+    init_logging();
+
+    // `region` and `meta` exist only in the Delta table; `meta.tag` mirrors
+    // `region`, so both filter forms select the same rows.
+    let meta_fields: ArrowFields =
+        vec![Arc::new(ArrowField::new("tag", ArrowDataType::Utf8, false))].into();
+    let arrow_schema = Arc::new(ArrowSchema::new(vec![
+        ArrowField::new("id", ArrowDataType::Int64, false),
+        ArrowField::new("b", ArrowDataType::Boolean, false),
+        ArrowField::new("s", ArrowDataType::Utf8, false),
+        ArrowField::new("region", ArrowDataType::Utf8, false),
+        ArrowField::new("meta", ArrowDataType::Struct(meta_fields.clone()), false),
+    ]));
+
+    // Even ids are in region 'us' (kept), odd ids in 'eu' (filtered out).
+    let region = |id: u32| if id.is_multiple_of(2) { "us" } else { "eu" };
+    let row = |id: u32, s: &str| TestStruct {
+        id,
+        b: false,
+        i: None,
+        s: s.to_string(),
+    };
+    let make_batch = |ids: &[u32]| -> RecordBatch {
+        RecordBatch::try_new(
+            arrow_schema.clone(),
+            vec![
+                Arc::new(Int64Array::from_iter_values(
+                    ids.iter().map(|id| *id as i64),
+                )) as Arc<dyn Array>,
+                Arc::new(ids.iter().map(|_| Some(false)).collect::<BooleanArray>()),
+                Arc::new(StringArray::from_iter_values(
+                    ids.iter().map(|id| format!("row-{id}")),
+                )),
+                Arc::new(StringArray::from_iter_values(
+                    ids.iter().map(|id| region(*id)),
+                )),
+                Arc::new(StructArray::new(
+                    meta_fields.clone(),
+                    vec![Arc::new(StringArray::from_iter_values(
+                        ids.iter().map(|id| region(*id)),
+                    ))],
+                    None,
+                )),
+            ],
+        )
+        .unwrap()
+    };
+
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let partitions: &[&str] = if partition_by_region {
+        &["region"]
+    } else {
+        &[]
+    };
+    let mut delta = create_change_feed_table(&table_uri, &arrow_schema, partitions).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let pipeline = delta_input_controller::<TestStruct>(
+        &table_uri,
+        json!({
+            "mode": "snapshot_and_follow",
+            "change_feed": "auto",
+            "filter": filter_expr,
+            "skip_unused_columns": true,
+        }),
+        &TestStruct::schema(),
+        storage_dir.path(),
+        &errors,
+    )
+    .await
+    .unwrap();
+    pipeline.start();
+    let output = SqlIdentifier::from("test_output1");
+
+    // An append records no change data, so this half is the fallback path.
+    let ids: Vec<u32> = (0..6).collect();
+    delta = delta
+        .write(vec![make_batch(&ids)])
+        .with_save_mode(SaveMode::Append)
+        .await
+        .unwrap();
+    let mut expected: Vec<TestStruct> = ids
+        .iter()
+        .filter(|id| region(**id) == "us")
+        .map(|id| row(*id, &format!("row-{id}")))
+        .collect();
+    wait_or_connector_error(&pipeline, &output, &expected, &errors).await;
+
+    // An UPDATE does record it, so this half is the change data path. Both
+    // images of id 0 pass the filter: the pre-image is retracted, the
+    // post-image inserted.
+    delta = delta
+        .update()
+        .with_predicate(col("id").eq(lit(0i64)))
+        .with_update("s", lit("updated"))
+        .await
+        .unwrap()
+        .0;
+    expected[0] = row(0, "updated");
+    wait_or_connector_error(&pipeline, &output, &expected, &errors).await;
+
+    // id 1 is in the filtered-out region. Its change data must be dropped, not
+    // merely resolved: a filter that parses but never applies leaks it in.
+    delta = delta
+        .update()
+        .with_predicate(col("id").eq(lit(1i64)))
+        .with_update("s", lit("leaked"))
+        .await
+        .unwrap()
+        .0;
+    // Nothing changes, so give the commit a chance to arrive wrongly before
+    // asserting that it did not.
+    let appended: Vec<u32> = (6..8).collect();
+    let _ = delta
+        .write(vec![make_batch(&appended)])
+        .with_save_mode(SaveMode::Append)
+        .await
+        .unwrap();
+    expected.extend(
+        appended
+            .iter()
+            .filter(|id| region(**id) == "us")
+            .map(|id| row(*id, &format!("row-{id}"))),
+    );
+    wait_or_connector_error(&pipeline, &output, &expected, &errors).await;
+
+    assert_read_change_data(&pipeline);
+    pipeline.stop().unwrap();
+}
+
+/// A change feed read under a `filter` over a Delta column the SQL table never
+/// declares admits the rows the predicate selects.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_change_feed_filter_undeclared_column_test() {
+    run_change_feed_filter_test("region = 'us'", false).await;
+}
+
+/// The same with the filter naming a field of an undeclared struct column, which
+/// parses as a compound identifier, so the read set keeps `meta` rather than
+/// `meta.tag`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_change_feed_filter_struct_field_test() {
+    run_change_feed_filter_test("meta.tag = 'us'", false).await;
+}
+
+/// The same filter with its column as the partition key.
+///
+/// Delta keeps a partition value in the log rather than the file, so the
+/// partition columns are supplied as literals before the filter runs.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_change_feed_filter_partition_column_test() {
+    run_change_feed_filter_test("region = 'us'", true).await;
+}
+
+/// A `MERGE` that updates one row, deletes another and inserts a third leaves the
+/// table with each of those changes applied once.
+///
+/// One `MERGE` clause matches each row, so the commit records all four change
+/// types -- an update's two images, a delete, and an insert -- which no other
+/// operation does in a single commit.
+///
+/// `test_delta_input_change_feed_merge` in
+/// `python/tests/platform/test_delta_input_change_feed.py` drives the same
+/// commit shape written by Spark, and asserts how much of it was read.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_change_feed_merge_test() {
+    use crate::test::TestStruct;
+    use deltalake::datafusion::prelude::SessionContext;
+
+    init_logging();
+
+    let arrow_schema = change_feed_arrow_schema();
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let mut delta = create_change_feed_table(&table_uri, &arrow_schema, &[]).await;
+
+    let initial: Vec<TestStruct> = (0..4).map(|id| change_feed_row(id, "initial")).collect();
+    delta = write_data_to_table(delta, &arrow_schema, &initial).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let pipeline = delta_input_controller::<TestStruct>(
+        &table_uri,
+        json!({ "mode": "snapshot_and_follow", "change_feed": "auto" }),
+        &TestStruct::schema(),
+        storage_dir.path(),
+        &errors,
+    )
+    .await
+    .unwrap();
+    pipeline.start();
+
+    let output = SqlIdentifier::from("test_output1");
+    wait_or_connector_error(&pipeline, &output, &initial, &errors).await;
+
+    // Source rows: id 1 updates, id 2 deletes, id 9 inserts. Each `MERGE` clause
+    // matches exactly one, so the commit records one of every change type.
+    let source = SessionContext::new()
+        .read_batch(
+            serde_arrow::to_record_batch(
+                arrow_schema.fields(),
+                &SerializeWithContextWrapper::new(
+                    &vec![
+                        change_feed_row(1, "merged"),
+                        change_feed_row(2, "doomed"),
+                        change_feed_row(9, "inserted"),
+                    ],
+                    &crate::integrated::delta_table::output::delta_output_serde_config(
+                        feldera_types::transport::delta_table::DeltaVariantEncoding::Variant,
+                    ),
+                ),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+
+    let _ = delta
+        .merge(source, col("target.id").eq(col("source.id")))
+        .with_source_alias("source")
+        .with_target_alias("target")
+        .when_matched_update(|u| {
+            u.predicate(col("source.s").eq(lit("merged")))
+                .update("s", col("source.s"))
+        })
+        .unwrap()
+        .when_matched_delete(|d| d.predicate(col("source.s").eq(lit("doomed"))))
+        .unwrap()
+        .when_not_matched_insert(|i| {
+            i.set("id", col("source.id"))
+                .set("b", col("source.b"))
+                .set("i", col("source.i"))
+                .set("s", col("source.s"))
+        })
+        .unwrap()
+        .await
+        .unwrap();
+
+    // id 1 renamed, id 2 gone, id 9 added; ids 0 and 3 untouched.
+    let expected = vec![
+        change_feed_row(0, "initial"),
+        change_feed_row(1, "merged"),
+        change_feed_row(3, "initial"),
+        change_feed_row(9, "inserted"),
+    ];
+    wait_or_connector_error(&pipeline, &output, &expected, &errors).await;
+
+    assert_eq!(
+        delta_connector_counter(&pipeline, "input_connector_delta_commits_from_change_data"),
+        1,
+        "the merge must be read from the change data it recorded, not from the \
+         files it rewrote"
+    );
+    pipeline.stop().unwrap();
+}
+
+/// Records the connector has fed into the circuit so far.
+fn delta_input_records(pipeline: &Controller) -> u64 {
+    pipeline
+        .status()
+        .input_status()
+        .values()
+        .next()
+        .unwrap()
+        .metrics
+        .total_records
+        .load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Ingest a snapshot and one whole-file `UPDATE` under `change_feed`, and report
+/// the resulting rows and the records it took to produce them.
+async fn run_change_feed_option(
+    change_feed: &str,
+    rows: u32,
+) -> (Vec<crate::test::TestStruct>, u64, u64, u64) {
+    use crate::test::TestStruct;
+
+    init_logging();
+
+    let arrow_schema = change_feed_arrow_schema();
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let mut delta = create_change_feed_table(&table_uri, &arrow_schema, &[]).await;
+
+    let initial: Vec<TestStruct> = (0..rows).map(|id| change_feed_row(id, "initial")).collect();
+    delta = write_data_to_table(delta, &arrow_schema, &initial).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let pipeline = delta_input_controller::<TestStruct>(
+        &table_uri,
+        json!({ "mode": "snapshot_and_follow", "change_feed": change_feed }),
+        &TestStruct::schema(),
+        storage_dir.path(),
+        &errors,
+    )
+    .await
+    .unwrap();
+    pipeline.start();
+
+    let output = SqlIdentifier::from("test_output1");
+    wait_or_connector_error(&pipeline, &output, &initial, &errors).await;
+
+    // One row of one file changes, so the file-action read rewrites the lot.
+    let _ = delta
+        .update()
+        .with_predicate(col("id").eq(lit(0i64)))
+        .with_update("s", lit("updated"))
+        .await
+        .unwrap();
+    let mut expected = initial;
+    expected[0].s = "updated".to_string();
+    wait_or_connector_error(&pipeline, &output, &expected, &errors).await;
+
+    let records = delta_input_records(&pipeline);
+    let from_change_data =
+        delta_connector_counter(&pipeline, "input_connector_delta_commits_from_change_data");
+    let from_file_actions =
+        delta_connector_counter(&pipeline, "input_connector_delta_commits_from_file_actions");
+    pipeline.stop().unwrap();
+    (expected, records, from_change_data, from_file_actions)
+}
+
+/// `change_feed = off` and `auto` reach the same contents from the same table,
+/// and read different amounts of data doing it.
+///
+/// `off` reconstructs every change from file actions; `auto` reads the rows the
+/// commit recorded. Both halves are asserted: the results agree, the record
+/// counts do not.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_change_feed_off_reads_file_actions_test() {
+    const ROWS: u32 = 50;
+
+    let (auto_rows, auto_records, auto_change_data, _) = run_change_feed_option("auto", ROWS).await;
+    let (off_rows, off_records, off_change_data, _) = run_change_feed_option("off", ROWS).await;
+
+    assert_eq!(
+        auto_rows, off_rows,
+        "the option chooses how a change is read, never what it means"
+    );
+    assert_eq!(
+        auto_change_data, 1,
+        "auto must read the UPDATE from the change data it recorded"
+    );
+    assert_eq!(
+        off_change_data, 0,
+        "off must not look at change data at all"
+    );
+
+    // snapshot + 2 rows against snapshot + the file retracted and re-inserted.
+    assert_eq!(
+        auto_records,
+        u64::from(ROWS) + 2,
+        "auto must read the two rows the UPDATE recorded"
+    );
+    assert_eq!(
+        off_records,
+        u64::from(ROWS) * 3,
+        "off must retract and re-insert the whole rewritten file"
+    );
+}
+
+/// `auto` reads a table that records no change feed, falling back to its file
+/// actions.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_change_feed_auto_without_feed_test() {
+    use crate::test::TestStruct;
+
+    init_logging();
+
+    let arrow_schema = change_feed_arrow_schema();
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    // Deliberately not a change-feed table.
+    let delta = create_table_from_arrow(&table_uri, &arrow_schema, &[]).await;
+
+    let initial: Vec<TestStruct> = (0..4).map(|id| change_feed_row(id, "initial")).collect();
+    let delta = write_data_to_table(delta, &arrow_schema, &initial).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let pipeline = delta_input_controller::<TestStruct>(
+        &table_uri,
+        json!({ "mode": "snapshot_and_follow", "change_feed": "auto" }),
+        &TestStruct::schema(),
+        storage_dir.path(),
+        &errors,
+    )
+    .await
+    .unwrap();
+    pipeline.start();
+
+    let output = SqlIdentifier::from("test_output1");
+    wait_or_connector_error(&pipeline, &output, &initial, &errors).await;
+
+    let appended = vec![change_feed_row(4, "appended")];
+    write_data_to_table(delta, &arrow_schema, &appended).await;
+    let mut expected = initial;
+    expected.extend(appended.iter().cloned());
+    wait_or_connector_error(&pipeline, &output, &expected, &errors).await;
+
+    // The counter cannot tell `auto` from `off` here, since neither reads
+    // change data from a table that records none; the config can.
+    assert_eq!(delta_change_feed(&pipeline), DeltaTableChangeFeed::Auto);
+    assert_eq!(
+        delta_connector_counter(&pipeline, "input_connector_delta_commits_from_change_data"),
+        0,
+        "the table records no change feed, so every commit must fall back to \
+         its file actions"
+    );
+    pipeline.stop().unwrap();
+}
+
+/// Ingest a burst of change feed commits under `transaction_mode`, and report
+/// how many Feldera transactions the connector opened for it.
+///
+/// The connector is paused while the commits are written, so the burst is one
+/// backlog when it resumes rather than a race between the writer and the
+/// reader. That backlog is what `catchup` exists to batch.
+async fn run_change_feed_transaction_burst(transaction_mode: &str) -> (u64, u64) {
+    use crate::test::TestStruct;
+
+    init_logging();
+
+    let arrow_schema = change_feed_arrow_schema();
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let mut delta = create_change_feed_table(&table_uri, &arrow_schema, &[]).await;
+
+    let initial: Vec<TestStruct> = (0..4).map(|id| change_feed_row(id, "initial")).collect();
+    delta = write_data_to_table(delta, &arrow_schema, &initial).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let pipeline = delta_input_controller::<TestStruct>(
+        &table_uri,
+        json!({
+            "mode": "snapshot_and_follow",
+            "change_feed": "auto",
+            "transaction_mode": transaction_mode,
+        }),
+        &TestStruct::schema(),
+        storage_dir.path(),
+        &errors,
+    )
+    .await
+    .unwrap();
+    pipeline.start();
+
+    let output = SqlIdentifier::from("test_output1");
+    wait_or_connector_error(&pipeline, &output, &initial, &errors).await;
+
+    // Pause, so the three commits below become one backlog.
+    pipeline
+        .pause_input_endpoint(DELTA_TEST_INPUT_ENDPOINT)
+        .unwrap();
+    wait(
+        || {
+            pipeline
+                .is_input_endpoint_paused(DELTA_TEST_INPUT_ENDPOINT)
+                .unwrap_or(false)
+        },
+        60_000,
+    )
+    .expect("timeout waiting for the input endpoint to pause");
+    let transactions_before = delta_follow_transaction_starts(&pipeline);
+
+    // Three commits, two of which record change data and one of which does not.
+    delta = delta
+        .update()
+        .with_predicate(col("id").eq(lit(0i64)))
+        .with_update("s", lit("updated"))
+        .await
+        .unwrap()
+        .0;
+    delta = delta
+        .delete()
+        .with_predicate(col("id").eq(lit(3i64)))
+        .await
+        .unwrap()
+        .0;
+    let appended = vec![change_feed_row(4, "appended")];
+    write_data_to_table(delta, &arrow_schema, &appended).await;
+
+    let mut expected: Vec<TestStruct> = initial.iter().filter(|row| row.id != 3).cloned().collect();
+    expected[0].s = "updated".to_string();
+    expected.extend(appended);
+
+    pipeline
+        .start_input_endpoint(DELTA_TEST_INPUT_ENDPOINT)
+        .unwrap();
+    wait_or_connector_error(&pipeline, &output, &expected, &errors).await;
+
+    let transactions = delta_follow_transaction_starts(&pipeline) - transactions_before;
+    let snapshot_transactions = delta_snapshot_transaction_starts(&pipeline);
+    assert_read_change_data(&pipeline);
+    pipeline.stop().unwrap();
+    (transactions, snapshot_transactions)
+}
+
+/// `catchup` batches a backlog of change feed commits into one Feldera
+/// transaction, so no downstream view sees a half-applied backlog.
+///
+/// The burst mixes the two read paths: an `UPDATE` and a `DELETE` that record
+/// change data, and an append that records none and falls back to its `add`
+/// action. One transaction spans all three.
+///
+/// The metric counts transaction labels the commit loop allocates, not labels
+/// the reader attached to its queue entries. That loop is shared with follow
+/// mode, so this covers `cdf` mode taking part in it and ingesting the backlog,
+/// not the label reaching the data. The follow-mode catchup tests above measure
+/// the same way.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_change_feed_catchup_test() {
+    let (transactions, snapshot_transactions) = run_change_feed_transaction_burst("catchup").await;
+
+    assert_eq!(
+        snapshot_transactions, 1,
+        "catchup must ingest the initial snapshot in one Feldera transaction"
+    );
+    assert_eq!(
+        transactions, 1,
+        "catchup must ingest a three-commit backlog in one Feldera transaction; \
+         {transactions} means it opened one per commit instead of batching them"
+    );
+}
+
+/// `always` gives each Delta commit its own Feldera transaction, one for one,
+/// whichever path the commit is read through.
+///
+/// Counted the same way as [`delta_table_change_feed_catchup_test`], with the
+/// same caveat about what the metric measures.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_change_feed_always_transaction_test() {
+    let (transactions, _) = run_change_feed_transaction_burst("always").await;
+
+    assert_eq!(
+        transactions, 3,
+        "always must open one Feldera transaction per Delta commit; the burst \
+         has three, so {transactions} means commits were batched or dropped"
+    );
+}
+
+/// A change feed read and a file-level follow read of the same table history
+/// land on the same ZSet.
+///
+/// The mutations cover every commit shape the reader distinguishes: an append,
+/// which records no change data file and falls back to the `add` actions; an
+/// `UPDATE`, which records pre-image and post-image rows; and a `DELETE`.
+///
+/// Read over [`DeltaTestStruct`], whose 21 columns carry the types the change
+/// data path handles with machinery of its own: `change_data_read_schema`,
+/// `project_physical_to_logical` with `relabel_nested_columns`, and
+/// `add_partition_columns`. Binary, decimal, arrays, nested rows, maps of rows,
+/// `VARIANT` and `UUID` are where that machinery breaks, and none of them is
+/// reached by four scalar columns. The oracle is the follow-mode connector
+/// reading the same history, so the wider row type costs no new assertions.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_change_feed_matches_file_actions_test() {
+    init_logging();
+
+    let mut runner = TestRunner::default();
+    let relation = DeltaTestStruct::schema();
+    let arrow_schema = arrow_schema_of(&relation);
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let mut delta = create_change_feed_table(&table_uri, &arrow_schema, &[]).await;
+
+    // Snapshot contents, in the table before either connector starts. Proptest
+    // fills every column; `delta_data` numbers `bigint` from zero, which the
+    // predicates below select on.
+    let generated: Vec<DeltaTestStruct> = delta_data(40).new_tree(&mut runner).unwrap().current();
+    let split = generated.len() / 2;
+    let initial: Vec<DeltaTestStruct> = generated[..split].to_vec();
+    let appended: Vec<DeltaTestStruct> = generated[split..].to_vec();
+    delta = write_data_to_table(delta, &arrow_schema, &initial).await;
+
+    let cdf_storage = TempDir::new().unwrap();
+    let follow_storage = TempDir::new().unwrap();
+    let cdf_errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let follow_errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+
+    let cdf_pipeline = delta_input_controller::<DeltaTestStruct>(
+        &table_uri,
+        json!({ "mode": "snapshot_and_follow", "change_feed": "auto" }),
+        &relation,
+        cdf_storage.path(),
+        &cdf_errors,
+    )
+    .await
+    .unwrap();
+    let follow_pipeline = delta_input_controller::<DeltaTestStruct>(
+        &table_uri,
+        json!({ "mode": "snapshot_and_follow", "change_feed": "off" }),
+        &relation,
+        follow_storage.path(),
+        &follow_errors,
+    )
+    .await
+    .unwrap();
+    cdf_pipeline.start();
+    follow_pipeline.start();
+
+    let output = SqlIdentifier::from("test_output1");
+    let expect_both = async |expected: &[DeltaTestStruct]| {
+        wait_or_connector_error(&cdf_pipeline, &output, expected, &cdf_errors).await;
+        wait_or_connector_error(&follow_pipeline, &output, expected, &follow_errors).await;
+    };
+
+    expect_both(&initial).await;
+
+    // Append: no change data file, so the change feed reads the added file.
+    delta = write_data_to_table(delta, &arrow_schema, &appended).await;
+    let mut expected = initial.clone();
+    expected.extend(appended.iter().cloned());
+    expect_both(&expected).await;
+
+    // Update: pre-image and post-image rows. Only `string` changes, so every
+    // other column has to survive the round trip through the change data file
+    // for the two readers to agree.
+    let updated_below = split as i64 / 2;
+    delta = delta
+        .update()
+        .with_predicate(col("bigint").lt(lit(updated_below)))
+        .with_update("string", lit("updated"))
+        .await
+        .unwrap()
+        .0;
+    for row in expected.iter_mut().filter(|row| row.bigint < updated_below) {
+        row.string = "updated".to_string();
+    }
+    expect_both(&expected).await;
+
+    // Delete: rows leave through the change feed, not through a removed file.
+    let deleted_from = split as i64;
+    let _ = delta
+        .delete()
+        .with_predicate(col("bigint").gt_eq(lit(deleted_from)))
+        .await
+        .unwrap();
+    expected.retain(|row| row.bigint < deleted_from);
+    expect_both(&expected).await;
+
+    assert_read_change_data(&cdf_pipeline);
+    cdf_pipeline.stop().unwrap();
+    follow_pipeline.stop().unwrap();
+}
+
+/// A commit that records change data is counted as read from change data, and an
+/// append, which records none, is counted against the file-action fallback.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_change_feed_reads_change_data_test() {
+    use crate::test::TestStruct;
+
+    init_logging();
+
+    let arrow_schema = change_feed_arrow_schema();
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let mut delta = create_change_feed_table(&table_uri, &arrow_schema, &[]).await;
+
+    let initial: Vec<TestStruct> = (0..4).map(|id| change_feed_row(id, "initial")).collect();
+    delta = write_data_to_table(delta, &arrow_schema, &initial).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let pipeline = delta_input_controller::<TestStruct>(
+        &table_uri,
+        json!({ "mode": "snapshot_and_follow", "change_feed": "auto" }),
+        &TestStruct::schema(),
+        storage_dir.path(),
+        &errors,
+    )
+    .await
+    .unwrap();
+    pipeline.start();
+
+    let output = SqlIdentifier::from("test_output1");
+    wait_or_connector_error(&pipeline, &output, &initial, &errors).await;
+
+    const FROM_CHANGE_DATA: &str = "input_connector_delta_commits_from_change_data";
+    const FROM_FILE_ACTIONS: &str = "input_connector_delta_commits_from_file_actions";
+
+    // An append records no change data file: the Delta protocol lets a writer
+    // skip one when a commit only adds rows.
+    let appended = vec![change_feed_row(4, "appended")];
+    delta = write_data_to_table(delta, &arrow_schema, &appended).await;
+    let mut expected = initial.clone();
+    expected.extend(appended.iter().cloned());
+    wait_or_connector_error(&pipeline, &output, &expected, &errors).await;
+    assert_eq!(delta_connector_counter(&pipeline, FROM_FILE_ACTIONS), 1);
+    assert_eq!(delta_connector_counter(&pipeline, FROM_CHANGE_DATA), 0);
+
+    // An update records one, and this is the assertion that fails if the reader
+    // silently ignores `cdc` actions and re-reads the rewritten files.
+    let _ = delta
+        .update()
+        .with_predicate(col("id").lt(lit(2i64)))
+        .with_update("s", lit("updated"))
+        .await
+        .unwrap();
+    for row in expected.iter_mut().filter(|row| row.id < 2) {
+        row.s = "updated".to_string();
+    }
+    wait_or_connector_error(&pipeline, &output, &expected, &errors).await;
+    assert_eq!(delta_connector_counter(&pipeline, FROM_FILE_ACTIONS), 1);
+    assert_eq!(delta_connector_counter(&pipeline, FROM_CHANGE_DATA), 1);
+
+    pipeline.stop().unwrap();
+}
+
+/// An `UPDATE` that moves a row between partitions retracts it under its old
+/// partition value and inserts it under the new one.
+///
+/// A change data file keeps its partition column in the path, like any other
+/// Delta data file, so the pre-image is written under the old partition and the
+/// post-image under the new one.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_change_feed_partition_column_test() {
+    use crate::test::TestStruct;
+
+    init_logging();
+
+    let arrow_schema = change_feed_arrow_schema();
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    // The partition values need escaping in the path, as in the follow tests.
+    let mut delta = create_change_feed_table(&table_uri, &arrow_schema, &["s"]).await;
+
+    let initial: Vec<TestStruct> = (0..4)
+        .map(|id| {
+            change_feed_row(
+                id,
+                if id.is_multiple_of(2) {
+                    "us east"
+                } else {
+                    "us/west"
+                },
+            )
+        })
+        .collect();
+    delta = write_data_to_table(delta, &arrow_schema, &initial).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let pipeline = delta_input_controller::<TestStruct>(
+        &table_uri,
+        json!({ "mode": "snapshot_and_follow", "change_feed": "auto" }),
+        &TestStruct::schema(),
+        storage_dir.path(),
+        &errors,
+    )
+    .await
+    .unwrap();
+    pipeline.start();
+
+    let output = SqlIdentifier::from("test_output1");
+    wait_or_connector_error(&pipeline, &output, &initial, &errors).await;
+
+    // Move id 0 from "us east" to "us/west": its pre-image and post-image land
+    // in different partitions of `_change_data`.
+    let _ = delta
+        .update()
+        .with_predicate(col("id").eq(lit(0i64)))
+        .with_update("s", lit("us/west"))
+        .await
+        .unwrap();
+    let mut expected = initial.clone();
+    expected[0].s = "us/west".to_string();
+    wait_or_connector_error(&pipeline, &output, &expected, &errors).await;
+
+    assert_read_change_data(&pipeline);
+    pipeline.stop().unwrap();
+}
+
+/// An `UPDATE` that moves a row across a `filter` boundary retracts it on the way
+/// out and inserts it on the way in.
+///
+/// `filter` decides which rows the connector ingested at all, and the change feed
+/// carries both images, so each is judged by the predicate the snapshot used.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_change_feed_filter_test() {
+    use crate::test::TestStruct;
+
+    init_logging();
+
+    let arrow_schema = change_feed_arrow_schema();
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let mut delta = create_change_feed_table(&table_uri, &arrow_schema, &[]).await;
+
+    let initial = vec![
+        change_feed_row(0, "keep"),
+        change_feed_row(1, "drop"),
+        change_feed_row(2, "keep"),
+    ];
+    delta = write_data_to_table(delta, &arrow_schema, &initial).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let pipeline = delta_input_controller::<TestStruct>(
+        &table_uri,
+        json!({ "mode": "snapshot_and_follow", "change_feed": "auto", "filter": "s = 'keep'" }),
+        &TestStruct::schema(),
+        storage_dir.path(),
+        &errors,
+    )
+    .await
+    .unwrap();
+    pipeline.start();
+
+    let output = SqlIdentifier::from("test_output1");
+    wait_or_connector_error(
+        &pipeline,
+        &output,
+        &[change_feed_row(0, "keep"), change_feed_row(2, "keep")],
+        &errors,
+    )
+    .await;
+
+    // Out of the filter: the pre-image passed it and was ingested, so it must be
+    // retracted; the post-image does not and is dropped.
+    delta = delta
+        .update()
+        .with_predicate(col("id").eq(lit(0i64)))
+        .with_update("s", lit("drop"))
+        .await
+        .unwrap()
+        .0;
+    wait_or_connector_error(&pipeline, &output, &[change_feed_row(2, "keep")], &errors).await;
+
+    // Into the filter: only the post-image passes, so the row appears with no
+    // retraction to match.
+    let _ = delta
+        .update()
+        .with_predicate(col("id").eq(lit(1i64)))
+        .with_update("s", lit("keep"))
+        .await
+        .unwrap();
+    wait_or_connector_error(
+        &pipeline,
+        &output,
+        &[change_feed_row(1, "keep"), change_feed_row(2, "keep")],
+        &errors,
+    )
+    .await;
+
+    assert_read_change_data(&pipeline);
+
+    pipeline.stop().unwrap();
+}
+
+/// `change_feed = require` against a table that records no feed fails at startup,
+/// with an error naming the table property that is missing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_change_feed_require_not_enabled_test() {
+    use crate::test::TestStruct;
+
+    init_logging();
+
+    let arrow_schema = change_feed_arrow_schema();
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let delta = create_table_from_arrow(&table_uri, &arrow_schema, &[]).await;
+    write_data_to_table(delta, &arrow_schema, &[change_feed_row(0, "row")]).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let error = match delta_input_controller::<TestStruct>(
+        &table_uri,
+        json!({ "mode": "snapshot_and_follow", "change_feed": "require" }),
+        &TestStruct::schema(),
+        storage_dir.path(),
+        &errors,
+    )
+    .await
+    {
+        Err(error) => error.to_string(),
+        Ok(pipeline) => {
+            pipeline.stop().unwrap();
+            panic!("change_feed = require must not start against a table without a change feed");
+        }
+    };
+
+    assert!(
+        error.contains("delta.enableChangeDataFeed"),
+        "the error must name the table property; got: {error}"
+    );
+}
+
+/// `change_feed` is rejected in a mode that never reads one, rather than
+/// silently dropped.
+///
+/// `require` is the reason it must fail: its whole purpose is to fail loudly
+/// when a table records no change data, so a connector that starts and reads
+/// nothing from the feed is the one outcome it exists to rule out. `snapshot`
+/// never follows the log, and `cdc` reads a change log the user encoded as
+/// table rows.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_change_feed_rejected_outside_follow_modes_test() {
+    use crate::test::TestStruct;
+
+    init_logging();
+
+    let arrow_schema = change_feed_arrow_schema();
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let delta = create_change_feed_table(&table_uri, &arrow_schema, &[]).await;
+    write_data_to_table(delta, &arrow_schema, &[change_feed_row(0, "row")]).await;
+
+    for (mode, change_feed) in [
+        ("snapshot", "auto"),
+        ("snapshot", "require"),
+        // Rejected even where it names the default, so the rule is "not valid
+        // in this mode" rather than "not valid unless it happens to agree".
+        ("snapshot", "off"),
+        ("cdc", "auto"),
+        ("cdc", "require"),
+        ("cdc", "off"),
+    ] {
+        let storage_dir = TempDir::new().unwrap();
+        let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let mut config = json!({ "mode": mode, "change_feed": change_feed });
+        if mode == "cdc" {
+            config["cdc_order_by"] = "id".into();
+            config["cdc_delete_filter"] = "b".into();
+        }
+        let error = match delta_input_controller::<TestStruct>(
+            &table_uri,
+            config,
+            &TestStruct::schema(),
+            storage_dir.path(),
+            &errors,
+        )
+        .await
+        {
+            Err(error) => error.to_string(),
+            Ok(pipeline) => {
+                pipeline.stop().unwrap();
+                panic!("'change_feed = {change_feed}' must not start in '{mode}' mode");
+            }
+        };
+        assert!(
+            error.contains("'change_feed'") && error.contains(mode),
+            "the error must name the property and the mode; got: {error}"
+        );
+    }
+}
+
+/// A `follow` mode connector accepts `change_feed`, so the rejection above is
+/// about the mode and not about the property.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_change_feed_accepted_in_follow_modes_test() {
+    use crate::test::TestStruct;
+
+    init_logging();
+
+    let arrow_schema = change_feed_arrow_schema();
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let delta = create_change_feed_table(&table_uri, &arrow_schema, &[]).await;
+    write_data_to_table(delta, &arrow_schema, &[change_feed_row(0, "row")]).await;
+
+    for mode in ["follow", "snapshot_and_follow"] {
+        let storage_dir = TempDir::new().unwrap();
+        let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let pipeline = delta_input_controller::<TestStruct>(
+            &table_uri,
+            json!({ "mode": mode, "change_feed": "require" }),
+            &TestStruct::schema(),
+            storage_dir.path(),
+            &errors,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("'change_feed' must be valid in '{mode}' mode: {e}"));
+        pipeline.stop().unwrap();
+    }
+}
+
+/// Suspending and resuming a `cdf` connector ingests the commits made while it
+/// was down exactly once.
+///
+/// Suspension leaves the connector on a Delta version boundary, so the ad hoc
+/// query after the resume returns each row once.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_change_feed_suspend_test() {
+    use crate::test::TestStruct;
+
+    init_logging();
+
+    let relation = TestStruct::schema();
+    let arrow_schema = change_feed_arrow_schema();
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let mut delta = create_change_feed_table(&table_uri, &arrow_schema, &[]).await;
+
+    let initial: Vec<TestStruct> = (0..4).map(|id| change_feed_row(id, "initial")).collect();
+    delta = write_data_to_table(delta, &arrow_schema, &initial).await;
+
+    // The connector resumes from the checkpoint this directory holds, so both
+    // runs share it.
+    let storage_dir = TempDir::new().unwrap();
+    let output = SqlIdentifier::from("test_output1");
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+
+    let pipeline = delta_input_controller::<TestStruct>(
+        &table_uri,
+        json!({ "mode": "snapshot_and_follow", "change_feed": "auto" }),
+        &relation,
+        storage_dir.path(),
+        &errors,
+    )
+    .await
+    .unwrap();
+    pipeline.start();
+    wait_or_connector_error(&pipeline, &output, &initial, &errors).await;
+
+    // One change feed commit before the checkpoint.
+    delta = delta
+        .update()
+        .with_predicate(col("id").eq(lit(0i64)))
+        .with_update("s", lit("before suspend"))
+        .await
+        .unwrap()
+        .0;
+    let mut expected = initial.clone();
+    expected[0].s = "before suspend".to_string();
+    wait_or_connector_error(&pipeline, &output, &expected, &errors).await;
+
+    let (sender, mut receiver) = mpsc::channel(1);
+    pipeline.start_suspend(Box::new(move |result| sender.try_send(result).unwrap()));
+    timeout(Duration::from_secs(100), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    pipeline.stop().unwrap();
+
+    // Two more commits while the connector is down: one recorded in the change
+    // feed, one an append that is not.
+    delta = delta
+        .update()
+        .with_predicate(col("id").eq(lit(1i64)))
+        .with_update("s", lit("while down"))
+        .await
+        .unwrap()
+        .0;
+    expected[1].s = "while down".to_string();
+    let appended = vec![change_feed_row(4, "after restart")];
+    write_data_to_table(delta, &arrow_schema, &appended).await;
+    expected.extend(appended.iter().cloned());
+
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let pipeline = delta_input_controller::<TestStruct>(
+        &table_uri,
+        json!({ "mode": "snapshot_and_follow", "change_feed": "auto" }),
+        &relation,
+        storage_dir.path(),
+        &errors,
+    )
+    .await
+    .unwrap();
+    pipeline.start();
+    wait_or_connector_error(&pipeline, &output, &expected, &errors).await;
+
+    assert_read_change_data(&pipeline);
+    pipeline.stop().unwrap();
+}
+
+/// `skip_unused_columns` applies to a change feed read, and the columns it drops
+/// leave `_change_type` in place.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_change_feed_skip_unused_columns_test() {
+    use crate::test::TestStruct;
+
+    init_logging();
+
+    let arrow_schema = change_feed_arrow_schema();
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let mut delta = create_change_feed_table(&table_uri, &arrow_schema, &[]).await;
+
+    let initial: Vec<TestStruct> = (0..3).map(|id| change_feed_row(id, "initial")).collect();
+    delta = write_data_to_table(delta, &arrow_schema, &initial).await;
+
+    // `i` is nullable and unused by the circuit, so it can be skipped.
+    let mut relation = TestStruct::schema();
+    for field in relation.iter_mut() {
+        field.unused = field.name.name() == "i";
+    }
+
+    let storage_dir = TempDir::new().unwrap();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let pipeline = delta_input_controller::<TestStruct>(
+        &table_uri,
+        json!({
+            "mode": "snapshot_and_follow",
+            "change_feed": "auto",
+            "skip_unused_columns": true,
+        }),
+        &relation,
+        storage_dir.path(),
+        &errors,
+    )
+    .await
+    .unwrap();
+    pipeline.start();
+
+    let output = SqlIdentifier::from("test_output1");
+    wait_or_connector_error(&pipeline, &output, &initial, &errors).await;
+
+    let _ = delta
+        .delete()
+        .with_predicate(col("id").eq(lit(0i64)))
+        .await
+        .unwrap();
+    wait_or_connector_error(&pipeline, &output, &initial[1..], &errors).await;
+
+    assert_read_change_data(&pipeline);
+    pipeline.stop().unwrap();
+}
+
 /// [`wait_for_records_materialized`], but report a connector error as soon as
 /// one arrives rather than waiting out the materialization timeout.
 async fn wait_or_connector_error<T>(
@@ -4652,23 +6102,25 @@ async fn wait_or_connector_error<T>(
     }
 }
 
+/// A follow read under a `filter` over a Delta column the SQL table never
+/// declares admits the rows the predicate selects.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delta_table_follow_filter_undeclared_column_test() {
     run_follow_filter_undeclared_column_test("region = 'us'").await;
 }
 
-/// Same, over a field of an undeclared struct column, the form reported in the
-/// issue: it parses as a compound identifier, so the read set must keep `meta`.
+/// The same over a field of an undeclared struct column, which parses as a
+/// compound identifier, so the read set keeps `meta`.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delta_table_follow_filter_undeclared_struct_field_test() {
     run_follow_filter_undeclared_column_test("meta.tag = 'us'").await;
 }
 
-/// A `filter` that does not parse must fail the connector at startup, not on the
-/// first Delta commit: pure follow mode skipped validation entirely.
+/// A `filter` that does not parse fails the connector at startup rather than on
+/// the first Delta commit.
 ///
-/// The directory holds no Delta table, so reaching it at all would fail with a
-/// different error: validation has to happen before the connector opens it.
+/// The directory holds no Delta table, so opening it would fail with a different
+/// error; validation happens before the connector opens it.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delta_table_follow_invalid_filter_test() {
     use crate::test::TestStruct;
@@ -4701,8 +6153,79 @@ async fn delta_table_follow_invalid_filter_test() {
     );
 }
 
-/// Filtering before projecting must not widen the scan: DataFusion's projection
-/// pushdown collapses the two, so columns neither step names stay pruned.
+/// A change feed read prunes from the scan a column that neither the filter nor
+/// the projection names, even though the declared read schema lists it.
+///
+/// `skip_unused_columns` on the change feed path rests on DataFusion's
+/// projection pushdown rather than on the declared read schema:
+/// `change_data_read_schema` declares every column, and the projection to
+/// `used_columns` comes several nodes later, after the physical-to-logical
+/// rename, the partition literals, and a union across partition groups.
+/// [`follow_filter_before_projection_prunes_scan`] asserts the same for a follow
+/// read, which stacks fewer nodes between the scan and the projection.
+#[tokio::test]
+async fn change_feed_projection_prunes_scan() {
+    use crate::integrated::delta_table::input::apply_filter;
+    use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField};
+    use datafusion::datasource::MemTable;
+    use datafusion::prelude::SessionContext;
+
+    // A change data file's columns: the table's own, minus the partition column
+    // that lives in the log, plus `_change_type`. `region` is filtered on but
+    // not projected; `junk` is neither.
+    let arrow_schema = Arc::new(ArrowSchema::new(vec![
+        ArrowField::new("id", ArrowDataType::Int64, false),
+        ArrowField::new("s", ArrowDataType::Utf8, false),
+        ArrowField::new("region", ArrowDataType::Utf8, false),
+        ArrowField::new("junk", ArrowDataType::Utf8, false),
+        ArrowField::new("_change_type", ArrowDataType::Utf8, false),
+    ]));
+
+    let ctx = SessionContext::new();
+    let mut groups = Vec::new();
+    for (i, grp) in ["0", "1"].iter().enumerate() {
+        let name = format!("cdc_{i}");
+        ctx.register_table(
+            name.as_str(),
+            Arc::new(MemTable::try_new(arrow_schema.clone(), vec![vec![]]).unwrap()),
+        )
+        .unwrap();
+        // What `add_partition_columns` produces: the table's columns in schema
+        // order, the partition column supplied as a literal from the log, and
+        // the extra column carried through.
+        groups.push(
+            ctx.table(name.as_str())
+                .await
+                .unwrap()
+                .select(vec![
+                    col("id"),
+                    col("s"),
+                    col("region"),
+                    col("junk"),
+                    lit(*grp).alias("grp"),
+                    col("_change_type"),
+                ])
+                .unwrap(),
+        );
+    }
+
+    let mut groups = groups.into_iter();
+    let df = groups.next().unwrap();
+    let df = groups.try_fold(df, |acc, g| acc.union(g)).unwrap();
+    let df = apply_filter(df, Some("region = 'us'"), "unit-test", None).unwrap();
+    let df = df
+        .select_columns(&["id", "s", "grp", "_change_type"])
+        .unwrap();
+
+    let plan = format!("{}", df.into_optimized_plan().unwrap().display_indent());
+    assert!(
+        plan.contains("projection=") && !plan.contains("junk"),
+        "the scan must read only the projected columns plus the filter's, so \
+         'junk' must be pruned through the partition literals and the union; \
+         plan was:\n{plan}"
+    );
+}
+
 #[tokio::test]
 async fn follow_filter_before_projection_prunes_scan() {
     use crate::integrated::delta_table::input::apply_filter;
