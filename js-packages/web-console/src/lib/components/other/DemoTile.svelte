@@ -15,7 +15,7 @@
 </script>
 
 {#if demo}
-  <div class="flex flex-col card border border-surface-100-900 p-4">
+  <div class="flex flex-col card border border-surface-200-800 p-4">
     <div class="text-sm text-surface-700-300">{demo.type}</div>
     <button
       class="text-left disabled:pointer-events-none disabled:opacity-50"
@@ -29,7 +29,7 @@
     <span class="text-left text-surface-700-300">{demo.description}</span>
   </div>
 {:else}
-  <div class="flex flex-col card border border-surface-100-900 p-4">
+  <div class="flex flex-col card border border-surface-200-800 p-4">
     <div class="flex flex-col gap-1">
       <div class="placeholder w-16 animate-pulse"></div>
       <span class="placeholder w-48 animate-pulse bg-surface-700-300"></span>
