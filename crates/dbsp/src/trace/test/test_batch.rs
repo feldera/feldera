@@ -167,6 +167,82 @@ where
         .collect::<Vec<_>>()
 }
 
+/// A key's tuples grouped by distinct value, in value order.
+///
+/// A value can occur at several times. `GroupFilterCursor` steps over distinct
+/// values, so it spends one of its `n` places on such a value, not one per time.
+fn by_value<V: DataTrait + ?Sized, T, R: WeightTrait + ?Sized>(
+    tuples: Vec<(Box<V>, T, Box<R>)>,
+) -> Vec<(Box<V>, Vec<(T, Box<R>)>)> {
+    let mut grouped: BTreeMap<Box<V>, Vec<(T, Box<R>)>> = BTreeMap::new();
+    for (value, time, weight) in tuples {
+        grouped.entry(value).or_default().push((time, weight));
+    }
+    grouped.into_iter().collect()
+}
+
+/// Which end of a group of values `retain_n_unsatisfying` retains.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Extreme {
+    Largest,
+    Smallest,
+}
+
+/// Models `GroupFilter::TopN` and `GroupFilter::BottomN`.
+///
+/// Retains, for each key, every value that satisfies `filter`, plus the `n` values
+/// that do not satisfy it and that are largest (`Extreme::Largest`) or smallest
+/// (`Extreme::Smallest`) within the key's group.  A group with fewer than `n`
+/// values that fail the filter retains all of them.
+fn retain_n_unsatisfying<
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    T,
+    R: WeightTrait + ?Sized,
+>(
+    tuples: Vec<((Box<K>, Box<V>, T), Box<R>)>,
+    filter: &Filter<V>,
+    n: usize,
+    extreme: Extreme,
+) -> Vec<((Box<K>, Box<V>, T), Box<R>)> {
+    let mut tuples_by_key: BTreeMap<Box<K>, Vec<(Box<V>, T, Box<R>)>> = BTreeMap::new();
+    for ((k, v, t), w) in tuples.into_iter() {
+        tuples_by_key.entry(k).or_default().push((v, t, w));
+    }
+
+    let mut result = Vec::new();
+    for (k, group) in tuples_by_key.into_iter() {
+        let group = by_value(group);
+
+        // Walk the group from the end that `extreme` names, keeping every value
+        // that satisfies the filter and the first `n` values that do not.
+        let mut retain = vec![false; group.len()];
+        let mut unsatisfying = 0;
+        let indexes: Box<dyn Iterator<Item = usize>> = match extreme {
+            Extreme::Largest => Box::new((0..group.len()).rev()),
+            Extreme::Smallest => Box::new(0..group.len()),
+        };
+        for i in indexes {
+            if (filter.filter_func())(group[i].0.as_ref()) {
+                retain[i] = true;
+            } else if unsatisfying < n {
+                retain[i] = true;
+                unsatisfying += 1;
+            }
+        }
+
+        for ((value, times), retain) in group.into_iter().zip(retain) {
+            if retain {
+                for (time, weight) in times {
+                    result.push(((clone_box(&*k), clone_box(&*value), time), weight));
+                }
+            }
+        }
+    }
+
+    result
+}
+
 pub fn filter<K: DataTrait + ?Sized, V: DataTrait + ?Sized, T, R: WeightTrait + ?Sized>(
     mut tuples: Vec<((Box<K>, Box<V>, T), Box<R>)>,
     key_filter: &Option<Filter<K>>,
@@ -193,31 +269,27 @@ pub fn filter<K: DataTrait + ?Sized, V: DataTrait + ?Sized, T, R: WeightTrait + 
 
                 let mut result = Vec::new();
 
-                for (k, mut tuples) in tuples_by_key.into_iter() {
-                    let index = tuples
+                for (k, tuples) in tuples_by_key.into_iter() {
+                    let group = by_value(tuples);
+                    let index = group
                         .iter()
-                        .position(|(v, _t, _w)| (filter.filter_func())(v.as_ref()))
-                        .unwrap_or(tuples.len());
+                        .position(|(value, _times)| (filter.filter_func())(value.as_ref()))
+                        .unwrap_or(group.len());
                     let first_index = index.saturating_sub(*n);
-                    tuples
-                        .drain(first_index..)
-                        .for_each(|(v, t, w)| result.push(((clone_box(&*k), v, t), w)));
+                    for (value, times) in group.into_iter().skip(first_index) {
+                        for (time, weight) in times {
+                            result.push(((clone_box(&*k), clone_box(&*value), time), weight));
+                        }
+                    }
                 }
 
                 return result;
             }
             GroupFilter::TopN(n, filter, _val_factory) => {
-                tuples.retain(|((_k, v, _t), _r)| (filter.filter_func())(v.as_ref()));
-                // take the last n elements of tuples only
-                if tuples.len() > *n {
-                    tuples.drain(..tuples.len() - *n);
-                }
-                return tuples;
+                return retain_n_unsatisfying(tuples, filter, *n, Extreme::Largest);
             }
             GroupFilter::BottomN(n, filter, _vals_factory) => {
-                tuples.retain(|((_k, v, _t), _r)| (filter.filter_func())(v.as_ref()));
-                tuples.truncate(*n);
-                return tuples;
+                return retain_n_unsatisfying(tuples, filter, *n, Extreme::Smallest);
             }
         }
     }
@@ -1555,5 +1627,132 @@ pub fn test_trace_sampling<T: Trace<Time = ()>>(trace: &T) {
     let all_keys_set = all_keys.dyn_iter().map(clone_box).collect::<BTreeSet<_>>();
     for key in sample.dyn_iter() {
         assert!(all_keys_set.contains(key));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Extreme, filter, retain_n_unsatisfying};
+    use crate::dynamic::{DowncastTrait, DynData, Erase, WithFactory};
+    use crate::trace::{Filter, GroupFilter};
+    use crate::{DynZWeight, ZWeight};
+    use dyn_clone::clone_box;
+
+    type Tuples = Vec<((Box<DynData>, Box<DynData>, u32), Box<DynZWeight>)>;
+
+    /// `(key, value, time, weight)` in the shape `filter` takes.
+    fn tuples(rows: &[(i32, i32, u32, ZWeight)]) -> Tuples {
+        rows.iter()
+            .map(|&(key, value, time, weight)| {
+                (
+                    (clone_box(key.erase()), clone_box(value.erase()), time),
+                    clone_box(weight.erase()),
+                )
+            })
+            .collect()
+    }
+
+    fn plain(tuples: &Tuples) -> Vec<(i32, i32, u32, ZWeight)> {
+        tuples
+            .iter()
+            .map(|((key, value, time), weight)| {
+                (
+                    *unsafe { key.as_ref().downcast::<i32>() },
+                    *unsafe { value.as_ref().downcast::<i32>() },
+                    *time,
+                    *unsafe { weight.as_ref().downcast::<ZWeight>() },
+                )
+            })
+            .collect()
+    }
+
+    fn keeps_8() -> Filter<DynData> {
+        Filter::new(Box::new(|v: &DynData| *unsafe { v.downcast::<i32>() } >= 8))
+    }
+
+    /// Nothing else drives this model, so pin the semantics it is supposed to
+    /// state: everything satisfying the filter, plus the `n` failing values
+    /// nearest the chosen end, and per key rather than across the batch.
+    #[test]
+    fn retains_the_n_failing_values_nearest_each_end() {
+        let rows = tuples(&[
+            (1, 1, 0, 1),
+            (1, 3, 0, 1),
+            (1, 5, 0, 1),
+            (1, 9, 0, 1),
+            (2, 2, 0, 1),
+            (2, 4, 0, 1),
+        ]);
+
+        let top = retain_n_unsatisfying(rows.clone(), &keeps_8(), 2, Extreme::Largest);
+        assert_eq!(
+            plain(&top),
+            vec![
+                (1, 3, 0, 1),
+                (1, 5, 0, 1),
+                (1, 9, 0, 1),
+                (2, 2, 0, 1),
+                (2, 4, 0, 1)
+            ],
+            "the two largest failing values of each key, plus everything >= 8"
+        );
+
+        let bottom = retain_n_unsatisfying(rows, &keeps_8(), 2, Extreme::Smallest);
+        assert_eq!(
+            plain(&bottom),
+            vec![
+                (1, 1, 0, 1),
+                (1, 3, 0, 1),
+                (1, 9, 0, 1),
+                (2, 2, 0, 1),
+                (2, 4, 0, 1)
+            ],
+            "the two smallest failing values of each key, plus everything >= 8"
+        );
+    }
+
+    /// A value at several times is one value to the cursor, so it spends one of
+    /// the `n` places, not one per time.
+    #[test]
+    fn a_value_at_several_times_counts_once() {
+        // Value 5 occurs twice. Counting tuples would spend both places on it
+        // and drop value 3.
+        let rows = tuples(&[(1, 3, 0, 1), (1, 5, 0, 1), (1, 5, 7, 1)]);
+
+        let top = retain_n_unsatisfying(rows, &keeps_8(), 2, Extreme::Largest);
+        assert_eq!(
+            plain(&top),
+            vec![(1, 3, 0, 1), (1, 5, 0, 1), (1, 5, 7, 1)],
+            "values 3 and 5 are the two largest failing values"
+        );
+    }
+
+    /// The same, through `filter`, which is what `TestBatch::retain_values` and
+    /// `assert_trace_eq` call.
+    #[test]
+    fn filter_dispatches_top_and_bottom_n() {
+        let rows = tuples(&[(1, 1, 0, 1), (1, 5, 0, 1), (1, 9, 0, 1)]);
+
+        let top = filter(
+            rows.clone(),
+            &None,
+            &Some(GroupFilter::TopN(
+                1,
+                keeps_8(),
+                <DynData as WithFactory<i32>>::FACTORY,
+            )),
+        );
+        assert_eq!(plain(&top), vec![(1, 5, 0, 1), (1, 9, 0, 1)]);
+
+        let bottom = filter(
+            rows,
+            &None,
+            &Some(GroupFilter::BottomN(
+                1,
+                keeps_8(),
+                <DynData as WithFactory<i32>>::FACTORY,
+            )),
+        );
+        assert_eq!(plain(&bottom), vec![(1, 1, 0, 1), (1, 9, 0, 1)]);
     }
 }

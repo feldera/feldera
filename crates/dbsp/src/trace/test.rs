@@ -2035,7 +2035,11 @@ fn file_val_batch_filter_follows_the_rate() {
 /// disagreed over a value, resurrected deleted rows. The snapshot key gate was a
 /// separate defect that needed no predicate at all.
 mod non_monotone_retention {
+    use std::collections::BTreeMap;
     use std::sync::Arc;
+
+    use proptest::collection::vec as prop_vec;
+    use proptest::prelude::*;
 
     use super::{CircuitConfig, DynI32, Filter, indexed_zset_tuples};
     use crate::algebra::{OrdIndexedZSet, OrdIndexedZSetFactories};
@@ -2243,5 +2247,177 @@ mod non_monotone_retention {
             vec![0, 1, 8],
             "6 fails the filter and is not among the 2 smallest that do"
         );
+    }
+
+    /// Values come from a small domain so that a random bitmask ranges over
+    /// every shape of predicate, and so that one batch can hold more than the
+    /// eight values `advance` probes before it starts skipping.
+    const VALUES: i32 = 16;
+    const BATCHES: usize = 3;
+
+    /// `(value, batch, weight)` triples. Repeating a value across batches with
+    /// opposing weights cancels it, which is how a value becomes invisible to
+    /// the snapshot while still present in the batches being merged.
+    fn entries() -> impl Strategy<Value = Vec<(i32, usize, ZWeight)>> {
+        prop_vec(
+            (
+                0..VALUES,
+                0..BATCHES,
+                prop::sample::select(vec![-2 as ZWeight, -1, 1, 2]),
+            ),
+            1..32usize,
+        )
+    }
+
+    /// `fold` collapses the batch assignment onto fewer batches. Whether a key's
+    /// values sit in one batch or are spread over several decides how far the
+    /// cursor has to skip, and skipping is where the bugs are, so the property
+    /// tests need both shapes.
+    fn split(entries: &[(i32, usize, ZWeight)], fold: usize) -> Vec<Vec<(i32, ZWeight)>> {
+        let mut batches = vec![Vec::new(); fold];
+        for &(value, batch, weight) in entries {
+            batches[batch % fold].push((value, weight));
+        }
+        batches.retain(|batch| !batch.is_empty());
+        batches
+    }
+
+    /// The values the spine snapshot holds: weights summed across batches, with
+    /// anything that cancels gone.
+    fn snapshot_of(entries: &[(i32, usize, ZWeight)]) -> BTreeMap<i32, ZWeight> {
+        let mut snapshot = BTreeMap::new();
+        for &(value, _batch, weight) in entries {
+            *snapshot.entry(value).or_insert(0) += weight;
+        }
+        snapshot.retain(|_value, weight| *weight != 0);
+        snapshot
+    }
+
+    fn retained(
+        snapshot: &BTreeMap<i32, ZWeight>,
+        keep: impl Fn(&[i32]) -> Vec<bool>,
+    ) -> Vec<(i32, i32, ZWeight)> {
+        let values: Vec<i32> = snapshot.keys().copied().collect();
+        values
+            .iter()
+            .zip(keep(&values))
+            .filter(|&(_value, keep)| keep)
+            .map(|(&value, _keep)| (1, value, snapshot[&value]))
+            .collect()
+    }
+
+    /// What `TopN`/`BottomN` must retain, derived from the documented semantics
+    /// rather than from the cursor: every value satisfying the filter, plus the
+    /// `n` failing values nearest the chosen end of the group.
+    fn model_n(
+        mask: u32,
+        n: usize,
+        keep_largest: bool,
+        entries: &[(i32, usize, ZWeight)],
+    ) -> Vec<(i32, i32, ZWeight)> {
+        let snapshot = snapshot_of(entries);
+        retained(&snapshot, |values| {
+            let mut keep = vec![false; values.len()];
+            let mut failing = 0;
+            let order: Box<dyn Iterator<Item = usize>> = if keep_largest {
+                Box::new((0..values.len()).rev())
+            } else {
+                Box::new(0..values.len())
+            };
+            for i in order {
+                if satisfies(mask, values[i]) {
+                    keep[i] = true;
+                } else if failing < n {
+                    keep[i] = true;
+                    failing += 1;
+                }
+            }
+            keep
+        })
+    }
+
+    /// What `LastN` must retain: every value from the `n`'th before the first
+    /// one satisfying the filter onwards, or the last `n` when none satisfies it.
+    fn model_last_n(
+        threshold: i32,
+        n: usize,
+        entries: &[(i32, usize, ZWeight)],
+    ) -> Vec<(i32, i32, ZWeight)> {
+        let snapshot = snapshot_of(entries);
+        retained(&snapshot, |values| {
+            let first = values
+                .iter()
+                .position(|&value| value >= threshold)
+                .unwrap_or(values.len());
+            let from = first.saturating_sub(n);
+            (0..values.len()).map(|i| i >= from).collect()
+        })
+    }
+
+    fn satisfies(mask: u32, value: i32) -> bool {
+        mask >> value & 1 == 1
+    }
+
+    fn bitmask_filter(mask: u32) -> Filter<DynI32> {
+        Filter::new(Box::new(move |v: &DynI32| {
+            satisfies(mask, *unsafe { v.downcast::<i32>() })
+        }))
+    }
+
+    /// A monotone filter, the only kind `LastN` supports.
+    fn threshold_filter(threshold: i32) -> Filter<DynI32> {
+        Filter::new(Box::new(move |v: &DynI32| {
+            *unsafe { v.downcast::<i32>() } >= threshold
+        }))
+    }
+
+    fn run(
+        filter: GroupFilter<DynI32>,
+        batches: &[Vec<(i32, ZWeight)>],
+    ) -> Vec<(i32, i32, ZWeight)> {
+        let refs: Vec<&[(i32, ZWeight)]> = batches.iter().map(|b| b.as_slice()).collect();
+        retain(filter, &refs)
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(512))]
+
+        /// `n` starts at 1 because `TopN(0)` conflates "no failing value may be
+        /// retained" with "the group holds fewer than `n` failing values", and
+        /// retains everything. The compiler only ever emits n >= 1.
+        #[test]
+        fn top_n_matches_the_documented_semantics(
+            mask in any::<u32>(),
+            n in 1usize..4,
+            fold in 1usize..=BATCHES,
+            entries in entries(),
+        ) {
+            let filter = GroupFilter::TopN(n, bitmask_filter(mask), <DynData as WithFactory<i32>>::FACTORY);
+            prop_assert_eq!(run(filter, &split(&entries, fold)), model_n(mask, n, true, &entries));
+        }
+
+        #[test]
+        fn bottom_n_matches_the_documented_semantics(
+            mask in any::<u32>(),
+            n in 1usize..4,
+            fold in 1usize..=BATCHES,
+            entries in entries(),
+        ) {
+            let filter = GroupFilter::BottomN(n, bitmask_filter(mask), <DynData as WithFactory<i32>>::FACTORY);
+            prop_assert_eq!(run(filter, &split(&entries, fold)), model_n(mask, n, false, &entries));
+        }
+
+        /// `LastN` is only defined for a monotone filter, so this drives it with
+        /// a threshold rather than a bitmask.
+        #[test]
+        fn last_n_matches_the_documented_semantics(
+            threshold in 0i32..=VALUES,
+            n in 1usize..4,
+            fold in 1usize..=BATCHES,
+            entries in entries(),
+        ) {
+            let filter = GroupFilter::LastN(n, threshold_filter(threshold));
+            prop_assert_eq!(run(filter, &split(&entries, fold)), model_last_n(threshold, n, &entries));
+        }
     }
 }
