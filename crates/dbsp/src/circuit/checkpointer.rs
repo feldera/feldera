@@ -345,6 +345,12 @@ impl Checkpointer {
         Ok(())
     }
 
+    /// First phase of committing a checkpoint: writes everything that the
+    /// checkpoint owns into its directory and returns its metadata.
+    ///
+    /// The checkpoint is not visible yet.  [Self::publish] adds it to the
+    /// catalog, which is what makes it visible to `/checkpoints`, to a restart,
+    /// and to garbage collection.
     pub(super) fn commit(
         &mut self,
         uuid: Uuid,
@@ -411,6 +417,16 @@ impl Checkpointer {
 
         md.size = Some(self.measure_checkpoint_storage_use(uuid)?);
 
+        Ok(md)
+    }
+
+    /// Second phase of committing a checkpoint: adds `md` to the catalog, which
+    /// publishes the checkpoint.
+    ///
+    /// The caller must have written every file the checkpoint needs, including
+    /// the pipeline state that [Self::commit] does not write, because a
+    /// checkpoint in the catalog is one that a restart may use.
+    pub(super) fn publish(&mut self, md: &CheckpointMetadata) -> Result<(), Error> {
         // Persist the catalog first, then add to the in-memory list only on
         // success. Otherwise a failed write leaves callers with a phantom
         // checkpoint that no future restart will recognize. The same rollback
@@ -424,6 +440,22 @@ impl Checkpointer {
             self.checkpoint_list.pop_back();
             return Err(e);
         }
+        Ok(())
+    }
+
+    /// Commits and publishes a checkpoint in one call, for tests that have no
+    /// reason to act between the two phases.
+    #[cfg(test)]
+    fn commit_and_publish(
+        &mut self,
+        uuid: Uuid,
+        fingerprint: u64,
+        identifier: Option<String>,
+        steps: Option<u64>,
+        processed_records: Option<u64>,
+    ) -> Result<CheckpointMetadata, Error> {
+        let md = self.commit(uuid, fingerprint, identifier, steps, processed_records)?;
+        self.publish(&md)?;
         Ok(md)
     }
 
@@ -837,7 +869,7 @@ mod test {
         std::fs::write(&state_file, b"spine state").unwrap();
 
         checkpointer
-            .commit(uuid, 0, None, Some(0), Some(0))
+            .commit_and_publish(uuid, 0, None, Some(0), Some(0))
             .unwrap();
         drop(checkpointer);
 
@@ -922,7 +954,7 @@ mod test {
         .unwrap();
 
         checkpointer
-            .commit(uuid, 0, None, Some(0), Some(0))
+            .commit_and_publish(uuid, 0, None, Some(0), Some(0))
             .unwrap();
         drop(checkpointer);
 
@@ -985,7 +1017,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         .unwrap();
 
         checkpointer
-            .commit(uuid, 0, None, Some(0), Some(0))
+            .commit_and_publish(uuid, 0, None, Some(0), Some(0))
             .unwrap();
         drop(checkpointer);
 
@@ -1023,7 +1055,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
             .map(|i| {
                 let uuid = uuid::Uuid::now_v7();
                 checkpointer
-                    .commit(uuid, 0, None, Some(i as u64), Some(0))
+                    .commit_and_publish(uuid, 0, None, Some(i as u64), Some(0))
                     .unwrap();
                 uuid
             })
@@ -1067,7 +1099,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         for i in 0..Checkpointer::MIN_CHECKPOINT_THRESHOLD + 1 {
             let uuid = uuid::Uuid::now_v7();
             checkpointer
-                .commit(uuid, 0, None, Some(i as u64), Some(0))
+                .commit_and_publish(uuid, 0, None, Some(i as u64), Some(0))
                 .unwrap();
             uuids.push(uuid);
         }
@@ -1105,7 +1137,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         let mut checkpointer = Checkpointer::new(make_backend()).unwrap();
         let uuid = uuid::Uuid::now_v7();
         checkpointer
-            .commit(uuid, 0, None, Some(0), Some(0))
+            .commit_and_publish(uuid, 0, None, Some(0), Some(0))
             .unwrap();
         drop(checkpointer);
 
@@ -1128,7 +1160,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
     /// A failed `commit` must not leave the new checkpoint in the in-memory
     /// list. Otherwise callers see a checkpoint that no restart will find.
     #[test]
-    fn failed_commit_rolls_back_in_memory_list() {
+    fn failed_publish_rolls_back_in_memory_list() {
         use feldera_types::constants::CHECKPOINT_FILE_NAME;
         let tempdir = tempfile::tempdir().unwrap();
         let posix: Arc<dyn StorageBackend> = Arc::new(PosixBackend::new(
@@ -1143,10 +1175,10 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
         let mut checkpointer = Checkpointer::new(backend).unwrap();
 
         let uuid = uuid::Uuid::now_v7();
-        let result = checkpointer.commit(uuid, 0, None, Some(0), Some(0));
+        let result = checkpointer.commit_and_publish(uuid, 0, None, Some(0), Some(0));
         assert!(
             result.is_err(),
-            "commit should fail when catalog write fails"
+            "publishing should fail when the catalog write fails"
         );
 
         assert!(
@@ -1154,7 +1186,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
                 .checkpoint_list
                 .iter()
                 .any(|cpm| cpm.uuid == uuid),
-            "failed commit left UUID {uuid} in the in-memory checkpoint list",
+            "failed publication left UUID {uuid} in the in-memory checkpoint list",
         );
     }
 
@@ -1218,7 +1250,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
 
             for i in 0..Checkpointer::MIN_CHECKPOINT_THRESHOLD {
                 self.checkpointer
-                    .commit(uuid::Uuid::now_v7(), 0, None, Some(i as u64), Some(0))
+                    .commit_and_publish(uuid::Uuid::now_v7(), 0, None, Some(i as u64), Some(0))
                     .unwrap();
             }
 
@@ -1245,7 +1277,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
 
             let uuid = uuid::Uuid::now_v7();
             self.checkpointer
-                .commit(uuid, 0, None, Some(2), Some(0))
+                .commit_and_publish(uuid, 0, None, Some(2), Some(0))
                 .unwrap();
 
             TestState::<ExtraCheckpoints> {
@@ -1269,7 +1301,7 @@ ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaa
             self.precondition();
 
             self.checkpointer
-                .commit(uuid::Uuid::now_v7(), 0, None, Some(3), Some(0))
+                .commit_and_publish(uuid::Uuid::now_v7(), 0, None, Some(3), Some(0))
                 .unwrap();
 
             TestState::<ExtraCheckpoints> {

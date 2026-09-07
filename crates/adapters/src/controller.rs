@@ -9746,9 +9746,7 @@ struct CheckpointThread {
 impl CheckpointThread {
     fn run(mut self) -> Result<Checkpoint, ControllerError> {
         // Commit all the operator checkpoints to stable storage.
-        let circuit = self.committer.commit()?;
-        let uuid = circuit.uuid;
-        self.checkpoint.circuit = Some(circuit);
+        let publisher = self.committer.commit()?;
         let bytes_written = WRITE_BLOCKS_BYTES.sum() - self.written_before;
 
         // Wait to complete outputs for all the records processed at the time
@@ -9818,11 +9816,46 @@ impl CheckpointThread {
 
         // Finalize the checkpoint on storage.
         //
-        // [Checkpoint::write] commits to stable storage.
-        self.checkpoint.write(
-            &*self.storage,
-            &StoragePath::from(uuid.to_string()).join(STATE_FILE),
-        )?;
+        // The ordering is important:
+        //
+        // 1. Write the checkpoint's `state.json`.
+        //
+        // 2. Publish the checkpoint, which updates the checkpoint catalog,
+        //    which makes the checkpoint visible.
+        //
+        // 3. Write root `state.json`.
+        //
+        // Steps 1 and 2 cannot be reordered because the checkpoint, once
+        // visible, must be complete, and the checkpoint's own `state.json` is
+        // needed for that: checkpoint sync reads it to describe the checkpoint
+        // it uploads, and a multihost host restoring a checkpoint the
+        // coordinator names reads it to find the circuit to open and the input
+        // offsets to resume from.
+        //
+        // Steps 2 and 3 cannot be reordered because gc_startup keeps only files
+        // that the catalog references, so a root pointer to an uncatalogued
+        // checkpoint would get its files deleted.
+        //
+        // [CheckpointPublisher::metadata] reports the circuit's metadata before
+        // publication, so that step 1 can record it.
+        let uuid = publisher.metadata().uuid;
+        let checkpoint_dir = StoragePath::from(uuid.to_string());
+        self.checkpoint.circuit = Some(publisher.metadata().clone());
+        self.checkpoint
+            .write(&*self.storage, &checkpoint_dir.clone().join(STATE_FILE))?;
+
+        // Writing the file renames it into the checkpoint's directory, and a
+        // rename is durable only once that directory entry is.  Nothing else
+        // fsyncs the directory this late: `Checkpointer::commit`'s barrier ran
+        // before this write, and publication fsyncs the storage root.  Without
+        // this barrier a crash could keep the catalog entry while losing the
+        // file it vouches for, which is the state this ordering exists to
+        // prevent.
+        self.storage.fsync_dir(&checkpoint_dir).map_err(|error| {
+            ControllerError::storage_error(format!("{checkpoint_dir}: failed to fsync"), error)
+        })?;
+
+        publisher.publish()?;
         self.checkpoint
             .write(&*self.storage, &StoragePath::from(STATE_FILE))?;
 
