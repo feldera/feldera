@@ -1062,9 +1062,10 @@ impl<V: DataTrait + ?Sized> GroupFilter<V> {
         );
 
         match self {
-            Self::Simple(filter) => GroupFilterCursor::Simple {
-                filter: filter.clone(),
-            },
+            // `merge_cursor_with_snapshot` serves `Simple` from
+            // `FilteredMergeCursor`, and it is the only caller, so a `Simple`
+            // filter never reaches this cursor.
+            Self::Simple(_) => unreachable!("`Simple` does not need a snapshot"),
             Self::LastN(n, filter) => GroupFilterCursor::LastN {
                 n: *n,
                 filter: filter.clone(),
@@ -1087,9 +1088,6 @@ impl<V: DataTrait + ?Sized> GroupFilter<V> {
 
 /// State maintained by a `GroupFilter` for a cursor.
 enum GroupFilterCursor<V: ?Sized> {
-    Simple {
-        filter: Filter<V>,
-    },
     LastN {
         n: usize,
         filter: Filter<V>,
@@ -1126,19 +1124,10 @@ impl<V: DataTrait + ?Sized> GroupFilterCursor<V> {
         trace_cursor: &mut dyn Cursor<K, V, T, R>,
     ) -> bool {
         if !trace_cursor.seek_key_exact(cursor.key(), None) {
-            return false;
+            return self.retain_whole_key(cursor);
         }
 
         match self {
-            Self::Simple { filter } => {
-                while let Some(val) = cursor.get_val() {
-                    if (filter.filter_func())(val) {
-                        return true;
-                    }
-                    cursor.step_val();
-                }
-                false
-            }
             Self::LastN { n, filter } => {
                 // Find the last value below the waterline.
                 trace_cursor.fast_forward_vals();
@@ -1257,6 +1246,28 @@ impl<V: DataTrait + ?Sized> GroupFilterCursor<V> {
         }
     }
 
+    /// Positions the cursor on a key the spine snapshot does not hold.
+    ///
+    /// The spine's weights for such a key cancel out, so there is no group to
+    /// measure against and no ground for dropping any of it. The records that
+    /// cancel the key live in batches this merge does not cover and so survive
+    /// it; dropping the records it does cover would leave those unbalanced, and
+    /// the trace would gain a retraction that matches nothing.
+    fn retain_whole_key<K: ?Sized, T, R: ?Sized>(
+        &mut self,
+        cursor: &mut dyn Cursor<K, V, T, R>,
+    ) -> bool {
+        match self {
+            // Retain the key whole. Clearing the mark stops `on_step_val`
+            // measuring this key against a previous key's value.
+            Self::LastN { .. } => {}
+            Self::TopN { min_val_valid, .. } => *min_val_valid = false,
+            Self::BottomN { max_val_valid, .. } => *max_val_valid = false,
+        }
+
+        cursor.val_valid()
+    }
+
     /// Called after the cursor has advanced to a new value.
     ///
     /// Skip over values that don't satisfy the filter.
@@ -1266,14 +1277,6 @@ impl<V: DataTrait + ?Sized> GroupFilterCursor<V> {
         _trace_cursor: &mut dyn Cursor<K, V, T, R>,
     ) {
         match self {
-            Self::Simple { filter } => {
-                while let Some(val) = cursor.get_val() {
-                    if (filter.filter_func())(val) {
-                        return;
-                    }
-                    cursor.step_val();
-                }
-            }
             Self::LastN { .. } => {}
             Self::TopN {
                 filter,
