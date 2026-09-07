@@ -28,6 +28,7 @@ import {
     REGION_OPACITY,
     REGION_PADDING
 } from './diagramTheme.js'
+import { regionMinWidth } from './regionSize.js'
 
 const graph = (theme: DiagramTheme) =>
     cytoscape({
@@ -255,6 +256,79 @@ describe('expanded regions', () => {
     it('leaves the operators inside a region opaque', () => {
         const cy = graph('light')
         expect(Number(cy.$id('inside').style('background-opacity'))).toBe(1)
+    })
+})
+
+describe('the width of an expanded region', () => {
+    /** A region named `label` holding one operator `child` px wide, sized as the diagram sizes it:
+     *  `min_width` from the node definition, everything else from the stylesheet. */
+    const region = (label: string, leafCount: number, child: number) =>
+        cytoscape({
+            headless: true,
+            styleEnabled: true,
+            style: buildGraphStyle('light'),
+            elements: {
+                nodes: [
+                    {
+                        data: {
+                            id: 'region',
+                            label,
+                            operator: label,
+                            has_children: true,
+                            text_width: labelWidth(label),
+                            min_width: regionMinWidth(label, leafCount),
+                            chips: nodeChips(false, leafCount, 'light')
+                        }
+                    },
+                    {
+                        data: {
+                            id: 'inside',
+                            label: 'inside',
+                            text_width: child,
+                            parent: 'region',
+                            chips: nodeChips(false, 0, 'light')
+                        },
+                        position: { x: 0, y: 0 }
+                    }
+                ]
+            }
+        }).$id('region')
+
+    const LONG = 'region shard_by_index_and_key'
+    const COUNT = 12
+
+    it('pads a narrow region out to what its own name needs', () => {
+        // A cytoscape parent is sized by its children and ignores its own label, so a region holding one
+        // short operator would be narrower than the name in its top band, leaving the name running past
+        // both borders and under the counter chip.
+        const node = region(LONG, COUNT, 30)
+        expect(node.children().boundingBox().w).toBeLessThan(labelWidth(LONG))
+        expect(node.outerWidth())
+            .toBeGreaterThanOrEqual(labelWidth(LONG) + 2 * badgePillWidth(formatLeafCount(COUNT)))
+        // The floor is measured against the children, so the region's own padding is part of the band
+        // the name is drawn in - which is what `regionMinWidth` takes it off for.
+        expect(node.numericStyle('padding')).toBe(REGION_PADDING)
+    })
+
+    it('leaves a region sized by the nodes inside it when those are the wider ones', () => {
+        // A region around a wide operator is as wide as that operator and no wider, its name having
+        // fitted anyway.
+        const node = region('region r', 1, 600)
+        // The node's own body, which for a parent is the box its children take; the padding around it
+        // is what `node geometry` above covers.
+        expect(node.width()).toBeCloseTo(node.children().boundingBox().w, 0)
+    })
+
+    it('adds every extra pixel on the right, the side ELK reserves it on', () => {
+        // Cytoscape splits the extra evenly by default, which would grow the region into whatever the
+        // layout placed to its left.
+        const node = region(LONG, COUNT, 30)
+        const inside = node.children().boundingBox()
+        // Measured on the body rather than the padded box, so the two sides are comparable: the left
+        // edge stays on the nodes inside, and all of the padding out to the floor is on the right.
+        expect(inside.x1 - (node.position().x - node.width() / 2)).toBeCloseTo(0, 0)
+        expect(node.position().x + node.width() / 2 - inside.x2)
+            .toBeCloseTo(regionMinWidth(LONG, COUNT) - inside.w, 0)
     })
 })
 
