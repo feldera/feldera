@@ -2379,12 +2379,68 @@ mod non_monotone_retention {
         retain(filter, &refs)
     }
 
+    /// `n = 0` denotes `Simple`, but the marking these filters rely on cannot
+    /// express it, and the compiler never emits it. Rejecting it turns a silent
+    /// wrong answer into a loud one.
+    ///
+    /// The rejection panics on a worker thread, and the runtime re-raises it as
+    /// its own panic, so the message does not survive to be matched on. Running
+    /// the same call with a limit of one instead pins the panic to the zero
+    /// rather than to the surrounding machinery.
+    fn assert_rejects_zero_n(zero: GroupFilter<DynI32>, one: GroupFilter<DynI32>) {
+        let values: [(i32, ZWeight); 2] = [(0, 1), (8, 1)];
+
+        retain(one, &[&values]);
+
+        let panicked =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| retain(zero, &[&values])));
+        assert!(panicked.is_err(), "a group filter with n = 0 was accepted");
+    }
+
+    #[test]
+    fn top_n_rejects_a_zero_limit() {
+        assert_rejects_zero_n(
+            GroupFilter::TopN(
+                0,
+                threshold_filter(8),
+                <DynData as WithFactory<i32>>::FACTORY,
+            ),
+            GroupFilter::TopN(
+                1,
+                threshold_filter(8),
+                <DynData as WithFactory<i32>>::FACTORY,
+            ),
+        );
+    }
+
+    #[test]
+    fn bottom_n_rejects_a_zero_limit() {
+        assert_rejects_zero_n(
+            GroupFilter::BottomN(
+                0,
+                threshold_filter(8),
+                <DynData as WithFactory<i32>>::FACTORY,
+            ),
+            GroupFilter::BottomN(
+                1,
+                threshold_filter(8),
+                <DynData as WithFactory<i32>>::FACTORY,
+            ),
+        );
+    }
+
+    #[test]
+    fn last_n_rejects_a_zero_limit() {
+        assert_rejects_zero_n(
+            GroupFilter::LastN(0, threshold_filter(8)),
+            GroupFilter::LastN(1, threshold_filter(8)),
+        );
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(512))]
 
-        /// `n` starts at 1 because `TopN(0)` conflates "no failing value may be
-        /// retained" with "the group holds fewer than `n` failing values", and
-        /// retains everything. The compiler only ever emits n >= 1.
+        /// `n` starts at 1 because a zero limit is rejected.
         #[test]
         fn top_n_matches_the_documented_semantics(
             mask in any::<u32>(),

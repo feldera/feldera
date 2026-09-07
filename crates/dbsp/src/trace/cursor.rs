@@ -1047,6 +1047,20 @@ where
 
 impl<V: DataTrait + ?Sized> GroupFilter<V> {
     fn new_cursor(&self) -> GroupFilterCursor<V> {
+        // These filters mark the n'th value that fails the filter and retain
+        // everything from there on, so "no n'th value" has to mean "the group
+        // holds fewer than `n` of them, and all of them stay". A limit of zero
+        // means the opposite and the marking cannot express it. Rather than
+        // reading it as `Simple`, which is what it denotes, reject it: the
+        // compiler never emits a zero limit, so one signals a bug upstream.
+        assert!(
+            !matches!(
+                self,
+                Self::LastN(0, _) | Self::TopN(0, _, _) | Self::BottomN(0, _, _)
+            ),
+            "group filter built with n = 0"
+        );
+
         match self {
             Self::Simple(filter) => GroupFilterCursor::Simple {
                 filter: filter.clone(),
