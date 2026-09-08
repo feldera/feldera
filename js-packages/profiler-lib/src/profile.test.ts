@@ -1313,8 +1313,10 @@ describe('CircuitProfile.consumerCount', () => {
 })
 
 describe('CircuitProfile.byName', () => {
-    const mirNode = (persistent_id: string, table: string | null, view: string | null) => ({
-        operation: 'op', table, view, inputs: [], calcite: {}, positions: [], persistent_id
+    // An omitted key models the SQL compiler's own dataflow file; an explicit null models a support
+    // bundle, whose graph is round-tripped through serde in `crates/ir/src/mir.rs`.
+    const mirNode = (persistent_id: string, names: { table?: string | null; view?: string | null } = {}) => ({
+        operation: 'op', ...names, inputs: [], calcite: {}, positions: [], persistent_id
     })
 
     const makeProfile = () => {
@@ -1329,9 +1331,9 @@ describe('CircuitProfile.byName', () => {
         const dataflow: Dataflow = {
             calcite_plan: {},
             mir: {
-                s1: mirNode('abc123', 'CUSTOMERS', null),
-                s2: mirNode('def456', null, 'report'),
-                s3: mirNode('789fed', 'port', null)
+                s1: mirNode('abc123', { table: 'CUSTOMERS' }),
+                s2: mirNode('def456', { view: 'report' }),
+                s3: mirNode('789fed', { table: 'port' })
             }
         }
         profile.setDataflow(dataflow)
@@ -1359,6 +1361,49 @@ describe('CircuitProfile.byName', () => {
         expect(profile.findByName('port').unwrap()).toBe(port)
     })
 
+    // `table` wins when both are named; a missing name is spelled either way by the two producers,
+    // and neither spelling may reach `toLowerCase`.
+    describe.each([
+        { case: 'both absent', names: {}, expected: undefined },
+        { case: 'table absent, view null', names: { view: null }, expected: undefined },
+        { case: 'table absent, view named', names: { view: 'v' }, expected: 'v' },
+        { case: 'table null, view absent', names: { table: null }, expected: undefined },
+        { case: 'both null', names: { table: null, view: null }, expected: undefined },
+        { case: 'table null, view named', names: { table: null, view: 'v' }, expected: 'v' },
+        { case: 'table named, view absent', names: { table: 't' }, expected: 't' },
+        { case: 'table named, view null', names: { table: 't', view: null }, expected: 't' },
+        { case: 'both named', names: { table: 't', view: 'v' }, expected: 't' }
+    ])('with $case', ({ names, expected }) => {
+        const run = () => {
+            const profile = new CircuitProfile(1, 'n')
+            const region = new ComplexNode('c1', 'region', 1)
+            const node = new SimpleNode('n1', 'map', 1)
+            profile.complexNodes.set(region.id, region)
+            profile.simpleNodes.set(node.id, node)
+            profile.parents.set(node.id, region.id)
+            profile.byPersistentId.set('abc123', node)
+            profile.setDataflow({ calcite_plan: {}, mir: { s1: mirNode('abc123', names) } })
+            return { profile, region, node }
+        }
+
+        it('parses without throwing', () => {
+            expect(run).not.toThrow()
+        })
+
+        it(`indexes ${expected ?? 'nothing'}`, () => {
+            const { profile, region, node } = run()
+            if (expected === undefined) {
+                expect(profile.byName.size).toBe(0)
+                expect(node.operation).toBe('map')
+                expect(region.collapsedOperation()).toBe('region')
+            } else {
+                expect(profile.byName.get(expected).unwrap()).toBe(node)
+                expect(node.operation).toBe(`map ${expected}`)
+                expect(region.collapsedOperation()).toBe(`region ${expected}`)
+            }
+        })
+    })
+
     it('propagates the name to ancestors for collapsed display', () => {
         const profile = new CircuitProfile(1, 'n')
         const outer = new ComplexNode('c1', 'region', 1)
@@ -1371,7 +1416,7 @@ describe('CircuitProfile.byName', () => {
         profile.parents.set(source.id, inner.id)
         profile.byPersistentId.set('abc123', source)
 
-        profile.setDataflow({ calcite_plan: {}, mir: { s1: mirNode('abc123', 'customers', null) } })
+        profile.setDataflow({ calcite_plan: {}, mir: { s1: mirNode('abc123', { table: 'customers' }) } })
 
         expect(outer.collapsedOperation()).toBe('region customers')
         expect(inner.collapsedOperation()).toBe('subregion customers')

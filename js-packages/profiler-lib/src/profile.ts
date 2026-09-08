@@ -1719,8 +1719,8 @@ export class CircuitProfile {
         // This can happen for some Z nodes in recursive components
         if (profileNode.isNone()) return;
         let n = profileNode.unwrap();
-        const name = mir.table !== null ? mir.table : mir.view;
-        if (name !== null) {
+        const name = mir.table ?? mir.view;
+        if (name !== undefined && name !== null) {
             n.operation += " " + name;
             this.byName.set(name.toLowerCase(), n);
             // Ancestors display the contained names when collapsed
