@@ -16,7 +16,7 @@ use arrow::array::{
     Array, ArrayRef, LargeListArray, ListArray, MapArray, StructArray, new_null_array,
 };
 use arrow::compute::cast;
-use arrow::datatypes::{DataType, Field, FieldRef, Fields, SchemaRef};
+use arrow::datatypes::{DataType, Field, FieldRef, Fields, Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use async_stream::try_stream;
 use datafusion::catalog::TableProvider;
@@ -225,7 +225,7 @@ impl fmt::Debug for MaskedParquetPartition {
 
 /// A field's Parquet field id. The data file stamps `PARQUET:field_id`; the Delta
 /// read schema carries `delta.columnMapping.id`. Either identifies the same column.
-fn field_id(field: &Field) -> Option<&str> {
+pub(super) fn field_id(field: &Field) -> Option<&str> {
     field
         .metadata()
         .get("PARQUET:field_id")
@@ -234,7 +234,7 @@ fn field_id(field: &Field) -> Option<&str> {
 }
 
 /// Index a field list by field id, skipping fields without one.
-fn field_index_by_id(fields: &Fields) -> HashMap<&str, usize> {
+pub(super) fn field_index_by_id(fields: &Fields) -> HashMap<&str, usize> {
     fields
         .iter()
         .enumerate()
@@ -242,16 +242,35 @@ fn field_index_by_id(fields: &Fields) -> HashMap<&str, usize> {
         .collect()
 }
 
+/// Where `want` lives in `file`: by field id, else by name. A name match must
+/// be on an id-less column, since one carrying another id is another column.
+pub(super) fn source_index(
+    file: &Schema,
+    by_id: &HashMap<&str, usize>,
+    want: &Field,
+) -> Option<usize> {
+    match field_id(want) {
+        Some(id) => by_id.get(id).copied().or_else(|| {
+            file.fields()
+                .iter()
+                .position(|f| field_id(f).is_none() && f.name() == want.name())
+        }),
+        None => file.index_of(want.name()).ok(),
+    }
+}
+
+/// `file` names the file when the caller knows it; a listing's reader does not.
 fn conversion_error(
-    file: &str,
+    file: Option<&str>,
     column: &str,
     from: &DataType,
     to: &DataType,
     cause: impl fmt::Display,
 ) -> DataFusionError {
+    let of_file = file.map_or(String::new(), |f| format!(" of file '{f}'"));
     DataFusionError::External(
         format!(
-            "Delta file reader: cannot read column '{column}' of file '{file}': the file stores \
+            "Delta file reader: cannot read column '{column}'{of_file}: the file stores \
              it as {from:?}, which is not convertible to the {to:?} that the Delta table's \
              schema declares: {cause}"
         )
@@ -276,7 +295,7 @@ fn container_element(data_type: &DataType) -> Option<&FieldRef> {
 fn realign_container(
     array: &ArrayRef,
     target: &DataType,
-    file: &str,
+    file: Option<&str>,
     column: &str,
 ) -> Result<Option<ArrayRef>, DataFusionError> {
     let Some(element) = container_element(target) else {
@@ -344,10 +363,10 @@ fn realign_container(
 /// one needs the same id matching: `cast` pairs children by name, falling back
 /// to position when no name matches, which is every column-mapped struct.
 /// `cast` handles scalars and the container kind itself (`List` vs `LargeList`).
-fn realign_array(
+pub(super) fn realign_array(
     array: &ArrayRef,
     target: &DataType,
-    file: &str,
+    file: Option<&str>,
     column: &str,
 ) -> Result<ArrayRef, DataFusionError> {
     // Errors name the file's own type, not an intermediate one.
@@ -428,20 +447,13 @@ fn project_to_logical(
     let file_idx_by_id = field_index_by_id(file_schema.fields());
     let mut columns: Vec<ArrayRef> = Vec::with_capacity(logical_schema.fields().len());
     for field in logical_schema.fields().iter() {
-        // Same rule as the struct children in `realign_array`: a file column
-        // naming a different id is that other column, so only an id-less one
-        // may be claimed by name.
-        let source = match field_id(field) {
-            Some(id) => file_idx_by_id.get(id).copied().or_else(|| {
-                file_schema
-                    .fields()
-                    .iter()
-                    .position(|f| field_id(f).is_none() && f.name() == field.name())
-            }),
-            None => file_schema.index_of(field.name()).ok(),
-        };
-        let col = match source {
-            Some(idx) => realign_array(batch.column(idx), field.data_type(), file, field.name())?,
+        let col = match source_index(&file_schema, &file_idx_by_id, field) {
+            Some(idx) => realign_array(
+                batch.column(idx),
+                field.data_type(),
+                Some(file),
+                field.name(),
+            )?,
             None => new_null_array(field.data_type(), num_rows),
         };
         columns.push(col);
@@ -690,7 +702,7 @@ mod tests {
         // A `List` target over a `LargeList` file also exercises the coercion
         // the rebuild leaves to `cast`.
         let target = ArrowDataType::List(element(ArrowDataType::Struct(target_fields)));
-        let out = realign_array(&list, &target, TEST_FILE, "history").unwrap();
+        let out = realign_array(&list, &target, Some(TEST_FILE), "history").unwrap();
         assert_eq!(out.data_type(), &target);
         let out = out.as_any().downcast_ref::<ListArray>().unwrap();
         assert_eq!(
@@ -716,7 +728,7 @@ mod tests {
             ArrowDataType::Utf8,
             false,
         )));
-        let error = realign_array(&source, &target, TEST_FILE, "items")
+        let error = realign_array(&source, &target, Some(TEST_FILE), "items")
             .expect_err("a null element must not pass into a NOT NULL element type")
             .to_string();
         assert!(error.contains("cannot read column 'items'"), "{error}");
@@ -739,7 +751,7 @@ mod tests {
 
         let target =
             ArrowDataType::List(Arc::new(ArrowField::new("item", ArrowDataType::Utf8, true)));
-        let out = realign_array(&source, &target, TEST_FILE, "items").unwrap();
+        let out = realign_array(&source, &target, Some(TEST_FILE), "items").unwrap();
         assert_eq!(out.data_type(), &target);
         assert_eq!(out.len(), 2);
     }
@@ -849,7 +861,7 @@ mod tests {
             ),
         ]));
 
-        let out = realign_array(&source, &target, TEST_FILE, "after").unwrap();
+        let out = realign_array(&source, &target, Some(TEST_FILE), "after").unwrap();
         let out = out.as_any().downcast_ref::<StructArray>().unwrap();
         let present = out
             .column(0)
@@ -881,7 +893,7 @@ mod tests {
             "2",
         )]));
 
-        let out = realign_array(&source, &target, TEST_FILE, "after").unwrap();
+        let out = realign_array(&source, &target, Some(TEST_FILE), "after").unwrap();
         assert_eq!(
             first_child_value(&out),
             "t1",
@@ -907,7 +919,7 @@ mod tests {
             "5",
         )]));
 
-        let out = realign_array(&source, &target, TEST_FILE, "after").unwrap();
+        let out = realign_array(&source, &target, Some(TEST_FILE), "after").unwrap();
         let out = out.as_any().downcast_ref::<StructArray>().unwrap();
         assert!(
             out.column(0).is_null(0),
@@ -943,7 +955,7 @@ mod tests {
             ArrowField::new("beta", ArrowDataType::Utf8, true),
         ]));
 
-        let out = realign_array(&source, &target, TEST_FILE, "after").unwrap();
+        let out = realign_array(&source, &target, Some(TEST_FILE), "after").unwrap();
         let out = out.as_any().downcast_ref::<StructArray>().unwrap();
         assert_eq!(
             out.column(0)
@@ -1008,7 +1020,7 @@ mod tests {
             "2",
         )]));
 
-        let err = realign_array(&source, &target, TEST_FILE, "after")
+        let err = realign_array(&source, &target, Some(TEST_FILE), "after")
             .expect_err("Utf8 does not cast to FixedSizeBinary")
             .to_string();
 
