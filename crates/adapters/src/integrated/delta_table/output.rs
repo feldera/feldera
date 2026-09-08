@@ -89,11 +89,16 @@ pub(crate) fn delta_variant_types(
                     nested.push(field.clone());
                     continue;
                 };
-                nested.push(StructField::new(
-                    field.name(),
-                    delta_variant_types(&sql_field.columntype, field.data_type().clone())?,
-                    field.is_nullable(),
-                ));
+                // Rewriting the type must keep the field's metadata, which
+                // carries its column mapping id.
+                nested.push(
+                    StructField::new(
+                        field.name(),
+                        delta_variant_types(&sql_field.columntype, field.data_type().clone())?,
+                        field.is_nullable(),
+                    )
+                    .with_metadata(field.metadata().clone()),
+                );
             }
             DataType::Struct(Box::new(StructType::try_new(nested)?))
         }

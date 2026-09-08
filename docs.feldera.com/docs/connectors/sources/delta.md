@@ -204,6 +204,26 @@ The following table lists supported Delta Lake data types and corresponding Feld
 | `VARIANT`                   | `VARIANT`        | Read from the Parquet variant binary encoding, keeping the types the writer encoded (dates, decimals, timestamps and binary stay typed inside the `VARIANT`). Shredded variants (the `variantShredding-preview` table feature) are not supported. Timestamps with nanosecond precision are truncated to microseconds. A `VARIANT` column stored as a JSON string is also accepted. |
 
 
+## Column mapping
+
+[Column mapping](https://docs.delta.io/latest/delta-column-mapping.html) lets a
+Delta table rename or reorder columns without rewriting its data files. Feldera
+reads tables in both mapping modes, `name` and `id`. Unity Catalog Uniform
+tables (Delta over Iceberg) use `id` mode.
+
+Two limitations apply to a column-mapped table:
+
+* In `id` mode the connector reads the data files itself in `follow` and `cdc`
+  mode, matching columns by field id, because a Uniform table's files name their
+  columns logically whereas the table schema uses physical `col-<id>` names. Such
+  a table is read one file at a time, and [`filter`](#filter) selects rows
+  without pruning Parquet row groups, so ingest is slower than for a table
+  without column mapping.
+* In `snapshot` mode a struct nested inside an `ARRAY` or a `MAP` is read by
+  field order rather than by field id. If the table's nested struct fields were
+  reordered after its existing files were written, their values are read under
+  the wrong names. Use `follow` or `cdc` mode for such a table.
+
 ## Transactions
 
 The Delta Lake connector can be configured to automatically initiate [transactions](/pipelines/transactions)
