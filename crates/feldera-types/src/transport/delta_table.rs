@@ -370,7 +370,10 @@ pub struct DeltaTableReaderConfig {
     /// tables.
     ///
     /// Note: The simplest way to exclude unused columns is to omit them from the Feldera SQL table
-    /// declaration. The connector never reads columns that aren't declared in the SQL schema.
+    /// declaration. In `snapshot` and `follow` mode the connector then reads an undeclared column
+    /// only when `filter` or `snapshot_filter` names it. In `cdc` mode it reads every column of
+    /// the Delta table unless this option is set, and then still reads any column `cdc_order_by`
+    /// or `cdc_delete_filter` names.
     /// Additionally, the SQL compiler emits warnings for declared but unused columns—use these as
     /// a guide to optimize your schema.
     #[serde(default)]
