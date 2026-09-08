@@ -43,6 +43,7 @@ public class CreateViewStatement extends CreateRelationStatement {
     public static final String EMIT_FINAL = "emit_final";
     public static final String MATERIALIZED = "materialized";
     public static final String POSTPROCESSOR = "postprocessor";
+    public static final String SEND_SNAPSHOT = "send_snapshot";
 
     /** Compiled and optimized query. */
     private final RelRoot compiled;
