@@ -296,8 +296,7 @@ struct RuntimeInner {
 
     storage: Option<RuntimeStorage>,
     store: LocalStore,
-    kill_signal: AtomicBool,
-    cancellation_token: CancellationToken,
+    kill_signal: KillSignal,
     aux_threads: Mutex<Vec<(JoinHandle<()>, Unparker)>>,
     buffer_caches: Vec<EnumMap<ThreadType, Arc<BufferCache>>>,
 
@@ -412,6 +411,40 @@ fn map_pin_cpus(config: &CircuitConfig) -> (Vec<CoreId>, Vec<CoreId>) {
     (fg_pinning, bg_pinning)
 }
 
+/// The runtime's "stop what you are doing" flag.
+///
+/// This is a [CancellationToken] paired with an [AtomicBool] shortcut, because
+/// [CancellationToken::is_cancelled] locks a mutex and every operator polls
+/// this flag.
+///
+/// If https://github.com/tokio-rs/tokio/issues/7775 is ever fixed (e.g. by
+/// https://github.com/martin-augment/tokio/pull/59), then this can be replaced
+/// by a plain [CancellationToken].
+#[derive(Debug, Default)]
+struct KillSignal {
+    raised: AtomicBool,
+    token: CancellationToken,
+}
+
+impl KillSignal {
+    /// Raises the signal.  Idempotent, and never lowered again.
+    fn raise(&self) {
+        self.raised.store(true, Ordering::SeqCst);
+        self.token.cancel();
+    }
+
+    /// Whether the signal is raised.  Cheap enough to poll.
+    fn is_raised(&self) -> bool {
+        self.raised.load(Ordering::SeqCst)
+    }
+
+    /// A token that [KillSignal::raise] cancels, for awaiting the signal
+    /// rather than polling it.
+    fn token(&self) -> CancellationToken {
+        self.token.clone()
+    }
+}
+
 impl RuntimeInner {
     fn new(config: CircuitConfig) -> Result<Self, DbspError> {
         let nworkers = config.layout.local_workers().len();
@@ -514,8 +547,7 @@ impl RuntimeInner {
             memory_pressure_notify: Arc::new(Notify::new()),
             storage,
             store: TypedDashMap::new(),
-            kill_signal: AtomicBool::new(false),
-            cancellation_token: CancellationToken::new(),
+            kill_signal: KillSignal::default(),
             aux_threads: Mutex::new(Vec::new()),
             buffer_caches,
             fbuf_slab_allocators,
@@ -1323,13 +1355,12 @@ impl Runtime {
             runtime
                 .borrow()
                 .as_ref()
-                .map(|runtime| runtime.inner().kill_signal.load(Ordering::SeqCst))
-                .unwrap_or(false)
+                .is_some_and(|runtime| runtime.inner().kill_signal.is_raised())
         })
     }
 
     pub fn cancellation_token(&self) -> CancellationToken {
-        self.inner().cancellation_token.clone()
+        self.inner().kill_signal.token()
     }
 
     pub fn worker_panic_info(
@@ -1543,11 +1574,7 @@ impl RuntimeHandle {
     // Signals all worker threads to exit, and returns immediately without
     // waiting for them to exit.
     pub fn kill_async(&self) {
-        self.runtime
-            .inner()
-            .kill_signal
-            .store(true, Ordering::SeqCst);
-        self.runtime.inner().cancellation_token.cancel();
+        self.runtime.inner().kill_signal.raise();
         for (_worker, unparker) in self.workers.iter() {
             unparker.unpark();
         }
@@ -1579,10 +1606,7 @@ impl RuntimeHandle {
         // Normally this is not needed, since this function is usually called from `kill_async`,
         // which already signals the aux threads to terminate, but it is useful when it is called
         // directly, e.g., in some tests.
-        self.runtime
-            .inner()
-            .kill_signal
-            .store(true, Ordering::SeqCst);
+        self.runtime.inner().kill_signal.raise();
 
         self.runtime
             .inner()
