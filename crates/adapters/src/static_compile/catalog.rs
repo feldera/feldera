@@ -981,7 +981,7 @@ impl Catalog {
         self.register_materialized_index_persistent(None, stream, index_name, view_name, key_fields)
     }
 
-    /// Like `register_index`, but also assigns persistent id to the index.
+    /// Like `register_materialized_index`, but also assigns persistent id to the index.
     pub fn register_materialized_index_persistent<K, KD, V, VD>(
         &mut self,
         persistent_id: Option<&str>,

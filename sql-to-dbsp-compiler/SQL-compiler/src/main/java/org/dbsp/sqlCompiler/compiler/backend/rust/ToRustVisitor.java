@@ -1191,13 +1191,15 @@ public class ToRustVisitor extends CircuitVisitor {
         this.innerVisitor.setOperatorContext(operator);
         if (!this.useHandles) {
             /*
-               Current register API:
-               - `register_materialized_output_zset_persistent` (existing method) - to be used to register
-                  materialized views _without_ indexes only.
-               - `register_materialized_output_map_persistent` - used to simultaneously register a
-                  materialized view and an index, which will share a common integral.
-               - `register_materialized_index_persistent` - used with views that have multiple indexes
-                  to register the second, third, etc. index.
+               Catalog registration API:
+               - `register_output_zset_persistent` - a non-materialized view.
+               - `register_index_persistent` - an index of a non-materialized view; keeps no integral.
+               - `register_materialized_output_zset_persistent` - a materialized view without indexes.
+               - `register_materialized_output_map_persistent` - a materialized view together with
+                  its first index; the two share one integral.
+               - `register_materialized_index_persistent` - every other index of a materialized view;
+                  each keeps its own integral so that a connector can request a snapshot through
+                  any index.
              */
 
             final DBSPType type = operator.originalRowType;
@@ -1205,12 +1207,16 @@ public class ToRustVisitor extends CircuitVisitor {
             if (operator.isIndex()) {
                 ViewAndIndexes indexes = this.indexes.get(operator.query);
                 Utilities.enforce(indexes != null);
-                boolean registerAsMap =
-                        indexes.getView().metadata.viewKind == SqlCreateView.ViewKind.MATERIALIZED
-                        && indexes.firstIndex() == operator;
-                String registerFunction = registerAsMap
-                        ? "register_materialized_output_map_persistent"
-                        : "register_materialized_index_persistent";
+                boolean viewMaterialized =
+                        indexes.getView().metadata.viewKind == SqlCreateView.ViewKind.MATERIALIZED;
+                boolean registerAsMap = viewMaterialized && indexes.firstIndex() == operator;
+                String registerFunction;
+                if (registerAsMap)
+                    registerFunction = "register_materialized_output_map_persistent";
+                else if (viewMaterialized)
+                    registerFunction = "register_materialized_index_persistent";
+                else
+                    registerFunction = "register_index_persistent";
                 this.writeComments(operator);
                 DBSPTypeRawTuple raw = operator.originalRowType.to(DBSPTypeRawTuple.class);
                 Utilities.enforce(raw.size() == 2);
