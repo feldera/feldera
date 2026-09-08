@@ -441,7 +441,10 @@ public class KeyAnalysis extends CircuitVisitor {
      * With one input the operator is the identity. */
     private void rowUnion(DBSPSimpleOperator node) {
         if (node.inputs.size() == 1) {
-            this.copy(node.to(DBSPUnaryOperator.class));
+            // Sum, AtomicSum and Subtract are DBSPSimpleOperator with a variable number of
+            // inputs, not DBSPUnaryOperator, even when they happen to have a single input.
+            OutputPort input = node.inputs.get(0);
+            this.set(node, this.getKeys(input), this.getEquivalence(input));
             return;
         }
         ColumnEquivalence equivalence = this.getEquivalence(node.inputs.get(0));
