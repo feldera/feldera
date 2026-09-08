@@ -9,6 +9,7 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexShuttle;
 import org.apache.calcite.rex.RexSubQuery;
 import org.apache.calcite.sql.SqlKind;
+import org.dbsp.sqlCompiler.compiler.Documentation;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
@@ -37,8 +38,8 @@ import org.dbsp.util.Utilities;
 public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
     private static final String ERROR_KIND = "Unsupported comparison";
 
-    private static final String ROW_DOCUMENTATION =
-            "See https://docs.feldera.com/sql/comparisons#comparing-row-values";
+    public static final Documentation.Link ROW_DOCUMENTATION =
+            new Documentation.Link("sql/comparisons", "comparing-row-values");
 
     private final CheckExpression checker;
 
@@ -101,7 +102,7 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
             if (message == null)
                 return;
             this.reporter.reportError(new SourcePositionRange(call.getParserPosition()),
-                    ERROR_KIND, message + ".\n" + ROW_DOCUMENTATION);
+                    ERROR_KIND, message + ".\n" + ROW_DOCUMENTATION.citation());
         }
     }
 }

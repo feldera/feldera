@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.temporal;
 
+import org.dbsp.sqlCompiler.compiler.Documentation;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
@@ -69,6 +70,7 @@ import java.util.Objects;
  * ("temporal filters"), the others are compiled in a similar way with MAP operators.
  */
 public class RewriteNow extends CircuitCloneVisitor {
+    public static final Documentation.Link NOW_DOCUMENTATION = new Documentation.Link("sql/datetime", "now");
     // Holds the indexed version of the 'now' operator (indexed with an empty key).
     // (actually, it's the differentiator after the index)
     @Nullable
@@ -220,7 +222,7 @@ public class RewriteNow extends CircuitCloneVisitor {
         this.compiler.reportWarning(
                 Objects.requireNonNull(expression).getSourcePosition(), "Inefficient pattern",
                 "NOW() expression is used in a pattern that could require expensive computations\n"
-                        + "See https://docs.feldera.com/sql/datetime/#now");
+                        + NOW_DOCUMENTATION.citation());
     }
 
     @Override

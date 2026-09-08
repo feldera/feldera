@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
+import org.dbsp.sqlCompiler.compiler.Documentation;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
@@ -100,8 +101,7 @@ public class FunctionDocumentation {
                     throw new RuntimeException("Function `" + func.functionName() + "` does not appear in file " + docFile);
             }
             if (!anchor.isEmpty()) {
-                if (!contents.contains("<a id=\"" + anchor + "\"></a>")
-                        && !headingSlugs(contents).contains(anchor))
+                if (!Documentation.anchors(contents).contains(anchor))
                     throw new RuntimeException("Anchor `" + anchor + "` does not appear in file " + docFile);
                 anchor = "#" + anchor;
             } else {
@@ -118,28 +118,6 @@ public class FunctionDocumentation {
             writer.print("[" + Utilities.getBaseName(docFile) + "](" + toPrint + ")");
         }
         writer.println();
-    }
-
-    /** Slugify a Markdown heading the way Docusaurus (github-slugger) does:
-     * lowercase, drop punctuation, replace spaces with hyphens.
-     * Underscores and hyphens are preserved. */
-    static String slugify(String heading) {
-        String slug = heading.trim().toLowerCase(Locale.ENGLISH);
-        slug = slug.replaceAll("[^a-z0-9 _-]", "");
-        return slug.trim().replaceAll("\\s+", "-");
-    }
-
-    /** The slugs of all Markdown headings in the file contents.
-     * A `#anchor` link resolves only against the FULL heading slug;
-     * substring matches produce links that break in the rendered docs. */
-    static Set<String> headingSlugs(String contents) {
-        Set<String> slugs = new HashSet<>();
-        for (String line: contents.split("\n")) {
-            if (!line.startsWith("#"))
-                continue;
-            slugs.add(slugify(line.replaceFirst("^#+", "")));
-        }
-        return slugs;
     }
 
     static boolean sameFunction(FunctionDescription left, FunctionDescription right) {
