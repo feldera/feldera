@@ -2036,7 +2036,8 @@ public class SqlToRelCompiler implements IWritesLogs {
         return root;
     }
 
-    void validateViewProperty(ProgramIdentifier view, SqlFragment key, SqlFragment value) {
+    void validateViewProperty(ProgramIdentifier view, SqlCreateView.ViewKind viewKind,
+                              SqlFragment key, SqlFragment value) {
         CalciteObject node = CalciteObject.create(key.getParserPosition());
         String keyString = key.getString();
         switch (keyString) {
@@ -2045,7 +2046,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 break;
             case "rust":
             case "connectors":
-                this.validateConnectorsProperty(node, false, view, List.of(), key, value);
+                this.validateConnectorsProperty(node, false, view, List.of(), viewKind, key, value);
                 break;
             default:
                 throw new CompilationError("Unknown view property " + Utilities.singleQuote(keyString), node);
@@ -2080,10 +2081,12 @@ public class SqlToRelCompiler implements IWritesLogs {
     }
 
     /** @param primaryKey Primary key columns of the table; empty for a view or for a table
-     *                    without a primary key. */
+     *                    without a primary key.
+     *  @param viewKind   Kind of the view; null for a table. */
     @SuppressWarnings("unused")
     void validateConnectorsProperty(CalciteObject ignored, boolean isTable, ProgramIdentifier tableView,
                                     List<ProgramIdentifier> primaryKey,
+                                    @Nullable SqlCreateView.ViewKind viewKind,
                                     SqlFragment keyIgnored, SqlFragment value) {
         final String json = value.getString();
         final Result<JsonNode> jsonNode = Utilities.validateJson(json);
@@ -2133,6 +2136,16 @@ public class SqlToRelCompiler implements IWritesLogs {
                                 String.join(", ", Linq.map(primaryKey, ProgramIdentifier::name)) +
                                 "); soft deletes are only supported for tables without a primary key", pos);
                     }
+                }
+                JsonNode sendSnapshot = connector.get(CreateViewStatement.SEND_SNAPSHOT);
+                if (sendSnapshot != null && sendSnapshot.asBoolean(false)
+                        && !isTable && viewKind != SqlCreateView.ViewKind.MATERIALIZED) {
+                    // The pipeline stores the contents of a view only when the view is materialized
+                    SourcePositionRange pos = elementPositionRange(value,
+                            path + "/" + CreateViewStatement.SEND_SNAPSHOT, true);
+                    throw new CompilationError("\"" + CreateViewStatement.SEND_SNAPSHOT +
+                            "\" property for " + objectName +
+                            " requires a materialized view; declare the view with CREATE MATERIALIZED VIEW", pos);
                 }
                 JsonNode preprocessor = connector.get(CreateTableStatement.PREPROCESSOR);
                 if (preprocessor != null) {
@@ -2254,7 +2267,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 this.validateBooleanProperty(node, key, value);
                 break;
             case CreateTableStatement.CONNECTORS:
-                this.validateConnectorsProperty(node, true, table, primaryKey, key, value);
+                this.validateConnectorsProperty(node, true, table, primaryKey, null, key, value);
                 break;
             case CreateTableStatement.EXPECTED_SIZE:
                 this.validateNumericProperty(node, key, value);
@@ -2359,7 +2372,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             }
 
             for (var prop: viewProperties) {
-                this.validateViewProperty(viewName, prop.getKey(), prop.getValue());
+                this.validateViewProperty(viewName, cv.viewKind, prop.getKey(), prop.getValue());
             }
             props = new Properties(viewProperties);
         }

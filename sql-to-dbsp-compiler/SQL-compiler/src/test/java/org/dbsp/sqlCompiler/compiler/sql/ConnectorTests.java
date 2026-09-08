@@ -703,6 +703,63 @@ public class ConnectorTests extends BaseSQLTests {
                 "\"threads\" must be greater than 0");
     }
 
+    @Test
+    public void sendSnapshotRequiresMaterializedView() {
+        String sql = """
+                CREATE TABLE T (x INT);
+                CREATE VIEW V WITH (
+                  'connectors' = '[{
+                    "name": "c",
+                    "send_snapshot": true,
+                    "transport": {
+                      "name": "delta_table_output",
+                      "config": { "uri": "s3://bucket/table", "mode": "truncate" }
+                    }
+                  }]'
+                ) AS SELECT * FROM T;""";
+        this.statementsFailingInCompilation(sql,
+                "\"send_snapshot\" property for view 'v' requires a materialized view");
+    }
+
+    @Test
+    public void sendSnapshotThroughIndexRequiresMaterializedView() {
+        // The index of a non-materialized view stores no data, so it cannot serve a snapshot
+        String sql = """
+                CREATE TABLE T (x INT);
+                CREATE VIEW V WITH (
+                  'connectors' = '[{
+                    "name": "c",
+                    "index": "ix",
+                    "send_snapshot": true,
+                    "transport": {
+                      "name": "delta_table_output",
+                      "config": { "uri": "s3://bucket/table", "mode": "truncate" }
+                    }
+                  }]'
+                ) AS SELECT * FROM T;
+                CREATE INDEX IX ON V(x);""";
+        this.statementsFailingInCompilation(sql,
+                "\"send_snapshot\" property for view 'v' requires a materialized view");
+    }
+
+    @Test
+    public void sendSnapshotThroughIndexOfMaterializedView() {
+        runCleanConnectorTest("""
+                CREATE TABLE T (x INT);
+                CREATE MATERIALIZED VIEW V WITH (
+                  'connectors' = '[{
+                    "name": "c",
+                    "index": "ix",
+                    "send_snapshot": true,
+                    "transport": {
+                      "name": "delta_table_output",
+                      "config": { "uri": "s3://bucket/table", "mode": "truncate" }
+                    }
+                  }]'
+                ) AS SELECT * FROM T;
+                CREATE INDEX IX ON V(x);""");
+    }
+
     // ---- HTTP transport config ----
 
     @Test
