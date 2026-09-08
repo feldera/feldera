@@ -672,11 +672,12 @@ inventory::submit! {
 
 #[cfg(test)]
 mod tests {
-    use feldera_storage::StorageBackend;
+    use feldera_storage::{StorageBackend, StoragePath};
     use feldera_types::config::{FileBackendConfig, StorageCacheConfig};
     use std::{path::Path, sync::Arc};
 
     use crate::storage::backend::tests::{random_sizes, test_backend};
+    use crate::storage::buffer_cache::FBuf;
 
     use super::PosixBackend;
 
@@ -699,6 +700,56 @@ mod tests {
         assert!(
             super::fsync_dir(&missing).is_err(),
             "fsync_dir must surface a missing-dir error",
+        );
+    }
+
+    /// The names in `dir` that a write in progress leaves behind.
+    fn temporary_files(dir: &Path) -> Vec<String> {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name.ends_with(".mut"))
+            .collect()
+    }
+
+    /// A write abandoned before `complete` leaves a file of the same name as it
+    /// was, and takes its temporary file with it.
+    ///
+    /// A writer fills a temporary name and renames it into place only in
+    /// `complete`, so a write that dies partway through never touches what the
+    /// name held.  Callers that overwrite a file others read depend on this,
+    /// the checkpoint catalog most of all: a half-written catalog hides every
+    /// checkpoint the pipeline has.
+    #[test]
+    fn abandoned_write_leaves_the_previous_file_intact() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let backend = create_posix_backend(tempdir.path());
+        let name = StoragePath::from("catalog.feldera");
+        let original = b"the contents that are already there";
+
+        backend
+            .write(&name, FBuf::from_slice(original))
+            .unwrap()
+            .commit()
+            .unwrap();
+
+        // Write the same name again and abandon it, as a process dying partway
+        // through the write would.
+        let mut writer = backend.create_named(&name).unwrap();
+        writer
+            .write_block(FBuf::from_slice(b"a replacement that never lands"))
+            .unwrap();
+        drop(writer);
+
+        assert_eq!(
+            std::fs::read(tempdir.path().join("catalog.feldera")).unwrap(),
+            original,
+            "the abandoned write damaged the file that was already there"
+        );
+        assert_eq!(
+            temporary_files(tempdir.path()),
+            Vec::<String>::new(),
+            "the abandoned write left its temporary file behind"
         );
     }
 
