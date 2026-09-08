@@ -21,8 +21,12 @@ export interface OutputPort {
 
 export interface MirNode {
     operation: string;
-    table: string | null;
-    view: string | null;
+    // A named operator carries one of these: `table` on source tables and view declarations, `view`
+    // on sinks. Every other operator carries neither, spelled two ways depending on the producer:
+    // the SQL compiler omits the key, while a support bundle round-trips the graph through
+    // `crates/ir/src/mir.rs`, whose `Option<String>` fields serialize None as null.
+    table?: string | null;
+    view?: string | null;
     inputs: Array<OutputPort>;
     // We don't care about this yet
     calcite: any;
