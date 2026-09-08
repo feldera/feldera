@@ -155,6 +155,19 @@ public class NegativeParserTests extends BaseSQLTests {
         this.statementsFailingInCompilation(statement, "Do not use");
     }
 
+    /** The body of a function is compiled inside a generated program; an error on
+     * the second line of the body must point at that line of the user's program */
+    @Test
+    public void functionBodyErrorPosition() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(x INT);
+                CREATE FUNCTION f(a INT) RETURNS INT AS
+                  a +
+                  nosuch;
+                CREATE VIEW V AS SELECT f(x) FROM T;""",
+                "(no input file):4:3: error");
+    }
+
     @Test
     public void errorTest() throws IOException, SQLException {
         File file = createInputScript("This is not SQL");

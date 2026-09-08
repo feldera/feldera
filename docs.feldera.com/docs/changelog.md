@@ -43,6 +43,21 @@ import TabItem from '@theme/TabItem';
           `SET FELDERA_IGNORE_WARNING_UNBOUNDED_STATE = ON`. See
           [Unbounded state warnings](/sql/streaming#unbounded-state-warnings).
 
+        - The SQL compiler emits the warning `Floating point equality` for
+          constructs that compare `REAL` or `DOUBLE` values for equality:
+          comparison operators, `IN`, `GROUP BY`, `DISTINCT`, `UNION`,
+          `INTERSECT`, `EXCEPT`, `PARTITION BY`, `NATURAL JOIN`, `USING`, and
+          the ties of `RANK`, `PIVOT`, and the array and map functions that
+          compare elements or keys.  Each warning points at the clause that
+          compares.  `SET FELDERA_IGNORE_WARNING_FLOATING_POINT_EQUALITY = ON`
+          silences it; a program that sets `FELDERA_WARNINGS_ARE_ERRORS` and
+          compares floating point values no longer compiles until it does.
+          See [comparing floating point values](/sql/comparisons#comparing-floating-point-values).
+
+        - The SQL compiler reports an error inside a multi-line `CREATE FUNCTION`
+          body at its line; an error past the first line of the body used to be
+          reported above the statement.
+
         ## v0.344.0
 
         - The Delta Lake and Iceberg input connectors read a `VARIANT` column

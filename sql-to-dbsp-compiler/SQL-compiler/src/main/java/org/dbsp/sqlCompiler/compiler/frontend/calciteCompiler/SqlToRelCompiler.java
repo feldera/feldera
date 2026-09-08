@@ -205,6 +205,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 
 /**
@@ -776,6 +777,10 @@ public class SqlToRelCompiler implements IWritesLogs {
      * There is no way to reuse the previous parser one, unfortunately. */
     public static final Documentation.Link RECURSION_DOCUMENTATION = new Documentation.Link("sql/recursion");
     final StringBuilder newlines = new StringBuilder();
+    /** Maps a position in the program being compiled to the position reported to the user.
+     * This is normally the identity function, except while compiling the body of a user-defined
+     * function. */
+    UnaryOperator<SqlParserPos> sourcePositionRemap = UnaryOperator.identity();
 
     /** Create a new parser.
      * @param sql       Program to parse.
@@ -1609,6 +1614,8 @@ public class SqlToRelCompiler implements IWritesLogs {
                     .append(sql)
                     .newline();
             SqlToRelCompiler clone = new SqlToRelCompiler(this);
+            int bodyStartLine = newLineNumber;
+            clone.sourcePositionRemap = generated -> positionInFunctionBody(generated, bodyStartLine, position);
             List<ParsedStatement> list = clone.parseStatements(sql, true, true);
             RelStatement statement = null;
             for (ParsedStatement node : list) {
@@ -1854,23 +1861,32 @@ public class SqlToRelCompiler implements IWritesLogs {
         return Objects.requireNonNull(query);
     }
 
-    // Adjust the source position in the exception to match the original position
+    /** Position in the user's program of {@code generated}.  The function body starts at line
+     * {@code bodyStartLine} of the generated program and at {@code body} in the user's program. */
+    static SqlParserPos positionInFunctionBody(SqlParserPos generated, int bodyStartLine, SqlParserPos body) {
+        int line = body.getLineNum() + generated.getLineNum() - bodyStartLine;
+        int endLine = body.getLineNum() + generated.getEndLineNum() - bodyStartLine;
+        // The body is copied verbatim, so only its first line is shifted to the right
+        int column = generated.getColumnNum();
+        if (generated.getLineNum() == bodyStartLine)
+            column += body.getColumnNum() - 1;
+        int endColumn = generated.getEndColumnNum();
+        if (generated.getEndLineNum() == bodyStartLine)
+            endColumn += body.getColumnNum() - 1;
+        return new SqlParserPos(line, column, endLine, endColumn);
+    }
+
+    /** The exception {@code e}, raised while compiling a function body inside a generated
+     * program, with its position moved into the user's program */
     CalciteContextException rewriteException(
-            CalciteContextException e,
-            int startLineNumberInGeneratedCode, SqlParserPos original) {
-        int line = original.getLineNum() - e.getPosLine() + startLineNumberInGeneratedCode;
-        int endLine = original.getEndLineNum() - e.getEndPosLine() + startLineNumberInGeneratedCode;
-        // If the error is on the first line, we need to adjust the column, otherwise we don't.
-        // The temporary generated code always starts after a newline.
-        int col = e.getPosColumn();
-        int endCol = e.getEndPosColumn();
-        if (e.getPosLine() == startLineNumberInGeneratedCode)
-            col += original.getColumnNum() - 1;
-        if (e.getEndPosLine() == startLineNumberInGeneratedCode)
-            endCol += original.getColumnNum() - 1;
+            CalciteContextException e, int bodyStartLine, SqlParserPos body) {
+        SqlParserPos generated = new SqlParserPos(
+                e.getPosLine(), e.getPosColumn(), e.getEndPosLine(), e.getEndPosColumn());
+        SqlParserPos position = positionInFunctionBody(generated, bodyStartLine, body);
         return new CalciteContextException(
                 e.getMessage() == null ? "" : e.getMessage(), e.getCause(),
-                line, col, endLine, endCol);
+                position.getLineNum(), position.getColumnNum(),
+                position.getEndLineNum(), position.getEndColumnNum());
     }
 
     private DropTableStatement compileDropTable(ParsedStatement node) {
@@ -2012,7 +2028,10 @@ public class SqlToRelCompiler implements IWritesLogs {
 
     RelRoot sqlToRel(SqlNode node) {
         SqlToRelConverter converter = this.getConverter();
-        RelRoot root = converter.convertQuery(node, true, true);
+        SqlNode validated = this.getValidator().validate(node);
+        validated.accept(new WarnFloatingPointEquality(
+                this.getValidator(), this.errorReporter, this.sourcePositionRemap));
+        RelRoot root = converter.convertQuery(validated, false, true);
         root.rel.accept(new RejectUnsupportedPlans(this.errorReporter));
         return root;
     }

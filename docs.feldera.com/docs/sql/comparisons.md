@@ -12,17 +12,17 @@ but always return a Boolean value (sometimes nullable):
   <tr>
     <td><a id="eq"></a><code>=</code></td>
     <td>equality test</td>
-    <td>rejected for <a href="#comparing-row-values"><code>ROW</code> values</a></td>
+    <td>rejected for <a href="#comparing-row-values"><code>ROW</code> values</a>; <a href="#comparing-floating-point-values">warns</a> for floating point values</td>
   </tr>
   <tr>
     <td><a id="ne"></a><code>&lt;&gt;</code></td>
     <td>inequality test</td>
-    <td>rejected for <a href="#comparing-row-values"><code>ROW</code> values</a></td>
+    <td>rejected for <a href="#comparing-row-values"><code>ROW</code> values</a>; <a href="#comparing-floating-point-values">warns</a> for floating point values</td>
   </tr>
   <tr>
     <td><a id="neq"></a><code>!=</code></td>
     <td>inequality test, same as above</td>
-    <td>rejected for <a href="#comparing-row-values"><code>ROW</code> values</a></td>
+    <td>rejected for <a href="#comparing-row-values"><code>ROW</code> values</a>; <a href="#comparing-floating-point-values">warns</a> for floating point values</td>
   </tr>
   <tr>
     <td><a id="gt"></a><code>&gt;</code></td>
@@ -57,17 +57,17 @@ but always return a Boolean value (sometimes nullable):
   <tr>
     <td><a id="nne"></a><code>&lt;=&gt;</code></td>
     <td>equality check that treats <code>NULL</code> values as equal</td>
-    <td>result is not nullable</td>
+    <td>result is not nullable; <a href="#comparing-floating-point-values">warns</a> for floating point values</td>
   </tr>
   <tr>
     <td><a id="distinct"></a><code>IS DISTINCT FROM</code></td>
     <td>check if two values are not equal, treating <code>NULL</code> as equal</td>
-    <td>result is not nullable</td>
+    <td>result is not nullable; <a href="#comparing-floating-point-values">warns</a> for floating point values</td>
   </tr>
   <tr>
     <td><a id="notdistinct"></a><code>IS NOT DISTINCT FROM</code></td>
     <td>check if two values are the same, treating <code>NULL</code> values as equal</td>
-    <td>result is not nullable</td>
+    <td>result is not nullable; <a href="#comparing-floating-point-values">warns</a> for floating point values</td>
   </tr>
   <tr>
     <td><a id="between"></a><code>BETWEEN [ASYMMETRIC] ... AND ...</code></td>
@@ -105,6 +105,47 @@ Note that the SQL standard mandates `IS NULL` to return `true` for a
 `ROW` object where all fields are `NULL` (similarly, `IS NOT NULL` is
 required to return `false`).  Our compiler diverges from the standard,
 returning `false` for `ROW(null) is null`.
+
+## Comparing floating point values {#comparing-floating-point-values}
+
+Floating point arithmetic rounds its results, so two computations of
+the same quantity can produce `REAL` or `DOUBLE` values that differ in
+their last bits: `0.1e0 + 0.2e0 = 0.3e0` is `false`.  Testing floating point
+values for equality, or grouping by such columns, gives results that
+depend on how the values were computed rather than on the quantities
+they represent.
+
+The compiler therefore emits the warning `Floating point equality` when
+one of the constructs listed below compares floating point values for
+equality, including values nested inside `ROW`, `ARRAY`, and `MAP`
+values:
+
+| Construct | What is compared |
+|-----------|------------------|
+| `=`, `<>`, `!=`, `<=>`, `IS [NOT] DISTINCT FROM`, `NULLIF` | the two operands |
+| `IN`, `NOT IN`, `CASE x WHEN v` | the value and each candidate |
+| `GROUP BY`, `PARTITION BY` | the grouping keys |
+| `DISTINCT`, `UNION`, `INTERSECT [ALL]`, `EXCEPT [ALL]` | whole rows |
+| `COUNT(DISTINCT x)` and other `DISTINCT` aggregates, `MODE` | the aggregated values |
+| `NATURAL JOIN`, `JOIN ... USING` | the shared columns |
+| `RANK`, `DENSE_RANK`, `PERCENT_RANK`, `CUME_DIST` | the `ORDER BY` keys, to detect ties |
+| `PIVOT` | the `FOR` columns and the pivot values |
+| `ARRAY_CONTAINS`, `ARRAY_POSITION`, `ARRAY_REMOVE`, `ARRAY_DISTINCT`, `ARRAY_EXCEPT`, `ARRAY_UNION`, `ARRAY_INTERSECT`, `ARRAYS_OVERLAP` | the array elements |
+| `map[key]`, `MAP_CONTAINS_KEY` | the map keys |
+
+The analysis inspects declared types only, so it does not report a
+`VARIANT` value that holds a floating point number at run time.
+
+To avoid the problem, store quantities that are compared or grouped as
+`DECIMAL` values, or convert them before comparing: `ROUND(x, 2) =
+ROUND(y, 2)` still compares floating point values, whereas `CAST(x AS
+DECIMAL(10, 2)) = CAST(y AS DECIMAL(10, 2))` compares exact values.  A
+comparison with a tolerance, such as `ABS(x - y) < 1e-9`, is an
+ordering comparison and produces no warning either.
+
+The statement `SET FELDERA_IGNORE_WARNING_FLOATING_POINT_EQUALITY = ON`
+silences the warning for the whole program; see the
+[compiler options](/sql/grammar#supported-options).
 
 ## Comparing complex values
 

@@ -10,7 +10,6 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
