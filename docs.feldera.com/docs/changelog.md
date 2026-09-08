@@ -18,6 +18,21 @@ Source edition can be found on github.
   `remove` actions did not cancel, and the connector re-emitted the
   rewritten rows as inserts (#7116).
 
+- The Delta Lake input connector now reads a struct nested in an array
+  or a map of a column-mapped table correctly.  It paired the struct's
+  fields by name, and such a file shares no field name with the table's
+  schema, so the fields fell back to their position and each read its
+  neighbor's values.  This covers `follow` and `cdc` mode; in
+  `snapshot` mode the underlying reader still pairs those fields by
+  position, so a table whose nested fields were reordered after it was
+  written reads them swapped there.
+
+- The Delta Lake input connector now rejects a null element of an array
+  or map column the Delta table declares `NOT NULL`, in `follow` and
+  `cdc` mode, instead of reading it through.  Such a file never
+  satisfied the table's own schema; the read now fails with the file
+  and column named.
+
 - Incompatible change (SQL compiler): the `WATERMARK` column annotation is
   removed, and a table that declares one no longer compiles.  There is no
   replacement. The annotation was experimental and undocumented, and a table that
