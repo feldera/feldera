@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.StubsWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RejectUnsupportedPlans;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.WarnFloatingPointEquality;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FindUnboundedState;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.RewriteNow;
 import org.junit.Assert;
@@ -16,6 +17,7 @@ import java.util.Set;
 public class DocumentationTests {
     /** The links that compiler messages cite */
     static final List<Documentation.Link> CITED = List.of(
+            WarnFloatingPointEquality.DOCUMENTATION,
             RejectUnsupportedPlans.ROW_DOCUMENTATION,
             SqlToRelCompiler.RECURSION_DOCUMENTATION,
             RewriteNow.NOW_DOCUMENTATION,

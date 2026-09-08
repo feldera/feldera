@@ -26,6 +26,10 @@ an example is `NaN` raised to the zero power yields one.
 
 In sorting order `NaN` is considered greater than all other values.
 
+Rounding makes floating point values unreliable operands for equality
+tests, `GROUP BY`, and `DISTINCT`; the compiler warns about such uses.
+See [comparing floating point values](/sql/comparisons#comparing-floating-point-values).
+
 The legal operations are `+` (plus, unary and binary), `-` (minus,
 unary and binary), `*` (multiplication), `/` (division), `%`
 (modulus).

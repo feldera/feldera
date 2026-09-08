@@ -54,6 +54,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ExternalFunction;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.WarnFloatingPointEquality;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -1712,6 +1713,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                     case "arrays_overlap": {
                         validateArgCount(node, operationName, ops.size(), 2);
+                        this.checkFloatingPointEquality(node, call,
+                                call.operands.get(0).getType().getComponentType());
                         DBSPExpression arg0 = ops.get(0);
                         DBSPExpression arg1 = ops.get(1);
                         if (arg0.getType().is(DBSPTypeNull.class) || arg1.getType().is(DBSPTypeNull.class))
@@ -1739,6 +1742,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                     case "array_remove": {
                         validateArgCount(node, operationName, call.operandCount(), 2);
+                        this.checkFloatingPointEquality(node, call,
+                                call.operands.get(0).getType().getComponentType());
                         DBSPExpression arg0 = ops.get(0);
                         DBSPExpression arg1 = ops.get(1);
                         DBSPTypeArray vec = arg0.getType().to(DBSPTypeArray.class);
@@ -2002,6 +2007,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 if (collectionType.is(DBSPTypeMap.class)) {
                     // index into a map
                     Utilities.enforce(name.equals("ITEM"));
+                    this.checkFloatingPointEquality(node, "MAP[key]", call.operands.get(0).getType().getKeyType());
                     DBSPTypeMap map = collectionType.to(DBSPTypeMap.class);
                     index = index.applyCloneIfNeeded()
                             .cast(node, map.getKeyType(), DBSPCastExpression.CastType.SqlUnsafe);
@@ -2096,6 +2102,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case ARRAY_INTERSECT:
             case ARRAY_CONCAT: {
                 int operands = ops.size();
+                if (call.getKind() != SqlKind.ARRAY_CONCAT)
+                    this.checkFloatingPointEquality(node, call, call.getType().getComponentType());
                 DBSPExpression result = ops.get(0).cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
                 for (int i = 1; i < operands; i++) {
                     // Extra check due to https://issues.apache.org/jira/browse/CALCITE-7105
@@ -2157,6 +2165,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case ARRAY_CONTAINS:
             case ARRAY_POSITION: {
                 validateArgCount(node, operationName, call.operandCount(), 2);
+                this.checkFloatingPointEquality(node, call,
+                        call.operands.get(0).getType().getComponentType());
                 DBSPExpression arg0 = ops.get(0);
                 DBSPExpression arg1 = ops.get(1);
                 DBSPTypeArray vec = arg0.getType().to(DBSPTypeArray.class);
@@ -2191,6 +2201,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             }
             case MAP_CONTAINS_KEY: {
                 validateArgCount(node, operationName, call.operandCount(), 2);
+                this.checkFloatingPointEquality(node, call,
+                        call.operands.get(0).getType().getKeyType());
                 DBSPExpression arg0 = ops.get(0);
                 DBSPExpression arg1 = ops.get(1);
                 DBSPTypeMap map = arg0.getType().to(DBSPTypeMap.class);
@@ -2212,6 +2224,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             }
             case ARRAY_DISTINCT: {
                 DBSPExpression arg0 = ops.get(0);
+                this.checkFloatingPointEquality(node, call,
+                        call.operands.get(0).getType().getComponentType());
                 String method = getCallName(call);
                 if (arg0.type.mayBeNull)
                     method += "N";
@@ -2386,6 +2400,17 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())
                         + " not yet implemented", 1265, node);
         }
+    }
+
+    /** Warn if {@code construct} compares floating point values for equality; {@code type} is
+     * the type of the values compared, such as the element type of an array argument */
+    void checkFloatingPointEquality(CalciteObject node, RexCall call, @Nullable RelDataType type) {
+        // Some functions are registered with lowercase names
+        this.checkFloatingPointEquality(node, call.op.getName().toUpperCase(Locale.ENGLISH), type);
+    }
+
+    void checkFloatingPointEquality(CalciteObject node, String construct, @Nullable RelDataType type) {
+        WarnFloatingPointEquality.checkType(this.compiler, node.getPositionRange(), construct, type);
     }
 
     private DBSPExpression warnAlwaysNull(CalciteObject node, DBSPType type) {
