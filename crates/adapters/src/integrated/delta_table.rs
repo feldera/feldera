@@ -1,5 +1,6 @@
 mod deletion_vector;
 mod input;
+mod merge;
 mod output;
 
 #[cfg(test)]
