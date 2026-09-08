@@ -495,7 +495,9 @@ public class CatalogTests extends BaseSQLTests {
         Assert.assertEquals(1, Utilities.countMatches(sources, "register_input_zset"));
         // One extra for the error_view
         Assert.assertEquals(2, Utilities.countMatches(sources, "register_output_zset_persistent"));
-        Assert.assertEquals(2, Utilities.countMatches(sources, "register_materialized_index_persistent"));
+        // Indexes of a non-materialized view keep no integral
+        Assert.assertEquals(2, Utilities.countMatches(sources, "register_index_persistent"));
+        Assert.assertEquals(0, Utilities.countMatches(sources, "register_materialized_index_persistent"));
     }
 
     @Test
@@ -511,7 +513,9 @@ public class CatalogTests extends BaseSQLTests {
         Assert.assertEquals(1, Utilities.countMatches(sources, "register_input_zset"));
         Assert.assertEquals(1, Utilities.countMatches(sources, "register_output_zset_persistent"));
         Assert.assertEquals(1, Utilities.countMatches(sources, "register_materialized_output_map_persistent"));
+        // The second index of a materialized view keeps its own integral
         Assert.assertEquals(1, Utilities.countMatches(sources, "register_materialized_index_persistent"));
+        Assert.assertEquals(0, Utilities.countMatches(sources, "register_index_persistent"));
         // When the view is materialized and indexed, it is no longer registered as an output at all
         // That's why there are only 4 outputs instead of 5
     }

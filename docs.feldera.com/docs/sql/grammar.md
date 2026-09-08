@@ -604,6 +604,14 @@ Indexes only have effect for views that are not `LOCAL`.
 
 A view can have multiple indexes.
 
+An index of a view that is not `MATERIALIZED` only groups the changes
+of the view by the index columns; the index stores no data.  The first
+index of a [materialized view](materialized.md) shares the stored
+contents of the view.  Each additional index of a materialized view
+stores its own copy of the contents of the view, ordered by the index
+columns, so that an output connector can request a snapshot through
+any index.
+
 ### Aggregate queries
 
 An aggregate query is a query that contains a `GROUP BY` or a `HAVING`
