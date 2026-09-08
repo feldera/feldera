@@ -50,6 +50,11 @@ as follows:
 
 2. Associate the index with an output connector by setting the connector’s `index` property to the name of the index. This allows the connector to merge insert and delete events for the same key into a single update event.
 
+An index stores data only when its view is materialized.  A connector attached to an index
+of a view that is not materialized receives the changes to the view, but cannot use
+`send_snapshot`; declare the view with `CREATE MATERIALIZED VIEW` to send a snapshot
+through an index (see [Materialized Tables and Views](/sql/materialized)).
+
 The specific behavior of this transformation depends on the data format and transport protocol used. Currently, the `index` property is supported only for:
 - Kafka output connectors configured with the [Avro format](/formats/avro/)
 - [Postgres output connector](/connectors/sinks/postgresql)
