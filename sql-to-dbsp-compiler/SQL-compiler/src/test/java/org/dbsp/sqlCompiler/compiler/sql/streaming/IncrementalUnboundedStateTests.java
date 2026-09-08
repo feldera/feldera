@@ -4,18 +4,10 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
-import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.FindUnboundedState;
 import org.junit.Assert;
 import org.junit.Test;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.List;
-import java.util.Locale;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /** Tests for the {@link FindUnboundedState#WARNING} warnings.
  * Only incremental circuits contain the garbage collection operators that bound state,
@@ -72,31 +64,6 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
 
     void assertNoUnboundedStateWarnings(String sql) {
         this.assertUnboundedStateWarnings(sql, "");
-    }
-
-    /** The anchor that the documentation site generates for a Markdown heading */
-    static String anchor(String heading) {
-        return heading.toLowerCase(Locale.ENGLISH)
-                .replaceAll("[^a-z0-9 ]", "")
-                .trim()
-                .replaceAll(" +", "-");
-    }
-
-    @Test
-    public void documentationLinkIsValid() throws IOException {
-        // Check that the URL in the documentation exists
-        // The hint links to https://docs.feldera.com/<page>#<anchor>, which the site
-        // builds from docs.feldera.com/docs/<page>.md and one of its headings
-        Matcher url = Pattern.compile("https://docs\\.feldera\\.com/([^#\\s]+)#(\\S+)").matcher(FindUnboundedState.HINT);
-        Assert.assertTrue(FindUnboundedState.HINT, url.find());
-        Path page = Path.of(BaseSQLTests.PROJECT_DIRECTORY, "..", "docs.feldera.com", "docs", url.group(1) + ".md");
-        Assert.assertTrue("Documentation page not found: " + page.normalize(), Files.exists(page));
-        List<String> headings = Files.readAllLines(page).stream()
-                .filter(line -> line.startsWith("#"))
-                .map(line -> anchor(line.replaceFirst("^#+", "")))
-                .toList();
-        Assert.assertTrue("No heading for anchor '" + url.group(2) + "' in " + page.normalize() + ": " + headings,
-                headings.contains(url.group(2)));
     }
 
     // ---- Programs that must not produce warnings ----

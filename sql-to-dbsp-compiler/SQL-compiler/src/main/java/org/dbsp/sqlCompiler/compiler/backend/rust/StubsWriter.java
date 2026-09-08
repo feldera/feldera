@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
+import org.dbsp.sqlCompiler.compiler.Documentation;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -25,6 +26,7 @@ import java.util.List;
 
 /** Generates the stubs.rs file with declarations for the Rust user-defined functions */
 public class StubsWriter extends BaseRustCodeGenerator {
+    public static final Documentation.Link UDF_DOCUMENTATION = new Documentation.Link("sql/udf");
     final Path path;
     @Nullable
     PrintStream stream = null;
@@ -74,13 +76,13 @@ public class StubsWriter extends BaseRustCodeGenerator {
 // This file contains stubs for user-defined functions declared in the SQL program.
 // Each stub defines a function prototype that must be implemented in `udf.rs`.
 // Copy these stubs to `udf.rs`, replacing their bodies with the actual UDF implementation.
-// See detailed documentation in https://docs.feldera.com/sql/udf.
+// See detailed documentation in %s.
 
 #![allow(non_snake_case)]
 
 use feldera_sqllib::*;
 use crate::*;
-""");
+""".formatted(UDF_DOCUMENTATION.url()));
         List<DBSPFunction> extern = new ArrayList<>();
         if (this.circuit != null) {
             for (DBSPDeclaration decl : this.circuit.declarations) {

@@ -432,7 +432,7 @@ public class Regression2Tests extends SqlIoTest {
         System.setErr(saved);
         TestUtil.assertMessagesContain(compiler, """
                 warning: Inefficient pattern: NOW() expression is used in a pattern that could require expensive computations
-                See https://docs.feldera.com/sql/datetime/#now
+                See https://docs.feldera.com/sql/datetime#now
                     6|SELECT ts > NOW()
                                   ^^^^^
                     7|FROM transactions;""");
@@ -458,7 +458,7 @@ public class Regression2Tests extends SqlIoTest {
         System.setErr(saved);
         TestUtil.assertMessagesContain(compiler, """
                 warning: Inefficient pattern: NOW() expression is used in a pattern that could require expensive computations
-                See https://docs.feldera.com/sql/datetime/#now
+                See https://docs.feldera.com/sql/datetime#now
                     7|FROM transactions
                     8|WHERE LEAST(ts, NOW()) < ts - INTERVAL 1 DAY;
                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^""");

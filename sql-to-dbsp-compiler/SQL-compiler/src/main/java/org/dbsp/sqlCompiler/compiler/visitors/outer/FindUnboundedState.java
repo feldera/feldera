@@ -58,6 +58,7 @@ import org.dbsp.sqlCompiler.circuit.operator.ILinear;
 import org.dbsp.sqlCompiler.circuit.operator.INonLinearAggregate;
 import org.dbsp.sqlCompiler.circuit.operator.IStateful;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.Documentation;
 import org.dbsp.sqlCompiler.compiler.ViewOrigins;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRanges;
@@ -95,11 +96,12 @@ import java.util.Set;
 public class FindUnboundedState extends Passes {
     /** Error type shared by all warnings emitted by this pass */
     public static final String WARNING = "Unbounded state";
+    public static final Documentation.Link DOCUMENTATION =
+            new Documentation.Link("sql/streaming", "unbounded-state-warnings");
     /** Continuation of the first warning of a compilation; tells the user how to silence all of them
      * and where they are documented */
     public static final String HINT = "Silence these warnings with SET " +
-            DBSPCompiler.silencingVariable(WARNING) + " = ON\n" +
-            "See https://docs.feldera.com/sql/streaming#unbounded-state-warnings";
+            DBSPCompiler.silencingVariable(WARNING) + " = ON\n" + DOCUMENTATION.citation();
 
     /**
      * An operator whose state may grow without bound.

@@ -133,6 +133,7 @@ import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.Pair;
 import org.dbsp.generated.parser.DbspParserImpl;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.Documentation;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -560,7 +561,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                         "Not supported",
                         "RECURSIVE queries in WITH are not supported; " +
                                 "use DECLARE RECURSIVE VIEW instead. " +
-                                "See https://docs.feldera.com/sql/recursion");
+                                RECURSION_DOCUMENTATION.citation());
             }
             SqlOperator operator = call.getOperator();
             if (operator instanceof SqlFunction) {
@@ -773,6 +774,7 @@ public class SqlToRelCompiler implements IWritesLogs {
     /** Keep here a number of empty lines.  This is done to fool the SqlParser
      * below: for each invocation of parseStatements we create a new SqlParser.
      * There is no way to reuse the previous parser one, unfortunately. */
+    public static final Documentation.Link RECURSION_DOCUMENTATION = new Documentation.Link("sql/recursion");
     final StringBuilder newlines = new StringBuilder();
 
     /** Create a new parser.
