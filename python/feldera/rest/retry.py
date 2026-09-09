@@ -12,7 +12,8 @@ class RetryConfig:
 
     Retries are attempted on transient failures: connection/read timeouts and
     the HTTP statuses listed in `retryable_status_codes` (408, 429, 502, 503,
-    504 by default).
+    504 by default). 401 is not among them; it is handled separately, and only
+    for a callable credential, by `expired_token_wait_seconds`.
 
     Wait strategies:
       - 408, 429, 503, 504 and connection/read timeouts use exponential
@@ -52,6 +53,16 @@ class RetryConfig:
         exponential ramp. Default: `90.0`.
     :param retryable_status_codes: HTTP status codes that should trigger a
         retry. Default: `{408, 429, 502, 503, 504}`.
+    :param expired_token_wait_seconds: How long to wait for a background
+        refresher to replace a bearer token that has provably expired, when
+        the credential is a callable and the instance answered 401. Only a
+        token whose own `exp` claim has passed waits: a credential the
+        instance refuses for any other reason still fails at once, so a wrong
+        API key does not hang. The wait ends on the first token that is not
+        itself expired, so a refresher minting from a skewed clock cannot end
+        it early. This budget is separate from `deadline_seconds`: a request
+        that exhausts both takes the sum of the two. Default: `0.0` (do not
+        wait).
     """
 
     max_retries: int = 3
@@ -61,6 +72,7 @@ class RetryConfig:
     multiplier: float = 2.0
     jitter: float = 0.0
     unhealthy_backoff: float = 90.0
+    expired_token_wait_seconds: float = 0.0
     retryable_status_codes: FrozenSet[int] = field(
         default_factory=lambda: _DEFAULT_RETRYABLE_STATUS_CODES
     )
@@ -80,6 +92,8 @@ class RetryConfig:
             raise ValueError("jitter must be >= 0")
         if self.unhealthy_backoff < 0:
             raise ValueError("unhealthy_backoff must be >= 0")
+        if self.expired_token_wait_seconds < 0:
+            raise ValueError("expired_token_wait_seconds must be >= 0")
         # Coerce to frozenset so callers can pass a set/list without surprises,
         # and so equality comparisons against the default behave intuitively.
         if not isinstance(self.retryable_status_codes, frozenset):
