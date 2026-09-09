@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import time
 from contextlib import contextmanager
 from typing import Iterable, List, Optional
 from unittest import mock
@@ -104,6 +105,7 @@ class TestRetryConfig:
         assert cfg.multiplier == 2.0
         assert cfg.jitter == 0.0
         assert cfg.unhealthy_backoff == 90.0
+        assert cfg.expired_token_wait_seconds == 0.0
         assert cfg.retryable_status_codes == frozenset({408, 429, 502, 503, 504})
 
     def test_validation(self):
@@ -123,6 +125,8 @@ class TestRetryConfig:
             RetryConfig(deadline_seconds=0.0)
         with pytest.raises(ValueError):
             RetryConfig(deadline_seconds=-1.0)
+        with pytest.raises(ValueError):
+            RetryConfig(expired_token_wait_seconds=-1.0)
 
     def test_is_frozen(self):
         cfg = RetryConfig()
@@ -519,3 +523,319 @@ class TestFelderaClientAcceptsRetryConfig:
             client = FelderaClient(url="http://example.test", retry_config=rc)
         assert client.config.retry_config is rc
         assert client.http.config.retry_config is rc
+
+
+def _jwt(exp: float) -> str:
+    import base64
+    import json
+
+    def segment(value: object) -> str:
+        return (
+            base64.urlsafe_b64encode(json.dumps(value).encode()).rstrip(b"=").decode()
+        )
+
+    return f"{segment({'alg': 'RS256'})}.{segment({'exp': exp})}.c2ln"
+
+
+class _TokenFile:
+    """A credential a background refresher replaces, as `fda` and CI see it.
+
+    `refresh_at` models the refresher landing that many seconds into the
+    client's wait; without it the token never changes, as when the refresher
+    has died.
+    """
+
+    def __init__(self, token: str, clock=None, refresh_at=None, replacement=None):
+        self.token = token
+        self.clock = clock
+        self.refresh_at = refresh_at
+        self.replacement = replacement
+        self.reads = 0
+
+    def __call__(self) -> str:
+        self.reads += 1
+        if self.refresh_at is not None and self.clock() >= self.refresh_at:
+            self.token = self.replacement
+        return self.token
+
+
+@contextmanager
+def _instant_sleep():
+    """Run the expired-token wait on a clock that costs no wall time.
+
+    `_monotonic` and `_sleep` are the module's own names for the clock, so the
+    fake stays inside the code under test; patching `time.sleep` would replace
+    it for tenacity and every other caller in the process too.
+    """
+    now = [0.0]
+    with mock.patch("feldera.rest._httprequests._monotonic", lambda: now[0]):
+        with mock.patch(
+            "feldera.rest._httprequests._sleep",
+            lambda seconds: now.__setitem__(0, now[0] + seconds),
+        ):
+            yield now
+
+
+class TestExpiredBearerWaitsForItsRefresher:
+    """401 handling for a callable credential.
+
+    https://github.com/feldera/feldera/issues/7048: a refresher that missed a
+    cycle left the token file holding an expired token, and re-resolving it
+    immediately just presented the same dead token again.
+    """
+
+    @staticmethod
+    def _client(**overrides) -> tuple[HttpRequests, _TokenFile]:
+        credential = _TokenFile(_jwt(exp=-1_000))  # long expired
+        cfg = Config(
+            url="http://example.test",
+            api_key=credential,
+            retry_config=_fast_retry(max_retries=0, **overrides),
+        )
+        return HttpRequests(cfg), credential
+
+    def test_waits_for_the_refresher_and_retries_with_the_new_token(self):
+        expired, fresh = _jwt(exp=-1_000), _jwt(exp=2**31)
+        with _instant_sleep() as now:
+            credential = _TokenFile(
+                expired, clock=lambda: now[0], refresh_at=20.0, replacement=fresh
+            )
+            cfg = Config(
+                url="http://example.test",
+                api_key=credential,
+                retry_config=_fast_retry(
+                    max_retries=0, expired_token_wait_seconds=150.0
+                ),
+            )
+            sent = []
+
+            def record(*args, **kwargs):
+                sent.append(kwargs["headers"]["Authorization"])
+                return _make_response(401 if len(sent) == 1 else 200)
+
+            with patch_requests("get", []) as m:
+                m.side_effect = record
+                HttpRequests(cfg).get("/foo")
+
+        assert sent == [f"Bearer {expired}", f"Bearer {fresh}"]
+        # It waited for the refresher rather than replaying the dead token.
+        assert 20.0 <= now[0] < 20.0 + 5.0
+
+    def test_gives_up_after_the_budget_and_reports_the_instance_failure(self):
+        client, _ = self._client(expired_token_wait_seconds=30.0)
+        with patch_requests("get", [_make_response(401)] * 2) as m:
+            with _instant_sleep() as now:
+                with pytest.raises(FelderaAPIError) as exc_info:
+                    client.get("/foo")
+        assert exc_info.value.status_code == 401
+        assert m.call_count == 2
+        # The wait is bounded by the budget, not by the refresher showing up.
+        assert 30.0 <= now[0] < 30.0 + 5.0
+
+    def test_a_credential_that_is_merely_refused_does_not_wait(self):
+        """A live token the instance rejects is a trust problem, not a race.
+
+        Waiting on it would turn a misconfigured trust or a wrong API key into
+        a hang on every request.
+        """
+        credential = _TokenFile(_jwt(exp=2**31))  # valid for decades
+        cfg = Config(
+            url="http://example.test",
+            api_key=credential,
+            retry_config=_fast_retry(max_retries=0, expired_token_wait_seconds=150.0),
+        )
+        client = HttpRequests(cfg)
+        with patch_requests("get", [_make_response(401)] * 2) as m:
+            with _instant_sleep() as now:
+                with pytest.raises(FelderaAPIError):
+                    client.get("/foo")
+        assert m.call_count == 2, "expected exactly one re-resolved retry"
+        assert now[0] == 0.0, "waited on a token that had not expired"
+
+    def test_an_opaque_credential_does_not_wait(self):
+        credential = _TokenFile("not-a-jwt-at-all")
+        cfg = Config(
+            url="http://example.test",
+            api_key=credential,
+            retry_config=_fast_retry(max_retries=0, expired_token_wait_seconds=150.0),
+        )
+        client = HttpRequests(cfg)
+        with patch_requests("get", [_make_response(401)] * 2):
+            with _instant_sleep() as now:
+                with pytest.raises(FelderaAPIError):
+                    client.get("/foo")
+        assert now[0] == 0.0
+
+    def test_without_a_budget_the_behaviour_is_one_immediate_retry(self):
+        client, _ = self._client()  # expired_token_wait_seconds defaults to 0
+        with patch_requests("get", [_make_response(401), _make_response(200)]) as m:
+            with _instant_sleep() as now:
+                client.get("/foo")
+        assert m.call_count == 2
+        assert now[0] == 0.0
+
+    def test_a_token_replaced_mid_flight_retries_without_waiting(self):
+        """The refresher can land between building a request and its rejection."""
+        client, credential = self._client(expired_token_wait_seconds=150.0)
+        fresh = _jwt(exp=2**31)
+
+        def record(*args, **kwargs):
+            if kwargs["headers"]["Authorization"].endswith(fresh):
+                return _make_response(200)
+            credential.token = fresh
+            return _make_response(401)
+
+        with patch_requests("get", []) as m:
+            m.side_effect = record
+            with _instant_sleep() as now:
+                client.get("/foo")
+        assert m.call_count == 2
+        assert now[0] == 0.0, "waited although the credential had already changed"
+
+    def test_a_second_expired_token_does_not_end_the_wait(self):
+        """A refresher can mint from a skewed clock, or half-write its file.
+
+        The single retry is worth more than the first token that merely
+        differs from the dead one.
+        """
+        first, second, fresh = _jwt(exp=-1_000), _jwt(exp=-900), _jwt(exp=2**31)
+        with _instant_sleep() as now:
+
+            def credential() -> str:
+                if now[0] >= 40.0:
+                    return fresh
+                return second if now[0] >= 5.0 else first
+
+            cfg = Config(
+                url="http://example.test",
+                api_key=credential,
+                retry_config=_fast_retry(
+                    max_retries=0, expired_token_wait_seconds=150.0
+                ),
+            )
+            sent = []
+
+            def record(*args, **kwargs):
+                sent.append(kwargs["headers"]["Authorization"])
+                return _make_response(401 if len(sent) == 1 else 200)
+
+            with patch_requests("get", []) as m:
+                m.side_effect = record
+                HttpRequests(cfg).get("/foo")
+
+        assert sent == [f"Bearer {first}", f"Bearer {fresh}"]
+        assert now[0] == 40.0, "the replacement dead token ended the wait"
+
+    @pytest.mark.parametrize("status", [400, 403, 404, 500])
+    def test_only_401_enters_the_wait_path(self, status: int):
+        """Every other refusal is reported as-is, expired bearer or not."""
+        client, credential = self._client(expired_token_wait_seconds=150.0)
+        with patch_requests("get", [_make_response(status)]) as m:
+            with _instant_sleep() as now:
+                with pytest.raises(FelderaAPIError) as exc_info:
+                    client.get("/foo")
+        assert exc_info.value.status_code == status
+        assert m.call_count == 1
+        assert now[0] == 0.0
+        assert credential.reads == 1, "re-resolved the credential for a non-401"
+
+    def test_a_clock_ahead_of_the_idp_costs_delay_but_not_a_hang(self):
+        """`exp` is read against the local clock, with no allowance for skew.
+
+        A host running ahead of the issuer reads a still-live token as expired
+        and spends the budget waiting for a refresh that was never due. The
+        cost is bounded by the budget, so the caller still gets the instance's
+        answer rather than a hang.
+        """
+        credential = _TokenFile(_jwt(exp=time.time() - 1))  # expired by a hair
+        cfg = Config(
+            url="http://example.test",
+            api_key=credential,
+            retry_config=_fast_retry(max_retries=0, expired_token_wait_seconds=30.0),
+        )
+        with patch_requests("get", [_make_response(401)] * 2) as m:
+            with _instant_sleep() as now:
+                with pytest.raises(FelderaAPIError) as exc_info:
+                    HttpRequests(cfg).get("/foo")
+        assert exc_info.value.status_code == 401
+        assert m.call_count == 2
+        assert now[0] == 30.0
+
+    def test_the_expiry_comes_from_the_token_the_retry_will_send(self):
+        """The wait is decided by the headers, never by a second resolve.
+
+        A refresh landing between building the retry headers and reading the
+        expiry would otherwise clear the wait while the retry still carried
+        the expired token.
+        """
+        expired, fresh = _jwt(exp=-1_000), _jwt(exp=2**31)
+        reads = [0]
+
+        def credential() -> str:
+            # The original request and the retry headers both read the expired
+            # token; only a third resolve sees the replacement.
+            reads[0] += 1
+            return expired if reads[0] <= 2 else fresh
+
+        cfg = Config(
+            url="http://example.test",
+            api_key=credential,
+            retry_config=_fast_retry(max_retries=0, expired_token_wait_seconds=150.0),
+        )
+        sent = []
+
+        def record(*args, **kwargs):
+            auth = kwargs["headers"]["Authorization"]
+            sent.append(auth)
+            return _make_response(200 if auth.endswith(fresh) else 401)
+
+        with patch_requests("get", []) as m:
+            m.side_effect = record
+            with _instant_sleep() as now:
+                HttpRequests(cfg).get("/foo")
+
+        assert sent == [f"Bearer {expired}", f"Bearer {fresh}"]
+        assert reads[0] == 3, "resolved the credential more than the flow needs"
+        assert now[0] == 5.0, "the replacement arrived on the first poll"
+
+    def test_the_fake_clock_does_not_reach_tenacity(self):
+        """The wait is measured on this module's clock alone.
+
+        Patching `time.sleep` process-wide instead would fold tenacity's own
+        backoff into `now`, and every measurement here would quietly drift the
+        moment a case was given a real backoff.
+        """
+        credential = _TokenFile(_jwt(exp=-1_000))
+        cfg = Config(
+            url="http://example.test",
+            api_key=credential,
+            retry_config=_fast_retry(
+                max_retries=1,
+                initial_backoff=0.2,
+                max_backoff=0.2,
+                expired_token_wait_seconds=30.0,
+            ),
+        )
+        # 503 costs one real 0.2s tenacity backoff before the 401s arrive.
+        responses = [_make_response(503)] + [_make_response(401)] * 2
+        with patch_requests("get", responses) as m:
+            with _instant_sleep() as now:
+                with pytest.raises(FelderaAPIError):
+                    HttpRequests(cfg).get("/foo")
+        assert m.call_count == 3
+        assert now[0] == 30.0, "tenacity's backoff leaked into the fake clock"
+
+    def test_a_static_credential_still_fails_at_once(self):
+        cfg = Config(
+            url="http://example.test",
+            api_key=_jwt(exp=-1_000),
+            retry_config=_fast_retry(max_retries=0, expired_token_wait_seconds=150.0),
+        )
+        client = HttpRequests(cfg)
+        with patch_requests("get", [_make_response(401)]) as m:
+            with _instant_sleep() as now:
+                with pytest.raises(FelderaAPIError):
+                    client.get("/foo")
+        # Nothing refreshes a string, so there is nothing to wait for.
+        assert m.call_count == 1
+        assert now[0] == 0.0
