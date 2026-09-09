@@ -16,6 +16,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** Equivalent to the apply operator from DBSP
  * which applies an arbitrary function to its input.
@@ -81,5 +82,12 @@ public final class DBSPApplyOperator extends DBSPUnaryOperator implements ILinea
         return new DBSPApplyOperator(
                 CalciteEmptyRel.INSTANCE, info.getClosureFunction(), info.outputType(), info.getInput(0), null)
                 .addAnnotations(info.annotations(), DBSPApplyOperator.class);
+    }
+
+    /** Apply computes a function of whole values, never of changes. */
+    @Override
+    protected StreamKind computeOutputKind() {
+        this.requireAllInputsAmong(StreamKind.WATERLINE);
+        return StreamKind.WATERLINE;
     }
 }

@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** Base class for source operators which represent tables. */
 public abstract class DBSPSourceTableOperator
@@ -40,8 +41,8 @@ public abstract class DBSPSourceTableOperator
     protected DBSPSourceTableOperator(
             CalciteRelNode node, String operation, CalciteObject sourceName,
             DBSPType outputType, DBSPTypeStruct originalRowType, boolean isMultiset,
-            TableMetadata metadata, ProgramIdentifier name, @Nullable String comment) {
-        super(node, operation, outputType, isMultiset, name, metadata, comment);
+            TableMetadata metadata, ProgramIdentifier name, StreamKind kind, @Nullable String comment) {
+        super(node, operation, outputType, isMultiset, name, metadata, kind, comment);
         Utilities.enforce(node.is(RelAnd.class) || node.is(CalciteEmptyRel.class));
         this.originalRowType = originalRowType;
         this.sourceName = sourceName;

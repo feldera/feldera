@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 public final class DBSPDifferentiateOperator extends DBSPUnaryOperator implements IStateful, ILinear {
     public DBSPDifferentiateOperator(CalciteRelNode node, OutputPort source) {
@@ -66,5 +67,11 @@ public final class DBSPDifferentiateOperator extends DBSPUnaryOperator implement
         CommonInfo info = commonInfoFromJson(node, decoder);
         return new DBSPDifferentiateOperator(CalciteEmptyRel.INSTANCE, info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPDifferentiateOperator.class);
+    }
+
+    @Override
+    protected StreamKind computeOutputKind() {
+        this.requireAllInputsAmong(StreamKind.COLLECTION);
+        return StreamKind.DELTA;
     }
 }

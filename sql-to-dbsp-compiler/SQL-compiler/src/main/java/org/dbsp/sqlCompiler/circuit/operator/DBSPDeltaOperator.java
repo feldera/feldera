@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** Represents a delta operator (called delta0 in DBSP) */
 public class DBSPDeltaOperator extends DBSPUnaryOperator implements ILinear {
@@ -46,5 +47,13 @@ public class DBSPDeltaOperator extends DBSPUnaryOperator implements ILinear {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         return new DBSPDeltaOperator(CalciteEmptyRel.INSTANCE, info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPDeltaOperator.class);
+    }
+
+    /** delta0 emits the outer value at the first step of the nested circuit and
+     * nothing afterwards: a delta of the nested circuit, whatever the outer kind. */
+    @Override
+    protected StreamKind computeOutputKind() {
+        this.requireAllInputsAmong(StreamKind.DELTA, StreamKind.COLLECTION);
+        return StreamKind.DELTA;
     }
 }

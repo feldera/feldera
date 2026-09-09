@@ -120,9 +120,9 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
     }
 
     @Override
-    public DBSPType outputStreamType(int outputNo, boolean outerCircuit) {
+    public DBSPType outputStreamType(int outputNo, int nesting) {
         Utilities.enforce(outputNo == 0);
-        Utilities.enforce(outerCircuit);
+        Utilities.enforce(nesting == 0);
         DBSPType[] args = new DBSPType[3];
         DBSPTypeRawTuple pfOut = this.partitioningFunction.getResultType().to(DBSPTypeRawTuple.class);
         args[0] = pfOut.tupFields[0];

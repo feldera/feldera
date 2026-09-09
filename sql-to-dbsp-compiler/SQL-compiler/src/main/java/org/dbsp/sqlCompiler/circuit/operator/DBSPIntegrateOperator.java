@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 public final class DBSPIntegrateOperator extends DBSPUnaryOperator implements IContainsIntegrator, ILinear {
     public DBSPIntegrateOperator(CalciteRelNode node, OutputPort source) {
@@ -66,5 +67,11 @@ public final class DBSPIntegrateOperator extends DBSPUnaryOperator implements IC
         CommonInfo info = commonInfoFromJson(node, decoder);
         return new DBSPIntegrateOperator(CalciteEmptyRel.INSTANCE, info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPIntegrateOperator.class);
+    }
+
+    @Override
+    protected StreamKind computeOutputKind() {
+        this.requireAllInputsAmong(StreamKind.DELTA);
+        return StreamKind.COLLECTION;
     }
 }

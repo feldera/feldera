@@ -14,6 +14,7 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.List;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** Models the Rust AggregateIncremental node in the expansion circuit that the monotonicity
  * analysis (DeltaExpandOperators) builds.  The code generator never sees this operator. */
@@ -55,5 +56,12 @@ public final class DBSPPrimitiveAggregateOperator extends DBSPBinaryOperator
         return new DBSPPrimitiveAggregateOperator(CalciteEmptyRel.INSTANCE, info.function(),
                 info.getIndexedZsetType(), info.getInput(0), info.getInput(1))
                 .addAnnotations(info.annotations(), DBSPPrimitiveAggregateOperator.class);
+    }
+
+    @Override
+    protected StreamKind computeOutputKind() {
+        this.requireInputAmong(0, StreamKind.DELTA);
+        this.requireInputAmong(1, StreamKind.COLLECTION);
+        return StreamKind.DELTA;
     }
 }

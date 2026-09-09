@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import javax.annotation.Nullable;
 import java.util.List;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** This operator is like an integral followed by a delay.  It exists only in the expansion
  * circuit that the monotonicity analysis (DeltaExpandOperators) builds. */
@@ -47,5 +48,11 @@ public final class DBSPDelayedIntegralOperator extends DBSPUnaryOperator impleme
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         return new DBSPDelayedIntegralOperator(CalciteEmptyRel.INSTANCE, info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPDelayedIntegralOperator.class);
+    }
+
+    @Override
+    protected StreamKind computeOutputKind() {
+        this.requireAllInputsAmong(StreamKind.DELTA);
+        return StreamKind.COLLECTION;
     }
 }

@@ -22,6 +22,8 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 
 /** Operator used in the creation of recursive circuits.
  * Represents a recursive view declaration that is used in the definition of a set of other views.
@@ -30,12 +32,23 @@ public final class DBSPViewDeclarationOperator
         extends DBSPSourceTableOperator {
     public final CalciteObject viewDeclaration;
 
+    /** @param kind  A declaration stands for the previous value of a recursive view:
+     *              a collection in the flat circuit built by the front-end, and a delta
+     *              once the declaration is placed inside a nested circuit. */
     public DBSPViewDeclarationOperator(
             CalciteObject node, CalciteObject sourceName,
             DBSPTypeZSet outputType, DBSPTypeStruct originalRowType,
-            TableMetadata metadata, ProgramIdentifier name) {
-        super(new RelAnd(), "Z", sourceName, outputType, originalRowType, true,
-                metadata, name, null);
+            TableMetadata metadata, ProgramIdentifier name, StreamKind kind) {
+        this(new RelAnd(), node, sourceName, outputType, originalRowType, metadata, name, kind);
+    }
+
+    /** Copies keep the Calcite nodes accumulated by the original declaration. */
+    private DBSPViewDeclarationOperator(
+            CalciteRelNode relNode, CalciteObject node, CalciteObject sourceName,
+            DBSPTypeZSet outputType, DBSPTypeStruct originalRowType,
+            TableMetadata metadata, ProgramIdentifier name, StreamKind kind) {
+        super(relNode, "Z", sourceName, outputType, originalRowType, true,
+                metadata, name, kind, null);
         Utilities.enforce(metadata.getColumnCount() == originalRowType.fields.size());
         Utilities.enforce(metadata.getColumnCount() == outputType.elementType.to(DBSPTypeTuple.class).size());
         this.viewDeclaration = node;
@@ -55,10 +68,17 @@ public final class DBSPViewDeclarationOperator
             @Nullable DBSPExpression unused, DBSPType outputType,
             List<OutputPort> newInputs, boolean force) {
         if (this.mustReplace(force, unused, newInputs, outputType))
-            return new DBSPViewDeclarationOperator(this.viewDeclaration, this.sourceName,
+            return new DBSPViewDeclarationOperator(this.getRelNode(), this.viewDeclaration, this.sourceName,
                 outputType.to(DBSPTypeZSet.class), this.originalRowType,
-                this.metadata, this.tableName).copyAnnotations(this);
+                this.metadata, this.tableName, this.kind).copyAnnotations(this);
         return this;
+    }
+
+    @Override
+    public DBSPSourceBaseOperator withKind(StreamKind kind) {
+        return new DBSPViewDeclarationOperator(this.getRelNode(), this.viewDeclaration, this.sourceName,
+                this.getOutputZSetType(), this.originalRowType, this.metadata, this.tableName, kind)
+                .copyAnnotations(this).to(DBSPSourceBaseOperator.class);
     }
 
     public ProgramIdentifier originalViewName() {
@@ -90,7 +110,7 @@ public final class DBSPViewDeclarationOperator
         DBSPTypeStruct originalRowType = fromJsonInner(node, "originalRowType", decoder, DBSPTypeStruct.class);
         TableMetadata metadata = TableMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder);
         return new DBSPViewDeclarationOperator(CalciteObject.EMPTY, CalciteObject.EMPTY,
-                info.getZsetType(), originalRowType, metadata, viewName)
+                info.getZsetType(), originalRowType, metadata, viewName, decoder.sourceKind())
                 .addAnnotations(info.annotations(), DBSPViewDeclarationOperator.class);
     }
 

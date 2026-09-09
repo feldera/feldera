@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** The z^-1 operator from DBSP.
  * If the function is specified, it is the initial value produced by the delay. */
@@ -58,5 +59,11 @@ public final class DBSPDelayOperator extends DBSPUnaryOperator implements IState
         CommonInfo info = commonInfoFromJson(node, decoder);
         return new DBSPDelayOperator(CalciteEmptyRel.INSTANCE, info.function(), info.getInput(0))
                 .addAnnotations(info.annotations(), DBSPDelayOperator.class);
+    }
+
+    /** A delay carries a stream of any kind unchanged, waterlines included. */
+    @Override
+    protected StreamKind computeOutputKind() {
+        return this.input().kind();
     }
 }

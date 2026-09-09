@@ -22,6 +22,7 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /**
  * Represents multiple DBSP operators, all whose names start with
@@ -123,5 +124,13 @@ public final class DBSPIntegrateTraceRetainNValuesOperator
     @Override
     public DBSPSimpleOperator asOperator() {
         return this;
+    }
+
+    /** The data passes through unchanged; the control input carries the bound. */
+    @Override
+    protected StreamKind computeOutputKind() {
+        this.requireInputAmong(0, StreamKind.DELTA, StreamKind.COLLECTION);
+        this.requireInputAmong(1, StreamKind.WATERLINE);
+        return this.inputs.get(0).kind();
     }
 }

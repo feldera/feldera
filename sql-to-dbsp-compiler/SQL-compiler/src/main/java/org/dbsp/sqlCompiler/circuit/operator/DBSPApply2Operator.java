@@ -14,6 +14,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** Equivalent to the apply2 operator from DBSP
  * which applies an arbitrary function to its 2 inputs.
@@ -65,5 +66,12 @@ public final class DBSPApply2Operator extends DBSPBinaryOperator implements ILin
         return new DBSPApply2Operator(
                 CalciteEmptyRel.INSTANCE, info.getClosureFunction(), info.getInput(0), info.getInput(1))
                 .addAnnotations(info.annotations(), DBSPApply2Operator.class);
+    }
+
+    /** Apply computes a function of whole values, never of changes. */
+    @Override
+    protected StreamKind computeOutputKind() {
+        this.requireAllInputsAmong(StreamKind.WATERLINE);
+        return StreamKind.WATERLINE;
     }
 }

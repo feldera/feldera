@@ -19,6 +19,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** Operator that generates the NOW() timestamp.
  * There is no equivalent DBSP operator, this is only used during compilation to
@@ -57,5 +58,10 @@ public final class DBSPNowOperator extends DBSPSimpleOperator implements ILinear
         CommonInfo info = commonInfoFromJson(node, decoder);
         return new DBSPNowOperator(CalciteEmptyRel.INSTANCE)
                 .addAnnotations(info.annotations(), DBSPNowOperator.class);
+    }
+
+    @Override
+    protected StreamKind computeOutputKind() {
+        return StreamKind.COLLECTION;
     }
 }

@@ -40,14 +40,19 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.STREAM;
 
 /** A type of the form 'Stream<Circuit, elementType>' */
 public class DBSPTypeStream extends DBSPType {
-    /** Currently only 2 levels of nesting are supported */
-    public final boolean outerCircuit;
     public final DBSPType elementType;
+    /** Whether the stream carries deltas, collections, or scalars. */
+    public final StreamKind kind;
+    /** Depth of the circuit the stream belongs to: 0 for the root circuit,
+     * 1 for a stream inside a nested (recursive) circuit. */
+    public final int nesting;
 
-    public DBSPTypeStream(DBSPType elementType, boolean outerCircuit) {
+    public DBSPTypeStream(DBSPType elementType, StreamKind kind, int nesting) {
         super(elementType.getNode(), STREAM, elementType.mayBeNull);
+        Utilities.enforce(nesting >= 0);
         this.elementType = elementType;
-        this.outerCircuit = outerCircuit;
+        this.kind = kind;
+        this.nesting = nesting;
     }
 
     @Override
@@ -71,7 +76,8 @@ public class DBSPTypeStream extends DBSPType {
         DBSPTypeStream s = other.as(DBSPTypeStream.class);
         if (s == null) return false;
         return this.elementType == s.elementType &&
-                this.outerCircuit == s.outerCircuit;
+                this.kind == s.kind &&
+                this.nesting == s.nesting;
     }
 
     @Override
@@ -88,8 +94,7 @@ public class DBSPTypeStream extends DBSPType {
     @Override
     public int hashCode() {
         return Objects.hash(super.hashCode(),
-                this.elementType.hashCode(),
-                Objects.hash(this.outerCircuit));
+                this.elementType.hashCode(), this.kind, this.nesting);
     }
 
     @Override
@@ -100,7 +105,8 @@ public class DBSPTypeStream extends DBSPType {
         if (oRef == null)
             return false;
         return this.elementType.sameType(oRef.elementType) &&
-                this.outerCircuit == oRef.outerCircuit;
+                this.kind == oRef.kind &&
+                this.nesting == oRef.nesting;
     }
 
     @Override
@@ -113,7 +119,8 @@ public class DBSPTypeStream extends DBSPType {
     @SuppressWarnings("unused")
     public static DBSPTypeStream fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPType elementType = fromJsonInner(node, "elementType", decoder, DBSPType.class);
-        boolean outerCircuit = Utilities.getBooleanProperty(node, "outerCircuit");
-        return new DBSPTypeStream(elementType, outerCircuit);
+        StreamKind kind = StreamKind.valueOf(Utilities.getStringProperty(node, "kind"));
+        int nesting = Utilities.getIntProperty(node, "nesting");
+        return new DBSPTypeStream(elementType, kind, nesting);
     }
 }

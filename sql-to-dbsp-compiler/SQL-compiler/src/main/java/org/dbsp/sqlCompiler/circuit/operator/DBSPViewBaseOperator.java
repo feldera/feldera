@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** Base class for an operator representing a view declared by the user.
  *  If the view is an output then it is represented by a Sink operator.
@@ -66,5 +67,11 @@ public abstract class DBSPViewBaseOperator extends DBSPUnaryOperator {
     public boolean equivalent(DBSPOperator other) {
         // Two outputs are never equivalent
         return false;
+    }
+
+    @Override
+    protected StreamKind computeOutputKind() {
+        this.requireInputAmong(0, StreamKind.DELTA, StreamKind.COLLECTION);
+        return this.input().kind();
     }
 }
