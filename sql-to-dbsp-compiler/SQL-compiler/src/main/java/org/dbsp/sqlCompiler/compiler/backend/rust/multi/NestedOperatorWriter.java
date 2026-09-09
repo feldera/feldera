@@ -185,7 +185,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
             input++;
             this.builder().append(n);
             this.builder().append(": &");
-            DBSPType streamType = port.streamType(true);
+            DBSPType streamType = port.streamType(0);
             streamType.accept(visitor.innerVisitor);
             this.builder().append(",").newline();
         }
@@ -194,7 +194,8 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         this.builder().append("(");
         for (int i = 0; i < this.operator.outputCount(); i++) {
             if (this.operator.hasOutput(i)) {
-                DBSPType streamType = this.operator.outputStreamType(i, true);
+                // The outputs of the nested operator are streams of the root circuit
+                DBSPType streamType = this.operator.outputStreamType(i, 0);
                 streamType.accept(visitor.innerVisitor);
                 this.builder().append(",");
             }
@@ -236,7 +237,8 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
             if (operator.internalOutputs.get(i) == null) {
                 this.builder().append("()").append(", ");
             } else {
-                DBSPType streamType = new DBSPTypeStream(operator.outputType(i), false);
+                // The streams produced inside the nested circuit
+                DBSPType streamType = operator.internalOutputs.get(i).streamType(1);
                 streamType.accept(visitor.innerVisitor);
                 this.builder().append(", ");
             }

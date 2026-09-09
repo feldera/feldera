@@ -14,6 +14,7 @@ import java.util.List;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** This operator does not exist in DBSP, it is purely used while computing monotonicity */
 @NonCoreIR
@@ -55,5 +56,12 @@ public final class DBSPBinaryDistinctOperator extends DBSPBinaryOperator
         boolean positive = Utilities.getBooleanProperty(node, "positive");
         return new DBSPBinaryDistinctOperator(CalciteEmptyRel.INSTANCE, info.getInput(0), info.getInput(1), positive)
                 .addAnnotations(info.annotations(), DBSPBinaryDistinctOperator.class);
+    }
+
+    @Override
+    protected StreamKind computeOutputKind() {
+        this.requireInputAmong(0, StreamKind.COLLECTION);
+        this.requireInputAmong(1, StreamKind.DELTA);
+        return StreamKind.DELTA;
     }
 }

@@ -29,6 +29,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /**
  * Encloses recursive components into separate {@link DBSPNestedOperator} operators.
@@ -53,6 +54,8 @@ class BuildNestedOperators extends CircuitCloneWithGraphsVisitor {
         this.toAdd = new HashSet<>();
         this.viewPort = new HashMap<>();
         this.deltasCreated = new HashMap<>();
+        // Operators moved into a nested circuit and their declarations change kind
+        this.preservesKinds = false;
     }
 
     @Override
@@ -135,6 +138,9 @@ class BuildNestedOperators extends CircuitCloneWithGraphsVisitor {
 
         DBSPSimpleOperator result = operator.withInputs(sources, this.force)
                 .to(DBSPSimpleOperator.class);
+        if (result.is(DBSPViewDeclarationOperator.class))
+            // Inside the nested circuit the declaration feeds an integrator
+            result = result.to(DBSPViewDeclarationOperator.class).withKind(StreamKind.DELTA);
         block.addOperator(result);
         DBSPViewOperator view = result.as(DBSPViewOperator.class);
         OutputPort port = result.outputPort();

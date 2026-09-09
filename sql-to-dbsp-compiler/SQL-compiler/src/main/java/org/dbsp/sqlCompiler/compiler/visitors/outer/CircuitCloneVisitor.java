@@ -60,6 +60,8 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     protected final List<ICircuit> underConstruction;
     /** True if the rewriting never changes the output type of an operator */
     protected boolean preservesTypes = true;
+    /** True if the rewriting never changes the kind of stream an operator produces */
+    protected boolean preservesKinds = true;
 
     public CircuitCloneVisitor(DBSPCompiler compiler, boolean force) {
         super(compiler);
@@ -67,6 +69,11 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
         this.circuitRemap = new HashMap<>();
         this.force = force;
         this.underConstruction = new ArrayList<>();
+    }
+
+    /** Whether the circuit this visitor produces is incremental; only IncrementalizeVisitor changes it. */
+    protected boolean resultIncremental(DBSPCircuit circuit) {
+        return circuit.incremental;
     }
 
     public CircuitCloneVisitor withPreservesTypes(boolean preservesTypes) {
@@ -91,6 +98,11 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
                 Utilities.enforce(oldPort.outputType().sameType(newPort.outputType()),
                         () -> "Replacing operator with type\n" + oldPort.outputType() +
                                 " with new type\n" + newPort.outputType());
+            }
+            if (this.preservesKinds && oldPort.exists() && newPort.exists()) {
+                Utilities.enforce(oldPort.kind() == newPort.kind(),
+                        () -> this + ": replacing " + oldPort + " producing " + oldPort.kind() +
+                                " with " + newPort + " producing " + newPort.kind());
             }
             Logger.INSTANCE.belowLevel(this, 2)
                     .appendSupplier(this::toString)
@@ -590,7 +602,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     public VisitDecision preorder(DBSPCircuit circuit) {
         if (this.visited.contains(circuit))
             return VisitDecision.STOP;
-        this.underConstruction.add(new DBSPCircuit(circuit.metadata));
+        this.underConstruction.add(new DBSPCircuit(circuit.metadata, this.resultIncremental(circuit)));
         return VisitDecision.CONTINUE;
     }
 

@@ -32,12 +32,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.Predicate;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** Tests for the TagRegions visitor */
 public class TestTagRegions {
     DBSPCircuit createCircuit(Predicate<DBSPOperator> addAnnotation) {
         ProgramMetadata meta = new ProgramMetadata();
-        DBSPCircuit circuit = new DBSPCircuit(meta);
+        DBSPCircuit circuit = new DBSPCircuit(meta, false);
         ProgramIdentifier table = new ProgramIdentifier("T");
         ProgramIdentifier view = new ProgramIdentifier("V");
         ProgramIdentifier col = new ProgramIdentifier("x");
@@ -54,7 +55,7 @@ public class TestTagRegions {
         var source = new DBSPSourceMultisetOperator(
                 CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY, z, str,
                 new TableMetadata(table, Linq.list(inputMeta), new ArrayList<>(), null, false, false, null),
-                table, null);
+                table, StreamKind.COLLECTION, null);
         if (addAnnotation.test(source))
             source.addAnnotation(new GlobalAggregate(0), DBSPSimpleOperator.class);
         circuit.addOperator(source);

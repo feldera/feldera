@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 import org.dbsp.util.Utilities;
 import org.dbsp.util.graph.Port;
 
@@ -172,7 +173,12 @@ public class OutputPort {
         return "{ \"node\": " + this.operator.id + ", \"output\": " + this.outputNumber + " }";
     }
 
-    public DBSPType streamType(boolean outerCircuit) {
-        return this.node().outputStreamType(this.outputNumber, outerCircuit);
+    /** The kind of stream flowing out of this port */
+    public StreamKind kind() {
+        return this.node().outputKind(this.outputNumber);
+    }
+
+    public DBSPType streamType(int nesting) {
+        return this.node().outputStreamType(this.outputNumber, nesting);
     }
 }

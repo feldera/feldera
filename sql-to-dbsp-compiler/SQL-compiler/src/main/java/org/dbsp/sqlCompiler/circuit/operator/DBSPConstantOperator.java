@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 public final class DBSPConstantOperator extends DBSPSimpleOperator {
     public DBSPConstantOperator(CalciteRelNode node, DBSPExpression value, boolean isMultiset) {
@@ -70,5 +71,10 @@ public final class DBSPConstantOperator extends DBSPSimpleOperator {
         return new DBSPConstantOperator(
                 CalciteEmptyRel.INSTANCE, info.getFunction(), info.isMultiset())
                 .addAnnotations(info.annotations(), DBSPConstantOperator.class);
+    }
+
+    @Override
+    protected StreamKind computeOutputKind() {
+        return StreamKind.COLLECTION;
     }
 }

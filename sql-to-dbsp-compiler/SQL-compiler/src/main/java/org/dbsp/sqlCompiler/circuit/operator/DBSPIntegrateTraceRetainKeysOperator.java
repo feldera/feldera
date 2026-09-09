@@ -23,6 +23,7 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 public final class DBSPIntegrateTraceRetainKeysOperator
         extends DBSPBinaryOperator implements IGCOperator
@@ -130,5 +131,13 @@ public final class DBSPIntegrateTraceRetainKeysOperator
         return new DBSPIntegrateTraceRetainKeysOperator(CalciteEmptyRel.INSTANCE,
                 info.getFunction(), info.getInput(0), info.getInput(1), accumulate)
                 .addAnnotations(info.annotations(), DBSPIntegrateTraceRetainKeysOperator.class);
+    }
+
+    /** The data passes through unchanged; the control input carries the bound. */
+    @Override
+    protected StreamKind computeOutputKind() {
+        this.requireInputAmong(0, StreamKind.DELTA, StreamKind.COLLECTION);
+        this.requireInputAmong(1, StreamKind.WATERLINE);
+        return this.inputs.get(0).kind();
     }
 }

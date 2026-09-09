@@ -10,7 +10,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
-import org.dbsp.sqlCompiler.circuit.operator.IIncremental;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FieldUseMap;
@@ -23,6 +22,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.CollectionShape;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 import org.dbsp.sqlCompiler.ir.type.IndexedShape;
 import org.dbsp.sqlCompiler.ir.type.CollectionShape.Column;
 import org.dbsp.sqlCompiler.ir.type.CollectionShape.Part;
@@ -309,14 +309,9 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
         OutputPort current = join.left();
         // Operators going upstream from the left input of this join
         List<Step> path = new ArrayList<>();
-        // The current type system of the compiler does not distinguish between
-        // streams that represent deltas or full collections.  A chain must start
-        // only at a stream that represents a full collection.
-        Utilities.enforce(join.is(IIncremental.class), () -> "Expected an incremental join: " + join);
-        // left join is incremental-only, so the port feeding it is a delta
-        boolean isDelta = true;
         // Where a new chain starts if the walk meets no chain: the collection feeding the first
-        // left join.
+        // left join.  A left join consumes deltas, so the walk reaches a collection only by
+        // stepping over the differentiator that produces them.
         OutputPort newChainStart = null;
         int pathLengthBelowStart = -1;
         while (!this.carriedAt.containsKey(current) || this.insideChains.contains(current)) {
@@ -324,13 +319,9 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
             if (source == null || // Stop below an operator a chain cannot run through
                 this.insideChains.contains(current)) // Stop at a port inside another chain
                 break;
-            if (current.node().is(DBSPDifferentiateOperator.class))
-                isDelta = false;
-            else if (current.node().is(DBSPIntegrateOperator.class))
-                isDelta = true;
             path.add(new Step(current, source));
             current = source.port();
-            if (!isDelta && newChainStart == null) {
+            if (current.kind() == StreamKind.COLLECTION && newChainStart == null) {
                 newChainStart = current;
                 pathLengthBelowStart = path.size();
             }
@@ -346,12 +337,13 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
                     path.get(0).port().node().is(DBSPDifferentiateOperator.class),
                     () -> "A chain must start right before " + join);
             path.subList(pathLengthBelowStart, path.size()).clear();
-            CollectionShape shape = newChainStart.getShape();
-            Utilities.enforce(shape != null, () -> "A chain does not start at a delta");
+            final OutputPort start = newChainStart;
+            CollectionShape shape = start.getShape();
+            Utilities.enforce(shape != null, () -> "The start of a chain has no known shape: " + start);
             Map<Column, Column> identity = new LinkedHashMap<>();
             for (Column column : shape.columns())
                 identity.put(column, column);
-            carried = new Carried(newChainStart, 0, identity, identity, Set.of());
+            carried = new Carried(start, 0, identity, identity, Set.of());
         }
         for (int i = path.size() - 1; i >= 0; i--)
             carried = this.extend(carried, path.get(i).port(), path.get(i).source());
@@ -437,8 +429,8 @@ public class LeftJoinChainsVisitor extends CircuitVisitor {
         if (carried.length() < 2)
             // a single left join is not a chain
             return;
-        // DeferCarriedColumns inserts a join here.  The join needs a collection as input,
-        // and only an integrator produces one
+        // DeferCarriedColumns inserts a join here, and that join needs a collection as input:
+        // the chain must end at the integrator that turns its deltas back into a collection
         if (!end.node().is(DBSPIntegrateOperator.class))
             return;
         Chain chain = this.chainOf(carried, end);

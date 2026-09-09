@@ -58,7 +58,6 @@ import org.dbsp.util.Utilities;
 public class CircuitOptimizer extends Passes {
     public CircuitOptimizer(DBSPCompiler compiler) {
         super("Optimizer", compiler);
-        this.checkSerialization = compiler.options.ioOptions.checkSerialization;
         this.createOptimizer();
     }
 
@@ -202,8 +201,22 @@ public class CircuitOptimizer extends Passes {
         this.add(new CircuitStatistics(compiler));
     }
 
+    /** Every pass must leave a circuit with consistent stream kinds; when the testing option
+     * asks for it, the circuit must also survive a round trip through JSON. */
+    @Override
+    protected void afterPass(DBSPCircuit circuit) {
+        new ValidateStreamKinds(this.compiler).apply(circuit);
+        if (this.compiler.options.ioOptions.checkSerialization)
+            new TestSerialize(this.compiler).apply(circuit);
+    }
+
     public DBSPCircuit optimize(DBSPCircuit input) {
-        return this.apply(input);
+        DBSPCircuit result = this.apply(input);
+        boolean requested = this.compiler.options.languageOptions.incrementalize;
+        Utilities.enforce(result.incremental == requested, () -> "The circuit is " +
+                (result.incremental ? "" : "not ") + "incremental, but the compilation " +
+                (requested ? "requires" : "does not allow") + " an incremental circuit");
+        return result;
     }
 
     /** Index of the {@code occurrence}-th pass of class {@code anchor}, counting from 1 */

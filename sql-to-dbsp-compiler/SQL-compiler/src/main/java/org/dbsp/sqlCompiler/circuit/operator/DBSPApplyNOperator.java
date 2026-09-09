@@ -14,6 +14,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** Equivalent to the apply_n operator from DBSP
  * which applies an arbitrary function to its N inputs.
@@ -70,5 +71,12 @@ public final class DBSPApplyNOperator extends DBSPSimpleOperator implements ILin
         return new DBSPApplyNOperator(
                 CalciteEmptyRel.INSTANCE, info.getClosureFunction(), info.inputs())
                 .addAnnotations(info.annotations(), DBSPApplyNOperator.class);
+    }
+
+    /** Apply computes a function of whole values, never of changes. */
+    @Override
+    protected StreamKind computeOutputKind() {
+        this.requireAllInputsAmong(StreamKind.WATERLINE);
+        return StreamKind.WATERLINE;
     }
 }

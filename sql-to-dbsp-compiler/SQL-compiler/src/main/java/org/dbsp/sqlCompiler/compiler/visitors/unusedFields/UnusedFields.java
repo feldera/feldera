@@ -180,7 +180,7 @@ public class UnusedFields extends Passes {
                     source.metadata.materialized, source.metadata.isStreaming(), source.metadata.skipUnusedColumns);
             DBSPSourceMultisetOperator replacement = new DBSPSourceMultisetOperator(
                     source.getRelNode(), source.sourceName, new DBSPTypeZSet(newType.toTuple()), newType,
-                    metadata, source.tableName, source.comment);
+                    metadata, source.tableName, source.kind, source.comment);
             this.addOperator(replacement);
             Utilities.putNew(this.replacement, source, replacement);
         }

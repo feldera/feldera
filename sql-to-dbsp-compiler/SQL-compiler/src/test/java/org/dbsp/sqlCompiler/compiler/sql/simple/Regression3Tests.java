@@ -720,6 +720,7 @@ public class Regression3Tests extends SqlIoTest {
                 CREATE VIEW Z AS SELECT b, r.b, t.b FROM T;""");
     }
 
+    /** ENFORCE_POSITIVE_INPUTS catches a delete of an absent row in a non-incremental circuit. */
     @Test
     public void testEnforcePositiveInputs() {
         String sql = """

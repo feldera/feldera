@@ -27,6 +27,8 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 
 /** This visitor converts a {@link DBSPCircuit} into a new circuit which
  * computes the incremental version of the same query.
@@ -35,13 +37,22 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 public class IncrementalizeVisitor extends CircuitCloneVisitor {
     public IncrementalizeVisitor(DBSPCompiler compiler) {
         super(compiler, false);
+        // Sources and sinks change from collections to deltas by design
+        this.preservesKinds = false;
     }
 
-    public void input(DBSPSimpleOperator operator) {
+    @Override
+    protected boolean resultIncremental(DBSPCircuit circuit) {
+        return true;
+    }
+
+    public void input(DBSPSourceBaseOperator operator) {
         if (this.visited.contains(operator))
             return;
-        this.addOperator(operator);
-        DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getRelNode(), operator.outputPort());
+        // The source now emits changes; the integral rebuilds the collection its consumers expect
+        DBSPSourceBaseOperator delta = operator.withKind(StreamKind.DELTA);
+        this.addOperator(delta);
+        DBSPIntegrateOperator integral = new DBSPIntegrateOperator(operator.getRelNode(), delta.outputPort());
         this.map(operator, integral);
     }
 

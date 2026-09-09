@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** Deserialize data serialized by either {@link ToJsonOuterVisitor}
  * or {@link ToJsonInnerVisitor}. */
@@ -43,6 +44,10 @@ public class JsonDecoder {
     final Cache<IDBSPInnerNode> inner;
     final Cache<IDBSPOuterNode> outer;
     public final RelDataTypeFactory typeFactory;
+    /** True while decoding an incremental circuit, whose sources carry deltas */
+    boolean incremental = false;
+    /** True while decoding the operators inside a nested operator, which all carry deltas */
+    boolean nested = false;
 
     public JsonDecoder(RelDataTypeFactory typeFactory) {
         this.inner = new Cache<>();
@@ -128,6 +133,26 @@ public class JsonDecoder {
         } catch (NoSuchMethodException | IllegalAccessException e) {
             throw new RuntimeException("Class " + cls.asText() + " has no static fromJson(JsonNode, JsonDecoder) method", e);
         }
+    }
+
+    /** Called by DBSPCircuit.fromJson before it decodes the operators. */
+    public void setIncremental(boolean incremental) {
+        this.incremental = incremental;
+    }
+
+    /** Called by DBSPNestedOperator.fromJson around the decoding of its operators;
+     * returns the previous value, to restore afterwards. */
+    public boolean setNested(boolean nested) {
+        boolean previous = this.nested;
+        this.nested = nested;
+        return previous;
+    }
+
+    /** The kind of stream a source operator decoded at this point produces.  The kind is not
+     * serialized: it follows from the circuit mode and from the position of the operator, so
+     * the JSON hashed into persistent ids is unchanged. */
+    public StreamKind sourceKind() {
+        return (this.incremental || this.nested) ? StreamKind.DELTA : StreamKind.COLLECTION;
     }
 
     public <T extends IDBSPOuterNode> T decodeOuter(JsonNode node, Class<T> clazz) {
