@@ -11,9 +11,11 @@
 //! to one batch.
 
 use anyhow::{Result as AnyResult, anyhow};
-use arrow::array::{Array, ArrayRef, StructArray, new_null_array};
+use arrow::array::{
+    Array, ArrayRef, LargeListArray, ListArray, MapArray, StructArray, new_null_array,
+};
 use arrow::compute::cast;
-use arrow::datatypes::{DataType, Field, Fields, SchemaRef};
+use arrow::datatypes::{DataType, Field, FieldRef, Fields, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use async_stream::try_stream;
 use datafusion::catalog::TableProvider;
@@ -216,48 +218,139 @@ fn conversion_error(
     )
 }
 
+/// The element field of a container type: a list's element, a map's entries.
+/// Delta has no fixed-size list, so that Arrow type never appears here.
+fn container_element(data_type: &DataType) -> Option<&FieldRef> {
+    match data_type {
+        DataType::List(element) | DataType::LargeList(element) | DataType::Map(element, _) => {
+            Some(element)
+        }
+        _ => None,
+    }
+}
+
+/// Rebuild container `array` around elements realigned to `target`'s element
+/// type, keeping the array's own container kind. `None` when either side is not
+/// a container, leaving the caller to handle it.
+fn realign_container(
+    array: &ArrayRef,
+    target: &DataType,
+    file: &str,
+    column: &str,
+) -> Result<Option<ArrayRef>, DataFusionError> {
+    let Some(element) = container_element(target) else {
+        return Ok(None);
+    };
+    let realigned = |values: &ArrayRef| realign_array(values, element.data_type(), file, column);
+    let rebuild_error =
+        |e: arrow::error::ArrowError| conversion_error(file, column, array.data_type(), target, e);
+
+    let rebuilt: ArrayRef = if let Some(source) = array.as_any().downcast_ref::<ListArray>() {
+        Arc::new(
+            ListArray::try_new(
+                Arc::clone(element),
+                source.offsets().clone(),
+                realigned(source.values())?,
+                source.nulls().cloned(),
+            )
+            .map_err(rebuild_error)?,
+        )
+    } else if let Some(source) = array.as_any().downcast_ref::<LargeListArray>() {
+        Arc::new(
+            LargeListArray::try_new(
+                Arc::clone(element),
+                source.offsets().clone(),
+                realigned(source.values())?,
+                source.nulls().cloned(),
+            )
+            .map_err(rebuild_error)?,
+        )
+    } else if let Some(source) = array.as_any().downcast_ref::<MapArray>() {
+        // A map's element is its entries struct, which holds the key and value.
+        let entries: ArrayRef = Arc::new(source.entries().clone());
+        let entries = realign_array(&entries, element.data_type(), file, column)?;
+        let Some(entries) = entries.as_any().downcast_ref::<StructArray>() else {
+            return Ok(None);
+        };
+        Arc::new(
+            MapArray::try_new(
+                Arc::clone(element),
+                source.offsets().clone(),
+                entries.clone(),
+                source.nulls().cloned(),
+                // Delta never marks a map sorted, so this matches the target.
+                matches!(target, DataType::Map(_, true)),
+            )
+            .map_err(rebuild_error)?,
+        )
+    } else {
+        return Ok(None);
+    };
+    Ok(Some(rebuilt))
+}
+
 /// Convert a file column `array` to the `target` type the read schema expects.
 /// `file` and `column` (dotted for a nested child) locate it in errors.
 ///
 /// Under column mapping a struct's field names differ between the file and the
-/// schema (a file may use logical names, the schema uses `col-<id>`), so a struct
-/// is rebuilt: each target child takes the source child with the same field id, or
-/// the child at the same position when neither side carries an id (unmapped). A
-/// target child the file lacks is null-filled, matching how [`project_to_logical`]
-/// handles a missing top-level column. Non-struct types (scalars, lists, maps)
-/// have no such names to match, so `cast` handles them, including type and
-/// container differences like `List` vs `LargeList`.
+/// schema (a file may use logical names, the schema uses `col-<id>`), so a
+/// struct is rebuilt: each target child takes the source child with the same
+/// field id, or an id-less one of the same name. Position serves an unmapped
+/// struct, where no side carries ids. A target child the file lacks is
+/// null-filled.
+///
+/// A list or map is rebuilt around its realigned elements, because a struct inside
+/// one needs the same id matching: `cast` pairs children by name, falling back
+/// to position when no name matches, which is every column-mapped struct.
+/// `cast` handles scalars and the container kind itself (`List` vs `LargeList`).
 fn realign_array(
     array: &ArrayRef,
     target: &DataType,
     file: &str,
     column: &str,
 ) -> Result<ArrayRef, DataFusionError> {
-    let cast_to_target = || {
-        cast(array, target)
-            .map_err(|e| conversion_error(file, column, array.data_type(), target, e))
+    // Errors name the file's own type, not an intermediate one.
+    let cast_to_target = |from: &ArrayRef| {
+        cast(from, target).map_err(|e| conversion_error(file, column, array.data_type(), target, e))
     };
-    let DataType::Struct(target_fields) = target else {
-        return if array.data_type() == target {
-            Ok(Arc::clone(array))
+    if array.data_type() == target {
+        return Ok(Arc::clone(array));
+    }
+    if let Some(rebuilt) = realign_container(array, target, file, column)? {
+        // The rebuild keeps the file's container kind, so a target that spells
+        // it differently needs one more cast, of the offsets alone.
+        return if rebuilt.data_type() == target {
+            Ok(rebuilt)
         } else {
-            cast_to_target()
+            cast_to_target(&rebuilt)
         };
+    }
+    let DataType::Struct(target_fields) = target else {
+        return cast_to_target(array);
     };
     let Some(source) = array.as_any().downcast_ref::<StructArray>() else {
-        return cast_to_target();
+        return cast_to_target(array);
     };
     let src_idx_by_id = field_index_by_id(source.fields());
+    // Position is for an unmapped struct alone: once any target field carries an
+    // id, the source child at the same position may belong to another field.
+    let target_has_ids = target_fields.iter().any(|f| field_id(f).is_some());
     let children = target_fields
         .iter()
         .enumerate()
         .map(|(pos, tf)| {
-            // With an id, match by id only: falling back to position would risk
-            // grabbing an unrelated column. Without one (unmapped), use position.
-            let idx = match field_id(tf) {
-                Some(id) => src_idx_by_id.get(id).copied(),
-                None => Some(pos),
-            };
+            // Match by id, then by name, but only against a child that carries
+            // no id of its own: a child naming a different id means it, and
+            // taking it would read one column's values under another's name.
+            let idx = field_id(tf)
+                .and_then(|id| src_idx_by_id.get(id).copied())
+                .or_else(|| {
+                    source
+                        .fields()
+                        .iter()
+                        .position(|sf| field_id(sf).is_none() && sf.name() == tf.name())
+                })
+                .or_else(|| (!target_has_ids).then_some(pos));
             match idx.and_then(|i| source.columns().get(i)) {
                 Some(child) => realign_array(
                     child,
@@ -294,9 +387,18 @@ fn project_to_logical(
     let file_idx_by_id = field_index_by_id(file_schema.fields());
     let mut columns: Vec<ArrayRef> = Vec::with_capacity(logical_schema.fields().len());
     for field in logical_schema.fields().iter() {
-        let source = field_id(field)
-            .and_then(|id| file_idx_by_id.get(id).copied())
-            .or_else(|| file_schema.index_of(field.name()).ok());
+        // Same rule as the struct children in `realign_array`: a file column
+        // naming a different id is that other column, so only an id-less one
+        // may be claimed by name.
+        let source = match field_id(field) {
+            Some(id) => file_idx_by_id.get(id).copied().or_else(|| {
+                file_schema
+                    .fields()
+                    .iter()
+                    .position(|f| field_id(f).is_none() && f.name() == field.name())
+            }),
+            None => file_schema.index_of(field.name()).ok(),
+        };
         let col = match source {
             Some(idx) => realign_array(batch.column(idx), field.data_type(), file, field.name())?,
             None => new_null_array(field.data_type(), num_rows),
@@ -450,6 +552,116 @@ mod tests {
         field.with_metadata(HashMap::from([(key.to_string(), id.to_string())]))
     }
 
+    /// Source `struct<alpha (id 5), beta (id 6)>` for a list element or map value,
+    /// paired with the target that lists the same two children in the opposite
+    /// order, so pairing by position swaps the values.
+    fn reordered_struct_pair() -> (StructArray, ArrowFields) {
+        let source = StructArray::from(vec![
+            (
+                Arc::new(with_id(
+                    ArrowField::new("alpha", ArrowDataType::Utf8, true),
+                    "PARQUET:field_id",
+                    "5",
+                )),
+                Arc::new(StringArray::from(vec!["A"])) as ArrayRef,
+            ),
+            (
+                Arc::new(with_id(
+                    ArrowField::new("beta", ArrowDataType::Utf8, true),
+                    "PARQUET:field_id",
+                    "6",
+                )),
+                Arc::new(StringArray::from(vec!["B"])) as ArrayRef,
+            ),
+        ]);
+        let target = ArrowFields::from(vec![
+            with_id(
+                ArrowField::new("col-6", ArrowDataType::Utf8, true),
+                "delta.columnMapping.id",
+                "6",
+            ),
+            with_id(
+                ArrowField::new("col-5", ArrowDataType::Utf8, true),
+                "delta.columnMapping.id",
+                "5",
+            ),
+        ]);
+        (source, target)
+    }
+
+    /// The value of `array`'s first child, as a string.
+    fn first_child_value(array: &ArrayRef) -> String {
+        array
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap()
+            .column(0)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap()
+            .value(0)
+            .to_string()
+    }
+
+    // A struct inside a container is column-mapped like any other, so realign
+    // must recurse by field id. The two sides share no child name here, so
+    // `cast` would pair them by position and swap the values. `LargeList` is
+    // Arrow's own spelling; `delta_table_follow_uniform_field_id_test` covers
+    // Delta's `List` and `Map` end to end.
+    #[test]
+    fn realign_array_matches_nested_struct_by_field_id() {
+        use arrow::buffer::OffsetBuffer;
+
+        let (value, target_fields) = reordered_struct_pair();
+        let element =
+            |element_type: ArrowDataType| Arc::new(ArrowField::new("element", element_type, true));
+        let list: ArrayRef = Arc::new(
+            LargeListArray::try_new(
+                element(value.data_type().clone()),
+                OffsetBuffer::new(vec![0i64, 1].into()),
+                Arc::new(value) as ArrayRef,
+                None,
+            )
+            .unwrap(),
+        );
+
+        // A `List` target over a `LargeList` file also exercises the coercion
+        // the rebuild leaves to `cast`.
+        let target = ArrowDataType::List(element(ArrowDataType::Struct(target_fields)));
+        let out = realign_array(&list, &target, TEST_FILE, "history").unwrap();
+        assert_eq!(out.data_type(), &target);
+        let out = out.as_any().downcast_ref::<ListArray>().unwrap();
+        assert_eq!(
+            first_child_value(out.values()),
+            "B",
+            "the target's first child is id 6, so it must carry beta's value"
+        );
+    }
+
+    // The rebuild reports a rejected element with the column and file, which
+    // Arrow's own error lacks.
+    #[test]
+    fn realign_array_rejects_null_element_of_not_null_target() {
+        use arrow::array::{ListBuilder, StringBuilder};
+        let mut b = ListBuilder::new(StringBuilder::new());
+        b.values().append_value("a");
+        b.values().append_null();
+        b.append(true);
+        let source: ArrayRef = Arc::new(b.finish());
+
+        let target = ArrowDataType::List(Arc::new(ArrowField::new(
+            "element",
+            ArrowDataType::Utf8,
+            false,
+        )));
+        let error = realign_array(&source, &target, TEST_FILE, "items")
+            .expect_err("a null element must not pass into a NOT NULL element type")
+            .to_string();
+        assert!(error.contains("cannot read column 'items'"), "{error}");
+        assert!(error.contains(TEST_FILE), "{error}");
+        assert!(error.contains("cannot contain nulls"), "{error}");
+    }
+
     // The read schema's list kind may differ from the file's (Delta `List` vs a
     // file's `LargeList`); realign must coerce the container instead of failing.
     #[test]
@@ -590,6 +802,127 @@ mod tests {
             .unwrap();
         assert_eq!(missing.len(), 2);
         assert!(missing.is_null(0) && missing.is_null(1));
+    }
+
+    // A file may name a struct's children physically and omit their Parquet
+    // field ids. `project_to_logical` falls back to the name at the top
+    // level, so the struct branch must too, or those children read as NULL.
+    #[test]
+    fn realign_array_matches_struct_child_by_name_without_an_id() {
+        let source: ArrayRef = Arc::new(StructArray::from(vec![(
+            Arc::new(ArrowField::new("col-2", ArrowDataType::Utf8, true)),
+            Arc::new(StringArray::from(vec!["t1"])) as ArrayRef,
+        )]));
+        let target = ArrowDataType::Struct(ArrowFields::from(vec![with_id(
+            ArrowField::new("col-2", ArrowDataType::Utf8, true),
+            "delta.columnMapping.id",
+            "2",
+        )]));
+
+        let out = realign_array(&source, &target, TEST_FILE, "after").unwrap();
+        assert_eq!(
+            first_child_value(&out),
+            "t1",
+            "an id-less child sharing the target's name must not be null-filled"
+        );
+    }
+
+    // A source child that names a different id is that other column, whatever
+    // it is called, so the name must not claim it.
+    #[test]
+    fn realign_array_ignores_a_name_match_carrying_another_id() {
+        let source: ArrayRef = Arc::new(StructArray::from(vec![(
+            Arc::new(with_id(
+                ArrowField::new("col-5", ArrowDataType::Utf8, true),
+                "PARQUET:field_id",
+                "10",
+            )),
+            Arc::new(StringArray::from(vec!["ten"])) as ArrayRef,
+        )]));
+        let target = ArrowDataType::Struct(ArrowFields::from(vec![with_id(
+            ArrowField::new("col-5", ArrowDataType::Utf8, true),
+            "delta.columnMapping.id",
+            "5",
+        )]));
+
+        let out = realign_array(&source, &target, TEST_FILE, "after").unwrap();
+        let out = out.as_any().downcast_ref::<StructArray>().unwrap();
+        assert!(
+            out.column(0).is_null(0),
+            "id 10's values must not be read as id 5"
+        );
+    }
+
+    // Once a struct's fields carry ids, position says nothing: the id-carrying
+    // children match out of position, so a child left unmatched must read NULL
+    // rather than whatever sits at its index.
+    #[test]
+    fn realign_array_null_fills_an_unmatched_id_less_child() {
+        let source: ArrayRef = Arc::new(StructArray::from(vec![
+            (
+                Arc::new(ArrowField::new("gamma", ArrowDataType::Utf8, true)),
+                Arc::new(StringArray::from(vec!["G"])) as ArrayRef,
+            ),
+            (
+                Arc::new(with_id(
+                    ArrowField::new("alpha", ArrowDataType::Utf8, true),
+                    "PARQUET:field_id",
+                    "5",
+                )),
+                Arc::new(StringArray::from(vec!["A"])) as ArrayRef,
+            ),
+        ]));
+        let target = ArrowDataType::Struct(ArrowFields::from(vec![
+            with_id(
+                ArrowField::new("col-5", ArrowDataType::Utf8, true),
+                "delta.columnMapping.id",
+                "5",
+            ),
+            ArrowField::new("beta", ArrowDataType::Utf8, true),
+        ]));
+
+        let out = realign_array(&source, &target, TEST_FILE, "after").unwrap();
+        let out = out.as_any().downcast_ref::<StructArray>().unwrap();
+        assert_eq!(
+            out.column(0)
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap()
+                .value(0),
+            "A",
+            "id 5 must come from the child naming it"
+        );
+        assert!(
+            out.column(1).is_null(0),
+            "an unmatched child must not take id 5's neighbor by position"
+        );
+    }
+
+    // The top-level match follows the same rule as the struct children: a file
+    // column naming another id is that column, whatever it is called.
+    #[test]
+    fn project_to_logical_ignores_a_name_match_carrying_another_id() {
+        let file_schema = Arc::new(ArrowSchema::new(vec![with_id(
+            ArrowField::new("col-5", ArrowDataType::Utf8, true),
+            "PARQUET:field_id",
+            "10",
+        )]));
+        let batch = RecordBatch::try_new(
+            file_schema,
+            vec![Arc::new(StringArray::from(vec!["ten"])) as ArrayRef],
+        )
+        .unwrap();
+        let read_schema = Arc::new(ArrowSchema::new(vec![with_id(
+            ArrowField::new("col-5", ArrowDataType::Utf8, true),
+            "delta.columnMapping.id",
+            "5",
+        )]));
+
+        let out = project_to_logical(&batch, &read_schema, TEST_FILE).unwrap();
+        assert!(
+            out.column(0).is_null(0),
+            "id 10's values must not be read as id 5"
+        );
     }
 
     // A user hitting a type mismatch sees only the physical `col-<uuid>` name on
@@ -872,6 +1205,92 @@ mod tests {
         got.sort();
         let expected: Vec<i64> = (0..TOTAL_ROWS as i64).filter(|i| i % 2 != 0).collect();
         assert_eq!(got, expected, "masked rows mismatch");
+    }
+
+    /// A deletion vector and `columnMapping.mode = 'id'` meet on the same file:
+    /// the bitmap picks the rows, the field ids pick the columns.
+    #[tokio::test]
+    async fn masked_reader_matches_columns_by_field_id() {
+        let dir = TempDir::new().unwrap();
+
+        // As a Uniform file has them: logical names, Parquet field ids.
+        let file_schema = Arc::new(ArrowSchema::new(vec![
+            with_id(
+                ArrowField::new("id", ArrowDataType::Int64, false),
+                "PARQUET:field_id",
+                "7",
+            ),
+            with_id(
+                ArrowField::new("label", ArrowDataType::Utf8, false),
+                "PARQUET:field_id",
+                "8",
+            ),
+        ]));
+        let batch = RecordBatch::try_new(
+            Arc::clone(&file_schema),
+            vec![
+                Arc::new(Int64Array::from(vec![0, 1, 2, 3])),
+                Arc::new(StringArray::from(vec!["a", "b", "c", "d"])),
+            ],
+        )
+        .unwrap();
+        let file = std::fs::File::create(dir.path().join("data.parquet")).unwrap();
+        let mut writer = parquet::arrow::ArrowWriter::try_new(file, file_schema, None).unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        // As the log has them: physical names, column mapping ids, and the
+        // columns in the opposite order.
+        let logical = Arc::new(ArrowSchema::new(vec![
+            with_id(
+                ArrowField::new("col-8", ArrowDataType::Utf8, true),
+                "delta.columnMapping.id",
+                "8",
+            ),
+            with_id(
+                ArrowField::new("col-7", ArrowDataType::Int64, true),
+                "delta.columnMapping.id",
+                "7",
+            ),
+        ]));
+
+        let store = unloaded_table(dir.path()).log_store().object_store(None);
+        let provider = filtered_parquet_table(
+            store,
+            Path::from("data.parquet"),
+            RoaringTreemap::from_iter([0u64, 2]),
+            Arc::clone(&logical),
+            ReadMode::NotInBitmap,
+        )
+        .await
+        .unwrap();
+        let batches = SessionContext::new()
+            .read_table(provider)
+            .unwrap()
+            .collect()
+            .await
+            .unwrap();
+
+        let mut rows: Vec<(String, i64)> = Vec::new();
+        for batch in &batches {
+            assert_eq!(batch.schema().as_ref(), logical.as_ref());
+            let labels = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<StringArray>()
+                .unwrap();
+            let ids = batch
+                .column(1)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            rows.extend((0..batch.num_rows()).map(|i| (labels.value(i).to_string(), ids.value(i))));
+        }
+        assert_eq!(
+            rows,
+            vec![("b".to_string(), 1), ("d".to_string(), 3)],
+            "the deleted rows must be gone and each column read under its own id"
+        );
     }
 
     /// End-to-end check of [`filtered_parquet_table`] with [`ReadMode::InBitmap`]:

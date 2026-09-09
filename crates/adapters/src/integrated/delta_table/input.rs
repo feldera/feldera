@@ -24,6 +24,7 @@ use datafusion::physical_plan::{PhysicalExpr, displayable};
 use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
 use dbsp::circuit::tokio::TOKIO;
 use delta_kernel::schema::{ColumnMetadataKey, MetadataValue};
+use delta_kernel::table_features::ColumnMappingMode;
 use deltalake::datafusion::dataframe::DataFrame;
 use deltalake::datafusion::execution::context::SQLOptions;
 use deltalake::datafusion::logical_expr::{ExprSchemable, SortExpr};
@@ -156,12 +157,6 @@ fn is_retryable_delta_load_error(e: &DeltaTableError) -> bool {
 /// A deletion vector is only in effect when it flags at least one row.
 fn is_active_dv(dv: &DeletionVectorDescriptor) -> bool {
     dv.cardinality > 0
-}
-
-/// A `uc://` location is path-less, so a `ListingTable` built from `root_url() +
-/// Add.path` reads empty. Such tables must read through the object store directly.
-fn requires_direct_object_store_read(table: &DeltaTable) -> bool {
-    table.log_store().root_url().scheme() == "uc"
 }
 
 /// A [`ListingTableUrl`] for one data file of `table`.
@@ -3235,6 +3230,40 @@ impl DeltaTableInputEndpointInner {
         self.pin_schema_to_version(new_version as u64).await
     }
 
+    /// Must this table's files be read through the object store instead of a
+    /// [`ListingTable`]?
+    ///
+    /// A `ListingTable` has nothing to list at a path-less `uc://` location, and
+    /// it matches columns by name, so it reads a `mode = 'id'` file's logically
+    /// named columns as NULL.
+    ///
+    /// It costs throughput: each file gets its own single-partition stream, and
+    /// a `filter` no longer prunes row groups. Every `mode = 'id'` file pays
+    /// that, because only a file's Parquet footer says whether it needs the
+    /// direct read.
+    ///
+    /// TODO: resolve a `ListingTable`'s columns by field id instead, through
+    /// `ListingTableConfig::with_expr_adapter_factory` (DataFusion 53 replaced
+    /// `SchemaAdapterFactory` with `PhysicalExprAdapterFactory`), and keep the
+    /// listing's multi-file scans and predicate pushdown for these tables.
+    fn requires_direct_object_store_read(&self, table: &DeltaTable) -> AnyResult<bool> {
+        Ok(table.log_store().root_url().scheme() == "uc" || self.column_mapping_mode_is_id()?)
+    }
+
+    /// Is the table's column mapping `mode = 'id'`? Its files may name columns
+    /// logically, which only `project_to_logical` pairs with the `col-<id>` read
+    /// schema.
+    fn column_mapping_mode_is_id(&self) -> AnyResult<bool> {
+        Ok(self
+            .schema_snapshot()
+            .snapshot()
+            .map_err(|e| anyhow!("error accessing Delta table snapshot: {e}"))?
+            .snapshot()
+            .table_properties()
+            .column_mapping_mode
+            == Some(ColumnMappingMode::Id))
+    }
+
     /// Logical-to-physical column-name pairs under Delta column mapping.
     ///
     /// With `delta.columnMapping.mode = 'name'` or `'id'` each column lives on
@@ -3500,8 +3529,9 @@ impl DeltaTableInputEndpointInner {
     /// Build the [`DataFrame`] for one side (adds or removes) of a CDC
     /// transaction, or `None` when the side has no files.
     ///
-    /// Each file is `(path, deletion_vector)`. Files with an active DV stream
-    /// through a [`filtered_parquet_table`] that drops their deleted rows; the
+    /// Each file is `(path, deletion_vector)`. A file with an active DV streams
+    /// through a [`filtered_parquet_table`] that drops its deleted rows, and so
+    /// does every file when [`Self::requires_direct_object_store_read`] holds; the
     /// rest are read together through one [`ListingTable`]. The pieces combine
     /// with `UNION ALL`, each restricted to the same CDC read set (the columns
     /// [`Self::project_cdc_columns`] keeps), so they line up by position for the
@@ -3518,18 +3548,20 @@ impl DeltaTableInputEndpointInner {
         files: &[CdcFile<'_>],
         description: &str,
     ) -> AnyResult<Option<DataFrame>> {
-        // Split by read strategy: files with an active DV are masked one by
-        // one; the rest are read together in one listing, grouped by partition
-        // so each group's constant partition columns apply to all its files.
-        // The key keeps the outer `Option`: a log that omits a partition column
-        // is not a log that records it as NULL, and grouping the two together
-        // would let whichever file the log listed first decide for both.
+        // A file with an active DV, and every file when the table needs a direct
+        // read, gets its own object-store provider. The rest share one listing,
+        // grouped by partition so each group's constant partition columns apply
+        // to all its files. The key keeps the outer `Option`: a log that omits a
+        // partition column is not a log that records it as NULL, and grouping the
+        // two would let the first file listed decide for both.
         let mut plain: BTreeMap<Vec<Option<Option<String>>>, Vec<&CdcFile<'_>>> = BTreeMap::new();
-        let mut masked: Vec<(&CdcFile<'_>, &DeletionVectorDescriptor)> = Vec::new();
+        let mut direct: Vec<(&CdcFile<'_>, Option<&DeletionVectorDescriptor>)> = Vec::new();
         let partition_keys = self.partition_value_keys()?;
+        let direct_read = self.requires_direct_object_store_read(table)?;
         for file in files {
             match file.deletion_vector.filter(|d| is_active_dv(d)) {
-                Some(dv) => masked.push((file, dv)),
+                Some(dv) => direct.push((file, Some(dv))),
+                None if direct_read => direct.push((file, None)),
                 None => plain
                     .entry(
                         partition_keys
@@ -3566,18 +3598,19 @@ impl DeltaTableInputEndpointInner {
             })?);
         }
 
-        for (file, dv) in masked {
+        for (file, dv) in direct {
             let path = file.path;
             // Read the same column set as the plain side; both are projected
-            // again below, after the partition columns go back in.
-            let bitmap = self.decode_dv(table, Some(dv), description).await?;
+            // again below, once the partition columns are back in. An empty
+            // bitmap reads every row, which is what a file with no DV needs.
+            let bitmap = self.decode_dv(table, dv, description).await?;
             let provider = self
                 .file_provider(table, path, bitmap, ReadMode::NotInBitmap, |name| {
                     self.keeps_cdc_column(name)
                 })
                 .await?;
             let df = self.datafusion.read_table(provider).map_err(|e| {
-                anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading masked file '{path}': {e}")
+                anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading file '{path}': {e}")
             })?;
             let df = self.project_physical_to_logical(df)?;
             let df = self.add_partition_columns(df, file.partition_values, description)?;
@@ -3644,7 +3677,7 @@ impl DeltaTableInputEndpointInner {
     }
 
     // NOTE: Column projection (follow here, CDC in `process_cdc_transaction`) runs against the
-    // schema in `schema_table`, which `create_parquet_table` applies to every Parquet file we read.
+    // schema in `schema_table`, which every read path applies to the Parquet files it opens.
     // While following, that schema is the one active when the commit being read was written (see the
     // field's docs and `advance_schema`). Column-mapped physical names are stable across a rename, so
     // the reader handles each version's files against its own schema: DataFusion's schema adapter
@@ -3665,16 +3698,12 @@ impl DeltaTableInputEndpointInner {
     ) -> AnyResult<()> {
         let description = format!("file '{path}'");
 
-        // DV files, and uc:// tables (whose path-less location a ListingTable
-        // can't resolve), read through the object store directly. An empty bitmap
-        // reads every row. Other schemes use the ListingTable path.
-        let provider: Arc<dyn TableProvider> = if requires_direct_object_store_read(table)
+        // A DV file, or any file this table needs a direct read for, goes
+        // through the object store. An empty bitmap reads every row.
+        let provider: Arc<dyn TableProvider> = if self.requires_direct_object_store_read(table)?
             || deletion_vector.is_some_and(is_active_dv)
         {
-            let bitmap = match deletion_vector.filter(|d| is_active_dv(d)) {
-                Some(dv) => self.decode_dv(table, Some(dv), &description).await?,
-                None => RoaringTreemap::new(),
-            };
+            let bitmap = self.decode_dv(table, deletion_vector, &description).await?;
             self.file_provider(table, path, bitmap, ReadMode::NotInBitmap, |name| {
                 self.needs_column(name)
             })

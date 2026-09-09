@@ -3,13 +3,14 @@ use crate::adhoc::execute_sql;
 use crate::format::parquet::test::load_parquet_file;
 use crate::format::parquet::{ArrowSchemaOptions, relation_to_arrow_fields};
 use crate::integrated::delta_table::delta_input_serde_config;
+use crate::integrated::delta_table::output::delta_variant_types;
 use crate::test::data::DeltaTestKey;
 use crate::test::{
     DeltaTestStruct, file_to_zset, list_files_recursive, test_circuit, test_circuit_with_index,
     wait,
 };
 use crate::{Catalog, CircuitCatalog};
-use arrow::datatypes::Schema as ArrowSchema;
+use arrow::datatypes::{DataType as ArrowDataType, FieldRef, Schema as ArrowSchema};
 use chrono::NaiveDate;
 use dbsp::circuit::CircuitConfig;
 #[cfg(any(feature = "delta-s3-test", feature = "delta-unity-test"))]
@@ -18,7 +19,7 @@ use dbsp::utils::Tup2;
 use dbsp::{DBData, DBSPHandle, OrdZSet, Runtime};
 use delta_kernel::engine::arrow_conversion::TryFromArrow;
 use deltalake::datafusion::prelude::SessionContext;
-use deltalake::kernel::{DataType, StructField};
+use deltalake::kernel::{DataType, StructField, StructType};
 use deltalake::operations::create::CreateBuilder;
 use deltalake::protocol::SaveMode;
 use deltalake::{DeltaTable, DeltaTableBuilder, ensure_table_uri};
@@ -95,8 +96,11 @@ where
         json_file.path().display()
     );
 
-    let mut config = config.clone();
-    config.insert("mode".to_string(), "snapshot".to_string());
+    let mut config: HashMap<String, Value> = config
+        .iter()
+        .map(|(key, value)| (key.clone(), Value::from(value.clone())))
+        .collect();
+    config.insert("mode".to_string(), "snapshot".into());
 
     let input_pipeline = delta_table_input_pipeline::<T>(
         table_uri,
@@ -809,7 +813,7 @@ async fn create_table(
 fn delta_table_input_pipeline<T>(
     table_uri: &str,
     schema: &[Field],
-    config: &HashMap<String, String>,
+    config: &HashMap<String, Value>,
     output_file_path: &str,
 ) -> Controller
 where
@@ -4941,7 +4945,7 @@ async fn delta_table_foreign_variant_test() {
     let pipeline = delta_table_input_pipeline::<VariantTestStruct>(
         &table_uri,
         &VariantTestStruct::schema(),
-        &HashMap::from([("mode".to_string(), "snapshot".to_string())]),
+        &HashMap::from([("mode".to_string(), Value::from("snapshot"))]),
         &output_file.path().display().to_string(),
     );
     pipeline.start();
@@ -5210,4 +5214,1003 @@ async fn delta_output_variant_encoding_mismatch_test() {
         // The matching encoding is accepted.
         check_variant_encoding(&table, std::slice::from_ref(existing), encoding).unwrap();
     }
+}
+
+// ---- Uniform-over-Iceberg tables (columnMapping.mode = 'id') --------------
+
+/// Nested column of the Uniform test table. Its child is column-mapped too, so
+/// reading it needs field-id matching inside the struct.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    IsNone,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+struct UniformNested {
+    merchant: Option<String>,
+    status: Option<String>,
+}
+
+serialize_table_record!(UniformNested[2]{
+    merchant["merchant"]: Option<String>,
+    status["status"]: Option<String>
+});
+
+deserialize_table_record!(UniformNested["UniformNested", Variant, 2] {
+    (merchant, "merchant", false, Option<String>, |_| Some(None)),
+    (status, "status", false, Option<String>, |_| Some(None))
+});
+
+/// SQL relation the Uniform tests read. [`UniformCdcRow`] writes two more
+/// columns, so the CDC configuration can name columns the SQL schema does not.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    IsNone,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+struct UniformTestStruct {
+    id: Option<i64>,
+    label: Option<String>,
+    after: Option<UniformNested>,
+    history: Option<Vec<UniformNested>>,
+    tags: Option<BTreeMap<String, UniformNested>>,
+}
+
+serialize_table_record!(UniformTestStruct[5]{
+    id["id"]: Option<i64>,
+    label["label"]: Option<String>,
+    after["after"]: Option<UniformNested>,
+    history["history"]: Option<Vec<UniformNested>>,
+    tags["tags"]: Option<BTreeMap<String, UniformNested>>
+});
+
+deserialize_table_record!(UniformTestStruct["UniformTestStruct", Variant, 5] {
+    (id, "id", false, Option<i64>, |_| Some(None)),
+    (label, "label", false, Option<String>, |_| Some(None)),
+    (after, "after", false, Option<UniformNested>, |_| Some(None)),
+    (history, "history", false, Option<Vec<UniformNested>>, |_| Some(None)),
+    (tags, "tags", false, Option<BTreeMap<String, UniformNested>>, |_| Some(None))
+});
+
+impl UniformTestStruct {
+    fn schema() -> Vec<Field> {
+        vec![
+            Field::new("id".into(), ColumnType::bigint(true)),
+            Field::new("label".into(), ColumnType::varchar(true)),
+            Field::new(
+                "after".into(),
+                ColumnType::structure(true, &Self::nested_schema()),
+            ),
+            Field::new(
+                "history".into(),
+                ColumnType::array(true, ColumnType::structure(true, &Self::nested_schema())),
+            ),
+            Field::new(
+                "tags".into(),
+                ColumnType::map(
+                    true,
+                    ColumnType::varchar(false),
+                    ColumnType::structure(true, &Self::nested_schema()),
+                ),
+            ),
+        ]
+    }
+
+    fn nested_schema() -> Vec<Field> {
+        vec![
+            Field::new("merchant".into(), ColumnType::varchar(true)),
+            Field::new("status".into(), ColumnType::varchar(true)),
+        ]
+    }
+
+    fn new(id: i64, label: &str, merchant: &str, status: &str) -> Self {
+        let nested = UniformNested {
+            merchant: Some(merchant.to_string()),
+            status: Some(status.to_string()),
+        };
+        Self {
+            id: Some(id),
+            label: Some(label.to_string()),
+            after: Some(nested.clone()),
+            history: Some(vec![nested.clone()]),
+            tags: Some(BTreeMap::from([(label.to_string(), nested)])),
+        }
+    }
+}
+
+/// [`UniformTestStruct`] with the `op` and `ts` columns the CDC configuration
+/// names but the SQL table never declares.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    IsNone,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+struct UniformCdcRow {
+    id: Option<i64>,
+    label: Option<String>,
+    after: Option<UniformNested>,
+    history: Option<Vec<UniformNested>>,
+    tags: Option<BTreeMap<String, UniformNested>>,
+    op: Option<String>,
+    ts: Option<i64>,
+}
+
+serialize_table_record!(UniformCdcRow[7]{
+    id["id"]: Option<i64>,
+    label["label"]: Option<String>,
+    after["after"]: Option<UniformNested>,
+    history["history"]: Option<Vec<UniformNested>>,
+    tags["tags"]: Option<BTreeMap<String, UniformNested>>,
+    op["op"]: Option<String>,
+    ts["ts"]: Option<i64>
+});
+
+impl UniformCdcRow {
+    fn schema() -> Vec<Field> {
+        let mut schema = UniformTestStruct::schema();
+        schema.push(Field::new("op".into(), ColumnType::varchar(true)));
+        schema.push(Field::new("ts".into(), ColumnType::bigint(true)));
+        schema
+    }
+
+    fn new(id: i64, label: &str, merchant: &str, status: &str, op: &str, ts: i64) -> Self {
+        let row = UniformTestStruct::new(id, label, merchant, status);
+        Self {
+            id: row.id,
+            label: row.label,
+            after: row.after,
+            history: row.history,
+            tags: row.tags,
+            op: Some(op.to_string()),
+            ts: Some(ts),
+        }
+    }
+}
+
+/// Run a `mode = 'id'` table through the input connector and return the net rows
+/// it ingested. Following stops at `end_version`, so the pipeline completes on
+/// its own.
+fn read_id_mapped_table<T>(
+    table_uri: &str,
+    relation: &[Field],
+    end_version: u64,
+    config: &[(&str, Value)],
+) -> Vec<T>
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+{
+    use dbsp::typed_batch::IndexedZSetReader;
+
+    let mut connector_config: HashMap<String, Value> = HashMap::from([
+        ("version".to_string(), Value::from(0)),
+        ("end_version".to_string(), Value::from(end_version)),
+    ]);
+    connector_config.extend(
+        config
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.clone())),
+    );
+
+    let output_file = NamedTempFile::new().unwrap();
+    let pipeline = delta_table_input_pipeline::<T>(
+        table_uri,
+        relation,
+        &connector_config,
+        &output_file.path().display().to_string(),
+    );
+    pipeline.start();
+    wait(|| pipeline.pipeline_complete(), 60_000).expect("timeout ingesting the table");
+    pipeline.stop().unwrap();
+
+    let zset = file_to_zset::<T>(&mut File::open(output_file.path()).unwrap());
+    let mut rows: Vec<T> = zset
+        .iter()
+        .map(|(row, (), weight): (T, (), _)| {
+            assert_eq!(weight, 1, "each row must be ingested once: {row:?}");
+            row
+        })
+        .collect();
+    rows.sort();
+    rows
+}
+
+/// Read a Uniform table declared as [`UniformTestStruct`].
+fn read_uniform_table(
+    table_uri: &str,
+    end_version: u64,
+    config: &[(&str, Value)],
+) -> Vec<UniformTestStruct> {
+    read_id_mapped_table::<UniformTestStruct>(
+        table_uri,
+        &UniformTestStruct::schema(),
+        end_version,
+        config,
+    )
+}
+
+/// Follow mode resolves a Uniform file's columns by Parquet field id.
+///
+/// The file names its columns logically whereas the log maps them to `col-<id>`,
+/// so matching by name finds nothing and null-fills every column, silently.
+/// Snapshot mode resolves this inside delta-rs; follow reads the file itself.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_follow_uniform_field_id_test() {
+    let table_dir = TempDir::new().unwrap();
+    write_id_mapped_table(
+        table_dir.path(),
+        &UniformCdcRow::schema(),
+        &[&[
+            UniformCdcRow::new(1, "alpha", "Coffee Shop", "settled", "c", 1),
+            UniformCdcRow::new(2, "beta", "Gas Station", "pending", "c", 2),
+        ]],
+    );
+    let table_uri = table_dir.path().display().to_string();
+
+    let rows = tokio::task::spawn_blocking(move || {
+        read_uniform_table(&table_uri, 1, &[("mode", json!("follow"))])
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(
+        rows,
+        vec![
+            UniformTestStruct::new(1, "alpha", "Coffee Shop", "settled"),
+            UniformTestStruct::new(2, "beta", "Gas Station", "pending")
+        ],
+        "follow mode must resolve the file's logically-named columns by field id, \
+         inside the nested struct as well as at the top level"
+    );
+}
+
+/// CDC mode resolves a Uniform file's columns by field id too, including the
+/// undeclared `op` and `ts` its own configuration names. The second commit's
+/// delete cancels the first commit's row only if both reads resolved alike.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_cdc_uniform_field_id_test() {
+    let table_dir = TempDir::new().unwrap();
+    write_id_mapped_table(
+        table_dir.path(),
+        &UniformCdcRow::schema(),
+        &[
+            &[
+                UniformCdcRow::new(1, "alpha", "Coffee Shop", "settled", "c", 1),
+                UniformCdcRow::new(2, "beta", "Gas Station", "pending", "c", 2),
+            ],
+            &[UniformCdcRow::new(
+                1,
+                "alpha",
+                "Coffee Shop",
+                "settled",
+                "d",
+                3,
+            )],
+        ],
+    );
+    let table_uri = table_dir.path().display().to_string();
+
+    let rows = tokio::task::spawn_blocking(move || {
+        read_uniform_table(
+            &table_uri,
+            2,
+            &[
+                ("mode", json!("cdc")),
+                ("cdc_delete_filter", json!("op = 'd'")),
+                ("cdc_order_by", json!("ts")),
+            ],
+        )
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(
+        rows,
+        vec![UniformTestStruct::new(2, "beta", "Gas Station", "pending")],
+        "the CDC delete must cancel row 1, leaving row 2"
+    );
+}
+
+/// Stamp `field` and every struct field nested inside it with a Parquet field
+/// id, numbering depth-first from `next_id`.
+fn stamp_field_ids(field: &arrow::datatypes::Field, next_id: &mut i64) -> arrow::datatypes::Field {
+    let id = *next_id;
+    *next_id += 1;
+    let mut metadata = field.metadata().clone();
+    metadata.insert("PARQUET:field_id".to_string(), id.to_string());
+    field
+        .clone()
+        .with_data_type(stamp_nested_field_ids(field.data_type(), next_id))
+        .with_metadata(metadata)
+}
+
+/// Stamp the struct fields nested inside `data_type`, leaving every other type
+/// as it is. A list's element and a map's entries are unnamed in Delta, so they
+/// take no id of their own; their struct fields still do.
+fn stamp_nested_field_ids(data_type: &ArrowDataType, next_id: &mut i64) -> ArrowDataType {
+    fn nested(element: &FieldRef, next_id: &mut i64) -> FieldRef {
+        Arc::new(
+            element
+                .as_ref()
+                .clone()
+                .with_data_type(stamp_nested_field_ids(element.data_type(), next_id)),
+        )
+    }
+    match data_type {
+        ArrowDataType::Struct(fields) => ArrowDataType::Struct(
+            fields
+                .iter()
+                .map(|field| Arc::new(stamp_field_ids(field, next_id)))
+                .collect(),
+        ),
+        ArrowDataType::List(element) => ArrowDataType::List(nested(element, next_id)),
+        ArrowDataType::LargeList(element) => ArrowDataType::LargeList(nested(element, next_id)),
+        ArrowDataType::Map(entries, sorted) => {
+            ArrowDataType::Map(nested(entries, next_id), *sorted)
+        }
+        other => other.clone(),
+    }
+}
+
+/// Rename a field to its physical `col-<id>` name and drop the id, recursively,
+/// as Delta writes a mapped table's data files. An Iceberg writer instead leaves
+/// the logical names and the ids, which is what [`write_id_mapped_table`] does.
+fn to_physical_field(field: &arrow::datatypes::Field) -> arrow::datatypes::Field {
+    let name = match field.metadata().get("PARQUET:field_id") {
+        Some(id) => format!("col-{id}"),
+        None => field.name().clone(),
+    };
+    arrow::datatypes::Field::new(
+        name,
+        to_physical_type(field.data_type()),
+        field.is_nullable(),
+    )
+}
+
+/// [`to_physical_field`] for the struct fields nested inside `data_type`.
+fn to_physical_type(data_type: &ArrowDataType) -> ArrowDataType {
+    let nested = |field: &FieldRef| Arc::new(to_physical_field(field));
+    match data_type {
+        ArrowDataType::Struct(fields) => ArrowDataType::Struct(fields.iter().map(nested).collect()),
+        ArrowDataType::List(element) => ArrowDataType::List(nested(element)),
+        ArrowDataType::LargeList(element) => ArrowDataType::LargeList(nested(element)),
+        // A map's `key` and `value` are named by the Parquet encoding, not by the
+        // table, so they keep their names; a struct inside them does not.
+        ArrowDataType::Map(entries, sorted) => {
+            let keep_name = |field: &FieldRef| {
+                Arc::new(
+                    field
+                        .as_ref()
+                        .clone()
+                        .with_data_type(to_physical_type(field.data_type()))
+                        .with_metadata(Default::default()),
+                )
+            };
+            let entries = match entries.data_type() {
+                ArrowDataType::Struct(fields) => Arc::new(entries.as_ref().clone().with_data_type(
+                    ArrowDataType::Struct(fields.iter().map(keep_name).collect()),
+                )),
+                _ => Arc::clone(entries),
+            };
+            ArrowDataType::Map(entries, *sorted)
+        }
+        other => other.clone(),
+    }
+}
+
+/// Rewrite `batch` under the physical names [`to_physical_field`] gives its
+/// columns. Only field names change, so the buffers move across as they are.
+fn to_physical_batch(batch: &arrow::array::RecordBatch) -> arrow::array::RecordBatch {
+    /// Relabel `data` and its children to `target`, which must differ from the
+    /// array's own type in field names alone.
+    fn relabel(data: arrow::array::ArrayData, target: &ArrowDataType) -> arrow::array::ArrayData {
+        let child_types: Vec<&ArrowDataType> = match target {
+            ArrowDataType::Struct(fields) => fields.iter().map(|f| f.data_type()).collect(),
+            ArrowDataType::List(field)
+            | ArrowDataType::LargeList(field)
+            | ArrowDataType::Map(field, _) => vec![field.data_type()],
+            _ => vec![],
+        };
+        let children = data
+            .child_data()
+            .iter()
+            .enumerate()
+            .map(|(index, child)| match child_types.get(index) {
+                Some(target) => relabel(child.clone(), target),
+                None => child.clone(),
+            })
+            .collect();
+        data.into_builder()
+            .data_type(target.clone())
+            .child_data(children)
+            .build()
+            .unwrap()
+    }
+
+    let fields: Vec<arrow::datatypes::Field> = batch
+        .schema()
+        .fields()
+        .iter()
+        .map(|field| to_physical_field(field))
+        .collect();
+    let columns = batch
+        .columns()
+        .iter()
+        .zip(&fields)
+        .map(|(column, field)| {
+            arrow::array::make_array(relabel(column.to_data(), field.data_type()))
+        })
+        .collect();
+    arrow::array::RecordBatch::try_new(Arc::new(ArrowSchema::new(fields)), columns).unwrap()
+}
+
+/// Rewrite the `parquet.field.id` metadata the Arrow conversion carries over
+/// into the column mapping metadata a `mode = 'id'` log holds. Every column
+/// gets a physical `col-<id>` name, which is never the logical name its data
+/// file uses.
+fn to_column_mapping_metadata(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            if let Some(Value::Object(metadata)) = object.get_mut("metadata")
+                && let Some(id) = metadata.remove("parquet.field.id")
+            {
+                metadata.insert(
+                    "delta.columnMapping.physicalName".to_string(),
+                    json!(format!("col-{id}")),
+                );
+                metadata.insert("delta.columnMapping.id".to_string(), id);
+            }
+            object.values_mut().for_each(to_column_mapping_metadata);
+        }
+        Value::Array(items) => items.iter_mut().for_each(to_column_mapping_metadata),
+        _ => {}
+    }
+}
+
+/// Reverse the child order of every struct nested in `schema`, which is what an
+/// Iceberg field reorder leaves behind: the log and the data file agree on field
+/// ids but not on position, so pairing children by position swaps their values.
+fn reverse_nested_struct_fields(schema: &mut Value) {
+    fn walk(value: &mut Value, nested: bool) {
+        match value {
+            Value::Object(object) => {
+                if let Some(Value::Array(fields)) = object.get_mut("fields") {
+                    if nested {
+                        fields.reverse();
+                    }
+                    fields.iter_mut().for_each(|field| walk(field, true));
+                } else {
+                    object.values_mut().for_each(|v| walk(v, nested));
+                }
+            }
+            Value::Array(items) => items.iter_mut().for_each(|v| walk(v, nested)),
+            _ => {}
+        }
+    }
+    walk(schema, false);
+}
+
+/// The largest column mapping id a `schemaString` assigns, which the table's
+/// `maxColumnId` must be at least.
+fn max_column_mapping_id(schema_string: &str) -> i64 {
+    fn walk(value: &Value, max: &mut i64) {
+        match value {
+            Value::Object(object) => {
+                if let Some(id) = object.get("delta.columnMapping.id").and_then(Value::as_i64) {
+                    *max = (*max).max(id);
+                }
+                object.values().for_each(|v| walk(v, max));
+            }
+            Value::Array(items) => items.iter().for_each(|v| walk(v, max)),
+            _ => {}
+        }
+    }
+    let mut max = 0;
+    walk(&serde_json::from_str(schema_string).unwrap(), &mut max);
+    max
+}
+
+/// Write the log of a `columnMapping.mode = 'id'` table: version 0 carries the
+/// protocol and metadata alone, then one version per commit, each adding the
+/// files `write_files` wrote for it.
+///
+/// The log is written by hand because delta-rs refuses to create or write a
+/// column-mapped table.
+fn write_id_mapped_log(
+    table_dir: &Path,
+    schema_string: &str,
+    partition_columns: &[&str],
+    commits: usize,
+    mut write_files: impl FnMut(u64) -> Vec<(String, Value)>,
+) {
+    let max_column_id = max_column_mapping_id(schema_string);
+    let log_dir = table_dir.join("_delta_log");
+    std::fs::create_dir_all(&log_dir).unwrap();
+
+    let write_commit = |version: u64, actions: &[Value]| {
+        let mut file = File::create(log_dir.join(format!("{version:020}.json"))).unwrap();
+        for action in actions {
+            writeln!(file, "{action}").unwrap();
+        }
+    };
+
+    // Column mapping and `variant` are both table features, so the protocol has
+    // to declare them that way rather than by a minimum reader version.
+    write_commit(
+        0,
+        &[
+            json!({"protocol": {
+                "minReaderVersion": 3,
+                "minWriterVersion": 7,
+                "readerFeatures": ["columnMapping", "variantType"],
+                "writerFeatures": ["columnMapping", "variantType"],
+            }}),
+            json!({"metaData": {
+                "id": uuid::Uuid::new_v4().to_string(),
+                "format": {"provider": "parquet", "options": {}},
+                "schemaString": schema_string,
+                "partitionColumns": partition_columns,
+                "configuration": {
+                    "delta.columnMapping.mode": "id",
+                    "delta.columnMapping.maxColumnId": max_column_id.to_string(),
+                },
+                "createdTime": 0,
+            }}),
+        ],
+    );
+
+    for version in 1..=commits as u64 {
+        let adds: Vec<Value> = write_files(version)
+            .into_iter()
+            .map(|(path, partition_values)| {
+                let size = std::fs::metadata(table_dir.join(&path)).unwrap().len();
+                json!({"add": {
+                    "path": path,
+                    "partitionValues": partition_values,
+                    "size": size,
+                    "modificationTime": version as i64 * 1000,
+                    "dataChange": true,
+                }})
+            })
+            .collect();
+        write_commit(version, &adds);
+    }
+}
+
+/// Build a `columnMapping.mode = 'id'` table from `commits` of `T`, one version
+/// each, as Unity Catalog Uniform leaves a table an Iceberg writer produced: the
+/// data files name their columns logically whereas the log maps every column to a
+/// physical `col-<id>` name no file uses.
+///
+/// Derived from `relation`, so it covers any SQL type. Its nested structs list
+/// their children in the opposite order to the data file, as an Iceberg field
+/// reorder leaves them.
+fn write_id_mapped_table<T>(table_dir: &Path, relation: &[Field], commits: &[&[T]])
+where
+    T: DBData + SerializeWithContext<SqlSerdeConfig> + Sync,
+{
+    write_id_mapped_table_with(
+        table_dir,
+        relation,
+        IdMappedLayout {
+            reverse_nested: true,
+            ..IdMappedLayout::default()
+        },
+        commits,
+    )
+}
+
+/// As [`write_id_mapped_table`], but with the log's nested children in the data
+/// file's order, which is all delta-rs can read: it pairs a list or map
+/// element's struct children by position, ignoring their ids.
+fn write_id_mapped_table_in_file_order<T>(table_dir: &Path, relation: &[Field], commits: &[&[T]])
+where
+    T: DBData + SerializeWithContext<SqlSerdeConfig> + Sync,
+{
+    write_id_mapped_table_with(table_dir, relation, IdMappedLayout::default(), commits)
+}
+
+/// As [`write_id_mapped_table`], but `partition` names one column Delta keeps in
+/// the log instead of the data file, with the value each commit's file carries.
+fn write_id_mapped_table_partitioned<T>(
+    table_dir: &Path,
+    relation: &[Field],
+    partition: (&str, &[&str]),
+    commits: &[&[T]],
+) where
+    T: DBData + SerializeWithContext<SqlSerdeConfig> + Sync,
+{
+    write_id_mapped_table_with(
+        table_dir,
+        relation,
+        IdMappedLayout {
+            partition: Some(partition),
+            reverse_nested: true,
+            ..IdMappedLayout::default()
+        },
+        commits,
+    )
+}
+
+/// As [`write_id_mapped_table`], but the data files name their columns
+/// physically and carry no field ids, as Delta itself writes a mapped table.
+fn write_id_mapped_table_physical_names<T>(table_dir: &Path, relation: &[Field], commits: &[&[T]])
+where
+    T: DBData + SerializeWithContext<SqlSerdeConfig> + Sync,
+{
+    write_id_mapped_table_with(
+        table_dir,
+        relation,
+        IdMappedLayout {
+            physical_file_names: true,
+            ..IdMappedLayout::default()
+        },
+        commits,
+    )
+}
+
+/// How [`write_id_mapped_table_with`] lays out a `mode = 'id'` table.
+#[derive(Default, Clone, Copy)]
+struct IdMappedLayout<'a> {
+    /// Column Delta keeps in the log rather than the data file, with the value
+    /// each commit's file carries.
+    partition: Option<(&'a str, &'a [&'a str])>,
+    /// List the log's nested struct children in the opposite order to the data
+    /// file, as an Iceberg field reorder leaves them.
+    reverse_nested: bool,
+    /// Name the data file's columns `col-<id>` and drop their field ids, as
+    /// Delta writes them; an Iceberg writer leaves logical names and ids.
+    physical_file_names: bool,
+}
+
+fn write_id_mapped_table_with<T>(
+    table_dir: &Path,
+    relation: &[Field],
+    layout: IdMappedLayout,
+    commits: &[&[T]],
+) where
+    T: DBData + SerializeWithContext<SqlSerdeConfig> + Sync,
+{
+    let mut next_id = 100;
+    let fields: Vec<arrow::datatypes::Field> =
+        relation_to_arrow_fields(relation, delta_schema_options())
+            .iter()
+            .map(|field| stamp_field_ids(field, &mut next_id))
+            .collect();
+    let table_schema = Arc::new(ArrowSchema::new(fields));
+
+    // A partition column is not stored in the data file, and the log keys its
+    // value by physical name.
+    let partition_column = layout.partition.map(|(name, _)| name);
+    let stored: Vec<usize> = table_schema
+        .fields()
+        .iter()
+        .enumerate()
+        .filter(|(_, field)| Some(field.name().as_str()) != partition_column)
+        .map(|(index, _)| index)
+        .collect();
+    let partition_key = partition_column.map(|name| {
+        let field = table_schema.field_with_name(name).unwrap();
+        format!("col-{}", field.metadata()["PARQUET:field_id"])
+    });
+
+    // The Arrow conversion sees a Parquet variant as the struct of two binary
+    // buffers it is encoded as; column mapping would then demand a physical name
+    // for each, which a real table never has.
+    let struct_type = StructType::try_from_arrow(table_schema.as_ref())
+        .unwrap()
+        .fields()
+        .zip(relation)
+        .map(|(field, column)| {
+            StructField::new(
+                field.name(),
+                delta_variant_types(&column.columntype, field.data_type().clone()).unwrap(),
+                field.is_nullable(),
+            )
+            .with_metadata(field.metadata().clone())
+        })
+        .collect::<Vec<_>>();
+    let mut schema = serde_json::to_value(StructType::try_new(struct_type).unwrap()).unwrap();
+    to_column_mapping_metadata(&mut schema);
+    if layout.reverse_nested {
+        reverse_nested_struct_fields(&mut schema);
+    }
+
+    write_id_mapped_log(
+        table_dir,
+        &schema.to_string(),
+        partition_column.as_slice(),
+        commits.len(),
+        |version| {
+            let rows = commits[version as usize - 1];
+            let values = match (&partition_key, layout.partition) {
+                (Some(key), Some((_, values))) => json!({key: values[version as usize - 1]}),
+                _ => json!({}),
+            };
+
+            // Two files per commit where the rows allow it, so a read plans
+            // several files and their columns have to line up.
+            let per_file = rows.len().div_ceil(2).max(1);
+            rows.chunks(per_file)
+                .enumerate()
+                .map(|(index, chunk)| {
+                    let batch = serde_arrow::to_record_batch(
+                        table_schema.fields(),
+                        &SerializeWithContextWrapper::new(
+                            &chunk.to_vec(),
+                            &delta_test_write_serde_config(),
+                        ),
+                    )
+                    .unwrap()
+                    .project(&stored)
+                    .unwrap();
+
+                    let batch = match layout.physical_file_names {
+                        true => to_physical_batch(&batch),
+                        false => batch,
+                    };
+
+                    let name = format!("part-{version:05}-{index}.parquet");
+                    let file = File::create(table_dir.join(&name)).unwrap();
+                    let mut writer =
+                        parquet::arrow::ArrowWriter::try_new(file, batch.schema(), None).unwrap();
+                    writer.write(&batch).unwrap();
+                    writer.close().unwrap();
+                    (name, values.clone())
+                })
+                .collect()
+        },
+    );
+}
+
+/// A `mode = 'id'` file that names its columns physically reads through the
+/// direct path too.
+///
+/// Delta writes those names, and a writer that omits the Parquet field ids with
+/// them leaves the name as the only way to pair a column. Routing every mapped
+/// table through the direct read must not cost such a file the data a
+/// `ListingTable` read for it before.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_follow_id_mapped_physical_names_test() {
+    let table_dir = TempDir::new().unwrap();
+    let rows = [
+        UniformTestStruct::new(1, "alpha", "Coffee Shop", "settled"),
+        UniformTestStruct::new(2, "beta", "Gas Station", "pending"),
+    ];
+    write_id_mapped_table_physical_names(table_dir.path(), &UniformTestStruct::schema(), &[&rows]);
+    let table_uri = table_dir.path().display().to_string();
+
+    let read = tokio::task::spawn_blocking(move || {
+        read_uniform_table(&table_uri, 1, &[("mode", json!("follow"))])
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(
+        read,
+        rows.to_vec(),
+        "a physically named file must match by name, nested children included"
+    );
+}
+
+/// `filter` still selects rows on the direct path, including on a column the
+/// SQL table does not declare, which the connector reads for the filter alone.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_follow_id_mapped_filter_test() {
+    let table_dir = TempDir::new().unwrap();
+    write_id_mapped_table(
+        table_dir.path(),
+        &UniformCdcRow::schema(),
+        &[&[
+            UniformCdcRow::new(1, "alpha", "Coffee Shop", "settled", "c", 1),
+            UniformCdcRow::new(2, "beta", "Gas Station", "pending", "c", 2),
+            UniformCdcRow::new(3, "gamma", "Book Store", "settled", "c", 3),
+        ]],
+    );
+    let table_uri = table_dir.path().display().to_string();
+
+    let rows = tokio::task::spawn_blocking(move || {
+        read_uniform_table(
+            &table_uri,
+            1,
+            &[("mode", json!("follow")), ("filter", json!("ts > 1"))],
+        )
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(
+        rows,
+        vec![
+            UniformTestStruct::new(2, "beta", "Gas Station", "pending"),
+            UniformTestStruct::new(3, "gamma", "Book Store", "settled"),
+        ],
+        "the filter must drop row 1 and keep the rest"
+    );
+}
+
+/// Every SQL type the connector supports survives a `mode = 'id'` follow read.
+///
+/// `mode = 'id'` routes every file through `project_to_logical` instead of
+/// delta-rs's reader, so every column's Arrow type passes through
+/// `realign_array`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_follow_id_mapped_all_types_test() {
+    let table_dir = TempDir::new().unwrap();
+    let rows: Vec<DeltaTestStruct> = (0..10).map(delta_test_record).collect();
+    write_id_mapped_table(table_dir.path(), &DeltaTestStruct::schema(), &[&rows]);
+    let table_uri = table_dir.path().display().to_string();
+
+    let read = tokio::task::spawn_blocking(move || {
+        read_id_mapped_table::<DeltaTestStruct>(
+            &table_uri,
+            &DeltaTestStruct::schema(),
+            1,
+            &[("mode", json!("follow"))],
+        )
+    })
+    .await
+    .unwrap();
+
+    let mut expected = rows;
+    expected.sort();
+    assert_eq!(
+        read, expected,
+        "every column type must survive the field-id projection"
+    );
+}
+
+/// A partitioned `mode = 'id'` table reads its partition column back.
+///
+/// Delta stores a partition column's value in the log, never in the data file,
+/// and the direct read this mode forces bypasses the `ListingTable` that would
+/// otherwise supply it, leaving `add_partition_columns` as the only source.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_follow_id_mapped_partitioned_test() {
+    let table_dir = TempDir::new().unwrap();
+    // `label` is the partition column, so each commit's rows share its value.
+    let first = [UniformTestStruct::new(1, "alpha", "Coffee Shop", "settled")];
+    let second = [UniformTestStruct::new(2, "beta", "Gas Station", "pending")];
+    write_id_mapped_table_partitioned(
+        table_dir.path(),
+        &UniformTestStruct::schema(),
+        ("label", &["alpha", "beta"]),
+        &[&first, &second],
+    );
+    let table_uri = table_dir.path().display().to_string();
+
+    let read = tokio::task::spawn_blocking(move || {
+        read_uniform_table(&table_uri, 2, &[("mode", json!("follow"))])
+    })
+    .await
+    .unwrap();
+
+    let mut expected = [first.to_vec(), second.to_vec()].concat();
+    expected.sort();
+    assert_eq!(
+        read, expected,
+        "the partition column must come back from the log, not as NULL"
+    );
+}
+
+/// Every SQL type survives a `mode = 'id'` CDC read too.
+///
+/// CDC plans each data file on its own and joins them with `UNION ALL`, so every
+/// column's Arrow type meets `realign_array` on a second path, and the files'
+/// columns have to line up. No row is a delete, so the read is every row.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_cdc_id_mapped_all_types_test() {
+    let table_dir = TempDir::new().unwrap();
+    // `string` is the delete flag and the ordering key; the generator produces
+    // decimal digit strings, so nothing is deleted.
+    let rows: Vec<DeltaTestStruct> = (0..10).map(delta_test_record).collect();
+    write_id_mapped_table(
+        table_dir.path(),
+        &DeltaTestStruct::schema(),
+        &[&rows[..5], &rows[5..]],
+    );
+    let table_uri = table_dir.path().display().to_string();
+
+    let read = tokio::task::spawn_blocking(move || {
+        read_id_mapped_table::<DeltaTestStruct>(
+            &table_uri,
+            &DeltaTestStruct::schema(),
+            2,
+            &[
+                ("mode", json!("cdc")),
+                ("cdc_delete_filter", json!("string = 'deleted'")),
+                ("cdc_order_by", json!("string")),
+            ],
+        )
+    })
+    .await
+    .unwrap();
+
+    let mut expected = rows;
+    expected.sort();
+    assert_eq!(
+        read, expected,
+        "every column type must survive the CDC field-id projection"
+    );
+}
+
+/// The two readers a `snapshot_and_follow` read uses must agree.
+///
+/// The snapshot half goes through delta-rs and the follow half through
+/// `project_to_logical`; #7076 is what happens when the two disagree. The
+/// snapshot covers version 1 and the follow covers version 2, so a
+/// disagreement shows up as one commit's rows missing or nulled.
+///
+/// [`UniformTestStruct`] rather than [`DeltaTestStruct`] because delta-rs cannot
+/// read a `VARIANT` column of a column-mapped table at all: it reads the binary
+/// fields a variant is stored in as `BinaryView`, which its own schema rejects.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_snapshot_and_follow_id_mapped_test() {
+    let table_dir = TempDir::new().unwrap();
+    let snapshot = [
+        UniformTestStruct::new(1, "alpha", "Coffee Shop", "settled"),
+        UniformTestStruct::new(2, "beta", "Gas Station", "pending"),
+    ];
+    let followed = [UniformTestStruct::new(3, "gamma", "Book Store", "settled")];
+    write_id_mapped_table_in_file_order(
+        table_dir.path(),
+        &UniformTestStruct::schema(),
+        &[&snapshot, &followed],
+    );
+    let table_uri = table_dir.path().display().to_string();
+
+    let read = tokio::task::spawn_blocking(move || {
+        read_uniform_table(
+            &table_uri,
+            2,
+            &[
+                ("mode", json!("snapshot_and_follow")),
+                ("version", json!(1)),
+            ],
+        )
+    })
+    .await
+    .unwrap();
+
+    let mut expected = [snapshot.to_vec(), followed.to_vec()].concat();
+    expected.sort();
+    assert_eq!(
+        read, expected,
+        "the snapshot of version 1 and the follow of version 2 must resolve \
+         the same columns"
+    );
 }

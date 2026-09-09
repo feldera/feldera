@@ -37,7 +37,7 @@ exactly once fault tolerance.
 | `cdc_order_by`              | string |            | <p>An expression that determines the ordering of updates in the Delta table.</p><p>This setting is only valid in the `cdc` mode. It specifies a predicate applied to each row in the Delta table to determine the order in which updates in the table should be applied. Its value must be a valid SQL expression that can be used in a query of the form `SELECT * from <table> ORDER BY <cdc_order_by>`.</p>|
 | `num_parsers`               | integer| 4          | The number of parallel parsing tasks the connector uses to process data read from the table. Increasing this value can enhance performance by allowing more concurrent processing. Recommended range: 1–10.|
 | `max_retries`               | integer| unlimited retries| <p>Maximum number of retries for failed object store operations.</p><p>Controls how many times the connector retries high-level storage operations, such as reading a Delta log entry or a Parquet file.</p><p>This is in addition to lower-level retries (e.g., individual S3 operation retries governed by storage options like `retry_timeout`). If those retries are exhausted or the failure is otherwise unrecoverable at the storage layer, the connector retries the entire operation.</p><p>Defaults to unlimited retries. Set to 0 to disable retries.</p><p>See [retries and at-least-once delivery](#retries-and-at-least-once-delivery)</p>|
-| `skip_unused_columns` (<b>DEPRECATED</b>) | bool   | false | <p>This property is deprecated. Use the [table-level `skip_unused_columns` property](/sql/grammar#ignoring-unused-columns) instead.</p><p>Don't read unused columns from the Delta table.  When set to `true`, this option instructs the connector to avoid reading columns from the Delta table that are not used in any view definitions. To be skipped, the columns must be either nullable or have default values. This can improve ingestion performance, especially for wide tables.</p><p>Note: The simplest way to exclude unused columns is to omit them from the Feldera SQL table declaration. The connector never reads columns that aren't declared in the SQL schema. Additionally, the SQL compiler emits warnings for declared but unused columns—use these as a guide to optimize your schema.</p>|
+| `skip_unused_columns` (<b>DEPRECATED</b>) | bool   | false | <p>This property is deprecated. Use the [table-level `skip_unused_columns` property](/sql/grammar#ignoring-unused-columns) instead.</p><p>Don't read unused columns from the Delta table.  When set to `true`, this option instructs the connector to avoid reading columns from the Delta table that are not used in any view definitions. To be skipped, the columns must be either nullable or have default values. This can improve ingestion performance, especially for wide tables.</p><p>Note: The simplest way to exclude unused columns is to omit them from the Feldera SQL table declaration. In `snapshot` and `follow` mode the connector then reads an undeclared column only when `filter` or `snapshot_filter` names it. In `cdc` mode it reads every column of the Delta table unless this option is set, and then still reads any column `cdc_order_by` or `cdc_delete_filter` names. Additionally, the SQL compiler emits warnings for declared but unused columns—use these as a guide to optimize your schema.</p>|
 | `max_concurrent_readers`    | integer| 6          | <p>Maximum number of concurrent object store reads performed by all Delta Lake connectors.</p><p>This setting is used to limit the number of concurrent reads of the object store in a pipeline with a large number of Delta Lake connectors. When multiple connectors are simultaneously reading from the object store, this can lead to transport timeouts.</p><p>When enabled, this setting limits the number of concurrent reads across all connectors. This is a global setting that affects all Delta Lake connectors, and not just the connector where it is specified. It should therefore be used at most once in a pipeline.  If multiple connectors specify this setting, they must all use the same value.</p><p>The default value is 6.</p>|
 
 [*]: Required fields
@@ -203,6 +203,26 @@ The following table lists supported Delta Lake data types and corresponding Feld
 | `STRUCT`                    | `ROW` or [user-defined type](/sql/types#user-defined-types)| structs can be encoded as either anonymous `ROW` types or as named user-defined structs |
 | `VARIANT`                   | `VARIANT`        | Read from the Parquet variant binary encoding, keeping the types the writer encoded (dates, decimals, timestamps and binary stay typed inside the `VARIANT`). Shredded variants (the `variantShredding-preview` table feature) are not supported. Timestamps with nanosecond precision are truncated to microseconds. A `VARIANT` column stored as a JSON string is also accepted. |
 
+
+## Column mapping
+
+[Column mapping](https://docs.delta.io/latest/delta-column-mapping.html) lets a
+Delta table rename or reorder columns without rewriting its data files. Feldera
+reads tables in both mapping modes, `name` and `id`. Unity Catalog Uniform
+tables (Delta over Iceberg) use `id` mode.
+
+Two limitations apply to a column-mapped table:
+
+* In `id` mode the connector reads the data files itself in `follow` and `cdc`
+  mode, matching columns by field id, because a Uniform table's files name their
+  columns logically whereas the table schema uses physical `col-<id>` names. Such
+  a table is read one file at a time, and [`filter`](#filter) selects rows
+  without pruning Parquet row groups, so ingest is slower than for a table
+  without column mapping.
+* In `snapshot` mode a struct nested inside an `ARRAY` or a `MAP` is read by
+  field order rather than by field id. If the table's nested struct fields were
+  reordered after its existing files were written, their values are read under
+  the wrong names. Use `follow` or `cdc` mode for such a table.
 
 ## Transactions
 

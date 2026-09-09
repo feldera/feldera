@@ -10043,7 +10043,7 @@
           },
           "skip_unused_columns": {
             "type": "boolean",
-            "description": "Don't read unused columns from the Delta table.\n\nWhen set to `true`, this option instructs the connector to avoid reading\ncolumns from the Delta table that are not used in any view definitions.\nTo be skipped, the columns must be either nullable or have default\nvalues. This can improve ingestion performance, especially for wide\ntables.\n\nNote: The simplest way to exclude unused columns is to omit them from the Feldera SQL table\ndeclaration. The connector never reads columns that aren't declared in the SQL schema.\nAdditionally, the SQL compiler emits warnings for declared but unused columns—use these as\na guide to optimize your schema."
+            "description": "Don't read unused columns from the Delta table.\n\nWhen set to `true`, this option instructs the connector to avoid reading\ncolumns from the Delta table that are not used in any view definitions.\nTo be skipped, the columns must be either nullable or have default\nvalues. This can improve ingestion performance, especially for wide\ntables.\n\nNote: The simplest way to exclude unused columns is to omit them from the Feldera SQL table\ndeclaration. In `snapshot` and `follow` mode the connector then reads an undeclared column\nonly when `filter` or `snapshot_filter` names it. In `cdc` mode it reads every column of\nthe Delta table unless this option is set, and then still reads any column `cdc_order_by`\nor `cdc_delete_filter` names.\nAdditionally, the SQL compiler emits warnings for declared but unused columns—use these as\na guide to optimize your schema."
           },
           "snapshot_filter": {
             "type": "string",

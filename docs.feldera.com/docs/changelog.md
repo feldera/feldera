@@ -58,6 +58,30 @@ import TabItem from '@theme/TabItem';
           body at its line; an error past the first line of the body used to be
           reported above the statement.
 
+        - The Delta Lake input connector now reads a table whose column mapping
+          mode is `id`, which is what Unity Catalog Uniform produces over an
+          Iceberg table.  In `follow` and `cdc` mode, and in the follow half of
+          `snapshot_and_follow`, it matched a data file's columns by name where
+          such a table identifies them by Parquet field id, and so read every
+          column as NULL.  Reading these tables is slower than reading an
+          unmapped table: each data file is read on its own, and
+          [`filter`](/connectors/sources/delta) no longer skips row groups.
+
+        - The Delta Lake input connector now reads a struct nested in an array
+          or a map of a column-mapped table correctly.  It paired the struct's
+          fields by name, and such a file shares no field name with the table's
+          schema, so the fields fell back to their position and each read its
+          neighbor's values.  This covers `follow` and `cdc` mode; in
+          `snapshot` mode the underlying reader still pairs those fields by
+          position, so a table whose nested fields were reordered after it was
+          written reads them swapped there.
+
+        - The Delta Lake input connector now rejects a null element of an array
+          or map column the Delta table declares `NOT NULL`, in `follow` and
+          `cdc` mode, instead of reading it through.  Such a file never
+          satisfied the table's own schema; the read now fails with the file
+          and column named.
+
         ## v0.344.0
 
         - The Delta Lake and Iceberg input connectors read a `VARIANT` column
