@@ -142,6 +142,25 @@ fn format_datafusion_error(
     }
 }
 
+/// A positive integer from the environment variable `name`, or `None` when it
+/// is unset or does not hold one.
+///
+/// These are process-wide overrides, so they apply to every Delta Lake
+/// connector in the pipeline. A connector setting of the same meaning takes
+/// precedence.
+fn env_override(endpoint_name: &str, name: &str) -> Option<usize> {
+    let value = std::env::var(name).ok()?;
+    match value.parse::<usize>() {
+        Ok(n) if n > 0 => Some(n),
+        _ => {
+            warn!(
+                "delta_table {endpoint_name}: ignoring {name}={value:?}; expected a positive integer"
+            );
+            None
+        }
+    }
+}
+
 /// Total decoded bytes a single read may hold across all the files it decodes
 /// at once.
 ///
@@ -597,55 +616,40 @@ impl DeltaTableInputEndpoint {
     ) -> Self {
         register_storage_handlers();
 
-        // if `DELTA_DF_TARGET_PARTITIONS` env var (process-wide override) is set,
-        // override default target partitions with that value. Target partitions
-        // controls the number of parallel tasks DataFusion uses for scanning during the
-        // snapshot phase.
-        let env_target_partitions = match std::env::var("DELTA_DF_TARGET_PARTITIONS").ok() {
-            None => None,
-            Some(s) => match s.parse::<usize>() {
-                Ok(n) if n > 0 => Some(n),
-                _ => {
-                    warn!(
-                        "delta_table {endpoint_name}: ignoring DELTA_DF_TARGET_PARTITIONS={s:?}; expected a positive integer"
-                    );
-                    None
-                }
-            },
-        };
-        if let Some(n) = env_target_partitions {
-            info!("delta_table {endpoint_name}: DELTA_DF_TARGET_PARTITIONS={n} overriding default");
+        // `scan_parallelism` controls how many files DataFusion decodes at once;
+        // `batch_size` how many rows each decoded batch holds. Both are
+        // per-connector settings, each falling back to a process-wide env var
+        // for the case where a running pipeline needs the knob without a
+        // config change.
+        let target_partitions = config
+            .scan_parallelism
+            .map(|n| n as usize)
+            .or_else(|| env_override(endpoint_name, "DELTA_DF_TARGET_PARTITIONS"));
+        if let Some(n) = target_partitions {
+            info!("delta_table {endpoint_name}: scanning {n} files at a time");
         }
 
-        let env_batch_size = match std::env::var("DELTA_DF_BATCH_SIZE").ok() {
-            None => None,
-            Some(s) => match s.parse::<usize>() {
-                Ok(n) if n > 0 => {
-                    info!("delta_table {endpoint_name}: applying DELTA_DF_BATCH_SIZE={n}");
-                    Some(n)
-                }
-                _ => {
-                    warn!(
-                        "delta_table {endpoint_name}: ignoring DELTA_DF_BATCH_SIZE={s:?}; expected a positive integer"
-                    );
-                    None
-                }
-            },
-        };
+        let batch_size = config
+            .batch_size
+            .map(|n| n as usize)
+            .or_else(|| env_override(endpoint_name, "DELTA_DF_BATCH_SIZE"));
+        if let Some(n) = batch_size {
+            info!("delta_table {endpoint_name}: decoding {n} rows per batch");
+        }
 
         // The `SessionContext` shares the pipeline-wide `RuntimeEnv` so that the
         // CDC-mode ORDER BY query spills to the same bounded memory pool and
         // on-disk scratch dir as every other datafusion user in the pipeline.
         //
         // `target_partitions` inherits `create_session_context_with`'s
-        // worker-derived default; only override if `DELTA_DF_TARGET_PARTITIONS`
-        // was set explicitly. Same for `batch_size`.
+        // worker-derived default, and `batch_size` DataFusion's, unless the
+        // connector configured them above.
         let datafusion = create_session_context_with(pipeline_config, runtime_env, |cfg| {
             let mut cfg = cfg;
-            if let Some(n) = env_target_partitions {
+            if let Some(n) = target_partitions {
                 cfg = cfg.set_usize("datafusion.execution.target_partitions", n);
             }
-            if let Some(n) = env_batch_size {
+            if let Some(n) = batch_size {
                 cfg = cfg.set_usize("datafusion.execution.batch_size", n);
             }
             cfg

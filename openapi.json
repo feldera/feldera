@@ -10001,6 +10001,13 @@
           "mode"
         ],
         "properties": {
+          "batch_size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Maximum number of rows the connector decodes into one Arrow batch.\n\nA batch is the unit the connector decodes a Parquet file into, and its\nmemory cost is this many rows of every column it reads. The connector\nalready lowers the batch size on its own when the Delta log says the\nrows are wide; set this to pin a value, for instance when the log\ncarries no row counts and so cannot be measured.\n\nLower values reduce the memory a read holds at the cost of throughput.\nThe default is 8192.",
+            "nullable": true,
+            "minimum": 0
+          },
           "cdc_delete_filter": {
             "type": "string",
             "description": "A predicate that determines whether the record represents a deletion.\n\nThis setting is only valid in the `cdc` mode. It specifies a predicate applied to\neach row in the Delta table to determine whether the row represents a deletion event.\nIts value must be a valid Boolean SQL expression that can be used in a query of the\nform `SELECT * from <table> WHERE <cdc_delete_filter>`.",
@@ -10056,6 +10063,13 @@
             "type": "integer",
             "format": "int32",
             "description": "The number of parallel parsing tasks the connector uses to process data read from the\ntable. Increasing this value can enhance performance by allowing more concurrent processing.\nRecommended range: 1–10. The default is 4.",
+            "minimum": 0
+          },
+          "scan_parallelism": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Number of data files the connector decodes concurrently.\n\nReading more files at a time is faster and holds more decoded data in\nmemory at once. Unlike `max_concurrent_readers`, which caps concurrent\nobject store reads across every Delta Lake connector in the pipeline,\nthis applies to one connector and governs the parallelism of a single\nread.\n\nDefaults to the pipeline's `io_workers`, or its `workers` when\n`io_workers` is not set.",
+            "nullable": true,
             "minimum": 0
           },
           "skip_unused_columns": {
