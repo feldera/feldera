@@ -3439,24 +3439,29 @@ fn test_pg_non_unique_keys_skipped() {
 // ===================================================================
 
 #[cfg(feature = "with-postgres-cdc")]
+mod cdc_scenarios;
+
+#[cfg(feature = "with-postgres-cdc")]
 mod cdc_tests {
     use super::*;
     use crate::test::wait;
+    use dbsp::DBData;
     use feldera_types::config::PipelineConfig;
+    use feldera_types::serde_with_context::DeserializeWithContext;
     use pg::pg_connect;
 
     /// Helper: creates a table, publication, and sets REPLICA IDENTITY FULL.
     /// Returns a connected client for further DML operations.
     /// On drop, cleans up the publication and table.
-    struct CdcTestTable {
-        client: postgres::Client,
-        table_name: String,
-        publication_name: String,
-        url: String,
+    pub(super) struct CdcTestTable {
+        pub(super) client: postgres::Client,
+        pub(super) table_name: String,
+        pub(super) publication_name: String,
+        pub(super) url: String,
     }
 
     impl CdcTestTable {
-        fn new_simple(table_name: &str, publication_name: &str, url: &str) -> Self {
+        pub(super) fn new_simple(table_name: &str, publication_name: &str, url: &str) -> Self {
             Self::new_simple_with_tls(table_name, publication_name, url, None)
         }
 
@@ -3513,7 +3518,7 @@ mod cdc_tests {
         }
 
         /// Creates a table with many Postgres types for data type coverage testing.
-        fn new_all_types(table_name: &str, publication_name: &str, url: &str) -> Self {
+        pub(super) fn new_all_types(table_name: &str, publication_name: &str, url: &str) -> Self {
             let mut client = pg_connect(url, &None);
 
             let _ = client.execute(
@@ -3571,7 +3576,7 @@ mod cdc_tests {
             }
         }
 
-        fn execute(&mut self, query: &str) {
+        pub(super) fn execute(&mut self, query: &str) {
             self.client
                 .execute(query, &[])
                 .unwrap_or_else(|e| panic!("failed to execute '{query}': {e}"));
@@ -3655,7 +3660,7 @@ mod cdc_tests {
         }
     }
 
-    fn cdc_connector_url(url: &str) -> String {
+    pub(super) fn cdc_connector_url(url: &str) -> String {
         let Ok(mut url) = url::Url::parse(url) else {
             return url.to_string();
         };
@@ -3818,7 +3823,7 @@ mod cdc_tests {
         feldera_macros::IsNone,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
-    struct CdcAllTypesStruct {
+    pub(super) struct CdcAllTypesStruct {
         id: i32,
         col_text: Option<String>,
         col_integer: Option<i32>,
@@ -3879,7 +3884,7 @@ mod cdc_tests {
     });
 
     impl CdcAllTypesStruct {
-        fn schema() -> Vec<Field> {
+        pub(super) fn schema() -> Vec<Field> {
             vec![
                 Field::new("id".into(), ColumnType::int(false)),
                 Field::new("col_text".into(), ColumnType::varchar(true)),
@@ -4008,18 +4013,46 @@ mod cdc_tests {
     /// that no automatic checkpoint fires during the test.  With fault
     /// tolerance enabled the connector uses strict mode: the replication slot
     /// only advances after a durable checkpoint.
-    fn cdc_ft_test_circuit(
+    pub(super) fn cdc_ft_test_circuit(
         url: &str,
         publication: &str,
         source_table: &str,
         storage_dir: &Path,
         output_path: &Path,
     ) -> (Controller, crossbeam::channel::Receiver<String>) {
+        cdc_ft_test_circuit_for::<TestStruct>(
+            url,
+            publication,
+            source_table,
+            storage_dir,
+            output_path,
+            &TestStruct::schema(),
+            1,
+        )
+    }
+
+    /// Fault-tolerant CDC circuit for record type `T` with `schema`, run on
+    /// `workers` worker threads. Checkpoints only when the test asks for one
+    /// (interval set to one hour).
+    pub(super) fn cdc_ft_test_circuit_for<T>(
+        url: &str,
+        publication: &str,
+        source_table: &str,
+        storage_dir: &Path,
+        output_path: &Path,
+        schema: &[Field],
+        workers: usize,
+    ) -> (Controller, crossbeam::channel::Receiver<String>)
+    where
+        T: DBData
+            + SerializeWithContext<SqlSerdeConfig>
+            + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+            + Sync,
+    {
         let url = cdc_connector_url(url);
-        let schema = TestStruct::schema();
         let config: PipelineConfig = serde_json::from_value(json!({
             "name": "cdc_ft_test",
-            "workers": 1,
+            "workers": workers,
             "storage_config": { "path": storage_dir },
             "storage": true,
             "fault_tolerance": { "model": "at_least_once", "checkpoint_interval_secs": 3600 },
@@ -4053,40 +4086,18 @@ mod cdc_tests {
         .unwrap();
 
         let (err_sender, err_receiver) = crossbeam::channel::unbounded();
+        let schema = schema.to_vec();
         let controller = Controller::with_test_config(
-            move |workers| {
-                Ok({
-                    let (circuit, catalog) = Runtime::init_circuit(workers, move |circuit| {
-                        let mut catalog = Catalog::new();
-                        let (input, hinput) = circuit.add_input_zset::<TestStruct>();
-                        let input_schema = serde_json::to_string(&Relation::new(
-                            "test_input1".into(),
-                            schema.clone(),
-                            false,
-                            BTreeMap::new(),
-                        ))
-                        .unwrap();
-                        let output_schema = serde_json::to_string(&Relation::new(
-                            "test_output1".into(),
-                            schema,
-                            false,
-                            BTreeMap::new(),
-                        ))
-                        .unwrap();
-                        catalog.register_materialized_input_zset::<_, TestStruct>(
-                            input.clone(),
-                            hinput,
-                            &input_schema,
-                        );
-                        catalog.register_materialized_output_zset::<_, TestStruct>(
-                            input,
-                            &output_schema,
-                        );
-                        Ok(catalog)
-                    })
-                    .unwrap();
-                    (circuit, Box::new(catalog))
-                })
+            // `test_circuit` assigns persistent ids to every operator. A
+            // hand-built circuit without them fails to checkpoint, and that
+            // failure hangs the circuit thread instead of returning an error
+            // (#7075).
+            move |circuit_config| {
+                Ok(crate::test::test_circuit::<T>(
+                    circuit_config,
+                    &schema,
+                    &[Some("output")],
+                ))
             },
             &config,
             Box::new(move |e, _| {
@@ -4100,8 +4111,78 @@ mod cdc_tests {
         (controller, err_receiver)
     }
 
+    /// Wait until a table of this connector's etl pipeline reports `state`.
+    /// The publications these callers use hold one table, the source table.
+    pub(super) fn wait_for_etl_state(table: &mut CdcTestTable, state: &str) {
+        wait(
+            || etl_table_states(table).iter().any(|s| s == state),
+            60_000,
+        )
+        .unwrap_or_else(|_| {
+            panic!(
+                "timeout waiting for etl state {state:?}; current states: {:?}",
+                etl_table_states(table)
+            )
+        });
+    }
+
+    /// Wait until every replication slot of `table`'s connector is inactive,
+    /// which is when a restarted connector can reattach to them. A fixed delay
+    /// here is a timing race: the walsender releases the slot some time after
+    /// the controller has stopped.
+    pub(super) fn wait_for_slots_released(table: &mut CdcTestTable) {
+        let pipeline_id = crate::integrated::postgres::cdc_input::pipeline_id(
+            &cdc_connector_url(&table.url),
+            &table.publication_name,
+            &format!("public.{}", table.table_name),
+        )
+        .to_string();
+        let active_slots = |table: &mut CdcTestTable| -> Vec<String> {
+            table
+                .client
+                .query(
+                    "SELECT slot_name::text FROM pg_replication_slots WHERE active",
+                    &[],
+                )
+                .unwrap_or_else(|e| panic!("querying pg_replication_slots failed: {e}"))
+                .iter()
+                .map(|r| r.get::<_, String>(0))
+                .filter(|name| name.split('_').any(|token| token == pipeline_id))
+                .collect()
+        };
+        wait(|| active_slots(table).is_empty(), 60_000).unwrap_or_else(|_| {
+            panic!(
+                "timeout: replication slots still active after stop: {:?}",
+                active_slots(table)
+            )
+        });
+    }
+
+    /// Current `state` of every table etl tracks for this connector's pipeline.
+    ///
+    /// Reuses the table's client: `wait_for_etl_state` polls this every 10 ms.
+    /// A failed query panics rather than reading as "no tables", which would let
+    /// the `errored`-state assertions pass vacuously.
+    pub(super) fn etl_table_states(table: &mut CdcTestTable) -> Vec<String> {
+        let pipeline_id = crate::integrated::postgres::cdc_input::pipeline_id(
+            &cdc_connector_url(&table.url),
+            &table.publication_name,
+            &format!("public.{}", table.table_name),
+        ) as i64;
+        table
+            .client
+            .query(
+                "SELECT state::text FROM etl.replication_state WHERE pipeline_id = $1 AND is_current",
+                &[&pipeline_id],
+            )
+            .unwrap_or_else(|e| panic!("querying etl.replication_state failed: {e}"))
+            .iter()
+            .map(|r| r.get(0))
+            .collect()
+    }
+
     /// Helper: read output file lines as JSON values.
-    fn read_output_json(path: &Path) -> Vec<serde_json::Value> {
+    pub(super) fn read_output_json(path: &Path) -> Vec<serde_json::Value> {
         let content = std::fs::read_to_string(path).unwrap_or_default();
         content
             .lines()
@@ -4855,9 +4936,7 @@ mod cdc_tests {
 
         // Stop the first pipeline.
         controller_1.stop().unwrap();
-
-        // Small delay to let the replication slot become inactive.
-        std::thread::sleep(std::time::Duration::from_secs(2));
+        wait_for_slots_released(&mut table);
 
         // --- Second pipeline run (restart) ---
         let output_file_2 = NamedTempFile::new().unwrap();
@@ -4927,16 +5006,17 @@ mod cdc_tests {
     // Fault-tolerance / strict-mode tests
     // -------------------------------------------------------------------
 
-    /// With fault tolerance enabled the replication slot LSN is not
-    /// advanced until a Feldera checkpoint completes.  When the pipeline is
-    /// stopped before any checkpoint occurs and then restarted with the same
-    /// connection identity (same slot), Postgres replays all events from the
-    /// original slot position — guaranteeing at-least-once delivery.
+    /// With fault tolerance enabled, a pipeline stopped before any checkpoint
+    /// must deliver the initial snapshot again when restarted on fresh
+    /// storage, which holds none of the rows. Rows 1 and 2 are snapshot rows
+    /// that never came through the replication slot, so holding the slot
+    /// alone cannot bring them back; scenario 3 in `cdc_scenarios` covers
+    /// slot replay.
     ///
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
-    #[ignore]
+    #[ignore = "red until #6121 is fixed: the snapshot is lost; see PR #6652"]
     fn test_cdc_ft_mode_holds_slot() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_strict_hold");
@@ -4973,9 +5053,12 @@ mod cdc_tests {
             errs_1.try_recv()
         );
 
-        // Stop without a checkpoint — slot LSN is still at the snapshot position.
+        // Stop without a checkpoint, but only once etl has persisted the copy
+        // as complete. Stopping earlier leaves etl in `data_sync`, and it
+        // redoes the copy on restart, which would hide a lost snapshot.
+        wait_for_etl_state(&mut table, "ready");
         ctrl_1.stop().unwrap();
-        std::thread::sleep(std::time::Duration::from_secs(1));
+        wait_for_slots_released(&mut table);
 
         // --- Run 2: fresh output, same slot (same url/publication/source_table) ---
         let out_2 = NamedTempFile::new().unwrap();
@@ -5015,14 +5098,14 @@ mod cdc_tests {
             })
             .collect();
 
-        // The slot was held back in run 1 — rows 1 and 2 must be redelivered.
+        // Run 1 never checkpointed, so run 2 must deliver the snapshot again.
         assert!(
             ids.contains(&1),
-            "row 1 must be redelivered (slot held); ids={ids:?}"
+            "row 1 must be redelivered (no checkpoint); ids={ids:?}"
         );
         assert!(
             ids.contains(&2),
-            "row 2 must be redelivered (slot held); ids={ids:?}"
+            "row 2 must be redelivered (no checkpoint); ids={ids:?}"
         );
         assert!(ids.contains(&3), "row 3 (new) must appear; ids={ids:?}");
 
