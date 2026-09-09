@@ -1695,12 +1695,15 @@ async fn call_compiler(
         command.env("CARGO_INCREMENTAL", cargo_incremental);
     }
 
-    // Preserve AWS_PROFILE if set, to allow sccache to use
-    // credentials from there.
-    // we avoid passing all AWS_* env vars to prevent leaking
-    // credentials from the malicious build scripts.
-    if let Some(aws_profile) = std::env::var_os("AWS_PROFILE") {
-        command.env("AWS_PROFILE", aws_profile);
+    // Preserve the AWS variables that name an identity without carrying one:
+    // AWS_PROFILE for sccache, and the web identity pair for a cargo
+    // credential provider authenticating to a private registry. All other
+    // AWS_* vars are withheld to prevent leaking credentials to malicious
+    // build scripts.
+    for key in ["AWS_PROFILE", "AWS_ROLE_ARN", "AWS_WEB_IDENTITY_TOKEN_FILE"] {
+        if let Some(value) = std::env::var_os(key) {
+            command.env(key, value);
+        }
     }
 
     for (key, value) in preserved_env_vars {
