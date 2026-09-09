@@ -140,6 +140,16 @@ fn format_datafusion_error(
     }
 }
 
+/// The suffix a read error carries to say which table version produced the data
+/// being read, or nothing when the read is not tied to one commit (the initial
+/// snapshot spans many).
+fn version_suffix(version: Option<i64>) -> String {
+    match version {
+        Some(version) => format!(" (table version: {version})"),
+        None => String::new(),
+    }
+}
+
 /// Render up to [`DESCRIBED_PATHS`] of `paths` for a log message, followed by a
 /// count of the rest.
 ///
@@ -2844,6 +2854,9 @@ impl DeltaTableInputEndpointInner {
     ///
     /// * `max_retries` - the maximum number of retries to attempt if the function fails to read the log entry.
     ///
+    /// * `version` - the table version whose data is being read, named in the
+    ///   error message. `None` for the initial snapshot, which spans many.
+    ///
     /// Returns the total number of records processed.
     ///
     /// Returns an error if the function fails to read the log entry after performing the configured
@@ -2865,7 +2878,7 @@ impl DeltaTableInputEndpointInner {
         receiver: &mut Receiver<PipelineState>,
         transaction: Option<Option<String>>,
         max_retries: u32,
-        current_table_version: Option<i64>,
+        version: Option<i64>,
     ) -> Result<usize, AnyError> {
         let mut retry_count = 0;
         loop {
@@ -2889,11 +2902,7 @@ impl DeltaTableInputEndpointInner {
                     if retry_count - 1 == max_retries {
                         let message = format!(
                             "error retrieving {descr} after {retry_count} attempts{}: {e}",
-                            if let Some(version) = current_table_version {
-                                format!(" (current table version: {version})")
-                            } else {
-                                String::new()
-                            }
+                            version_suffix(version)
                         );
                         self.consumer
                             .update_connector_health(ConnectorHealth::unhealthy(&message));
@@ -2903,11 +2912,7 @@ impl DeltaTableInputEndpointInner {
 
                     let message = format!(
                         "error retrieving {descr} after {retry_count} attempts{}: {e}; retrying in {backoff_delay:?}",
-                        if let Some(version) = current_table_version {
-                            format!(" (current table version: {version})")
-                        } else {
-                            String::new()
-                        }
+                        version_suffix(version)
                     );
                     self.consumer
                         .update_connector_health(ConnectorHealth::unhealthy(&message));
@@ -3161,8 +3166,15 @@ impl DeltaTableInputEndpointInner {
         let timestamp = Utc::now();
 
         if self.config.is_cdc() {
-            self.process_cdc_transaction(actions, table, input_stream, receiver, start_transaction)
-                .await?;
+            self.process_cdc_transaction(
+                actions,
+                new_version,
+                table,
+                input_stream,
+                receiver,
+                start_transaction,
+            )
+            .await?;
         } else if self.config.reads_change_feed() {
             self.process_change_feed_log_entry(
                 new_version,
@@ -3174,8 +3186,15 @@ impl DeltaTableInputEndpointInner {
             )
             .await?;
         } else {
-            self.process_follow_actions(actions, table, input_stream, receiver, start_transaction)
-                .await?;
+            self.process_follow_actions(
+                actions,
+                new_version,
+                table,
+                input_stream,
+                receiver,
+                start_transaction,
+            )
+            .await?;
         }
 
         // Empty buffer to indicate checkpointable state.
@@ -3205,6 +3224,7 @@ impl DeltaTableInputEndpointInner {
     async fn process_follow_actions(
         &self,
         actions: &[Action],
+        version: i64,
         table: &DeltaTable,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
@@ -3282,6 +3302,7 @@ impl DeltaTableInputEndpointInner {
                     remove.partition_values.as_ref(),
                     newly_deleted,
                     false,
+                    version,
                     table,
                     &used_columns,
                     input_stream,
@@ -3303,6 +3324,7 @@ impl DeltaTableInputEndpointInner {
                     Some(&add.partition_values),
                     restored,
                     true,
+                    version,
                     table,
                     &used_columns,
                     input_stream,
@@ -3350,7 +3372,14 @@ impl DeltaTableInputEndpointInner {
                 .commits_from_file_actions
                 .fetch_add(1, Ordering::Relaxed);
             return self
-                .process_follow_actions(actions, table, input_stream, receiver, start_transaction)
+                .process_follow_actions(
+                    actions,
+                    new_version,
+                    table,
+                    input_stream,
+                    receiver,
+                    start_transaction,
+                )
                 .await;
         }
         self.metrics
@@ -3427,7 +3456,7 @@ impl DeltaTableInputEndpointInner {
                 receiver,
                 start_transaction.clone(),
                 self.config.max_retries(),
-                table.version().map(|v| v as i64),
+                Some(new_version),
             )
             .await?;
         }
@@ -3556,6 +3585,7 @@ impl DeltaTableInputEndpointInner {
     async fn process_cdc_transaction(
         &self,
         actions: &[Action],
+        version: i64,
         table: &DeltaTable,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
@@ -3672,7 +3702,7 @@ impl DeltaTableInputEndpointInner {
                 receiver,
                 start_transaction,
                 self.config.max_retries(),
-                table.version().map(|v| v as i64),
+                Some(version),
             )
             .await?;
 
@@ -4159,9 +4189,11 @@ impl DeltaTableInputEndpointInner {
         Ok(Some(df))
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn process_action(
         &self,
         action: &Action,
+        version: i64,
         table: &DeltaTable,
         used_columns: &[&str],
         input_stream: &mut dyn ArrowStream,
@@ -4175,6 +4207,7 @@ impl DeltaTableInputEndpointInner {
                     true,
                     add.deletion_vector.as_ref(),
                     Some(&add.partition_values),
+                    version,
                     table,
                     used_columns,
                     input_stream,
@@ -4191,6 +4224,7 @@ impl DeltaTableInputEndpointInner {
                     false,
                     remove.deletion_vector.as_ref(),
                     remove.partition_values.as_ref(),
+                    version,
                     table,
                     used_columns,
                     input_stream,
@@ -4217,6 +4251,7 @@ impl DeltaTableInputEndpointInner {
         polarity: bool,
         deletion_vector: Option<&DeletionVectorDescriptor>,
         partition_values: Option<&HashMap<String, Option<String>>>,
+        version: i64,
         table: &DeltaTable,
         used_columns: &[&str],
         input_stream: &mut dyn ArrowStream,
@@ -4260,7 +4295,7 @@ impl DeltaTableInputEndpointInner {
             used_columns,
             partition_values,
             &description,
-            table,
+            version,
             input_stream,
             receiver,
             start_transaction,
@@ -4279,6 +4314,7 @@ impl DeltaTableInputEndpointInner {
         partition_values: Option<&HashMap<String, Option<String>>>,
         dv_delta: Option<&RoaringTreemap>,
         polarity: bool,
+        version: i64,
         table: &DeltaTable,
         used_columns: &[&str],
         input_stream: &mut dyn ArrowStream,
@@ -4306,7 +4342,7 @@ impl DeltaTableInputEndpointInner {
                     used_columns,
                     partition_values,
                     &description,
-                    table,
+                    version,
                     input_stream,
                     receiver,
                     start_transaction,
@@ -4319,6 +4355,7 @@ impl DeltaTableInputEndpointInner {
             None => {
                 self.process_action(
                     action,
+                    version,
                     table,
                     used_columns,
                     input_stream,
@@ -4343,7 +4380,7 @@ impl DeltaTableInputEndpointInner {
         used_columns: &[&str],
         partition_values: Option<&HashMap<String, Option<String>>>,
         description: &str,
-        table: &DeltaTable,
+        version: i64,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
         start_transaction: Option<Option<String>>,
@@ -4371,7 +4408,7 @@ impl DeltaTableInputEndpointInner {
                 receiver,
                 start_transaction,
                 self.config.max_retries(),
-                table.version().map(|v| v as i64),
+                Some(version),
             )
             .await?;
 
@@ -5185,6 +5222,26 @@ mod change_data_feed_state_tests {
             ]),
             Some(true)
         );
+    }
+}
+
+#[cfg(test)]
+mod version_suffix_tests {
+    use super::*;
+
+    /// A version-scoped read names the commit it is reading. The follow loop
+    /// never reloads its table handle, so reporting `DeltaTable::version()`
+    /// here named the version the connector *started* from on every retry, and
+    /// sent whoever read the log to the wrong commit.
+    #[test]
+    fn a_version_is_named() {
+        assert_eq!(version_suffix(Some(107273)), " (table version: 107273)");
+    }
+
+    /// The initial snapshot spans many commits, so it names none.
+    #[test]
+    fn no_version_adds_nothing() {
+        assert_eq!(version_suffix(None), "");
     }
 }
 
