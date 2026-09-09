@@ -91,10 +91,11 @@ const REPORT_ERROR: &str =
 static DELTA_READER_SEMAPHORE: std::sync::LazyLock<Semaphore> =
     std::sync::LazyLock::new(|| Semaphore::new(DEFAULT_MAX_CONCURRENT_READERS));
 
-/// Default cap for concurrent Delta object-store reads, used both as the
-/// initial token count for `DELTA_READER_SEMAPHORE` and as the fallback
-/// for DataFusion's `target_partitions` when neither
-/// `DELTA_DF_TARGET_PARTITIONS` nor `max_concurrent_readers` is set.
+/// Default cap for concurrent Delta object-store reads: the initial token count
+/// for `DELTA_READER_SEMAPHORE`, which bounds how many connector queries read at
+/// once. It does not bound the scan parallelism *within* one query; that is
+/// DataFusion's `target_partitions`, which `create_session_context_with` derives
+/// from `io_workers` / `workers` unless `DELTA_DF_TARGET_PARTITIONS` overrides it.
 const DEFAULT_MAX_CONCURRENT_READERS: usize = 6;
 
 /// Configured `max_concurrent_readers` value (0 = not set by any connector).
@@ -518,20 +519,15 @@ impl DeltaTableInputEndpoint {
             },
         };
 
-        // Configure datafusion not to generate Utf8View arrow types, which are
-        // not yet supported by the `serde_arrow` crate. The `SessionContext`
-        // shares the pipeline-wide `RuntimeEnv` so that the CDC-mode ORDER BY
-        // query spills to the same bounded memory pool and on-disk scratch
-        // dir as every other datafusion user in the pipeline.
+        // The `SessionContext` shares the pipeline-wide `RuntimeEnv` so that the
+        // CDC-mode ORDER BY query spills to the same bounded memory pool and
+        // on-disk scratch dir as every other datafusion user in the pipeline.
         //
         // `target_partitions` inherits `create_session_context_with`'s
         // worker-derived default; only override if `DELTA_DF_TARGET_PARTITIONS`
         // was set explicitly. Same for `batch_size`.
         let datafusion = create_session_context_with(pipeline_config, runtime_env, |cfg| {
-            let mut cfg = cfg.set_bool(
-                "datafusion.execution.parquet.schema_force_view_types",
-                false,
-            );
+            let mut cfg = cfg;
             if let Some(n) = env_target_partitions {
                 cfg = cfg.set_usize("datafusion.execution.target_partitions", n);
             }
@@ -5039,5 +5035,117 @@ mod change_data_feed_state_tests {
             ]),
             Some(true)
         );
+    }
+}
+
+/// How the Parquet reader decides the Arrow type of a string column, which is
+/// what bounds a decoded batch: `Utf8` carries 32-bit offsets and so caps one
+/// batch at 2 GiB per column, `Utf8View` does not.
+#[cfg(test)]
+mod read_schema_tests {
+    use super::*;
+    use arrow::array::{ArrayRef, StringArray};
+    use datafusion::prelude::SessionConfig;
+    use parquet::arrow::ArrowWriter;
+    use parquet::file::properties::WriterProperties;
+    use std::fs::File;
+    use std::path::{Path, PathBuf};
+
+    /// Write `values` as a single `Utf8` column named `s` and return the file's path.
+    ///
+    /// `rows_per_write` batches keep the writer's own buffers small while every
+    /// row still lands in one row group, so what the reader decodes in one batch
+    /// is decided by the read batch size alone.
+    fn write_parquet(dir: &Path, values: &[&str], rows_per_write: usize) -> PathBuf {
+        let path = dir.join("part-00000.parquet");
+        let schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
+            "s",
+            ArrowDataType::Utf8,
+            false,
+        )]));
+        let props = WriterProperties::builder()
+            .set_dictionary_enabled(true)
+            .set_max_row_group_row_count(Some(values.len().max(1)))
+            .build();
+        let mut writer =
+            ArrowWriter::try_new(File::create(&path).unwrap(), schema.clone(), Some(props))
+                .unwrap();
+        for chunk in values.chunks(rows_per_write) {
+            let column: ArrayRef = Arc::new(StringArray::from_iter_values(chunk.iter().copied()));
+            writer
+                .write(&RecordBatch::try_new(schema.clone(), vec![column]).unwrap())
+                .unwrap();
+        }
+        writer.close().unwrap();
+        path
+    }
+
+    /// Read `path` the way the connector reads a data file: one `ListingTable`
+    /// whose schema is supplied rather than inferred (see
+    /// [`DeltaTableInputEndpointInner::create_parquet_table`]).
+    ///
+    /// `force_view_types` sets the session option of the same name, and
+    /// `read_schema` is what the listing table declares.
+    async fn read_one_batch(
+        path: &Path,
+        read_schema: SchemaRef,
+        force_view_types: bool,
+        batch_size: usize,
+    ) -> Result<RecordBatch, DataFusionError> {
+        let config = SessionConfig::new()
+            .set_bool(
+                "datafusion.execution.parquet.schema_force_view_types",
+                force_view_types,
+            )
+            .set_usize("datafusion.execution.batch_size", batch_size);
+        let ctx = SessionContext::new_with_config(config);
+
+        let url = ListingTableUrl::parse(format!("file://{}", path.display())).unwrap();
+        let listing_options = ListingOptions::new(Arc::new(ParquetFormat::default()))
+            .with_file_extension_opt(Some(".parquet"));
+        let table = ListingTable::try_new(
+            ListingTableConfig::new_with_multi_paths(vec![url])
+                .with_listing_options(listing_options)
+                .with_schema(read_schema),
+        )?;
+
+        let mut stream = ctx.read_table(Arc::new(table))?.execute_stream().await?;
+        stream
+            .next()
+            .await
+            .expect("the file holds at least one row")
+    }
+
+    fn schema_of(data_type: ArrowDataType) -> SchemaRef {
+        Arc::new(ArrowSchema::new(vec![ArrowField::new(
+            "s", data_type, false,
+        )]))
+    }
+
+    /// `schema_force_view_types` cannot reach the connector's reads, whichever
+    /// way it is set: DataFusion consults it only when `ParquetFormat` *infers*
+    /// a schema, and every Delta read supplies one instead. The type follows the
+    /// supplied schema, which is why setting the option was a no-op and
+    /// [`DeltaTableInputEndpointInner::physical_read_schema`] is the real lever.
+    #[tokio::test]
+    async fn force_view_types_does_not_reach_a_supplied_schema() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_parquet(dir.path(), &["a", "bb"], 2);
+
+        for force_view_types in [false, true] {
+            let batch = read_one_batch(
+                &path,
+                schema_of(ArrowDataType::Utf8),
+                force_view_types,
+                1024,
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                batch.column(0).data_type(),
+                &ArrowDataType::Utf8,
+                "schema_force_view_types={force_view_types} must not change a supplied schema"
+            );
+        }
     }
 }
