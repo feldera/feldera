@@ -446,6 +446,28 @@ impl KillSignal {
 }
 
 impl RuntimeInner {
+    /// Wakes every aux thread so that it can notice the kill signal.
+    fn unpark_aux_threads(&self) {
+        for (_handle, unparker) in self.aux_threads.lock().unwrap().iter() {
+            unparker.unpark();
+        }
+    }
+
+    /// Waits for every aux thread to terminate.
+    ///
+    /// Callers must have signaled the kill first: an aux thread runs until
+    /// then, so joining one before that never returns.
+    ///
+    /// The threads are taken out from under the lock before being joined.  An
+    /// aux thread that reaches for `aux_threads` on its way out would
+    /// otherwise deadlock against the join waiting for it.
+    fn join_aux_threads(&self) {
+        let aux_threads: Vec<_> = self.aux_threads.lock().unwrap().drain(..).collect();
+        for (handle, _unparker) in aux_threads {
+            let _ = handle.join();
+        }
+    }
+
     fn new(config: CircuitConfig) -> Result<Self, DbspError> {
         let nworkers = config.layout.local_workers().len();
         let buffer_cache_strategy = config.dev_tweaks.buffer_cache_strategy();
@@ -1578,16 +1600,7 @@ impl RuntimeHandle {
         for (_worker, unparker) in self.workers.iter() {
             unparker.unpark();
         }
-
-        self.runtime
-            .inner()
-            .aux_threads
-            .lock()
-            .unwrap()
-            .iter()
-            .for_each(|(_h, unparker)| {
-                unparker.unpark();
-            });
+        self.runtime.inner().unpark_aux_threads();
     }
 
     /// Wait for all workers in the runtime to terminate.
@@ -1607,27 +1620,8 @@ impl RuntimeHandle {
         // which already signals the aux threads to terminate, but it is useful when it is called
         // directly, e.g., in some tests.
         self.runtime.inner().kill_signal.raise();
-
-        self.runtime
-            .inner()
-            .aux_threads
-            .lock()
-            .unwrap()
-            .iter()
-            .for_each(|(_h, unparker)| {
-                unparker.unpark();
-            });
-
-        // Wait for aux threads.
-        self.runtime
-            .inner()
-            .aux_threads
-            .lock()
-            .unwrap()
-            .drain(..)
-            .for_each(|(h, _unparker)| {
-                let _ = h.join();
-            });
+        self.runtime.inner().unpark_aux_threads();
+        self.runtime.inner().join_aux_threads();
 
         // Terminate the tokio merger runtime.
         //
