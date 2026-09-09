@@ -5,6 +5,7 @@ use datafusion::common::ScalarValue;
 use datafusion::common::arrow::array::{AsArray, RecordBatch};
 use datafusion::execution::SessionStateBuilder;
 use datafusion::execution::memory_pool::{FairSpillPool, MemoryLimit};
+use datafusion::execution::object_store::DefaultObjectStoreRegistry;
 use datafusion::execution::runtime_env::{RuntimeEnv, RuntimeEnvBuilder};
 use datafusion::logical_expr::sqlparser::parser::ParserError;
 use datafusion::prelude::{SQLOptions, SessionConfig, SessionContext};
@@ -126,6 +127,10 @@ fn adhoc_partition_floor(pipeline_config: &PipelineConfig) -> usize {
 /// Build once per pipeline and share the `Arc` across every
 /// `SessionContext`. A separate `RuntimeEnv` per context would give each its
 /// own pool, multiplying the effective memory budget by `(1 + #connectors)`.
+///
+/// The object store registry is shared too, so a store registered on this env
+/// is visible to every connector. Register stores on a
+/// [`with_private_object_store_registry`] clone instead.
 pub fn create_runtime_env(
     pipeline_config: &PipelineConfig,
 ) -> Result<Arc<RuntimeEnv>, ControllerError> {
@@ -154,6 +159,24 @@ pub fn create_runtime_env(
             IoError::other(error.to_string()),
         )
     })
+}
+
+/// Clone `shared` with an object store registry of its own.
+///
+/// DataFusion keys stores by scheme, host and port, so connectors sharing a
+/// registry can capture each other's reads. Pool and caches stay shared.
+pub fn with_private_object_store_registry(
+    shared: &RuntimeEnv,
+) -> Result<Arc<RuntimeEnv>, ControllerError> {
+    RuntimeEnvBuilder::from_runtime_env(shared)
+        .with_object_store_registry(Arc::new(DefaultObjectStoreRegistry::new()))
+        .build_arc()
+        .map_err(|error| {
+            ControllerError::io_error(
+                "unable to build a datafusion runtime environment with a private object store registry",
+                IoError::other(error.to_string()),
+            )
+        })
 }
 
 /// Remove leftovers from a previous process inside the scratch directory.
