@@ -555,6 +555,32 @@ pub struct DeltaTableReaderConfig {
     /// The default value is 6.
     pub max_concurrent_readers: Option<u32>,
 
+    /// Maximum number of rows the connector decodes into one Arrow batch.
+    ///
+    /// A batch is the unit the connector decodes a Parquet file into, and its
+    /// memory cost is this many rows of every column it reads. The connector
+    /// already lowers the batch size on its own when the Delta log says the
+    /// rows are wide; set this to pin a value, for instance when the log
+    /// carries no row counts and so cannot be measured.
+    ///
+    /// Lower values reduce the memory a read holds at the cost of throughput.
+    /// The default is 8192.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub batch_size: Option<u64>,
+
+    /// Number of data files the connector decodes concurrently.
+    ///
+    /// Reading more files at a time is faster and holds more decoded data in
+    /// memory at once. Unlike `max_concurrent_readers`, which caps concurrent
+    /// object store reads across every Delta Lake connector in the pipeline,
+    /// this applies to one connector and governs the parallelism of a single
+    /// read.
+    ///
+    /// Defaults to the pipeline's `io_workers`, or its `workers` when
+    /// `io_workers` is not set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scan_parallelism: Option<u64>,
+
     /// Enable verbose logging.
     ///
     /// When enabled, the connector will log detailed information at INFO level.
@@ -753,6 +779,48 @@ fn test_delta_table_ingest_mode_display() {
         "snapshot_and_follow"
     );
     assert_eq!(DeltaTableIngestMode::Cdc.to_string(), "cdc");
+}
+
+#[cfg(test)]
+mod read_tuning_tests {
+    use super::*;
+
+    fn config(extra: &str) -> DeltaTableReaderConfig {
+        serde_json::from_str(&format!(r#"{{"uri":"memory://","mode":"follow"{extra}}}"#)).unwrap()
+    }
+
+    /// Both settings are optional, and absent means "let the connector decide":
+    /// it derives the batch size from the Delta log and the scan parallelism
+    /// from the pipeline's worker count.
+    #[test]
+    fn absent_by_default() {
+        let config = config("");
+        assert_eq!(config.batch_size, None);
+        assert_eq!(config.scan_parallelism, None);
+    }
+
+    #[test]
+    fn read_from_the_connector_config() {
+        let config = config(r#","batch_size":512,"scan_parallelism":4"#);
+        assert_eq!(config.batch_size, Some(512));
+        assert_eq!(config.scan_parallelism, Some(4));
+    }
+
+    /// An unset setting stays out of the serialized form, so a config that
+    /// omits it round-trips unchanged through a manager that does not know it.
+    #[test]
+    fn absent_settings_are_not_serialized() {
+        let serialized = serde_json::to_string(&config("")).unwrap();
+        assert!(
+            !serialized.contains("batch_size") && !serialized.contains("scan_parallelism"),
+            "unset settings must not be serialized; got: {serialized}"
+        );
+        let serialized = serde_json::to_string(&config(r#","batch_size":512"#)).unwrap();
+        assert!(
+            serialized.contains(r#""batch_size":512"#),
+            "a set value must survive serialization; got: {serialized}"
+        );
+    }
 }
 
 #[cfg(test)]

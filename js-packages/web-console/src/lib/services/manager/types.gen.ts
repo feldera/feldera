@@ -1255,6 +1255,19 @@ export type DeltaTableIngestMode = 'snapshot' | 'follow' | 'snapshot_and_follow'
  */
 export type DeltaTableReaderConfig = {
   /**
+   * Maximum number of rows the connector decodes into one Arrow batch.
+   *
+   * A batch is the unit the connector decodes a Parquet file into, and its
+   * memory cost is this many rows of every column it reads. The connector
+   * already lowers the batch size on its own when the Delta log says the
+   * rows are wide; set this to pin a value, for instance when the log
+   * carries no row counts and so cannot be measured.
+   *
+   * Lower values reduce the memory a read holds at the cost of throughput.
+   * The default is 8192.
+   */
+  batch_size?: number | null
+  /**
    * A predicate that determines whether the record represents a deletion.
    *
    * This setting is only valid in the `cdc` mode. It specifies a predicate applied to
@@ -1342,6 +1355,19 @@ export type DeltaTableReaderConfig = {
    * Recommended range: 1–10. The default is 4.
    */
   num_parsers?: number
+  /**
+   * Number of data files the connector decodes concurrently.
+   *
+   * Reading more files at a time is faster and holds more decoded data in
+   * memory at once. Unlike `max_concurrent_readers`, which caps concurrent
+   * object store reads across every Delta Lake connector in the pipeline,
+   * this applies to one connector and governs the parallelism of a single
+   * read.
+   *
+   * Defaults to the pipeline's `io_workers`, or its `workers` when
+   * `io_workers` is not set.
+   */
+  scan_parallelism?: number | null
   /**
    * Don't read unused columns from the Delta table.
    *
@@ -1439,6 +1465,8 @@ export type DeltaTableReaderConfig = {
   version?: number | null
   [key: string]:
     | string
+    | number
+    | null
     | string
     | null
     | string
@@ -1457,6 +1485,8 @@ export type DeltaTableReaderConfig = {
     | null
     | DeltaTableIngestMode
     | number
+    | number
+    | null
     | boolean
     | string
     | null
