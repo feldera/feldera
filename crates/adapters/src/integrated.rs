@@ -2,6 +2,7 @@ use crate::controller::{ControllerInner, EndpointId};
 use crate::transport::IntegratedInputEndpoint;
 use crate::{ControllerError, Encoder, InputConsumer, OutputEndpoint};
 use datafusion::execution::runtime_env::RuntimeEnv;
+use feldera_adapterlib::utils::datafusion::with_private_object_store_registry;
 use feldera_types::config::{ConnectorConfig, PipelineConfig, TransportConfig};
 use feldera_types::program_schema::Relation;
 use std::sync::{Arc, Weak};
@@ -113,6 +114,11 @@ pub fn create_integrated_input_endpoint(
     runtime_env: Arc<RuntimeEnv>,
     consumer: Box<dyn InputConsumer>,
 ) -> Result<Box<dyn IntegratedInputEndpoint>, ControllerError> {
+    // Every connector gets its own object store registry: DataFusion keys stores
+    // by scheme, host and port, so a shared registry lets one connector reroute
+    // another's reads (#7080). The memory pool and caches stay shared.
+    let runtime_env = with_private_object_store_registry(&runtime_env)?;
+
     let ep: Box<dyn IntegratedInputEndpoint> = match &config.transport {
         #[cfg(feature = "with-deltalake")]
         TransportConfig::DeltaTableInput(config) => {
