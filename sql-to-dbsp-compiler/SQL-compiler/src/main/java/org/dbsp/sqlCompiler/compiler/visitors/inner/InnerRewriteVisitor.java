@@ -341,7 +341,7 @@ public abstract class InnerRewriteVisitor
         this.push(type);
         DBSPType elementType = this.transform(type.elementType);
         this.pop(type);
-        DBSPType result = new DBSPTypeStream(elementType, type.outerCircuit);
+        DBSPType result = new DBSPTypeStream(elementType, type.kind, type.nesting);
         this.map(type, result);
         return VisitDecision.STOP;
     }

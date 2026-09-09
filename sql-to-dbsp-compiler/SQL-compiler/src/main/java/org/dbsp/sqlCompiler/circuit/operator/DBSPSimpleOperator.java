@@ -18,6 +18,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
@@ -49,6 +50,9 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
     /** True if the output of the operator is a multiset.  Conservative approximation;
      * if this is 'false', it is surely false.  If it is true, the output may still be a set. */
     public final boolean isMultiset;
+    /** Kind of the output stream, derived from the inputs (cached here). */
+    @Nullable
+    private StreamKind outputKind = null;
 
     protected DBSPSimpleOperator(CalciteRelNode node, String operation,
                                  @Nullable DBSPExpression function, DBSPType outputType,
@@ -90,6 +94,29 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
 
     public DBSPType outputType() {
         return this.outputType;
+    }
+
+    @Override
+    public StreamKind outputKind(int outputNo) {
+        Utilities.enforce(outputNo == 0);
+        if (this.outputKind == null)
+            this.outputKind = this.computeOutputKind();
+        return this.outputKind;
+    }
+
+    /** Derive the kind of the output from the kinds of the inputs, validating the inputs. */
+    protected StreamKind computeOutputKind() {
+        if (this.is(INonIncremental.class)) {
+            this.requireAllInputsAmong(StreamKind.COLLECTION);
+            return StreamKind.COLLECTION;
+        }
+        if (this.is(ILinear.class))
+            return this.commonInputKind();
+        if (this.is(IIncremental.class)) {
+            this.requireAllInputsAmong(StreamKind.DELTA);
+            return StreamKind.DELTA;
+        }
+        throw new InternalCompilerError("No stream kind rule for operator " + this.operation, this);
     }
 
     public OutputPort outputPort() {

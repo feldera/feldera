@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** Base class for source operators. */
 public abstract class DBSPSourceBaseOperator
@@ -39,6 +40,8 @@ public abstract class DBSPSourceBaseOperator
     // Note: the metadata is not transformed after being set.
     // In particular, types are not rewritten.
     public final TableMetadata metadata;
+    /** Sources carry collections until the circuit is incrementalized, and deltas afterwards. */
+    public final StreamKind kind;
 
     /** Create a DBSP operator that is a source to the dataflow graph.
      *
@@ -48,14 +51,24 @@ public abstract class DBSPSourceBaseOperator
      * @param operation  Type of table.
      * @param isMultiset True if the source data can be a multiset.
      * @param tableName  The name of the table that this operator is created from.
+     * @param kind       Whether the source produces collections or deltas.
      * @param comment    A comment describing the operator. */
     protected DBSPSourceBaseOperator(
             CalciteRelNode node, String operation, DBSPType outputType, boolean isMultiset,
-            ProgramIdentifier tableName, TableMetadata metadata, @Nullable String comment) {
+            ProgramIdentifier tableName, TableMetadata metadata, StreamKind kind, @Nullable String comment) {
         super(node, operation, null, outputType, isMultiset, comment);
         this.tableName = tableName;
         this.metadata = metadata;
+        this.kind = kind;
     }
+
+    @Override
+    protected StreamKind computeOutputKind() {
+        return this.kind;
+    }
+
+    /** A copy of this source producing streams of the specified kind. */
+    public abstract DBSPSourceBaseOperator withKind(StreamKind kind);
 
     @Override
     public DBSPOperator asOperator() {

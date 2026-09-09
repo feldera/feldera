@@ -33,11 +33,7 @@ public class RemoveConstantFilters extends CircuitCloneVisitor {
                 OutputPort input = this.mapped(operator.input());
                 this.map(operator.outputPort(), input, false);
             } else {
-                DBSPType outputType = operator.getType();
-                DBSPExpression value = PropagateEmptySources.emptySet(outputType);
-                DBSPConstantOperator result = new DBSPConstantOperator(
-                        operator.getRelNode(), value, operator.isMultiset);
-                this.map(operator, result);
+                this.map(operator, PropagateEmptySources.emptyStream(this, operator, o -> {}));
             }
         }
         else {

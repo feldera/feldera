@@ -2680,7 +2680,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPTypeStream type) {
         this.push(type);
         this.builder.append("Stream<");
-        if (type.outerCircuit)
+        Utilities.enforce(type.nesting <= 1, () -> "Unsupported nesting depth " + type.nesting);
+        if (type.nesting == 0)
             this.builder.append("RootCircuit");
         else
             this.builder.append("NestedCircuit");

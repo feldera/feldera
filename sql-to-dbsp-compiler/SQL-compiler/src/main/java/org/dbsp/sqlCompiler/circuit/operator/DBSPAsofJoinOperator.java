@@ -22,7 +22,7 @@ import java.util.Objects;
 
 /** A high-level representation of the ASOF JOIN.  Converted to a pair of
  * {@link DBSPMapIndexOperator} and one {@link DBSPConcreteAsofJoinOperator}. */
-public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator implements INonIncremental {
+public final class DBSPAsofJoinOperator extends DBSPJoinBaseOperator implements IIncremental {
     // Usually a DBSPComparatorExpression; currently not used
     // https://github.com/feldera/feldera/issues/2212
     public final DBSPExpression comparator;

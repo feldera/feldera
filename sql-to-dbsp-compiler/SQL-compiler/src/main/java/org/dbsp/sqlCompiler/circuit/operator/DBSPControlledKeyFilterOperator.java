@@ -28,6 +28,8 @@ import org.dbsp.util.Utilities;
 import java.util.List;
 
 import static org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator.commonInfoFromJson;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 
 /**
  * The {@link DBSPControlledKeyFilterOperator} is an operator with 2 outputs, including
@@ -161,5 +163,16 @@ public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError
         return new DBSPControlledKeyFilterOperator(CalciteEmptyRel.INSTANCE,
                 info.getClosureFunction(), error, info.getInput(0), info.getInput(1))
                 .addAnnotations(info.annotations(), DBSPControlledKeyFilterOperator.class);
+    }
+
+    /** The data passes through with its kind; the error output is a stream of new errors. */
+    @Override
+    public StreamKind outputKind(int outputNo) {
+        this.requireInputAmong(1, StreamKind.WATERLINE);
+        return switch (outputNo) {
+            case 0 -> this.inputs.get(0).kind();
+            case 1 -> StreamKind.DELTA;
+            default -> throw new InternalCompilerError("Unexpected output " + outputNo, this);
+        };
     }
 }

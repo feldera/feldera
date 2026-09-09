@@ -16,6 +16,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /**
  * The DBSPWindow operator corresponds to a DBSP window() call.
@@ -81,5 +82,12 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator implements ICon
         return new DBSPWindowOperator(CalciteEmptyRel.INSTANCE,
                 lowerInclusive, upperInclusive, lowerUnbounded, info.getInput(0), info.getInput(1))
                 .addAnnotations(info.annotations(), DBSPWindowOperator.class);
+    }
+
+    @Override
+    protected StreamKind computeOutputKind() {
+        this.requireInputAmong(0, StreamKind.DELTA);
+        this.requireInputAmong(1, StreamKind.WATERLINE);
+        return StreamKind.DELTA;
     }
 }

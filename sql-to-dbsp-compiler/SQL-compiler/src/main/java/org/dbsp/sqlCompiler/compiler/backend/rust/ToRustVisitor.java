@@ -463,7 +463,8 @@ public class ToRustVisitor extends CircuitVisitor {
             if (operator.internalOutputs.get(i) == null) {
                 this.builder.append("()").append(", ");
             } else {
-                DBSPType streamType = new DBSPTypeStream(operator.outputType(i), false);
+                // The streams produced inside the nested circuit
+                DBSPType streamType = operator.internalOutputs.get(i).streamType(1);
                 streamType.accept(this.innerVisitor);
                 this.builder.append(", ");
             }
@@ -944,7 +945,7 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     public DBSPType streamType(DBSPSimpleOperator operator) {
-        return operator.outputStreamType(0, this.inOuterCircuit());
+        return operator.outputStreamType(0, this.nesting());
     }
 
     @Override
@@ -996,12 +997,12 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(",")
                 .append(operator.getOutput(1).getName(this.preferHash))
                 .append("): (");
-        boolean isOuter = this.inOuterCircuit();
-        DBSPType streamType = operator.outputStreamType(0, isOuter);
+        int nesting = this.nesting();
+        DBSPType streamType = operator.outputStreamType(0, nesting);
         this.innerVisitor.setOperatorContext(operator);
         streamType.accept(this.innerVisitor);
         this.builder.append(", ");
-        streamType = operator.outputStreamType(1, isOuter);
+        streamType = operator.outputStreamType(1, nesting);
         streamType.accept(this.innerVisitor);
         this.builder.append(") = ")
                 .append(this.getInputName(operator, 0))
@@ -1656,11 +1657,16 @@ public class ToRustVisitor extends CircuitVisitor {
         return this.getParent().is(DBSPCircuit.class);
     }
 
+    /** Depth of the circuit being generated: 0 for the root circuit, 1 inside a nested circuit */
+    int nesting() {
+        return this.inOuterCircuit() ? 0 : 1;
+    }
+
     @Override
     public VisitDecision preorder(DBSPPartitionedRollingAggregateOperator operator) {
         this.computeHash(operator);
         this.innerVisitor.setOperatorContext(operator);
-        DBSPType outputStreamType = operator.outputStreamType(0, this.inOuterCircuit());
+        DBSPType outputStreamType = operator.outputStreamType(0, this.nesting());
         this.writeComments(operator)
                 .append("let ")
                 .append(operator.getNodeName(this.preferHash))

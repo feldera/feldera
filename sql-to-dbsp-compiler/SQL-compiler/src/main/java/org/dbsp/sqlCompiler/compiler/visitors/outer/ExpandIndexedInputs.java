@@ -116,7 +116,7 @@ public class ExpandIndexedInputs extends Passes {
             List<Integer> keyColumnFields = getKeyFields(node);
             DBSPSourceMapOperator set = new DBSPSourceMapOperator(
                     node.getRelNode(), node.sourceName, keyColumnFields,
-                    ix, node.originalRowType, node.metadata, node.tableName, node.comment);
+                    ix, node.originalRowType, node.metadata, node.tableName, node.kind, node.comment);
             this.addOperator(set);
             if (dedupKeys) {
                 // The value no longer contains the key, so rebuild the whole row by
@@ -217,6 +217,12 @@ public class ExpandIndexedInputs extends Passes {
         public void startVisit(IDBSPInnerNode node) {
             super.startVisit(node);
             this.resolver.apply(node);
+        }
+
+        @Override
+        protected void set(IDBSPInnerNode node, IDBSPInnerNode translation) {
+            if (this.maybeGet(node) == null)
+                super.set(node, translation);
         }
 
         @Override

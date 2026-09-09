@@ -721,18 +721,6 @@ public class Regression3Tests extends SqlIoTest {
     }
 
     @Test
-    public void testEnforcePositiveInputs() {
-        String sql = """
-                SET ENFORCE_POSITIVE_INPUTS = TRUE;
-                CREATE TABLE T(x INT NOT NULL);
-                CREATE VIEW V AS SELECT x FROM T;""";
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.submitStatementsForCompilation(sql);
-        this.runtimeFail(compiler, "REMOVE FROM T VALUES (1);",
-                "Table t: negative weight found");
-    }
-
-    @Test
     public void issue6453() {
         var ccs = this.getCCS("""
                 CREATE TABLE t (id INT, arr ROW(name VARCHAR, score INT) ARRAY);

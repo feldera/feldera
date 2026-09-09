@@ -22,6 +22,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 public final class DBSPSourceMultisetOperator
         extends DBSPSourceTableOperator {
@@ -34,13 +35,14 @@ public final class DBSPSourceMultisetOperator
      * @param sourceName Calcite node for the identifier naming the table.
      * @param outputType Type of table.
      * @param name       The name of the table that this operator is created from.
+     * @param kind       Whether the source produces collections or deltas.
      * @param comment    A comment describing the operator. */
     public DBSPSourceMultisetOperator(
             CalciteRelNode node, CalciteObject sourceName,
             DBSPTypeZSet outputType, DBSPTypeStruct originalRowType,
-            TableMetadata metadata, ProgramIdentifier name, @Nullable String comment) {
+            TableMetadata metadata, ProgramIdentifier name, StreamKind kind, @Nullable String comment) {
         super(node, "source_multiset", sourceName, outputType, originalRowType, true,
-                metadata, name, comment);
+                metadata, name, kind, comment);
         Utilities.enforce(metadata.getColumnCount() == originalRowType.fields.size());
         Utilities.enforce(metadata.getColumnCount() == outputType.elementType.to(DBSPTypeTuple.class).size());
     }
@@ -62,9 +64,16 @@ public final class DBSPSourceMultisetOperator
             Utilities.enforce(newInputs.isEmpty());
             return new DBSPSourceMultisetOperator(
                     this.getRelNode(), this.sourceName, outputType.to(DBSPTypeZSet.class), this.originalRowType,
-                    this.metadata, this.tableName, this.comment).copyAnnotations(this);
+                    this.metadata, this.tableName, this.kind, this.comment).copyAnnotations(this);
         }
         return this;
+    }
+
+    @Override
+    public DBSPSourceBaseOperator withKind(StreamKind kind) {
+        return new DBSPSourceMultisetOperator(this.getRelNode(), this.sourceName, this.getOutputZSetType(),
+                this.originalRowType, this.metadata, this.tableName, kind, this.comment)
+                .copyAnnotations(this).to(DBSPSourceBaseOperator.class);
     }
 
     @Override
@@ -93,13 +102,13 @@ public final class DBSPSourceMultisetOperator
         ProgramIdentifier name = ProgramIdentifier.fromJson(Utilities.getProperty(node, "tableName"));
         TableMetadata metadata = TableMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder);
         return new DBSPSourceMultisetOperator(CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY,
-                info.getZsetType(), originalRowType, metadata, name, null)
+                info.getZsetType(), originalRowType, metadata, name, decoder.sourceKind(), null)
                 .addAnnotations(info.annotations(), DBSPSourceMultisetOperator.class);
     }
 
     @Override
     public DBSPSourceTableOperator withMetadata(TableMetadata metadata) {
         return new DBSPSourceMultisetOperator(this.getRelNode(), this.sourceName, this.getOutputZSetType(),
-                this.originalRowType, metadata, this.tableName, this.comment);
+                this.originalRowType, metadata, this.tableName, this.kind, this.comment);
     }
 }

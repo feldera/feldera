@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Objects;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 public final class DBSPAggregateLinearPostprocessRetainKeysOperator
         extends DBSPBinaryOperator
@@ -87,5 +88,12 @@ public final class DBSPAggregateLinearPostprocessRetainKeysOperator
         return new DBSPAggregateLinearPostprocessRetainKeysOperator(CalciteEmptyRel.INSTANCE, info.getIndexedZsetType(),
                 info.getFunction(), postProcess, retainKeysFunction, info.getInput(0), info.getInput(1))
                 .addAnnotations(info.annotations(), DBSPAggregateLinearPostprocessRetainKeysOperator.class);
+    }
+
+    @Override
+    protected StreamKind computeOutputKind() {
+        this.requireInputAmong(0, StreamKind.DELTA, StreamKind.COLLECTION);
+        this.requireInputAmong(1, StreamKind.WATERLINE);
+        return this.inputs.get(0).kind();
     }
 }

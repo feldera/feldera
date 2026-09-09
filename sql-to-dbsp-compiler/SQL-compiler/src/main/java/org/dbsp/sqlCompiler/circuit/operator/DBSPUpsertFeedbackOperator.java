@@ -20,7 +20,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
  * for the pre-existing key.  It exists only in the expansion circuit that the
  * monotonicity analysis (DeltaExpandOperators) builds. */
 @NonCoreIR
-public final class DBSPUpsertFeedbackOperator extends DBSPUnaryOperator implements IContainsIntegrator {
+public final class DBSPUpsertFeedbackOperator extends DBSPUnaryOperator implements IContainsIntegrator, IIncremental {
     public DBSPUpsertFeedbackOperator(CalciteRelNode node, OutputPort source) {
         super(node, "upsert_feedback", null, source.outputType(), source.isMultiset(), source);
         source.getOutputIndexedZSetType();  // asserts that the type is right

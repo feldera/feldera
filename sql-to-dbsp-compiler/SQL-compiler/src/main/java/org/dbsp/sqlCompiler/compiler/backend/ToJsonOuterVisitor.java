@@ -436,6 +436,8 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         this.preorder(circuit.to(IDBSPOuterNode.class));
         this.property("metadata");
         this.asJsonInner(circuit.metadata);
+        this.property("incremental");
+        this.stream.append(circuit.incremental);
         return VisitDecision.CONTINUE;
     }
 

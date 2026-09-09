@@ -51,12 +51,12 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ImplementNow;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
+import org.dbsp.util.Utilities;
 
 /** All optimizations applied to circuits. */
 public class CircuitOptimizer extends Passes {
     public CircuitOptimizer(DBSPCompiler compiler) {
         super("Optimizer", compiler);
-        this.checkSerialization = compiler.options.ioOptions.checkSerialization;
         this.createOptimizer();
     }
 
@@ -143,8 +143,9 @@ public class CircuitOptimizer extends Passes {
         this.add(new OptimizeWithGraph(compiler, g -> new CloneOperatorsWithFanout(compiler, g)));
         this.add(new LinearPostprocessRetainKeys(compiler));
         this.add(new ExpandIndexedInputs(compiler));
-        this.add(new Conditional(compiler, new InsertWeightValidation(compiler),
-                this.compiler.metadata::enforcePositiveInputs));
+        if (options.languageOptions.incrementalize)
+            this.add(new Conditional(compiler, new InsertWeightValidation(compiler),
+                    this.compiler.metadata::enforcePositiveInputs));
         this.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
         this.add(new DeadCode(compiler, true));
         this.add(new Simplify(compiler).circuitRewriter(true));
@@ -199,7 +200,21 @@ public class CircuitOptimizer extends Passes {
         this.add(new CircuitStatistics(compiler));
     }
 
+    /** Every pass must leave a circuit with consistent stream kinds; when the testing option
+     * asks for it, the circuit must also survive a round trip through JSON. */
+    @Override
+    protected void afterPass(DBSPCircuit circuit) {
+        new ValidateStreamKinds(this.compiler).apply(circuit);
+        if (this.compiler.options.ioOptions.checkSerialization)
+            new TestSerialize(this.compiler).apply(circuit);
+    }
+
     public DBSPCircuit optimize(DBSPCircuit input) {
-        return this.apply(input);
+        DBSPCircuit result = this.apply(input);
+        boolean requested = this.compiler.options.languageOptions.incrementalize;
+        Utilities.enforce(result.incremental == requested, () -> "The circuit is " +
+                (result.incremental ? "" : "not ") + "incremental, but the compilation " +
+                (requested ? "requires" : "does not allow") + " an incremental circuit");
+        return result;
     }
 }

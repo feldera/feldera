@@ -76,6 +76,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 
 /** As a result of the Monotonicity analysis, this pass inserts new operators:
  * - apply operators that compute the bounds that drive the controlled filters
@@ -1706,7 +1709,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             newSource = new DBSPInputMapWithWaterlineOperator(
                     multisetInput.getRelNode(), multisetInput.sourceName, keyFields,
                     indexedOutputType, multisetInput.originalRowType, multisetInput.metadata, multisetInput.tableName,
-                    minValue.closure(), timestamp.closure(k, t), max, ff, error);
+                    multisetInput.kind, minValue.closure(), timestamp.closure(k, t), max, ff, error);
             this.errorStreams.add(newSource.getOutput(1));
             waterlineOutputPort = newSource.getOutput(2);
             this.addOperator(newSource);
@@ -1795,6 +1798,31 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
 
         return result;
+    }
+
+    /** The stream a window operator integrates and the stream carrying its result. */
+    record WindowStreams(OutputPort input, OutputPort output) {}
+
+    /** A window over 'data' bounded by 'control'.  The window operator consumes deltas:
+     * a stream of collections is differentiated before it and the result integrated after it. */
+    WindowStreams window(CalciteRelNode node, boolean lowerInclusive, boolean upperInclusive,
+                         boolean lowerUnbounded, OutputPort data, OutputPort control) {
+        boolean collection = data.kind() == StreamKind.COLLECTION;
+        if (collection) {
+            DBSPDifferentiateOperator delta = new DBSPDifferentiateOperator(node, data);
+            this.addOperator(delta);
+            data = delta.outputPort();
+        }
+        DBSPWindowOperator window = new DBSPWindowOperator(
+                node, lowerInclusive, upperInclusive, lowerUnbounded, data, control);
+        this.addOperator(window);
+        OutputPort result = window.outputPort();
+        if (collection) {
+            DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, result);
+            this.addOperator(integral);
+            result = integral.outputPort();
+        }
+        return new WindowStreams(data, result);
     }
 
     DBSPControlledKeyFilterOperator createControlledKeyFilter(
@@ -1897,12 +1925,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     new DBSPTypeIndexedZSet(operator.getRelNode(),
                             fields.get(0).getType(), dataType), true, replacement.getOutput(0));
             this.addOperator(ix);
-            DBSPWindowOperator window = new DBSPWindowOperator(
-                    operator.getRelNode(), true, true,
-                    // -infinity
-                    true, ix.outputPort(), apply.outputPort());
-            this.addOperator(window);
-            replacement = new DBSPDeindexOperator(operator.getRelNode(), operator.getNode(), window.outputPort());
+            // -infinity lower bound
+            WindowStreams window = this.window(operator.getRelNode(), true, true, true,
+                    ix.outputPort(), apply.outputPort());
+            replacement = new DBSPDeindexOperator(operator.getRelNode(), operator.getNode(), window.output());
         }
 
         if (replacement == operator) {
@@ -2112,6 +2138,16 @@ public class InsertLimiters extends CircuitCloneVisitor {
             } else {
                 collected = this.errorStreams.get(0);
             }
+            // Error streams carry the errors of each step and the empty constant is a
+            // collection; the view keeps the kind the error table gave it.
+            StreamKind expected = operator.input().kind();
+            if (collected.kind() != expected) {
+                DBSPSimpleOperator adapted = expected == StreamKind.DELTA ?
+                        new DBSPDifferentiateOperator(operator.getRelNode(), collected) :
+                        new DBSPIntegrateOperator(operator.getRelNode(), collected);
+                this.addOperator(adapted);
+                collected = adapted.outputPort();
+            }
             DBSPSimpleOperator newView = operator.withInputs(Linq.list(collected), false)
                     .to(DBSPSimpleOperator.class);
             this.map(operator, newView);
@@ -2192,12 +2228,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
                                     field.getType(), dataType), true,
                             this.mapped(operator.input()));
                     this.addOperator(ix);
-                    // The upper bound must be exclusive
-                    DBSPWindowOperator window = new DBSPWindowOperator(
-                            operator.getRelNode(), true, false,
-                            // -infinity
-                            true, ix.outputPort(), apply.outputPort());
-                    this.addOperator(window);
+                    // The upper bound must be exclusive; -infinity lower bound
+                    WindowStreams window = this.window(operator.getRelNode(), true, false, true,
+                            ix.outputPort(), apply.outputPort());
                     // GC for window: the waterline delayed
                     PartiallyMonotoneTuple projection = new PartiallyMonotoneTuple(
                             // We project the key of the index node, which is always the first field.
@@ -2218,10 +2251,11 @@ public class InsertLimiters extends CircuitCloneVisitor {
                         this.addOperator(dropOp);
                         boundSource = dropOp.outputPort();
                     }
-                    this.createRetainKeys(operator.getRelNode(), ix.outputPort(), projection, boundSource);
+                    // GC the state of the window, which integrates the stream it consumes
+                    this.createRetainKeys(operator.getRelNode(), window.input(), projection, boundSource);
 
                     DBSPSimpleOperator deindex = new DBSPDeindexOperator(
-                            operator.getRelNode(), window.getFunctionNode(), window.outputPort());
+                            operator.getRelNode(), operator.getNode(), window.output());
                     this.addOperator(deindex);
                     DBSPSimpleOperator sink = operator.withInputs(Linq.list(deindex.outputPort()), false)
                             .to(DBSPSimpleOperator.class);

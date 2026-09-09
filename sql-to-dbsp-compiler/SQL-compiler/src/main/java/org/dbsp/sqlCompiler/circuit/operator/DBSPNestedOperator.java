@@ -25,6 +25,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** An operator which contains multiple other operators. */
 public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
@@ -212,8 +213,11 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
     @SuppressWarnings("unused")
     public static DBSPNestedOperator fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPNestedOperator result = new DBSPNestedOperator(CalciteEmptyRel.INSTANCE);
+        // The view declarations inside a nested operator produce deltas
+        boolean outerNested = decoder.setNested(true);
         List<DBSPOperator> operators =
                 fromJsonOuterList(node, "allOperators", decoder, DBSPOperator.class);
+        decoder.setNested(outerNested);
         for (DBSPOperator op : operators)
             result.addOperator(op);
         List<OutputPort> internalOutputs = Linq.list(Linq.map(
@@ -228,5 +232,14 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         }
         Annotations annotations = Annotations.fromJson(Utilities.getProperty(node, "annotations"));
         return result.addAnnotations(annotations, DBSPNestedOperator.class);
+    }
+
+    /** The outputs of a nested circuit carry the kind of its inputs in the enclosing
+     * circuit; the kinds inside the nested circuit are relative to its own clock. */
+    @Override
+    public StreamKind outputKind(int outputNo) {
+        if (this.inputs.isEmpty())
+            return StreamKind.COLLECTION;
+        return this.commonInputKind();
     }
 }

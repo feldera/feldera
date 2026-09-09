@@ -46,6 +46,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
         extends DBSPBinaryOperator
@@ -150,9 +151,9 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
     }
 
     @Override
-    public DBSPType outputStreamType(int outputNo, boolean outerCircuit) {
+    public DBSPType outputStreamType(int outputNo, int nesting) {
         Utilities.enforce(outputNo == 0);
-        Utilities.enforce(outerCircuit);
+        Utilities.enforce(nesting == 0);
         DBSPType[] args = new DBSPType[3];
         DBSPTypeRawTuple pfOut = this.partitioningFunction.getResultType().to(DBSPTypeRawTuple.class);
         args[0] = pfOut.tupFields[0];
@@ -165,5 +166,12 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
         }
         return new DBSPTypeUser(this.getRelNode(), DBSPTypeCode.USER,
                 "OrdPartitionedOverStream", false, args);
+    }
+
+    @Override
+    protected StreamKind computeOutputKind() {
+        this.requireInputAmong(0, StreamKind.DELTA);
+        this.requireInputAmong(1, StreamKind.WATERLINE);
+        return StreamKind.DELTA;
     }
 }

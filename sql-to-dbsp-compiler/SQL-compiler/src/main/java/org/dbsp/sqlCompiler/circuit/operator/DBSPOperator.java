@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 import org.dbsp.util.HashString;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
@@ -39,6 +40,7 @@ import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -149,6 +151,37 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
     /** Get the type of the specified output */
     public abstract DBSPType outputType(int outputNo);
 
+    /** The kind of stream produced on the specified output: delta, collection, or waterline.
+     * Computing the kind validates the kinds of the inputs against what the operator accepts. */
+    public abstract StreamKind outputKind(int outputNo);
+
+    /** Enforce that the specified input carries one of the kinds in {@code anyOf}. */
+    protected void requireInputAmong(int input, StreamKind... anyOf) {
+        OutputPort port = this.inputs.get(input);
+        StreamKind kind = port.kind();
+        Utilities.enforce(Linq.any(List.of(anyOf), k -> k == kind),
+                () -> "Operator " + this + " requires input " + input + " to be one of " +
+                        List.of(anyOf) + ", but " + port + " produces " + kind);
+    }
+
+    /** Enforce that each input carries one of the kinds in {@code anyOf}; the inputs need not
+     * agree with each other. */
+    protected void requireAllInputsAmong(StreamKind... anyOf) {
+        for (int i = 0; i < this.inputs.size(); i++)
+            this.requireInputAmong(i, anyOf);
+    }
+
+    /** The kind shared by all inputs, a delta or a collection; enforces that the inputs agree.
+     * Operators that pass the kind of their inputs through consume Z-sets, never waterlines. */
+    protected StreamKind commonInputKind() {
+        Utilities.enforce(!this.inputs.isEmpty(),
+                () -> "Operator " + this + " has no inputs to derive its stream kind from");
+        this.requireInputAmong(0, StreamKind.DELTA, StreamKind.COLLECTION);
+        StreamKind kind = this.inputs.get(0).kind();
+        this.requireAllInputsAmong(kind);
+        return kind;
+    }
+
     /** True if the specified output is a multiset */
     public abstract boolean isMultiset(int outputNumber);
 
@@ -180,8 +213,10 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
      */
     public abstract DBSPOperator withInputs(List<OutputPort> newInputs, boolean force);
 
-    public DBSPType outputStreamType(int outputNo, boolean outerCircuit) {
-        return new DBSPTypeStream(this.outputType(outputNo), outerCircuit);
+    /** The stream type of the specified output.
+     * @param nesting  Depth of the circuit containing the operator: 0 for the root circuit. */
+    public DBSPType outputStreamType(int outputNo, int nesting) {
+        return new DBSPTypeStream(this.outputType(outputNo), this.outputKind(outputNo), nesting);
     }
 
     public OutputPort getOutput(int outputNo) {

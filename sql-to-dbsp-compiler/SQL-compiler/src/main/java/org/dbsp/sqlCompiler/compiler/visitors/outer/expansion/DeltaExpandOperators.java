@@ -64,7 +64,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Expands each operator into its incremental delta form. */
+/** Expands each operator into its incremental delta form.
+ *
+ * <p>The expanded graph does not satisfy the stream typing rules.  The expansion of a join is:
+ * {@code I(a) ⋈ Δb + Δa ⋈ I(b) + Δa ⋈ Δb}, with the integrals as explicit
+ * {@link DBSPDelayedIntegralOperator}s.  Each product multiplies a
+ * collection by a delta; the join is bilinear, so the product is a delta.  No
+ * join operator has this signature. */
 public class DeltaExpandOperators extends CircuitCloneVisitor {
     public final Map<DBSPSimpleOperator, OperatorDeltaExpansion> expansion;
     public final NullablePredicate<OutputPort> isApendOnly;
@@ -75,6 +81,8 @@ public class DeltaExpandOperators extends CircuitCloneVisitor {
                                 NullableFunction<DBSPSimpleOperator, KeyPropagation.JoinDescription> joinDescriptions) {
         // Force replacement so all operators are new.
         super(compiler, true);
+        // The expanded graph is analyzed, never executed; see the class comment
+        this.preservesKinds = false;
         this.expansion = new HashMap<>();
         this.isApendOnly = isApendOnly;
         this.joinDescriptions = joinDescriptions;

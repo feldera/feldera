@@ -155,7 +155,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
             this.builder().append(n);
             this.builder().append(": &");
             boolean inputTopLevel = this.operator.is(DBSPDeltaOperator.class) || this.topLevel;
-            DBSPType streamType = port.streamType(inputTopLevel);
+            DBSPType streamType = port.streamType(inputTopLevel ? 0 : 1);
             streamType.accept(visitor.innerVisitor);
             this.builder().append(",").newline();
         }
@@ -179,7 +179,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
                 if (operator.is(DBSPSourceBaseOperator.class)) {
                     this.builder().append("(");
                 }
-                DBSPType streamType = operator.outputStreamType(0, this.topLevel);
+                DBSPType streamType = operator.outputStreamType(0, this.topLevel ? 0 : 1);
                 streamType.accept(visitor.innerVisitor);
 
                 if (operator.is(IInputOperator.class)) {
@@ -191,7 +191,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
             } else {
                 this.builder().append("(");
                 for (int i = 0; i < operator.outputCount(); i++) {
-                    DBSPType streamType = operator.outputStreamType(i, this.topLevel);
+                    DBSPType streamType = operator.outputStreamType(i, this.topLevel ? 0 : 1);
                     streamType.accept(visitor.innerVisitor);
                     this.builder().append(",");
                 }

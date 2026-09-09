@@ -20,6 +20,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** This operator produces an IndexedZSet as a result, indexed on the table keys. */
 public final class DBSPSourceMapOperator
@@ -38,14 +39,15 @@ public final class DBSPSourceMapOperator
      * @param keyFields  Fields of the input row which compose the key.
      * @param outputType Type of output produced.
      * @param name       The name of the table that this operator is created from.
+     * @param kind       Whether the source produces collections or deltas.
      * @param comment    A comment describing the operator.
      */
     public DBSPSourceMapOperator(
             CalciteRelNode node, CalciteObject sourceName, List<Integer> keyFields,
             DBSPTypeIndexedZSet outputType, DBSPTypeStruct originalRowType,
-            TableMetadata metadata, ProgramIdentifier name, @Nullable String comment) {
+            TableMetadata metadata, ProgramIdentifier name, StreamKind kind, @Nullable String comment) {
         super(node, "source_map", sourceName, outputType, originalRowType, false,
-                metadata, name, comment);
+                metadata, name, kind, comment);
         this.keyFields = keyFields;
     }
 
@@ -71,9 +73,16 @@ public final class DBSPSourceMapOperator
             Utilities.enforce(newInputs.isEmpty());
             return new DBSPSourceMapOperator(this.getRelNode(), this.sourceName,
                     this.keyFields, outputType.to(DBSPTypeIndexedZSet.class), this.originalRowType,
-                    this.metadata, this.tableName, this.comment).copyAnnotations(this);
+                    this.metadata, this.tableName, this.kind, this.comment).copyAnnotations(this);
         }
         return this;
+    }
+
+    @Override
+    public DBSPSourceBaseOperator withKind(StreamKind kind) {
+        return new DBSPSourceMapOperator(this.getRelNode(), this.sourceName, this.keyFields,
+                this.getOutputIndexedZSetType(), this.originalRowType, this.metadata, this.tableName, kind, this.comment)
+                .copyAnnotations(this).to(DBSPSourceBaseOperator.class);
     }
 
     @Override
@@ -89,7 +98,7 @@ public final class DBSPSourceMapOperator
     @Override
     public DBSPSourceTableOperator withMetadata(TableMetadata metadata) {
         return new DBSPSourceMapOperator(this.getRelNode(), this.sourceName, this.keyFields,
-                this.getOutputIndexedZSetType(), this.originalRowType, metadata, this.tableName, this.comment);
+                this.getOutputIndexedZSetType(), this.originalRowType, metadata, this.tableName, this.kind, this.comment);
     }
 
     @Override
@@ -115,7 +124,7 @@ public final class DBSPSourceMapOperator
         List<Integer> keyFields = Linq.list(Linq.map(
                 Utilities.getProperty(node, "keyFields").elements(), JsonNode::asInt));
         return new DBSPSourceMapOperator(CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY, keyFields,
-                info.getIndexedZsetType(), originalRowType, metadata, name, null)
+                info.getIndexedZsetType(), originalRowType, metadata, name, decoder.sourceKind(), null)
                 .addAnnotations(info.annotations(), DBSPSourceMapOperator.class);
     }
 }

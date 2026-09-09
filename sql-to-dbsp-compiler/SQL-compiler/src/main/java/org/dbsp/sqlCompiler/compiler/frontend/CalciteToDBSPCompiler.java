@@ -238,6 +238,7 @@ import java.util.Set;
 import java.util.function.Consumer;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.*;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /**
  * The compiler is stateful: it compiles a sequence of SQL statements
@@ -267,7 +268,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
      */
     public CalciteToDBSPCompiler(CompilerOptions options, DBSPCompiler compiler,
                                  ProgramMetadata metadata) {
-        this.circuit = new DBSPCircuit(compiler.metadata);
+        this.circuit = new DBSPCircuit(compiler.metadata, false);
         this.compiler = compiler;
         this.nodeOperator = new HashMap<>();
         this.tableContents = new TableContents(compiler);
@@ -3402,7 +3403,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 tableName, metadata, create.foreignKeys, expectedSize, materialized, appendOnly, skipUnusedColumns);
         DBSPSourceMultisetOperator result = new DBSPSourceMultisetOperator(
                 new RelAnd(), identifier, TypeCompiler.makeZSet(rowType), originalRowType,
-                tableMeta, tableName, def.getStatement());
+                tableMeta, tableName, StreamKind.COLLECTION, def.getStatement());
         this.addOperator(result);
         this.metadata.addTable(create);
         return result;
@@ -3420,7 +3421,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 tableName, metadata, new ArrayList<>(), null, false, false, null);
         DBSPViewDeclarationOperator result = new DBSPViewDeclarationOperator(
                 create.getCalciteObject(), identifier, TypeCompiler.makeZSet(rowType), originalRowType,
-                tableMeta, tableName);
+                tableMeta, tableName, StreamKind.COLLECTION);
         this.addOperator(result);
         this.metadata.addTable(create);
         return result;

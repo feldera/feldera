@@ -27,6 +27,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Random;
 import java.util.function.BiFunction;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 
 /** Regression tests that executed in incremental mode */
 public class IncrementalRegression2Tests extends SqlIoTest {
@@ -954,5 +955,18 @@ public class IncrementalRegression2Tests extends SqlIoTest {
                 Assert.assertEquals(1, this.filters);
             }
         });
+    }
+
+    /** The weight validator exists only in incremental circuits. */
+    @Test
+    public void testEnforcePositiveInputs() {
+        String sql = """
+                SET ENFORCE_POSITIVE_INPUTS = TRUE;
+                CREATE TABLE T(x INT NOT NULL);
+                CREATE VIEW V AS SELECT x FROM T;""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.submitStatementsForCompilation(sql);
+        this.runtimeFail(compiler, "REMOVE FROM T VALUES (1);",
+                "Table t: negative weight found");
     }
 }

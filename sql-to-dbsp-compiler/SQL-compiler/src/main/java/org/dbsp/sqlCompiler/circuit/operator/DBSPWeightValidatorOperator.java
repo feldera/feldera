@@ -13,6 +13,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** Operator that panics at runtime if the running integral of its input stream
  * contains any record with a non-positive weight. */
@@ -51,5 +52,11 @@ public final class DBSPWeightValidatorOperator extends DBSPUnaryOperator {
         String message = Utilities.getStringProperty(node, "message");
         return new DBSPWeightValidatorOperator(CalciteEmptyRel.INSTANCE, info.getInput(0), message)
                 .addAnnotations(info.annotations(), DBSPWeightValidatorOperator.class);
+    }
+
+    @Override
+    protected StreamKind computeOutputKind() {
+        this.requireAllInputsAmong(StreamKind.DELTA);
+        return StreamKind.DELTA;
     }
 }

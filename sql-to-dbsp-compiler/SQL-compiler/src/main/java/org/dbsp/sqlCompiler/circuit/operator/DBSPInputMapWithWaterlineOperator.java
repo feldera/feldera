@@ -25,6 +25,7 @@ import org.dbsp.util.Utilities;
 
 import java.util.List;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** Corresponds to input_map_with_waterline operator from DBSP.
  * This operator has 3 outputs: the data, the waterline, and the error stream
@@ -34,6 +35,8 @@ public class DBSPInputMapWithWaterlineOperator
         implements IMultiOutput, IInputMapOperator, IInputOperator, IStateful {
     // Fields that belong normally to SourceTableOperators (which we don't derive from)
     public final ProgramIdentifier tableName;
+    /** Kind of the data output: that of the source this operator replaces. */
+    public final StreamKind kind;
     public final DBSPTypeStruct originalRowType;
     public final CalciteObject sourceName;
     // Note: the metadata is not transformed after being set.
@@ -54,10 +57,11 @@ public class DBSPInputMapWithWaterlineOperator
 
     public DBSPInputMapWithWaterlineOperator(
             CalciteRelNode node, CalciteObject sourceName, List<Integer> keyFields, DBSPTypeIndexedZSet outputType,
-            DBSPTypeStruct originalRowType, TableMetadata metadata, ProgramIdentifier name,
+            DBSPTypeStruct originalRowType, TableMetadata metadata, ProgramIdentifier name, StreamKind kind,
             DBSPClosureExpression initializer, DBSPClosureExpression timestamp, DBSPClosureExpression lub,
             DBSPClosureExpression filter, DBSPClosureExpression error) {
         super(node);
+        this.kind = kind;
         this.sourceName = sourceName;
         this.outputType = outputType;
         this.tableName = name;
@@ -203,13 +207,26 @@ public class DBSPInputMapWithWaterlineOperator
         List<Integer> keyFields = Linq.list(Linq.map(
                 Utilities.getProperty(node, "keyFields").elements(), JsonNode::asInt));
         return new DBSPInputMapWithWaterlineOperator(CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY, keyFields,
-                outputType, originalRowType, metadata, name, initializer, timestamp, lub, filter, error)
+                outputType, originalRowType, metadata, name, decoder.sourceKind(),
+                initializer, timestamp, lub, filter, error)
                 .addAnnotations(Annotations.fromJson(Utilities.getProperty(node, "annotations")), DBSPInputMapWithWaterlineOperator.class);
     }
 
     public DBSPInputMapWithWaterlineOperator withMetadata(TableMetadata metadata) {
         return new DBSPInputMapWithWaterlineOperator(this.getRelNode(), this.sourceName, this.keyFields,
-                this.getOutputIndexedZSetType(), this.originalRowType, metadata, this.tableName,
+                this.getOutputIndexedZSetType(), this.originalRowType, metadata, this.tableName, this.kind,
                 this.initializer, this.timestamp, this.lub, this.filter, this.error);
+    }
+
+    /** The data output has the kind of the source this operator replaces;
+     * the errors of each step form a delta. */
+    @Override
+    public StreamKind outputKind(int outputNo) {
+        return switch (outputNo) {
+            case 0 -> this.kind;
+            case 1 -> StreamKind.DELTA;
+            case 2 -> StreamKind.WATERLINE;
+            default -> throw new InternalCompilerError("Unexpected output " + outputNo, this);
+        };
     }
 }
