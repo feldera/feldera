@@ -140,6 +140,27 @@ fn format_datafusion_error(
     }
 }
 
+/// Render up to [`DESCRIBED_PATHS`] of `paths` for a log message, followed by a
+/// count of the rest.
+///
+/// A commit can add hundreds of files, and the description it produces is
+/// repeated on every retry of the read. Spelling out every path there once
+/// cost a customer a 7.5 KB log line every 44 seconds, which pushed everything
+/// else out of the pipeline's log buffer.
+fn describe_paths<'a>(paths: impl IntoIterator<Item = &'a str>) -> String {
+    let mut paths = paths.into_iter();
+    let shown: Vec<&str> = paths.by_ref().take(DESCRIBED_PATHS).collect();
+    let rest = paths.count();
+    let mut description = format!("{shown:?}");
+    if rest > 0 {
+        description.push_str(&format!(" and {rest} more"));
+    }
+    description
+}
+
+/// How many file paths a read description names before summarizing the rest.
+const DESCRIBED_PATHS: usize = 3;
+
 /// Whether a `table_builder.load()` failure is transient and worth retrying.
 ///
 /// There is no strongly-typed way to identify these across the transitive
@@ -3340,8 +3361,8 @@ impl DeltaTableInputEndpointInner {
         // protocol requires a reader that finds change data files to take the
         // row-level changes from them alone. Reading both would double-count.
         let description = format!(
-            "change data files {:?}",
-            change_files.iter().map(|f| &f.path).collect::<Vec<_>>()
+            "change data files {}",
+            describe_paths(change_files.iter().map(|f| f.path.as_str()))
         );
 
         // Group files based on the values of partition columns (extracted from filenames).
@@ -3576,11 +3597,11 @@ impl DeltaTableInputEndpointInner {
         }
 
         let description = format!(
-            "CDC transaction with {} adds {:?} and {} removes {:?}",
+            "CDC transaction with {} adds {} and {} removes {}",
             adds.len(),
-            adds.iter().map(|a| &a.path).collect::<Vec<_>>(),
+            describe_paths(adds.iter().map(|a| a.path.as_str())),
             removes_by_path.len(),
-            removes_by_path.keys().collect::<Vec<_>>(),
+            describe_paths(removes_by_path.keys().copied()),
         );
 
         // Drop add/remove pairs on the same path (metadata-only rewrites).
@@ -5163,6 +5184,44 @@ mod change_data_feed_state_tests {
                 metadata(&[(ENABLE_CHANGE_DATA_FEED, "true")]),
             ]),
             Some(true)
+        );
+    }
+}
+
+#[cfg(test)]
+mod describe_paths_tests {
+    use super::*;
+
+    /// Up to `DESCRIBED_PATHS` paths are named in full.
+    #[test]
+    fn short_lists_are_named_in_full() {
+        assert_eq!(describe_paths(Vec::<&str>::new()), "[]");
+        assert_eq!(describe_paths(vec!["a", "b"]), r#"["a", "b"]"#);
+        assert_eq!(
+            describe_paths(vec!["a", "b", "c"]),
+            r#"["a", "b", "c"]"#,
+            "a list at the limit must not claim a remainder"
+        );
+    }
+
+    /// Past the limit the description stays a fixed size whatever the commit
+    /// touched, and still says how much it left out.
+    #[test]
+    fn long_lists_are_summarized() {
+        assert_eq!(
+            describe_paths(vec!["a", "b", "c", "d"]),
+            r#"["a", "b", "c"] and 1 more"#
+        );
+        let many: Vec<String> = (0..100).map(|i| format!("part-{i:05}.parquet")).collect();
+        let description = describe_paths(many.iter().map(String::as_str));
+        assert!(
+            description.ends_with("and 97 more"),
+            "expected a remainder count; got: {description}"
+        );
+        assert!(
+            description.len() < 120,
+            "the description must stay short; got {} chars",
+            description.len()
         );
     }
 }
