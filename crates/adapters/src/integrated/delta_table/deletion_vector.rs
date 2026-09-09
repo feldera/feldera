@@ -10,6 +10,7 @@
 //! thus fully applied (deleted rows are never emitted), and memory stays bounded
 //! to one batch.
 
+use crate::integrated::delta_table::ReadSchema;
 use anyhow::{Result as AnyResult, anyhow};
 use arrow::array::{Array, ArrayRef, StructArray, new_null_array};
 use arrow::compute::cast;
@@ -31,7 +32,9 @@ use deltalake::logstore::LogStore;
 use deltalake::{DeltaTable, ObjectStore, Path};
 use futures_util::StreamExt;
 use parquet::arrow::ProjectionMask;
-use parquet::arrow::arrow_reader::{RowSelection, RowSelector};
+use parquet::arrow::arrow_reader::{
+    ArrowReaderMetadata, ArrowReaderOptions, RowSelection, RowSelector,
+};
 use parquet::arrow::async_reader::{ParquetObjectReader, ParquetRecordBatchStreamBuilder};
 use roaring::RoaringTreemap;
 use std::collections::{HashMap, HashSet};
@@ -121,17 +124,18 @@ pub(crate) async fn filtered_parquet_table(
     store: Arc<dyn ObjectStore>,
     path: Path,
     bitmap: RoaringTreemap,
-    logical_schema: SchemaRef,
+    logical_schema: ReadSchema,
     mode: ReadMode,
 ) -> AnyResult<Arc<dyn TableProvider>> {
+    let schema = Arc::clone(logical_schema.schema());
     let partition = MaskedParquetPartition {
         store,
         path,
         bitmap: Arc::new(bitmap),
-        schema: Arc::clone(&logical_schema),
+        schema: logical_schema,
         mode,
     };
-    let provider = StreamingTable::try_new(logical_schema, vec![Arc::new(partition)])
+    let provider = StreamingTable::try_new(schema, vec![Arc::new(partition)])
         .map_err(|e| anyhow!("failed to build DV-filtered streaming table: {e}"))?;
     Ok(Arc::new(provider))
 }
@@ -166,7 +170,7 @@ struct MaskedParquetPartition {
     bitmap: Arc<RoaringTreemap>,
     /// The Delta logical schema; may differ from the file's own schema under
     /// schema evolution.
-    schema: SchemaRef,
+    schema: ReadSchema,
     /// Which rows to read, relative to `bitmap`.
     mode: ReadMode,
 }
@@ -382,26 +386,41 @@ fn bitmap_to_selection(bitmap: &RoaringTreemap, total_rows: u64, mode: ReadMode)
 /// batch stream. Ours opens the Parquet file and masks deleted rows on the fly.
 impl PartitionStream for MaskedParquetPartition {
     fn schema(&self) -> &SchemaRef {
-        &self.schema
+        self.schema.schema()
     }
 
     fn execute(&self, _ctx: Arc<TaskContext>) -> SendableRecordBatchStream {
         let store = Arc::clone(&self.store);
         let path = self.path.clone();
         let bitmap = Arc::clone(&self.bitmap);
-        let logical_schema = Arc::clone(&self.schema);
+        let logical_schema = Arc::clone(self.schema.schema());
         let mode = self.mode;
 
         let stream = try_stream! {
-            let reader = ParquetObjectReader::new(store, path.clone());
-            let builder = ParquetRecordBatchStreamBuilder::new(reader)
+            let probe = ParquetRecordBatchStreamBuilder::new(
+                    ParquetObjectReader::new(Arc::clone(&store), path.clone()))
                 .await
                 .map_err(|e| DataFusionError::External(
                     format!("failed to open Parquet file '{path}': {e}").into()))?;
+            // Decode string and binary columns straight into view arrays, the
+            // same types `physical_read_schema` declares. Without this the
+            // decoder builds 32-bit-offset arrays, which cap one batch at 2 GiB
+            // per column, and `project_to_logical` then pays to cast them.
+            // Rebuilding the reader metadata reuses the footer read above.
+            let metadata = ArrowReaderMetadata::try_new(
+                    Arc::clone(probe.metadata()),
+                    ArrowReaderOptions::new()
+                        .with_schema(Arc::clone(ReadSchema::new(probe.schema()).schema())))
+                .map_err(|e| DataFusionError::External(
+                    format!("failed to read Parquet file '{path}' as view types: {e}").into()))?;
             // `num_rows()` is `i64` because Parquet's metadata is signed
             // throughout; it is non-negative for any file whose footer parsed
             // (which it did, just above).
-            let total_rows = builder.metadata().file_metadata().num_rows() as u64;
+            let total_rows = metadata.metadata().file_metadata().num_rows() as u64;
+            let builder = ParquetRecordBatchStreamBuilder::new_with_metadata(
+                ParquetObjectReader::new(store, path.clone()),
+                metadata,
+            );
             // Decode only the columns the logical schema names.
             let mask = logical_projection_mask(&builder, &logical_schema);
             // Pick rows inside the decoder: skip the flagged rows (apply a DV) or
@@ -424,7 +443,7 @@ impl PartitionStream for MaskedParquetPartition {
         };
 
         Box::pin(RecordBatchStreamAdapter::new(
-            Arc::clone(&self.schema),
+            Arc::clone(self.schema.schema()),
             stream,
         ))
     }
@@ -433,7 +452,7 @@ impl PartitionStream for MaskedParquetPartition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arrow::array::{Array, Int32Array, Int64Array, StringArray, StructArray};
+    use arrow::array::{Array, Int32Array, Int64Array, StringArray, StringViewArray, StructArray};
     use arrow::datatypes::{
         DataType as ArrowDataType, Field as ArrowField, Fields as ArrowFields,
         Schema as ArrowSchema,
@@ -838,7 +857,7 @@ mod tests {
 
         // What `change_data_read_schema` builds: the table's columns plus
         // `_change_type`, and nothing else.
-        let declared = Arc::new(ArrowSchema::new(vec![
+        let declared = ReadSchema::new(&ArrowSchema::new(vec![
             ArrowField::new("id", ArrowDataType::Int64, false),
             ArrowField::new("name", ArrowDataType::Utf8, false),
             ArrowField::new("_change_type", ArrowDataType::Utf8, true),
@@ -849,7 +868,7 @@ mod tests {
             store,
             Path::from("cdc.parquet"),
             RoaringTreemap::new(),
-            Arc::clone(&declared),
+            declared.clone(),
             ReadMode::NotInBitmap,
         )
         .await
@@ -865,7 +884,7 @@ mod tests {
         for batch in &batches {
             assert_eq!(
                 batch.schema().as_ref(),
-                declared.as_ref(),
+                declared.schema().as_ref(),
                 "`__is_cdc` must be pruned: the declared schema drives the read"
             );
             let ids = batch
@@ -876,7 +895,7 @@ mod tests {
             let kinds = batch
                 .column(2)
                 .as_any()
-                .downcast_ref::<StringArray>()
+                .downcast_ref::<StringViewArray>()
                 .unwrap();
             for row in 0..batch.num_rows() {
                 got.push((ids.value(row), kinds.value(row).to_string()));
@@ -923,7 +942,7 @@ mod tests {
         writer.write(&batch).unwrap();
         writer.close().unwrap();
 
-        let logical = Arc::new(ArrowSchema::new(vec![
+        let logical = ReadSchema::new(&ArrowSchema::new(vec![
             ArrowField::new("id", ArrowDataType::Int64, true),
             ArrowField::new("added_later", ArrowDataType::Utf8, true),
         ]));
@@ -934,7 +953,7 @@ mod tests {
             store,
             Path::from("data.parquet"),
             deleted,
-            Arc::clone(&logical),
+            logical.clone(),
             ReadMode::NotInBitmap,
         )
         .await
@@ -950,7 +969,7 @@ mod tests {
         for batch in &batches {
             assert_eq!(
                 batch.schema().as_ref(),
-                logical.as_ref(),
+                logical.schema().as_ref(),
                 "batch schema must equal the declared logical schema"
             );
             let id = batch
@@ -996,7 +1015,7 @@ mod tests {
         writer.write(&batch).unwrap();
         writer.close().unwrap();
 
-        let logical = Arc::new(ArrowSchema::new(vec![
+        let logical = ReadSchema::new(&ArrowSchema::new(vec![
             ArrowField::new("id", ArrowDataType::Int64, true),
             ArrowField::new("added_later", ArrowDataType::Utf8, true),
         ]));
@@ -1009,7 +1028,7 @@ mod tests {
             store,
             Path::from("data.parquet"),
             selected,
-            Arc::clone(&logical),
+            logical.clone(),
             ReadMode::InBitmap,
         )
         .await
@@ -1023,7 +1042,7 @@ mod tests {
 
         let mut got: Vec<i64> = Vec::new();
         for batch in &batches {
-            assert_eq!(batch.schema().as_ref(), logical.as_ref());
+            assert_eq!(batch.schema().as_ref(), logical.schema().as_ref());
             let id = batch
                 .column(0)
                 .as_any()

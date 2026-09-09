@@ -3,23 +3,27 @@ use crate::format::InputBuffer;
 use crate::integrated::delta_table::deletion_vector::{
     ReadMode, filtered_parquet_table, read_deletion_vector,
 };
-use crate::integrated::delta_table::{delta_input_serde_config, register_storage_handlers};
+use crate::integrated::delta_table::{
+    ReadSchema, delta_input_serde_config, register_storage_handlers,
+};
 use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand, IntegratedInputEndpoint};
 use crate::{ControllerError, InputConsumer, InputReader, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
-use arrow::array::{Array, ArrayData, ArrayRef, BooleanArray, StringArray, make_array};
+use arrow::array::{Array, ArrayData, ArrayRef, AsArray, BooleanArray, make_array};
 use arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, FieldRef, Schema as ArrowSchema, SchemaRef,
 };
 use chrono::{DateTime, Utc};
 use datafusion::catalog::TableProvider;
 use datafusion::common::arrow::array::RecordBatch;
+use datafusion::common::tree_node::{TransformedResult, TreeNode};
 use datafusion::common::{DFSchema, DataFusionError, ScalarValue};
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
 use datafusion::execution::memory_pool::MemoryLimit;
+use datafusion::optimizer::analyzer::type_coercion::TypeCoercionRewriter;
 use datafusion::physical_plan::{PhysicalExpr, displayable};
 use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
 use dbsp::circuit::tokio::TOKIO;
@@ -1167,6 +1171,21 @@ fn reserved_change_type_column(schema: &ArrowSchema) -> Option<&str> {
         .find(|name| name.eq_ignore_ascii_case(CHANGE_TYPE_COLUMN))
 }
 
+/// Iterate a string column as `Option<&str>`, whichever width of string array
+/// the read produced.
+///
+/// A read schema asks for view types ([`ReadSchema`]), so a string column
+/// arrives as `Utf8View`; a reader that binds `Utf8` cannot read it. `None`
+/// means the column is not a string at all.
+fn string_column_iter(column: &ArrayRef) -> Option<Box<dyn Iterator<Item = Option<&str>> + '_>> {
+    match column.data_type() {
+        ArrowDataType::Utf8 => Some(Box::new(column.as_string::<i32>().iter())),
+        ArrowDataType::LargeUtf8 => Some(Box::new(column.as_string::<i64>().iter())),
+        ArrowDataType::Utf8View => Some(Box::new(column.as_string_view().iter())),
+        _ => None,
+    }
+}
+
 /// Split `batch` into its table columns and one polarity per row, taken from the
 /// change feed's [`CHANGE_TYPE_COLUMN`].
 ///
@@ -1180,15 +1199,14 @@ fn take_change_type_polarities(mut batch: RecordBatch) -> AnyResult<(RecordBatch
         )
     })?;
     let column = batch.remove_column(index);
-    let change_types = column.as_any().downcast_ref::<StringArray>().ok_or_else(|| {
+    let change_types = string_column_iter(&column).ok_or_else(|| {
         anyhow!(
-            "internal error reading the Delta change data feed; {REPORT_ERROR}: column '{CHANGE_TYPE_COLUMN}' has type {:?}, expected Utf8",
+            "internal error reading the Delta change data feed; {REPORT_ERROR}: column '{CHANGE_TYPE_COLUMN}' has type {:?}, expected a string column",
             column.data_type()
         )
     })?;
 
     let polarities = change_types
-        .into_iter()
         .map(|change_type| match change_type {
             Some("insert") | Some("update_postimage") => Ok(true),
             Some("delete") | Some("update_preimage") => Ok(false),
@@ -2592,6 +2610,18 @@ impl DeltaTableInputEndpointInner {
                 anyhow!("invalid 'cdc_delete_filter' expression '{delete_filter}': {e}")
             })?;
 
+        // Coerce the expression's types the way the logical analyzer does for a
+        // planned predicate. Compiling a physical expression directly skips that
+        // pass, and then a literal keeps whatever type the parser gave it: a
+        // `Utf8` literal compared against a `Utf8View` column reaches the Arrow
+        // kernel as "Invalid comparison operation: Utf8View == Utf8".
+        let filter_expr = filter_expr
+            .rewrite(&mut TypeCoercionRewriter::new(schema))
+            .data()
+            .map_err(|e| {
+                anyhow!("cannot compile 'cdc_delete_filter' expression '{delete_filter}': {e}")
+            })?;
+
         let physical_expr = DefaultPhysicalPlanner::default()
             .create_physical_expr(&filter_expr, schema, &self.datafusion.state())
             .map_err(|e| {
@@ -3398,7 +3428,7 @@ impl DeltaTableInputEndpointInner {
         &self,
         table: &DeltaTable,
         group: &[&AddCdcAction],
-        read_schema: &SchemaRef,
+        read_schema: &ReadSchema,
         description: &str,
     ) -> AnyResult<DataFrame> {
         let read = |provider: Arc<dyn TableProvider>| {
@@ -3449,16 +3479,16 @@ impl DeltaTableInputEndpointInner {
     /// Arrow schema for reading a change data file: the table's own columns as
     /// [`physical_read_schema`](Self::physical_read_schema) names them, plus the
     /// [`CHANGE_TYPE_COLUMN`] that only these files carry.
-    fn change_data_read_schema(&self) -> AnyResult<SchemaRef> {
+    fn change_data_read_schema(&self) -> AnyResult<ReadSchema> {
         let table_schema = self.physical_read_schema(|_| true)?;
-        let mut fields: Vec<FieldRef> = table_schema.fields().to_vec();
+        let mut fields: Vec<FieldRef> = table_schema.schema().fields().to_vec();
         fields.push(Arc::new(ArrowField::new(
             CHANGE_TYPE_COLUMN,
             ArrowDataType::Utf8,
             true,
         )));
-        Ok(Arc::new(
-            ArrowSchema::new(fields).with_metadata(table_schema.metadata().clone()),
+        Ok(ReadSchema::new(
+            &ArrowSchema::new(fields).with_metadata(table_schema.schema().metadata().clone()),
         ))
     }
 
@@ -3864,7 +3894,10 @@ impl DeltaTableInputEndpointInner {
     ///
     /// Partition columns are always excluded: Delta never stores them in the data
     /// file.
-    fn physical_read_schema(&self, keep: impl Fn(&str) -> bool) -> AnyResult<SchemaRef> {
+    ///
+    /// The result is a [`ReadSchema`], so string and binary columns are read as
+    /// view types and a decoded batch is not capped at 2 GiB per column.
+    fn physical_read_schema(&self, keep: impl Fn(&str) -> bool) -> AnyResult<ReadSchema> {
         let logical = self.logical_schema()?;
         let partition_columns = self.partition_columns()?;
         let fields: Vec<FieldRef> = logical
@@ -3873,8 +3906,8 @@ impl DeltaTableInputEndpointInner {
             .filter(|f| keep(f.name()) && !partition_columns.contains(f.name()))
             .map(field_to_physical)
             .collect();
-        Ok(Arc::new(
-            ArrowSchema::new(fields).with_metadata(logical.metadata().clone()),
+        Ok(ReadSchema::new(
+            &ArrowSchema::new(fields).with_metadata(logical.metadata().clone()),
         ))
     }
 
@@ -3918,7 +3951,7 @@ impl DeltaTableInputEndpointInner {
     async fn create_parquet_table(
         &self,
         urls: Vec<ListingTableUrl>,
-        schema: SchemaRef,
+        schema: ReadSchema,
         description: &str,
     ) -> AnyResult<ListingTable> {
         let listing_options = ListingOptions::new(Arc::new(ParquetFormat::default()))
@@ -3926,7 +3959,7 @@ impl DeltaTableInputEndpointInner {
 
         let table_config = ListingTableConfig::new_with_multi_paths(urls)
             .with_listing_options(listing_options)
-            .with_schema(schema);
+            .with_schema(Arc::clone(schema.schema()));
 
         ListingTable::try_new(table_config).map_err(|e| {
             anyhow!("internal error processing {description}; {REPORT_ERROR}; error creating Parquet table: {e}")
@@ -3955,7 +3988,7 @@ impl DeltaTableInputEndpointInner {
         path: &str,
         bitmap: RoaringTreemap,
         mode: ReadMode,
-        read_schema: SchemaRef,
+        read_schema: ReadSchema,
     ) -> AnyResult<Arc<dyn TableProvider>> {
         // delta-rs already decoded the log's URL-encoded path, so `path` is the
         // object-store key as written.
@@ -4409,24 +4442,79 @@ mod format_datafusion_error_tests {
 #[cfg(test)]
 mod change_type_tests {
     use super::*;
-    use arrow::array::{Int64Array, StringArray};
+    use arrow::array::{Int64Array, LargeStringArray, StringArray, StringViewArray};
     use std::sync::Arc;
 
+    /// Every width of string array a read can produce for `_change_type`.
+    const STRING_TYPES: [ArrowDataType; 3] = [
+        ArrowDataType::Utf8,
+        ArrowDataType::LargeUtf8,
+        ArrowDataType::Utf8View,
+    ];
+
     /// A batch of `id` values tagged with `change_types`, shaped like a change
-    /// data file: the table's columns followed by `_change_type`.
-    fn batch(change_types: Vec<Option<&str>>) -> RecordBatch {
+    /// data file: the table's columns followed by `_change_type` stored as
+    /// `string_type`.
+    fn batch_typed(change_types: Vec<Option<&str>>, string_type: &ArrowDataType) -> RecordBatch {
         let ids: Vec<i64> = (0..change_types.len() as i64).collect();
+        let column: ArrayRef = match string_type {
+            ArrowDataType::Utf8 => Arc::new(StringArray::from(change_types)),
+            ArrowDataType::LargeUtf8 => Arc::new(LargeStringArray::from(change_types)),
+            ArrowDataType::Utf8View => Arc::new(StringViewArray::from(change_types)),
+            other => panic!("{other:?} is not a string type"),
+        };
         RecordBatch::try_new(
             Arc::new(ArrowSchema::new(vec![
                 ArrowField::new("id", ArrowDataType::Int64, false),
-                ArrowField::new(CHANGE_TYPE_COLUMN, ArrowDataType::Utf8, true),
+                ArrowField::new(CHANGE_TYPE_COLUMN, string_type.clone(), true),
             ])),
-            vec![
-                Arc::new(Int64Array::from(ids)),
-                Arc::new(StringArray::from(change_types)),
-            ],
+            vec![Arc::new(Int64Array::from(ids)), column],
         )
         .unwrap()
+    }
+
+    fn batch(change_types: Vec<Option<&str>>) -> RecordBatch {
+        batch_typed(change_types, &ArrowDataType::Utf8)
+    }
+
+    /// The polarity mapping reads `_change_type` at any string width. A read
+    /// schema asks for view types, so this column arrives as `Utf8View` and a
+    /// reader bound to `Utf8` would reject every change data file.
+    #[test]
+    fn change_types_read_at_every_string_width() {
+        for string_type in STRING_TYPES {
+            let (batch, polarities) = take_change_type_polarities(batch_typed(
+                vec![Some("insert"), Some("delete")],
+                &string_type,
+            ))
+            .unwrap_or_else(|e| panic!("{string_type:?} column must be readable: {e}"));
+
+            assert_eq!(polarities, vec![true, false], "at {string_type:?}");
+            assert_eq!(batch.num_rows(), 2, "at {string_type:?}");
+        }
+    }
+
+    /// A column that is not a string at all is an error naming its type, so
+    /// widening the reader did not lose the type check.
+    #[test]
+    fn non_string_change_type_column_is_an_error() {
+        let batch = RecordBatch::try_new(
+            Arc::new(ArrowSchema::new(vec![ArrowField::new(
+                CHANGE_TYPE_COLUMN,
+                ArrowDataType::Int64,
+                true,
+            )])),
+            vec![Arc::new(Int64Array::from(vec![1i64]))],
+        )
+        .unwrap();
+
+        let error = take_change_type_polarities(batch)
+            .expect_err("a non-string change type column must not be ingested")
+            .to_string();
+        assert!(
+            error.contains(CHANGE_TYPE_COLUMN) && error.contains("Int64"),
+            "the error must name the column and its type; got: {error}"
+        );
     }
 
     /// Each `_change_type` the protocol defines maps to a polarity: `insert` and
@@ -4654,7 +4742,9 @@ mod is_skippable_tests {
 #[cfg(test)]
 mod column_mapping_tests {
     use super::{field_to_physical, nested_physical_to_logical, relabel_nested_columns};
-    use arrow::array::{ArrayRef, ListArray, RecordBatch, StringArray, StructArray};
+    use arrow::array::{
+        ArrayRef, ListArray, RecordBatch, StringArray, StringViewArray, StructArray,
+    };
     use arrow::buffer::OffsetBuffer;
     use arrow::datatypes::{DataType, Field, Fields, Schema};
     use std::collections::HashMap;
@@ -4666,6 +4756,45 @@ mod column_mapping_tests {
             "delta.columnMapping.physicalName".to_string(),
             physical.to_string(),
         )]))
+    }
+
+    /// Relabeling rebuilds each column's `ArrayData` with renamed fields, and a
+    /// view array's layout is several data buffers behind a buffer of views
+    /// rather than one values buffer behind offsets. Since reads ask for view
+    /// types, a column-mapped nested string column arrives here as one, so the
+    /// rebuild has to carry that layout through untouched.
+    #[test]
+    fn relabel_carries_view_arrays_through() {
+        let ids: ArrayRef = Arc::new(StringViewArray::from(vec!["t1", "t2"]));
+        let after: ArrayRef = Arc::new(StructArray::from(vec![(
+            Arc::new(Field::new("col-id", DataType::Utf8View, true)),
+            ids.clone(),
+        )]));
+        let batch = RecordBatch::try_from_iter(vec![("after", after)]).unwrap();
+
+        let map = nested_physical_to_logical(&Schema::new(vec![mapped(
+            "after",
+            struct_of(vec![mapped("id", DataType::Utf8View, "col-id")]),
+            "col-after",
+        )]));
+        let relabeled = relabel_nested_columns(&batch, &map).unwrap();
+
+        let DataType::Struct(children) = relabeled.schema().field(0).data_type().clone() else {
+            panic!("`after` must stay a struct");
+        };
+        assert_eq!(children[0].name(), "id");
+        assert_eq!(
+            children[0].data_type(),
+            &DataType::Utf8View,
+            "relabeling renames fields, it must not change their types"
+        );
+
+        let after = relabeled
+            .column(0)
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+        assert_eq!(after.column(0).as_ref(), ids.as_ref());
     }
 
     /// A `struct<..>` data type from mapped fields.
@@ -4862,7 +4991,7 @@ mod column_mapping_tests {
 #[cfg(test)]
 mod partition_projection_tests {
     use super::*;
-    use arrow::array::Int64Array;
+    use arrow::array::{Int64Array, StringArray};
     use datafusion::prelude::SessionContext;
     use std::sync::Arc;
 
@@ -5120,6 +5249,122 @@ mod read_schema_tests {
         Arc::new(ArrowSchema::new(vec![ArrowField::new(
             "s", data_type, false,
         )]))
+    }
+
+    /// A `Utf8` read schema caps one batch at 2 GiB for that column: the reader
+    /// gives up rather than build an array whose 32-bit offsets would overflow.
+    /// `Utf8View` has no such ceiling.
+    ///
+    /// Ignored because it has to allocate past `i32::MAX` to prove it. Run with
+    /// `cargo test -p dbsp_adapters --lib read_schema_lifts -- --ignored`.
+    #[tokio::test]
+    #[ignore]
+    async fn read_schema_lifts_the_two_gib_ceiling() {
+        let dir = tempfile::tempdir().unwrap();
+        // 8192 x 300 KiB = 2.5 GiB decoded, from a 300 KB file: one distinct
+        // value, dictionary-encoded, referenced by every row.
+        let value = "x".repeat(300 * 1024);
+        let values: Vec<&str> = vec![value.as_str(); 8192];
+        let path = write_parquet(dir.path(), &values, 128);
+
+        let error = read_one_batch(&path, schema_of(ArrowDataType::Utf8), false, 8192)
+            .await
+            .expect_err("2.5 GiB does not fit a Utf8 array");
+        assert!(
+            error
+                .to_string()
+                .contains("index overflow decoding byte array"),
+            "expected the 32-bit offset overflow; got: {error}"
+        );
+
+        let batch = read_one_batch(&path, schema_of(ArrowDataType::Utf8View), false, 8192)
+            .await
+            .expect("a view array has no 2 GiB ceiling");
+        assert_eq!(batch.num_rows(), 8192);
+        assert_eq!(batch.column(0).data_type(), &ArrowDataType::Utf8View);
+    }
+
+    /// A view read schema does not copy a dictionary-encoded value once per row,
+    /// it references the dictionary page's buffer. That is what keeps a small
+    /// file from decoding into gigabytes, so the saving is the point, not an
+    /// incidental optimization.
+    ///
+    /// Sized to stay small: 1024 rows of one 64 KiB value is 64 MiB inlined.
+    #[tokio::test]
+    async fn read_schema_does_not_expand_repeated_values() {
+        let dir = tempfile::tempdir().unwrap();
+        const ROWS: usize = 1024;
+        const VALUE_LEN: usize = 64 * 1024;
+        let value = "x".repeat(VALUE_LEN);
+        let values: Vec<&str> = vec![value.as_str(); ROWS];
+        let path = write_parquet(dir.path(), &values, 128);
+
+        let inlined = read_one_batch(&path, schema_of(ArrowDataType::Utf8), false, ROWS)
+            .await
+            .unwrap();
+        let viewed = read_one_batch(&path, schema_of(ArrowDataType::Utf8View), false, ROWS)
+            .await
+            .unwrap();
+
+        assert_eq!(inlined.num_rows(), ROWS);
+        assert_eq!(viewed.num_rows(), ROWS);
+        assert_eq!(viewed.column(0).data_type(), &ArrowDataType::Utf8View);
+
+        let inlined_bytes = inlined.column(0).get_array_memory_size();
+        let viewed_bytes = viewed.column(0).get_array_memory_size();
+        assert!(
+            inlined_bytes >= ROWS * VALUE_LEN,
+            "Utf8 must inline every repeat; got {inlined_bytes} bytes"
+        );
+        assert!(
+            viewed_bytes < inlined_bytes / 50,
+            "Utf8View must reference the dictionary page, not copy it; \
+             got {viewed_bytes} bytes against {inlined_bytes} inlined"
+        );
+    }
+
+    /// Every string and binary type becomes its view counterpart at every depth,
+    /// and nothing else changes: the Parquet reader validates a supplied schema
+    /// field by field, so a stray difference in name, nullability or any other
+    /// type would be rejected outright.
+    #[test]
+    fn read_schema_rewrites_only_string_and_binary_types() {
+        let element = Arc::new(ArrowField::new("item", ArrowDataType::Utf8, true));
+        let nested = ArrowDataType::Struct(
+            vec![
+                Arc::new(ArrowField::new("s", ArrowDataType::LargeUtf8, false)),
+                Arc::new(ArrowField::new("b", ArrowDataType::LargeBinary, true)),
+                Arc::new(ArrowField::new("n", ArrowDataType::Int64, true)),
+                Arc::new(ArrowField::new("l", ArrowDataType::List(element), true)),
+            ]
+            .into(),
+        );
+        let schema = ArrowSchema::new(vec![
+            ArrowField::new("plain", ArrowDataType::Utf8, false),
+            ArrowField::new("bin", ArrowDataType::Binary, true),
+            ArrowField::new("num", ArrowDataType::Float64, true),
+            ArrowField::new("nested", nested, true),
+        ]);
+
+        let viewed = ReadSchema::new(&schema);
+        let viewed = viewed.schema();
+
+        assert_eq!(viewed.field(0).data_type(), &ArrowDataType::Utf8View);
+        assert!(!viewed.field(0).is_nullable());
+        assert_eq!(viewed.field(1).data_type(), &ArrowDataType::BinaryView);
+        assert_eq!(viewed.field(2).data_type(), &ArrowDataType::Float64);
+        let ArrowDataType::Struct(fields) = viewed.field(3).data_type() else {
+            panic!("the nested field must stay a struct");
+        };
+        assert_eq!(fields[0].data_type(), &ArrowDataType::Utf8View);
+        assert_eq!(fields[1].data_type(), &ArrowDataType::BinaryView);
+        assert_eq!(fields[2].data_type(), &ArrowDataType::Int64);
+        let ArrowDataType::List(item) = fields[3].data_type() else {
+            panic!("the list field must stay a list");
+        };
+        assert_eq!(item.data_type(), &ArrowDataType::Utf8View);
+        assert_eq!(item.name(), "item");
+        assert!(item.is_nullable());
     }
 
     /// `schema_force_view_types` cannot reach the connector's reads, whichever
