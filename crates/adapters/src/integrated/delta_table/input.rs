@@ -24,7 +24,9 @@ use datafusion::datasource::listing::{
 };
 use datafusion::execution::memory_pool::MemoryLimit;
 use datafusion::optimizer::analyzer::type_coercion::TypeCoercionRewriter;
-use datafusion::physical_plan::{PhysicalExpr, displayable};
+use datafusion::physical_plan::{
+    ExecutionPlan, PhysicalExpr, SendableRecordBatchStream, displayable, execute_stream,
+};
 use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
 use dbsp::circuit::tokio::TOKIO;
 use delta_kernel::schema::{ColumnMetadataKey, MetadataValue};
@@ -138,6 +140,83 @@ fn format_datafusion_error(
     } else {
         base
     }
+}
+
+/// Total decoded bytes a single read may hold across all the files it decodes
+/// at once.
+///
+/// Parquet decode buffers are invisible to the DataFusion memory pool, so
+/// `datafusion_memory_mb` does not bound them. What does is the batch size,
+/// which DataFusion states in *rows* (8192 by default), leaving the byte total
+/// unbounded: a wide row makes one batch arbitrarily large, and up to
+/// `target_partitions` files decode at once.
+///
+/// This is a ceiling, not a target. 1 GiB is chosen so that ordinary tables keep
+/// the full 8192-row batch and only unusually wide rows shrink it: across 32
+/// scan partitions it takes more than 1 KiB of compressed data per row before
+/// the batch gets smaller.
+const DECODE_BUDGET_BYTES: u64 = 1024 * 1024 * 1024;
+
+/// Smallest batch the budget may ask for. A read whose rows are wide enough to
+/// hit this floor exceeds `DECODE_BUDGET_BYTES`, which is deliberate: shrinking
+/// batches without limit costs more in per-batch overhead than it saves.
+const MIN_BATCH_ROWS: usize = 64;
+
+/// Assumed ratio of decoded bytes to the byte counts the Delta log reports,
+/// which are compressed file sizes.
+const COMPRESSED_EXPANSION: u64 = 4;
+
+/// How big the Delta log says a read is: bytes on disk and the number of
+/// records those bytes hold.
+///
+/// Both come from the log, so they cost no I/O. `Add.size` is the compressed
+/// file size and `Add.stats.numRecords` its row count.
+/// [`ReadSize::batch_rows`] divides one by the other, so a read whose files
+/// record no row count has no ratio to work from and falls back to the
+/// configured batch size.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ReadSize {
+    bytes: u64,
+    records: u64,
+}
+
+impl ReadSize {
+    fn add(&mut self, bytes: u64, records: u64) {
+        self.bytes += bytes;
+        self.records += records;
+    }
+
+    /// Rows per decoded batch, so that `partitions` readers together stay near
+    /// [`DECODE_BUDGET_BYTES`]. `default_rows` is both the starting point and
+    /// the ceiling: the budget only ever shrinks a batch.
+    fn batch_rows(&self, partitions: usize, default_rows: usize) -> Option<usize> {
+        if self.bytes == 0 || self.records == 0 {
+            return None;
+        }
+        let partitions = partitions.max(1) as u64;
+        let bytes_per_row = (self.bytes * COMPRESSED_EXPANSION)
+            .div_ceil(self.records)
+            .max(1);
+        let rows = (DECODE_BUDGET_BYTES / partitions / bytes_per_row) as usize;
+        Some(rows.clamp(MIN_BATCH_ROWS, default_rows))
+    }
+}
+
+/// The read size DataFusion derived for `plan`, or `None` unless it reports
+/// both a byte total and a row count. `Statistics` states each independently
+/// and either may be absent, and one without the other gives no bytes-per-row
+/// ratio.
+///
+/// The Delta snapshot's table provider states the log's own totals here, so a
+/// snapshot read is sized without the connector passing anything. The listing
+/// tables the connector builds for follow and CDC reads collect no statistics,
+/// so their callers supply a [`ReadSize`] instead.
+fn plan_read_size(plan: &dyn ExecutionPlan) -> Option<ReadSize> {
+    let statistics = plan.partition_statistics(None).ok()?;
+    Some(ReadSize {
+        bytes: *statistics.total_byte_size.get_value()? as u64,
+        records: *statistics.num_rows.get_value()? as u64,
+    })
 }
 
 /// The suffix a read error carries to say which table version produced the data
@@ -2835,6 +2914,10 @@ impl DeltaTableInputEndpointInner {
             self.allocate_snapshot_transaction_label(),
             num_retries,
             None,
+            // The snapshot reads through delta-rs's table provider, which
+            // states the log's totals in the plan, so the batch size is
+            // derived from there.
+            None,
         )
         .await
     }
@@ -2856,6 +2939,10 @@ impl DeltaTableInputEndpointInner {
     ///
     /// * `version` - the table version whose data is being read, named in the
     ///   error message. `None` for the initial snapshot, which spans many.
+    ///
+    /// * `read_size` - how big the Delta log says this read is, used to bound
+    ///   the decoded batch size. `None` falls back to what DataFusion derived
+    ///   for the plan, and then to the configured batch size.
     ///
     /// Returns the total number of records processed.
     ///
@@ -2879,6 +2966,7 @@ impl DeltaTableInputEndpointInner {
         transaction: Option<Option<String>>,
         max_retries: u32,
         version: Option<i64>,
+        read_size: Option<ReadSize>,
     ) -> Result<usize, AnyError> {
         let mut retry_count = 0;
         loop {
@@ -2889,6 +2977,7 @@ impl DeltaTableInputEndpointInner {
                     input_stream,
                     receiver,
                     &transaction,
+                    read_size,
                 )
                 .await
             {
@@ -2923,6 +3012,42 @@ impl DeltaTableInputEndpointInner {
         }
     }
 
+    /// Execute `dataframe`, with the decoded batch bounded in bytes rather than
+    /// only in rows.
+    ///
+    /// `FileScanConfig` resolves the batch size from the task context when the
+    /// plan does not pin one, and neither the connector's listing tables nor
+    /// delta-rs's provider pins one, so the plan is built once and run with a
+    /// task context carrying the chosen size. Anything else the query does
+    /// (sorting a CDC transaction, subtracting its removes) keeps working to
+    /// the same size, which is what it would have used anyway.
+    async fn execute_stream(
+        &self,
+        dataframe: DataFrame,
+        read_size: Option<ReadSize>,
+    ) -> Result<SendableRecordBatchStream, DataFusionError> {
+        let (mut state, plan) = dataframe.into_parts();
+        let plan = state.create_physical_plan(&plan).await?;
+
+        let partitions = state.config().target_partitions();
+        let default_rows = state.config().batch_size();
+        if let Some(rows) = read_size
+            .or_else(|| plan_read_size(plan.as_ref()))
+            .and_then(|size| size.batch_rows(partitions, default_rows))
+            && rows < default_rows
+        {
+            debug!(
+                "delta_table {}: reading {rows} rows per batch instead of {default_rows}, to keep \
+                 {partitions} concurrent readers within {} MB of decoded data",
+                &self.endpoint_name,
+                DECODE_BUDGET_BYTES / 1024 / 1024,
+            );
+            state.config_mut().options_mut().execution.batch_size = rows;
+        }
+
+        execute_stream(plan, state.task_ctx())
+    }
+
     // A single attempt of the `execute_df` retry loop.
     #[allow(clippy::too_many_arguments)]
     async fn execute_df_inner(
@@ -2932,6 +3057,7 @@ impl DeltaTableInputEndpointInner {
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
         transaction: &Option<Option<String>>,
+        read_size: Option<ReadSize>,
     ) -> Result<usize, String> {
         wait_running(receiver).await;
         let transaction = self.follow_start_transaction(transaction);
@@ -2939,7 +3065,7 @@ impl DeltaTableInputEndpointInner {
         // Limit the number of connectors simultaneously reading from Delta Lake.
         let _token = DELTA_READER_SEMAPHORE.acquire().await.unwrap();
 
-        let mut stream = match dataframe.execute_stream().await {
+        let mut stream = match self.execute_stream(dataframe, read_size).await {
             Err(e) => {
                 return Err(format!("{e:?}"));
             }
@@ -3457,6 +3583,10 @@ impl DeltaTableInputEndpointInner {
                 start_transaction.clone(),
                 self.config.max_retries(),
                 Some(new_version),
+                // A `cdc` action carries the file's size but no row count, so
+                // there is no ratio to size the batch from; the plan's own
+                // statistics decide, and the configured size if it has none.
+                None,
             )
             .await?;
         }
@@ -3634,6 +3764,21 @@ impl DeltaTableInputEndpointInner {
             describe_paths(removes_by_path.keys().copied()),
         );
 
+        // How big this read is, from the log rather than from the files: an
+        // `Add` carries its compressed size and its row count. A `Remove`
+        // carries no row count, so the added files decide the bytes-per-row
+        // ratio; both sides of the transaction come from the same table, so
+        // that is the same ratio either way.
+        let mut read_size = ReadSize::default();
+        for add in &adds {
+            let records = add
+                .get_stats()
+                .ok()
+                .flatten()
+                .map_or(0, |stats| stats.num_records);
+            read_size.add(add.size.max(0) as u64, records.max(0) as u64);
+        }
+
         // Drop add/remove pairs on the same path (metadata-only rewrites).
         // This loop must run before the removes side is built below: it
         // drains `removes_by_path` of every matched path, leaving only the
@@ -3703,6 +3848,7 @@ impl DeltaTableInputEndpointInner {
                 start_transaction,
                 self.config.max_retries(),
                 Some(version),
+                Some(read_size),
             )
             .await?;
 
@@ -4409,6 +4555,7 @@ impl DeltaTableInputEndpointInner {
                 start_transaction,
                 self.config.max_retries(),
                 Some(version),
+                None,
             )
             .await?;
 
@@ -5226,6 +5373,94 @@ mod change_data_feed_state_tests {
 }
 
 #[cfg(test)]
+mod read_size_tests {
+    use super::*;
+
+    /// 8192 rows is DataFusion's default and the ceiling here: the budget only
+    /// shrinks a batch, it never asks for a bigger one than configured.
+    const DEFAULT_ROWS: usize = 8192;
+
+    fn rows(bytes: u64, records: u64, partitions: usize) -> Option<usize> {
+        ReadSize { bytes, records }.batch_rows(partitions, DEFAULT_ROWS)
+    }
+
+    /// An ordinary table keeps the full batch, so bounding decode memory costs
+    /// nothing until the rows are actually wide.
+    #[test]
+    fn ordinary_rows_keep_the_default_batch() {
+        // 200 bytes per row compressed over 10M rows.
+        assert_eq!(rows(2_000_000_000, 10_000_000, 32), Some(DEFAULT_ROWS));
+        // Even a single reader is capped by the configured batch size.
+        assert_eq!(rows(2_000_000_000, 10_000_000, 1), Some(DEFAULT_ROWS));
+    }
+
+    /// Wide rows shrink the batch, and the result stays inside the budget.
+    #[test]
+    fn wide_rows_shrink_the_batch() {
+        const PARTITIONS: usize = 32;
+        // 64 KiB per row compressed over 1000 rows.
+        let bytes = 64 * 1024 * 1000;
+        let rows = rows(bytes, 1000, PARTITIONS).expect("a sized read picks a batch");
+        assert!(
+            (MIN_BATCH_ROWS..DEFAULT_ROWS).contains(&rows),
+            "expected a smaller batch inside the floor; got {rows}"
+        );
+        let per_row = 64 * 1024 * COMPRESSED_EXPANSION;
+        let held = rows as u64 * per_row * PARTITIONS as u64;
+        assert!(
+            held <= DECODE_BUDGET_BYTES,
+            "{PARTITIONS} readers of {rows} rows hold {held} bytes, over the budget"
+        );
+    }
+
+    /// More concurrent readers each get a smaller batch, since the budget covers
+    /// the scan and not one reader.
+    #[test]
+    fn concurrency_divides_the_budget() {
+        let bytes = 16 * 1024 * 1000;
+        let few = rows(bytes, 1000, 4).unwrap();
+        let many = rows(bytes, 1000, 64).unwrap();
+        assert!(
+            many < few,
+            "64 readers must take smaller batches than 4; got {many} against {few}"
+        );
+    }
+
+    /// Rows wide enough to make even the floor exceed the budget still get the
+    /// floor: shrinking without limit costs more than it saves.
+    #[test]
+    fn the_floor_holds() {
+        // 8 MiB per row.
+        assert_eq!(rows(8 * 1024 * 1024, 1, 32), Some(MIN_BATCH_ROWS));
+    }
+
+    /// A read the log did not measure falls back to the configured batch size
+    /// rather than guessing. A writer that omits `stats` leaves `numRecords`
+    /// absent, which is the common way this happens.
+    #[test]
+    fn an_unmeasured_read_picks_nothing() {
+        assert_eq!(rows(0, 0, 32), None);
+        assert_eq!(rows(1_000_000, 0, 32), None, "bytes without a row count");
+        assert_eq!(rows(0, 1_000, 32), None, "rows without a byte count");
+    }
+
+    /// Summing the log's files is what produces the pair.
+    #[test]
+    fn sizes_accumulate() {
+        let mut size = ReadSize::default();
+        size.add(100, 10);
+        size.add(200, 20);
+        assert_eq!(
+            size,
+            ReadSize {
+                bytes: 300,
+                records: 30
+            }
+        );
+    }
+}
+
+#[cfg(test)]
 mod version_suffix_tests {
     use super::*;
 
@@ -5365,6 +5600,47 @@ mod read_schema_tests {
         Arc::new(ArrowSchema::new(vec![ArrowField::new(
             "s", data_type, false,
         )]))
+    }
+
+    /// The batch size a file scan uses comes from the task context at execution
+    /// time, not from the session the plan was built with. `execute_stream`
+    /// relies on that: it plans once, sizes the batch from the read, and then
+    /// runs the same plan under a context carrying the size it chose. If
+    /// DataFusion ever binds the size at planning time instead, the override
+    /// becomes silent, so this pins the behavior rather than the API.
+    #[tokio::test]
+    async fn a_file_scan_takes_its_batch_size_from_the_task_context() {
+        let dir = tempfile::tempdir().unwrap();
+        let values: Vec<String> = (0..1000).map(|i| format!("row-{i}")).collect();
+        let path = write_parquet(
+            dir.path(),
+            &values.iter().map(String::as_str).collect::<Vec<_>>(),
+            1000,
+        );
+
+        let planned = SessionConfig::new().set_usize("datafusion.execution.batch_size", 8192);
+        let ctx = SessionContext::new_with_config(planned);
+        let url = ListingTableUrl::parse(format!("file://{}", path.display())).unwrap();
+        let listing_options = ListingOptions::new(Arc::new(ParquetFormat::default()))
+            .with_file_extension_opt(Some(".parquet"));
+        let table = ListingTable::try_new(
+            ListingTableConfig::new_with_multi_paths(vec![url])
+                .with_listing_options(listing_options)
+                .with_schema(schema_of(ArrowDataType::Utf8)),
+        )
+        .unwrap();
+
+        let (mut state, plan) = ctx.read_table(Arc::new(table)).unwrap().into_parts();
+        let plan = state.create_physical_plan(&plan).await.unwrap();
+        state.config_mut().options_mut().execution.batch_size = 100;
+
+        let mut stream = execute_stream(plan, state.task_ctx()).unwrap();
+        let batch = stream.next().await.expect("the file holds rows").unwrap();
+        assert_eq!(
+            batch.num_rows(),
+            100,
+            "the scan must use the task context's batch size, not the plan's"
+        );
     }
 
     /// A `Utf8` read schema caps one batch at 2 GiB for that column: the reader
