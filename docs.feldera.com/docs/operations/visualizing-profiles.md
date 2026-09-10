@@ -121,7 +121,10 @@ collected for the node.  The measurements are displayed in a table.
 
 Clicking on a node will make the table of measurements "sticky": the
 table will remain visible until either the user presses the ESCAPE
-key, or the user clicks on another node.
+key, or the user clicks on another node.  Clicking also selects the SQL
+the node was compiled from in the program shown beside the graph, and
+scrolls it into view.  A node that groups other nodes stands for all the
+SQL inside it, so clicking one selects every statement it covers.
 
 ### Understanding graph reachability
 
