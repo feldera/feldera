@@ -522,6 +522,11 @@ mechanism can discard old records under the following conditions:
   has a waterline.  In the `daily_max` view, the `TIMESTAMP_TRUNC(ts, DAY) as d`
   column has a waterline.
 
+* The `MIN` of a column with a waterline has the same waterline.  This holds
+  only when every aggregate in the same `GROUP BY` is a `MIN` over that same
+  column; adding a `MAX`, a `MIN` over a different column, or a `FILTER`
+  clause loses the waterline.
+
 ### Tumbling and hopping windows
 
 [Tumbling](/sql/table/#tumble) and [hopping](/sql/table/#tumble) window operators

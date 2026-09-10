@@ -42,11 +42,13 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.IMaybeMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneClosureType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneExpression;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneTransferFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.NonMonotoneType;
@@ -57,7 +59,10 @@ import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalIncrementExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -66,7 +71,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTimeAddSub;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.NoExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
@@ -842,7 +846,54 @@ public class Monotonicity extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPPrimitiveAggregateOperator node) {
-        this.aggregate(node);
+        DBSPMinMax minMax = node.function == null ? null : node.function.as(DBSPMinMax.class);
+        if (minMax == null || !this.minAggregate(node, minMax))
+            this.aggregate(node);
+    }
+
+    /** Compute the monotonicity of the output of a MIN.  Every change
+     * (insertion or deletion) to a group's row carries a value at or above the input waterline,
+     * so the output will have the exact same waterline.  Returns false when the aggregate is
+     * not a MIN, or when nothing in the output is monotone. */
+    boolean minAggregate(DBSPPrimitiveAggregateOperator node, DBSPMinMax minMax) {
+        // The output column (payload) has no waterline.
+        // ARG_MIN is not a special case: over a non-nullable compared column it is converted
+        // to Min(compared, payload); over a nullable one it is implemented as ArgMinSome,
+        // which only returns payload, so it is rejected here.
+        if (minMax.aggregation != DBSPMinMax.Aggregation.Min &&
+                minMax.aggregation != DBSPMinMax.Aggregation.MinSome1)
+            return false;
+        MonotoneExpression inputValue = this.getMonotoneExpression(node.inputs.get(0));
+        if (inputValue == null)
+            return false;
+
+        IMaybeMonotoneType projection = Monotonicity.getBodyType(inputValue);
+        DBSPTypeTupleBase pairType = projection.getType().to(DBSPTypeTupleBase.class);
+        if (pairType.size() != 2)
+            return false;
+        DBSPTypeRawTuple varType = new DBSPTypeRawTuple(pairType.tupFields[0].ref(), pairType.tupFields[1].ref());
+        DBSPVariablePath var = varType.var();
+
+        // The minimum of the input value is known in its first field only
+        DBSPExpression input = var.deepCopy().field(1).deref();
+        DBSPExpression minimum = withFirstField(
+            node.getNode(), input.getType(), 
+            firstField(input).applyCloneIfNeeded());
+        DBSPExpression value = minMax.postProcessing == null ? minimum :
+                minMax.postProcessing.call(minimum.borrow()).reduce(this.compiler());
+        DBSPType outputType = node.getOutputIndexedZSetType().elementType;
+        // An output shape the model does not describe yields no waterline
+        if (!value.getType().sameType(outputType))
+            return false;
+        DBSPExpression body = new DBSPRawTupleExpression(var.field(0).deref(), value);
+        MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
+                this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
+        // Null when neither the key nor the minimized value is monotone
+        MonotoneExpression result = analyzer.applyAnalysis(body.closure(var));
+        if (result == null)
+            return false;
+        this.set(node, result);
+        return true;
     }
 
     @Override
@@ -870,9 +921,137 @@ public class Monotonicity extends CircuitVisitor {
             return;
         }
 
+        List<DBSPConditionalIncrementExpression> updates = this.minUpdates(node);
+        if (updates != null) {
+            this.setMinChainMonotonicity(node, updates);
+            return;
+        }
         // TODO: for MAX the output is always monotone, but we cannot use this information.
         // https://github.com/feldera/feldera/issues/2805
         this.aggregate(node);
+    }
+
+    /** The list of instructions which update the accumulator of a chain aggregate,
+     * one per accumulator field, when every one of them computes the minimum of
+     * the same expression of the input row; null otherwise. */
+    @Nullable
+    List<DBSPConditionalIncrementExpression> minUpdates(DBSPChainAggregateOperator node) {
+        // The update function has the shape |acc, row, weight| Tup(update0, update1, ...)
+        DBSPClosureExpression function = node.getClosureFunction();
+        DBSPBaseTupleExpression body = function.body.as(DBSPBaseTupleExpression.class);
+        if (function.parameters.length != 3 || body == null || body.fields == null)
+            return null;
+        DBSPParameter row = function.parameters[1];
+        // The first row of a group goes through init, |row, weight| Tup(init0, init1, ...);
+        // each init must compute the minimum of the same expression as its update.
+        DBSPClosureExpression init = node.init;
+        DBSPBaseTupleExpression initBody = init.body.as(DBSPBaseTupleExpression.class);
+        if (init.parameters.length != 2 || initBody == null || initBody.fields == null ||
+                initBody.fields.length != body.fields.length)
+            return null;
+        List<DBSPConditionalIncrementExpression> updates = new ArrayList<>();
+        DBSPClosureExpression first = null;
+        for (int i = 0; i < body.fields.length; i++) {
+            DBSPConditionalIncrementExpression update = body.fields[i].as(DBSPConditionalIncrementExpression.class);
+            if (update == null || update.condition != null)
+                return null;
+            DBSPExpression compared = comparedValue(update);
+            if (compared == null)
+                return null;
+            DBSPClosureExpression closure = compared.closure(row);
+            // Check that the compared depends on the row alone (parameters[1]).
+            ResolveReferences resolver = new ResolveReferences(this.compiler(), true);
+            resolver.apply(closure);
+            if (resolver.hasFreeVariables())
+                return null;
+            if (first == null)
+                first = closure;
+            else if (!first.equivalent(closure))
+                return null;
+            DBSPConditionalIncrementExpression initial = initBody.fields[i].as(DBSPConditionalIncrementExpression.class);
+            if (initial == null || initial.condition != null || initial.opcode != update.opcode)
+                return null;
+            DBSPExpression initCompared = comparedValue(initial);
+            if (initCompared == null || !first.equivalent(initCompared.closure(init.parameters[0])))
+                return null;
+            updates.add(update);
+        }
+        return updates;
+    }
+
+    /** The expression whose minimum an accumulator update computes; null for updates that
+     * compute no minimum. */
+    @Nullable
+    private static DBSPExpression comparedValue(DBSPConditionalIncrementExpression update) {
+        return switch (update.opcode) {
+            case AGG_MIN, AGG_MIN1 -> firstField(update.right);
+            default -> null;
+        };
+    }
+
+    /** The first "field" of {@code value}. */
+    private static DBSPExpression firstField(DBSPExpression value) {
+        if (value.getType().is(DBSPTypeTupleBase.class))
+            return firstField(value.field(0));
+        return value;
+    }
+
+    /** Create a tuple with the specified type and with {@code first} in the first position.
+     * Fill the tuple with NoExpression. */
+    private static DBSPExpression withFirstField(CalciteObject node, DBSPType tupleType, DBSPExpression first) {
+        if (tupleType.is(DBSPTypeTupleBase.class)) {
+            DBSPTypeTupleBase tuple = tupleType.to(DBSPTypeTupleBase.class);
+            DBSPExpression[] fields = new DBSPExpression[tuple.size()];
+            for (int i = 0; i < tuple.size(); i++)
+                fields[i] = i == 0 
+                    ? withFirstField(node, tuple.tupFields[i], first) 
+                    : makeNoExpression(tuple.tupFields[i]);
+            return tuple.makeTuple(fields);
+        }
+        return first.cast(node, tupleType, DBSPCastExpression.CastType.SqlUnsafe);
+    }
+
+    /** Output monotonicity of a chain aggregate whose accumulators are all minimums of
+     * the same expression.  Every change to a group's row carries a compared value at or 
+     * above the input waterline.  The accumulator fields holding the compared value are 
+     * monotone with the input's waterline. */
+    private void setMinChainMonotonicity(DBSPChainAggregateOperator node, List<DBSPConditionalIncrementExpression> updates) {
+        MonotoneExpression inputValue = this.getMonotoneExpression(node.input());
+        if (inputValue == null)
+            return;
+        IMaybeMonotoneType projection = Monotonicity.getBodyType(inputValue);
+        DBSPTypeTupleBase pairType = projection.getType().to(DBSPTypeTupleBase.class);
+        if (pairType.size() != 2)
+            return;
+        DBSPTypeRawTuple varType = new DBSPTypeRawTuple(pairType.tupFields[0].ref(), pairType.tupFields[1].ref());
+        DBSPVariablePath var = varType.var();
+        DBSPParameter row = node.getClosureFunction().parameters[1];
+        if (!row.getType().sameType(var.field(1).getType()))
+            return;
+
+        DBSPTypeTuple accumulators = node.getOutputIndexedZSetType().getElementTypeTuple();
+        if (accumulators.size() != updates.size())
+            return;
+        List<DBSPExpression> fields = new ArrayList<>();
+        int index = 0;
+        for (DBSPConditionalIncrementExpression update : updates) {
+            DBSPType accumulatorType = accumulators.getFieldType(index++);
+            // The compared expression applied to var.1, the row
+            DBSPExpression compared = Objects.requireNonNull(comparedValue(update)).closure(row)
+                    .call(var.field(1)).reduce(this.compiler()).deepCopy();
+            DBSPExpression field = withFirstField(node.getNode(), accumulatorType, compared);
+            if (!field.getType().sameType(accumulatorType))
+                return;
+            fields.add(field);
+        }
+        DBSPExpression body = new DBSPRawTupleExpression(
+                var.field(0).deref(), new DBSPTupleExpression(fields, false));
+        MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(
+                this.compiler(), node, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
+        // Null when neither the key nor the compared expression is monotone
+        MonotoneExpression result = analyzer.applyAnalysis(body.closure(var));
+        if (result != null)
+            this.set(node, result);
     }
 
     @Override
@@ -964,19 +1143,16 @@ public class Monotonicity extends CircuitVisitor {
 
         public final List<Comparison> comparisons = new ArrayList<>();
 
-        /** Analyze the condition of a filter and decompose it into a conjunction of comparisons */
+        /** Collect the comparisons among the conjuncts of a filter condition */
         public ComparisonsAnalyzer(DBSPExpression closure) {
             DBSPClosureExpression clo = closure.to(DBSPClosureExpression.class);
             Utilities.enforce(clo.parameters.length == 1);
             DBSPParameter param = clo.parameters[0];
-            DBSPExpression expression = clo.body;
-            if (expression.is(DBSPUnaryExpression.class)) {
-                DBSPUnaryExpression unary = expression.to(DBSPUnaryExpression.class);
-                // If the filter is wrap_bool(expression), analyze expression
-                if (unary.opcode == DBSPOpcode.WRAP_BOOL)
-                    expression = unary.source;
+            for (DBSPExpression conjunct : clo.body.conjuncts()) {
+                DBSPBinaryExpression binary = conjunct.as(DBSPBinaryExpression.class);
+                if (binary != null)
+                    this.findComparison(binary, param);
             }
-            this.complete = this.analyzeConjunction(expression, param);
         }
 
         public boolean isEmpty() {
@@ -1083,57 +1259,29 @@ public class Monotonicity extends CircuitVisitor {
             return false;
         }
 
-        /** Check if `expression` is a comparison and if so add it to the list.
-         * Return true if added. */
-        boolean findComparison(DBSPBinaryExpression binary, DBSPParameter param) {
+        /** If {@code binary} compares a column, or a column offset by a constant, with an
+         * expression, add the comparison to the list. */
+        void findComparison(DBSPBinaryExpression binary, DBSPParameter param) {
             switch (binary.opcode) {
-                case LTE:
-                case LT: {
-                    boolean added = this.addIfRightIsColumn(binary.left, binary.right, inverse(binary.opcode), param);
-                    if (added)
-                        return true;
-                    added = this.addIfOffsetOfColumn(binary.left, binary.right, inverse(binary.opcode), param);
-                    return added;
+                case LTE, LT -> {
+                    DBSPOpcode inverse = inverse(binary.opcode);
+                    if (!this.addIfRightIsColumn(binary.left, binary.right, inverse, param))
+                        this.addIfOffsetOfColumn(binary.left, binary.right, inverse, param);
                 }
-                case GTE:
-                case GT: {
-                    boolean added = this.addIfRightIsColumn(binary.right, binary.left, binary.opcode, param);
-                    if (added)
-                        return true;
-                    added = this.addIfOffsetOfColumn(binary.right, binary.left, binary.opcode, param);
-                    return added;
+                case GTE, GT -> {
+                    if (!this.addIfRightIsColumn(binary.right, binary.left, binary.opcode, param))
+                        this.addIfOffsetOfColumn(binary.right, binary.left, binary.opcode, param);
                 }
-                case EQ: {
-                    // add both ways
-                    boolean added = this.addIfRightIsColumn(binary.left, binary.right, binary.opcode, param);
-                    added = added || this.addIfRightIsColumn(binary.right, binary.left, binary.opcode, param);
-                    if (added)
-                        return true;
-                    added = this.addIfOffsetOfColumn(binary.left, binary.right, binary.opcode, param);
-                    if (added)
-                        return true;
-                    return this.addIfOffsetOfColumn(binary.right, binary.left, binary.opcode, param);
+                case EQ -> {
+                    // The column may be on either side
+                    if (!this.addIfRightIsColumn(binary.left, binary.right, binary.opcode, param)
+                            && !this.addIfRightIsColumn(binary.right, binary.left, binary.opcode, param)
+                            && !this.addIfOffsetOfColumn(binary.left, binary.right, binary.opcode, param))
+                        this.addIfOffsetOfColumn(binary.right, binary.left, binary.opcode, param);
                 }
-                default:
-                    return false;
+                default -> { }
             }
         }
-
-        boolean analyzeConjunction(DBSPExpression expression, DBSPParameter param) {
-            DBSPBinaryExpression binary = expression.as(DBSPBinaryExpression.class);
-            if (binary == null)
-                return false;
-            if (binary.opcode == DBSPOpcode.AND) {
-                boolean foundLeft = this.analyzeConjunction(binary.left, param);
-                boolean foundRight = this.analyzeConjunction(binary.right, param);
-                return foundLeft && foundRight;
-            } else {
-                return this.findComparison(binary, param);
-            }
-        }
-
-        /** True is the entire expression is composed of legal comparisons */
-        final boolean complete;
 
         /** Get all the expressions that are below the specified output column */
         List<DBSPExpression> getLowerBounds(int columnIndex) {
