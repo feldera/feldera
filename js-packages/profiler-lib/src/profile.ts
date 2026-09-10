@@ -1958,7 +1958,9 @@ export class CircuitProfile {
             return [];
         }
 
-        return node.unwrap().sourcePositions.positions;
+        // Sorted, since a region collects the positions of the nodes inside it in node order
+        // and a reader expects the earliest statement first.
+        return node.unwrap().sourcePositions.sort();
     }
 
     /**

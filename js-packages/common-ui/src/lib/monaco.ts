@@ -11,14 +11,23 @@ const monacoEndColumn = (position: CodePosition) => position.column + 1
 
 /**
  * Apply one or more selections to a Monaco editor and reveal the first range
- * in the viewport center. No-op when the editor is undefined or no ranges are
- * provided.
+ * in the viewport center. No-op when the editor is undefined; an empty list
+ * leaves the cursor where it is and selects nothing.
  */
 export function setSelections(
   editorRef: editor.IStandaloneCodeEditor | undefined,
   ranges: CodeRange[]
 ) {
-  if (!editorRef || ranges.length === 0) {
+  if (!editorRef) {
+    return
+  }
+  if (ranges.length === 0) {
+    // Monaco has no clearSelection, and rejects an empty selection list; moving the cursor to
+    // where it already is drops every selection, secondary cursors included.
+    const position = editorRef.getPosition()
+    if (position) {
+      editorRef.setPosition(position)
+    }
     return
   }
   editorRef.setSelections(

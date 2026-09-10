@@ -100,7 +100,9 @@ contracted, as described below.
 Some nodes in a dataflow graph are in turn composed of other nodes and
 edges.  Such nodes are shown with rounded corners.  Double-clicking on
 such a node will expand it into the component nodes.  Double-clicking
-on an expanded node will contract it.
+on an expanded node will contract it.  Clicking on an expanded node,
+away from the nodes inside it, displays the measurements of the
+composite node itself.
 
 ![expanding composite nodes](expanding.png)
 

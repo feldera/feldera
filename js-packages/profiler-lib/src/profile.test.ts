@@ -22,7 +22,8 @@ import {
     type JsonProfiles
 } from './profile.js'
 import type { Dataflow } from './dataflow.js'
-import { NumericRange, Option } from './util.js'
+import { SourcePositionRange, SourcePositionRanges } from './dataflow.js'
+import { displaysNodeInformation, NumericRange, Option } from './util.js'
 
 // Issue 6991: the metric selector showed `spine_storage_size_bytes` while the table of values
 // showed "Spine storage size bytes". One helper now names a metric for every place on screen.
@@ -1422,5 +1423,77 @@ describe('CircuitProfile.byName', () => {
         expect(inner.collapsedOperation()).toBe('subregion customers')
         // The expanded label stays unchanged
         expect(outer.operation).toBe('region')
+    })
+})
+
+/** The arguments of `displaysNodeInformation` in order, named for the reader. */
+const displays = (
+    gesture: 'click' | 'hover',
+    node: 'expanded region' | 'node',
+    pinned: 'pinned' | 'nothing') =>
+    displaysNodeInformation(gesture === 'click', node === 'expanded region', pinned === 'pinned')
+
+describe('displaysNodeInformation', () => {
+    // Issue 6994: a click on an expanded region displayed nothing, and the region's double click
+    // expands it, so the readings of the region as a whole were out of reach.
+    it('displays the readings of a region a click asked for', () => {
+        expect(displays('click', 'expanded region', 'nothing')).toBe(true)
+        expect(displays('click', 'expanded region', 'pinned')).toBe(true)
+    })
+
+    it('displays the readings of any other node a click asked for', () => {
+        expect(displays('click', 'node', 'pinned')).toBe(true)
+        expect(displays('click', 'node', 'nothing')).toBe(true)
+    })
+
+    it('leaves pinned readings alone while the pointer travels', () => {
+        expect(displays('hover', 'node', 'pinned')).toBe(false)
+    })
+
+    it('says nothing about an expanded region the pointer crosses', () => {
+        expect(displays('hover', 'expanded region', 'nothing')).toBe(false)
+        expect(displays('hover', 'expanded region', 'pinned')).toBe(false)
+    })
+
+    it('follows the pointer over a node while nothing is pinned', () => {
+        expect(displays('hover', 'node', 'nothing')).toBe(true)
+    })
+})
+
+describe('CircuitProfile.getSourceRanges', () => {
+    const profile = (() => {
+        const json = {
+            metrics: [],
+            worker_profiles: [{ metadata: {} }],
+            graph: {
+                nodes: {
+                    id: 'n', label: 'root', nodes: [{
+                        Cluster: {
+                            id: 'r', label: 'region',
+                            nodes: [{ Simple: { id: 'a', label: 'a' } }]
+                        }
+                    }]
+                },
+                edges: []
+            }
+        }
+        return CircuitProfile.fromJson(json as unknown as JsonProfiles).profile
+    })()
+
+    const line = (n: number) => new SourcePositionRange(
+        { start_line_number: n, start_column: 1, end_line_number: n, end_column: 9 })
+
+    it('returns the ranges in program order, once each', () => {
+        // A region collects the positions of the nodes inside it as it walks them, so its own
+        // list arrives in node order and may repeat a statement two children share.  The SQL
+        // panel scrolls to the first range it is handed, which has to be the earliest one.
+        profile.complexNodes.get('r').unwrap().setSourcePositions(
+            new SourcePositionRanges([line(10), line(2), line(10)]))
+        expect(profile.getSourceRanges('r').map(r => r.range.start_line_number)).toEqual([2, 10])
+    })
+
+    it('is empty for a node compiled from no SQL, and for one it does not know', () => {
+        expect(profile.getSourceRanges('a')).toEqual([])
+        expect(profile.getSourceRanges('absent')).toEqual([])
     })
 })

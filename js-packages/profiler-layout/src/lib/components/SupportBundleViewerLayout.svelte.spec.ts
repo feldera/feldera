@@ -184,10 +184,12 @@ describe('SupportBundleViewerLayout source navigation', () => {
     expect(highlighted).toEqual([ranges.region])
   })
 
-  it('keeps the previous highlight for a node compiled from no SQL', () => {
+  it('selects nothing for a node compiled from no SQL', () => {
+    // The metrics panel has already switched to the clicked node, so leaving the previous
+    // node's statements selected would show two different nodes at once.
     const { click, highlighted } = mount()
     click('operator')
     click('internal')
-    expect(highlighted).toEqual([ranges.operator])
+    expect(highlighted).toEqual([ranges.operator, []])
   })
 })
