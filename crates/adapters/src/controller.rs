@@ -8321,6 +8321,10 @@ impl ControllerInner {
     /// Main loop for the output thread. Drains batches from the endpoint's
     /// queue, optionally buffers them, and encodes them via the endpoint's
     /// encoder.
+    ///
+    /// This runs as an aux thread of the DBSP runtime, which a teardown joins,
+    /// so nothing it calls may wait past [ControllerInner::shutdown_token].  See the
+    /// rule on `OutputEndpoint`, which is where a connector author meets it.
     #[allow(clippy::too_many_arguments)]
     fn output_thread_func(
         endpoint_id: EndpointId,
