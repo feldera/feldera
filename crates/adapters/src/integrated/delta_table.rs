@@ -72,9 +72,12 @@ fn view_field(field: &FieldRef) -> FieldRef {
 /// The type exists to ensure that a schema that skipped the rewrite cannot reach a
 /// reader.
 ///
-/// Note: this doesn't apply to the initial snapshot: it reads through delta-rs's table
-/// provider, which builds its own schema from the Delta log, and so keeps the
-/// 32-bit types and their ceiling.
+/// Note: the initial snapshot needs none of this. It reads through delta-rs's
+/// table provider, which asks for view types itself: `DeltaScanConfig::new`
+/// hard-codes `schema_force_view_types` rather than reading it from the
+/// session, so its string columns are `Utf8View` whatever the session says.
+/// Between that and this type, no read path in the connector decodes 32-bit
+/// strings.
 #[derive(Clone, Debug)]
 pub(super) struct ReadSchema(SchemaRef);
 
