@@ -6,7 +6,7 @@ use std::{io::Write, str::FromStr, sync::Weak, time::Duration};
 use super::{
     error::BackoffError, prepared_statements::PreparedStatements, tls::make_tls_connector,
 };
-use crate::{ControllerError, PipelineState, util::indexed_operation_type};
+use crate::{ControllerError, util::indexed_operation_type};
 use crate::{
     buffer_op,
     catalog::{RecordFormat, SerBatchReader, SerCursor},
@@ -496,11 +496,19 @@ These statements were successfully prepared before reconnecting. Does the table 
     }
 
     /// Whether the pipeline has been asked to stop.
+    ///
+    /// The endpoint runs on the controller's output thread and blocks there
+    /// for this worker's reply, and that output thread is a DBSP aux thread
+    /// that `RuntimeHandle::kill` joins.  So this has to report a kill of the
+    /// runtime as well as a `Terminated` controller, which is what
+    /// [ControllerInner::shutdown_token] does: a checkpoint that fails in a worker
+    /// kills the circuit from the circuit thread, the thread that would
+    /// otherwise set `Terminated`, and the reconnect loop this gates is
+    /// unbounded.
     fn shutting_down(&self) -> bool {
-        match self.controller.upgrade() {
-            None => true,
-            Some(controller) => controller.status.state() == PipelineState::Terminated,
-        }
+        self.controller
+            .upgrade()
+            .is_none_or(|controller| controller.shutdown_token().is_cancelled())
     }
 
     /// Waits `duration` before the next connection attempt, giving up as soon as

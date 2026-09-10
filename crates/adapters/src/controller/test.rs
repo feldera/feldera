@@ -6,7 +6,7 @@ use crate::{
     preprocess::{DecryptionPreprocessorFactory, PassthroughPreprocessorFactory},
     test::{
         DEFAULT_TIMEOUT_MS, TestStruct, generate_test_batch, init_test_logger, test_circuit,
-        test_circuit_with_aggregate, wait,
+        test_circuit_with_aggregate, test_circuit_without_persistent_ids, wait,
     },
     transport::{
         InputQueue, InputQueueEntry, InputReader, InputReaderCommand,
@@ -41,7 +41,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
-    thread::sleep,
+    thread::{self, sleep},
     time::{Duration, Instant},
 };
 use tempfile::{NamedTempFile, TempDir};
@@ -1933,6 +1933,154 @@ fn ft_send_snapshot_resent_on_flag_flip() {
     }
     run_round(&config_on, 1500);
     check_file_contents(&output_path, 500..1000);
+}
+
+/// A worker-side checkpoint failure must reach the caller of
+/// [Controller::checkpoint] rather than deadlock the circuit thread.
+///
+/// `DBSPHandle::broadcast_command` kills the circuit when a worker answers a
+/// command with an error, and killing the runtime joins its aux threads, one
+/// of which is each output endpoint's thread.  Those threads therefore have to
+/// exit on the kill: it runs on the circuit thread, so a thread that instead
+/// waits for the controller to reach `Terminated` waits on the thread that is
+/// waiting on it.  Regression test for issue #7075.
+#[test]
+fn checkpoint_error_does_not_deadlock() {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_path = tempdir.path().join("input.csv");
+    let output_path = tempdir.path().join("output.csv");
+    File::create_new(&input_path).unwrap();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 2,
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": input_path.display().to_string(), "follow": true },
+                },
+                "format": { "name": "csv" },
+            },
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "file_output",
+                    "config": { "path": output_path.display().to_string() },
+                },
+                "format": { "name": "csv", "config": {} },
+            },
+        },
+    }))
+    .unwrap();
+
+    // The circuit has no persistent operator ids, so every worker fails the
+    // `Checkpoint` command with `StorageError::NoPersistentId`.
+    let controller = Arc::new(
+        Controller::with_test_config(
+            |circuit_config| {
+                Ok(test_circuit_without_persistent_ids::<TestStruct>(
+                    circuit_config,
+                    &TestStruct::schema(),
+                ))
+            },
+            &config,
+            Box::new(|e, _| info!("error: {e}")),
+        )
+        .unwrap(),
+    );
+    controller.start();
+    wait(|| !controller.is_replaying(), DEFAULT_TIMEOUT_MS).unwrap();
+
+    // Check from another thread so that the test reports a failure instead of
+    // hanging the whole test binary if the deadlock comes back.
+    let (sender, receiver) = mpsc::channel();
+    let checkpointer = controller.clone();
+    thread::Builder::new()
+        .name("checkpoint-requester".into())
+        .spawn(move || {
+            let _ = sender.send(checkpointer.checkpoint().err());
+        })
+        .unwrap();
+
+    let error = receiver
+        .recv_timeout(Duration::from_secs(60))
+        .expect("`checkpoint()` must return instead of blocking forever")
+        .expect("`checkpoint()` must fail on a circuit with no persistent operator ids");
+    assert!(
+        error.to_string().contains("persistent id"),
+        "unexpected checkpoint error: {error}"
+    );
+
+    // The kill is what put the pipeline in this state: this path never reaches
+    // `Terminated`, so a shutdown signal that only tracked the state would
+    // still read as running here.
+    assert!(controller.inner.shutdown_token().is_cancelled());
+
+    // The circuit is already dead, but the controller still owns the endpoints
+    // and this drops them before `tempdir` goes away underneath them.
+    controller.initiate_stop();
+}
+
+/// The other half of [ControllerInner::shutdown_token]: an ordinary stop cancels the
+/// shutdown signal without any help from the DBSP runtime.
+#[test]
+fn stop_cancels_the_shutdown_signal() {
+    init_test_logger();
+
+    let temp_output = NamedTempFile::new().unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 1,
+        "clock_resolution_usecs": null,
+        "inputs": {},
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "file_output",
+                    "config": { "path": temp_output.path() },
+                },
+                "format": { "name": "csv" },
+            },
+        },
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+
+    assert!(!controller.inner.shutdown_token().is_cancelled());
+
+    // Checked right after `initiate_stop`, which cancels the signal before it
+    // returns.  Waiting for `stop` to join the circuit thread would let the
+    // circuit's own kill cancel it and hide a missing cancel here.
+    controller.initiate_stop();
+    assert!(controller.inner.shutdown_token().is_cancelled());
+
+    controller.stop().unwrap();
 }
 
 /// End-to-end: modified `send_snapshot: true` delta sink delivers its

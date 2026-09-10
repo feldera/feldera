@@ -307,6 +307,50 @@ where
         + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
 {
+    test_circuit_inner::<T>(
+        config,
+        schema,
+        input_properties,
+        persistent_output_ids,
+        true,
+    )
+}
+
+/// Creates a one-stream test circuit that cannot be checkpointed.
+///
+/// Shaped like [`test_circuit`], but assigns no persistent operator ids, so a
+/// checkpoint fails in every worker with `StorageError::NoPersistentId`.  Use
+/// it to exercise the controller's handling of a worker-side checkpoint
+/// failure.
+pub fn test_circuit_without_persistent_ids<T>(
+    config: CircuitConfig,
+    schema: &[Field],
+) -> (DBSPHandle, Box<dyn CircuitCatalog>)
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+{
+    test_circuit_inner::<T>(config, schema, &[], &[None], false)
+}
+
+/// The body of [`test_circuit_with_properties`] and
+/// [`test_circuit_without_persistent_ids`].  `persistent_ids` says whether the
+/// input operators get persistent ids, which is what a checkpoint needs.
+fn test_circuit_inner<T>(
+    config: CircuitConfig,
+    schema: &[Field],
+    input_properties: &[(&str, &str)],
+    persistent_output_ids: &[Option<&str>],
+    persistent_ids: bool,
+) -> (DBSPHandle, Box<dyn CircuitCatalog>)
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+{
     let zero_position = SourcePosition {
         start_line_number: 0,
         start_column: 0,
@@ -339,10 +383,12 @@ where
 
         for (persistent_output_id, i) in persistent_output_ids.iter().zip(1..) {
             let (input, hinput) = circuit.add_input_zset::<T>();
-            if n > 1 {
-                input.set_persistent_mir_id(&format!("input{i}"));
-            } else {
-                input.set_persistent_mir_id("input");
+            if persistent_ids {
+                if n > 1 {
+                    input.set_persistent_mir_id(&format!("input{i}"));
+                } else {
+                    input.set_persistent_mir_id("input");
+                }
             }
 
             let input_schema = serde_json::to_string(&Relation::new(

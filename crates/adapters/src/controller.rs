@@ -141,6 +141,7 @@ use tokio::{
     },
     task::spawn_blocking,
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
 use validate::validate_config;
@@ -3621,7 +3622,7 @@ impl CircuitThread {
     }
 
     fn finish(mut self) -> Result<(), ControllerError> {
-        self.controller.status.set_state(PipelineState::Terminated);
+        self.controller.set_terminated();
         self.flush_commands_and_requests();
         self.circuit
             .kill()
@@ -7130,6 +7131,10 @@ pub struct ControllerInner {
     /// Weak reference to the runtime, so we can deallocate the runtime once all DBSP threads and auxiliary threads are done
     /// without waiting for the controller to be dropped.
     runtime: WeakRuntime,
+    /// Canceled when the pipeline starts going down.
+    ///
+    /// A child of the runtime's kill token, so the runtime cancels it too.
+    shutdown: CancellationToken,
     circuit_thread_unparker: Unparker,
     backpressure_thread_unparker: Unparker,
     error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
@@ -7246,6 +7251,7 @@ impl ControllerInner {
                 next_output_id: Atomic::new(0),
                 layout: runtime.layout().clone(),
                 runtime: runtime.downgrade(),
+                shutdown: runtime.cancellation_token().child_token(),
                 circuit_thread_unparker: circuit_thread_parker.unparker().clone(),
                 backpressure_thread_unparker: backpressure_thread_parker.unparker().clone(),
                 error_cb,
@@ -7333,7 +7339,7 @@ impl ControllerInner {
         )
         .inspect_err(|_e| {
             // Set the state to terminated to make sure that when we later unpark auxiliary threads, they will exit.
-            controller.status.set_state(PipelineState::Terminated);
+            controller.set_terminated();
         })?;
 
         if controller.layout.local_host_idx() == 0 {
@@ -8309,7 +8315,10 @@ impl ControllerInner {
         let mut output_buffer = OutputBuffer::new(&endpoint_name);
 
         loop {
-            if controller.state() == PipelineState::Terminated {
+            // This thread is an aux thread of the DBSP runtime, and
+            // `RuntimeHandle::kill` joins its aux threads, so it has to exit on
+            // a kill as well as on `Terminated`.  The token covers both.
+            if controller.shutdown_token().is_cancelled() {
                 return;
             }
 
@@ -8440,6 +8449,38 @@ impl ControllerInner {
         self.status.state()
     }
 
+    /// Moves the pipeline to [PipelineState::Terminated] and cancels
+    /// [ControllerInner::shutdown].
+    ///
+    /// The only way to reach `Terminated`, so that the state and the token
+    /// cannot disagree.
+    fn set_terminated(&self) {
+        self.status.set_state(PipelineState::Terminated);
+        self.shutdown.cancel();
+    }
+
+    /// Cancellation token for indicating that the pipeline is going down.
+    ///
+    /// Every thread that a DBSP thread waits for has to stop waiting when this
+    /// holds, however long the chain between them: `RuntimeHandle::kill` joins
+    /// the runtime's aux threads, and the controller's output threads are aux
+    /// threads.  A thread that instead waits for something the teardown itself
+    /// is responsible for producing deadlocks the teardown.
+    ///
+    /// Two things put the pipeline in this state, and neither implies the
+    /// other:
+    ///
+    /// - The controller reaches [PipelineState::Terminated].  This is the
+    ///   ordinary shutdown path, where the circuit thread sets the state
+    ///   before killing the circuit.
+    ///
+    /// - The DBSP runtime is killed.  A worker that answers a command with an
+    ///   error kills the circuit from the circuit thread itself, so nothing
+    ///   sets `Terminated` on that path.
+    pub(crate) fn shutdown_token(&self) -> &CancellationToken {
+        &self.shutdown
+    }
+
     fn start(&self) {
         self.status.set_state(PipelineState::Running);
 
@@ -8466,7 +8507,7 @@ impl ControllerInner {
 
         // Mark pipeline as terminated before removing endpoints, so endpoint removal doesn't
         // end up getting recorded in the journal.
-        self.status.set_state(PipelineState::Terminated);
+        self.set_terminated();
 
         // Prevent nested panic when stopping the pipeline in response to a panic.
         let mut inputs = self.status.inputs.write();
