@@ -45,11 +45,6 @@ public class ViewColumnMetadata
         return this.lateness;
     }
 
-    @Nullable @Override
-    public DBSPExpression getWatermark() {
-        return null;
-    }
-
     @Nullable
     @Override
     public DBSPExpression getDefaultValue() {

@@ -297,7 +297,6 @@ pub struct Field {
     pub lateness: Option<String>,
     pub default: Option<String>,
     pub unused: bool,
-    pub watermark: Option<String>,
 }
 
 impl Field {
@@ -308,7 +307,6 @@ impl Field {
             lateness: None,
             default: None,
             unused: false,
-            watermark: None,
         }
     }
 
@@ -356,7 +354,6 @@ impl<'de> Deserialize<'de> for Field {
             #[serde(default)]
             unused: bool,
             lateness: Option<String>,
-            watermark: Option<String>,
         }
 
         fn helper_to_field(helper: FieldHelper) -> Field {
@@ -403,7 +400,6 @@ impl<'de> Deserialize<'de> for Field {
                 default: helper.default,
                 unused: helper.unused,
                 lateness: helper.lateness,
-                watermark: helper.watermark,
             }
         }
 
@@ -1766,7 +1762,6 @@ mod tests {
                         lateness: None,
                         default: None,
                         unused: false,
-                        watermark: None,
                     }]),
                     key: None,
                     value: None,
@@ -1774,7 +1769,6 @@ mod tests {
                 lateness: None,
                 default: None,
                 unused: false,
-                watermark: None,
             }
         );
     }

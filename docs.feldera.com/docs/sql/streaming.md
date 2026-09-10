@@ -18,21 +18,6 @@ lateness time units out of order.
 See the [Time Series Analysis Guide](/tutorials/time-series#timestamp-columns-and-lateness)
 for details.
 
-<!-- ## `WATERMARK` expressions
-
-:::warning
-
-The `WATERMARK` feature is still experimental, and it may be removed
-or substantially modified in the future.
-
-:::
-
-`WATERMARK` is an annotation on a column of a table that delays the processing
-of the input rows by a constant amount of time.
-
-See the [Time Series Analysis Guide](/tutorials/time-series#delaying-inputs-with-watermark)
-for details. -->
-
 ## `append_only` tables
 
 The `append_only` annotation on a table instructs Feldera that the table will

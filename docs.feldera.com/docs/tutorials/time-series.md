@@ -148,8 +148,6 @@ tables and views:
   until all out-of-order records have been received.  It always computes the
   output of the queries given all inputs received so far and incrementally updates
   these outputs as new out-of-order inputs arrive.
-  <!-- (See [below](#delaying-inputs-with-watermark)
-  for an experimental feature that allows delaying inputs on demand). -->
 
 * **Inputs that violate lateness are discarded.**  When a program receives a record
   that is more than lateness time units behind the most recent timestamp value
@@ -399,51 +397,6 @@ The use of `emit_final` is subject to the following restrictions:
   [`LOCAL`](/sql/grammar/#creating-views).  It takes effect only
   for the view used as output.  If the view is used in defining
   other views, these derived views will receive the non-delayed data.
-
-<!-- ## Delaying inputs with `WATERMARK`
-
-:::warning
-
-The `WATERMARK` feature is still experimental, and it may be removed
-or substantially modified in the future.
-
-:::
-
-Feldera can process data received either in-order or out-of-order.  In both
-scenarios, it continuously maintains query results computed based on the inputs
-received so far, updating these results as new data arrives.  However, some
-applications may not be able to handle results derived from out-of-order data
-correctly and prefer to wait until all out-of-order events have been delivered.
-
-`WATERMARK` is an annotation on a column of a table that delays the processing
-of the input rows by a specified amount of time.  More precisely, given a `WATERMARK`
-annotation with value `WM`, an input row with a value `X` for the watermarked column
-will be "held up" until another row with a timestamp `>=X + WM` is received, at which
-point the program will behave as if the row with value `X` has only just been received.
-
-This delay allows `WM` time units for out-of-order data to arrive.
-For a column with a `LATENESS` annotation, setting `WATERMARK` to be equal
-to `LATENESS` ensures that all received data is processed in-order.
-
-`WATERMARK` is specified as an expression that evaluates to a constant value.
-The expression must have a type that can be subtracted from the column
-type.  For example, a column of type `TIMESTAMP` may have a watermark
-specified as an `INTERVAL` type:
-
-```sql
-CREATE TABLE purchase_watermark (
-   customer_id INT,
-   ts TIMESTAMP NOT NULL WATERMARK INTERVAL 1 HOURS,
-   amount BIGINT
-);
-```
-
-:::warning
-
-The current version of the SQL compiler does not support multiple
-`WATERMARK` columns in a single table.
-
-::: -->
 
 ## Append-only tables
 

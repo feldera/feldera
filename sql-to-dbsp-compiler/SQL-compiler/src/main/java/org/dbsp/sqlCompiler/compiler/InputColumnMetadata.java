@@ -25,9 +25,6 @@ public class InputColumnMetadata implements IColumnMetadata {
     /** Lateness, if declared.  Should be a constant expression. */
     @Nullable
     public final DBSPExpression lateness;
-    /** Watermark, if declared.  Should be a constant expression. */
-    @Nullable
-    public final DBSPExpression watermark;
     /** Default value, if declared.  Should be a constant expression */
     @Nullable
     public final DBSPExpression defaultValue;
@@ -38,7 +35,7 @@ public class InputColumnMetadata implements IColumnMetadata {
     boolean unused;
 
     public InputColumnMetadata(CalciteObject node, ProgramIdentifier name, DBSPType type, boolean isPrimaryKey,
-                               @Nullable DBSPExpression lateness, @Nullable DBSPExpression watermark,
+                               @Nullable DBSPExpression lateness,
                                @Nullable DBSPExpression defaultValue,
                                @Nullable SourcePositionRange defaultValuePosition,
                                boolean interned) {
@@ -47,7 +44,6 @@ public class InputColumnMetadata implements IColumnMetadata {
         this.type = type;
         this.isPrimaryKey = isPrimaryKey;
         this.lateness = lateness;
-        this.watermark = watermark;
         this.defaultValue = defaultValue;
         this.defaultValuePosition = defaultValuePosition;
         this.interned = interned;
@@ -73,11 +69,6 @@ public class InputColumnMetadata implements IColumnMetadata {
     @Override
     public SourcePositionRange getPositionRange() {
         return this.getNode().getPositionRange();
-    }
-
-    @Override @Nullable
-    public DBSPExpression getWatermark() {
-        return this.watermark;
     }
 
     @Nullable @Override
@@ -111,10 +102,6 @@ public class InputColumnMetadata implements IColumnMetadata {
             visitor.stream.label("lateness");
             this.lateness.accept(visitor);
         }
-        if (this.watermark != null) {
-            visitor.stream.label("watermark");
-            this.watermark.accept(visitor);
-        }
         if (this.defaultValue != null) {
             visitor.stream.label("defaultValue");
             this.defaultValue.accept(visitor);
@@ -136,15 +123,12 @@ public class InputColumnMetadata implements IColumnMetadata {
         DBSPExpression lateness = null;
         if (node.has("lateness"))
             lateness = DBSPNode.fromJsonInner(node, "lateness", decoder, DBSPExpression.class);
-        DBSPExpression watermark = null;
-        if (node.has("watermark"))
-            watermark = DBSPNode.fromJsonInner(node, "watermark", decoder, DBSPExpression.class);
         DBSPExpression defaultValue = null;
         if (node.has("defaultValue"))
             defaultValue = DBSPNode.fromJsonInner(node, "defaultValue", decoder, DBSPExpression.class);
         boolean interned = Utilities.getBooleanProperty(node, "interned");
         var result = new InputColumnMetadata(CalciteObject.EMPTY, name, type, isPrimaryKey,
-                lateness, watermark, defaultValue, SourcePositionRange.INVALID, interned);
+                lateness, defaultValue, SourcePositionRange.INVALID, interned);
         if (node.has("unused")) {
             boolean unused = Utilities.getBooleanProperty(node, "unused");
             if (unused)

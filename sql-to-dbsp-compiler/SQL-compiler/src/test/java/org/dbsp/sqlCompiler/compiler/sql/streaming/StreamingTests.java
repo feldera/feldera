@@ -2010,7 +2010,7 @@ public class StreamingTests extends StreamingTestBase {
     public void testDelayedOutput() {
         String sql = """
                 CREATE TABLE t (
-                    ts TIMESTAMP NOT NULL WATERMARK INTERVAL 1 MINUTE LATENESS INTERVAL 1 MINUTE
+                    ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE
                 );
                 CREATE VIEW test as
                 SELECT SUM(YEAR(TS)), TIMESTAMP_TRUNC(ts, MINUTE) FROM t
@@ -3334,64 +3334,6 @@ public class StreamingTests extends StreamingTestBase {
                 CREATE VIEW V AS
                 SELECT AVG(distance), CAST(pickup AS DATE) FROM series GROUP BY CAST(pickup AS DATE);""";
         this.getCCS(ddl);
-    }
-
-    @Test
-    public void watermarkTest0() {
-        // Test for the example in the documentation
-        String sql = """
-                CREATE TABLE order_pickup (
-                   pickup_time TIMESTAMP NOT NULL WATERMARK INTERVAL '1:00' HOURS TO MINUTES,
-                   location VARCHAR
-                );
-                """;
-        this.getCCS(sql);
-    }
-
-    @Test
-    public void watermarkTest() {
-        String sql = """
-                CREATE TABLE series (
-                        distance DOUBLE,
-                        pickup TIMESTAMP NOT NULL WATERMARK INTERVAL '1:00' HOURS TO MINUTES
-                );
-                CREATE VIEW V AS
-                SELECT AVG(distance), CAST(pickup AS DATE) FROM series GROUP BY CAST(pickup AS DATE)""";
-        CompilerCircuitStream ccs = this.getCCS(sql);
-        ccs.step("INSERT INTO series VALUES(10, '2023-12-30 10:00:00');",
-                """
-                         avg  | date       | weight
-                        ---------------------------""");
-        // Insert tuple before watermark, should be processed
-        ccs.step("INSERT INTO series VALUES(10, '2023-12-29 10:00:00');",
-                """
-                         avg  | date       | weight
-                        ---------------------------
-                         10   | 2023-12-29 | 1""");
-        // Insert tuple after waterline, but not after watermark
-        // Waterline is advanced, no new outputs
-        ccs.step("INSERT INTO series VALUES(20, '2023-12-30 10:10:00');",
-                """
-                         avg  | date        | weight
-                        ---------------------------""");
-        // Insert tuple before last waterline, should be processed
-        // average does not change for 2023-12-19
-        ccs.step("INSERT INTO series VALUES(10, '2023-12-29 09:10:00');",
-                """
-                 avg  | date       | weight
-                ---------------------------""");
-        // Insert tuple in the past, but before the last waterline
-        // no new output
-        ccs.step("INSERT INTO series VALUES(10, '2023-12-30 10:00:00');",
-                """
-                         avg  | date        | weight
-                        ---------------------------""");
-        // Insert one more tuple that accepts all buffered 3 tuples
-        ccs.step("INSERT INTO series VALUES(10, '2023-12-31 10:00:00');",
-                """
-                         avg  | date        | weight
-                        ---------------------------
-                         13.333333333333334 | 2023-12-30 | 1""");
     }
 
     @Test

@@ -158,8 +158,6 @@ public class RustFileWriter extends RustWriter {
                     fn.apply(meta.defaultValue);
                 if (meta.lateness != null)
                     fn.apply(meta.lateness);
-                if (meta.watermark != null)
-                    fn.apply(meta.watermark);
             }
         }
 

@@ -269,10 +269,6 @@ latenessStatement
 
 See [Streaming SQL Extensions, LATENESS](streaming.md#lateness-expressions)
 
-<!-- ### WATERMARKS
-
-See [Streaming SQL Extensions, WATERMARKS](streaming.md#watermark-expressions) -->
-
 ## Creating user-defined functions.
 
 `CREATE FUNCTION` is used to declare [user-defined functions](udf.md).
@@ -866,7 +862,7 @@ only when it is written as a [quoted identifier](identifiers.md), as in
 | T | `TABLE`, `TABLESAMPLE`, `THEN`, `THURSDAY`, `TIME`, `TIMESTAMP`, `TRY_CAST`, `TUESDAY` |
 | U | `UNION`, `UNNEST`, `UNSIGNED`, `UPDATE`, `USING`, `UUID` |
 | V | `VALUES`, `VARIANT` |
-| W | `WATERMARK`, `WEDNESDAY`, `WHEN`, `WHERE`, `WINDOW`, `WITH` |
+| W | `WEDNESDAY`, `WHEN`, `WHERE`, `WINDOW`, `WITH` |
 
 Feldera reserves far fewer words than the SQL standard does; `AND`,
 `CAST`, `COUNT`, `SUM`, `VARCHAR`, and several hundred other standard

@@ -376,7 +376,7 @@ def _build_sql(connector_json: str) -> str:
       JOIN.
     * ``InputUpsertWithWaterline`` -- input + LATENESS waterline.
     * ``Window`` -- emitted because of the ``emit_final`` annotation
-      below; the runtime gates output on the watermark.
+      below; the runtime gates output on the waterline.
     * ``InnerStarJoin_*`` -- the runtime wrapper around the multijoin
       ``Match`` operator (``operator/dynamic/multijoin/match_keys.rs``);
       synthesized by the SQL star-join pass for the multi-aggregation
@@ -458,7 +458,7 @@ CREATE MATERIALIZED VIEW v_three_way AS
    WHERE a.id < 25;
 
 -- LATENESS on `input_table.created_at` routes ingest through the
--- watermark-aware input operator; the GROUP BY here keeps that path
+-- waterline-aware input operator; the GROUP BY here keeps that path
 -- materialized.
 CREATE MATERIALIZED VIEW v_window_count AS
   SELECT
@@ -468,14 +468,14 @@ CREATE MATERIALIZED VIEW v_window_count AS
   GROUP BY TIMESTAMP_TRUNC(created_at, HOUR);
 
 -- TODO: restore once bootstrapping supports relations with lateness;
--- `emit_final` requires a watermark, which requires LATENESS on
+-- `emit_final` requires a waterline, which requires LATENESS on
 -- `created_at` above.
 --
 -- The combination of `emit_final` on a LATENESS-bearing column and a
 -- multi-aggregation GROUP BY drives the compiler down the star-join
 -- path: the grouped MIN/MAX/STDDEV/ARG_MAX collapses into a Window
 -- operator (waterline gating) plus a StarJoin / Match multijoin.
--- Until the watermark advances the view emits no rows, but the
+-- Until the waterline advances the view emits no rows, but the
 -- Window/Match state is still part of the checkpoint.
 --CREATE MATERIALIZED VIEW v_emit_final
 --WITH ('emit_final' = 'created_at')

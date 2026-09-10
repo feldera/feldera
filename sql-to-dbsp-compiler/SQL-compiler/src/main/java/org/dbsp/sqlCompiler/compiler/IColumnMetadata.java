@@ -8,7 +8,6 @@ import javax.annotation.Nullable;
 
 public interface IColumnMetadata extends IHasSourcePositionRange, IHasType, IHasCalciteObject {
     @Nullable DBSPExpression getLateness();
-    @Nullable DBSPExpression getWatermark();
     @Nullable DBSPExpression getDefaultValue();
     ProgramIdentifier getColumnName();
     boolean isPrimaryKey();
