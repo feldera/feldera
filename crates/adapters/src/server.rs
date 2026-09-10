@@ -2991,16 +2991,24 @@ async fn output_endpoint(
         }
     };
 
-    // Create HTTP endpoint.
+    let controller = state.controller()?;
+
+    // Create HTTP endpoint.  In `backpressure` mode it waits for the client to
+    // receive each chunk, so it needs the controller's shutdown token to stop
+    // waiting when the pipeline goes down.
     let endpoint_name = format!("{}.api-{}", &config.stream, Uuid::new_v4());
-    let endpoint = HttpOutputEndpoint::new(&endpoint_name, format, http_output_config.backpressure);
+    let endpoint = HttpOutputEndpoint::new(
+        &endpoint_name,
+        format,
+        http_output_config.backpressure,
+        controller.shutdown_token().clone(),
+    );
     // Pre-connect the streaming receiver before `add_output_endpoint` so the
     // initial snapshot (when `send_snapshot` is enabled) is captured rather
     // than racing the streaming body that drains it.
     let response_receiver = endpoint.connect_stream();
 
     // Connect endpoint.
-    let controller = state.controller()?;
     let _guard = controller.register_api_connection()?;
 
     let endpoint_id = controller.add_output_endpoint(

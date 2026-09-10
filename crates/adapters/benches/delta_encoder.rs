@@ -8,6 +8,7 @@ use feldera_adapterlib::transport::OutputBatchType;
 use feldera_types::transport::delta_table::{DeltaTableWriteMode, DeltaTableWriterConfig};
 use std::sync::Weak;
 use tempfile::TempDir;
+use tokio_util::sync::CancellationToken;
 
 // ---------------------------------------------------------------------------
 // Delta-specific helpers
@@ -35,6 +36,7 @@ fn create_indexed_writer(threads: usize, table_uri: &str) -> DeltaTableWriter {
         &key_schema,
         &value_schema,
         Weak::new(),
+        CancellationToken::new(),
         false,
         true,
     )

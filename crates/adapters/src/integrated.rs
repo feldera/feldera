@@ -5,6 +5,7 @@ use datafusion::execution::runtime_env::RuntimeEnv;
 use feldera_types::config::{ConnectorConfig, PipelineConfig, TransportConfig};
 use feldera_types::program_schema::Relation;
 use std::sync::{Arc, Weak};
+use tokio_util::sync::CancellationToken;
 
 #[cfg(feature = "with-deltalake")]
 pub mod delta_table;
@@ -50,6 +51,7 @@ pub fn create_integrated_output_endpoint(
     key_schema: &Option<Relation>,
     schema: &Relation,
     controller: Weak<ControllerInner>,
+    shutdown: CancellationToken,
     continue_previous_state: bool,
     is_index: bool,
 ) -> Result<Box<dyn IntegratedOutputEndpoint>, ControllerError> {
@@ -62,6 +64,7 @@ pub fn create_integrated_output_endpoint(
             key_schema,
             schema,
             controller,
+            shutdown,
             continue_previous_state,
             is_index,
         )?),
