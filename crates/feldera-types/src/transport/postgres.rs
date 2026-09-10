@@ -86,7 +86,8 @@ pub struct PostgresCdcReaderConfig {
     /// Name of the pre-created Postgres publication to replicate from.
     pub publication: String,
 
-    /// Postgres table to replicate (e.g. "public.orders").
+    /// Postgres table to replicate, schema-qualified (e.g. "public.orders").
+    /// A name given without a schema refers to a table in "public".
     /// Must be included in the publication.
     pub source_table: String,
 
