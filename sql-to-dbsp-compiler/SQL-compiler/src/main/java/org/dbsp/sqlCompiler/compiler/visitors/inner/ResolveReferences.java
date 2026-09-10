@@ -22,6 +22,11 @@ public class ResolveReferences extends InnerVisitor {
     public final boolean allowFreeVariables;
     boolean freeVariablesFound;
 
+    /** True after a visit that met a variable declared nowhere in the visited node */
+    public boolean hasFreeVariables() {
+        return this.freeVariablesFound;
+    }
+
     public ResolveReferences(DBSPCompiler compiler, boolean allowFreeVariables) {
         super(compiler);
         this.substitutionContext = new Scopes<>();
@@ -100,6 +105,7 @@ public class ResolveReferences extends InnerVisitor {
         this.substitutionContext.clear();
         this.substitutionContext.newContext();
         this.reference.clear();
+        this.freeVariablesFound = false;
         super.startVisit(node);
     }
 
