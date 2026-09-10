@@ -180,6 +180,7 @@
       // fires right after with the payload.
       analysisView = { nodeId }
       currentTab = 'Metrics'
+      highlightSource(nodeId)
     },
     displayTopNodes(data, _isSticky) {
       tooltipData = data.match({
@@ -206,24 +207,22 @@
     onError: (err) => {
       error = err
     },
-    onNodeDoubleClick: (nodeId, type) => {
-      if (type !== 'leaf') {
-        return
-      }
-      const profile = profilerDiagram?.getProfile()
-      if (!profile) {
-        return
-      }
-      const ranges = profile.getSourceRanges(nodeId)
-      if (ranges.length === 0) {
-        return
-      }
-      highlightRanges = ranges
-      onHighlightSourceRanges?.(ranges)
-    },
     onRenderingChange: (rendering) => {
       onRenderingChange?.(rendering)
     }
+  }
+
+  /** Show the SQL the node was compiled from, selected and scrolled into view in the SQL panel. */
+  function highlightSource(nodeId: string) {
+    // A region's double click expands it, so a single click is the only gesture left to reach
+    // its source. A region carries the positions of everything inside it (see
+    // `CircuitProfile.getSourceRanges`), so the same call serves regions and operators alike.
+    const ranges = profilerDiagram?.getProfile()?.getSourceRanges(nodeId)
+    if (!ranges || ranges.length === 0) {
+      return
+    }
+    highlightRanges = ranges
+    onHighlightSourceRanges?.(ranges)
   }
 
   // Re-color the diagram when the selected metric changes. The selectMetric() call refreshes

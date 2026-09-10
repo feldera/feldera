@@ -1,5 +1,8 @@
 /**
- * Regression test for the vertical resizer in the support bundle viewer layout.
+ * Two regressions in the support bundle viewer layout: the vertical resizer's direction, and
+ * which gesture navigates to a node's SQL.
+ *
+ * ## The resizer
  *
  * The graph pane is rendered inside `{#if hasProfile}`; the analysis pane below it is
  * unconditional. PaneForge orders panes by registration time unless each pane declares an
@@ -19,8 +22,9 @@
  * vertical panes in SupportBundleViewerLayout.svelte.
  */
 
+import type { SourcePositionRange } from 'profiler-lib'
 import { TriageResults } from 'triage-types'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-svelte'
 
 // vi.mock is hoisted above module-scope bindings, so each factory imports the stub inline
@@ -46,6 +50,7 @@ vi.mock('./tabs/SqlTab.svelte', async () => ({
 }))
 
 // Imported after vi.mock so the stubs take effect.
+import { capture } from '../test-support/ComponentStub.svelte'
 import SupportBundleViewerLayout from './SupportBundleViewerLayout.svelte'
 
 const baseProps = () => ({
@@ -55,7 +60,7 @@ const baseProps = () => ({
   triageResults: new TriageResults(),
   profileFiles: [],
   selectedTimestamp: null,
-  onSelectTimestamp: () => {},
+  onSelectTimestamp: () => { },
   sqlPanelFullHeight: false
 })
 
@@ -122,5 +127,67 @@ describe('SupportBundleViewerLayout vertical pane order', () => {
     await rerender({ profileData: someProfile })
 
     await expectDividerDownGrowsTopPane(container)
+  })
+})
+
+/**
+ * Issue 6994: navigating to a node's SQL with a single click on any node - region
+ * or operator.
+ *
+ * The stub the diagram is mocked with records the callbacks the layout registers, so the test
+ * can raise them the way the Visualizer does; cytoscape cannot run here.
+ */
+describe('SupportBundleViewerLayout source navigation', () => {
+  const range = (line: number): SourcePositionRange =>
+    ({ start: { line, column: 1 }, end: { line, column: 9 } }) as SourcePositionRange
+
+  // The ids the fake profile knows: one operator, one region carrying the positions of the
+  // operators inside it, and one node compiled from no SQL at all.
+  const ranges: Record<string, SourcePositionRange[]> = {
+    operator: [range(3)],
+    region: [range(3), range(7)],
+    internal: []
+  }
+
+  const mount = () => {
+    const highlighted: SourcePositionRange[][] = []
+    capture.profile = { getSourceRanges: (id: string) => ranges[id] ?? [] } as never
+    render(SupportBundleViewerLayout, {
+      props: {
+        ...baseProps(),
+        profileData: someProfile,
+        programCode: ['a', 'b', 'c'],
+        onHighlightSourceRanges: (r: SourcePositionRange[]) => highlighted.push(r)
+      }
+    })
+    const click = capture.callbacks?.onNodeClick
+    if (!click) {
+      throw new Error('the layout registered no node-click callback')
+    }
+    return { click, highlighted }
+  }
+
+  beforeEach(() => {
+    capture.callbacks = undefined
+    capture.profile = null
+  })
+
+  it('navigates to the SQL of an operator on a single click', () => {
+    const { click, highlighted } = mount()
+    click('operator')
+    expect(highlighted).toEqual([ranges.operator])
+  })
+
+  it('navigates to the SQL of a region, whose double click is taken by expanding it', () => {
+    const { click, highlighted } = mount()
+    click('region')
+    expect(highlighted).toEqual([ranges.region])
+  })
+
+  it('keeps the previous highlight for a node compiled from no SQL', () => {
+    const { click, highlighted } = mount()
+    click('operator')
+    click('internal')
+    expect(highlighted).toEqual([ranges.operator])
   })
 })
