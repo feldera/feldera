@@ -996,11 +996,16 @@ impl Runtime {
     /// storage backend. The current use case for this is to be able to use spines outside
     /// of the DBSP worker threads, e.g., to maintain output buffers.
     ///
+    /// `f` must return once [Runtime::kill_in_progress] holds, because
+    /// [RuntimeHandle::join] joins the aux threads. An aux thread that waits
+    /// for anything else deadlocks whoever kills the runtime, and a kill can
+    /// come from any thread, including one the aux thread expects to hear from.
+    ///
     /// # Arguments
     ///
     /// * `thread_name` - The name of the thread.
-    /// * `parker` - The thread will use this parker when waiting for work. Use it to unpark
-    ///   the thread when terminating the runtime.
+    /// * `parker` - The thread will use this parker when waiting for work. The runtime
+    ///   unparks the thread through it when terminating.
     /// * `f` - The function to execute in the thread.
     pub fn spawn_aux_thread<F>(&self, thread_name: &str, parker: Parker, f: F)
     where
@@ -1369,6 +1374,10 @@ impl Runtime {
     /// `true` if the current worker thread has received a kill signal
     /// and should exit asap.  Schedulers should use this method before
     /// scheduling the next operator and after parking.
+    ///
+    /// This returns `false` on a thread that is not in a [Runtime], which has
+    /// no runtime to ask.  Such a thread can use [Runtime::kill_requested] on
+    /// a [Runtime] it carries instead.
     pub fn kill_in_progress() -> bool {
         // Only a circuit with a `Runtime` can receive a kill signal, which is
         // OK because a kill request can only be sent via a `RuntimeHandle`
@@ -1377,8 +1386,13 @@ impl Runtime {
             runtime
                 .borrow()
                 .as_ref()
-                .is_some_and(|runtime| runtime.inner().kill_signal.is_raised())
+                .is_some_and(Runtime::kill_requested)
         })
+    }
+
+    /// `true` if this runtime has received a kill signal.
+    pub fn kill_requested(&self) -> bool {
+        self.inner().kill_signal.is_raised()
     }
 
     pub fn cancellation_token(&self) -> CancellationToken {
@@ -1605,7 +1619,9 @@ impl RuntimeHandle {
 
     /// Wait for all workers in the runtime to terminate.
     ///
-    /// The calling thread blocks until all worker threads have terminated.
+    /// The calling thread blocks until all worker threads have terminated, and
+    /// then until every aux thread registered with [Runtime::spawn_aux_thread]
+    /// has terminated too.
     pub fn join(self) -> ThreadResult<()> {
         // Insist on joining all threads even if some of them fail.
         #[allow(clippy::needless_collect)]
@@ -1763,7 +1779,7 @@ impl ExactSizeIterator for WorkerLocations {}
 
 #[cfg(test)]
 mod tests {
-    use super::{Runtime, RuntimeInner};
+    use super::{Parker, Runtime, RuntimeInner};
     use crate::{
         Circuit, RootCircuit,
         circuit::{
@@ -1787,7 +1803,10 @@ mod tests {
     use std::{
         cell::RefCell,
         rc::Rc,
-        sync::{Arc, LazyLock, Mutex},
+        sync::{
+            Arc, LazyLock, Mutex,
+            atomic::{AtomicBool, Ordering},
+        },
         thread::sleep,
         time::{Duration, Instant},
     };
@@ -2200,6 +2219,86 @@ mod tests {
     #[test]
     fn test_kill_dynamic() {
         test_kill::<DynamicScheduler>();
+    }
+
+    /// `RuntimeHandle::join` cancels the cancellation token as well as setting
+    /// the kill signal, so a thread that watches either one sees a teardown.
+    #[test]
+    fn join_cancels_the_cancellation_token() {
+        let hruntime = Runtime::run(2, |_parker| {}).expect("failed to start runtime");
+        let token = hruntime.runtime().cancellation_token();
+        assert!(!token.is_cancelled());
+
+        hruntime.join().unwrap();
+        assert!(token.is_cancelled());
+    }
+
+    /// An aux thread that waits for a plain helper thread must be able to
+    /// release it on the kill signal alone.  `RuntimeHandle::kill` joins the
+    /// aux threads, so whatever they wait for has to end when the runtime is
+    /// killed, however deep the chain runs.
+    ///
+    /// The helper cannot ask [Runtime::kill_in_progress], which answers for
+    /// the calling thread and so reports `false` on a thread the runtime did
+    /// not spawn.  It carries a [Runtime] and asks
+    /// [Runtime::kill_requested] instead.  This is the shape that hung the
+    /// Postgres output connector, whose worker threads gave up only once the
+    /// controller reached `Terminated`, which the thread doing the killing was
+    /// itself the one that would have set.
+    #[test]
+    fn kill_releases_an_aux_thread_waiting_on_a_helper_thread() {
+        let hruntime = Runtime::run(2, |_parker| {
+            while !Runtime::kill_in_progress() {
+                sleep(Duration::from_millis(1));
+            }
+        })
+        .expect("failed to start runtime");
+
+        let runtime = hruntime.runtime().clone();
+        let (helper_done, helper_finished) = std::sync::mpsc::channel();
+        let kill_in_progress_lied = Arc::new(AtomicBool::new(false));
+
+        let helper_runtime = runtime.clone();
+        let lied = kill_in_progress_lied.clone();
+        let helper = std::thread::spawn(move || {
+            while !helper_runtime.kill_requested() {
+                sleep(Duration::from_millis(1));
+            }
+
+            // The trap this test guards, sampled with the kill already under
+            // way: the runtime did not spawn this thread, so the thread-local
+            // query does not report the kill even now.  Sampling before the
+            // loop would find the flag false whatever it answers on a foreign
+            // thread, and assert nothing.
+            lied.store(!Runtime::kill_in_progress(), Ordering::SeqCst);
+
+            let _ = helper_done.send(());
+        });
+
+        // Blocks for the helper's answer, the way an output endpoint blocks
+        // for its connector's worker threads.
+        runtime.spawn_aux_thread("waits-on-helper", Parker::new(), move |_parker| {
+            let _ = helper_finished.recv();
+        });
+
+        // Kill from a thread of its own, so that a regression fails this test
+        // rather than hanging the whole run.
+        let (killed, kill_returned) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            hruntime.kill().unwrap();
+            let _ = killed.send(());
+        });
+
+        kill_returned
+            .recv_timeout(Duration::from_secs(30))
+            .expect("`kill` must not wait for a thread that only the kill signal releases");
+        helper.join().unwrap();
+
+        assert!(
+            kill_in_progress_lied.load(Ordering::SeqCst),
+            "`kill_in_progress` reported a kill on a foreign thread; if it now \
+             answers there, this test and `kill_requested` need revisiting"
+        );
     }
 
     // Test `RuntimeHandle::kill`.
