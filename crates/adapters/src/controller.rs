@@ -1497,6 +1497,15 @@ impl Controller {
         Ok(())
     }
 
+    /// A token that is cancelled when the pipeline goes down.
+    ///
+    /// Hand this to an output endpoint that waits on something outside the
+    /// pipeline, so that it can stop waiting when the pipeline goes down.  See
+    /// [ControllerInner::shutdown_token].
+    pub(crate) fn shutdown_token(&self) -> &CancellationToken {
+        self.inner.shutdown_token()
+    }
+
     pub fn start_transaction(&self) -> Result<StartTransactionResponse, ControllerError> {
         self.inner.fail_if_bootstrapping_or_restoring()?;
 
@@ -8098,6 +8107,7 @@ impl ControllerInner {
                 &handles.key_schema,
                 &handles.value_schema,
                 self_weak,
+                self.shutdown_token().clone(),
                 continue_previous_state,
                 endpoint_config.connector_config.index.is_some(),
             )?;
@@ -8293,7 +8303,16 @@ impl ControllerInner {
     ) {
         encoder.consumer().batch_start(transaction, batch_type);
         encoder.encode(batch).unwrap_or_else(|e| {
-            controller.encode_error(endpoint_id, endpoint_name, e, Some("encoder_error"))
+            // An encoder that a shutdown cut short reports the abort as an
+            // error, and a teardown is not an endpoint fault: reporting it
+            // would log at ERROR and bump the endpoint's error count on every
+            // stop of a busy sink.  A genuine error that arrives in the same
+            // window is lost, which costs nothing on the way down.
+            if controller.shutdown_token().is_cancelled() {
+                debug!("{endpoint_name}: encoder gave up on the shutdown: {e}");
+            } else {
+                controller.encode_error(endpoint_id, endpoint_name, e, Some("encoder_error"));
+            }
         });
         encoder.consumer().batch_end();
     }
@@ -8323,6 +8342,16 @@ impl ControllerInner {
             }
 
             if disconnect_flag.load(Ordering::Acquire) {
+                return;
+            }
+
+            // This thread runs as an aux thread of the DBSP runtime, and
+            // `RuntimeHandle::kill` joins its aux threads. Killing the circuit
+            // therefore requires this thread to exit on the kill signal alone:
+            // a worker error tears the circuit down from the circuit thread,
+            // which is the thread that would otherwise set `Terminated`, so
+            // waiting for that state would deadlock the teardown.
+            if Runtime::kill_in_progress() {
                 return;
             }
 

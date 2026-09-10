@@ -44,6 +44,7 @@ use std::num::NonZeroU64;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use tokio::time::{Duration, sleep};
+use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, info, info_span, warn};
 
 /// Arrow serde config for writing Delta tables.
@@ -191,6 +192,10 @@ struct DeltaTableWriterInner {
     /// synchronisation.
     records_written: Arc<AtomicU64>,
     is_index: bool,
+    /// `ControllerInner::shutdown_token`, which ends an in-flight write
+    /// instead of letting it outlive the pipeline.  See
+    /// [encode_and_write_range].
+    shutdown: CancellationToken,
 }
 
 pub struct DeltaTableWriter {
@@ -224,6 +229,7 @@ impl DeltaTableWriter {
         key_schema: &Option<Relation>,
         value_schema: &Relation,
         controller: Weak<ControllerInner>,
+        shutdown: CancellationToken,
         continue_previous_state: bool,
         is_index: bool,
     ) -> Result<Self, ControllerError> {
@@ -310,6 +316,7 @@ impl DeltaTableWriter {
             controller,
             records_written: Arc::new(AtomicU64::new(0)),
             is_index,
+            shutdown,
         });
 
         // Register the progress counter with the controller's metrics.
@@ -654,6 +661,11 @@ enum WriteError {
     Transient(anyhow::Error),
 }
 
+/// The error a write reports when a shutdown cuts it short.
+fn write_aborted(retry_count: u32) -> anyhow::Error {
+    anyhow!("Delta table write aborted after {retry_count} retries: the pipeline is shutting down")
+}
+
 /// Encode a key range and stream-write it to a `DeltaWriter`, retrying transient failures.
 ///
 /// On retry, a fresh cursor is rebuilt from `cursor_builder` and a new `DeltaWriter`
@@ -673,68 +685,119 @@ async fn encode_and_write_range(
     // health status on success, which would be incorrect here; a single range
     // succeeding must not mask failures in other ranges.
     let mut retry_count: u32 = 0;
-    let mut backoff = Duration::from_secs(1);
-    let max_backoff = Duration::from_secs(10);
+    let attempts = async {
+        let mut backoff = Duration::from_secs(1);
+        let max_backoff = Duration::from_secs(10);
 
-    loop {
-        let mut rows_written: u64 = 0;
+        loop {
+            // A shutdown part-way through drops this future at its next await
+            // point, abandoning the Parquet files the attempt had already put in
+            // the object store.  A failed attempt leaves the same orphans, and
+            // Delta `VACUUM` collects them.
+            match write_once(&cursor_builder, &inner, &object_store, micros).await {
+                Ok((ref actions, rows)) => {
+                    if retry_count > 0 {
+                        info!(
+                            "delta_table {}: Delta table write succeeded after {retry_count} retries ({rows} rows, {} files)",
+                            inner.endpoint_name,
+                            actions.len(),
+                        );
+                    }
+                    return Ok((actions.clone(), rows));
+                }
+                Err(WriteError::Deterministic(e)) => {
+                    return Err(e);
+                }
+                Err(WriteError::Transient(e))
+                    if inner.config.max_retries.is_none()
+                        || retry_count < inner.config.max_retries.unwrap() =>
+                {
+                    retry_count += 1;
+                    let message = format!(
+                        "Delta table write failed (attempt {retry_count}, retrying in {backoff:?}): {e:?}"
+                    );
+                    if let Some(controller) = inner.controller.upgrade() {
+                        controller.update_output_connector_health(
+                            inner.endpoint_id,
+                            ConnectorHealth::unhealthy(&message),
+                        );
+                    }
+                    warn!("delta_table {}: {message}", inner.endpoint_name);
 
-        match stream_encode_and_write(
-            &cursor_builder,
-            &inner,
-            object_store.clone(),
-            micros,
-            &mut rows_written,
-        )
+                    sleep(backoff).await;
+                    backoff = std::cmp::min(backoff * 2, max_backoff);
+                }
+                Err(WriteError::Transient(e)) => {
+                    return Err(anyhow!(
+                        "Delta table write failed after {retry_count} retries: {e}"
+                    ));
+                }
+            }
+        }
+    };
+
+    // One shutdown consult for the whole loop.  `run_until_cancelled` answers
+    // `None` without polling an already-cancelled token's future, so no attempt
+    // begins after the shutdown, and dropping the loop makes every await inside
+    // it an abort point without naming any of them here.  A new await in the
+    // body therefore cannot reintroduce the hang.
+    inner
+        .shutdown
+        .run_until_cancelled(attempts)
         .await
-        {
-            Ok((ref actions, rows)) => {
-                if retry_count > 0 {
-                    info!(
-                        "delta_table {}: Delta table write succeeded after {retry_count} retries ({rows} rows, {} files)",
-                        inner.endpoint_name,
-                        actions.len(),
-                    );
-                }
-                return Ok((actions.clone(), rows));
-            }
-            Err(WriteError::Deterministic(e)) => {
-                rollback_progress(&inner, rows_written);
-                return Err(e);
-            }
-            Err(WriteError::Transient(e))
-                if inner.config.max_retries.is_none()
-                    || retry_count < inner.config.max_retries.unwrap() =>
-            {
-                rollback_progress(&inner, rows_written);
-                retry_count += 1;
-                let message = format!(
-                    "Delta table write failed (attempt {retry_count}, retrying in {backoff:?}): {e:?}"
-                );
-                if let Some(controller) = inner.controller.upgrade() {
-                    controller.update_output_connector_health(
-                        inner.endpoint_id,
-                        ConnectorHealth::unhealthy(&message),
-                    );
-                }
-                warn!("delta_table {}: {message}", inner.endpoint_name);
-                sleep(backoff).await;
-                backoff = std::cmp::min(backoff * 2, max_backoff);
-            }
-            Err(WriteError::Transient(e)) => {
-                rollback_progress(&inner, rows_written);
-                return Err(anyhow!(
-                    "Delta table write failed after {retry_count} retries: {e}"
-                ));
-            }
+        .unwrap_or_else(|| Err(write_aborted(retry_count)))
+}
+
+/// Encodes and writes the range once, undoing its contribution to the shared
+/// progress counter unless it succeeds.
+///
+/// [AttemptProgress] owns the row count so that the rollback also happens when
+/// this future is dropped mid-write, which is how a shutdown ends it.  The
+/// caller cannot do the rollback itself: the count lives in a borrow this
+/// future holds, and the caller only ever sees the future, not inside it.
+async fn write_once(
+    cursor_builder: &SplitCursorBuilder,
+    inner: &DeltaTableWriterInner,
+    object_store: &ObjectStoreRef,
+    micros: i64,
+) -> Result<(Vec<Add>, usize), WriteError> {
+    let mut progress = AttemptProgress {
+        inner,
+        rows_written: 0,
+        succeeded: false,
+    };
+    let result = stream_encode_and_write(
+        cursor_builder,
+        inner,
+        object_store.clone(),
+        micros,
+        &mut progress.rows_written,
+    )
+    .await;
+    progress.succeeded = result.is_ok();
+    result
+}
+
+/// The rows one write attempt added to the shared progress counter, rolled
+/// back on drop unless the attempt succeeded.
+struct AttemptProgress<'a> {
+    inner: &'a DeltaTableWriterInner,
+    rows_written: u64,
+    succeeded: bool,
+}
+
+impl Drop for AttemptProgress<'_> {
+    fn drop(&mut self) {
+        if !self.succeeded {
+            rollback_progress(self.inner, self.rows_written);
         }
     }
 }
 
 /// Subtract a failed attempt's contribution from the shared progress counter.
 ///
-/// On retry or terminal failure, this subtracts exactly what the failed
-/// attempt added (its `total_rows`) — no interference with other ranges.
+/// This subtracts exactly what the failed attempt added (its `total_rows`), so
+/// it does not interfere with other ranges.
 fn rollback_progress(inner: &DeltaTableWriterInner, written: u64) {
     if written == 0 {
         return;
@@ -1227,6 +1290,7 @@ mod parallel {
     use feldera_types::program_schema::{ColumnType, Relation, SqlIdentifier};
     use feldera_types::transport::delta_table::{DeltaTableWriteMode, DeltaTableWriterConfig};
     use tempfile::TempDir;
+    use tokio_util::sync::CancellationToken;
 
     use crate::catalog::SerBatch;
     use crate::controller::EndpointId;
@@ -1358,6 +1422,24 @@ mod parallel {
         mode: DeltaTableWriteMode,
         continue_previous_state: bool,
     ) -> DeltaTableWriter {
+        make_endpoint_with_retries(
+            threads,
+            table_uri,
+            indexed,
+            mode,
+            continue_previous_state,
+            Some(0),
+        )
+    }
+
+    fn make_endpoint_with_retries(
+        threads: usize,
+        table_uri: &str,
+        indexed: bool,
+        mode: DeltaTableWriteMode,
+        continue_previous_state: bool,
+        max_retries: Option<u32>,
+    ) -> DeltaTableWriter {
         let key_schema = if indexed { Some(key_relation()) } else { None };
         DeltaTableWriter::new(
             EndpointId::default(),
@@ -1366,7 +1448,7 @@ mod parallel {
                 variant_encoding: Default::default(),
                 uri: table_uri.to_string(),
                 mode,
-                max_retries: Some(0),
+                max_retries,
                 threads: Some(threads),
                 object_store_config: Default::default(),
                 checkpoint_interval: None,
@@ -1376,6 +1458,7 @@ mod parallel {
             &key_schema,
             &value_relation(),
             Weak::new(),
+            CancellationToken::new(),
             continue_previous_state,
             indexed,
         )
@@ -1548,6 +1631,137 @@ mod parallel {
     #[test]
     fn test_insert_single_thread() {
         insert_test(1);
+    }
+
+    /// A shutdown aborts the write rather than letting it retry on.
+    ///
+    /// `encode` runs on the controller's output thread, which is a DBSP aux
+    /// thread that `RuntimeHandle::kill` joins, and the retry loop in
+    /// `encode_and_write_range` is unbounded unless `max_retries` says
+    /// otherwise.  A write that outlives the shutdown hangs the teardown.
+    #[test]
+    fn shutdown_aborts_the_write() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        let batch = build_insert_batch(&make_records(100));
+        let mut endpoint = make_endpoint(1, &table_uri, true);
+
+        endpoint.inner.shutdown.cancel();
+
+        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
+        let error = endpoint
+            .encode(batch.clone().arc_as_batch_reader())
+            .expect_err("a shutdown must abort the write");
+        assert!(
+            error.to_string().contains("shutting down"),
+            "unexpected error: {error}"
+        );
+
+        // Aborting before the first attempt writes nothing at all.  An abort
+        // part-way leaves orphan Parquet files instead, which `VACUUM` takes.
+        assert!(
+            read_output(&table_uri).is_empty(),
+            "the aborted write must not have written any rows"
+        );
+    }
+
+    /// A shutdown during the retry backoff ends the write instead of retrying
+    /// for ever.
+    ///
+    /// `max_retries: None` is the documented default and an unbounded loop, so
+    /// `encode` cannot return here on its own: the table directory is
+    /// read-only, every attempt fails, and only the shutdown ends it.
+    #[test]
+    fn a_shutdown_ends_an_unbounded_retry_loop() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        let batch = build_insert_batch(&make_records(10));
+        let mut endpoint = make_endpoint_with_retries(
+            1,
+            &table_uri,
+            true,
+            DeltaTableWriteMode::Truncate,
+            false,
+            None,
+        );
+
+        // Read-only from here on, so the first attempt fails and every retry
+        // after it fails the same way.
+        std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        // Encode on a thread of its own, so that a regression fails this test
+        // rather than hanging the whole run.
+        let shutdown = endpoint.inner.shutdown.clone();
+        let (done, encode_returned) = std::sync::mpsc::channel();
+        let encoder = std::thread::spawn(move || {
+            endpoint.consumer().batch_start(0, OutputBatchType::Delta);
+            let result = endpoint.encode(batch.arc_as_batch_reader());
+            let _ = done.send((result.err(), records_written(&endpoint)));
+        });
+
+        // Long enough for the first attempt to fail and the write to reach the
+        // one-second backoff, where a shutdown finds it in production.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        shutdown.cancel();
+
+        let (error, progress) = encode_returned
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("a shutdown must end the retry loop");
+        encoder.join().unwrap();
+
+        std::fs::set_permissions(table_dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        let error = error.expect("an aborted write must report an error");
+        assert!(
+            error.to_string().contains("shutting down"),
+            "unexpected error: {error}"
+        );
+        assert_eq!(
+            progress, 0,
+            "an aborted write must leave no progress behind"
+        );
+    }
+
+    /// [AttemptProgress] takes an attempt's rows back out of the shared
+    /// progress counter unless the attempt succeeded.
+    ///
+    /// This is the whole reason the struct exists: a shutdown drops the write
+    /// future mid-flight, and the row count lives inside that future, where no
+    /// caller can reach it to roll it back.
+    #[test]
+    fn a_dropped_attempt_rolls_its_rows_back() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+        let endpoint = make_endpoint(1, &table_uri, true);
+        let inner = &*endpoint.inner;
+
+        // An attempt that never reports success, which is what a dropped
+        // write leaves behind.
+        {
+            let mut progress = super::AttemptProgress {
+                inner,
+                rows_written: 0,
+                succeeded: false,
+            };
+            inner.records_written.fetch_add(7, Ordering::Relaxed);
+            progress.rows_written = 7;
+        }
+        assert_eq!(records_written(&endpoint), 0);
+
+        // A successful attempt keeps its rows.
+        {
+            let mut progress = super::AttemptProgress {
+                inner,
+                rows_written: 0,
+                succeeded: false,
+            };
+            inner.records_written.fetch_add(7, Ordering::Relaxed);
+            progress.rows_written = 7;
+            progress.succeeded = true;
+        }
+        assert_eq!(records_written(&endpoint), 7);
     }
 
     #[test]
@@ -1732,6 +1946,7 @@ mod parallel {
             &key_schema,
             &value_relation(),
             Weak::new(),
+            CancellationToken::new(),
             false,
             false,
         );
@@ -1875,6 +2090,7 @@ mod parallel {
             &key_schema,
             &value_relation(),
             Weak::new(),
+            CancellationToken::new(),
             false,
             true,
         )
@@ -1939,6 +2155,7 @@ mod parallel {
             &Some(key_relation()),
             &value_relation(),
             Weak::new(),
+            CancellationToken::new(),
             false,
             true,
         )
@@ -2137,6 +2354,7 @@ mod parallel {
             &key_schema,
             &value_relation(),
             Weak::new(),
+            CancellationToken::new(),
             false,
             true,
         )
