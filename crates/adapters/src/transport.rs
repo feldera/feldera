@@ -21,6 +21,7 @@
 //! let reader = endpoint.open(consumer, 0);
 //! ```
 use std::path::Path;
+use tokio_util::sync::CancellationToken;
 
 use adhoc::AdHocInputEndpoint;
 use anyhow::Result as AnyResult;
@@ -140,6 +141,10 @@ pub fn input_transport_config_to_endpoint(
 /// fault-tolerant output endpoint (but it will still return a non-FT endpoint
 /// if that's all it can do).
 ///
+/// `shutdown` is `ControllerInner::shutdown_token`; an endpoint that
+/// waits on something outside the pipeline uses it to stop waiting when the
+/// pipeline goes down.
+///
 /// Returns an error if there is a invalid configuration for the endpoint.
 /// Returns `None` if the transport configuration variant is incompatible with an output endpoint.
 #[allow(unused_variables)]
@@ -148,6 +153,7 @@ pub fn output_transport_config_to_endpoint(
     endpoint_name: &str,
     fault_tolerant: bool,
     secrets_dir: &Path,
+    shutdown: CancellationToken,
 ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
     let config = resolve_secret_references_via_json(secrets_dir, config)?;
     match config {
@@ -157,8 +163,11 @@ pub fn output_transport_config_to_endpoint(
             false => Ok(Some(Box::new(KafkaOutputEndpoint::new(
                 config,
                 endpoint_name,
+                shutdown,
             )?))),
-            true => Ok(Some(Box::new(KafkaFtOutputEndpoint::new(config)?))),
+            true => Ok(Some(Box::new(KafkaFtOutputEndpoint::new(
+                config, shutdown,
+            )?))),
         },
         #[cfg(feature = "with-redis")]
         TransportConfig::RedisOutput(config) => {

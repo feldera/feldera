@@ -32,6 +32,7 @@ use std::sync::Mutex;
 use std::thread::sleep;
 use std::time::SystemTime;
 use std::time::{Duration, Instant};
+use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
 
 pub use ft::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint};
@@ -257,10 +258,17 @@ pub fn build_headers(headers: &Vec<KafkaHeader>) -> OwnedHeaders {
     result
 }
 
+/// Hands `record` to `producer`, waiting out a full producer queue.
+///
+/// The wait is unbounded, so it ends on `shutdown`: this runs on the
+/// controller's output thread, a DBSP aux thread that `RuntimeHandle::kill`
+/// joins, and a queue that a down broker keeps full would otherwise hold the
+/// teardown open for as long as the broker stays down.
 pub fn kafka_send<T1, T2, C>(
     producer: &ThreadedProducer<C>,
     topic: &str,
     mut record: BaseRecord<T1, T2, C::DeliveryOpaque>,
+    shutdown: &CancellationToken,
 ) -> AnyResult<()>
 where
     T1: ToBytes + ?Sized,
@@ -278,6 +286,13 @@ where
                     // Start timing after the first error.
                     start = Some(Instant::now());
                     record = r;
+
+                    if shutdown.is_cancelled() {
+                        bail!(
+                            "gave up sending a message to Kafka topic '{topic}' after {:?}                              because the pipeline is shutting down (error: {e})",
+                            start.unwrap().elapsed()
+                        );
+                    }
 
                     // Start warning after hitting max polling interval
                     if polling_interval >= MAX_POLLING_INTERVAL {
@@ -646,6 +661,76 @@ impl MemoryUseReporter {
             _ => return,
         }
         self.peak = Some((Instant::now(), memory));
+    }
+}
+
+#[cfg(test)]
+mod send_tests {
+    use super::{MAX_POLLING_INTERVAL, kafka_send};
+    use rdkafka::ClientConfig;
+    use rdkafka::producer::{BaseRecord, DefaultProducerContext, ThreadedProducer};
+    use std::sync::{Arc, mpsc};
+    use std::time::Duration;
+    use tokio_util::sync::CancellationToken;
+
+    /// `kafka_send` gives up its wait on a full producer queue once the
+    /// pipeline goes down.
+    ///
+    /// The wait is otherwise unbounded, and it runs on the controller's output
+    /// thread, a DBSP aux thread that `RuntimeHandle::kill` joins.  A broker
+    /// that stays down keeps the queue full, so waiting it out holds the
+    /// teardown open for as long as the broker is gone.
+    ///
+    /// No broker is involved: nothing listens on the configured address, so
+    /// the one message the queue holds never leaves it.
+    #[test]
+    fn a_shutdown_ends_a_full_queue_wait() {
+        let mut config = ClientConfig::new();
+        config.set("bootstrap.servers", "127.0.0.1:1");
+        config.set("queue.buffering.max.messages", "1");
+        let producer: Arc<ThreadedProducer<DefaultProducerContext>> =
+            Arc::new(config.create().expect("failed to create Kafka producer"));
+
+        let shutdown = CancellationToken::new();
+        kafka_send(
+            &producer,
+            "test_topic",
+            BaseRecord::<(), [u8], ()>::to("test_topic").payload(b"first".as_slice()),
+            &shutdown,
+        )
+        .expect("the first message must fit in the queue");
+
+        // Send from a thread of its own, so that a regression fails this test
+        // rather than hanging the whole run.
+        let sending_producer = producer.clone();
+        let sending_shutdown = shutdown.clone();
+        let (done, send_returned) = mpsc::channel();
+        let sender = std::thread::spawn(move || {
+            let result = kafka_send(
+                &sending_producer,
+                "test_topic",
+                BaseRecord::<(), [u8], ()>::to("test_topic").payload(b"second".as_slice()),
+                &sending_shutdown,
+            );
+            let _ = done.send(result.err());
+        });
+
+        assert!(
+            send_returned.recv_timeout(MAX_POLLING_INTERVAL).is_err(),
+            "a full queue must make `kafka_send` wait"
+        );
+
+        shutdown.cancel();
+        let error = send_returned
+            .recv_timeout(Duration::from_secs(30))
+            .expect("a shutdown must end the wait")
+            .expect("a send that gave up must report an error");
+        sender.join().unwrap();
+
+        assert!(
+            error.to_string().contains("shutting down"),
+            "unexpected error: {error}"
+        );
     }
 }
 

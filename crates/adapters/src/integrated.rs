@@ -85,6 +85,7 @@ pub fn create_integrated_output_endpoint(
             key_schema,
             schema,
             controller,
+            shutdown,
             is_index,
         )?),
         transport => {

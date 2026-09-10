@@ -61,6 +61,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tempfile::TempDir;
+use tokio_util::sync::CancellationToken;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::layer::SubscriberExt;
@@ -1022,10 +1023,15 @@ fn kafka_output_test(
     }))
     .unwrap();
 
-    let mut endpoint =
-        output_transport_config_to_endpoint(&config, "", true, default_secrets_directory())
-            .unwrap()
-            .unwrap();
+    let mut endpoint = output_transport_config_to_endpoint(
+        &config,
+        "",
+        true,
+        default_secrets_directory(),
+        CancellationToken::new(),
+    )
+    .unwrap()
+    .unwrap();
     assert!(endpoint.is_fault_tolerant());
     endpoint
         .connect(Box::new(|fatal, error, tag| {
@@ -1050,10 +1056,15 @@ fn _test() {
     }))
     .unwrap();
 
-    let mut endpoint =
-        output_transport_config_to_endpoint(&config, "", true, default_secrets_directory())
-            .unwrap()
-            .unwrap();
+    let mut endpoint = output_transport_config_to_endpoint(
+        &config,
+        "",
+        true,
+        default_secrets_directory(),
+        CancellationToken::new(),
+    )
+    .unwrap()
+    .unwrap();
     assert!(endpoint.is_fault_tolerant());
     endpoint
         .connect(Box::new(|fatal, error, tag| {

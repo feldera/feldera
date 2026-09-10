@@ -17,6 +17,7 @@ use rdkafka::{
 use std::error::Error;
 use std::sync::Mutex;
 use std::{sync::RwLock, time::Duration};
+use tokio_util::sync::CancellationToken;
 use tracing::span::EnteredSpan;
 use tracing::{debug, info_span};
 
@@ -119,6 +120,9 @@ pub struct KafkaOutputEndpoint {
     config: KafkaOutputConfig,
     headers: OwnedHeaders,
     max_message_size: usize,
+    /// `ControllerInner::shutdown_token`, which ends a wait on a full
+    /// producer queue.  See [kafka_send].
+    shutdown: CancellationToken,
 }
 
 fn span(topic: &str) -> EnteredSpan {
@@ -126,7 +130,11 @@ fn span(topic: &str) -> EnteredSpan {
 }
 
 impl KafkaOutputEndpoint {
-    pub fn new(mut config: KafkaOutputConfig, endpoint_name: &str) -> AnyResult<Self> {
+    pub fn new(
+        mut config: KafkaOutputConfig,
+        endpoint_name: &str,
+        shutdown: CancellationToken,
+    ) -> AnyResult<Self> {
         let _guard = span(&config.topic);
         // Create Kafka producer configuration.
         config.validate()?;
@@ -173,6 +181,7 @@ impl KafkaOutputEndpoint {
             config,
             headers,
             max_message_size,
+            shutdown,
         })
     }
 }
@@ -219,7 +228,12 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         let record = <BaseRecord<(), [u8], ()>>::to(&self.config.topic)
             .payload(buffer)
             .headers(self.headers.clone());
-        kafka_send(&self.kafka_producer, &self.config.topic, record)
+        kafka_send(
+            &self.kafka_producer,
+            &self.config.topic,
+            record,
+            &self.shutdown,
+        )
     }
 
     fn push_key(
@@ -246,7 +260,12 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         }
 
         record = record.headers(all_headers);
-        kafka_send(&self.kafka_producer, &self.config.topic, record)
+        kafka_send(
+            &self.kafka_producer,
+            &self.config.topic,
+            record,
+            &self.shutdown,
+        )
     }
 
     fn is_fault_tolerant(&self) -> bool {
