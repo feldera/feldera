@@ -21,6 +21,46 @@ import TabItem from '@theme/TabItem';
           reserved keyword, so a program may use it as an identifier, and a column's
           `watermark` property no longer appears in a program's schema.
 
+        - Breaking change (PostgreSQL CDC input connector): an unqualified
+          `source_table` names a table in the `public` schema. A pipeline whose
+          `source_table` gives a bare name for a table outside `public` no
+          longer matches that table: its Feldera table stays empty and receives
+          no further changes. Give the qualified name instead, for example
+          `"sales.orders"`. See
+          [PostgreSQL CDC input connector](/connectors/sources/postgresql-cdc).
+
+        - The PostgreSQL CDC input connector blocks checkpoints and suspend
+          requests until a complete copy of a table's initial read reaches the
+          circuit, so no checkpoint holds a partial copy of the table. The block
+          lasts as long as the initial read takes, and pausing the pipeline
+          during the read extends it for as long as the pipeline stays paused.
+          Stopping a pipeline during the first read of a large table may
+          therefore need a forced stop. See
+          [PostgreSQL CDC input connector](/connectors/sources/postgresql-cdc).
+
+        - The PostgreSQL CDC input connector reads a table again whenever a
+          pipeline stops or crashes before that table's initial read finishes,
+          with or without fault tolerance. The connector records the read as
+          complete only after the last row of the read has reached the circuit,
+          so an interrupted read is always repeated from a fresh snapshot
+          instead of leaving the Feldera table holding part of the source table.
+          A primary key on the Feldera table makes the repeated rows replace the
+          originals instead of appearing twice. See
+          [PostgreSQL CDC input connector](/connectors/sources/postgresql-cdc).
+
+        - The PostgreSQL CDC input connector no longer fails intermittently just
+          after a table finishes its initial read and hands off to streaming,
+          with the error `Missing shared table state` and a detail reporting
+          that no shared replicated table schema was found for the table. A
+          replication event that arrives before the streaming decoder knows the
+          table is now a handled case.
+
+        - The PostgreSQL CDC input connector installs a second migration on the
+          source database, which extends its `ALTER TABLE` DDL event trigger to
+          also cover `ALTER PUBLICATION`. The connecting user needs the same DDL
+          privileges on the source database that the first migration needs, and
+          the pipeline fails to start without them.
+
         - The Kafka connector's `sasl.mechanism = OAUTHBEARER` authentication can now
           target GCP Managed Service for Apache Kafka, in addition to AWS MSK. Set the
           new `oauth_provider` field to `gcp` to mint tokens from Google Application

@@ -28,14 +28,16 @@
 //! ```
 
 use super::cdc_tests::{
-    CdcAllTypesStruct, CdcTestTable, cdc_connector_url, cdc_ft_test_circuit,
-    cdc_ft_test_circuit_for, etl_table_states, read_output_json, wait_for_etl_state,
+    CdcAllTypesStruct, CdcTestTable, ETL_SYNC_COMPLETED_STATES, cdc_connector_url,
+    cdc_ft_test_circuit, cdc_ft_test_circuit_for, etl_table_states, read_output_json,
+    wait_for_etl_copy_in_progress, wait_for_etl_sync_completed,
 };
 use super::*;
 use crossbeam::channel::Receiver;
 use dbsp::DBData;
 use feldera_types::serde_with_context::DeserializeWithContext;
-use std::collections::{BTreeMap, BTreeSet};
+use feldera_types::suspend::{SuspendError, TemporarySuspendError};
+use std::collections::BTreeMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 use std::sync::Mutex;
@@ -49,12 +51,6 @@ const WAIT_MS: u128 = 60_000;
 /// no event to wait on for something that should not happen, so a bounded
 /// window is the only option; the existing CDC tests use the same one.
 const NEGATIVE_OBSERVATION_MS: u64 = 2_000;
-
-/// Key the fix for #6121 publishes in the connector's resume metadata; its
-/// boolean value says whether the checkpoint holds the whole initial
-/// snapshot. No connector on `main` emits it yet; see
-/// [`checkpoint_after_snapshot`] for how its absence is handled.
-const SNAPSHOT_COMPLETE_KEY: &str = "snapshot_complete";
 
 /// Wait out [`NEGATIVE_OBSERVATION_MS`] for rows that must not arrive.
 fn settle() {
@@ -179,21 +175,26 @@ impl Run {
         tail.inserted.clone()
     }
 
+    /// Records the circuit has taken from the CDC connector so far. This is
+    /// the counter a checkpoint reports as `circuit_input_records`, so a
+    /// prefix measured here and a checkpoint's total are comparable.
+    fn circuit_input_records(&self) -> u64 {
+        let status = self.controller.status();
+        let inputs = status.input_status();
+        let endpoint = inputs
+            .values()
+            .find(|e| e.endpoint_name == "cdc_in")
+            .expect("no input status for endpoint cdc_in");
+        endpoint
+            .metrics
+            .circuit_input_records
+            .load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     fn insert_count(&self) -> usize {
         let mut tail = self.tail.lock().unwrap();
         tail.refresh(self.output.path());
         tail.inserted.len()
-    }
-
-    /// Inserted ids appended since `cursor`, which is advanced past them.
-    /// Lets a wait predicate fold new ids into its own state instead of
-    /// re-reading every id on each poll.
-    fn inserted_since(&self, cursor: &mut usize) -> Vec<i64> {
-        let mut tail = self.tail.lock().unwrap();
-        tail.refresh(self.output.path());
-        let new = tail.inserted[*cursor..].to_vec();
-        *cursor = tail.inserted.len();
-        new
     }
 
     fn delete_count(&self) -> usize {
@@ -270,10 +271,15 @@ impl Run {
             WAIT_MS,
         )
         .unwrap_or_else(|_| {
+            let slots = replication_slots_of(&mut client, &slot_token);
+            assert!(
+                !slots.is_empty(),
+                "pipeline {slot_token} created no replication slot, so this run copied \
+                 nothing and its stop says nothing about slot release"
+            );
             panic!(
-                "timeout: replication slots for pipeline {slot_token} still active or missing \
-                 after stop: {:?}",
-                replication_slots_of(&mut client, &slot_token)
+                "timeout: replication slots for pipeline {slot_token} still active after \
+                 stop: {slots:?}"
             )
         });
         let mut tail = tail.into_inner().unwrap();
@@ -357,7 +363,6 @@ fn insert_range(table: &mut CdcTestTable, from: i64, to: i64) {
 /// copy/stream boundary either.
 #[test]
 #[serial]
-#[ignore = "red until #6121 is fixed: the snapshot is lost; see PR #6652"]
 fn test_snapshot_replayed_when_stopped_before_checkpoint() {
     let mut table = scenario_table("cdc_sc_snap_replay");
     insert_range(&mut table, 1, 3);
@@ -366,15 +371,15 @@ fn test_snapshot_replayed_when_stopped_before_checkpoint() {
     let run1 = Run::start(&table, storage.path());
     run1.wait_for_inserts(3, "run 1 snapshot");
     // Stop only once etl has persisted the copy as complete. Stopping earlier
-    // leaves etl in `data_sync`, and it redoes the copy on restart, which
-    // hides the bug behind timing.
-    wait_for_etl_state(&mut table, "ready");
+    // leaves etl in `data_sync` or `finished_copy`, and it redoes the copy on
+    // restart, which hides the bug behind timing.
+    wait_for_etl_sync_completed(&mut table);
     run1.stop();
 
     let run2 = Run::start(&table, storage.path());
     // Once etl is streaming, a probe row proves replication is live even if
     // the snapshot was not replayed, so the wait below fails only on a stall.
-    wait_for_etl_state(&mut table, "ready");
+    wait_for_etl_sync_completed(&mut table);
     insert_range(&mut table, 4, 4);
     wait(
         || run2.inserted_ids().contains(&4) || !run2.errors.is_empty(),
@@ -400,128 +405,182 @@ fn test_snapshot_replayed_when_stopped_before_checkpoint() {
 }
 
 // ---------------------------------------------------------------------------
-// Scenario 2: a checkpoint taken mid-copy must not lose rows or wedge restarts.
+// Scenario 2: a checkpoint requested mid-copy waits for the whole copy.
 // ---------------------------------------------------------------------------
 
-/// Issue #6121 (comment of 2026-05-24) and PR #6652.
+/// Issue #6121.
 ///
-/// The table is large enough that the initial copy is still running when the
-/// first rows come out. Run 1 pauses input at that point, checkpoints, and
-/// stops. The pause blocks etl from handing over further batches, but the
-/// batch already inside `write_table_rows` keeps filling the connector's
-/// queue, the controller keeps stepping on what is queued, and etl may mark
-/// the copy finished. Run 2 resumes from that checkpoint. Every row must be
-/// in the checkpoint or arrive in run 2, whatever state the stop left etl in.
+/// A checkpoint holding part of the initial copy would be unusable: on resume
+/// the connector cannot ask etl for the rest, because etl streams from the
+/// replication slot once it considers the copy done. The connector therefore
+/// reports a barrier for every step until the copy is in the circuit, and the
+/// controller defers a checkpoint requested before then.
 ///
-/// Rows checkpointed by run 1 may be delivered again by run 2: at-least-once
-/// allows it, and a primary key on the Feldera table folds them. The test
-/// reports how many were repeated.
+/// The test measures how much of the copy the circuit holds while etl still
+/// reports `data_sync`, and requires that prefix to be non-empty and shorter
+/// than the table. The checkpoint requested at that moment must still hold
+/// every row of the table, which is what the deferral buys, and a restart
+/// from it must neither lose a row nor read the table again.
+///
+/// What the assertions cannot reach from here is the narrower window in which
+/// etl reports the copy finished while its last buffers are still queued for
+/// the circuit. Nothing in this black-box path holds the pipeline inside that
+/// window; the unit tests of the copy state cover it.
 #[test]
 #[serial]
-#[ignore = "red until #6121 is fixed: etl persists a table error on stop; see PR #6652"]
-fn test_checkpoint_mid_snapshot_loses_nothing() {
-    checkpoint_mid_snapshot_loses_nothing(1);
+fn test_checkpoint_mid_snapshot_waits_for_the_whole_copy() {
+    checkpoint_mid_snapshot_waits_for_the_whole_copy(1);
 }
 
-/// Scenario 2 on a four-worker circuit, where redelivered rows are
-/// partitioned across workers.
+/// Scenario 2 on a four-worker circuit, where the copy is partitioned across
+/// workers.
 #[test]
 #[serial]
-#[ignore = "red until #6121 is fixed: etl persists a table error on stop; see PR #6652"]
-fn test_checkpoint_mid_snapshot_loses_nothing_multiworker() {
-    checkpoint_mid_snapshot_loses_nothing(4);
+fn test_checkpoint_mid_snapshot_waits_for_the_whole_copy_multiworker() {
+    checkpoint_mid_snapshot_waits_for_the_whole_copy(4);
 }
 
-fn checkpoint_mid_snapshot_loses_nothing(workers: usize) {
-    // Enough rows that the pause below lands while the copy is still running.
-    // Run 1 reports how far it got.
-    const N: i64 = 100_000;
+fn checkpoint_mid_snapshot_waits_for_the_whole_copy(workers: usize) {
+    // etl copies the table in 16 ctid partitions (4 copy connections, 4
+    // partitions each) and hands the connector each partition as one
+    // write_table_rows call, which the connector queues as one snapshot buffer
+    // of n / 16 rows: about 50 bytes of JSON per row, below the 2 MiB buffer
+    // cap at these row counts. The reader flushes whole buffers per step until it reaches
+    // max_batch_size, 10_000 records per worker, and
+    // wait_for_etl_copy_in_progress polls the circuit every 10 ms. The
+    // precondition "prefix < n" below fails only when the whole copy is
+    // flushed between two polls, which takes at least
+    // n / (10_000 * workers + n / 16) steps: seven, for any worker count,
+    // because n scales with the workers. Every measured run saw exactly one
+    // partition in the circuit: 6_256 rows, 190 to 235 ms after etl entered
+    // data_sync, in four single-worker runs; 25_024 rows, 330 to 385 ms, in
+    // three four-worker runs. A run takes about 15 s with one worker and
+    // 19 s with four.
+    let n: i64 = 100_000 * workers as i64;
     let mut table = scenario_table("cdc_sc_mid_snap");
-    insert_range(&mut table, 1, N);
+    insert_range(&mut table, 1, n);
     let storage = TempDir::new().unwrap();
 
     let run1 =
         Run::start_with::<TestStruct>(&table, storage.path(), &TestStruct::schema(), workers);
-    run1.wait_for_inserts(1, "run 1 first snapshot rows");
-    run1.controller.pause();
+    // Measure the part of the copy the circuit holds while etl is still
+    // copying. The checkpoint below is requested against that partial state,
+    // so what it holds is what the connector's barrier decides.
+    let prefix = wait_for_etl_copy_in_progress(
+        &mut table,
+        || run1.circuit_input_records(),
+        "run 1 checkpoint requested mid-copy",
+    );
+    run1.assert_no_errors("run 1 mid-copy");
+    assert!(
+        prefix < n as u64,
+        "the whole copy reached the circuit before the checkpoint was requested, so this run \
+         no longer exercises a deferred checkpoint; raise the row count. records in the circuit: \
+         {prefix}"
+    );
     let checkpoint = run1.controller.checkpoint().unwrap();
-    // The pause blocks new etl batches, but the controller keeps stepping on
-    // rows already queued, so run 1's output can run past the checkpoint. The
-    // checkpoint counts the rows it holds, and the file sink writes steps in
-    // order, so those are the first rows of the output.
     let in_checkpoint = checkpoint
         .input_statistics
         .get("cdc_in")
         .expect("checkpoint has no statistics for cdc_in")
-        .circuit_input_records as usize;
+        .circuit_input_records;
+    assert_eq!(
+        in_checkpoint, n as u64,
+        "the checkpoint must hold the whole copy: only {prefix} of {n} rows were in the circuit \
+         when it was requested, and the connector reports a barrier until the rest arrive"
+    );
+    // The barrier lifts once the copy is in the circuit, which is before etl
+    // records the copy as finished and hands the table over to streaming.
+    // Stopping inside that window would let etl read the table again on the
+    // next start, which is legal but not what this test is about.
+    wait_for_etl_sync_completed(&mut table);
     let delivered = run1.stop().inserted;
-    assert!(
-        delivered.len() >= in_checkpoint,
-        "run 1 wrote {} rows but its checkpoint holds {in_checkpoint}",
-        delivered.len()
-    );
-    // The scenario is about a checkpoint taken mid-copy. If the copy finished
-    // first, the test would pass without exercising it.
-    assert!(
-        in_checkpoint < N as usize,
-        "the copy finished before the pause: the checkpoint holds all {N} rows, so this run \
-         no longer exercises a mid-copy checkpoint; raise N"
-    );
-    let checkpointed = delivered[..in_checkpoint].to_vec();
-    println!(
-        "run 1: checkpointed {in_checkpoint} of {N} snapshot rows and delivered {} more \
-         before stopping",
-        delivered.len() - in_checkpoint
-    );
+    assert_exactly_once(&delivered, n, "run 1 output");
 
-    // Stopping while paused ends the etl batch that was waiting in
-    // `wait_unpaused`. Depending on whether etl sees the destination error
-    // or the shutdown signal first, it either persists a table error, which
-    // the connector must recover from on the next start (PR #6652), or stays
-    // in `data_sync` and simply redoes the copy.
-    let states = etl_table_states(&mut table);
-    println!("etl replication_state after stop: {states:?}");
-
+    // Run 2 resumes from a checkpoint that holds the copy, so it streams from
+    // the slot and does not read the table again.
     let run2 =
         Run::start_with::<TestStruct>(&table, storage.path(), &TestStruct::schema(), workers);
-    let checkpointed_set: BTreeSet<i64> = checkpointed.iter().copied().collect();
-    // Distinct ids across both runs: the checkpoint plus what run 2 delivers
-    // that the checkpoint did not hold, folded in as it arrives.
-    let mut cursor = 0;
-    let mut new_in_run2 = BTreeSet::new();
-    wait(
-        || {
-            new_in_run2.extend(
-                run2.inserted_since(&mut cursor)
-                    .into_iter()
-                    .filter(|id| !checkpointed_set.contains(id)),
-            );
-            checkpointed_set.len() + new_in_run2.len() >= N as usize || !run2.errors.is_empty()
-        },
-        WAIT_MS * 3,
-    )
-    .unwrap_or_else(|_| {
+    insert_range(&mut table, n + 1, n + 1);
+    run2.wait_for_inserts(1, "run 2 streamed row");
+    settle();
+    let ids = run2.stop().inserted;
+    assert_eq!(
+        ids,
+        vec![n + 1],
+        "run 2 must deliver only the row inserted after the restart"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 2b: a suspend requested mid-copy is refused.
+// ---------------------------------------------------------------------------
+
+/// Issue #6121, the property scenario 2 rests on. While the initial copy is
+/// only partly in the circuit, the controller must refuse to suspend, naming
+/// the connector's barrier. A pipeline paused mid-copy keeps that barrier
+/// until it is resumed, which is the price of never recording a partial copy.
+///
+/// The test pauses only once it has measured a non-empty, strictly partial
+/// copy in the circuit, so a connector that has fatally errored and is copying
+/// nothing cannot pass by reporting a barrier of its own.
+#[test]
+#[serial]
+fn test_suspend_mid_copy_is_refused() {
+    // etl hands the connector 16 ctid partitions of N / 16 rows, each one
+    // snapshot buffer; the reader flushes whole buffers per step until it
+    // reaches max_batch_size, 10_000 records on this single-worker circuit,
+    // and wait_for_etl_copy_in_progress polls every 10 ms. The precondition
+    // "prefix < N" below fails only when the whole copy is flushed between two
+    // polls, which takes at least N / (10_000 + N / 16) steps, seven. In four
+    // measured runs one partition, 6_256 rows, was in the circuit 180 to
+    // 265 ms after etl entered data_sync.
+    const N: i64 = 100_000;
+    let mut table = scenario_table("cdc_sc_partial");
+    insert_range(&mut table, 1, N);
+    let storage = TempDir::new().unwrap();
+
+    let run = Run::start(&table, storage.path());
+    let prefix = wait_for_etl_copy_in_progress(
+        &mut table,
+        || run.circuit_input_records(),
+        "suspend requested mid-copy",
+    );
+    run.assert_no_errors("the copy to start");
+    assert!(
+        prefix < N as u64,
+        "the whole copy reached the circuit before the pause, so this run no longer exercises \
+         a suspend requested mid-copy; raise N. records in the circuit: {prefix}"
+    );
+    // Pausing stops etl from handing over the rest of the copy, so the
+    // barrier stays up for as long as the pause does.
+    run.controller.pause();
+    let blocked = |status: &Result<(), SuspendError>| {
+        matches!(
+            status,
+            Err(SuspendError::Temporary(reasons))
+                if reasons
+                    .iter()
+                    .any(|r| matches!(r, TemporarySuspendError::InputEndpointBarrier(_)))
+        )
+    };
+    let refused = wait(
+        || blocked(&run.controller.can_suspend()) || !run.errors.is_empty(),
+        WAIT_MS,
+    );
+    let status = run.controller.can_suspend();
+    // A connector that died mid-copy also refuses to suspend, so report the
+    // error rather than reading it as the barrier this test is about.
+    run.assert_no_errors("suspend refused mid-copy");
+    // Let the copy finish so the run can stop.
+    run.controller.start();
+    run.stop();
+    refused.unwrap_or_else(|_| {
         panic!(
-            "timeout: run 2 delivered {} rows, run 1 checkpointed {}, expected {N} distinct ids; \
-             etl states after run 1: {states:?}",
-            run2.insert_count(),
-            checkpointed.len()
+            "suspending mid-copy must be refused with a barrier, got {status:?} with \
+             {prefix} of {N} rows in the circuit"
         )
     });
-    run2.assert_no_errors("run 2");
-
-    let mut all = checkpointed;
-    all.extend(run2.stop().inserted);
-    let h = insert_histogram(all);
-    let missing: Vec<i64> = (1..=N).filter(|id| !h.contains_key(id)).collect();
-    let repeated = h.values().filter(|c| **c > 1).count();
-    println!("run 2: {repeated} rows already in the checkpoint were delivered again");
-    assert!(
-        missing.is_empty(),
-        "snapshot rows lost across restart: {} missing, e.g. {}",
-        missing.len(),
-        preview(&missing)
-    );
 }
 
 // ---------------------------------------------------------------------------
@@ -587,37 +646,14 @@ fn streamed_rows_after_checkpoint_are_redelivered(workers: usize) {
     }
 }
 
-/// Checkpoint once etl has recorded the copy as finished and, where the
-/// connector can say so, the checkpoint covers the snapshot.
+/// Checkpoint once the initial copy is in the circuit.
 ///
-/// The fix for #6121 reports [`SNAPSHOT_COMPLETE_KEY`] in the resume
-/// metadata; with it, checkpoints are taken until the key reads true. The
-/// connector on `main` does not emit the key, so there the loop exits after
-/// a single checkpoint and the helper is a plain "checkpoint after `ready`".
+/// The connector reports a barrier for every step until then, so the
+/// controller defers this checkpoint by itself; waiting for etl to complete
+/// the table sync first only keeps the deferral short.
 fn checkpoint_after_snapshot(run: &Run, table: &mut CdcTestTable) {
-    wait_for_etl_state(table, "ready");
-    let deadline = Instant::now() + Duration::from_millis(WAIT_MS as u64);
-    loop {
-        let checkpoint = run.controller.checkpoint().unwrap();
-        let complete = checkpoint
-            .input_metadata
-            .0
-            .get("cdc_in")
-            .and_then(|m| m.get(SNAPSHOT_COMPLETE_KEY))
-            .and_then(|v| v.as_bool());
-        match complete {
-            None | Some(true) => return,
-            Some(false) => {
-                assert!(
-                    Instant::now() < deadline,
-                    "timeout: the connector never reported the snapshot as checkpointed; \
-                     resume metadata: {:?}",
-                    checkpoint.input_metadata.0.get("cdc_in")
-                );
-                std::thread::sleep(Duration::from_millis(100));
-            }
-        }
-    }
+    wait_for_etl_sync_completed(table);
+    run.controller.checkpoint().unwrap();
 }
 
 // ---------------------------------------------------------------------------
@@ -821,7 +857,7 @@ fn test_all_types_replayed_after_restart() {
                 col_bytea, col_numeric, col_smallint, col_int_array
             ) VALUES (
                 {id}, '{text}', 42, {big}, true,
-                3.14, 2.718281828, '2024-06-15', '14:30:00',
+                3.5, 2.25, '2024-06-15', '14:30:00',
                 '2024-01-01 12:00:00', '2024-01-01 12:00:00+00', '550e8400-e29b-41d4-a716-446655440000',
                 '{{"key": "value", "nested": {{"a": 1}}}}',
                 E'\\xDEADBEEF', 12345.67, 7, ARRAY[1, 2, 3]
@@ -867,8 +903,10 @@ fn test_all_types_replayed_after_restart() {
     assert_eq!(row["col_integer"], json!(42));
     assert_eq!(row["col_bigint"], json!(1234567890123i64));
     assert_eq!(row["col_boolean"], json!(true));
-    assert!((row["col_real"].as_f64().unwrap() - 3.14).abs() < 1e-3);
-    assert!((row["col_double"].as_f64().unwrap() - 2.718281828).abs() < 1e-9);
+    // REAL travels as f32; 1e-6 is a few f32 rounding steps at 3.5, the
+    // tolerance test_cdc_all_data_types uses for the same column.
+    assert!((row["col_real"].as_f64().unwrap() - 3.5).abs() < 1e-6);
+    assert!((row["col_double"].as_f64().unwrap() - 2.25).abs() < 1e-9);
     assert_eq!(row["col_date"], json!("2024-06-15"));
     assert_eq!(
         row["col_uuid"],
@@ -984,6 +1022,28 @@ fn test_other_tables_in_publication_are_filtered() {
     run_b.wait_for_inserts(4, "connector B streamed row");
     // Neither connector may receive the other table's rows.
     settle();
+
+    // Connector A's output says nothing about table b, which etl copies under
+    // the same pipeline: a copy of b that A answered wrongly leaves b errored
+    // in etl's state while A's rows all still arrive. So ask etl.
+    let deadline = Instant::now() + Duration::from_millis(WAIT_MS as u64);
+    loop {
+        let states = etl_table_states(&mut table_a);
+        if states.len() == 2
+            && states
+                .iter()
+                .all(|s| ETL_SYNC_COMPLETED_STATES.contains(&s.as_str()))
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "both tables of connector A's publication must complete their sync; states: {states:?}"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    run_a.assert_no_errors("connector A after streaming");
+    run_b.assert_no_errors("connector B after streaming");
 
     let a = run_a.stop().inserted;
     let b = run_b.stop().inserted;
