@@ -222,6 +222,11 @@ def suite_tag() -> str:
     return os.getenv("FELDERA_TEST_TAG_SUFFIX", "")
 
 
+# A pipeline name becomes a Kubernetes label value, which the platform caps at
+# 63 characters. Stay a character inside that.
+PIPELINE_NAME_MAX_LEN = 62
+
+
 def unique_pipeline_name(base_name: str) -> str:
     """
     In CI, multiple tests of different runs can run against the same Feldera instance, we
@@ -231,11 +236,32 @@ def unique_pipeline_name(base_name: str) -> str:
     """
     ci_tag = os.getenv("GITHUB_SHA", "local")[:5] + suite_tag()
     name = f"{ci_tag}_{base_name}"
-    # The pipeline name becomes a Kubernetes label value (max 63 chars). Fail here
-    # with a clear message rather than letting provisioning hit a cryptic 422.
-    assert len(name) <= 62, (
-        f"Generated pipeline name '{name}' is {len(name)} chars, exceeding the 62-char "
-        f"limit; shorten the test name '{base_name}' to at most {62 - len(ci_tag) - 1} chars."
+    # Fail here with a clear message rather than letting provisioning hit a
+    # cryptic 422.
+    assert len(name) <= PIPELINE_NAME_MAX_LEN, (
+        f"Generated pipeline name '{name}' is {len(name)} chars, exceeding the "
+        f"{PIPELINE_NAME_MAX_LEN}-char limit; shorten the test name '{base_name}' to at "
+        f"most {PIPELINE_NAME_MAX_LEN - len(ci_tag) - 1} chars."
+    )
+    return name
+
+
+def variant_pipeline_name(pipeline_name: str, variant: str) -> str:
+    """Name the pipeline a test creates for one `variant` of itself.
+
+    `unique_pipeline_name` bounds only the name it returns, so a test that
+    appends a variant to that name leaves the bound behind. The length it lands
+    on also depends on the suite: `python-multihost` stamps a tag one character
+    longer than `python` does, so the same test can fit in one suite and
+    overflow in the other. Check the whole name here, where the test that built
+    it is still named, instead of at pipeline creation.
+    """
+    name = f"{pipeline_name}_{variant}"
+    assert len(name) <= PIPELINE_NAME_MAX_LEN, (
+        f"Pipeline name '{name}' is {len(name)} chars, exceeding the "
+        f"{PIPELINE_NAME_MAX_LEN}-char limit; shorten the test name behind "
+        f"'{pipeline_name}' by {len(name) - PIPELINE_NAME_MAX_LEN} chars, or shorten "
+        f"the variant '{variant}'."
     )
     return name
 
