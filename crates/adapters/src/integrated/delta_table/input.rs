@@ -25,7 +25,8 @@ use datafusion::datasource::listing::{
 use datafusion::execution::memory_pool::MemoryLimit;
 use datafusion::optimizer::analyzer::type_coercion::TypeCoercionRewriter;
 use datafusion::physical_plan::{
-    ExecutionPlan, PhysicalExpr, SendableRecordBatchStream, displayable, execute_stream,
+    ExecutionPlan, ExecutionPlanProperties, PhysicalExpr, SendableRecordBatchStream, displayable,
+    execute_stream,
 };
 use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
 use dbsp::circuit::tokio::TOKIO;
@@ -176,9 +177,10 @@ fn env_override(endpoint_name: &str, name: &str) -> Option<usize> {
 /// the batch gets smaller.
 const DECODE_BUDGET_BYTES: u64 = 1024 * 1024 * 1024;
 
-/// Smallest batch the budget may ask for. A read whose rows are wide enough to
-/// hit this floor exceeds `DECODE_BUDGET_BYTES`, which is deliberate: shrinking
-/// batches without limit costs more in per-batch overhead than it saves.
+/// Smallest batch the budget may ask for, unless the configured batch size is
+/// smaller still. A read whose rows are wide enough to hit this floor exceeds
+/// `DECODE_BUDGET_BYTES`, which is deliberate: shrinking batches without limit
+/// costs more in per-batch overhead than it saves.
 const MIN_BATCH_ROWS: usize = 64;
 
 /// Assumed ratio of decoded bytes to the byte counts the Delta log reports,
@@ -208,6 +210,9 @@ impl ReadSize {
     /// Rows per decoded batch, so that `partitions` readers together stay near
     /// [`DECODE_BUDGET_BYTES`]. `default_rows` is both the starting point and
     /// the ceiling: the budget only ever shrinks a batch.
+    ///
+    /// `partitions` is how many readers the plan runs at once, which
+    /// [`scan_partitions`] reads off the plan rather than assuming.
     fn batch_rows(&self, partitions: usize, default_rows: usize) -> Option<usize> {
         if self.bytes == 0 || self.records == 0 {
             return None;
@@ -217,8 +222,43 @@ impl ReadSize {
             .div_ceil(self.records)
             .max(1);
         let rows = (DECODE_BUDGET_BYTES / partitions / bytes_per_row) as usize;
-        Some(rows.clamp(MIN_BATCH_ROWS, default_rows))
+        // A configured batch size below the floor is what the connector was
+        // asked for, so it wins: `clamp` requires `min <= max` and would panic
+        // otherwise.
+        Some(rows.clamp(MIN_BATCH_ROWS.min(default_rows), default_rows))
     }
+}
+
+/// The row count the log records for `add`, or 0 when the writer omitted the
+/// `numRecords` statistic or wrote one this cannot parse.
+fn add_records(add: &AddAction) -> u64 {
+    add.get_stats()
+        .ok()
+        .flatten()
+        .map_or(0, |stats| stats.num_records)
+        .max(0) as u64
+}
+
+/// How big the log says one `Add` action's file is, or `None` when it records no
+/// row count and so leaves no bytes-per-row ratio.
+///
+/// `Remove` and `cdc` actions carry a size but never a row count, so a read of
+/// one is unmeasured and falls back to the configured batch size.
+fn add_read_size(add: &AddAction) -> Option<ReadSize> {
+    let mut size = ReadSize::default();
+    size.add(add.size.max(0) as u64, add_records(add));
+    (size.records > 0).then_some(size)
+}
+
+/// How many readers `plan` runs at once: the partitions of its leaves, which
+/// are its scans, summed because a plan with several scans drives them
+/// together.
+fn scan_partitions(plan: &Arc<dyn ExecutionPlan>) -> usize {
+    let children = plan.children();
+    if children.is_empty() {
+        return plan.output_partitioning().partition_count();
+    }
+    children.iter().map(|child| scan_partitions(child)).sum()
 }
 
 /// The read size DataFusion derived for `plan`, or `None` unless it reports
@@ -765,6 +805,8 @@ impl DeltaTableInputReader {
         // Used to communicate the status of connector initialization.
         let (init_status_sender, mut init_status_receiver) =
             mpsc::channel::<Result<(), ControllerError>>(1);
+
+        config.validate().map_err(|e| anyhow!("{e}"))?;
 
         if config.num_parsers == 0 {
             bail!("invalid 'num_parsers' value: 'num_parsers' must be greater than 0");
@@ -3019,35 +3061,45 @@ impl DeltaTableInputEndpointInner {
     /// Execute `dataframe`, with the decoded batch bounded in bytes rather than
     /// only in rows.
     ///
-    /// `FileScanConfig` resolves the batch size from the task context when the
-    /// plan does not pin one, and neither the connector's listing tables nor
-    /// delta-rs's provider pins one, so the plan is built once and run with a
-    /// task context carrying the chosen size. Anything else the query does
-    /// (sorting a CDC transaction, subtracting its removes) keeps working to
-    /// the same size, which is what it would have used anyway.
+    /// The plan is built to derive the batch size from, since that needs the
+    /// scan's statistics and its partition count, and then built again once the
+    /// size is known. Setting the size on the task context alone is not enough:
+    /// `FilterExec` takes its batch size when it is planned
+    /// (`physical_planner.rs` hands it `session_state.config().batch_size()`)
+    /// and feeds that frozen value to a coalescer, so it would buffer the
+    /// smaller batches back up to the size the first plan was built with. One
+    /// is in the plan whenever `filter` or `snapshot_filter` is set, and it
+    /// survives planning because `parquet.pushdown_filters` is off by default.
+    ///
+    /// Planning twice is why the second pass is conditional: a read that keeps
+    /// the configured size, which is the common one, is planned once.
     async fn execute_stream(
         &self,
         dataframe: DataFrame,
         read_size: Option<ReadSize>,
     ) -> Result<SendableRecordBatchStream, DataFusionError> {
-        let (mut state, plan) = dataframe.into_parts();
-        let plan = state.create_physical_plan(&plan).await?;
+        let (mut state, logical) = dataframe.into_parts();
+        let plan = state.create_physical_plan(&logical).await?;
 
-        let partitions = state.config().target_partitions();
+        let partitions = scan_partitions(&plan);
         let default_rows = state.config().batch_size();
-        if let Some(rows) = read_size
+        let plan = match read_size
             .or_else(|| plan_read_size(plan.as_ref()))
             .and_then(|size| size.batch_rows(partitions, default_rows))
-            && rows < default_rows
+            .filter(|rows| *rows < default_rows)
         {
-            debug!(
-                "delta_table {}: reading {rows} rows per batch instead of {default_rows}, to keep \
-                 {partitions} concurrent readers within {} MB of decoded data",
-                &self.endpoint_name,
-                DECODE_BUDGET_BYTES / 1024 / 1024,
-            );
-            state.config_mut().options_mut().execution.batch_size = rows;
-        }
+            Some(rows) => {
+                debug!(
+                    "delta_table {}: reading {rows} rows per batch instead of {default_rows}, to \
+                     keep {partitions} concurrent readers within {} MB of decoded data",
+                    &self.endpoint_name,
+                    DECODE_BUDGET_BYTES / 1024 / 1024,
+                );
+                state.config_mut().options_mut().execution.batch_size = rows;
+                state.create_physical_plan(&logical).await?
+            }
+            None => plan,
+        };
 
         execute_stream(plan, state.task_ctx())
     }
@@ -3433,6 +3485,16 @@ impl DeltaTableInputEndpointInner {
                     newly_deleted,
                     false,
                     version,
+                    // The `Remove` side of a same-path rewrite reads the file
+                    // its paired `Add` names: one immutable file, two deletion
+                    // vectors, so the same bytes and the same rows. Only the
+                    // `Add` records a row count, which is why the ratio comes
+                    // from there. An unpaired `Remove` finds nothing here and
+                    // is read whole below, unmeasured.
+                    adds_by_path
+                        .get(remove.path.as_str())
+                        .copied()
+                        .and_then(add_read_size),
                     table,
                     &used_columns,
                     input_stream,
@@ -3455,6 +3517,7 @@ impl DeltaTableInputEndpointInner {
                     restored,
                     true,
                     version,
+                    add_read_size(add),
                     table,
                     &used_columns,
                     input_stream,
@@ -3773,14 +3836,12 @@ impl DeltaTableInputEndpointInner {
         // carries no row count, so the added files decide the bytes-per-row
         // ratio; both sides of the transaction come from the same table, so
         // that is the same ratio either way.
+        // Every add counts as a file the scan will open, and one whose row
+        // count the writer omitted still contributes its bytes, which skews the
+        // ratio towards smaller batches rather than larger.
         let mut read_size = ReadSize::default();
         for add in &adds {
-            let records = add
-                .get_stats()
-                .ok()
-                .flatten()
-                .map_or(0, |stats| stats.num_records);
-            read_size.add(add.size.max(0) as u64, records.max(0) as u64);
+            read_size.add(add.size.max(0) as u64, add_records(add));
         }
 
         // Drop add/remove pairs on the same path (metadata-only rewrites).
@@ -4358,6 +4419,7 @@ impl DeltaTableInputEndpointInner {
                     add.deletion_vector.as_ref(),
                     Some(&add.partition_values),
                     version,
+                    add_read_size(add),
                     table,
                     used_columns,
                     input_stream,
@@ -4375,6 +4437,9 @@ impl DeltaTableInputEndpointInner {
                     remove.deletion_vector.as_ref(),
                     remove.partition_values.as_ref(),
                     version,
+                    // A `Remove` action carries no row count, so its read is
+                    // unmeasured.
+                    None,
                     table,
                     used_columns,
                     input_stream,
@@ -4402,6 +4467,7 @@ impl DeltaTableInputEndpointInner {
         deletion_vector: Option<&DeletionVectorDescriptor>,
         partition_values: Option<&HashMap<String, Option<String>>>,
         version: i64,
+        read_size: Option<ReadSize>,
         table: &DeltaTable,
         used_columns: &[&str],
         input_stream: &mut dyn ArrowStream,
@@ -4446,6 +4512,7 @@ impl DeltaTableInputEndpointInner {
             partition_values,
             &description,
             version,
+            read_size,
             input_stream,
             receiver,
             start_transaction,
@@ -4465,6 +4532,7 @@ impl DeltaTableInputEndpointInner {
         dv_delta: Option<&RoaringTreemap>,
         polarity: bool,
         version: i64,
+        read_size: Option<ReadSize>,
         table: &DeltaTable,
         used_columns: &[&str],
         input_stream: &mut dyn ArrowStream,
@@ -4493,6 +4561,7 @@ impl DeltaTableInputEndpointInner {
                     partition_values,
                     &description,
                     version,
+                    read_size,
                     input_stream,
                     receiver,
                     start_transaction,
@@ -4531,6 +4600,7 @@ impl DeltaTableInputEndpointInner {
         partition_values: Option<&HashMap<String, Option<String>>>,
         description: &str,
         version: i64,
+        read_size: Option<ReadSize>,
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
         start_transaction: Option<Option<String>>,
@@ -4559,7 +4629,7 @@ impl DeltaTableInputEndpointInner {
                 start_transaction,
                 self.config.max_retries(),
                 Some(version),
-                None,
+                read_size,
             )
             .await?;
 
@@ -5385,7 +5455,9 @@ mod read_size_tests {
     const DEFAULT_ROWS: usize = 8192;
 
     fn rows(bytes: u64, records: u64, partitions: usize) -> Option<usize> {
-        ReadSize { bytes, records }.batch_rows(partitions, DEFAULT_ROWS)
+        let mut size = ReadSize::default();
+        size.add(bytes, records);
+        size.batch_rows(partitions, DEFAULT_ROWS)
     }
 
     /// An ordinary table keeps the full batch, so bounding decode memory costs
@@ -5404,12 +5476,15 @@ mod read_size_tests {
         const PARTITIONS: usize = 32;
         // 64 KiB per row compressed over 1000 rows.
         let bytes = 64 * 1024 * 1000;
+        let per_row = 64 * 1024 * COMPRESSED_EXPANSION;
+
+        // Spread over enough files to use every partition, so all of them
+        // decode at once and the budget covers the sum.
         let rows = rows(bytes, 1000, PARTITIONS).expect("a sized read picks a batch");
         assert!(
             (MIN_BATCH_ROWS..DEFAULT_ROWS).contains(&rows),
             "expected a smaller batch inside the floor; got {rows}"
         );
-        let per_row = 64 * 1024 * COMPRESSED_EXPANSION;
         let held = rows as u64 * per_row * PARTITIONS as u64;
         assert!(
             held <= DECODE_BUDGET_BYTES,
@@ -5438,6 +5513,23 @@ mod read_size_tests {
         assert_eq!(rows(8 * 1024 * 1024, 1, 32), Some(MIN_BATCH_ROWS));
     }
 
+    /// A configured batch size below the floor is honored rather than raised to
+    /// it, and above all does not panic: `clamp` requires `min <= max`, so a
+    /// floor above the configured size used to abort the connector task on the
+    /// first sized read. A plain `"batch_size": 32` reaches this.
+    #[test]
+    fn a_batch_size_below_the_floor_is_honored() {
+        for configured in [1, 32, MIN_BATCH_ROWS - 1] {
+            let mut size = ReadSize::default();
+            size.add(2_000_000_000, 10_000_000);
+            assert_eq!(
+                size.batch_rows(32, configured),
+                Some(configured),
+                "a configured {configured}-row batch must survive the budget"
+            );
+        }
+    }
+
     /// A read the log did not measure falls back to the configured batch size
     /// rather than guessing. A writer that omits `stats` leaves `numRecords`
     /// absent, which is the common way this happens.
@@ -5448,7 +5540,46 @@ mod read_size_tests {
         assert_eq!(rows(0, 1_000, 32), None, "rows without a byte count");
     }
 
-    /// Summing the log's files is what produces the pair.
+    /// One `Add` action measures the file it adds, which is what makes a follow
+    /// read sized: before this, follow mode passed nothing and every read fell
+    /// back to the configured batch size.
+    #[test]
+    fn an_add_action_measures_its_file() {
+        let add = AddAction {
+            path: "part-00000.parquet".to_string(),
+            size: 4_000_000,
+            stats: Some(r#"{"numRecords":1000}"#.to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            add_read_size(&add),
+            Some(ReadSize {
+                bytes: 4_000_000,
+                records: 1000
+            })
+        );
+    }
+
+    /// A writer that omits `numRecords` leaves no ratio, so the read stays
+    /// unmeasured rather than being sized from a guess.
+    #[test]
+    fn an_add_without_statistics_is_unmeasured() {
+        let add = AddAction {
+            path: "part-00000.parquet".to_string(),
+            size: 4_000_000,
+            stats: None,
+            ..Default::default()
+        };
+        assert_eq!(add_read_size(&add), None);
+
+        let malformed = AddAction {
+            stats: Some("not json".to_string()),
+            ..add.clone()
+        };
+        assert_eq!(add_read_size(&malformed), None);
+    }
+
+    /// Summing the log's files is what produces the ratio.
     #[test]
     fn sizes_accumulate() {
         let mut size = ReadSize::default();
@@ -5604,6 +5735,136 @@ mod read_schema_tests {
         Arc::new(ArrowSchema::new(vec![ArrowField::new(
             "s", data_type, false,
         )]))
+    }
+
+    /// A filter keeps the batch size it was planned with, whatever the task
+    /// context says later. That is why `execute_stream` plans a second time
+    /// once it knows the size rather than only setting it on the context.
+    ///
+    /// `FilterExec` takes the size at planning time and hands it to a
+    /// coalescer, so it buffers the scan's smaller batches back up to it. The
+    /// scan itself does follow the context, which is the weaker property
+    /// `a_file_scan_takes_its_batch_size_from_the_task_context` pins; this test
+    /// exists because that one is not enough to conclude anything about a plan.
+    /// If DataFusion ever makes the filter read the context too, this fails and
+    /// the second planning pass can go.
+    #[tokio::test]
+    async fn a_filter_keeps_the_batch_size_it_was_planned_with() {
+        const ROWS: usize = 20_000;
+        const PLANNED: usize = 8192;
+        const AFTER: usize = 100;
+        let dir = tempfile::tempdir().unwrap();
+        let values: Vec<String> = (0..ROWS).map(|i| format!("row-{i:08}")).collect();
+        let path = write_parquet(
+            dir.path(),
+            &values.iter().map(String::as_str).collect::<Vec<_>>(),
+            1000,
+        );
+
+        // One partition, so every row passes through one filter and its
+        // coalescer has enough input to reach the planned size.
+        let config = SessionConfig::new()
+            .set_usize("datafusion.execution.batch_size", PLANNED)
+            .with_target_partitions(1);
+        let ctx = SessionContext::new_with_config(config);
+        let url = ListingTableUrl::parse(format!("file://{}", path.display())).unwrap();
+        let listing_options = ListingOptions::new(Arc::new(ParquetFormat::default()))
+            .with_file_extension_opt(Some(".parquet"));
+        let table = ListingTable::try_new(
+            ListingTableConfig::new_with_multi_paths(vec![url])
+                .with_listing_options(listing_options)
+                .with_schema(schema_of(ArrowDataType::Utf8)),
+        )
+        .unwrap();
+        let df = ctx
+            .read_table(Arc::new(table))
+            .unwrap()
+            .filter(ident("s").not_eq(lit("absent")))
+            .unwrap();
+
+        let (mut state, logical) = df.into_parts();
+        let plan = state.create_physical_plan(&logical).await.unwrap();
+        state.config_mut().options_mut().execution.batch_size = AFTER;
+
+        let mut largest = 0;
+        let mut stream = execute_stream(plan, state.task_ctx()).unwrap();
+        while let Some(batch) = stream.next().await {
+            largest = largest.max(batch.unwrap().num_rows());
+        }
+        assert_eq!(
+            largest, PLANNED,
+            "the filter must still be emitting the batch size it was planned with"
+        );
+
+        // Planning again with the smaller size is what actually bounds it.
+        let plan = state.create_physical_plan(&logical).await.unwrap();
+        let mut largest = 0;
+        let mut rows = 0;
+        let mut stream = execute_stream(plan, state.task_ctx()).unwrap();
+        while let Some(batch) = stream.next().await {
+            let batch = batch.unwrap();
+            largest = largest.max(batch.num_rows());
+            rows += batch.num_rows();
+        }
+        assert_eq!(
+            largest, AFTER,
+            "a replanned filter must follow the new size"
+        );
+        assert_eq!(rows, ROWS, "every row must still come through");
+    }
+
+    /// One file can become many scan partitions, which is why the budget reads
+    /// the count off the plan instead of assuming one partition per file.
+    ///
+    /// DataFusion splits a scan's files into byte ranges once the scan reads at
+    /// least `repartition_file_min_size` in total. The test lowers that
+    /// threshold rather than writing a 10 MB file, and asserts both directions:
+    /// above it one file yields several partitions, below it one.
+    #[tokio::test]
+    async fn a_scan_can_open_more_partitions_than_it_has_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let values: Vec<String> = (0..20_000).map(|i| format!("row-{i:08}")).collect();
+        let path = write_parquet(
+            dir.path(),
+            &values.iter().map(String::as_str).collect::<Vec<_>>(),
+            1000,
+        );
+        let file_bytes = std::fs::metadata(&path).unwrap().len() as usize;
+
+        // Below the threshold the one file stays one partition; above it, the
+        // scan splits the file by byte range and runs several readers.
+        for (min_size, expect_split) in [(file_bytes * 2, false), (file_bytes / 4, true)] {
+            let config = SessionConfig::new()
+                .with_target_partitions(8)
+                .set_usize("datafusion.optimizer.repartition_file_min_size", min_size);
+            let ctx = SessionContext::new_with_config(config);
+
+            let url = ListingTableUrl::parse(format!("file://{}", path.display())).unwrap();
+            let listing_options = ListingOptions::new(Arc::new(ParquetFormat::default()))
+                .with_file_extension_opt(Some(".parquet"));
+            let table = ListingTable::try_new(
+                ListingTableConfig::new_with_multi_paths(vec![url])
+                    .with_listing_options(listing_options)
+                    .with_schema(schema_of(ArrowDataType::Utf8)),
+            )
+            .unwrap();
+
+            let (state, plan) = ctx.read_table(Arc::new(table)).unwrap().into_parts();
+            let plan = state.create_physical_plan(&plan).await.unwrap();
+            let partitions = scan_partitions(&plan);
+
+            if expect_split {
+                assert!(
+                    partitions > 1,
+                    "one file over the threshold must split; got {partitions} partitions"
+                );
+            } else {
+                assert_eq!(
+                    partitions, 1,
+                    "one file under the threshold must stay one partition"
+                );
+            }
+        }
     }
 
     /// The batch size a file scan uses comes from the task context at execution

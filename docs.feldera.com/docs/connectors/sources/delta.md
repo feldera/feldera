@@ -181,6 +181,13 @@ Additional configuration options to configure HTTP client for remote object stor
 | `connect_timeout`             | Set a timeout for only the connect phase of a client. This is the time allowed for the client to establish a connection and if the connection is not established within this time, the client returns a timeout error.|
 | `user_agent`                  | User-Agent header to be used by this client.                                                                                                                   |
 
+### Advanced configuration
+
+| Property                    | Type   | Default    | Description   |
+|-----------------------------|--------|------------|---------------|
+| `batch_size`                | integer| 8192       | <p>Maximum number of rows the connector decodes into one Arrow batch.</p><p>A batch is the unit the connector decodes a Parquet file into, and its memory cost is this many rows of every column it reads. Lower values reduce the memory a read holds at the cost of throughput. The connector already sizes its reads from the table's statistics, so this setting is rarely needed; reach for it when a read holds too much memory, or when the Delta log carries no row counts and so cannot be measured.</p>|
+| `scan_parallelism`          | integer| `io_workers`| <p>Number of data files the connector decodes concurrently.</p><p>Reading more files at a time is faster and holds more decoded data in memory at once. Unlike `max_concurrent_readers`, which caps concurrent object store reads across every Delta Lake connector in the pipeline, this applies to one connector and governs the parallelism of a single read.</p><p>Defaults to the pipeline's `io_workers`, or its `workers` when `io_workers` is not set.</p>|
+
 ## Data type mapping
 
 The following table lists supported Delta Lake data types and corresponding Feldera types.

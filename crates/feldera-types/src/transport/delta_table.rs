@@ -806,6 +806,30 @@ mod read_tuning_tests {
         assert_eq!(config.scan_parallelism, Some(4));
     }
 
+    /// Zero is rejected at config time rather than reaching DataFusion, which
+    /// would be asked for empty batches or no scan partitions.
+    #[test]
+    fn zero_is_rejected() {
+        assert_eq!(
+            config(r#","batch_size":0"#).validate(),
+            Err("'batch_size' must be greater than 0".to_string())
+        );
+        assert_eq!(
+            config(r#","scan_parallelism":0"#).validate(),
+            Err("'scan_parallelism' must be greater than 0".to_string())
+        );
+    }
+
+    /// A set value and an absent one both validate.
+    #[test]
+    fn positive_and_absent_settings_validate() {
+        assert_eq!(config("").validate(), Ok(()));
+        assert_eq!(
+            config(r#","batch_size":512,"scan_parallelism":4"#).validate(),
+            Ok(())
+        );
+    }
+
     /// An unset setting stays out of the serialized form, so a config that
     /// omits it round-trips unchanged through a manager that does not know it.
     #[test]
@@ -929,6 +953,18 @@ mod log_retention_tests {
 }
 
 impl DeltaTableReaderConfig {
+    /// Reject settings the connector cannot act on, so a misconfigured pipeline
+    /// fails at startup naming the setting rather than at the first read.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.batch_size.is_some_and(|n| n == 0) {
+            return Err("'batch_size' must be greater than 0".to_string());
+        }
+        if self.scan_parallelism.is_some_and(|n| n == 0) {
+            return Err("'scan_parallelism' must be greater than 0".to_string());
+        }
+        Ok(())
+    }
+
     /// `true` if the configuration requires taking an initial snapshot of the table.
     pub fn snapshot(&self) -> bool {
         matches!(
