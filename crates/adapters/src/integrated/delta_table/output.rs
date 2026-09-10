@@ -361,61 +361,86 @@ struct WriterTask {
     delta_table: DeltaTable,
 }
 
-/// Retry `op` with exponential backoff  of up to 10 seconds until it succeeds or config.max_retries is reached.
+/// Retry the future `op` with exponential backoff of up to 10 seconds until it
+/// succeeds, `config.max_retries` is reached, or the pipeline goes down.
 ///
-/// `warn!` and set health status to unhealthy on each failure, clear the health status on success.
+/// `warn!` and set health status to unhealthy on each failure, clear the health
+/// status on success.
+///
+/// The shutdown check is not optional.  Every caller runs on the controller's
+/// output thread, a DBSP aux thread that `RuntimeHandle::kill` joins, and the
+/// loop is unbounded when `max_retries` is `None`, which is the documented
+/// default.  A retry that outlives the shutdown hangs the teardown.
 macro_rules! retry {
     ($self:ident, $description:expr, $op:expr) => {{
         let mut retry_count = 0;
-        let mut backoff = Duration::from_secs(1);
-        let max_backoff = Duration::from_secs(10);
-        loop {
-            match $op {
-                Ok(result) => {
-                    if let Some(controller) = $self.inner.controller.upgrade() {
-                        controller.update_output_connector_health(
-                            $self.inner.endpoint_id,
-                            ConnectorHealth::healthy(),
-                        );
+
+        // Owned, so that awaiting it does not borrow `$self` alongside `$op`.
+        let shutdown = $self.inner.shutdown.clone();
+
+        let attempts = async {
+            let mut backoff = Duration::from_secs(1);
+            let max_backoff = Duration::from_secs(10);
+
+            loop {
+                match $op.await {
+                    Ok(result) => {
+                        if let Some(controller) = $self.inner.controller.upgrade() {
+                            controller.update_output_connector_health(
+                                $self.inner.endpoint_id,
+                                ConnectorHealth::healthy(),
+                            );
+                        }
+                        if retry_count > 0 {
+                            info!(
+                                "delta_table {}: {description} succeeded after {retry_count} attempts",
+                                &$self.inner.endpoint_name,
+                                description = $description
+                            );
+                        }
+                        return Ok(result);
                     }
-                    if retry_count > 0 {
-                        info!(
-                            "delta_table {}: {description} succeeded after {retry_count} attempts",
-                            &$self.inner.endpoint_name,
+                    Err(e)
+                        if $self.inner.config.max_retries.is_none()
+                            || retry_count < $self.inner.config.max_retries.unwrap() =>
+                    {
+                        retry_count += 1;
+                        let message = format!(
+                            "{description} failed after {retry_count} attempts (retrying in {backoff:?}): {e:?}",
                             description = $description
                         );
-                    }
-                    break Ok(result);
-                }
-                Err(e) if $self.inner.config.max_retries.is_none() || retry_count < $self.inner.config.max_retries.unwrap() => {
-                    retry_count += 1;
-                    let message = format!(
-                        "{description} failed after {retry_count} attempts (retrying in {backoff:?}): {e:?}",
-                        description = $description
-                    );
 
-                    if let Some(controller) = $self.inner.controller.upgrade() {
-                        controller.update_output_connector_health(
-                            $self.inner.endpoint_id,
-                            ConnectorHealth::unhealthy(&message),
+                        if let Some(controller) = $self.inner.controller.upgrade() {
+                            controller.update_output_connector_health(
+                                $self.inner.endpoint_id,
+                                ConnectorHealth::unhealthy(&message),
+                            );
+                        }
+                        warn!("delta_table {}: {message}", &$self.inner.endpoint_name);
+
+                        sleep(backoff).await;
+                        backoff = std::cmp::min(backoff * 2, max_backoff);
+                    }
+                    Err(e) => {
+                        retry_count += 1;
+
+                        let message = format!(
+                            "{description} failed after {retry_count} attempts: {e:?}",
+                            description = $description
                         );
+
+                        return Err(anyhow!(message));
                     }
-                    warn!("delta_table {}: {message}", &$self.inner.endpoint_name);
-                    sleep(backoff).await;
-                    backoff = std::cmp::min(backoff * 2, max_backoff);
-                }
-                Err(e) => {
-                    retry_count += 1;
-
-                    let message = format!(
-                        "{description} failed after {retry_count} attempts: {e:?}",
-                        description = $description
-                    );
-
-                    break Err(anyhow!(message));
                 }
             }
-        }
+        };
+
+        // One shutdown consult for the whole loop; see `encode_and_write_range`
+        // for why that is enough, and why it beats one per await.
+        shutdown
+            .run_until_cancelled(attempts)
+            .await
+            .unwrap_or_else(|| Err(shutdown_aborted($description, retry_count)))
     }};
 }
 
@@ -643,7 +668,7 @@ impl WriterTask {
         retry!(
             self,
             "committing Delta table transaction",
-            self.commit(actions).await
+            self.commit(actions)
         )
     }
 }
@@ -661,9 +686,9 @@ enum WriteError {
     Transient(anyhow::Error),
 }
 
-/// The error a write reports when a shutdown cuts it short.
-fn write_aborted(retry_count: u32) -> anyhow::Error {
-    anyhow!("Delta table write aborted after {retry_count} retries: the pipeline is shutting down")
+/// The error an operation reports when a shutdown cuts it short.
+fn shutdown_aborted(operation: &str, retry_count: u32) -> anyhow::Error {
+    anyhow!("{operation} aborted after {retry_count} attempts: the pipeline is shutting down")
 }
 
 /// Encode a key range and stream-write it to a `DeltaWriter`, retrying transient failures.
@@ -745,7 +770,7 @@ async fn encode_and_write_range(
         .shutdown
         .run_until_cancelled(attempts)
         .await
-        .unwrap_or_else(|| Err(write_aborted(retry_count)))
+        .unwrap_or_else(|| Err(shutdown_aborted("Delta table write", retry_count)))
 }
 
 /// Encodes and writes the range once, undoing its contribution to the shared
@@ -1090,7 +1115,12 @@ impl OutputConsumer for DeltaTableWriter {
         // batch_end() is called from the dedicated output thread (output_thread_func).
         if let Err(e) = TOKIO.block_on(self.task.commit_with_retry(&actions)) {
             self.inner.records_written.store(0, Ordering::Relaxed);
-            if let Some(controller) = self.inner.controller.upgrade() {
+            // A commit that the shutdown cut short is a teardown, not an
+            // endpoint fault, and the batch is discarded either way.  The
+            // Parquet files it wrote are orphans that `VACUUM` collects.
+            if self.inner.shutdown.is_cancelled() {
+                info!("delta_table {}: {e}", &self.inner.endpoint_name);
+            } else if let Some(controller) = self.inner.controller.upgrade() {
                 controller.output_transport_error(
                     self.inner.endpoint_id,
                     &self.inner.endpoint_name,
@@ -1722,6 +1752,79 @@ mod parallel {
             progress, 0,
             "an aborted write must leave no progress behind"
         );
+    }
+
+    /// A shutdown ends the commit's retry loop too, not just the write's.
+    ///
+    /// `batch_end` drives `commit_with_retry` with `TOKIO.block_on` on the
+    /// controller's output thread, and that loop is unbounded when
+    /// `max_retries` is `None`.  Data that reached the object store but no
+    /// `_delta_log` entry hangs the teardown exactly like a failed write.
+    #[test]
+    fn a_shutdown_ends_an_unbounded_commit_loop() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        let batch = build_insert_batch(&make_records(10));
+        let mut endpoint = make_endpoint_with_retries(
+            1,
+            &table_uri,
+            true,
+            DeltaTableWriteMode::Truncate,
+            false,
+            None,
+        );
+
+        // Only the log directory is read-only, so the Parquet files still
+        // land and `encode` succeeds; just the commit cannot record them.
+        let log_dir = table_dir.path().join("_delta_log");
+        let versions_before = count_log_versions(&log_dir);
+        std::fs::set_permissions(&log_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        // Commit on a thread of its own, so that a regression fails this test
+        // rather than hanging the whole run.
+        let shutdown = endpoint.inner.shutdown.clone();
+        let (done, batch_ended) = std::sync::mpsc::channel();
+        let committer = std::thread::spawn(move || {
+            endpoint.consumer().batch_start(0, OutputBatchType::Delta);
+            endpoint
+                .encode(batch.arc_as_batch_reader())
+                .expect("the write itself must succeed");
+            endpoint.consumer().batch_end();
+            let _ = done.send(());
+        });
+
+        // Long enough for the first commit attempt to fail and the retry to
+        // reach the one-second backoff.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        shutdown.cancel();
+
+        batch_ended
+            .recv_timeout(std::time::Duration::from_secs(30))
+            .expect("a shutdown must end the commit loop");
+        committer.join().unwrap();
+
+        std::fs::set_permissions(&log_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(
+            count_log_versions(&log_dir),
+            versions_before,
+            "an aborted commit must not add a version to the Delta log"
+        );
+    }
+
+    /// How many versions the Delta log records.
+    fn count_log_versions(log_dir: &Path) -> usize {
+        std::fs::read_dir(log_dir)
+            .unwrap()
+            .filter(|entry| {
+                entry
+                    .as_ref()
+                    .unwrap()
+                    .path()
+                    .extension()
+                    .is_some_and(|ext| ext == "json")
+            })
+            .count()
     }
 
     /// [AttemptProgress] takes an attempt's rows back out of the shared
