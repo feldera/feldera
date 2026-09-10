@@ -67,6 +67,18 @@ export function shadeOfRed(percent: number): string {
     return `rgb(255, ${Math.round((255 * (100 - percent)) / 100)}, ${Math.round((255 * (100 - percent)) / 100)})`;
 }
 
+/**
+ * Whether to display the readings of the node an event names.
+ *
+ * @param isSticky True for a click, false for the pointer passing over the node
+ * @param expanded True if the node is a region drawn as the nodes inside it
+ * @param stickyShowing True if a click has pinned some node's readings
+ */
+export function displaysNodeInformation(
+    isSticky: boolean, expanded: boolean, stickyShowing: boolean): boolean {
+    return isSticky || !(expanded || stickyShowing);
+}
+
 /** Make sure that the supplied value is a number. */
 export function enforceNumber(x: any): number {
     if (typeof x !== "number") {

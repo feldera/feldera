@@ -2,7 +2,7 @@
 
 import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeDefinition, type NodeSingular, type StylesheetJson } from 'cytoscape';
 import dblclick from 'cytoscape-dblclick';
-import { assert, Graph, OMap, Option, type EncodableAsString, NumericRange, Edge } from './util.js';
+import { assert, displaysNodeInformation, Graph, OMap, Option, type EncodableAsString, NumericRange, Edge } from './util.js';
 import { categoryShares, CircuitProfile, ComplexNode, NodeAndMetric, PropertyValue, totalShare, type DisplayScales, type NodeId } from './profile.js';
 import { CircuitSelection } from './selection.js';
 import elk from 'cytoscape-elk';
@@ -987,15 +987,15 @@ export class CytographRendering {
         return result;
     }
 
-    // Called when someones hovers over a node.
-    // If the previous display is sticky, do nothing.
+    // Called when someone hovers over or clicks a node.
     // Currently it displays
     // (1) the attributes of the node,
     // (2) it highlights the edges reaching the node,
     // (3) it displays the source position of the node.
     displayEventTargetAttributes(event: EventObject, isSticky: boolean) {
         let node: NodeSingular = event.target;
-        if (node.data("expanded") === true || (this.stickyInformation && !isSticky)) {
+        if (!displaysNodeInformation(
+            isSticky, node.data("expanded") === true, this.stickyInformation)) {
             return;
         }
 
