@@ -178,6 +178,7 @@ tolerance.
 |[Kafka]|✅|✅|✅|
 |[NATS]|✅|✅|✅|
 |[PostgreSQL]|❌|❌|❌|
+|[PostgreSQL CDC]|✅|✅|❌|
 |[Pub/Sub]|❌|❌|❌|
 |[S3]|✅|✅|✅|
 |[File]|✅|✅|✅|
@@ -191,6 +192,7 @@ tolerance.
 [Kafka]: /connectors/sources/kafka.md
 [NATS]: /connectors/sources/nats.md
 [PostgreSQL]: /connectors/sources/postgresql.md
+[PostgreSQL CDC]: /connectors/sources/postgresql-cdc.md
 [Pub/Sub]: /connectors/sources/pubsub.md
 [S3]: /connectors/sources/s3.md
 [File]: /connectors/sources/file.md
