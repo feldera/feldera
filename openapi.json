@@ -13650,7 +13650,7 @@
               },
               "source_table": {
                 "type": "string",
-                "description": "Postgres table to replicate (e.g. \"public.orders\").\nMust be included in the publication."
+                "description": "Postgres table to replicate, schema-qualified (e.g. \"public.orders\").\nA name given without a schema refers to a table in \"public\".\nMust be included in the publication."
               },
               "uri": {
                 "type": "string",

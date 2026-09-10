@@ -28,7 +28,7 @@ Use transport name `postgres_cdc_input`.
 | ----------------- | ------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `uri`\*           | string |         | PostgreSQL connection URL, e.g. `"postgres://postgres:password@localhost:5432/postgres"`. The URL must include a username, host, and database name. The user must have `REPLICATION` privilege. |
 | `publication`\*   | string |         | Name of an existing PostgreSQL publication. The publication must include `source_table`.                                                                                                        |
-| `source_table`\*  | string |         | PostgreSQL table to replicate, usually schema-qualified, e.g. `"public.orders"`.                                                                                                                |
+| `source_table`\*  | string |         | PostgreSQL table to replicate, schema-qualified, e.g. `"public.orders"`. A name given without a schema refers to a table in `public`.                                                                                                                |
 | `ssl_ca_pem`      | string |         | CA certificates in PEM format. Setting this enables TLS and takes precedence over `ssl_ca_location`.                                                                                            |
 | `ssl_ca_location` | string |         | Path to a PEM file containing CA certificates. Used when `ssl_ca_pem` is not set.                                                                                                               |
 

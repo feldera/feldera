@@ -818,11 +818,16 @@ impl FelderaDestination {
         }
     }
 
+    /// Whether `schema_name.table_name` is the connector's source table. A
+    /// `source_table` without a schema names a table in `public`, as the
+    /// connector documentation says; matching a bare name in any schema would
+    /// let a publication that carries `sales.orders` and `archive.orders`
+    /// merge both into one Feldera table (#6126).
     fn is_target_table(&self, schema_name: &str, table_name: &str) -> bool {
         let qualified = format!("{schema_name}.{table_name}");
         self.source_table == qualified
-            || self.source_table == table_name
             || self.source_table == format!("\"{schema_name}\".\"{table_name}\"")
+            || (schema_name == "public" && self.source_table == table_name)
     }
 
     /// Resolve the replicated column names for `schema`.
@@ -1703,48 +1708,46 @@ mod tests {
     // Target table matching / column resolution tests
     // -----------------------------------------------------------------------
 
-    /// Test the is_target_table logic extracted for direct verification.
-    /// This mirrors FelderaDestination::is_target_table without needing to
-    /// construct the full struct.
     fn target_table_matches(source_table: &str, schema_name: &str, table_name: &str) -> bool {
         let qualified = format!("{schema_name}.{table_name}");
         source_table == qualified
-            || source_table == table_name
             || source_table == format!("\"{schema_name}\".\"{table_name}\"")
+            || (schema_name == "public" && source_table == table_name)
     }
 
     #[test]
-    fn test_target_table_unqualified() {
+    fn unqualified_source_table_means_public() {
         assert!(target_table_matches("orders", "public", "orders"));
         assert!(!target_table_matches("orders", "public", "users"));
+        // A publication can carry the same table name in several schemas, and
+        // a bare name must not pull in every one of them.
+        assert!(!target_table_matches("orders", "sales", "orders"));
+        assert!(!target_table_matches("orders", "archive", "orders"));
     }
 
     #[test]
-    fn test_target_table_qualified() {
+    fn qualified_source_table_matches_its_schema_only() {
         assert!(target_table_matches("public.orders", "public", "orders"));
         assert!(!target_table_matches("other.orders", "public", "orders"));
+        assert!(target_table_matches("sales.orders", "sales", "orders"));
+        assert!(!target_table_matches("sales.orders", "archive", "orders"));
     }
 
     #[test]
-    fn test_target_table_quoted() {
+    fn quoted_source_table_matches_its_schema_only() {
         assert!(target_table_matches(
             "\"public\".\"orders\"",
             "public",
             "orders"
         ));
+        assert!(target_table_matches(
+            "\"sales\".\"orders\"",
+            "sales",
+            "orders"
+        ));
         assert!(!target_table_matches(
             "\"other\".\"orders\"",
             "public",
-            "orders"
-        ));
-    }
-
-    #[test]
-    fn test_target_table_different_schema() {
-        assert!(!target_table_matches("myschema.orders", "public", "orders"));
-        assert!(target_table_matches(
-            "myschema.orders",
-            "myschema",
             "orders"
         ));
     }
