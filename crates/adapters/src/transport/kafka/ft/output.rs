@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::sync::Mutex;
 use std::{cmp::max, sync::RwLock, time::Duration};
+use tokio_util::sync::CancellationToken;
 use tracing::span::EnteredSpan;
 use tracing::{debug, info, info_span, warn};
 
@@ -94,6 +95,9 @@ pub struct KafkaOutputEndpoint {
     max_message_size: usize,
     next_transaction: u64,
     state: State,
+    /// `ControllerInner::shutdown_token`, which ends a wait on a full
+    /// producer queue.  See [kafka_send].
+    shutdown: CancellationToken,
 }
 
 pub fn span(topic: &str) -> EnteredSpan {
@@ -101,7 +105,7 @@ pub fn span(topic: &str) -> EnteredSpan {
 }
 
 impl KafkaOutputEndpoint {
-    pub fn new(config: KafkaOutputConfig) -> AnyResult<Self> {
+    pub fn new(config: KafkaOutputConfig, shutdown: CancellationToken) -> AnyResult<Self> {
         let _guard = span(&config.topic);
         let ft = config.clone().fault_tolerance.unwrap_or_default();
         let mut common = CommonConfig::new(
@@ -166,6 +170,7 @@ impl KafkaOutputEndpoint {
             max_message_size,
             next_transaction,
             state: State::New,
+            shutdown,
         })
     }
 
@@ -263,7 +268,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
                 .partition(self.next_partition as i32)
                 .payload(buffer)
                 .headers(self.headers.clone());
-            kafka_send(&self.kafka_producer, &self.topic, record)?;
+            kafka_send(&self.kafka_producer, &self.topic, record, &self.shutdown)?;
 
             self.next_partition += 1;
             if self.next_partition >= self.n_partitions {

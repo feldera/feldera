@@ -7823,6 +7823,7 @@ impl ControllerInner {
             endpoint_name,
             self.fault_tolerance == Some(FtModel::ExactlyOnce),
             &self.secrets_dir,
+            self.shutdown_token().clone(),
         )
         .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
 

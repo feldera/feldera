@@ -14,6 +14,7 @@ use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::transport::dynamodb::{DynamoDBWriteMode, DynamoDBWriterConfig};
 use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, info, info_span, warn};
 
 use crate::ControllerError;
@@ -78,6 +79,10 @@ pub(crate) struct DynamoDBWorker {
     write_mode: DynamoDBWriteMode,
     batch_size: usize,
     max_retries: Option<u8>,
+    /// `ControllerInner::shutdown_token`, which ends the retry loops in
+    /// [helpers::write_batch_chunk] and [helpers::write_transact_chunk].
+    /// Those are unbounded when `max_retries` is `None`.
+    shutdown: CancellationToken,
     /// Condition expression applied to every put (transactional mode only).
     put_condition: Option<String>,
     /// Condition expression applied to every delete (transactional mode only).
@@ -124,6 +129,7 @@ impl DynamoDBWorker {
             Arc::new(AtomicU64::new(0)),
             Arc::new(AtomicU64::new(0)),
             metrics,
+            CancellationToken::new(),
         )
     }
 
@@ -139,6 +145,7 @@ impl DynamoDBWorker {
         records_written: Arc<AtomicU64>,
         bytes_written: Arc<AtomicU64>,
         metrics: Arc<DynamoDBOutputMetrics>,
+        shutdown: CancellationToken,
     ) -> Self {
         Self {
             endpoint_id,
@@ -148,6 +155,7 @@ impl DynamoDBWorker {
             write_mode: config.write_mode,
             batch_size: config.effective_batch_size(),
             max_retries: config.max_retries,
+            shutdown,
             put_condition: config.put_condition_expression.clone(),
             delete_condition: config.delete_condition_expression.clone(),
             client,
@@ -276,6 +284,7 @@ impl DynamoDBWorker {
         let put_condition = self.put_condition.clone();
         let delete_condition = self.delete_condition.clone();
         let max_retries: Option<usize> = self.max_retries.map(|n| n as usize);
+        let shutdown = self.shutdown.clone();
         self.metrics.record_write_chunk();
         let task_metrics = self.metrics.clone();
         let task_records_written = self.records_written.clone();
@@ -291,6 +300,7 @@ impl DynamoDBWorker {
                         table,
                         requests,
                         max_retries,
+                        &shutdown,
                         &task_metrics,
                     )
                     .await
@@ -315,6 +325,7 @@ impl DynamoDBWorker {
                             endpoint_name.clone(),
                             transact_items,
                             max_retries,
+                            &shutdown,
                             &task_metrics,
                         )
                         .await
@@ -553,6 +564,7 @@ impl Drop for DynamoDBOutputEndpoint {
 }
 
 impl DynamoDBOutputEndpoint {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         endpoint_id: EndpointId,
         endpoint_name: &str,
@@ -560,6 +572,7 @@ impl DynamoDBOutputEndpoint {
         key_schema: &Option<Relation>,
         value_schema: &Relation,
         controller: Weak<ControllerInner>,
+        shutdown: CancellationToken,
         is_index: bool,
     ) -> Result<Self, ControllerError> {
         Self::new_with_metrics(
@@ -569,6 +582,7 @@ impl DynamoDBOutputEndpoint {
             key_schema,
             value_schema,
             controller,
+            shutdown,
             is_index,
             Arc::new(DynamoDBOutputMetrics::default()),
         )
@@ -586,6 +600,7 @@ impl DynamoDBOutputEndpoint {
         key_schema: &Option<Relation>,
         value_schema: &Relation,
         controller: Weak<ControllerInner>,
+        shutdown: CancellationToken,
         is_index: bool,
         metrics: Arc<DynamoDBOutputMetrics>,
     ) -> Result<Self, ControllerError> {
@@ -625,6 +640,7 @@ impl DynamoDBOutputEndpoint {
                 records_written.clone(),
                 bytes_written.clone(),
                 metrics.clone(),
+                shutdown.clone(),
             );
 
             let (cmd_tx, cmd_rx) = crossbeam::channel::bounded(1);

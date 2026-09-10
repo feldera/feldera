@@ -13,70 +13,92 @@ use aws_types::region::Region;
 use dbsp::circuit::tokio::TOKIO;
 use feldera_types::transport::dynamodb::DynamoDBWriterConfig;
 use rand::Rng;
+use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
 use super::metrics::DynamoDBOutputMetrics;
 
 /// Sends one pre-chunked `BatchWriteItem` request, retrying unprocessed items with backoff.
+///
+/// Gives up on `shutdown`: the loop is unbounded when `max_retries` is `None`,
+/// and `DynamoDBWorker::drain_pending_writes` blocks the controller's output
+/// thread on these tasks, a DBSP aux thread that `RuntimeHandle::kill` joins.
+/// The loop itself is shutdown-unaware; dropping it is what ends it.
 pub(crate) async fn write_batch_chunk(
     client: Client,
     endpoint_name: String,
     table: String,
     requests: Vec<WriteRequest>,
     max_retries: Option<usize>,
+    shutdown: &CancellationToken,
     metrics: &DynamoDBOutputMetrics,
 ) -> AnyResult<u64> {
-    let mut request_items = HashMap::from([(table, requests)]);
-    let mut retry = 0usize;
+    let item_count = requests.len();
+    let attempts = async {
+        let mut request_items = HashMap::from([(table, requests)]);
+        let mut retry = 0usize;
 
-    loop {
-        let call_start = Instant::now();
-        let output_result = client
-            .batch_write_item()
-            .set_request_items(Some(request_items.clone()))
-            .send()
-            .await;
-        metrics.record_write_call_latency(call_start.elapsed());
+        loop {
+            let call_start = Instant::now();
+            let output_result = client
+                .batch_write_item()
+                .set_request_items(Some(request_items.clone()))
+                .send()
+                .await;
+            metrics.record_write_call_latency(call_start.elapsed());
 
-        let output = output_result
-            .map_err(|error| {
-                // `SdkError` display can hide the underlying DynamoDB service error.
-                anyhow!(
-                    "dynamodb output connector '{endpoint_name}' failed to write batch \
-                     chunk: {}",
-                    DisplayErrorContext(&error)
-                )
-            })
-            .inspect_err(|error| warn!("{error:#}"))?;
+            let output = output_result
+                .map_err(|error| {
+                    // `SdkError` display can hide the underlying DynamoDB service error.
+                    anyhow!(
+                        "dynamodb output connector '{endpoint_name}' failed to write batch \
+                         chunk: {}",
+                        DisplayErrorContext(&error)
+                    )
+                })
+                .inspect_err(|error| warn!("{error:#}"))?;
 
-        let Some(unprocessed) = output.unprocessed_items() else {
-            return Ok(retry as u64);
-        };
-        if unprocessed.is_empty() {
-            return Ok(retry as u64);
-        }
+            let Some(unprocessed) = output.unprocessed_items() else {
+                return Ok(retry as u64);
+            };
+            if unprocessed.is_empty() {
+                return Ok(retry as u64);
+            }
 
-        let count = unprocessed.values().map(Vec::len).sum::<usize>();
-        // Unprocessed items are writes DynamoDB rejected for lack of capacity.
-        metrics.record_throttled_items(count as u64);
-        if max_retries.is_some_and(|max| retry >= max) {
-            metrics.record_failed_items(count as u64);
-            bail!(
-                "dynamodb output connector '{endpoint_name}' failed to write \
-                 {count} unprocessed item(s) after {retry} retries"
+            let count = unprocessed.values().map(Vec::len).sum::<usize>();
+            // Unprocessed items are writes DynamoDB rejected for lack of capacity.
+            metrics.record_throttled_items(count as u64);
+            if max_retries.is_some_and(|max| retry >= max) {
+                metrics.record_failed_items(count as u64);
+                bail!(
+                    "dynamodb output connector '{endpoint_name}' failed to write \
+                     {count} unprocessed item(s) after {retry} retries"
+                );
+            }
+
+            request_items = unprocessed.clone();
+            warn!(
+                "dynamodb output connector '{endpoint_name}' retrying \
+                 {count} unprocessed batch item(s) (attempt {})",
+                retry + 1,
             );
+
+            retry += 1;
+            tokio::time::sleep(backoff_delay(retry)).await;
         }
+    };
 
-        request_items = unprocessed.clone();
-        warn!(
-            "dynamodb output connector '{endpoint_name}' retrying \
-             {count} unprocessed batch item(s) (attempt {})",
-            retry + 1,
-        );
-
-        retry += 1;
-        tokio::time::sleep(backoff_delay(retry)).await;
-    }
+    // One shutdown consult for the whole loop, so that no await inside it can
+    // outlive the teardown, whether or not anyone remembers to say so.
+    shutdown
+        .run_until_cancelled(attempts)
+        .await
+        .unwrap_or_else(|| {
+            Err(anyhow!(
+                "dynamodb output connector '{endpoint_name}' gave up on a chunk of \
+                 {item_count} item(s): the pipeline is shutting down"
+            ))
+        })
 }
 
 /// Converts a `WriteRequest` (put or delete) into a `TransactWriteItem` for use in `TransactWriteItems`.
@@ -236,133 +258,150 @@ pub(crate) async fn write_transact_chunk(
     endpoint_name: String,
     mut transact_items: Vec<TransactWriteItem>,
     max_retries: Option<usize>,
+    shutdown: &CancellationToken,
     metrics: &DynamoDBOutputMetrics,
 ) -> AnyResult<TransactChunkOutcome> {
-    let mut retry = 0usize;
-    let mut suppressed = 0u64;
+    let item_count = transact_items.len();
+    let attempts = async {
+        let mut retry = 0usize;
+        let mut suppressed = 0u64;
 
-    loop {
-        let call_start = Instant::now();
-        let result = client
-            .transact_write_items()
-            .set_transact_items(Some(transact_items.clone()))
-            .send()
-            .await;
-        metrics.record_write_call_latency(call_start.elapsed());
+        loop {
+            let call_start = Instant::now();
+            let result = client
+                .transact_write_items()
+                .set_transact_items(Some(transact_items.clone()))
+                .send()
+                .await;
+            metrics.record_write_call_latency(call_start.elapsed());
 
-        let error = match result {
-            Ok(_) => {
-                return Ok(TransactChunkOutcome {
-                    retries: retry as u64,
-                    suppressed,
-                });
-            }
-            Err(error) => error,
-        };
-
-        // A cancelled transaction carries a per-item reason list. Use it to drop
-        // items whose condition was not met and retry only the rest. Any other
-        // error (or a cancellation without reasons) falls through to the
-        // whole-transaction retry below.
-        if let Some(TransactWriteItemsError::TransactionCanceledException(cancelled)) =
-            error.as_service_error()
-        {
-            let reasons = cancelled.cancellation_reasons();
-            if !reasons.is_empty()
-                && let Some(outcome) =
-                    partition_by_cancellation_reason(&mut transact_items, reasons)
-            {
-                if !outcome.hard_failures.is_empty() {
-                    // A permanent, non-condition failure (for example a
-                    // validation error) cancels the transaction.
-                    // Every item is dropped, including those whose condition happened
-                    // to fail.
-                    let failed =
-                        outcome.kept.len() + outcome.hard_failures.len() + outcome.condition_failed;
-                    metrics.record_transact_write_failure();
-                    metrics.record_failed_items(failed as u64);
-                    bail!(
-                        "dynamodb output connector '{endpoint_name}' TransactWriteItems request \
-                         cancelled by unrecoverable item error(s) [{}], dropping {failed} item(s): \
-                         {}",
-                        outcome.hard_failures.join(", "),
-                        DisplayErrorContext(&error),
-                    );
-                }
-
-                // Past the unrecoverable check the surviving items will be
-                // written, so the condition failures are genuine suppressions.
-                if outcome.condition_failed > 0 {
-                    suppressed += outcome.condition_failed as u64;
-                    metrics.record_condition_check_failures(outcome.condition_failed as u64);
-                }
-
-                if outcome.kept.is_empty() {
-                    // Every remaining item failed its condition: nothing left to write.
+            let error = match result {
+                Ok(_) => {
                     return Ok(TransactChunkOutcome {
                         retries: retry as u64,
                         suppressed,
                     });
                 }
+                Err(error) => error,
+            };
 
-                let dropped_any = outcome.condition_failed > 0;
-                transact_items = outcome.kept;
-
-                if outcome.has_retryable {
-                    // Transient contention on a kept item; back off, retry and count it.
-                    metrics.record_transact_write_failure();
-                    if max_retries.is_some_and(|max| retry >= max) {
-                        metrics.record_failed_items(transact_items.len() as u64);
+            // A cancelled transaction carries a per-item reason list. Use it to drop
+            // items whose condition was not met and retry only the rest. Any other
+            // error (or a cancellation without reasons) falls through to the
+            // whole-transaction retry below.
+            if let Some(TransactWriteItemsError::TransactionCanceledException(cancelled)) =
+                error.as_service_error()
+            {
+                let reasons = cancelled.cancellation_reasons();
+                if !reasons.is_empty()
+                    && let Some(outcome) =
+                        partition_by_cancellation_reason(&mut transact_items, reasons)
+                {
+                    if !outcome.hard_failures.is_empty() {
+                        // A permanent, non-condition failure (for example a
+                        // validation error) cancels the transaction.
+                        // Every item is dropped, including those whose condition happened
+                        // to fail.
+                        let failed = outcome.kept.len()
+                            + outcome.hard_failures.len()
+                            + outcome.condition_failed;
+                        metrics.record_transact_write_failure();
+                        metrics.record_failed_items(failed as u64);
                         bail!(
-                            "dynamodb output connector '{endpoint_name}' gave up on {} \
-                             transaction item(s) after {retry} retries: {}",
-                            transact_items.len(),
+                            "dynamodb output connector '{endpoint_name}' TransactWriteItems request \
+                             cancelled by unrecoverable item error(s) [{}], dropping {failed} item(s): \
+                             {}",
+                            outcome.hard_failures.join(", "),
                             DisplayErrorContext(&error),
                         );
                     }
-                    retry += 1;
-                    warn!(
-                        "dynamodb output connector '{endpoint_name}' retrying {} transaction \
-                         item(s) after transient cancellation (attempt {retry})",
-                        transact_items.len(),
-                    );
-                    tokio::time::sleep(backoff_delay(retry)).await;
-                    continue;
-                }
 
-                if dropped_any {
-                    // Sibling items were dropped for failing their condition;  so resubmit
-                    // the now-smaller set immediately.
-                    continue;
+                    // Past the unrecoverable check the surviving items will be
+                    // written, so the condition failures are genuine suppressions.
+                    if outcome.condition_failed > 0 {
+                        suppressed += outcome.condition_failed as u64;
+                        metrics.record_condition_check_failures(outcome.condition_failed as u64);
+                    }
+
+                    if outcome.kept.is_empty() {
+                        // Every remaining item failed its condition: nothing left to write.
+                        return Ok(TransactChunkOutcome {
+                            retries: retry as u64,
+                            suppressed,
+                        });
+                    }
+
+                    let dropped_any = outcome.condition_failed > 0;
+                    transact_items = outcome.kept;
+
+                    if outcome.has_retryable {
+                        // Transient contention on a kept item; back off, retry and count it.
+                        metrics.record_transact_write_failure();
+                        if max_retries.is_some_and(|max| retry >= max) {
+                            metrics.record_failed_items(transact_items.len() as u64);
+                            bail!(
+                                "dynamodb output connector '{endpoint_name}' gave up on {} \
+                                 transaction item(s) after {retry} retries: {}",
+                                transact_items.len(),
+                                DisplayErrorContext(&error),
+                            );
+                        }
+                        retry += 1;
+                        warn!(
+                            "dynamodb output connector '{endpoint_name}' retrying {} transaction \
+                             item(s) after transient cancellation (attempt {retry})",
+                            transact_items.len(),
+                        );
+                        tokio::time::sleep(backoff_delay(retry)).await;
+                        continue;
+                    }
+
+                    if dropped_any {
+                        // Sibling items were dropped for failing their condition;  so resubmit
+                        // the now-smaller set immediately.
+                        continue;
+                    }
                 }
             }
-        }
 
-        // Whole-transaction failure: no usable per-item reasons, so retry the
-        // entire request with backoff.
-        metrics.record_transact_write_failure();
-        let exhausted = max_retries.is_some_and(|max| retry >= max);
-        // Render the underlying DynamoDB error into the message via
-        // `DisplayErrorContext`; the bare `SdkError` `Display` would otherwise
-        // hide the real cause when shown with `{}`.
-        let error = anyhow!(
-            "dynamodb output connector '{endpoint_name}' TransactWriteItems request \
-             with {} item(s) failed (attempt {}), {}: {}",
-            transact_items.len(),
-            retry + 1,
-            if exhausted { "giving up" } else { "retrying" },
-            DisplayErrorContext(&error),
-        );
-        warn!("{error:#}");
-        if exhausted {
-            // A transaction is all-or-nothing, so every item is dropped.
-            metrics.record_failed_items(transact_items.len() as u64);
-            return Err(error);
-        }
+            // Whole-transaction failure: no usable per-item reasons, so retry the
+            // entire request with backoff.
+            metrics.record_transact_write_failure();
+            let exhausted = max_retries.is_some_and(|max| retry >= max);
+            // Render the underlying DynamoDB error into the message via
+            // `DisplayErrorContext`; the bare `SdkError` `Display` would otherwise
+            // hide the real cause when shown with `{}`.
+            let error = anyhow!(
+                "dynamodb output connector '{endpoint_name}' TransactWriteItems request \
+                 with {} item(s) failed (attempt {}), {}: {}",
+                transact_items.len(),
+                retry + 1,
+                if exhausted { "giving up" } else { "retrying" },
+                DisplayErrorContext(&error),
+            );
+            warn!("{error:#}");
+            if exhausted {
+                // A transaction is all-or-nothing, so every item is dropped.
+                metrics.record_failed_items(transact_items.len() as u64);
+                return Err(error);
+            }
 
-        retry += 1;
-        tokio::time::sleep(backoff_delay(retry)).await;
-    }
+            retry += 1;
+            tokio::time::sleep(backoff_delay(retry)).await;
+        }
+    };
+
+    // One shutdown consult for the whole loop, so that no await inside it can
+    // outlive the teardown, whether or not anyone remembers to say so.
+    shutdown
+        .run_until_cancelled(attempts)
+        .await
+        .unwrap_or_else(|| {
+            Err(anyhow!(
+                "dynamodb output connector '{endpoint_name}' gave up on a transaction of \
+                 {item_count} item(s): the pipeline is shutting down"
+            ))
+        })
 }
 
 /// Returns the exponential backoff delay for retry attempt `retry`, with full jitter.

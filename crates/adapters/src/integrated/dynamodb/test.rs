@@ -31,6 +31,7 @@ use rand::distributions::Alphanumeric;
 use serde_json::json;
 use size_of::SizeOf;
 use tempfile::NamedTempFile;
+use tokio_util::sync::CancellationToken;
 
 use crate::Controller;
 use crate::catalog::RecordFormat;
@@ -39,7 +40,7 @@ use crate::format::Encoder;
 use crate::static_compile::seroutput::SerBatchImpl;
 use crate::test::{TestStruct, test_circuit_with_index, wait};
 
-use super::helpers::{make_client, to_transact_item};
+use super::helpers::{make_client, to_transact_item, write_transact_chunk};
 use super::metrics::DynamoDBOutputMetrics;
 use super::output::{DynamoDBOutputEndpoint, DynamoDBWorker};
 
@@ -1369,6 +1370,7 @@ fn dynamodb_endpoint(
         &Some(key_relation()),
         &value_relation(),
         Weak::new(),
+        CancellationToken::new(),
         true,
     )
     .unwrap()
@@ -1456,6 +1458,7 @@ fn dynamodb_all_types_endpoint(table: &str, endpoint_url: Option<&str>) -> Dynam
         &Some(all_types_key_relation()),
         &all_types_value_relation(),
         Weak::new(),
+        CancellationToken::new(),
         true,
     )
     .unwrap()
@@ -1576,6 +1579,7 @@ fn dynamodb_conditional_endpoint(
         &Some(key_relation()),
         &value_relation(),
         Weak::new(),
+        CancellationToken::new(),
         true,
         metrics,
     )
@@ -1805,6 +1809,7 @@ fn check_oversized_item_dropped(write_mode: DynamoDBWriteMode) {
         &Some(key_relation()),
         &value_relation(),
         Weak::new(),
+        CancellationToken::new(),
         true,
         metrics.clone(),
     )
@@ -1876,6 +1881,7 @@ fn dynamodb_endpoint_flush_every(
         &Some(key_relation()),
         &value_relation(),
         Weak::new(),
+        CancellationToken::new(),
         true,
     )
     .unwrap()
@@ -1963,6 +1969,7 @@ fn backpressure_writes_all_records(threads: usize) {
         &Some(key_relation()),
         &value_relation(),
         Weak::new(),
+        CancellationToken::new(),
         true,
     )
     .unwrap();
@@ -2187,4 +2194,58 @@ fn dynamodb_progress_counter_multiple_batches() {
     assert_eq!(records_written(&endpoint), 0);
 
     assert_eq!(scan_table(&client, &table).len(), 80);
+}
+
+/// A shutdown ends `write_transact_chunk`'s unbounded retry loop.
+///
+/// `max_retries: None` makes the loop unbounded, and
+/// `DynamoDBWorker::drain_pending_writes` blocks the controller's output
+/// thread on these tasks, a DBSP aux thread that `RuntimeHandle::kill` joins.
+///
+/// Nothing listens at the client's endpoint, so every attempt fails and the
+/// loop cannot end on its own.
+#[test]
+fn a_shutdown_ends_an_unbounded_transact_retry_loop() {
+    use aws_sdk_dynamodb::types::{PutRequest, WriteRequest};
+
+    let item = HashMap::from([("id".to_string(), AttributeValue::N("1".to_string()))]);
+    let put = WriteRequest::builder()
+        .put_request(PutRequest::builder().set_item(Some(item)).build().unwrap())
+        .build();
+    let items = vec![to_transact_item("test_table", &put, None, None).unwrap()];
+
+    let shutdown = CancellationToken::new();
+    let client = dummy_client();
+
+    // Write on a thread of its own, so that a regression fails this test
+    // rather than hanging the whole run.
+    let writing_shutdown = shutdown.clone();
+    let (done, write_returned) = std::sync::mpsc::channel();
+    let writer = std::thread::spawn(move || {
+        let metrics = DynamoDBOutputMetrics::default();
+        let result = TOKIO.block_on(write_transact_chunk(
+            client,
+            "test_endpoint".to_string(),
+            items,
+            None,
+            &writing_shutdown,
+            &metrics,
+        ));
+        let _ = done.send(result.err());
+    });
+
+    // Long enough for the first attempt to fail and the retry to back off.
+    sleep(Duration::from_millis(200));
+    shutdown.cancel();
+
+    let error = write_returned
+        .recv_timeout(Duration::from_secs(30))
+        .expect("a shutdown must end the retry loop")
+        .expect("a chunk that gave up must report an error");
+    writer.join().unwrap();
+
+    assert!(
+        error.to_string().contains("shutting down"),
+        "unexpected error: {error}"
+    );
 }
