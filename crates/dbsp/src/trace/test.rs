@@ -24,12 +24,16 @@ use crate::{
     },
     circuit::{CircuitConfig, mkconfig},
     dynamic::{DowncastTrait, DynData, DynUnit, DynWeightedPairs, Erase, LeanVec, pair::DynPair},
-    storage::{buffer_cache::CacheStats, file::FilterKind},
+    storage::{
+        buffer_cache::CacheStats,
+        file::FilterKind,
+        file::reader::{CorruptionError, Error as ReaderError},
+    },
     trace::{
-        Batch, BatchLocation, BatchReader, BatchReaderFactories, Builder, FileIndexedWSetFactories,
-        FileWSetFactories, GroupFilter, ListMerger, Spine, Trace, TraceRole, VecIndexedWSet,
-        VecIndexedWSetFactories, VecKeyBatch, VecKeyBatchFactories, VecValBatch,
-        VecValBatchFactories, VecWSet, VecWSetFactories,
+        Batch, BatchLocation, BatchReader, BatchReaderFactories, Builder, FallbackIndexedWSet,
+        FallbackIndexedWSetFactories, FileIndexedWSetFactories, FileWSetFactories, GroupFilter,
+        ListMerger, Spine, Trace, TraceRole, VecIndexedWSet, VecIndexedWSetFactories, VecKeyBatch,
+        VecKeyBatchFactories, VecValBatch, VecValBatchFactories, VecWSet, VecWSetFactories,
         cursor::{Cursor, CursorPair},
         ord::{
             FileIndexedWSet, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
@@ -667,6 +671,225 @@ fn test_file_indexed_wset_value_stamp_guards_from_path() {
             "expected a value-stamp mismatch, got: {err}"
         );
     });
+}
+
+/// `(key, value, hidden stamp, weight)` for a projected batch.
+type ProjectedRow = (i32, i32, u32, ZWeight);
+
+type ProjectedPair = DynPair<DynData, DynData>;
+type Projectable = FallbackIndexedWSet<DynData, DynData, DynZWeight>;
+
+/// The inner batch a projected variant wraps: values are `(value, stamp)`
+/// pairs, and the batch consolidates rows agreeing on all three of key, value
+/// and stamp.
+fn projected_inner(rows: &[ProjectedRow]) -> VecIndexedWSet<DynData, ProjectedPair, DynZWeight> {
+    let factories = <VecIndexedWSetFactories<DynData, ProjectedPair, DynZWeight>>::new::<
+        i32,
+        Tup2<i32, u32>,
+        ZWeight,
+    >();
+    let tuples: Vec<Tup2<Tup2<i32, Tup2<i32, u32>>, ZWeight>> = rows
+        .iter()
+        .map(|&(key, value, stamp, weight)| Tup2(Tup2(key, Tup2(value, stamp)), weight))
+        .collect();
+    let mut tuples = Box::new(LeanVec::from(tuples)).erase_box();
+    VecIndexedWSet::dyn_from_tuples(&factories, (), &mut tuples)
+}
+
+/// [`projected_inner`] on storage, written through the stamped factories so the
+/// file records that its values carry a trailing column.
+fn projected_inner_file(
+    factories: &FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>,
+    rows: &[ProjectedRow],
+) -> FileIndexedWSet<DynData, ProjectedPair, DynZWeight> {
+    let tuples: Vec<Tup2<Tup2<i32, Tup2<i32, u32>>, ZWeight>> = rows
+        .iter()
+        .map(|&(key, value, stamp, weight)| Tup2(Tup2(key, Tup2(value, stamp)), weight))
+        .collect();
+    let mut tuples = Box::new(LeanVec::from(tuples)).erase_box();
+    FileIndexedWSet::dyn_from_tuples(factories.projected(), (), &mut tuples)
+}
+
+/// Every `(key, value, weight)` a batch's cursor exposes.
+fn projected_contents<B>(batch: &B) -> Vec<(i32, i32, ZWeight)>
+where
+    B: BatchReader<Key = DynData, Val = DynData, Time = (), R = DynZWeight>,
+{
+    let mut contents = Vec::new();
+    let mut cursor = batch.cursor();
+    while cursor.key_valid() {
+        while cursor.val_valid() {
+            contents.push((
+                *unsafe { cursor.key().downcast::<i32>() },
+                *unsafe { cursor.val().downcast::<i32>() },
+                **cursor.weight(),
+            ));
+            cursor.step_val();
+        }
+        cursor.step_key();
+    }
+    contents
+}
+
+/// A batch over values that carry a trailing column reads back as a batch over
+/// the leading column alone: values differing only in the stamp become one
+/// value carrying their summed weight.
+#[test]
+fn test_fallback_indexed_wset_projects_hidden_column() {
+    let factories = <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::with_projection::<
+        i32,
+        i32,
+        ZWeight,
+    >();
+    // Key 1 holds value 10 at two stamps and value 20 at one; key 2 holds a
+    // value whose two stamps cancel, so it disappears along with its key.
+    let rows: &[ProjectedRow] = &[
+        (1, 10, 0, 1),
+        (1, 10, 5, 2),
+        (1, 20, 1, 1),
+        (2, 30, 0, 1),
+        (2, 30, 7, -1),
+    ];
+
+    let batch = Projectable::from_projected_vec(&factories, projected_inner(rows));
+    assert_eq!(
+        projected_contents(&batch),
+        vec![(1, 10, 3), (1, 20, 1)],
+        "the stamps must be invisible and their runs consolidated"
+    );
+
+    // The count is over the inner batch, so it counts the stamps rather than
+    // the values they project to; `approx_len` promises only an upper bound.
+    assert!(
+        batch.approx_len() >= 2,
+        "approx_len is an upper bound on the projected length"
+    );
+}
+
+/// Spilling a projected batch to storage drops the trailing column: the file
+/// holds the values a reader of the batch sees, so it is an ordinary batch that
+/// reopens without one.
+#[test]
+fn test_fallback_indexed_wset_persisting_drops_the_hidden_column() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::with_projection::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+        // Value 10 is held at two stamps, so the inner batch has one more record
+        // than the projection exposes.
+        let rows: &[ProjectedRow] = &[(1, 10, 0, 1), (1, 10, 5, 2), (1, 20, 1, 1)];
+        let expected = vec![(1, 10, 3), (1, 20, 1)];
+
+        let batch = Projectable::from_projected_vec(&factories, projected_inner(rows));
+        assert_eq!(batch.approx_len(), 3, "the inner batch still counts stamps");
+
+        let persisted = batch
+            .persisted()
+            .expect("an in-memory batch persists to storage");
+        assert_eq!(persisted.location(), BatchLocation::Storage);
+        assert_eq!(
+            projected_contents(&persisted),
+            expected,
+            "spilling must not disturb the projection"
+        );
+        assert_eq!(
+            persisted.approx_len(),
+            expected.len(),
+            "the spilled batch counts values, so the column is gone rather than hidden"
+        );
+
+        let path: StoragePath = persisted.file_reader().unwrap().path().to_string().into();
+        let reopened = Projectable::from_path(&factories, &path)
+            .expect("a batch spilled from a projected one reopens as an ordinary batch");
+        assert_eq!(projected_contents(&reopened), expected);
+        assert_eq!(reopened.approx_len(), expected.len());
+    });
+}
+
+/// A file whose values do carry the trailing column reopens as a projected
+/// batch, on the stamp the file records.
+#[test]
+fn test_fallback_indexed_wset_reopens_a_stamped_file_as_projected() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::with_projection::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+        let rows: &[ProjectedRow] = &[(1, 10, 0, 1), (1, 10, 5, 2), (1, 20, 1, 1)];
+        let expected = vec![(1, 10, 3), (1, 20, 1)];
+
+        let batch =
+            Projectable::from_projected_file(&factories, projected_inner_file(&factories, rows));
+        assert_eq!(projected_contents(&batch), expected);
+
+        let path: StoragePath = batch.file_reader().unwrap().path().to_string().into();
+        let reopened = Projectable::from_path(&factories, &path).expect("a stamped file reopens");
+        assert_eq!(
+            projected_contents(&reopened),
+            expected,
+            "the stamp must route the file back to the projected variant"
+        );
+        assert_eq!(
+            reopened.approx_len(),
+            3,
+            "reopened as projected, so the count is still over the stamped records"
+        );
+    });
+}
+
+/// A stamped file opened through factories that describe no projection is
+/// refused.
+///
+/// Nothing in the bundle can read the file: its values carry a column the plain
+/// factories know nothing about, and decoding one as the other would hand rkyv a
+/// record of the wrong type.  The stamp the file records is what makes the
+/// refusal possible.
+#[test]
+fn test_fallback_indexed_wset_refuses_a_stamped_file_without_projection() {
+    run_in_circuit_with_storage(|| {
+        let projecting =
+            <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::with_projection::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+        let batch = Projectable::from_projected_file(
+            &projecting,
+            projected_inner_file(&projecting, &[(1, 10, 0, 1)]),
+        );
+        let path: StoragePath = batch.file_reader().unwrap().path().to_string().into();
+
+        let plain =
+            <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::new::<i32, i32, ZWeight>(
+            );
+        assert!(
+            matches!(
+                Projectable::from_path(&plain, &path),
+                Err(ReaderError::Corruption(
+                    CorruptionError::ValueStampMismatch {
+                        expected: false,
+                        found: true,
+                    }
+                ))
+            ),
+            "a stamped file must be refused, not read as an unstamped one"
+        );
+    });
+}
+
+/// Factories that describe no projection cannot hold a projected batch, and say
+/// so rather than reading its values as though they had no trailing column.
+#[test]
+#[should_panic(expected = "with_projection")]
+fn test_fallback_indexed_wset_projection_requires_its_factories() {
+    let plain =
+        <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::new::<i32, i32, ZWeight>();
+    let _ = Projectable::from_projected_vec(&plain, projected_inner(&[(1, 10, 0, 1)]));
 }
 
 #[test]

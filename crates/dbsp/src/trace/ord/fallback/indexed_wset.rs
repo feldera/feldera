@@ -3,19 +3,25 @@ use crate::storage::file::SerializerInner;
 use crate::storage::file::reader::RawItems;
 use crate::storage::file::{FilterKind, FilterStats, TouchedWindowCount};
 use crate::{
-    DBData, DBWeight, Error, NumEntries,
+    DBData, DBWeight, Error, NumEntries, Runtime,
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
     circuit::checkpointer::Checkpoint,
     dynamic::{
         DataTrait, DynData, DynDataTyped, DynPair, DynVec, DynWeightedPairs, Erase, Factory,
         WeightTrait, WeightTraitTyped,
     },
-    storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
+    storage::{
+        buffer_cache::CacheStats,
+        file::reader::{Error as ReaderError, read_metadata},
+    },
     trace::{
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
         FallbackValBatch, FileIndexedWSet, FileIndexedWSetFactories, Filter, GroupFilter,
         MergeCursor, WeightedItem,
-        cursor::{CursorFactory, DelegatingCursor, PushCursor},
+        cursor::{
+            Cursor, CursorFactory, DefaultPushCursor, DelegatingCursor, ProjectedValCursor,
+            PushCursor, merge_cursor_over,
+        },
         deserialize_indexed_wset, merge_batches_by_reference,
         ord::{
             fallback::utils::BuildTo,
@@ -110,6 +116,14 @@ where
     pub fn has_projection(&self) -> bool {
         self.projected.is_some()
     }
+
+    /// Hides the trailing value column of a projected variant's cursor.
+    fn project<C>(&self, inner: C) -> ProjectedValCursor<K, V, DynData, R, C>
+    where
+        C: Cursor<K, DynPair<V, DynData>, (), R>,
+    {
+        ProjectedValCursor::new(inner, self.plain.val_factory())
+    }
 }
 
 impl<K, V, R> BatchReaderFactories<K, V, (), R> for FallbackIndexedWSetFactories<K, V, R>
@@ -198,6 +212,54 @@ where
 {
     Vec(VecIndexedWSet<K, V, R>),
     File(FileIndexedWSet<K, V, R>),
+
+    /// In memory, over values that carry a trailing column this batch hides.
+    VecProj(VecIndexedWSet<K, DynPair<V, DynData>, R>),
+
+    /// On storage, over values that carry a trailing column this batch hides.
+    FileProj(FileIndexedWSet<K, DynPair<V, DynData>, R>),
+}
+
+impl<K, V, R> FallbackIndexedWSet<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    /// Presents `inner`, whose values carry a trailing column, as a batch over
+    /// the leading column alone.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless `factories` came from
+    /// [`FallbackIndexedWSetFactories::with_projection`].
+    pub fn from_projected_vec(
+        factories: &FallbackIndexedWSetFactories<K, V, R>,
+        inner: VecIndexedWSet<K, DynPair<V, DynData>, R>,
+    ) -> Self {
+        factories.projected();
+        Self {
+            factories: factories.clone(),
+            inner: Inner::VecProj(inner),
+        }
+    }
+
+    /// [`Self::from_projected_vec`] for a batch that lives on storage.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless `factories` came from
+    /// [`FallbackIndexedWSetFactories::with_projection`].
+    pub fn from_projected_file(
+        factories: &FallbackIndexedWSetFactories<K, V, R>,
+        inner: FileIndexedWSet<K, DynPair<V, DynData>, R>,
+    ) -> Self {
+        factories.projected();
+        Self {
+            factories: factories.clone(),
+            inner: Inner::FileProj(inner),
+        }
+    }
 }
 
 impl<K, V, R> Debug for FallbackIndexedWSet<K, V, R>
@@ -210,6 +272,8 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.fmt(f),
             Inner::File(file) => file.fmt(f),
+            Inner::VecProj(vec) => vec.fmt(f),
+            Inner::FileProj(file) => file.fmt(f),
         }
     }
 }
@@ -226,6 +290,8 @@ where
             inner: match &self.inner {
                 Inner::Vec(vec) => Inner::Vec(vec.clone()),
                 Inner::File(file) => Inner::File(file.clone()),
+                Inner::VecProj(vec) => Inner::VecProj(vec.clone()),
+                Inner::FileProj(file) => Inner::FileProj(file.clone()),
             },
         }
     }
@@ -264,6 +330,8 @@ where
         match &self.inner {
             Inner::File(file) => file.num_entries_shallow(),
             Inner::Vec(vec) => vec.num_entries_shallow(),
+            Inner::FileProj(file) => file.num_entries_shallow(),
+            Inner::VecProj(vec) => vec.num_entries_shallow(),
         }
     }
 
@@ -271,6 +339,8 @@ where
         match &self.inner {
             Inner::File(file) => file.num_entries_deep(),
             Inner::Vec(vec) => vec.num_entries_deep(),
+            Inner::FileProj(file) => file.num_entries_deep(),
+            Inner::VecProj(vec) => vec.num_entries_deep(),
         }
     }
 }
@@ -289,6 +359,8 @@ where
             inner: match &self.inner {
                 Inner::File(file) => Inner::File(file.neg_by_ref()),
                 Inner::Vec(vec) => Inner::Vec(vec.neg_by_ref()),
+                Inner::FileProj(file) => Inner::FileProj(file.neg_by_ref()),
+                Inner::VecProj(vec) => Inner::VecProj(vec.neg_by_ref()),
             },
         }
     }
@@ -363,6 +435,8 @@ where
         DelegatingCursor(match &self.inner {
             Inner::Vec(vec) => Box::new(vec.cursor()),
             Inner::File(file) => Box::new(file.cursor()),
+            Inner::VecProj(vec) => Box::new(self.factories.project(vec.cursor())),
+            Inner::FileProj(file) => Box::new(self.factories.project(file.cursor())),
         })
     }
 
@@ -372,6 +446,12 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.push_cursor(),
             Inner::File(file) => file.push_cursor(),
+            Inner::VecProj(vec) => {
+                Box::new(DefaultPushCursor::new(self.factories.project(vec.cursor())))
+            }
+            Inner::FileProj(file) => Box::new(DefaultPushCursor::new(
+                self.factories.project(file.cursor()),
+            )),
         }
     }
 
@@ -383,6 +463,16 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.merge_cursor(key_filter, value_filter),
             Inner::File(file) => file.merge_cursor(key_filter, value_filter),
+            Inner::VecProj(vec) => merge_cursor_over(
+                self.factories.project(vec.cursor()),
+                key_filter,
+                value_filter,
+            ),
+            Inner::FileProj(file) => merge_cursor_over(
+                self.factories.project(file.cursor()),
+                key_filter,
+                value_filter,
+            ),
         }
     }
 
@@ -391,9 +481,20 @@ where
         key_filter: Option<Filter<Self::Key>>,
         value_filter: Option<GroupFilter<Self::Val>>,
     ) -> Box<dyn MergeCursor<Self::Key, Self::Val, Self::Time, Self::R> + Send + '_> {
-        match &mut self.inner {
+        // Destructured so the projection can borrow the factories while the
+        // match holds `inner` mutably.
+        let Self { factories, inner } = self;
+        match inner {
             Inner::Vec(vec) => vec.consuming_cursor(key_filter, value_filter),
             Inner::File(file) => file.consuming_cursor(key_filter, value_filter),
+            // A consuming cursor is a `MergeCursor`, and the projection wraps a
+            // `Cursor`, so these arms read the batch rather than drain it.
+            Inner::VecProj(vec) => {
+                merge_cursor_over(factories.project(vec.cursor()), key_filter, value_filter)
+            }
+            Inner::FileProj(file) => {
+                merge_cursor_over(factories.project(file.cursor()), key_filter, value_filter)
+            }
         }
     }
 
@@ -402,6 +503,8 @@ where
         match &self.inner {
             Inner::File(file) => file.approx_key_count(),
             Inner::Vec(vec) => vec.approx_key_count(),
+            Inner::FileProj(file) => file.approx_key_count(),
+            Inner::VecProj(vec) => vec.approx_key_count(),
         }
     }
 
@@ -410,6 +513,8 @@ where
         match &self.inner {
             Inner::File(file) => file.approx_len(),
             Inner::Vec(vec) => vec.approx_len(),
+            Inner::FileProj(file) => file.approx_len(),
+            Inner::VecProj(vec) => vec.approx_len(),
         }
     }
 
@@ -418,6 +523,8 @@ where
         match &self.inner {
             Inner::File(file) => file.approximate_byte_size(),
             Inner::Vec(vec) => vec.approximate_byte_size(),
+            Inner::FileProj(file) => file.approximate_byte_size(),
+            Inner::VecProj(vec) => vec.approximate_byte_size(),
         }
     }
 
@@ -426,6 +533,8 @@ where
         match &self.inner {
             Inner::File(file) => file.membership_filter_stats(),
             Inner::Vec(vec) => vec.membership_filter_stats(),
+            Inner::FileProj(file) => file.membership_filter_stats(),
+            Inner::VecProj(vec) => vec.membership_filter_stats(),
         }
     }
 
@@ -433,6 +542,8 @@ where
         match &self.inner {
             Inner::File(file) => file.membership_filter_kind(),
             Inner::Vec(vec) => vec.membership_filter_kind(),
+            Inner::FileProj(file) => file.membership_filter_kind(),
+            Inner::VecProj(vec) => vec.membership_filter_kind(),
         }
     }
 
@@ -440,6 +551,8 @@ where
         match &self.inner {
             Inner::File(file) => file.range_filter_stats(),
             Inner::Vec(vec) => vec.range_filter_stats(),
+            Inner::FileProj(file) => file.range_filter_stats(),
+            Inner::VecProj(vec) => vec.range_filter_stats(),
         }
     }
 
@@ -448,6 +561,8 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.location(),
             Inner::File(file) => file.location(),
+            Inner::VecProj(vec) => vec.location(),
+            Inner::FileProj(file) => file.location(),
         }
     }
 
@@ -455,6 +570,8 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.cache_stats(),
             Inner::File(file) => file.cache_stats(),
+            Inner::VecProj(vec) => vec.cache_stats(),
+            Inner::FileProj(file) => file.cache_stats(),
         }
     }
 
@@ -465,6 +582,8 @@ where
         match &self.inner {
             Inner::File(file) => file.sample_keys(rng, sample_size, sample),
             Inner::Vec(vec) => vec.sample_keys(rng, sample_size, sample),
+            Inner::FileProj(file) => file.sample_keys(rng, sample_size, sample),
+            Inner::VecProj(vec) => vec.sample_keys(rng, sample_size, sample),
         }
     }
 
@@ -478,6 +597,7 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.fetch(keys).await,
             Inner::File(file) => file.fetch(keys).await,
+            Inner::VecProj(_) | Inner::FileProj(_) => None,
         }
     }
 
@@ -485,6 +605,8 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.keys(),
             Inner::File(file) => file.keys(),
+            Inner::VecProj(vec) => vec.keys(),
+            Inner::FileProj(file) => file.keys(),
         }
     }
 }
@@ -513,7 +635,24 @@ where
                     factories: self.factories.clone(),
                 })
             }
-            Inner::File(_) => None,
+            Inner::VecProj(vec) => {
+                // Spilling reads every record anyway, so it writes what a
+                // reader of this batch sees rather than what the inner batch
+                // holds: the trailing column goes, and with it the runs that
+                // only it distinguished.  The result is an ordinary file batch,
+                // smaller than the projected one and needing no stamp.
+                let mut file = FileIndexedWSetBuilder::with_capacity(
+                    &self.factories.plain,
+                    vec.approx_key_count(),
+                    vec.approx_len(),
+                );
+                copy_to_builder(&mut file, self.factories.project(vec.cursor()));
+                Some(Self {
+                    inner: Inner::File(file.done()),
+                    factories: self.factories.clone(),
+                })
+            }
+            Inner::File(_) | Inner::FileProj(_) => None,
         }
     }
 
@@ -521,13 +660,28 @@ where
         match &self.inner {
             Inner::Vec(vec) => vec.file_reader(),
             Inner::File(file) => file.file_reader(),
+            Inner::VecProj(vec) => vec.file_reader(),
+            Inner::FileProj(file) => file.file_reader(),
         }
     }
 
     fn from_path(factories: &Self::Factories, path: &StoragePath) -> Result<Self, ReaderError> {
+        // The file records whether its values carry the trailing column, so the
+        // layout is known before the factories that decode it are chosen.
+        let stamped = read_metadata(Runtime::buffer_cache, &*Runtime::storage_backend()?, path)?
+            .value_stamp
+            .is_stamped();
+
+        // A stamped file that these factories cannot describe is left to the
+        // plain open, which reports the mismatch.
+        let inner = if stamped && factories.has_projection() {
+            Inner::FileProj(FileIndexedWSet::from_path(factories.projected(), path)?)
+        } else {
+            Inner::File(FileIndexedWSet::from_path(&factories.plain, path)?)
+        };
         Ok(FallbackIndexedWSet {
             factories: factories.clone(),
-            inner: Inner::File(FileIndexedWSet::from_path(&factories.plain, path)?),
+            inner,
         })
     }
 
@@ -535,6 +689,8 @@ where
         match &self.inner {
             Inner::File(file) => file.key_bounds(),
             Inner::Vec(vec) => vec.key_bounds(),
+            Inner::FileProj(file) => file.key_bounds(),
+            Inner::VecProj(vec) => vec.key_bounds(),
         }
     }
 
@@ -542,6 +698,8 @@ where
         match &self.inner {
             Inner::File(file) => file.negative_weight_count(),
             Inner::Vec(vec) => vec.negative_weight_count(),
+            Inner::FileProj(file) => file.negative_weight_count(),
+            Inner::VecProj(vec) => vec.negative_weight_count(),
         }
     }
 
@@ -549,6 +707,8 @@ where
         match &self.inner {
             Inner::File(file) => file.touched_window_count(),
             Inner::Vec(vec) => vec.touched_window_count(),
+            Inner::FileProj(file) => file.touched_window_count(),
+            Inner::VecProj(vec) => vec.touched_window_count(),
         }
     }
 }
