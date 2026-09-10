@@ -1,3 +1,4 @@
+mod bounded_store;
 mod deletion_vector;
 mod input;
 mod output;
