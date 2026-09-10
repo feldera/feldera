@@ -5329,6 +5329,125 @@ async fn run_change_feed_filter_test(filter_expr: &str, partition_by_region: boo
     pipeline.stop().unwrap();
 }
 
+/// A change feed reads only the columns the connector needs, so a Delta column
+/// the SQL table never declares and no expression names is left out of the read
+/// entirely.
+///
+/// The read schema is what decides this: a change data file is read through a
+/// `StreamingTable`, which pushes no projection down, so a column the schema
+/// names is decoded whether or not anything downstream wants it. This is the
+/// case the two `filter` tests below cannot cover, since each of them pins one
+/// of the undeclared columns into the read set.
+///
+/// `skip_unused_columns` is deliberately left off: the narrowing follows from
+/// the SQL table's own column list, not from that property.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_change_feed_undeclared_columns_test() {
+    use crate::test::TestStruct;
+    use arrow::array::{Array, BooleanArray, Int64Array, RecordBatch, StringArray, StructArray};
+    use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Fields as ArrowFields};
+
+    init_logging();
+
+    // `region` and `meta` exist only in the Delta table, and nothing names them.
+    let meta_fields: ArrowFields =
+        vec![Arc::new(ArrowField::new("tag", ArrowDataType::Utf8, false))].into();
+    let arrow_schema = Arc::new(ArrowSchema::new(vec![
+        ArrowField::new("id", ArrowDataType::Int64, false),
+        ArrowField::new("b", ArrowDataType::Boolean, false),
+        ArrowField::new("s", ArrowDataType::Utf8, false),
+        ArrowField::new("region", ArrowDataType::Utf8, false),
+        ArrowField::new("meta", ArrowDataType::Struct(meta_fields.clone()), false),
+    ]));
+
+    let row = |id: u32, s: &str| TestStruct {
+        id,
+        b: false,
+        i: None,
+        s: s.to_string(),
+    };
+    let make_batch = |ids: &[u32]| -> RecordBatch {
+        RecordBatch::try_new(
+            arrow_schema.clone(),
+            vec![
+                Arc::new(Int64Array::from_iter_values(
+                    ids.iter().map(|id| *id as i64),
+                )) as Arc<dyn Array>,
+                Arc::new(ids.iter().map(|_| Some(false)).collect::<BooleanArray>()),
+                Arc::new(StringArray::from_iter_values(
+                    ids.iter().map(|id| format!("row-{id}")),
+                )),
+                Arc::new(StringArray::from_iter_values(ids.iter().map(|_| "us"))),
+                Arc::new(StructArray::new(
+                    meta_fields.clone(),
+                    vec![Arc::new(StringArray::from_iter_values(
+                        ids.iter().map(|_| "tagged"),
+                    ))],
+                    None,
+                )),
+            ],
+        )
+        .unwrap()
+    };
+
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let mut delta = create_change_feed_table(&table_uri, &arrow_schema, &[]).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let pipeline = delta_input_controller::<TestStruct>(
+        &table_uri,
+        json!({
+            "mode": "snapshot_and_follow",
+            "change_feed": "auto",
+        }),
+        &TestStruct::schema(),
+        storage_dir.path(),
+        &errors,
+    )
+    .await
+    .unwrap();
+    pipeline.start();
+    let output = SqlIdentifier::from("test_output1");
+
+    let ids: Vec<u32> = (0..4).collect();
+    delta = delta
+        .write(vec![make_batch(&ids)])
+        .with_save_mode(SaveMode::Append)
+        .await
+        .unwrap();
+    let mut expected: Vec<TestStruct> = ids
+        .iter()
+        .map(|id| row(*id, &format!("row-{id}")))
+        .collect();
+    wait_or_connector_error(&pipeline, &output, &expected, &errors).await;
+
+    // An UPDATE records change data, so this half reads through the change data
+    // files rather than the file actions.
+    delta = delta
+        .update()
+        .with_predicate(col("id").eq(lit(0i64)))
+        .with_update("s", lit("updated"))
+        .await
+        .unwrap()
+        .0;
+    expected[0] = row(0, "updated");
+    wait_or_connector_error(&pipeline, &output, &expected, &errors).await;
+
+    // A DELETE too, and it must retract only the row it names.
+    let _ = delta
+        .delete()
+        .with_predicate(col("id").eq(lit(1i64)))
+        .await
+        .unwrap();
+    expected.remove(1);
+    wait_or_connector_error(&pipeline, &output, &expected, &errors).await;
+
+    assert_read_change_data(&pipeline);
+    pipeline.stop().unwrap();
+}
+
 /// A change feed read under a `filter` over a Delta column the SQL table never
 /// declares admits the rows the predicate selects.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
