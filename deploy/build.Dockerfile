@@ -188,7 +188,8 @@ RUN  arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x8
     cd /home/ubuntu && curl -LO https://github.com/mozilla/sccache/releases/download/v0.17.0/sccache-v0.17.0-$arch-unknown-linux-musl.tar.gz \
     && tar zxvf sccache-v0.17.0-$arch-unknown-linux-musl.tar.gz \
     && cp sccache-v0.17.0-$arch-unknown-linux-musl/sccache /home/ubuntu/.cargo/bin \
-    && chmod +x /home/ubuntu/.cargo/bin/sccache
+    && chmod +x /home/ubuntu/.cargo/bin/sccache \
+    && rm -rf sccache-v0.17.0-$arch-unknown-linux-musl.tar.gz sccache-v0.17.0-$arch-unknown-linux-musl
 
 ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold -C link-arg=-Wl,--compress-debug-sections=zlib"
 

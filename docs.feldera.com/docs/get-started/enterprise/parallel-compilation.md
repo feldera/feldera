@@ -93,6 +93,16 @@ Use either IRSA (IAM Roles for Service Accounts) or a Kubernetes secret with S3 
   ```
 The secret must define keys `access_key_id` and `secret_access_key`. You can configure the secret name in `values.yaml`.
 
+If you encrypt the cache bucket with KMS (`serverSideEncryptionAwsKms` or
+`serverSideEncryptionKmsKeyId`), the principal above also needs
+`kms:GenerateDataKey` and `kms:Decrypt` on the key. Without them the bucket
+permissions look correct but every cache write fails.
+
+Both KMS settings require a Feldera release that ships sccache 0.17 or newer.
+Setting them on an older release makes sccache reject its entire configuration,
+not just the unknown keys, which disables the cache rather than only the
+encryption.
+
 
 **2. Configure sccache in `values.yaml`**
 
@@ -121,6 +131,14 @@ parallelCompilation:
       #
       # Server-side encryption (optional)
       # serverSideEncryption: false
+      #
+      # Server-side encryption with KMS (optional). Encrypt with the
+      # AWS-managed key (aws/s3):
+      # serverSideEncryptionAwsKms: true
+      #
+      # ... or with a customer-managed KMS key, which takes precedence over
+      # both settings above:
+      # serverSideEncryptionKmsKeyId: "arn:aws:kms:us-east-1:111122223333:key/<key-id>"
       #
       # Existing secret containing S3 credentials
       # The secret must have keys: access_key_id and secret_access_key
@@ -302,6 +320,8 @@ Comman causes can be misconfigured S3 bucket / endpoint / credentials.
 |-----|-------------|---------|
 | `parallelCompilation.sccache.s3.existingSecret` | Secret for S3 credentials (omit if using IRSA) | `sccache-s3-secret` |
 | `parallelCompilation.sccache.s3.serverSideEncryption` | Enable server-side encryption with s3 managed key (SSE-S3) | `false` |
+| `parallelCompilation.sccache.s3.serverSideEncryptionAwsKms` | Enable SSE-KMS with the AWS-managed key (`aws/s3`). Requires sccache 0.17 or newer | `true` |
+| `parallelCompilation.sccache.s3.serverSideEncryptionKmsKeyId` | Enable SSE-KMS with a customer-managed KMS key. Takes precedence over the two settings above. Requires sccache 0.17 or newer | `arn:aws:kms:us-east-1:111122223333:key/<key-id>` |
 | `parallelCompilation.sccache.s3.endpoint` | Custom endpoint (e.g. MinIO) | `minio.mydomain.com:9000` |
 
 **Autoscaling (experimental)**
