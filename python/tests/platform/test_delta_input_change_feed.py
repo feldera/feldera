@@ -36,6 +36,7 @@ from feldera.testutils import (
     FELDERA_TEST_NUM_HOSTS,
     FELDERA_TEST_NUM_WORKERS,
     number_of_input_records,
+    variant_pipeline_name,
 )
 
 from tests import TEST_CLIENT
@@ -326,14 +327,14 @@ def test_delta_input_change_feed_merge(pipeline_name):
     hundred-row file a copy-on-write merge rewrites.
     """
     auto = _ingest(
-        f"{pipeline_name}_auto",
+        variant_pipeline_name(pipeline_name, "auto"),
         mode="snapshot_and_follow",
         version=APPEND_VERSION,
         end_version=MERGE_VERSION,
         change_feed="auto",
     )
     off = _ingest(
-        f"{pipeline_name}_off",
+        variant_pipeline_name(pipeline_name, "off"),
         mode="snapshot_and_follow",
         version=APPEND_VERSION,
         end_version=MERGE_VERSION,
@@ -376,14 +377,14 @@ def test_delta_input_change_feed_matches_follow(pipeline_name):
     so falls back to the added file.
     """
     auto = _ingest(
-        f"{pipeline_name}_auto",
+        variant_pipeline_name(pipeline_name, "auto"),
         mode="snapshot_and_follow",
         version=CREATE_VERSION,
         end_version=LAST_VERSION,
         change_feed="auto",
     )
     off = _ingest(
-        f"{pipeline_name}_off",
+        variant_pipeline_name(pipeline_name, "off"),
         mode="snapshot_and_follow",
         version=CREATE_VERSION,
         end_version=LAST_VERSION,
@@ -407,7 +408,7 @@ def test_delta_input_change_feed_matches_follow(pipeline_name):
     )
 
 
-def test_delta_input_change_feed_reads_only_changed_rows(pipeline_name):
+def test_delta_input_change_feed_reads_only_changes(pipeline_name):
     """A one-row `UPDATE` ingests one row through the change feed, where
     `follow` ingests the whole rewritten file.
 
@@ -417,14 +418,14 @@ def test_delta_input_change_feed_reads_only_changed_rows(pipeline_name):
     and is what this asserts.
     """
     auto = _ingest(
-        f"{pipeline_name}_auto",
+        variant_pipeline_name(pipeline_name, "auto"),
         mode="snapshot_and_follow",
         version=CREATE_VERSION,
         end_version=UPDATE_VERSION,
         change_feed="auto",
     )
     off = _ingest(
-        f"{pipeline_name}_off",
+        variant_pipeline_name(pipeline_name, "off"),
         mode="snapshot_and_follow",
         version=CREATE_VERSION,
         end_version=UPDATE_VERSION,
