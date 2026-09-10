@@ -30,7 +30,7 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
                 @Override
                 public SqlCall createCall(
                         @Nullable SqlLiteral functionQualifier, SqlParserPos pos, @Nullable SqlNode... operands) {
-                    Utilities.enforce(operands.length == 11);
+                    Utilities.enforce(operands.length == 10);
                     return new SqlExtendedColumnDeclaration(pos,
                             (SqlIdentifier) Objects.requireNonNull(operands[0]),
                             (SqlDataTypeSpec) Objects.requireNonNull(operands[1]),
@@ -41,8 +41,7 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
                             ((SqlLiteral) Objects.requireNonNull(operands[6])).booleanValue(),
                             operands[7],
                             operands[8],
-                            operands[9],
-                            ((SqlLiteral) Objects.requireNonNull(operands[10])).booleanValue());
+                            ((SqlLiteral) Objects.requireNonNull(operands[9])).booleanValue());
                 }
             };
 
@@ -57,7 +56,6 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
     // These can be mutated
     public boolean primaryKey;
     public @Nullable SqlNode lateness;
-    public @Nullable SqlNode watermark;
     public @Nullable SqlNode defaultValue;
     public boolean interned;
 
@@ -65,7 +63,7 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
             SqlParserPos pos, SqlIdentifier name, SqlDataTypeSpec dataType,
             @Nullable SqlNode expression, ColumnStrategy strategy,
             @Nullable SqlIdentifier foreignKeyTable, @Nullable SqlIdentifier foreignKeyColumn,
-            boolean primaryKey, @Nullable SqlNode lateness, @Nullable SqlNode watermark, boolean interned) {
+            boolean primaryKey, @Nullable SqlNode lateness, boolean interned) {
         super(pos);
         this.name = name;
         this.dataType = dataType;
@@ -80,14 +78,13 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
             this.foreignKeyColumns.add(foreignKeyColumn);
         this.primaryKey = primaryKey;
         this.lateness = lateness;
-        this.watermark = watermark;
         this.interned = interned;
     }
 
     public SqlExtendedColumnDeclaration(
             SqlParserPos pos, SqlIdentifier name, SqlDataTypeSpec dataType, @Nullable SqlNode expression,
             ColumnStrategy strategy, List<SqlIdentifier> foreignKeyTables, List<SqlIdentifier> foreignKeyColumns,
-            boolean primaryKey, @Nullable SqlNode lateness, @Nullable SqlNode watermark, @Nullable SqlNode defaultValue,
+            boolean primaryKey, @Nullable SqlNode lateness, @Nullable SqlNode defaultValue,
             boolean interned) {
         super(pos);
         this.name = name;
@@ -98,7 +95,6 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
         this.foreignKeyColumns = foreignKeyColumns;
         this.primaryKey = primaryKey;
         this.lateness = lateness;
-        this.watermark = watermark;
         this.defaultValue = defaultValue;
         this.interned = interned;
     }
@@ -109,7 +105,7 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
                 new SqlNodeList(this.foreignKeyTables, SqlParserPos.ZERO),
                 new SqlNodeList(this.foreignKeyColumns, SqlParserPos.ZERO),
                 SqlLiteral.createBoolean(this.primaryKey, SqlParserPos.ZERO),
-                this.lateness, this.watermark, this.defaultValue,
+                this.lateness, this.defaultValue,
                 SqlLiteral.createBoolean(this.interned, SqlParserPos.ZERO));
     }
 
@@ -152,15 +148,6 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
                     " already marked as interned");
         }
         this.interned = true;
-        return this;
-    }
-
-    public SqlExtendedColumnDeclaration setWatermark(SqlNode watermark) {
-        if (this.watermark != null) {
-            throw new CompilationError("Column " + Utilities.singleQuote(this.name.getSimple()) +
-                    " already has a watermark", CalciteObject.create(watermark));
-        }
-        this.watermark = watermark;
         return this;
     }
 

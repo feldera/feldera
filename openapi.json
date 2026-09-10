@@ -10655,10 +10655,6 @@
               },
               "unused": {
                 "type": "boolean"
-              },
-              "watermark": {
-                "type": "string",
-                "nullable": true
               }
             }
           }

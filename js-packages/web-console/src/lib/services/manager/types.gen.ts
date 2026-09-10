@@ -89,8 +89,26 @@ export type ApiKeyId = string
 
 export type Auth = {
   credentials?: Credentials | null
+  /**
+   * User JWT for decentralized (operator-mode) authentication.
+   *
+   * Requires `nkey` to be set as well: the connection nonce is signed
+   * with the NKey seed. Equivalent to `credentials`, for deployments
+   * that store the JWT and seed separately (e.g. as two secrets)
+   * rather than as one `.creds` file.
+   */
   jwt?: string | null
+  /**
+   * NKey seed (`SU...`) for NKey challenge-response authentication.
+   *
+   * On its own, authenticates as a bare NKey user (a `nkey:` user in
+   * the server configuration). Combined with `jwt`, signs the
+   * connection nonce for decentralized authentication.
+   */
   nkey?: string | null
+  /**
+   * Token for token-based authentication.
+   */
   token?: string | null
   user_and_password?: UserAndPassword | null
 }
@@ -781,6 +799,7 @@ export type ConnectOptions = {
    * NATS server URL (e.g., "nats://localhost:4222").
    */
   server_url: string
+  tls?: Tls
 }
 
 export type ConnectorConfig = OutputBufferConfig & {
@@ -1208,18 +1227,12 @@ export type DeliverPolicy =
  * [Change Data Feed](https://docs.delta.io/latest/delta-change-data-feed.html).
  *
  * A table with the `delta.enableChangeDataFeed` property records the rows an
- * `UPDATE`, `DELETE`, or `MERGE` changed, in a `_change_data` directory.  Reading
- * those rows is what the `follow` and `snapshot_and_follow` modes do instead of
- * reconstructing the change from the data files a commit added and removed: for a
+ * `UPDATE`, `DELETE`, or `MERGE` changed, in a `_change_data` directory. The connector
+ * can read this data in the `follow` and `snapshot_and_follow` mode, which allows
+ * it to ingest the changes to the table more efficiently than by reconstructing
+ * them the data files a commit added and removed. For a
  * commit that rewrites whole files, the difference is between reading the changed
  * rows and reading every file those rows lived in.
- *
- * The result is the same either way, so this option chooses how the change is read,
- * never what it means.
- *
- * Delta records no change data for a commit that only adds or only removes rows -
- * an append, or a `DELETE` on a table with deletion vectors - so those commits are
- * always read from their file actions.
  */
 export type DeltaTableChangeFeed = 'auto' | 'require' | 'off'
 
@@ -2072,7 +2085,6 @@ export type Field = SqlIdentifier & {
   default?: string | null
   lateness?: string | null
   unused: boolean
-  watermark?: string | null
 }
 
 /**
@@ -3013,6 +3025,7 @@ export type KafkaInputConfig = {
    */
   include_topic?: boolean | null
   log_level?: KafkaLogLevel | null
+  oauth_provider?: KafkaOauthProvider | null
   /**
    * The list of Kafka partitions to read from.
    *
@@ -3122,6 +3135,8 @@ export type KafkaInputConfig = {
     | null
     | KafkaLogLevel
     | null
+    | KafkaOauthProvider
+    | null
     | Array<number>
     | null
     | number
@@ -3147,6 +3162,12 @@ export type KafkaLogLevel =
   | 'debug'
 
 /**
+ * Identity provider used to mint SASL/OAUTHBEARER tokens for the Kafka
+ * broker.
+ */
+export type KafkaOauthProvider = 'aws' | 'gcp'
+
+/**
  * Configuration for writing data to a Kafka topic with `OutputTransport`.
  */
 export type KafkaOutputConfig = {
@@ -3167,6 +3188,7 @@ export type KafkaOutputConfig = {
    */
   kafka_service?: string | null
   log_level?: KafkaLogLevel | null
+  oauth_provider?: KafkaOauthProvider | null
   /**
    * The AWS region to use while connecting to AWS Managed Streaming for Kafka (MSK).
    */
@@ -3184,6 +3206,8 @@ export type KafkaOutputConfig = {
     | string
     | null
     | KafkaLogLevel
+    | null
+    | KafkaOauthProvider
     | null
     | string
     | null
@@ -5937,6 +5961,11 @@ export type SyncConfig = {
    * The name of the storage bucket.
    *
    * This may include a path to a folder inside the bucket (e.g., `my-bucket/data`).
+   *
+   * Prefix it with `gs://` to sync to Google Cloud Storage through its native
+   * API instead of S3. `provider`, `access_key`, and `secret_key` are then
+   * ignored; rclone authenticates with Application Default Credentials, for
+   * example a GKE Workload Identity.
    */
   bucket: string
   /**
@@ -5949,6 +5978,9 @@ export type SyncConfig = {
    *
    * This is typically required for custom or local S3-compatible storage providers like MinIO.
    * Example: `http://localhost:9000`
+   *
+   * For a `gs://` bucket this is the Google Cloud Storage JSON API base URL;
+   * a bare host gets `/storage/v1/` appended. Leave empty for the public service.
    *
    * Relevant rclone config key: [`endpoint`](https://rclone.org/s3/#s3-endpoint)
    */
@@ -6033,7 +6065,9 @@ export type SyncConfig = {
    * When the pipeline has no local checkpoint and `bucket` contains no
    * checkpoint either, it will attempt to fetch the checkpoint from this
    * location instead.  All connection settings (`endpoint`, `region`,
-   * `provider`, `access_key`, `secret_key`) are shared with `bucket`.
+   * `provider`, `access_key`, `secret_key`) are shared with `bucket`. The
+   * scheme is not: a `gs://` `bucket` needs a `gs://` `read_bucket` too,
+   * because the prefix alone selects the object store.
    *
    * The pipeline **never writes** to `read_bucket`.
    *
@@ -6163,6 +6197,23 @@ export type TimeSeries = {
    * These report 60 seconds of samples, one per second.
    */
   samples: Array<SampleStatistics>
+}
+
+/**
+ * TLS options for connecting to a NATS server.
+ */
+export type Tls = {
+  /**
+   * Require an encrypted connection; refuse to connect to servers that
+   * do not offer TLS.
+   */
+  require_tls?: boolean
+  /**
+   * Path to a PEM file with additional root certificates to trust when
+   * verifying the server certificate, for servers whose certificates
+   * are not signed by a public CA.
+   */
+  root_certificates_file?: string
 }
 
 /**

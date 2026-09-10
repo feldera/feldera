@@ -183,7 +183,7 @@ public class RenameIdentifiers extends SqlShuttle {
             return new SqlExtendedColumnDeclaration(ecd.getParserPosition(),
                     name, (SqlDataTypeSpec) type, ecd.expression, ecd.strategy,
                     foreignKeyTables, foreignKeyColumns, ecd.primaryKey,
-                    ecd.lateness, ecd.watermark, ecd.defaultValue, ecd.interned);
+                    ecd.lateness, ecd.defaultValue, ecd.interned);
         } else if (call instanceof SqlCreateView cv) {
             SqlIdentifier name = this.renameIdentifier(cv.name);
             SqlNodeList columnList = cv.columnList == null ? null : (SqlNodeList) super.visit(cv.columnList);

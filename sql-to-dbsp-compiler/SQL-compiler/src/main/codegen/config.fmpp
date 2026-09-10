@@ -53,7 +53,6 @@ data: {
       "AGGREGATE"
       "LINEAR"
       "MATERIALIZED"
-      "WATERMARK"
       "REMOVE"
       "SEMI"
       #"VOLATILE"

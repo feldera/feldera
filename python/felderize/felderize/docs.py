@@ -67,7 +67,7 @@ _EXTRA_PATTERNS: dict[str, list[str]] = {
     "binary": [r"\bVARBINARY\b", r"\bBINARY\b", r"\bXXHASH\b"],
     "float": [r"\bFINITE_OR_NULL\b"],
     "operators": [r"\bBETWEEN\b", r"<=>", r"\bCONTAINS\b", r"\bOVERLAPS\b"],
-    "streaming": [r"\bLATENESS\b", r"\bWATERMARK\b", r"\bTUMBLE\b", r"\bHOP\b"],
+    "streaming": [r"\bLATENESS\b", r"\bTUMBLE\b", r"\bHOP\b"],
     "uuid": [r"\bUUID\b"],
 }
 

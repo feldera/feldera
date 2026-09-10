@@ -1251,7 +1251,6 @@ impl<'a> RecordGenerator<'a> {
                 name: SqlIdentifier::from("array_element"),
                 columntype,
                 lateness: None,
-                watermark: None,
                 default: None,
                 unused: false,
             };

@@ -321,20 +321,24 @@ public class ParserTests {
         Assert.assertNotNull(decl.lateness);
     }
 
+    /** `WATERMARK` was removed as a column annotation, so the word is an ordinary identifier. */
     @Test
-    public void watermarkTest() throws SqlParseException {
+    public void watermarkIsNotAKeywordTest() throws SqlParseException {
+        SqlToRelCompiler calcite = this.getCompiler();
+        SqlNode node = calcite.parse("CREATE TABLE watermark(watermark INT)");
+        Assert.assertNotNull(node);
+        Assert.assertTrue(node instanceof SqlCreateTable);
+    }
+
+    /** The removed `WATERMARK` column annotation no longer parses. */
+    @Test
+    public void watermarkAnnotationRejectedTest() {
         SqlToRelCompiler calcite = this.getCompiler();
         String ddl = """
                 CREATE TABLE st(
                    ts       TIMESTAMP WATERMARK INTERVAL '5:00' HOURS TO MINUTES,
                    name     VARCHAR)""";
-        SqlNode node = calcite.parse(ddl);
-        Assert.assertNotNull(node);
-        Assert.assertTrue(node instanceof SqlCreateTable);
-        SqlCreateTable create = (SqlCreateTable) node;
-        Assert.assertNotNull(create.columnsOrForeignKeys);
-        SqlExtendedColumnDeclaration decl = (SqlExtendedColumnDeclaration) create.columnsOrForeignKeys.get(0);
-        Assert.assertNotNull(decl.watermark);
+        Assert.assertThrows(SqlParseException.class, () -> calcite.parse(ddl));
     }
 
     @Test

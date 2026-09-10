@@ -3054,15 +3054,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 lateness = null;
             }
         }
-        DBSPExpression watermark = null;
-        if (metadata.watermark != null) {
-            watermark = expressionCompiler.compile(metadata.watermark);
-            if (!watermark.getType().is(IHasZero.class)) {
-                this.compiler.reportError(watermark.getSourcePosition(), "Illegal expression",
-                        "Illegal expression for watermark value");
-                watermark = null;
-            }
-        }
         DBSPExpression defaultValue = null;
         if (metadata.defaultValue != null) {
             defaultValue = expressionCompiler.compile(metadata.defaultValue);
@@ -3080,7 +3071,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         ", hint will be ignored");
         }
         return new InputColumnMetadata(metadata.getNode(), metadata.getName(), type,
-                metadata.isPrimaryKey, lateness, watermark, defaultValue, metadata.defaultValuePosition, metadata.interned);
+                metadata.isPrimaryKey, lateness, defaultValue, metadata.defaultValuePosition, metadata.interned);
     }
 
     private DBSPNode compileCreateView(CreateViewStatement view) {

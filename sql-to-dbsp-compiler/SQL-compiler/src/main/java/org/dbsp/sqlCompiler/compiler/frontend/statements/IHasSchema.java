@@ -204,10 +204,10 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
             String json = Utilities.deterministicObjectMapper().writeValueAsString(jsonType);
             RelDataType type = RelJsonReader.readType(typeFactory, json);
             RelDataTypeField field = new RelDataTypeFieldImpl(name, index, type);
-            // Do we need lateness, watermark, etc.?
+            // Do we need lateness, etc.?
             boolean interned = node.has("interned");
             return new RelColumnMetadata(CalciteObject.EMPTY, field, isPrimaryKey, caseSensitive,
-                    null, null, null, SourcePositionRange.INVALID, interned);
+                    null, null, SourcePositionRange.INVALID, interned);
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
@@ -249,9 +249,6 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
             }
             if (col.lateness != null) {
                 column.put("lateness", CalciteRelNode.toSqlString(col.lateness));
-            }
-            if (col.watermark != null) {
-                column.put("watermark", CalciteRelNode.toSqlString(col.watermark));
             }
             if (col.interned) {
                 column.put("interned", true);

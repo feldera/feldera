@@ -14,6 +14,13 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - Incompatible change (SQL compiler): the `WATERMARK` column annotation is
+          removed, and a table that declares one no longer compiles.  There is no
+          replacement. The annotation was experimental and undocumented, and a table that
+          combined it with a `PRIMARY KEY` never compiled.  `WATERMARK` is no longer a
+          reserved keyword, so a program may use it as an identifier, and a column's
+          `watermark` property no longer appears in a program's schema.
+
         - The Kafka connector's `sasl.mechanism = OAUTHBEARER` authentication can now
           target GCP Managed Service for Apache Kafka, in addition to AWS MSK. Set the
           new `oauth_provider` field to `gcp` to mint tokens from Google Application

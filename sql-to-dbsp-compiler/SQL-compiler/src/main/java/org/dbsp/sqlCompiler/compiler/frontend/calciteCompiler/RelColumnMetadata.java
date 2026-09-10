@@ -19,9 +19,6 @@ public class RelColumnMetadata {
     /** Lateness, if declared. */
     @Nullable
     public final RexNode lateness;
-    /** Lateness, if declared. */
-    @Nullable
-    public final RexNode watermark;
     /** Default value, if declared */
     @Nullable
     public final RexNode defaultValue;
@@ -34,14 +31,13 @@ public class RelColumnMetadata {
 
     public RelColumnMetadata(
             CalciteObject node, RelDataTypeField field, boolean isPrimaryKey, boolean nameIsQuoted,
-            @Nullable RexNode lateness, @Nullable RexNode watermark, @Nullable RexNode defaultValue,
+            @Nullable RexNode lateness, @Nullable RexNode defaultValue,
             @Nullable SourcePositionRange defaultValuePosition, boolean interned) {
         this.node = node;
         this.isPrimaryKey = isPrimaryKey;
         this.nameIsQuoted = nameIsQuoted;
         this.field = field;
         this.lateness = lateness;
-        this.watermark = watermark;
         this.defaultValue = defaultValue;
         this.defaultValuePosition = defaultValuePosition;
         this.unused = false;
@@ -58,7 +54,6 @@ public class RelColumnMetadata {
                 "field=" + this.field +
                 ", isPrimaryKey=" + this.isPrimaryKey +
                 ", lateness=" + this.lateness +
-                ", watermark=" + this.watermark +
                 ", defaultValue=" + this.defaultValue +
                 ", nameIsQuoted=" + this.nameIsQuoted +
                 ", unused=" + this.unused +

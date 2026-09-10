@@ -1160,11 +1160,11 @@ public class SqlToRelCompiler implements IWritesLogs {
         return result;
     }
 
-    RexNode validateLatenessOrWatermark(SqlIdentifier columnName, SqlDataTypeSpec columnType,
-                                        SqlNode value, SourceFileContents sources) {
+    RexNode validateLateness(SqlIdentifier columnName, SqlDataTypeSpec columnType,
+                             SqlNode value, SourceFileContents sources) {
         try {
             /* We generate the following SQL:
-              CREATE TABLE T(... column WATERMARK expression ...);
+              CREATE TABLE T(... column LATENESS expression ...);
               SELECT column - value FROM tmp;
               and validate it. */
             String sql = "CREATE TABLE TMP(\"" +
@@ -1322,7 +1322,6 @@ public class SqlToRelCompiler implements IWritesLogs {
             SqlDataTypeSpec typeSpec;
             boolean isPrimaryKey;
             RexNode lateness = null;
-            RexNode watermark = null;
             RexNode defaultValue = null;
             SourcePositionRange defaultValueRange = null;
             boolean interned;
@@ -1342,10 +1341,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 if (declaredPrimary)
                     primaryKeys.remove(name.getSimple());
                 if (cd.lateness != null) {
-                    lateness = this.validateLatenessOrWatermark(cd.name, cd.dataType, cd.lateness, sources);
-                }
-                if (cd.watermark != null) {
-                    watermark = this.validateLatenessOrWatermark(cd.name, cd.dataType, cd.watermark, sources);
+                    lateness = this.validateLateness(cd.name, cd.dataType, cd.lateness, sources);
                 }
                 if (cd.defaultValue != null) {
                     defaultValueRange = new SourcePositionRange(cd.defaultValue.getParserPosition());
@@ -1404,7 +1400,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     name.getSimple(), index++, type);
             RelColumnMetadata meta = new RelColumnMetadata(
                     CalciteObject.create(col), field, isPrimaryKey, Utilities.identifierIsQuoted(name),
-                    lateness, watermark, defaultValue, defaultValueRange, interned);
+                    lateness, defaultValue, defaultValueRange, interned);
             result.add(meta);
         }
 
@@ -1497,7 +1493,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             if (perColumnLateness.containsKey(colIdentifier)) {
                 SqlLateness sqlLateness = Utilities.getExists(perColumnLateness, colIdentifier);
                 SqlDataTypeSpec typeSpec = SqlTypeUtil.convertTypeToSpec(field.getType());
-                lateness = this.validateLatenessOrWatermark(id, typeSpec, sqlLateness.getLateness(), sources);
+                lateness = this.validateLateness(id, typeSpec, sqlLateness.getLateness(), sources);
             }
 
             if (colByName.containsKey(actualColumnName)) {
@@ -1521,7 +1517,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             }
             colByName.put(actualColumnName, field);
             RelColumnMetadata meta = new RelColumnMetadata(node,
-                    field, false, nameIsQuoted, lateness, null, null, null, false);
+                    field, false, nameIsQuoted, lateness, null, null, false);
             if (kind != SqlCreateView.ViewKind.LOCAL && !this.options.languageOptions.unrestrictedIOTypes)
                 this.validateColumnType(true, position, field.getType(), field.getName(), viewName);
             columns.add(meta);
@@ -2498,7 +2494,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             RelDataType type = this.specToRel(cd.dataType, false);
             RelDataTypeField field = new RelDataTypeFieldImpl(name, index++, type);
             var meta = new RelColumnMetadata(CalciteObject.create(n), field, false,
-                    Utilities.identifierIsQuoted(cd.name), null, null, null, null, cd.interned);
+                    Utilities.identifierIsQuoted(cd.name), null, null, null, cd.interned);
             columns.add(meta);
         }
         var result = new DeclareViewStatement(node, ProgramIdentifier.fromSqlId(cv.name), columns);
