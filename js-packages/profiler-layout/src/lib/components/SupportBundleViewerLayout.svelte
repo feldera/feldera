@@ -228,7 +228,7 @@
 
   // Re-color the diagram when the selected metric changes. The selectMetric() call refreshes
   // the current sticky tooltip via the callbacks above, but those only touch tooltipData — so
-  // this does not feed back into any effect (no loop). Same shape as the original ProfilerLayout.
+  // this does not feed back into any effect (no loop).
   $effect(() => {
     profilerDiagram?.selectMetric(selectedMetricId)
   })
