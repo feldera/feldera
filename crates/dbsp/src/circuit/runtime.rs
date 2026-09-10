@@ -326,8 +326,11 @@ struct RuntimeInner {
 }
 
 impl Drop for RuntimeInner {
+    /// Raises the kill signal, so that a runtime that goes away without ever
+    /// being killed still releases whoever waits on it.
     fn drop(&mut self) {
         debug!("dropping RuntimeInner");
+        self.kill_signal.raise();
     }
 }
 
