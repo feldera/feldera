@@ -1017,6 +1017,26 @@ pub enum OutputBatchType {
 ///
 /// * A non-fault-tolerant endpoint does not have a concept of steps and ignores
 ///   them.
+///
+/// # Every wait must end when the pipeline goes down
+///
+/// Every method here runs on the controller's output thread for the endpoint.
+/// That thread is an auxiliary thread of the DBSP runtime, and tearing the
+/// pipeline down joins it.  So an unbounded wait in any of them - a retry loop,
+/// a full queue, an acknowledgement from a client, a lock held by something
+/// else - hangs the teardown, and the teardown can be the very thing that would
+/// have released the wait.
+///
+/// An endpoint that waits on anything outside the pipeline therefore takes a
+/// `CancellationToken` from `ControllerInner::shutdown_token`, and either polls
+/// it between attempts or awaits it alongside the operation with
+/// `CancellationToken::run_until_cancelled`.  The Delta, Kafka, DynamoDB and
+/// HTTP sinks are worked examples.  `Encoder` implementations inherit the rule,
+/// since they run on the same thread.
+///
+/// A bounded wait is not an exception worth making: "bounded" here has to mean
+/// short enough to sit inside a shutdown, and a retry budget measured in
+/// minutes does not.
 pub trait OutputEndpoint: Send {
     fn command_handler(&self) -> Option<Arc<dyn CommandHandler>> {
         None

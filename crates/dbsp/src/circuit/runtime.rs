@@ -1004,6 +1004,10 @@ impl Runtime {
     /// for anything else deadlocks whoever kills the runtime, and a kill can
     /// come from any thread, including one the aux thread expects to hear from.
     ///
+    /// The rule reaches further than `f` itself: it binds everything `f` waits
+    /// for, however long the chain. The controller's output threads are aux
+    /// threads, so it binds every output connector too.
+    ///
     /// # Arguments
     ///
     /// * `thread_name` - The name of the thread.
