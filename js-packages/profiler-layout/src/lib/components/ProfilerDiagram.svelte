@@ -16,7 +16,7 @@
     dataflowData: Dataflow | undefined
     /** Lines of user SQL code */
     programCode: string[] | undefined
-    /** Callbacks from ProfilerLayout */
+    /** Callbacks the hosting layout listens on */
     callbacks: ProfilerCallbacks
     /** Optional class for styling the container */
     class?: string

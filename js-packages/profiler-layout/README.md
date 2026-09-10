@@ -24,10 +24,11 @@ Runthe build to test changes in consuming apps.
 
 ## Exported Components
 
-- **`ProfilerLayout`** - Main visualization container with toolbar slots
+- **`SupportBundleViewerLayout`** - Main visualization container: graph, metrics, SQL and log panels
 - **`ProfilerDiagram`** - Circuit graph renderer
 - **`ProfilerTooltip`** - Node metrics details display
 - **`ProfileTimestampSelector`** - Timestamp navigation dropdown
+- **`SqlCodeView`**, **`BundleLogsView`**, **`TriageResultsView`** - The panels the layout hosts
 
 ## Exported Utilities
 
@@ -46,7 +47,7 @@ Presentation layer between profiler-lib (visualization engine) and applications:
 
 ```typescript
 import {
-  ProfilerLayout,
+  SupportBundleViewerLayout,
   ProfileTimestampSelector,
   getSuitableProfiles,
   processProfileFiles
@@ -59,7 +60,11 @@ const profiles = getSuitableProfiles(zipData)
 const data = await processProfileFiles(profiles[0][1])
 
 // Render in Svelte component
-<ProfilerLayout profileData={data.profile} dataflowData={data.dataflow} programCode={data.sources} />
+<SupportBundleViewerLayout
+  profileData={data.profile}
+  dataflowData={data.dataflow}
+  programCode={data.sources}
+/>
 ```
 
 ## License
