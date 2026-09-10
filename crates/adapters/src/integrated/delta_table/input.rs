@@ -1,7 +1,7 @@
 use crate::catalog::{ArrowStream, InputCollectionHandle};
 use crate::format::InputBuffer;
 use crate::integrated::delta_table::deletion_vector::{
-    ReadMode, filtered_parquet_table, read_deletion_vector,
+    MaskedFile, ReadMode, filtered_parquet_table, read_deletion_vector,
 };
 use crate::integrated::delta_table::{
     ReadSchema, delta_input_serde_config, register_storage_handlers,
@@ -1290,6 +1290,17 @@ struct CatchupFollowState {
     /// Label for the current Feldera transaction, if one has been started.
     transaction: Option<Option<String>>,
 }
+
+/// A CDC file whose active deletion vector must be applied as it is read.
+type MaskedCdcFile<'a> = (&'a CdcFile<'a>, &'a DeletionVectorDescriptor);
+
+/// A file's partition values in `partition_value_keys` order, as the key that
+/// groups files reading together.
+///
+/// The outer `Option` is load-bearing: a log that omits a partition column is
+/// not a log that records it as NULL, and grouping the two together would let
+/// whichever file the log listed first decide the value for both.
+type PartitionKey = Vec<Option<Option<String>>>;
 
 /// One data file of a CDC transaction, as the log describes it.
 struct CdcFile<'a> {
@@ -3664,13 +3675,18 @@ impl DeltaTableInputEndpointInner {
     /// One frame over the change data files of a single partition.
     ///
     /// A `uc://` table's location has no path for a [`ListingTable`] to resolve,
-    /// so its files are read through the object store one at a time and unioned;
-    /// this is the same split [`add_with_polarity`](Self::add_with_polarity)
-    /// makes, and the reason it exists is the same: a listing needs a directory,
-    /// and a Unity Catalog location is not one.
+    /// so its files are read through the object store instead; this is the same
+    /// split [`add_with_polarity`](Self::add_with_polarity) makes, and the
+    /// reason it exists is the same: a listing needs a directory, and a Unity
+    /// Catalog location is not one.
     ///
-    /// Every other scheme reads the whole group in one listing, which lets
-    /// DataFusion parallelize across its files.
+    /// Both routes read the whole group through a single provider, and both
+    /// spread its files over at most `target_partitions` readers. The object
+    /// store route used to build one provider per file and union them, which
+    /// read nothing one at a time: a plan's partitions all run at once, so a
+    /// commit of a few hundred change data files held a few hundred Parquet
+    /// readers open, one per file, each with its own per-column state that no
+    /// batch size reaches.
     async fn change_data_group_dataframe(
         &self,
         table: &DeltaTable,
@@ -3697,30 +3713,22 @@ impl DeltaTableInputEndpointInner {
 
         // An empty bitmap reads every row: a change data file never carries a
         // deletion vector, and the protocol gives it no field to carry one in.
-        let mut dfs = Vec::with_capacity(group.len());
-        for file in group {
-            let provider = self
-                .file_provider(
-                    table,
-                    &file.path,
-                    RoaringTreemap::new(),
-                    ReadMode::NotInBitmap,
-                    read_schema.clone(),
-                )
-                .await?;
-            dfs.push(read(provider)?);
-        }
-
-        let mut dfs = dfs.into_iter();
-        // A group exists only because a file was put in it.
-        let first = dfs
-            .next()
-            .expect("a partition group holds at least one file");
-        dfs.try_fold(first, |acc, df| {
-            acc.union(df).map_err(|e| {
-                anyhow!("internal error processing {description}; {REPORT_ERROR}; error combining change data files: {e}")
-            })
-        })
+        //
+        // One provider covers the whole group. Reading each file through its own
+        // provider and unioning them gave the plan one partition per file, all
+        // of which DataFusion then drove at once, so a commit of a few hundred
+        // change data files held a few hundred Parquet readers open.
+        let provider = self
+            .file_provider(
+                table,
+                group
+                    .iter()
+                    .map(|file| (file.path.as_str(), RoaringTreemap::new())),
+                ReadMode::NotInBitmap,
+                read_schema.clone(),
+            )
+            .await?;
+        read(provider)
     }
 
     /// Arrow schema for reading a change data file: the table's own columns as
@@ -4247,22 +4255,30 @@ impl DeltaTableInputEndpointInner {
     async fn file_provider(
         &self,
         table: &DeltaTable,
-        path: &str,
-        bitmap: RoaringTreemap,
+        files: impl IntoIterator<Item = (&str, RoaringTreemap)>,
         mode: ReadMode,
         read_schema: ReadSchema,
     ) -> AnyResult<Arc<dyn TableProvider>> {
-        // delta-rs already decoded the log's URL-encoded path, so `path` is the
-        // object-store key as written.
-        let file_path = Path::parse(path)
-            .map_err(|e| anyhow!("invalid file path '{path}' in Delta log action: {e}"))?;
+        // delta-rs already decoded the log's URL-encoded path, so each path is
+        // the object-store key as written.
+        let files = files
+            .into_iter()
+            .map(|(path, bitmap)| {
+                Ok(MaskedFile {
+                    path: Path::parse(path).map_err(|e| {
+                        anyhow!("invalid file path '{path}' in Delta log action: {e}")
+                    })?,
+                    bitmap,
+                })
+            })
+            .collect::<AnyResult<Vec<_>>>()?;
 
         filtered_parquet_table(
             table.log_store().object_store(None),
-            file_path,
-            bitmap,
+            files,
             read_schema,
             mode,
+            self.datafusion.copied_config().target_partitions(),
         )
         .await
     }
@@ -4312,31 +4328,24 @@ impl DeltaTableInputEndpointInner {
         files: &[CdcFile<'_>],
         description: &str,
     ) -> AnyResult<Option<DataFrame>> {
-        // Split by read strategy: files with an active DV are masked one by
-        // one; the rest are read together in one listing, grouped by partition
-        // so each group's constant partition columns apply to all its files.
-        // The key keeps the outer `Option`: a log that omits a partition column
-        // is not a log that records it as NULL, and grouping the two together
-        // would let whichever file the log listed first decide for both.
-        let mut plain: BTreeMap<Vec<Option<Option<String>>>, Vec<&CdcFile<'_>>> = BTreeMap::new();
-        let mut masked: Vec<(&CdcFile<'_>, &DeletionVectorDescriptor)> = Vec::new();
+        // Split by read strategy: files with an active DV are masked, the rest
+        // are read through a listing. Both sides group by partition values, so
+        // each group's constant partition columns apply to all its files.
+        let mut plain: BTreeMap<PartitionKey, Vec<&CdcFile<'_>>> = BTreeMap::new();
+        let mut masked: BTreeMap<PartitionKey, Vec<MaskedCdcFile<'_>>> = BTreeMap::new();
         let partition_keys = self.partition_value_keys()?;
         for file in files {
+            let key: PartitionKey = partition_keys
+                .iter()
+                .map(|key| {
+                    file.partition_values
+                        .and_then(|values| values.get(key))
+                        .cloned()
+                })
+                .collect();
             match file.deletion_vector.filter(|d| is_active_dv(d)) {
-                Some(dv) => masked.push((file, dv)),
-                None => plain
-                    .entry(
-                        partition_keys
-                            .iter()
-                            .map(|key| {
-                                file.partition_values
-                                    .and_then(|values| values.get(key))
-                                    .cloned()
-                            })
-                            .collect(),
-                    )
-                    .or_default()
-                    .push(file),
+                Some(dv) => masked.entry(key).or_default().push((file, dv)),
+                None => plain.entry(key).or_default().push(file),
             }
         }
 
@@ -4363,25 +4372,39 @@ impl DeltaTableInputEndpointInner {
             })?);
         }
 
-        for (file, dv) in masked {
-            let path = file.path;
+        // Each masked group reads through one provider rather than one per
+        // file, which is what bounds how many of their Parquet readers are open
+        // at once: the plan drives every partition it has concurrently, so one
+        // provider per file left the count unbounded.
+        for group in masked.values() {
             // Read the same column set as the plain side; both are projected
             // again below, after the partition columns go back in.
-            let bitmap = self.decode_dv(table, Some(dv), description).await?;
+            let mut files = Vec::with_capacity(group.len());
+            for (file, dv) in group {
+                files.push((
+                    file.path,
+                    self.decode_dv(table, Some(*dv), description).await?,
+                ));
+            }
             let provider = self
                 .file_provider(
                     table,
-                    path,
-                    bitmap,
+                    files,
                     ReadMode::NotInBitmap,
                     self.physical_read_schema(|name| self.keeps_cdc_column(name))?,
                 )
                 .await?;
             let df = self.datafusion.read_table(provider).map_err(|e| {
-                anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading masked file '{path}': {e}")
+                anyhow!(
+                    "internal error processing {description}; {REPORT_ERROR}; error reading masked files {}: {e}",
+                    describe_paths(group.iter().map(|(file, _)| file.path))
+                )
             })?;
             let df = self.project_physical_to_logical(df)?;
-            let df = self.add_partition_columns(df, file.partition_values, &[], description)?;
+            // Every file in the group agrees on its partition values, so the
+            // first one speaks for all of them, as on the plain side.
+            let df =
+                self.add_partition_columns(df, group[0].0.partition_values, &[], description)?;
             dfs.push(self.project_cdc_columns(df).map_err(|e| {
                 anyhow!("internal error processing {description}; {REPORT_ERROR}; {e}")
             })?);
@@ -4488,8 +4511,7 @@ impl DeltaTableInputEndpointInner {
             };
             self.file_provider(
                 table,
-                path,
-                bitmap,
+                [(path, bitmap)],
                 ReadMode::NotInBitmap,
                 self.physical_read_schema(|name| self.needs_column(name))?,
             )
@@ -4548,8 +4570,7 @@ impl DeltaTableInputEndpointInner {
                 let provider = self
                     .file_provider(
                         table,
-                        path,
-                        positions.clone(),
+                        [(path, positions.clone())],
                         ReadMode::InBitmap,
                         self.physical_read_schema(|name| self.needs_column(name))?,
                     )
