@@ -599,6 +599,11 @@ impl ControllerStatus {
     ///
     /// Setting the state to [PipelineState::Terminated] is permanent; the state
     /// can't be re-set to any other state after that.
+    /// Sets the pipeline state.
+    ///
+    /// Use `ControllerInner::set_terminated` for
+    /// [PipelineState::Terminated]: the controller pairs that state with a
+    /// [tokio_util::sync::CancellationToken] and the two must not disagree.
     pub fn set_state(&self, desired: PipelineState) {
         if desired == PipelineState::Terminated {
             self.global_metrics.state.store(desired, Ordering::Relaxed);
