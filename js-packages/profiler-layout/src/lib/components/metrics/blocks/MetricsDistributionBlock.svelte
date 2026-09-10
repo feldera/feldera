@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { isCollapsed, toggleCollapsed } from '../collapsedBlocks.svelte'
   import type { RenderableMetric } from '../dispatch'
   import BarChartMetric from '../parts/BarChartMetric.svelte'
+  import BlockTitle from '../parts/BlockTitle.svelte'
 
   interface Props {
     id: string
@@ -8,6 +10,13 @@
     entries: RenderableMetric[]
   }
   const { id, title, entries }: Props = $props()
+
+  // The block holding the current metric stays open whatever the user chose for its category:
+  // that metric's value is what the panel leads with. The choice itself is kept, so the block
+  // collapses again once the current metric moves to another category.
+  const holdsCurrent = $derived(entries.some((entry) => entry.row.isCurrentMetric))
+  // A block with no title has no toggle to click, so it never collapses.
+  const collapsed = $derived(title !== undefined && isCollapsed(id) && !holdsCurrent)
 
   let expandedIds = $state(new Set<string>())
 
@@ -24,48 +33,62 @@
     expandedIds = next
   }
 
-  // Sticky header cells: the box-shadow paints `--header-bg` outward to cover the grid gaps
-  // (gap-x 0.75rem, gap-y 0.5rem) so scrolling rows below remain hidden. Height + leading
-  // force uniform header height regardless of intrinsic font size of each cell.
+  // Sticky header cells: the box-shadow paints `--header-bg` outward over the card's 0.375rem
+  // vertical padding and half of each 0.75rem column gap, so scrolling rows stay hidden behind
+  // the header and the paint stops at the card's edge. Height + leading force uniform header
+  // height regardless of intrinsic font size of each cell.
   const blockHeader =
-    'sticky -top-2 z-[1] mb-2 h-5 leading-5 shadow-[0_0_0_0.5rem_var(--header-bg)]'
+    'sticky -top-1.5 z-[1] mb-1.5 h-5 leading-5 shadow-[0_0_0_0.375rem_var(--header-bg)]'
 </script>
 
-<div class="metrics-block rounded-container bg-white-dark px-4 py-2 shadow-sm" data-block-id={id}>
-  <div class="scrollbar overflow-x-auto overflow-y-visible">
-  <div
-    class="grid min-w-120 items-baseline gap-x-3 gap-y-0 pb-2"
-    style="grid-template-columns: minmax(8rem, 1fr) 4rem 4rem 4rem 4.5rem 4.5rem;"
-  >
-    <!-- Header row: title + Avg / Min / Max / Total headers. Total is blank for metrics that cannot
-         be added. The rightmost (skew) column has no header so the right edge is reserved for
-         the per-row skew toggle. Sticky so it stays visible while the block's rows scroll. The
-         negative top/horizontal margins + padding extend the white background out to cover the
-         card's own padding when sticking. -->
-    {#if title}
-      <h3 class={`${blockHeader} bg-white-dark text-base font-semibold text-surface-900-100`}>{title}</h3>
-    {:else}
-      <span class={`${blockHeader} bg-white-dark`}></span>
-    {/if}
-    <div class={`${blockHeader} bg-white-dark text-right font-medium`}>Avg</div>
-    <div class={`${blockHeader} bg-white-dark text-right font-medium`}>Min</div>
-    <div class={`${blockHeader} bg-white-dark text-right font-medium`}>Max</div>
-    <div class={`${blockHeader} bg-white-dark text-right font-medium`}>Total</div>
-    <div class={`${blockHeader} bg-white-dark`}></div>
+{#snippet blockTitle(className: string)}
+  <BlockTitle
+    class={className}
+    title={title ?? ''}
+    {collapsed}
+    pinned={holdsCurrent ? 'Holds the current metric, so it cannot be collapsed' : undefined}
+    onToggle={() => toggleCollapsed(id)}
+  />
+{/snippet}
 
-    {#each entries as entry, i (i)}
-      <BarChartMetric
-        label={entry.label}
-        metricId={entry.row.metric}
-        cells={entry.row.cells}
-        total={entry.row.total}
-        current={entry.row.isCurrentMetric}
-        expanded={isExpanded(entry)}
-        onToggle={() => toggle(entry)}
-      />
-    {/each}
-  </div>
-  </div>
+<div class="metrics-block rounded-base bg-white-dark px-4 py-1.5 shadow-sm" data-block-id={id}>
+  {#if collapsed}
+    {@render blockTitle('h-5 leading-5')}
+  {:else}
+    <div class="scrollbar overflow-x-auto overflow-y-visible">
+    <div
+      class="grid min-w-120 items-baseline gap-x-3 gap-y-0"
+      style="grid-template-columns: minmax(8rem, 1fr) 4rem 4rem 4rem 4.5rem 4.5rem;"
+    >
+      <!-- Header row: title + Avg / Min / Max / Total headers. Total is blank for metrics that
+           cannot be added. The rightmost (skew) column has no header so the right edge is
+           reserved for the per-row skew toggle. Sticky so it stays visible while the block's rows
+           scroll; its shadow paints over the card's padding to hide the rows passing behind. -->
+      {#if title}
+        {@render blockTitle(`${blockHeader} bg-white-dark`)}
+      {:else}
+        <span class={`${blockHeader} bg-white-dark`}></span>
+      {/if}
+      <div class={`${blockHeader} bg-white-dark text-right font-medium`}>Avg</div>
+      <div class={`${blockHeader} bg-white-dark text-right font-medium`}>Min</div>
+      <div class={`${blockHeader} bg-white-dark text-right font-medium`}>Max</div>
+      <div class={`${blockHeader} bg-white-dark text-right font-medium`}>Total</div>
+      <div class={`${blockHeader} bg-white-dark`}></div>
+
+      {#each entries as entry, i (i)}
+        <BarChartMetric
+          label={entry.label}
+          metricId={entry.row.metric}
+          cells={entry.row.cells}
+          total={entry.row.total}
+          current={entry.row.isCurrentMetric}
+          expanded={isExpanded(entry)}
+          onToggle={() => toggle(entry)}
+        />
+      {/each}
+    </div>
+    </div>
+  {/if}
 </div>
 
 <style>

@@ -38,11 +38,13 @@
   import type { TooltipData } from './ProfilerTooltip.svelte'
   import KeyValueBlock from './metrics/blocks/KeyValueBlock.svelte'
   import MetricsDistributionBlock from './metrics/blocks/MetricsDistributionBlock.svelte'
+  import { setCollapsed } from './metrics/collapsedBlocks.svelte'
   import { buildBlocks, type RenderableBlock } from './metrics/dispatch'
   import { buildGlobalMetrics, type GlobalMetrics } from '../functions/globalMetrics'
   import type { LookupCoordinator, SearchProgress } from '../functions/lookup'
   import { buildSearchTargets, matchTargets } from '../functions/metricsSearch'
   import { positiveMod, Tooltip, type SearchDirection } from 'common-ui'
+  import { tick } from 'svelte'
 
   interface Props {
     mode: MetricsMode
@@ -155,8 +157,17 @@
     }
     const n = ids.length
     matchCursor = positiveMod(matchCursor, n)
-    const el = containerEl.querySelector<HTMLElement>(`[data-block-id="${ids[matchCursor]}"]`)
-    el?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    const target = ids[matchCursor]
+    // A hit inside a collapsed block would scroll to a hidden row.
+    setCollapsed(target, false)
+    // Scrolling before the expanded rows are laid out clamps the scroll to the collapsed
+    // height, leaving the match short of the top of the panel.
+    const container = containerEl
+    tick().then(() =>
+      container
+        .querySelector<HTMLElement>(`[data-block-id="${target}"]`)
+        ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    )
     return { current: matchCursor + 1, total: n }
   }
 
@@ -198,17 +209,17 @@
     <!-- Two same-width columns once the container is at least TWO_COLUMN_THRESHOLD_PX wide;
          otherwise one column. CSS multi-column flow auto-distributes blocks; the column
          count is driven by the ResizeObserver on the scroll container. -->
-    <div class="gap-3" style="column-count: {useTwoColumns ? 2 : 1};">
+    <div class="gap-2" style="column-count: {useTwoColumns ? 2 : 1};">
       <!-- Overview-only cumulative pipeline metrics from `stats.json`, tiled alongside the node
            blocks. Driven by the bundle's global metrics, not the selected node, so it shows in the
            overview even when the root node carries no attributes and no node tooltip is produced. -->
       {#if globalMetricEntries.length > 0}
-        <div class="mb-3 break-inside-avoid">
+        <div class="mb-2 break-inside-avoid">
           <KeyValueBlock id="global-metrics" title="Global stats" entries={globalMetricEntries} />
         </div>
       {/if}
       {#each blocks as b (b.id)}
-        <div class="mb-3 break-inside-avoid">
+        <div class="mb-2 break-inside-avoid">
           <MetricsDistributionBlock id={b.id} title={b.title} entries={b.entries} />
         </div>
       {/each}
@@ -222,7 +233,7 @@
       No top-nodes data — select a metric to compute.
     </div>
   {:else}
-    <div class="rounded-container bg-white-dark p-4 shadow-sm">
+    <div class="rounded-base bg-white-dark p-4 shadow-sm">
       <h3 class="mb-3 text-base font-semibold text-surface-900-100">{genericTable.header}</h3>
       <table class="w-full border-collapse text-sm">
         <thead>
