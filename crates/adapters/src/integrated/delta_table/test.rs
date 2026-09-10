@@ -4180,7 +4180,7 @@ fn delta_table_s3_people_2m() {
 /// images of a row therefore land in different change data files.
 ///
 /// NOTE: this test requires a `uc://` table, which exercises the code path that
-/// loads files one at a time rather than via a `ListingTable`.
+/// reads files through the object store rather than via a `ListingTable`.
 ///
 /// `python/tests/platform/fixtures/unity_change_feed.py` builds the table; the
 /// test is inert until `DELTA_TABLE_TEST_UNITY_CDF_TABLE` names it.

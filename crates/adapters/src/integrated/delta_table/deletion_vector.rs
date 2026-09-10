@@ -107,13 +107,30 @@ fn abbreviate(value: &str) -> String {
     }
 }
 
-/// Build a [`TableProvider`] over the Parquet file at `path` that reads the rows
-/// `mode` picks out of `bitmap` (see [`ReadMode`]).
+/// One Parquet file to read, and the row positions a [`ReadMode`] picks out of
+/// it.
+pub(crate) struct MaskedFile {
+    pub path: Path,
+    /// A `RoaringTreemap` stays compact even for dense sets, and it is dropped
+    /// once the file has been streamed, so the footprint is short-lived.
+    pub bitmap: RoaringTreemap,
+}
+
+/// Build a [`TableProvider`] over `files`, reading from each the rows `mode`
+/// picks out of its bitmap (see [`ReadMode`]).
 ///
-/// The bitmap indexes rows by physical position, so the file is read in order
-/// through a single-partition [`StreamingTable`] (a `ListingTable` could split
-/// and reorder it). Row selection happens inside the Parquet decoder, so memory
-/// stays bounded to one batch.
+/// A bitmap indexes rows by physical position, so each file is read in order
+/// through a [`StreamingTable`] (a `ListingTable` could split and reorder it).
+/// Row selection happens inside the Parquet decoder, so a file costs one batch
+/// of memory while it streams.
+///
+/// The files are dealt into at most `max_partitions` partitions, and a partition
+/// opens its files one after another. That is what bounds the memory: a Parquet
+/// reader's own state is per column per open file and no batch size reaches it,
+/// so N files read at once cost N times that state. DataFusion drives every
+/// partition of a plan concurrently, so partitions are the only lever, and one
+/// provider over N files replaces the N single-file providers this used to be
+/// unioned from, whose count nothing bounded.
 ///
 /// `logical_schema` is the table's Arrow schema, restricted by the caller to the
 /// columns it wants read. Batches are projected to it by name (missing columns
@@ -122,22 +139,41 @@ fn abbreviate(value: &str) -> String {
 /// [`StreamingTable`] does not push projections down.
 pub(crate) async fn filtered_parquet_table(
     store: Arc<dyn ObjectStore>,
-    path: Path,
-    bitmap: RoaringTreemap,
+    files: Vec<MaskedFile>,
     logical_schema: ReadSchema,
     mode: ReadMode,
+    max_partitions: usize,
 ) -> AnyResult<Arc<dyn TableProvider>> {
     let schema = Arc::clone(logical_schema.schema());
-    let partition = MaskedParquetPartition {
-        store,
-        path,
-        bitmap: Arc::new(bitmap),
-        schema: logical_schema,
-        mode,
-    };
-    let provider = StreamingTable::try_new(schema, vec![Arc::new(partition)])
+    let partitions: Vec<Arc<dyn PartitionStream>> = deal(files, max_partitions)
+        .into_iter()
+        .map(|files| {
+            Arc::new(MaskedParquetPartition {
+                store: Arc::clone(&store),
+                files: Arc::new(files),
+                schema: logical_schema.clone(),
+                mode,
+            }) as Arc<dyn PartitionStream>
+        })
+        .collect();
+    let provider = StreamingTable::try_new(schema, partitions)
         .map_err(|e| anyhow!("failed to build DV-filtered streaming table: {e}"))?;
     Ok(Arc::new(provider))
+}
+
+/// Deal `files` round-robin into at most `max_partitions` non-empty groups.
+///
+/// Round-robin rather than contiguous chunks so that a commit whose files vary
+/// in size spreads the large ones across partitions instead of loading one with
+/// all of them. An empty input yields one empty group, because a
+/// [`StreamingTable`] needs a partition to report the schema from.
+fn deal<T>(files: Vec<T>, max_partitions: usize) -> Vec<Vec<T>> {
+    let groups = max_partitions.clamp(1, files.len().max(1));
+    let mut dealt: Vec<Vec<T>> = (0..groups).map(|_| Vec::new()).collect();
+    for (index, file) in files.into_iter().enumerate() {
+        dealt[index % groups].push(file);
+    }
+    dealt
 }
 
 /// Which rows [`filtered_parquet_table`] reads, relative to its `bitmap`.
@@ -158,28 +194,29 @@ impl ReadMode {
     }
 }
 
-/// Single-partition [`PartitionStream`] that lazily opens a Parquet file and
-/// keeps or drops the rows flagged by `bitmap` (per `mode`) as batches flow
-/// through.
+/// [`PartitionStream`] that opens its files one at a time, keeping or dropping
+/// the rows each one's bitmap flags (per `mode`) as batches flow through.
+///
+/// One file is open at a time, so the partition's cost is one Parquet reader
+/// whatever it was given.
 struct MaskedParquetPartition {
     store: Arc<dyn ObjectStore>,
-    path: Path,
-    /// Row positions this partition acts on. A `RoaringTreemap` stays compact
-    /// even for dense sets, and it is dropped once the partition finishes
-    /// streaming, so the footprint is bounded and short-lived.
-    bitmap: Arc<RoaringTreemap>,
-    /// The Delta logical schema; may differ from the file's own schema under
+    files: Arc<Vec<MaskedFile>>,
+    /// The Delta logical schema; may differ from a file's own schema under
     /// schema evolution.
     schema: ReadSchema,
-    /// Which rows to read, relative to `bitmap`.
+    /// Which rows to read, relative to each file's bitmap.
     mode: ReadMode,
 }
 
 impl fmt::Debug for MaskedParquetPartition {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("MaskedParquetPartition")
-            .field("path", &self.path)
-            .field("bitmap_rows", &self.bitmap.len())
+            .field("files", &self.files.len())
+            .field(
+                "bitmap_rows",
+                &self.files.iter().map(|f| f.bitmap.len()).sum::<u64>(),
+            )
             .finish()
     }
 }
@@ -391,53 +428,58 @@ impl PartitionStream for MaskedParquetPartition {
 
     fn execute(&self, _ctx: Arc<TaskContext>) -> SendableRecordBatchStream {
         let store = Arc::clone(&self.store);
-        let path = self.path.clone();
-        let bitmap = Arc::clone(&self.bitmap);
+        let files = Arc::clone(&self.files);
         let logical_schema = Arc::clone(self.schema.schema());
         let mode = self.mode;
 
         let stream = try_stream! {
-            let probe = ParquetRecordBatchStreamBuilder::new(
-                    ParquetObjectReader::new(Arc::clone(&store), path.clone()))
-                .await
-                .map_err(|e| DataFusionError::External(
-                    format!("failed to open Parquet file '{path}': {e}").into()))?;
-            // Decode string and binary columns straight into view arrays, the
-            // same types `physical_read_schema` declares. Without this the
-            // decoder builds 32-bit-offset arrays, which cap one batch at 2 GiB
-            // per column, and `project_to_logical` then pays to cast them.
-            // Rebuilding the reader metadata reuses the footer read above.
-            let metadata = ArrowReaderMetadata::try_new(
-                    Arc::clone(probe.metadata()),
-                    ArrowReaderOptions::new()
-                        .with_schema(Arc::clone(ReadSchema::new(probe.schema()).schema())))
-                .map_err(|e| DataFusionError::External(
-                    format!("failed to read Parquet file '{path}' as view types: {e}").into()))?;
-            // `num_rows()` is `i64` because Parquet's metadata is signed
-            // throughout; it is non-negative for any file whose footer parsed
-            // (which it did, just above).
-            let total_rows = metadata.metadata().file_metadata().num_rows() as u64;
-            let builder = ParquetRecordBatchStreamBuilder::new_with_metadata(
-                ParquetObjectReader::new(store, path.clone()),
-                metadata,
-            );
-            // Decode only the columns the logical schema names.
-            let mask = logical_projection_mask(&builder, &logical_schema);
-            // Pick rows inside the decoder: skip the flagged rows (apply a DV) or
-            // keep only them (read a DV delta).
-            let selection = bitmap_to_selection(&bitmap, total_rows, mode);
-            let mut parquet_stream = builder
-                .with_projection(mask)
-                .with_row_selection(selection)
-                .build()
-                .map_err(|e| DataFusionError::External(
-                    format!("failed to build Parquet stream for '{path}': {e}").into()))?;
+            // Sequentially: only one file's reader is alive at a time, which is
+            // what keeps a partition's memory independent of how many files it
+            // was given.
+            for file in files.iter() {
+                let path = &file.path;
+                let probe = ParquetRecordBatchStreamBuilder::new(
+                        ParquetObjectReader::new(Arc::clone(&store), path.clone()))
+                    .await
+                    .map_err(|e| DataFusionError::External(
+                        format!("failed to open Parquet file '{path}': {e}").into()))?;
+                // Decode string and binary columns straight into view arrays, the
+                // same types `physical_read_schema` declares. Without this the
+                // decoder builds 32-bit-offset arrays, which cap one batch at 2 GiB
+                // per column, and `project_to_logical` then pays to cast them.
+                // Rebuilding the reader metadata reuses the footer read above.
+                let metadata = ArrowReaderMetadata::try_new(
+                        Arc::clone(probe.metadata()),
+                        ArrowReaderOptions::new()
+                            .with_schema(Arc::clone(ReadSchema::new(probe.schema()).schema())))
+                    .map_err(|e| DataFusionError::External(
+                        format!("failed to read Parquet file '{path}' as view types: {e}").into()))?;
+                // `num_rows()` is `i64` because Parquet's metadata is signed
+                // throughout; it is non-negative for any file whose footer parsed
+                // (which it did, just above).
+                let total_rows = metadata.metadata().file_metadata().num_rows() as u64;
+                let builder = ParquetRecordBatchStreamBuilder::new_with_metadata(
+                    ParquetObjectReader::new(Arc::clone(&store), path.clone()),
+                    metadata,
+                );
+                // Decode only the columns the logical schema names.
+                let mask = logical_projection_mask(&builder, &logical_schema);
+                // Pick rows inside the decoder: skip the flagged rows (apply a DV) or
+                // keep only them (read a DV delta).
+                let selection = bitmap_to_selection(&file.bitmap, total_rows, mode);
+                let mut parquet_stream = builder
+                    .with_projection(mask)
+                    .with_row_selection(selection)
+                    .build()
+                    .map_err(|e| DataFusionError::External(
+                        format!("failed to build Parquet stream for '{path}': {e}").into()))?;
 
-            while let Some(batch) = parquet_stream.next().await {
-                let batch = batch.map_err(|e| DataFusionError::External(
-                    format!("error reading Parquet file '{path}': {e}").into()))?;
-                if batch.num_rows() > 0 {
-                    yield project_to_logical(&batch, &logical_schema, path.as_ref())?;
+                while let Some(batch) = parquet_stream.next().await {
+                    let batch = batch.map_err(|e| DataFusionError::External(
+                        format!("error reading Parquet file '{path}': {e}").into()))?;
+                    if batch.num_rows() > 0 {
+                        yield project_to_logical(&batch, &logical_schema, path.as_ref())?;
+                    }
                 }
             }
         };
@@ -457,6 +499,7 @@ mod tests {
         DataType as ArrowDataType, Field as ArrowField, Fields as ArrowFields,
         Schema as ArrowSchema,
     };
+    use datafusion::physical_plan::ExecutionPlanProperties;
     use datafusion::prelude::SessionContext;
     use deltalake::{DeltaTableBuilder, ensure_table_uri};
     use proptest::prelude::*;
@@ -818,6 +861,151 @@ mod tests {
             .unwrap()
     }
 
+    /// The files are spread over at most `max_partitions` groups, and every
+    /// file lands in exactly one. The cap is the point: a plan runs all its
+    /// partitions at once, so it is the number of Parquet readers open
+    /// together.
+    #[test]
+    fn dealing_caps_the_groups_and_keeps_every_file() {
+        for (files, max_partitions, groups) in [
+            (212, 8, 8),
+            (212, 1, 1),
+            (3, 8, 3),
+            (1, 8, 1),
+            // A caller that asks for none still gets one, since a partition is
+            // what reports the schema.
+            (5, 0, 1),
+        ] {
+            let dealt = deal((0..files).collect::<Vec<_>>(), max_partitions);
+            assert_eq!(dealt.len(), groups, "{files} files over {max_partitions}");
+            assert!(
+                dealt.iter().all(|group| !group.is_empty()),
+                "no group may be empty; got {dealt:?}"
+            );
+            let mut seen: Vec<usize> = dealt.into_iter().flatten().collect();
+            seen.sort();
+            assert_eq!(
+                seen,
+                (0..files).collect::<Vec<_>>(),
+                "every file must be read exactly once"
+            );
+        }
+    }
+
+    /// An empty read still produces a partition, because a `StreamingTable`
+    /// takes its schema from one.
+    #[test]
+    fn dealing_nothing_yields_one_empty_group() {
+        assert_eq!(deal(Vec::<usize>::new(), 8), vec![Vec::<usize>::new()]);
+    }
+
+    /// Round-robin, so a commit whose files vary in size spreads the large ones
+    /// rather than loading one partition with all of them.
+    #[test]
+    fn dealing_is_round_robin() {
+        assert_eq!(
+            deal((0..7).collect::<Vec<_>>(), 3),
+            vec![vec![0, 3, 6], vec![1, 4], vec![2, 5]]
+        );
+    }
+
+    /// Many files through one provider: the partitions are capped, each file's
+    /// bitmap still applies to that file alone, and every kept row comes back.
+    ///
+    /// The cap is what bounds memory, since a plan drives all its partitions
+    /// concurrently and a Parquet reader's per-column state is per open file.
+    #[tokio::test]
+    async fn many_files_read_through_one_capped_provider() {
+        const FILES: usize = 7;
+        const ROWS_PER_FILE: i64 = 10;
+        const MAX_PARTITIONS: usize = 2;
+        let dir = TempDir::new().unwrap();
+
+        let file_schema = Arc::new(ArrowSchema::new(vec![ArrowField::new(
+            "id",
+            ArrowDataType::Int64,
+            false,
+        )]));
+        let mut files = Vec::new();
+        for file in 0..FILES {
+            let first = file as i64 * ROWS_PER_FILE;
+            let batch = RecordBatch::try_new(
+                Arc::clone(&file_schema),
+                vec![Arc::new(Int64Array::from_iter_values(
+                    first..first + ROWS_PER_FILE,
+                ))],
+            )
+            .unwrap();
+            let name = format!("part-{file}.parquet");
+            let handle = std::fs::File::create(dir.path().join(&name)).unwrap();
+            let mut writer =
+                parquet::arrow::ArrowWriter::try_new(handle, Arc::clone(&file_schema), None)
+                    .unwrap();
+            writer.write(&batch).unwrap();
+            writer.close().unwrap();
+            // Drop the first row of every file, so a bitmap that leaked to
+            // another file would show up as a wrong row count.
+            files.push(MaskedFile {
+                path: Path::from(name),
+                bitmap: RoaringTreemap::from_iter([0u64]),
+            });
+        }
+
+        let declared = ReadSchema::new(&ArrowSchema::new(vec![ArrowField::new(
+            "id",
+            ArrowDataType::Int64,
+            false,
+        )]));
+        let store = unloaded_table(dir.path()).log_store().object_store(None);
+        let provider = filtered_parquet_table(
+            store,
+            files,
+            declared,
+            ReadMode::NotInBitmap,
+            MAX_PARTITIONS,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            provider
+                .scan(&SessionContext::new().state(), None, &[], None)
+                .await
+                .unwrap()
+                .output_partitioning()
+                .partition_count(),
+            MAX_PARTITIONS,
+            "{FILES} files must read through at most {MAX_PARTITIONS} readers"
+        );
+
+        let batches = SessionContext::new()
+            .read_table(provider)
+            .unwrap()
+            .collect()
+            .await
+            .unwrap();
+        let mut got: Vec<i64> = Vec::new();
+        for batch in &batches {
+            let ids = batch
+                .column(0)
+                .as_any()
+                .downcast_ref::<Int64Array>()
+                .unwrap();
+            got.extend(ids.iter().map(|v| v.unwrap()));
+        }
+        got.sort();
+        let expected: Vec<i64> = (0..FILES as i64)
+            .flat_map(|file| {
+                let first = file * ROWS_PER_FILE;
+                first + 1..first + ROWS_PER_FILE
+            })
+            .collect();
+        assert_eq!(
+            got, expected,
+            "every file must lose exactly its own first row"
+        );
+    }
+
     /// One change data file read whole through the object store using [`filtered_parquet_table`]:
     /// every row comes back, `_change_type` survives alongside the table's own columns, and
     /// `__is_cdc`, which the declared schema leaves out, is dropped.
@@ -866,10 +1054,13 @@ mod tests {
         let store = unloaded_table(dir.path()).log_store().object_store(None);
         let provider = filtered_parquet_table(
             store,
-            Path::from("cdc.parquet"),
-            RoaringTreemap::new(),
+            vec![MaskedFile {
+                path: Path::from("cdc.parquet"),
+                bitmap: RoaringTreemap::new(),
+            }],
             declared.clone(),
             ReadMode::NotInBitmap,
+            1,
         )
         .await
         .unwrap();
@@ -951,10 +1142,13 @@ mod tests {
         let store = unloaded_table(dir.path()).log_store().object_store(None);
         let provider = filtered_parquet_table(
             store,
-            Path::from("data.parquet"),
-            deleted,
+            vec![MaskedFile {
+                path: Path::from("data.parquet"),
+                bitmap: deleted,
+            }],
             logical.clone(),
             ReadMode::NotInBitmap,
+            1,
         )
         .await
         .unwrap();
@@ -1026,10 +1220,13 @@ mod tests {
         let store = unloaded_table(dir.path()).log_store().object_store(None);
         let provider = filtered_parquet_table(
             store,
-            Path::from("data.parquet"),
-            selected,
+            vec![MaskedFile {
+                path: Path::from("data.parquet"),
+                bitmap: selected,
+            }],
             logical.clone(),
             ReadMode::InBitmap,
+            1,
         )
         .await
         .unwrap();
