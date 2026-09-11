@@ -12,6 +12,12 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Utilities;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
+import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
+import org.dbsp.util.Linq;
+import java.util.List;
+import java.util.Objects;
+import javax.annotation.Nullable;
 
 /** Visitor which rewrites a {@link DBSPClosureExpression} in a canonical form,
  * by using standard names for parameters (p0, p1, ...).  Handy for generating deterministic code.
@@ -23,6 +29,9 @@ public class CanonicalForm extends InnerRewriteVisitor {
     final Substitution<DBSPLetExpression, DBSPVariablePath> newLetExprVar;
     final ResolveReferences resolver;
     int counter;
+    /** Row variable of the aggregate list being rewritten, and its canonical replacement */
+    @Nullable String rowVar;
+    @Nullable DBSPVariablePath canonicalRowVar;
 
     /** The canonical form of `node` as a string. */
     public static String asString(DBSPCompiler compiler, IDBSPInnerNode node) {
@@ -106,10 +115,27 @@ public class CanonicalForm extends InnerRewriteVisitor {
         DBSPClosureExpression closure = node.to(DBSPClosureExpression.class);
         for (int i = 0; i < closure.parameters.length; i++) {
             DBSPParameter param = closure.parameters[i];
-            DBSPParameter replacement = new DBSPParameter(param.getNode(), this.nextName(), param.getType());
+            String name = param.name.equals(this.rowVar) ?
+                    Objects.requireNonNull(this.canonicalRowVar).variable : this.nextName();
+            DBSPParameter replacement = new DBSPParameter(param.getNode(), name, param.getType());
             this.newParam.substituteNew(param, replacement);
         }
         return super.preorder(node);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPAggregateList list) {
+        Utilities.enforce(this.rowVar == null, () -> "Aggregate lists do not nest");
+        DBSPVariablePath canonical = new DBSPVariablePath(list.rowVar.getNode(), this.nextName(), list.rowVar.getType());
+        this.rowVar = list.rowVar.variable;
+        this.canonicalRowVar = canonical;
+        this.push(list);
+        List<IAggregate> aggregates = Linq.map(list.aggregates, a -> this.transform(a).to(IAggregate.class));
+        this.pop(list);
+        this.rowVar = null;
+        this.canonicalRowVar = null;
+        this.map(list, new DBSPAggregateList(list.getNode(), canonical, aggregates));
+        return VisitDecision.STOP;
     }
 
     @Override
@@ -118,6 +144,8 @@ public class CanonicalForm extends InnerRewriteVisitor {
         this.newLetVar.clear();
         this.newLetExprVar.clear();
         this.counter = 0;
+        this.rowVar = null;
+        this.canonicalRowVar = null;
         this.resolver.startVisit(node);
         super.startVisit(node);
     }
