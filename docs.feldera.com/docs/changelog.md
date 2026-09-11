@@ -24,6 +24,40 @@ Source edition can be found on github.
   affected. In the Enterprise edition, the pipeline `ConfigMap` carries only
   `config.json`.
 
+- Incompatible change (`VARIANT`, Rust UDFs): `VARIANT` values are
+  implemented by the `SqlVariant` Rust struct.  This feature previously
+  required `SET FELDERA_FLAT_VARIANT = 'ON'`.
+
+  A user-defined function that takes or returns a `VARIANT` now receives
+  `feldera_sqllib::SqlVariant`, which names whichever representation
+  `VARIANT` uses, rather than the enum `feldera_sqllib::Variant`.
+  `SqlVariant` is not an enum, so code that matched on `Variant::String(..)`
+  and the other arms needs rewriting.  The enum is deprecated and will be
+  removed.
+
+  Because connectors still report record metadata as the enum, building a
+  pipeline reports one deprecation warning per table and view, naming
+  `Variant` in code the compiler generates rather than in anything you
+  wrote.  Those warnings are harmless and go away with the enum.  Connector
+  metadata itself will move to `SqlVariant` in a future release, so a
+  preprocessor that matches on the arms of the enum will need rewriting
+  then; see [`ConnectorMetadata`](/sql/udf#connectormetadata).
+
+  The storage formats of the two representations are not compatible, so a
+  pipeline with a `VARIANT` column rebuilds its state from scratch on
+  upgrade: a view is recomputed from its inputs, and a table re-ingests from
+  its connector.  The pipeline does not do this on its own.  It reports the
+  tables and views it would rebuild and waits for approval, so an upgrade
+  never discards state without consent.
+
+  Setting [`FELDERA_FLAT_VARIANT`](/sql/grammar#experimental-options) to
+  `OFF` keeps the previous behavior on both counts: the program's
+  user-defined functions continue using the legacy representation and need
+  no changes, and the pipeline resumes from its existing checkpoint instead
+  of rebuilding.  Set it before the pipeline runs with the new
+  representation: once the pipeline checkpoints, setting it no longer
+  recovers the earlier state.
+
 ## v0.366.0
 
 - Incompatible change (ad-hoc queries): the `hash` result format and
