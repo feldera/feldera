@@ -520,9 +520,10 @@ impl DeltaTableInputEndpoint {
 
         // Configure datafusion not to generate Utf8View arrow types, which are
         // not yet supported by the `serde_arrow` crate. The `SessionContext`
-        // shares the pipeline-wide `RuntimeEnv` so that the CDC-mode ORDER BY
-        // query spills to the same bounded memory pool and on-disk scratch
-        // dir as every other datafusion user in the pipeline.
+        // shares the pipeline's memory pool and on-disk scratch dir, so the
+        // CDC-mode ORDER BY query spills against the same bounded budget as
+        // every other datafusion user in the pipeline. Its object store
+        // registry is private; see `create_integrated_input_endpoint`.
         //
         // `target_partitions` inherits `create_session_context_with`'s
         // worker-derived default; only override if `DELTA_DF_TARGET_PARTITIONS`
@@ -4901,5 +4902,154 @@ mod change_data_feed_state_tests {
             ]),
             Some(true)
         );
+    }
+}
+
+/// Two containers of one storage account share a DataFusion registry key, so
+/// connectors must route their object stores privately.
+#[cfg(test)]
+mod object_store_routing_tests {
+    use super::DeltaTableInputEndpoint;
+    use crate::test::MockInputConsumer;
+    use deltalake::datafusion::execution::runtime_env::RuntimeEnv;
+    use deltalake::logstore::object_store::{ObjectStore, memory::InMemory};
+    use feldera_adapterlib::utils::datafusion::{
+        create_runtime_env, with_private_object_store_registry,
+    };
+    use feldera_types::config::{PipelineConfig, RuntimeConfig};
+    use feldera_types::transport::delta_table::DeltaTableReaderConfig;
+    use serde_json::json;
+    use std::sync::Arc;
+    use url::Url;
+
+    /// The one account holding every container these tests read.
+    const ACCOUNT: &str = "teststorageaccount.dfs.core.windows.net";
+
+    fn pipeline_config() -> PipelineConfig {
+        PipelineConfig {
+            global: RuntimeConfig {
+                workers: 1,
+                ..Default::default()
+            },
+            multihost: None,
+            name: None,
+            given_name: None,
+            storage_config: None,
+            secrets_dir: None,
+            inputs: Default::default(),
+            outputs: Default::default(),
+            program_ir: None,
+        }
+    }
+
+    /// The URL a connector registers its store under and resolves reads through.
+    fn table_root(container: &str) -> Url {
+        Url::parse(&format!(
+            "abfss://{container}@{ACCOUNT}/standard/orders/v0/"
+        ))
+        .unwrap()
+    }
+
+    /// A snapshot connector on `container`, wired the way
+    /// `create_integrated_input_endpoint` wires one: a private registry over the
+    /// pipeline's shared env.
+    fn connector(container: &str, shared_env: &Arc<RuntimeEnv>) -> DeltaTableInputEndpoint {
+        let config: DeltaTableReaderConfig = serde_json::from_value(json!({
+            "uri": table_root(container).to_string(),
+            "mode": "snapshot",
+        }))
+        .unwrap();
+
+        DeltaTableInputEndpoint::new(
+            container,
+            &config,
+            &pipeline_config(),
+            with_private_object_store_registry(shared_env).unwrap(),
+            Box::new(MockInputConsumer::new()),
+        )
+    }
+
+    /// Two connectors on two containers, each with its own store registered.
+    fn two_container_pipeline() -> Vec<(DeltaTableInputEndpoint, Url, Arc<dyn ObjectStore>)> {
+        let shared_env = create_runtime_env(&pipeline_config()).unwrap();
+
+        ["bronze", "silver"]
+            .iter()
+            .map(|container| {
+                let endpoint = connector(container, &shared_env);
+                let root = table_root(container);
+                let store: Arc<dyn ObjectStore> = Arc::new(InMemory::new());
+                endpoint
+                    .datafusion
+                    .runtime_env()
+                    .register_object_store(&root, store.clone());
+                (endpoint, root, store)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_connector_resolves_its_own_container() {
+        for (endpoint, root, own_store) in two_container_pipeline() {
+            let resolved = endpoint
+                .datafusion
+                .runtime_env()
+                .object_store_registry
+                .get_store(&root)
+                .expect("a connector must resolve its own table root");
+            assert!(
+                Arc::ptr_eq(&resolved, &own_store),
+                "connector on '{root}' resolved to another container's store",
+            );
+        }
+    }
+
+    /// Registering per connector is not enough; the registries must differ too.
+    #[test]
+    fn a_colliding_root_resolves_to_the_connectors_own_store() {
+        let pipeline = two_container_pipeline();
+
+        for (endpoint, root, own_store) in &pipeline {
+            for (_, sibling_root, _) in &pipeline {
+                if sibling_root == root {
+                    continue;
+                }
+                // The sibling root collides on the registry key, so it still
+                // resolves; it must resolve to this connector's own store.
+                let resolved = endpoint
+                    .datafusion
+                    .runtime_env()
+                    .object_store_registry
+                    .get_store(sibling_root)
+                    .expect("a sibling root shares this connector's registry key");
+                assert!(
+                    Arc::ptr_eq(&resolved, own_store),
+                    "connector on '{root}' resolved '{sibling_root}' to a sibling's store",
+                );
+            }
+        }
+    }
+
+    /// Isolating store routing must not fork the pipeline's memory budget.
+    #[test]
+    fn connectors_share_the_pipeline_memory_budget() {
+        let shared_env = create_runtime_env(&pipeline_config()).unwrap();
+
+        for container in ["bronze", "silver"] {
+            let endpoint = connector(container, &shared_env);
+            let env = endpoint.datafusion.runtime_env();
+            assert!(Arc::ptr_eq(&env.memory_pool, &shared_env.memory_pool));
+            assert!(Arc::ptr_eq(&env.disk_manager, &shared_env.disk_manager));
+            // The caches are rebuilt rather than cloned, so they are the ones
+            // that can silently fork on a datafusion upgrade.
+            assert!(Arc::ptr_eq(
+                &env.cache_manager.get_file_metadata_cache(),
+                &shared_env.cache_manager.get_file_metadata_cache(),
+            ));
+            assert!(Arc::ptr_eq(
+                &env.cache_manager.get_list_files_cache().unwrap(),
+                &shared_env.cache_manager.get_list_files_cache().unwrap(),
+            ));
+        }
     }
 }
