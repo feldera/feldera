@@ -1666,36 +1666,10 @@ impl DeltaTableInputEndpointInner {
         self.used_sql_columns().contains(name) || self.config_referenced_columns().contains(name)
     }
 
-    /// True if CDC keeps the column named `name`: everything when
-    /// `skip_unused_columns` is off, otherwise the columns the connector needs.
-    ///
-    /// The plain and DV-masked CDC sides must apply this same rule, or their
-    /// columns differ and the `UNION ALL` no longer lines up by position. Hence
-    /// the explicit off case: [`project_cdc_columns`](Self::project_cdc_columns)
-    /// returns the plain side unprojected when the flag is off, so the masked
-    /// side must keep everything too.
-    fn keeps_cdc_column(&self, name: &str) -> bool {
-        !self.skip_unused_columns() || self.needs_column(name)
-    }
-
-    /// Project `df` to the columns the connector needs when `skip_unused_columns`
-    /// is set, mirroring the snapshot path's `SELECT <used_columns>`: keep a
-    /// column iff the circuit reads it (`used_sql_columns`) or a connector
-    /// expression names it (`config_referenced_columns`). The latter covers Delta
-    /// metadata columns absent from the SQL schema, e.g. `__feldera_op` /
-    /// `__feldera_ts`, which `cdc_delete_filter` / `cdc_order_by` test, so those
-    /// expressions can resolve. A Delta table may carry far more physical columns
-    /// than the SQL table maps; this keeps the connector from reading the rest
-    /// off disk.
-    ///
-    /// The plain `ListingTable` side and the DV-masked side of a CDC transaction
-    /// both project through [`keeps_cdc_column`](Self::keeps_cdc_column), so the
-    /// two relations expose the same columns and their `UNION ALL` lines up.
+    /// Project `df` to [`needs_column`](Self::needs_column), like the snapshot
+    /// path's `SELECT <used_columns>`. Both CDC read sides use this predicate,
+    /// so their `UNION ALL` lines up by position.
     fn project_cdc_columns(&self, df: DataFrame) -> AnyResult<DataFrame> {
-        if !self.skip_unused_columns() {
-            return Ok(df);
-        }
-
         // Filter `df`'s own field list (not the SQL schema) so the projection
         // tracks the read schema if column mapping ever varies it across
         // versions. Own the kept names before consuming `df`; `select_columns`
@@ -1704,7 +1678,7 @@ impl DeltaTableInputEndpointInner {
             .schema()
             .fields()
             .iter()
-            .filter(|f| self.keeps_cdc_column(f.name()))
+            .filter(|f| self.needs_column(f.name()))
             .map(|f| f.name().to_string())
             .collect();
         let kept: Vec<&str> = kept.iter().map(String::as_str).collect();
@@ -3450,11 +3424,13 @@ impl DeltaTableInputEndpointInner {
         })
     }
 
-    /// Arrow schema for reading a change data file: the table's own columns as
-    /// [`physical_read_schema`](Self::physical_read_schema) names them, plus the
-    /// [`CHANGE_TYPE_COLUMN`] that only these files carry.
+    /// Arrow schema for reading a change data file: the columns the connector
+    /// needs, plus the [`CHANGE_TYPE_COLUMN`] that only these files carry.
+    ///
+    /// A `uc://` file is read through a [`StreamingTable`], which has no
+    /// projection pushdown, so this schema is the only bound on what it decodes.
     fn change_data_read_schema(&self) -> AnyResult<SchemaRef> {
-        let table_schema = self.physical_read_schema(|_| true)?;
+        let table_schema = self.physical_read_schema(|name| self.needs_column(name))?;
         let mut fields: Vec<FieldRef> = table_schema.fields().to_vec();
         fields.push(Arc::new(ArrowField::new(
             CHANGE_TYPE_COLUMN,
@@ -3915,9 +3891,9 @@ impl DeltaTableInputEndpointInner {
     /// `read_schema` names the columns to read, under their physical names, and
     /// doubles as the Parquet projection (see [`filtered_parquet_table`]). It
     /// must match the columns of any file this one unions with, so the providers
-    /// line up in one query, which is why the caller supplies it: follow keeps
-    /// `needs_column`, CDC keeps `keeps_cdc_column`, and a change data file
-    /// carries one column the table schema does not
+    /// line up in one query, which is why the caller supplies it: every read
+    /// keeps `needs_column`, and a change data file carries one column the table
+    /// schema does not
     /// ([`change_data_read_schema`](Self::change_data_read_schema)).
     async fn file_provider(
         &self,
@@ -4023,16 +3999,19 @@ impl DeltaTableInputEndpointInner {
                 .map(|f| file_listing_url(table, f.path))
                 .collect::<AnyResult<Vec<_>>>()?;
             let listing_table = Arc::new(
-                self.create_parquet_table(urls, self.physical_read_schema(|_| true)?, description)
-                    .await?,
+                self.create_parquet_table(
+                    urls,
+                    self.physical_read_schema(|name| self.needs_column(name))?,
+                    description,
+                )
+                .await?,
             );
             let df = self.datafusion.read_table(listing_table).map_err(|e| {
                 anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading Parquet files: {e}")
             })?;
             let df = self.project_physical_to_logical(df)?;
             let df = self.add_partition_columns(df, group[0].partition_values, &[], description)?;
-            // Drop unused columns when `skip_unused_columns` is set, so
-            // DataFusion never reads them off disk.
+            // Drop the columns the connector does not need.
             dfs.push(self.project_cdc_columns(df).map_err(|e| {
                 anyhow!("internal error processing {description}; {REPORT_ERROR}; {e}")
             })?);
@@ -4049,7 +4028,7 @@ impl DeltaTableInputEndpointInner {
                     path,
                     bitmap,
                     ReadMode::NotInBitmap,
-                    self.physical_read_schema(|name| self.keeps_cdc_column(name))?,
+                    self.physical_read_schema(|name| self.needs_column(name))?,
                 )
                 .await?;
             let df = self.datafusion.read_table(provider).map_err(|e| {
@@ -4160,6 +4139,8 @@ impl DeltaTableInputEndpointInner {
             )
             .await?
         } else {
+            // Declare every column: a `ListingTable` pushes down the projection
+            // `emit_provider` applies after the filter, so nothing extra is read.
             Arc::new(
                 self.create_parquet_table(
                     vec![file_listing_url(table, path)?],
@@ -4900,6 +4881,155 @@ mod change_data_feed_state_tests {
                 metadata(&[(ENABLE_CHANGE_DATA_FEED, "true")]),
             ]),
             Some(true)
+        );
+    }
+}
+
+/// Which columns a CDC read keeps, with and without `skip_unused_columns`.
+#[cfg(test)]
+mod cdc_projection_tests {
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    use super::DeltaTableInputEndpointInner;
+    use crate::test::MockInputConsumer;
+    use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
+    use datafusion::datasource::MemTable;
+    use deltalake::datafusion::prelude::{DataFrame, SessionContext};
+    use feldera_types::program_schema::{
+        ColumnType, Field, PropertyValue, Relation, SourcePosition, SqlIdentifier,
+    };
+    use feldera_types::transport::delta_table::DeltaTableReaderConfig;
+    use serde_json::json;
+
+    /// SQL field named `name`. A nullable `unused` field is the only shape
+    /// `skip_unused_columns` may skip.
+    fn field(name: &str, unused: bool) -> Field {
+        Field::new(SqlIdentifier::new(name, false), ColumnType::varchar(true)).with_unused(unused)
+    }
+
+    /// SQL table declaring `s` (read), `spare` (declared but unused).
+    fn relation(skip_unused_columns: bool) -> Relation {
+        let zero = SourcePosition {
+            start_line_number: 0,
+            start_column: 0,
+            end_line_number: 0,
+            end_column: 0,
+        };
+        let mut properties = BTreeMap::new();
+        if skip_unused_columns {
+            properties.insert(
+                "skip_unused_columns".to_string(),
+                PropertyValue {
+                    value: "true".to_string(),
+                    key_position: zero,
+                    value_position: zero,
+                },
+            );
+        }
+        Relation::new(
+            SqlIdentifier::new("test_table", false),
+            vec![field("s", false), field("spare", true)],
+            false,
+            properties,
+        )
+    }
+
+    /// CDC endpoint whose expressions name three columns the SQL table does not
+    /// declare: `region` (`filter`) and the two CDC metadata columns.
+    fn endpoint(skip_unused_columns: bool) -> DeltaTableInputEndpointInner {
+        let config: DeltaTableReaderConfig = serde_json::from_value(json!({
+            "uri": "/tmp/does-not-exist",
+            "mode": "cdc",
+            "filter": "region = 'us'",
+            "cdc_delete_filter": "__feldera_op = 'd'",
+            "cdc_order_by": "__feldera_ts",
+        }))
+        .unwrap();
+        DeltaTableInputEndpointInner::new(
+            "test_endpoint",
+            config,
+            SessionContext::new(),
+            Box::new(MockInputConsumer::new()),
+            relation(skip_unused_columns),
+            None,
+        )
+    }
+
+    /// A frame shaped like one CDC read side: the declared columns, the columns
+    /// the connector's expressions name, and `junk`, which nothing names.
+    async fn cdc_side_frame() -> DataFrame {
+        let schema = Arc::new(ArrowSchema::new(
+            [
+                "s",
+                "spare",
+                "region",
+                "junk",
+                "__feldera_op",
+                "__feldera_ts",
+            ]
+            .iter()
+            .map(|name| ArrowField::new(*name, ArrowDataType::Utf8, true))
+            .collect::<Vec<_>>(),
+        ));
+        let ctx = SessionContext::new();
+        ctx.register_table(
+            "cdc_side",
+            Arc::new(MemTable::try_new(schema, vec![vec![]]).unwrap()),
+        )
+        .unwrap();
+        ctx.table("cdc_side").await.unwrap()
+    }
+
+    fn column_names(df: &DataFrame) -> Vec<String> {
+        df.schema()
+            .fields()
+            .iter()
+            .map(|f| f.name().to_string())
+            .collect()
+    }
+
+    /// The flag governs declared columns the circuit ignores, so a column the
+    /// SQL table never declared is dropped with the flag off too.
+    #[tokio::test]
+    async fn projection_drops_undeclared_columns() {
+        let endpoint = endpoint(false);
+        let df = endpoint
+            .project_cdc_columns(cdc_side_frame().await)
+            .unwrap();
+        assert_eq!(
+            column_names(&df),
+            vec!["s", "spare", "region", "__feldera_op", "__feldera_ts"],
+            "'junk' is declared nowhere and named by no expression, so the CDC \
+             read must drop it even with 'skip_unused_columns' off"
+        );
+    }
+
+    /// With the flag on the declared-but-unused column goes too; the columns an
+    /// expression names stay, or the expression cannot resolve them.
+    #[tokio::test]
+    async fn skip_unused_columns_also_drops_declared_unused_columns() {
+        let endpoint = endpoint(true);
+        let df = endpoint
+            .project_cdc_columns(cdc_side_frame().await)
+            .unwrap();
+        assert_eq!(
+            column_names(&df),
+            vec!["s", "region", "__feldera_op", "__feldera_ts"],
+        );
+    }
+
+    /// The projection pushes down, so a dropped column is never read off disk.
+    #[tokio::test]
+    async fn projection_prunes_the_scan() {
+        let endpoint = endpoint(false);
+        let df = endpoint
+            .project_cdc_columns(cdc_side_frame().await)
+            .unwrap();
+        let plan = format!("{}", df.into_optimized_plan().unwrap().display_indent());
+        assert!(
+            !plan.contains("junk"),
+            "the dropped column must be pruned from the scan; plan was:\n{plan}"
         );
     }
 }

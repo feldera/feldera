@@ -6116,6 +6116,137 @@ async fn delta_table_follow_filter_undeclared_struct_field_test() {
     run_follow_filter_undeclared_column_test("meta.tag = 'us'").await;
 }
 
+/// A CDC read projects before it filters, so the read set has to keep the
+/// columns the `filter` names. `filter_expr` selects the rows in region 'us'.
+async fn run_cdc_filter_undeclared_column_test(filter_expr: &str) {
+    use crate::test::TestStruct;
+    use arrow::array::{Array, BooleanArray, Int64Array, RecordBatch, StringArray, StructArray};
+    use arrow::datatypes::{
+        DataType as ArrowDataType, Field as ArrowField, Fields as ArrowFields,
+        Schema as ArrowSchema,
+    };
+
+    init_logging();
+
+    // Only `id`, `b` and `s` are declared in SQL. `region` and `meta` back the
+    // two filter forms, the `__feldera_*` pair drives CDC, and `junk` is named
+    // nowhere, so no CDC read may decode it.
+    let meta_fields: ArrowFields =
+        vec![Arc::new(ArrowField::new("tag", ArrowDataType::Utf8, false))].into();
+    let arrow_schema = Arc::new(ArrowSchema::new(vec![
+        ArrowField::new("id", ArrowDataType::Int64, false),
+        ArrowField::new("b", ArrowDataType::Boolean, false),
+        ArrowField::new("s", ArrowDataType::Utf8, false),
+        ArrowField::new("region", ArrowDataType::Utf8, false),
+        ArrowField::new("meta", ArrowDataType::Struct(meta_fields.clone()), false),
+        ArrowField::new("junk", ArrowDataType::Utf8, false),
+        ArrowField::new("__feldera_op", ArrowDataType::Utf8, false),
+        ArrowField::new("__feldera_ts", ArrowDataType::Int64, false),
+    ]));
+
+    // Even ids are in region 'us' (kept), odd ids in 'eu' (filtered out).
+    let region = |id: u32| if id.is_multiple_of(2) { "us" } else { "eu" };
+    let row = |id: u32| TestStruct {
+        id,
+        b: false,
+        i: None,
+        s: format!("row-{id}"),
+    };
+    // One CDC event per id: `op` 'i' inserts the row, 'd' deletes it.
+    let make_batch = |ids: &[u32], op: &str, ts: i64| -> RecordBatch {
+        RecordBatch::try_new(
+            arrow_schema.clone(),
+            vec![
+                Arc::new(Int64Array::from_iter_values(
+                    ids.iter().map(|id| *id as i64),
+                )) as Arc<dyn Array>,
+                Arc::new(ids.iter().map(|_| Some(false)).collect::<BooleanArray>()),
+                Arc::new(StringArray::from_iter_values(
+                    ids.iter().map(|id| format!("row-{id}")),
+                )),
+                Arc::new(StringArray::from_iter_values(
+                    ids.iter().map(|id| region(*id)),
+                )),
+                Arc::new(StructArray::new(
+                    meta_fields.clone(),
+                    vec![Arc::new(StringArray::from_iter_values(
+                        ids.iter().map(|id| region(*id)),
+                    ))],
+                    None,
+                )),
+                Arc::new(StringArray::from_iter_values(
+                    ids.iter().map(|id| format!("junk-{id}")),
+                )),
+                Arc::new(StringArray::from_iter_values(ids.iter().map(|_| op))),
+                Arc::new(Int64Array::from_iter_values(ids.iter().map(|_| ts))),
+            ],
+        )
+        .unwrap()
+    };
+
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let mut delta = create_table_from_arrow(&table_uri, &arrow_schema, &[]).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let pipeline = delta_input_controller::<TestStruct>(
+        &table_uri,
+        json!({
+            "mode": "cdc",
+            "filter": filter_expr,
+            "cdc_delete_filter": "__feldera_op = 'd'",
+            "cdc_order_by": "__feldera_ts",
+        }),
+        &TestStruct::schema(),
+        storage_dir.path(),
+        &errors,
+    )
+    .await
+    .unwrap();
+    pipeline.start();
+    let output = SqlIdentifier::from("test_output1");
+
+    let ids: Vec<u32> = (0..6).collect();
+    delta = delta
+        .write(vec![make_batch(&ids, "i", 1)])
+        .with_save_mode(SaveMode::Append)
+        .await
+        .unwrap();
+    let mut expected: Vec<TestStruct> = ids
+        .iter()
+        .filter(|id| region(**id) == "us")
+        .map(|id| row(*id))
+        .collect();
+    wait_or_connector_error(&pipeline, &output, &expected, &errors).await;
+
+    // A delete event retracts the row it repeats, which only cancels if both
+    // commits were read through the same projection.
+    let _ = delta
+        .write(vec![make_batch(&[0], "d", 2)])
+        .with_save_mode(SaveMode::Append)
+        .await
+        .unwrap();
+    expected.remove(0);
+    wait_or_connector_error(&pipeline, &output, &expected, &errors).await;
+
+    pipeline.stop().unwrap();
+}
+
+/// A CDC read under a `filter` over a Delta column the SQL table never declares
+/// admits the rows the predicate selects.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_cdc_filter_undeclared_column_test() {
+    run_cdc_filter_undeclared_column_test("region = 'us'").await;
+}
+
+/// The same over a field of an undeclared struct column, which parses as a
+/// compound identifier, so the read set keeps `meta`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_cdc_filter_undeclared_struct_field_test() {
+    run_cdc_filter_undeclared_column_test("meta.tag = 'us'").await;
+}
+
 /// A `filter` that does not parse fails the connector at startup rather than on
 /// the first Delta commit.
 ///
