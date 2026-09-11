@@ -23,6 +23,7 @@ pub use object_store::path::{Path as StoragePath, PathPart as StoragePathPart};
 
 pub mod block;
 pub mod checkpoint_synchronizer;
+pub mod disk;
 pub mod error;
 pub mod fbuf;
 pub mod file;

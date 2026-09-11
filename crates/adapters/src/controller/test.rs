@@ -4444,6 +4444,7 @@ fn test_external_controller_status_serialization() {
         transaction_info: TransactionInfo::default(),
         memory_pressure: MemoryPressure::default(),
         memory_pressure_epoch: 0,
+        disk_usage: None,
         include_connector_errors: false,
     });
     external_status.global_metrics.rss_bytes = 1024 * 1024 * 512; // 512 MB
@@ -4549,6 +4550,131 @@ fn test_external_controller_status_serialization() {
         json!(8),
         "http_output should have 8 encode errors"
     );
+}
+
+/// The disk reported on the stats endpoint is the one holding the storage
+/// backend's own path, so a pipeline with local storage reports it and one
+/// without storage omits it.
+#[test]
+fn test_api_status_reports_disk_usage_from_storage_backend() {
+    use feldera_storage::disk::DiskUsage;
+
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_path = tempdir.path().join("input.csv");
+    let output_path = tempdir.path().join("output.csv");
+    File::create_new(&input_path).unwrap();
+
+    let global_metrics = |storage: serde_json::Value| {
+        let mut config = json!({
+            "name": "test",
+            "workers": 2,
+            "inputs": {
+                "test_input1": {
+                    "stream": "test_input1",
+                    "transport": {
+                        "name": "file_input",
+                        "config": { "path": input_path.display().to_string(), "follow": true },
+                    },
+                    "format": { "name": "csv" },
+                },
+            },
+            "outputs": {
+                "test_output1": {
+                    "stream": "test_output1",
+                    "transport": {
+                        "name": "file_output",
+                        "config": { "path": output_path.display().to_string() },
+                    },
+                    "format": { "name": "csv", "config": {} },
+                },
+            },
+        });
+        config
+            .as_object_mut()
+            .unwrap()
+            .extend(storage.as_object().unwrap().clone());
+        let config: PipelineConfig = serde_json::from_value(config).unwrap();
+
+        let controller = Controller::with_test_config(
+            |circuit_config| {
+                Ok(test_circuit::<TestStruct>(
+                    circuit_config,
+                    &TestStruct::schema(),
+                    &[None],
+                ))
+            },
+            &config,
+            Box::new(|e, _| info!("error: {e}")),
+        )
+        .unwrap();
+        controller.start();
+        let status = controller.api_status(false);
+        controller.stop().unwrap();
+        status.global_metrics
+    };
+
+    let with = global_metrics(json!({
+        "storage_config": { "path": storage_dir },
+        "storage": true,
+    }));
+    let total = with
+        .disk_total_bytes
+        .expect("local storage reports its disk");
+    let available = with
+        .disk_available_bytes
+        .expect("local storage reports its disk");
+    assert!(available <= total, "{available} > {total}");
+    // Capacity is stable, so it must equal a direct reading of the same directory.
+    let direct = DiskUsage::from_path(&storage_dir).unwrap();
+    assert_eq!(total, direct.total_bytes);
+
+    let without = global_metrics(json!({}));
+    assert_eq!(without.disk_total_bytes, None);
+    assert_eq!(without.disk_available_bytes, None);
+}
+
+#[test]
+fn test_stats_reports_disk_usage_from_context() {
+    use crate::{ControllerStatus, controller::stats::ControllerStatusContext};
+    use feldera_storage::disk::DiskUsage;
+    use feldera_types::suspend::SuspendError;
+    use uuid::Uuid;
+
+    let global_metrics = |disk_usage: Option<DiskUsage>| {
+        ControllerStatus::new(
+            serde_json::from_value(json!({})).unwrap(),
+            0,
+            None,
+            Uuid::nil(),
+        )
+        .to_api_type(ControllerStatusContext {
+            suspend_error: Ok::<(), SuspendError>(()),
+            checkpoint_activity: feldera_types::checkpoint::CheckpointActivity::Idle,
+            permanent_checkpoint_errors: None,
+            pipeline_complete: false,
+            transaction_info: TransactionInfo::default(),
+            memory_pressure: MemoryPressure::default(),
+            memory_pressure_epoch: 0,
+            disk_usage,
+            include_connector_errors: false,
+        })
+        .global_metrics
+    };
+
+    // Absence means unknown, never zero.
+    let without = global_metrics(None);
+    assert_eq!(without.disk_total_bytes, None);
+    assert_eq!(without.disk_available_bytes, None);
+
+    let with = global_metrics(Some(DiskUsage {
+        total_bytes: 1000,
+        available_bytes: 200,
+    }));
+    assert_eq!(with.disk_total_bytes, Some(1000));
+    assert_eq!(with.disk_available_bytes, Some(200));
 }
 
 /// Test that custom connector metrics registered via `set_input_custom_metrics` are

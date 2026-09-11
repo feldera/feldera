@@ -10931,6 +10931,20 @@
             "description": "CPU time used by the pipeline across all threads, in milliseconds.",
             "minimum": 0
           },
+          "disk_available_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Bytes the pipeline can still write to its storage disk; absent when unknown.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "disk_total_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Capacity of the pipeline's storage disk, in bytes; absent when unknown.",
+            "nullable": true,
+            "minimum": 0
+          },
           "incarnation_uuid": {
             "type": "string",
             "format": "uuid",

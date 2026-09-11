@@ -55,6 +55,7 @@ use feldera_adapterlib::{
     transport::{InputReader, Resume, Step, Watermark},
 };
 use feldera_samply::Event;
+use feldera_storage::disk::DiskUsage;
 use feldera_storage::histogram::SlidingHistogram;
 use feldera_types::{
     adapter_stats::{
@@ -558,6 +559,9 @@ pub struct ControllerStatusContext {
     pub transaction_info: TransactionInfo,
     pub memory_pressure: MemoryPressure,
     pub memory_pressure_epoch: u64,
+    /// Usage of the disk holding the pipeline's storage, or `None` when there
+    /// is no local disk or it cannot be read.
+    pub disk_usage: Option<DiskUsage>,
     /// When `true`, per-endpoint error messages are serialized alongside
     /// the counters. Set by the support-bundle collector via the
     /// `?include_connector_errors=true` query parameter on `/stats`.
@@ -1550,6 +1554,8 @@ impl ControllerStatus {
             initial_start_time: self.global_metrics.initial_start_time,
             storage_bytes: self.global_metrics.storage_bytes.load(Ordering::Relaxed),
             storage_mb_secs: self.global_metrics.storage_mb_secs.load(Ordering::Relaxed),
+            disk_total_bytes: ctx.disk_usage.map(|usage| usage.total_bytes),
+            disk_available_bytes: ctx.disk_usage.map(|usage| usage.available_bytes),
             uptime_msecs: (Utc::now() - self.global_metrics.start_time)
                 .num_milliseconds()
                 .try_into()
