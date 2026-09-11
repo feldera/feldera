@@ -4551,6 +4551,54 @@ fn test_external_controller_status_serialization() {
     );
 }
 
+#[test]
+fn test_stats_disk_usage_follows_storage_config() {
+    use crate::{ControllerStatus, controller::stats::ControllerStatusContext};
+    use feldera_types::suspend::SuspendError;
+    use uuid::Uuid;
+
+    let global_metrics = |config: serde_json::Value| {
+        ControllerStatus::new(
+            serde_json::from_value(config).unwrap(),
+            0,
+            None,
+            Uuid::nil(),
+        )
+        .to_api_type(ControllerStatusContext {
+            suspend_error: Ok::<(), SuspendError>(()),
+            checkpoint_activity: feldera_types::checkpoint::CheckpointActivity::Idle,
+            permanent_checkpoint_errors: None,
+            pipeline_complete: false,
+            transaction_info: TransactionInfo::default(),
+            memory_pressure: MemoryPressure::default(),
+            memory_pressure_epoch: 0,
+            include_connector_errors: false,
+        })
+        .global_metrics
+    };
+
+    let without = global_metrics(json!({}));
+    // Absence means unknown, never zero.
+    assert_eq!(without.disk_total_bytes, None);
+    assert_eq!(without.disk_available_bytes, None);
+
+    let temp_dir = std::env::temp_dir();
+    let local = global_metrics(json!({
+        "storage_config": {"path": temp_dir},
+        "storage": {},
+    }));
+    assert!(local.disk_total_bytes.is_some());
+    assert!(local.disk_available_bytes.is_some());
+
+    // Its configured path is scratch space, not where the data lives.
+    let object = global_metrics(json!({
+        "storage_config": {"path": temp_dir},
+        "storage": {"backend": {"name": "object", "config": {"url": "s3://bucket/prefix"}}},
+    }));
+    assert_eq!(object.disk_total_bytes, None);
+    assert_eq!(object.disk_available_bytes, None);
+}
+
 /// Test that custom connector metrics registered via `set_input_custom_metrics` are
 /// included in the Prometheus output produced by the custom-metrics loop in
 /// `write_metrics`.

@@ -2292,6 +2292,14 @@ export type GlobalControllerMetrics = {
    */
   cpu_msecs: number
   /**
+   * Bytes this process can still write to that disk.
+   */
+  disk_available_bytes?: number | null
+  /**
+   * Capacity of the disk holding this process's storage, in bytes.
+   */
+  disk_total_bytes?: number | null
+  /**
    * Uniquely identifies the pipeline process that started at start_time.
    */
   incarnation_uuid: string

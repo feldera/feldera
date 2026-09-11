@@ -55,6 +55,7 @@ use feldera_adapterlib::{
     transport::{InputReader, Resume, Step, Watermark},
 };
 use feldera_samply::Event;
+use feldera_storage::disk::DiskUsage;
 use feldera_storage::histogram::SlidingHistogram;
 use feldera_types::{
     adapter_stats::{
@@ -63,7 +64,7 @@ use feldera_types::{
         ShortEndpointConfig,
     },
     checkpoint::CheckpointActivity,
-    config::{FtModel, PipelineConfig},
+    config::{FtModel, PipelineConfig, StorageBackendConfig},
     coordination::Completion,
     memory_pressure::MemoryPressure,
     suspend::{PermanentSuspendError, SuspendError},
@@ -1495,6 +1496,18 @@ impl ControllerStatus {
             .total_processed_records
             .load(Ordering::Acquire);
 
+        // An object store still has a configured path, but it is scratch space.
+        let disk_usage = self
+            .pipeline_config
+            .storage()
+            .filter(|(_, options)| {
+                matches!(
+                    options.backend,
+                    StorageBackendConfig::Default | StorageBackendConfig::File(_)
+                )
+            })
+            .and_then(|(storage_config, _)| DiskUsage::from_path(storage_config.path()));
+
         #[allow(clippy::manual_unwrap_or_default)]
         #[allow(clippy::manual_unwrap_or)]
         let global_metrics = adapter_stats::ExternalGlobalControllerMetrics {
@@ -1550,6 +1563,8 @@ impl ControllerStatus {
             initial_start_time: self.global_metrics.initial_start_time,
             storage_bytes: self.global_metrics.storage_bytes.load(Ordering::Relaxed),
             storage_mb_secs: self.global_metrics.storage_mb_secs.load(Ordering::Relaxed),
+            disk_total_bytes: disk_usage.map(|usage| usage.total_bytes),
+            disk_available_bytes: disk_usage.map(|usage| usage.available_bytes),
             uptime_msecs: (Utc::now() - self.global_metrics.start_time)
                 .num_milliseconds()
                 .try_into()
