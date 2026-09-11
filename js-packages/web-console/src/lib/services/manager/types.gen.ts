@@ -1378,7 +1378,8 @@ export type DeltaTableReaderConfig = {
    * tables.
    *
    * Note: The simplest way to exclude unused columns is to omit them from the Feldera SQL table
-   * declaration. The connector never reads columns that aren't declared in the SQL schema.
+   * declaration. The connector reads an undeclared column only when its own configuration names
+   * it in `filter`, `snapshot_filter`, `cdc_order_by`, or `cdc_delete_filter`.
    * Additionally, the SQL compiler emits warnings for declared but unused columns—use these as
    * a guide to optimize your schema.
    */
