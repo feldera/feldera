@@ -4225,19 +4225,84 @@ mod cdc_tests {
         (controller, err_receiver)
     }
 
-    /// Wait until a table of this connector's etl pipeline reports `state`.
-    /// The publications these callers use hold one table, the source table.
-    pub(super) fn wait_for_etl_state(table: &mut CdcTestTable, state: &str) {
+    /// etl states in which a table's initial sync is complete: etl keeps the
+    /// table's data on a restart and streams changes instead of copying it
+    /// again. `sync_done` is the durable catchup handoff; `ready` follows only
+    /// once a later streamed write advances etl's replication checkpoint past
+    /// the handoff, so a table nobody writes to stays in `sync_done`.
+    pub(super) const ETL_SYNC_COMPLETED_STATES: [&str; 2] = ["sync_done", "ready"];
+
+    /// Wait until etl has completed the initial sync of a table of this
+    /// connector's pipeline, which is when a stop no longer makes the next
+    /// start read the table again. The publications these callers use hold
+    /// one table, the source table.
+    pub(super) fn wait_for_etl_sync_completed(table: &mut CdcTestTable) {
         wait(
-            || etl_table_states(table).iter().any(|s| s == state),
+            || {
+                etl_table_states(table)
+                    .iter()
+                    .any(|s| ETL_SYNC_COMPLETED_STATES.contains(&s.as_str()))
+            },
             60_000,
         )
         .unwrap_or_else(|_| {
             panic!(
-                "timeout waiting for etl state {state:?}; current states: {:?}",
+                "timeout waiting for etl to complete the table sync (one of \
+                 {ETL_SYNC_COMPLETED_STATES:?}); current states: {:?}",
                 etl_table_states(table)
             )
         });
+    }
+
+    /// Block until etl is inside the initial copy of `table` and part of that
+    /// copy has reached the circuit, and report how much of it has.
+    ///
+    /// `copied_so_far` returns the number of copied records the circuit has
+    /// taken from the connector.
+    ///
+    /// etl writes `init` for every published table at pipeline startup, before
+    /// any table-sync worker runs, so `init` says nothing about a running
+    /// copy. It writes `data_sync` immediately before it creates the copy
+    /// slot, so a `data_sync` state that has already delivered records places
+    /// the caller inside the copy, with the copy slot created.
+    ///
+    /// Panics naming `what` when the copy finished before the measurement,
+    /// because the test then no longer covers the window it names.
+    pub(super) fn wait_for_etl_copy_in_progress(
+        table: &mut CdcTestTable,
+        copied_so_far: impl Fn() -> u64,
+        what: &str,
+    ) -> u64 {
+        wait(
+            || etl_table_states(table).iter().any(|s| s == "data_sync"),
+            60_000,
+        )
+        .unwrap_or_else(|_| {
+            panic!(
+                "timeout waiting for etl to start the copy for {what}; etl states: {:?}",
+                etl_table_states(table)
+            )
+        });
+        let started = std::time::Instant::now();
+        wait(|| copied_so_far() > 0, 60_000)
+            .unwrap_or_else(|_| panic!("timeout waiting for the first copied rows of {what}"));
+        // Measure before re-reading the state, so the state decides whether
+        // the measurement describes a copy that was still running.
+        let copied = copied_so_far();
+        let states = etl_table_states(table);
+        // The margin the callers' row counts rest on is visible only here.
+        println!(
+            "{what}: {copied} copied records in the circuit {:?} after etl entered the copy, \
+             etl states: {states:?}",
+            started.elapsed()
+        );
+        assert!(
+            states.iter().any(|s| s == "data_sync"),
+            "{what}: the initial copy finished before its progress was measured, so this run \
+             no longer exercises the mid-copy window; raise the row count. \
+             records in the circuit: {copied}, etl states: {states:?}"
+        );
+        copied
     }
 
     /// Wait until every replication slot of `table`'s connector is inactive,
@@ -4274,7 +4339,7 @@ mod cdc_tests {
 
     /// Current `state` of every table etl tracks for this connector's pipeline.
     ///
-    /// Reuses the table's client: `wait_for_etl_state` polls this every 10 ms.
+    /// Reuses the table's client: `wait_for_etl_sync_completed` polls this every 10 ms.
     /// A failed query panics rather than reading as "no tables", which would let
     /// the `errored`-state assertions pass vacuously.
     pub(super) fn etl_table_states(table: &mut CdcTestTable) -> Vec<String> {
@@ -4591,7 +4656,7 @@ mod cdc_tests {
                 col_bytea, col_numeric, col_smallint, col_int_array
             ) VALUES (
                 1, 'hello world', 42, 9876543210, true,
-                3.14, 2.718281828, '2024-06-15', '14:30:00',
+                3.5, 2.25, '2024-06-15', '14:30:00',
                 '2024-01-01 12:00:00', '2024-01-01 12:00:00+00', '550e8400-e29b-41d4-a716-446655440000',
                 '{{"key": "value", "nested": {{"a": 1}}}}',
                 E'\\xDEADBEEF', 12345.67, 7, ARRAY[1, 2, 3]
@@ -4643,11 +4708,11 @@ mod cdc_tests {
         assert_eq!(row1["col_integer"], json!(42));
         assert_eq!(row1["col_bigint"], json!(9876543210i64));
         assert_eq!(row1["col_boolean"], json!(true));
-        // Float values: compare approximately
-        assert!(row1["col_real"].as_f64().unwrap() > 3.13);
-        assert!(row1["col_real"].as_f64().unwrap() < 3.15);
-        assert!(row1["col_double"].as_f64().unwrap() > 2.71);
-        assert!(row1["col_double"].as_f64().unwrap() < 2.72);
+        // REAL travels as f32, whose spacing at 3.5 is 2^-22 (about 2.4e-7),
+        // so 1e-6 forgives a few rounding steps and nothing more. The same
+        // tolerance guards this column in test_all_types_replayed_after_restart.
+        assert!((row1["col_real"].as_f64().unwrap() - 3.5).abs() < 1e-6);
+        assert!((row1["col_double"].as_f64().unwrap() - 2.25).abs() < 1e-9);
         // Date, time, timestamp are encoded as strings
         assert!(
             row1["col_date"].as_str().unwrap().contains("2024-06-15"),
@@ -5130,7 +5195,6 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
-    #[ignore = "red until #6121 is fixed: the snapshot is lost; see PR #6652"]
     fn test_cdc_ft_mode_holds_slot() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_strict_hold");
@@ -5168,9 +5232,10 @@ mod cdc_tests {
         );
 
         // Stop without a checkpoint, but only once etl has persisted the copy
-        // as complete. Stopping earlier leaves etl in `data_sync`, and it
-        // redoes the copy on restart, which would hide a lost snapshot.
-        wait_for_etl_state(&mut table, "ready");
+        // as complete. Stopping earlier leaves etl in `data_sync` or
+        // `finished_copy`, and it redoes the copy on restart, which would
+        // hide a lost snapshot.
+        wait_for_etl_sync_completed(&mut table);
         ctrl_1.stop().unwrap();
         wait_for_slots_released(&mut table);
 

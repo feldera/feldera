@@ -639,7 +639,7 @@ impl S3InputReader {
                                                     false,
                                                     anyhow!(
                                                         "could not fetch object '{}': {e:?}",
-                                                        &partially_processed_key.key
+                                                        partially_processed_key.key
                                                     ),
                                                     Some("s3-obj-fetch"),
                                                 );
@@ -672,7 +672,7 @@ impl S3InputReader {
                                                     false,
                                                     anyhow!(
                                                         "error reading object '{}' at offset '{error_offset}': {e:?}; max retries '{max_retries}' exceeded, this object is partially processed",
-                                                        &partially_processed_key.key,
+                                                        partially_processed_key.key,
                                                     ),
                                                     Some("s3-obj-read"),
                                                 );
@@ -706,7 +706,7 @@ impl S3InputReader {
                                                             false,
                                                             anyhow!(
                                                                 "error when reading object after prior failure; object '{}': bytes at offset `{latest_start_offset}..{}` do not match after reconnection; did the object change?",
-                                                                &partially_processed_key.key,
+                                                                partially_processed_key.key,
                                                                 latest_start_offset + min as u64
                                                             ),
                                                             Some("s3-obj-read"),
@@ -762,7 +762,7 @@ impl S3InputReader {
                                             e.map_description(|desc| {
                                                 format!(
                                                     "error parsing object '{}': {desc}",
-                                                    &partially_processed_key.key
+                                                    partially_processed_key.key
                                                 )
                                             })
                                         })

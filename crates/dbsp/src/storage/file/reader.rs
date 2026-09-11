@@ -1421,7 +1421,7 @@ struct ImmutableFileRef {
 
 impl Debug for ImmutableFileRef {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        write!(f, "ImmutableFileRef({:?})", &self.file_handle)
+        write!(f, "ImmutableFileRef({:?})", self.file_handle)
     }
 }
 impl Drop for ImmutableFileRef {
@@ -1664,8 +1664,10 @@ fn read_filter_block(
             }
 
             let words: Vec<u64> = bytes[front_len..wanted]
-                .chunks_exact(8)
-                .map(|word| u64::from_le_bytes(word.try_into().unwrap()))
+                .as_chunks::<8>()
+                .0
+                .iter()
+                .map(|word| u64::from_le_bytes(*word))
                 .collect();
             Ok(BatchKeyFilter::from_modular(layout, &words, density))
         }

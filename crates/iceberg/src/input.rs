@@ -638,7 +638,7 @@ impl IcebergInputReader {
                 match &resume_info {
                     IcebergResumeInfo { eoi: true, .. } => info!(
                         "iceberg {}: resuming in the end-of-input state; nothing left to read",
-                        &endpoint.endpoint_name
+                        endpoint.endpoint_name
                     ),
                     IcebergResumeInfo {
                         snapshot_id: Some(snapshot_id),
@@ -646,20 +646,20 @@ impl IcebergInputReader {
                         ..
                     } => info!(
                         "iceberg {}: resuming the initial snapshot {snapshot_id} from timestamp {ts}",
-                        &endpoint.endpoint_name
+                        endpoint.endpoint_name
                     ),
                     IcebergResumeInfo {
                         snapshot_id: Some(snapshot_id),
                         ..
                     } => info!(
                         "iceberg {}: resuming with pinned snapshot {snapshot_id}",
-                        &endpoint.endpoint_name
+                        endpoint.endpoint_name
                     ),
                     IcebergResumeInfo {
                         snapshot_id: None, ..
                     } => info!(
                         "iceberg {}: resuming from a clean state",
-                        &endpoint.endpoint_name
+                        endpoint.endpoint_name
                     ),
                 }
                 Some(resume_info)
@@ -975,12 +975,12 @@ impl IcebergInputEndpointInner {
         select! {
             _ = Self::worker_task_inner(self.clone(), input_stream, schema, receiver, init_status_sender) => {
                 debug!("iceberg {}: worker task terminated",
-                    &self.endpoint_name,
+                    self.endpoint_name,
                 );
             }
             _ = receiver_clone.wait_for(|state| state == &PipelineState::Terminated) => {
                 debug!("iceberg {}: received termination command; worker task canceled",
-                    &self.endpoint_name,
+                    self.endpoint_name,
                 );
             }
         }
@@ -1004,7 +1004,7 @@ impl IcebergInputEndpointInner {
         // Execute the snapshot query; push snapshot data to the circuit.
         info!(
             "iceberg {}: reading initial snapshot: {snapshot_query}",
-            &self.endpoint_name,
+            self.endpoint_name,
         );
 
         self.execute_snapshot_query(&snapshot_query, "initial snapshot", input_stream, receiver)
@@ -1013,7 +1013,7 @@ impl IcebergInputEndpointInner {
         //let _ = self.datafusion.deregister_table("snapshot");
         info!(
             "iceberg {}: finished reading initial snapshot",
-            &self.endpoint_name,
+            self.endpoint_name,
         );
     }
 
@@ -1058,13 +1058,13 @@ impl IcebergInputEndpointInner {
 
         info!(
             "iceberg {}: querying the table for min and max timestamp values",
-            &self.endpoint_name,
+            self.endpoint_name,
         );
 
         if bounds.len() != 1 || bounds[0].num_rows() != 1 {
             info!(
                 "iceberg {}: initial snapshot is empty; the Iceberg table contains no records{}",
-                &self.endpoint_name,
+                self.endpoint_name,
                 if let Some(filter) = &self.config.snapshot_filter {
                     format!(" that satisfy the filter condition '{filter}'")
                 } else {
@@ -1110,7 +1110,7 @@ impl IcebergInputEndpointInner {
 
         info!(
             "iceberg {}: reading table snapshot in the range '{min_raw} <= {timestamp_column} <= {max_raw}'{}",
-            &self.endpoint_name,
+            self.endpoint_name,
             if resume_timestamp.is_some() {
                 " (resumed from a checkpoint)"
             } else {
@@ -1266,7 +1266,7 @@ impl IcebergInputEndpointInner {
         self.consumer.eoi();
         info!(
             "iceberg {}: reached snapshot {snapshot_id} configured as 'end_snapshot_id'; stopping the connector",
-            &self.endpoint_name
+            self.endpoint_name
         );
         true
     }
@@ -1504,7 +1504,7 @@ impl IcebergInputEndpointInner {
                     let backoff_delay = calculate_backoff_delay(retry_count - 1);
                     warn!(
                         "iceberg {}: error reading {descr}: {e}; retrying in {backoff_delay:?} (attempt {retry_count})",
-                        &self.endpoint_name
+                        self.endpoint_name
                     );
                     sleep(backoff_delay).await;
                 }
@@ -1624,7 +1624,7 @@ impl IcebergInputEndpointInner {
                         .set_last_ingested_sequence_number(snapshot.sequence_number());
                     debug!(
                         "iceberg {}: ingested follow snapshot {snapshot_id} (sequence number {})",
-                        &self.endpoint_name,
+                        self.endpoint_name,
                         snapshot.sequence_number()
                     );
                 }
@@ -1739,7 +1739,7 @@ impl IcebergInputEndpointInner {
                     .set_last_ingested_sequence_number(snapshot.sequence_number());
                 info!(
                     "iceberg {}: ingested snapshot {} (sequence number {})",
-                    &self.endpoint_name,
+                    self.endpoint_name,
                     snapshot.snapshot_id(),
                     snapshot.sequence_number(),
                 );
@@ -1807,7 +1807,7 @@ impl IcebergInputEndpointInner {
                     retry_count += 1;
                     warn!(
                         "iceberg {}: error opening table: '{e}'; retrying in {backoff_delay:?} (attempt {retry_count})",
-                        &self.endpoint_name
+                        self.endpoint_name
                     );
                     sleep(backoff_delay).await;
                 }
@@ -1817,7 +1817,7 @@ impl IcebergInputEndpointInner {
 
     /// Open existing iceberg table.  Use snapshot id or timestamp specified in the configuration, if any.
     async fn open_table(&self) -> Result<IcebergTable, ControllerError> {
-        debug!("iceberg {}: opening iceberg table", &self.endpoint_name);
+        debug!("iceberg {}: opening iceberg table", self.endpoint_name);
 
         match self.config.catalog_type {
             None => self.open_table_no_catalog().await,
@@ -2171,7 +2171,7 @@ impl IcebergInputEndpointInner {
 
         trace!(
             "iceberg {}: registering table with Datafusion",
-            &self.endpoint_name,
+            self.endpoint_name,
         );
 
         let provider = match snapshot_id {
@@ -2318,7 +2318,7 @@ impl IcebergInputEndpointInner {
         let descr = format!("{descr} query '{query}'");
         debug!(
             "iceberg {}: retrieving data from the Iceberg table snapshot using {descr}",
-            &self.endpoint_name,
+            self.endpoint_name,
         );
 
         let options: SQLOptions = SQLOptions::new()
@@ -2425,7 +2425,7 @@ impl IcebergInputEndpointInner {
                     );
                     self.consumer
                         .update_connector_health(ConnectorHealth::unhealthy(&message));
-                    warn!("iceberg {}: {message}", &self.endpoint_name);
+                    warn!("iceberg {}: {message}", self.endpoint_name);
                     sleep(backoff_delay).await;
                 }
             }

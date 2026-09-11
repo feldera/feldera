@@ -338,7 +338,7 @@ impl DeltaTableWriter {
                     true,
                     anyhow!(
                         "error creating or opening delta table '{}': {e}",
-                        &config.uri
+                        config.uri
                     ),
                 )
             })?;
@@ -560,7 +560,7 @@ impl WriterTask {
                         } else {
                             return Err(anyhow!(
                                 "error creating or opening delta table '{}': {e:?}",
-                                &inner.config.uri
+                                inner.config.uri
                             ));
                         }
                     }
@@ -568,7 +568,7 @@ impl WriterTask {
                         if retry_count >= MAX_RETRIES {
                             return Err(anyhow!(
                                 "timeout creating or opening delta table '{}' after {retry_count} attempts",
-                                &inner.config.uri,
+                                inner.config.uri,
                             ));
                         } else {
                             warn!(

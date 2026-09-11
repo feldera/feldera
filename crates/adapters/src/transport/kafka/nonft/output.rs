@@ -207,7 +207,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
             .map_err(|e| {
                 anyhow!(
                     "error retrieving metadata for topic '{}': {e}",
-                    &self.config.topic
+                    self.config.topic
                 )
             })?;
         *self

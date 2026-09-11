@@ -553,7 +553,10 @@ impl InputGenerator {
                 .iter()
                 .map(|plan| match plan.limit.unwrap_or(usize::MAX) {
                     0 => RowRangeSet::new(),
-                    limit => RowRangeSet::from_ranges(&[0..=limit - 1]),
+                    limit => {
+                        let all_rows = 0..=limit - 1;
+                        RowRangeSet::from_ranges(&[all_rows])
+                    }
                 })
                 .collect()
         };

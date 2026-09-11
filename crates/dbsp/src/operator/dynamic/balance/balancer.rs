@@ -638,7 +638,7 @@ impl BalancerInner {
             variable_indexes.insert(*stream, variable_index);
         }
 
-        for (_join, (left, right, is_left_join)) in self.clusters[cluster_index].joins.iter() {
+        for (left, right, is_left_join) in self.clusters[cluster_index].joins.values() {
             maxsat.add_constraint(JoinConstraint::new(
                 variable_indexes[left],
                 variable_indexes[right],
@@ -1518,7 +1518,7 @@ impl Balancer {
             .collect();
 
         for (index, cluster) in clusters.iter().enumerate() {
-            for (stream, _layer) in cluster.streams.iter() {
+            for stream in cluster.streams.keys() {
                 inner.stream_to_cluster.insert(*stream, index);
             }
         }

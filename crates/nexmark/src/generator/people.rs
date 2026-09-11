@@ -131,10 +131,10 @@ impl<R: Rng> GeneratorContext<'_, R> {
     fn next_credit_card(&mut self) -> String {
         format!(
             "{:04} {:04} {:04} {:04}",
-            &mut self.rng.gen_range(0..10_000),
-            &mut self.rng.gen_range(0..10_000),
-            &mut self.rng.gen_range(0..10_000),
-            &mut self.rng.gen_range(0..10_000)
+            self.rng.gen_range(0..10_000),
+            self.rng.gen_range(0..10_000),
+            self.rng.gen_range(0..10_000),
+            self.rng.gen_range(0..10_000)
         )
     }
 }

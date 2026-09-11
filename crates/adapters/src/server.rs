@@ -1584,6 +1584,7 @@ async fn approve(
 ///
 /// This endpoint is designed to be non-blocking.
 #[get("/status")]
+#[allow(clippy::result_large_err)]
 async fn status_handler(
     state: WebData<ServerState>,
 ) -> Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError> {
@@ -2996,7 +2997,7 @@ async fn output_endpoint(
     // Create HTTP endpoint.  In `backpressure` mode it waits for the client to
     // receive each chunk, so it needs the controller's shutdown token to stop
     // waiting when the pipeline goes down.
-    let endpoint_name = format!("{}.api-{}", &config.stream, Uuid::new_v4());
+    let endpoint_name = format!("{}.api-{}", config.stream, Uuid::new_v4());
     let endpoint = HttpOutputEndpoint::new(
         &endpoint_name,
         format,

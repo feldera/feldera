@@ -225,7 +225,7 @@ impl Debug for Span {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Span")?;
         if let Some(inner) = &self.0 {
-            write!(f, "({})", &inner.name)?;
+            write!(f, "({})", inner.name)?;
         }
         Ok(())
     }
@@ -1301,14 +1301,13 @@ impl Blocks {
         } else {
             match FREE_BLOCKS.fetch_sub(1, Ordering::Relaxed) {
                 1.. => self.0.push(Block::new(marker)),
-                0 => {
+                0
                     // Record when marker space was exhausted.  The combination
                     // of `load` and `store` is not an atomic transaction, but
                     // it's good enough.
-                    if MARKERS_EXHAUSTED.load().is_none() {
+                    if MARKERS_EXHAUSTED.load().is_none() => {
                         MARKERS_EXHAUSTED.store(Some(Timestamp::now()));
                     }
-                }
                 _ => (),
             }
         }

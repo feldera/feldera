@@ -4410,7 +4410,8 @@ export type PostgresCdcReaderConfig = {
    */
   publication: string
   /**
-   * Postgres table to replicate (e.g. "public.orders").
+   * Postgres table to replicate, schema-qualified (e.g. "public.orders").
+   * A name given without a schema refers to a table in "public".
    * Must be included in the publication.
    */
   source_table: string

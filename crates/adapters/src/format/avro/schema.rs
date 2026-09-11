@@ -421,7 +421,7 @@ pub fn validate_field_schema(
             if key_type.typ != SqlType::Char && key_type.typ != SqlType::Varchar {
                 return Err(format!(
                     "cannot deserialize map with key type '{}': Avro only allows string keys",
-                    &key_type.typ
+                    key_type.typ
                 ));
             }
 
@@ -562,7 +562,7 @@ impl AvroSchemaBuilder {
             default: None,
             schema: self
                 .column_type_to_avro_schema(&field.columntype, force_optional)
-                .map_err(|e| format!("error generating Avro schema for field '{}': {e}", &name))?,
+                .map_err(|e| format!("error generating Avro schema for field '{}': {e}", name))?,
             order: RecordFieldOrder::Ascending,
             position,
             custom_attributes: BTreeMap::new(),
@@ -652,7 +652,7 @@ impl AvroSchemaBuilder {
                 if !key_type.typ.is_string() {
                     return Err(format!(
                         "cannot serialize map with key type '{}': Avro only allows string keys",
-                        &key_type.typ
+                        key_type.typ
                     ));
                 }
                 let value_type = column_type.value.as_ref().ok_or("internal error: relation schema contains a map field, with a missing value type")?;
