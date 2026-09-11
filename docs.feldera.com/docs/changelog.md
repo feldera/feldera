@@ -14,6 +14,14 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        - Bug fix (Delta Lake input connector, `cdc` mode): a CDC read no longer
+          decodes columns the pipeline does not need. A column the SQL table
+          never declares, and that no connector expression names, is left out of
+          the read. This also fixes a transaction such as `UPDATE` or `MERGE`
+          that rewrote a file while changing only such a column: its `add` and
+          `remove` actions did not cancel, and the connector re-emitted the
+          rewritten rows as inserts (#7116).
+
         - Incompatible change (SQL compiler): the `WATERMARK` column annotation is
           removed, and a table that declares one no longer compiles.  There is no
           replacement. The annotation was experimental and undocumented, and a table that
