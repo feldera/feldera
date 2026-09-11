@@ -423,6 +423,12 @@ pub struct ExternalGlobalControllerMetrics {
     pub storage_bytes: u64,
     /// Storage usage integrated over time, in megabytes * seconds.
     pub storage_mb_secs: u64,
+    /// Capacity of the disk holding this process's storage, in bytes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disk_total_bytes: Option<u64>,
+    /// Bytes this process can still write to that disk.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disk_available_bytes: Option<u64>,
     /// Time elapsed while the pipeline is executing a step, multiplied by the number of threads, in milliseconds.
     pub runtime_elapsed_msecs: u64,
     /// Total number of records currently buffered by all endpoints.
