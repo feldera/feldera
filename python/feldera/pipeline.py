@@ -40,6 +40,7 @@ from feldera.enums import (
 from feldera.output_handler import OutputHandler
 from feldera.rest.errors import FelderaAPIError
 from feldera.rest.feldera_client import FelderaClient
+from feldera.rest.logs import LogStream
 from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.rest.sql_table import SQLTable
 from feldera.rest.sql_view import SQLView
@@ -128,6 +129,34 @@ class Pipeline:
         """Gets the pipeline logs."""
 
         return self.client.get_pipeline_logs(self.name)
+
+    def resume_logs(self, cursor: Optional[str] = None) -> LogStream:
+        """
+        Open the pipeline logs stream, starting from the last read line (cursor).
+
+        Where :meth:`logs` replays the whole retained buffer on every connection, this
+        delivers only the lines following `cursor`.
+
+        A cursor issued during an earlier lifetime of the logs buffer, such as before a
+        pipeline restart, is not an error: the stream starts at the beginning of the
+        retained buffer, and `LogPosition.gap` names the lines that were lost.
+
+        For example, to read the logs across a dropped connection::
+
+            read = 0
+            with pipeline.resume_logs() as stream:
+                for line in stream:
+                    read += 1
+                    print(line)
+            stream = pipeline.resume_logs(stream.position.cursor(read))
+
+        :param cursor: The position to resume after, as returned by
+            :meth:`feldera.rest.logs.LogPosition.cursor`. `None` starts at the beginning
+            of the retained buffer.
+        :return: The open stream. Close it when done reading.
+        """
+
+        return self.client.resume_pipeline_logs(self.name, cursor)
 
     def input_pandas(self, table_name: str, df: pandas.DataFrame, force: bool = False):
         """
