@@ -1,16 +1,22 @@
 <script lang="ts">
   import type { Snippet } from '$lib/types/svelte'
 
-  const {
+  let {
     trigger,
     content,
-    wrapperClass
+    wrapperClass,
+    open: show = $bindable(false)
   }: {
     trigger: Snippet<[toggle: () => void, isOpen: boolean]>
     content: Snippet<[close: () => void]>
     wrapperClass?: string
+    /**
+     * Whether the content is showing. Bind it when something other than the
+     * trigger's click opens the popup; when unbound, the popup's own state is in
+     * charge. Clicking away closes it either way.
+     */
+    open?: boolean
   } = $props()
-  let show = $state(false)
   const onClose = () => {
     setTimeout(() => {
       show = false

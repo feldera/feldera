@@ -36,6 +36,7 @@ const testOptimizeDepsInclude = [
   'fast-deep-equal',
   '@streamparser/json',
   'apache-arrow',
+  'array-join',
   '@svelte-bin/clipboard',
   '@square/svelte-store',
   'bignumber.js',
