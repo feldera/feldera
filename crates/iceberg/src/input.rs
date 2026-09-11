@@ -3202,6 +3202,10 @@ mod tests {
 
 #[cfg(test)]
 mod variant_tests {
+    // Connector metadata is still the deprecated enum, so the record fixtures
+    // below name it.
+    #![allow(deprecated)]
+
     use crate::iceberg_input_serde_config;
     use datafusion::arrow::array::{ArrayRef, Int64Array, RecordBatch};
     use datafusion::arrow::datatypes::{
@@ -3341,6 +3345,9 @@ mod variant_tests {
 
 #[cfg(test)]
 mod distributed_tests {
+    // Connector metadata is deprecated used by `ArrowStream`
+    #![allow(deprecated)]
+
     use super::{validate_distributed, IcebergInputEndpointInner, QueueEntry};
     use anyhow::{Error as AnyError, Result as AnyResult};
     use chrono::Utc;
