@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import random
+import time
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -24,6 +25,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from feldera.rest._jwt import seconds_since_expiry
 from feldera.rest.config import Config
 from feldera.rest.errors import (
     FelderaAPIError,
@@ -45,6 +47,24 @@ def _is_502(exc: BaseException) -> bool:
 
 
 _SENSITIVE_HEADERS = {"authorization", "cookie", "proxy-authorization", "x-api-key"}
+
+# How often to re-resolve while waiting for a refresher to replace an expired
+# token. Short enough that the wait costs little beyond the refresher's own
+# schedule, long enough not to spin on a file.
+_EXPIRED_TOKEN_POLL_SECONDS = 5.0
+
+# Bound at import so a test can give this module a fake clock without also
+# replacing the one tenacity naps on.
+_monotonic = time.monotonic
+_sleep = time.sleep
+
+_BEARER_PREFIX = "Bearer "
+
+
+def _bearer_of(headers: Mapping[str, str]) -> Optional[str]:
+    """The token `headers` will actually present, or None if they present none."""
+    value = headers.get("Authorization", "")
+    return value[len(_BEARER_PREFIX) :] if value.startswith(_BEARER_PREFIX) else None
 
 
 def _redact_headers(headers: dict) -> dict:
@@ -186,6 +206,70 @@ class HttpRequests:
         logging.debug("got response: %s", str(resp))
         return resp
 
+    def _reauthenticated_headers(self, sent: dict, request_path: str) -> dict:
+        """Headers for the one retry of a request the instance answered 401.
+
+        A credential that refreshes in the background can be replaced between
+        the moment a request is built and the moment it is rejected, so
+        re-resolving covers that race for free. Where re-resolving still yields
+        an expired token, only that token is worth waiting on: its refresher is
+        late and will replace it, whereas anything else is a credential the
+        instance genuinely refuses, and waiting on that would turn a wrong API
+        key into a hang.
+        """
+        headers = self._headers_with_auth()
+        previously_sent = sent.get("Authorization")
+        # Judge the token these headers carry, never a second resolve of the
+        # credential: a refresher landing between the two reads would clear the
+        # wait while the retry still went out with the expired token.
+        expired_for = seconds_since_expiry(_bearer_of(headers))
+        budget = self.config.retry_config.expired_token_wait_seconds
+
+        if expired_for is None or budget <= 0:
+            if headers.get("Authorization") != previously_sent:
+                logging.info(
+                    "401 from %s; the credential had already been replaced, retrying",
+                    request_path,
+                )
+            else:
+                logging.info(
+                    "401 from %s; re-resolving api_key callable and retrying once",
+                    request_path,
+                )
+            return headers
+
+        logging.warning(
+            "401 from %s: the bearer expired %.0fs ago, so whatever refreshes "
+            "it is late; waiting up to %.0fs for a live one",
+            request_path,
+            expired_for,
+            budget,
+        )
+        deadline = _monotonic() + budget
+        while True:
+            remaining = deadline - _monotonic()
+            if remaining <= 0:
+                break
+            _sleep(min(_EXPIRED_TOKEN_POLL_SECONDS, remaining))
+            headers = self._headers_with_auth()
+            # A refresher minting from a skewed clock can replace one dead
+            # token with another, so a token that merely differs is not yet
+            # worth spending the single retry on.
+            if seconds_since_expiry(_bearer_of(headers)) is None:
+                logging.info(
+                    "the bearer was refreshed after %.0fs; retrying %s",
+                    budget - (deadline - _monotonic()),
+                    request_path,
+                )
+                return headers
+
+        logging.error(
+            "the bearer was still expired after %.0fs; retrying with it so the "
+            "instance reports the failure",
+            budget,
+        )
+        return headers
+
     def send_request(
         self,
         http_method: Callable,
@@ -300,17 +384,13 @@ class HttpRequests:
                             return None
                         raise
         except FelderaAPIError as err:
-            # On 401, if the bearer is a callable, re-resolve once and retry.
+            # On 401, if the bearer is a callable, re-resolve and retry once.
             # Covers tokens that expire mid-flight in long-running scripts
             # without forcing every caller to wrap calls in their own retry.
-            # One-shot is enforced by scope: this except runs at most once
+            # One retry is enforced by scope: this except runs at most once
             # per `send_request` call.
             if err.status_code == 401 and callable(self.config.api_key):
-                logging.info(
-                    "401 from %s; re-resolving api_key callable and retrying once",
-                    request_path,
-                )
-                headers = self._headers_with_auth()
+                headers = self._reauthenticated_headers(headers, request_path)
                 headers["Content-Type"] = content_type
                 return self._do_single_request(
                     http_method, request_path, data, params, stream, headers

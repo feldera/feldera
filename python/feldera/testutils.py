@@ -54,7 +54,10 @@ def feldera_bearer_token() -> Optional[str]:
 
     Callers that build their own requests resolve this per request: a CI token
     expires well inside a test run, and one read at import time starts
-    returning 401 partway through.
+    returning 401 partway through. Reading per request is not by itself
+    enough, because the file can hold an expired token when its refresher is
+    late; `RetryConfig.expired_token_wait_seconds` covers that gap for callers
+    that hand the SDK this function rather than its result.
     """
     if os.environ.get("OIDC_TEST_ISSUER"):
         return _get_effective_api_key()
@@ -93,7 +96,17 @@ class _LazyClient:
                 # import time, and a 5-minute retry against an instance that
                 # is not running would hang local test collection.
                 retry_config=(
-                    RetryConfig(deadline_seconds=300.0)
+                    RetryConfig(
+                        deadline_seconds=300.0,
+                        # A late refresh leaves the token file holding an
+                        # expired token, and every worker then fails at once
+                        # for as long as the gap lasts. Waiting it out costs a
+                        # couple of minutes; not waiting costs the whole job,
+                        # because these suites run under `--maxfail=1`.
+                        # Only a provably expired token waits, so a job with
+                        # no credential at all still fails immediately.
+                        expired_token_wait_seconds=150.0,
+                    )
                     if os.environ.get("CI")
                     else RetryConfig()
                 ),
