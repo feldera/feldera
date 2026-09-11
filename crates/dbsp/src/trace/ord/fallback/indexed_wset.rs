@@ -260,6 +260,30 @@ where
             inner: Inner::FileProj(inner),
         }
     }
+
+    /// Presents `batch`, whose values carry a trailing column, as a batch over
+    /// the leading column alone.
+    ///
+    /// The two spellings describe the same records, so this rewraps the inner
+    /// batch rather than copying it.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless `factories` came from
+    /// [`FallbackIndexedWSetFactories::with_projection`], and on a `batch` that
+    /// is already projected, whose values would then carry two trailing columns.
+    pub fn project_batch(
+        factories: &FallbackIndexedWSetFactories<K, V, R>,
+        batch: &FallbackIndexedWSet<K, DynPair<V, DynData>, R>,
+    ) -> Self {
+        match &batch.inner {
+            Inner::Vec(vec) => Self::from_projected_vec(factories, vec.clone()),
+            Inner::File(file) => Self::from_projected_file(factories, file.clone()),
+            Inner::VecProj(_) | Inner::FileProj(_) => {
+                panic!("a batch that already hides a trailing column cannot hide another")
+            }
+        }
+    }
 }
 
 impl<K, V, R> Debug for FallbackIndexedWSet<K, V, R>

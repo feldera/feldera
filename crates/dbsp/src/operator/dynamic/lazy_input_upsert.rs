@@ -26,10 +26,10 @@ use crate::{
     },
     dynamic::{DataTrait, DowncastTrait, DynData, DynPair, DynPairs, Erase, Factory, WithFactory},
     operator::dynamic::input_upsert::{DynUpdate, Update, UpdateRef},
-    trace::{BatchReader, BatchReaderFactories, Builder},
+    trace::{BatchReader, BatchReaderFactories, Builder, Spine, Trace, TraceRole},
     utils::Tup2,
 };
-use std::{borrow::Cow, marker::PhantomData};
+use std::{borrow::Cow, marker::PhantomData, sync::Arc};
 
 /// The stamped form of `B`: the same keys, with each value paired with the
 /// `u32` step it arrived in.
@@ -98,6 +98,32 @@ where
             stamped_val_factory: self.stamped_val_factory,
         }
     }
+}
+
+/// Presents a spine of stamped batches as a spine of unstamped ones.
+///
+/// Each batch is rewrapped rather than copied: the stamped and unstamped
+/// spellings describe the same records, and the projection happens in the
+/// cursor.  The resulting spine starts from the batch list alone, so whatever
+/// merges the stamped spine had in flight are discarded; preserving them is a
+/// separate change.
+pub async fn remove_stamp<K, V>(
+    factories: &OrdIndexedZSetFactories<K, V>,
+    stamped: Vec<Arc<Stamped<OrdIndexedZSet<K, V>>>>,
+    name: Arc<String>,
+) -> Spine<OrdIndexedZSet<K, V>>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+{
+    let mut spine =
+        <Spine<OrdIndexedZSet<K, V>> as Trace>::new(factories, name, TraceRole::Integral);
+    for batch in stamped {
+        spine
+            .insert(OrdIndexedZSet::project_batch(factories, &batch))
+            .await;
+    }
+    spine
 }
 
 /// Turns each step's updates into a stamped indexed Z-set.
@@ -706,6 +732,134 @@ mod stamp_tests {
             let input: Vec<Box<DynPairs<Key, DynUpdate<Val, Upd>>>> =
                 vec![Box::new(LeanVec::from(pairs)).erase_box()];
             let _ = TOKIO.block_on(operator.eval_owned(input));
+        });
+    }
+}
+
+#[cfg(test)]
+mod remove_stamp_tests {
+    use super::*;
+    use crate::dynamic::LeanVec;
+    use crate::trace::{Batch, BatchLocation, Cursor, test::run_in_circuit_with_storage};
+    use feldera_storage::tokio::TOKIO;
+
+    type Key = DynData;
+    type Val = DynData;
+    type Batched = OrdIndexedZSet<Key, Val>;
+
+    /// `(key, value, stamp, weight)`.
+    type Row = (i32, i32, u32, ZWeight);
+
+    fn factories() -> AddLazyInputMapFactories<Batched, DynData> {
+        AddLazyInputMapFactories::new::<i32, i32, i32>()
+    }
+
+    fn stamped_batch(
+        factories: &AddLazyInputMapFactories<Batched, DynData>,
+        rows: &[Row],
+    ) -> Stamped<Batched> {
+        let tuples: Vec<Tup2<Tup2<i32, Tup2<i32, u32>>, ZWeight>> = rows
+            .iter()
+            .map(|&(key, value, stamp, weight)| Tup2(Tup2(key, Tup2(value, stamp)), weight))
+            .collect();
+        let mut tuples = Box::new(LeanVec::from(tuples)).erase_box();
+        <Stamped<Batched> as crate::trace::Batch>::dyn_from_tuples(
+            &factories.stamped_factories,
+            (),
+            &mut tuples,
+        )
+    }
+
+    /// Every `(key, value, weight)` a batch or trace exposes.
+    fn contents<B>(batch: &B) -> Vec<(i32, i32, ZWeight)>
+    where
+        B: BatchReader<Key = Key, Val = Val, Time = (), R = crate::DynZWeight>,
+    {
+        let mut out = Vec::new();
+        let mut cursor = batch.cursor();
+        while cursor.key_valid() {
+            while cursor.val_valid() {
+                out.push((
+                    *unsafe { cursor.key().downcast::<i32>() },
+                    *unsafe { cursor.val().downcast::<i32>() },
+                    **cursor.weight(),
+                ));
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+        out
+    }
+
+    /// A stamped batch presents itself as an unstamped one: the stamp is
+    /// invisible, records differing only in it consolidate, and a record left
+    /// with no weight disappears along with a key left with nothing.
+    #[test]
+    fn a_stamped_batch_projects_to_its_values() {
+        run_in_circuit_with_storage(|| {
+            let factories = factories();
+            let rows: &[Row] = &[
+                (1, 10, 0, 1),
+                (1, 10, 3, 2),
+                (1, 20, 1, 1),
+                (2, 30, 0, 1),
+                (2, 30, 4, -1),
+            ];
+            let projected = Batched::project_batch(
+                &factories.batch_factories,
+                &stamped_batch(&factories, rows),
+            );
+            assert_eq!(contents(&projected), vec![(1, 10, 3), (1, 20, 1)]);
+        });
+    }
+
+    /// A stamped batch that has spilled projects the same way.
+    #[test]
+    fn a_spilled_stamped_batch_projects_the_same() {
+        run_in_circuit_with_storage(|| {
+            let factories = factories();
+            let rows: &[Row] = &[(1, 10, 0, 1), (1, 10, 3, 2), (1, 20, 1, 1)];
+
+            let stamped = stamped_batch(&factories, rows);
+            let spilled = stamped
+                .persisted()
+                .expect("an in-memory batch persists to storage");
+            assert_eq!(spilled.location(), BatchLocation::Storage);
+
+            let projected = Batched::project_batch(&factories.batch_factories, &spilled);
+            assert_eq!(contents(&projected), vec![(1, 10, 3), (1, 20, 1)]);
+        });
+    }
+
+    /// A spine of stamped batches reads as a spine of unstamped ones, across
+    /// batch boundaries: a value split over two batches consolidates once the
+    /// spine merges them.
+    #[test]
+    fn a_stamped_spine_reads_as_an_unstamped_one() {
+        run_in_circuit_with_storage(|| {
+            let factories = factories();
+
+            let mut stamped: Spine<Stamped<Batched>> = <Spine<_> as Trace>::new(
+                &factories.stamped_factories,
+                Arc::new(String::from("stamped")),
+                TraceRole::Integral,
+            );
+            TOKIO.block_on(
+                stamped.insert(stamped_batch(&factories, &[(1, 10, 0, 1), (2, 30, 0, 1)])),
+            );
+            TOKIO.block_on(
+                stamped.insert(stamped_batch(&factories, &[(1, 10, 1, 2), (2, 30, 1, -1)])),
+            );
+
+            let unstamped = TOKIO.block_on(remove_stamp(
+                &factories.batch_factories,
+                stamped.get_batches(),
+                Arc::new(String::from("unstamped")),
+            ));
+
+            // Key 1 keeps value 10 with the summed weight; key 2's two stamps
+            // cancel, so both the value and the key are gone.
+            assert_eq!(contents(&unstamped), vec![(1, 10, 3)]);
         });
     }
 }
