@@ -130,7 +130,7 @@ pub(crate) async fn handle_adhoc_query(
     // Because we're doing a websocket connection, we build the request manually
     // (ws isn't supported by progenitor).
     let reqwest_client = client.client();
-    let url = format!("{}/v0/pipelines/{}/query", client.baseurl(), &name);
+    let url = format!("{}/v0/pipelines/{}/query", client.baseurl(), name);
 
     let response = reqwest_client
         .get(url)

@@ -407,7 +407,7 @@ impl Parser for JsonParser {
                     self.apply_update::<&RawValue>(update, &metadata, &mut errors)
                 }
                 JsonUpdateFormat::Redis | JsonUpdateFormat::Snowflake => {
-                    panic!("Unexpected update format: {:?}", &self.config.update_format)
+                    panic!("Unexpected update format: {:?}", self.config.update_format)
                 }
             }
         }

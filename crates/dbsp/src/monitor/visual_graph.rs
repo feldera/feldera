@@ -120,7 +120,7 @@ impl ClusterNode {
     // edge to a specific simple node, which requires extending the circuit
     // builder API.
     fn to_dot(&self, output: &mut dyn Write) -> fmt::Result {
-        writeln!(output, "subgraph cluster_{} {{", &self.id)?;
+        writeln!(output, "subgraph cluster_{} {{", self.id)?;
         writeln!(output, "label=\"{}\"", self.label)?;
         writeln!(output, "enter_{}[style=invis]", self.id)?;
         writeln!(output, "exit_{}[style=invis]", self.id)?;
