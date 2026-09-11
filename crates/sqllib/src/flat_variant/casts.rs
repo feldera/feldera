@@ -17,7 +17,7 @@ use crate::casts::*;
 use crate::error::{SqlResult, SqlRuntimeError, r2o};
 use crate::flat_variant::{
     Container, FlatVariant, TAG_ARRAY, TAG_BIGINT, TAG_BINARY, TAG_BOOLEAN, TAG_DATE, TAG_DECIMAL,
-    TAG_DOUBLE, TAG_GEOMETRY, TAG_INT, TAG_LONG_INTERVAL, TAG_MAP, TAG_REAL, TAG_SHORT_INTERVAL,
+    TAG_DOUBLE, TAG_GEO_POINT, TAG_INT, TAG_LONG_INTERVAL, TAG_MAP, TAG_REAL, TAG_SHORT_INTERVAL,
     TAG_SMALLINT, TAG_SQL_NULL, TAG_STRING, TAG_TIME, TAG_TIMESTAMP, TAG_TIMESTAMP_TZ, TAG_TINYINT,
     TAG_UBIGINT, TAG_UINT, TAG_USMALLINT, TAG_UTINYINT, TAG_UUID, TAG_VARIANT_NULL, Writer,
     payload_array, sort_map_entries,
@@ -56,7 +56,7 @@ pub(crate) enum FVRef<'a> {
     ShortInterval(ShortInterval),
     LongInterval(LongInterval),
     Binary(&'a [u8]),
-    Geometry(GeoPoint),
+    GeoPoint(GeoPoint),
     Uuid(Uuid),
     /// Container arms carry no payload; container casts recurse over the
     /// original bytes through [`Container`] directly.
@@ -97,7 +97,7 @@ pub(crate) fn view(bytes: &[u8]) -> FVRef<'_> {
             payload_array(p),
         ))),
         TAG_BINARY => FVRef::Binary(p),
-        TAG_GEOMETRY => FVRef::Geometry(GeoPoint::new(
+        TAG_GEO_POINT => FVRef::GeoPoint(GeoPoint::new(
             f64::from_le_bytes(payload_array(&p[..8])),
             f64::from_le_bytes(payload_array(&p[8..])),
         )),
@@ -132,7 +132,7 @@ pub(crate) fn type_string(bytes: &[u8]) -> &'static str {
         TAG_TIMESTAMP_TZ => "TIMESTAMP WITH TIME ZONE",
         TAG_SHORT_INTERVAL => "SHORTINTERVAL",
         TAG_LONG_INTERVAL => "LONGINTERVAL",
-        TAG_GEOMETRY => "GEOPOINT",
+        TAG_GEO_POINT => "GEOPOINT",
         TAG_BINARY => "BINARY",
         TAG_ARRAY => "ARRAY",
         TAG_MAP => "MAP",
@@ -279,7 +279,7 @@ impl EncodeFV for GeoPoint {
         let mut payload = [0u8; 16];
         payload[..8].copy_from_slice(&self.left().into_inner().to_le_bytes());
         payload[8..].copy_from_slice(&self.right().into_inner().to_le_bytes());
-        w.scalar(TAG_GEOMETRY, &payload)
+        w.scalar(TAG_GEO_POINT, &payload)
     }
 }
 
@@ -387,7 +387,7 @@ decode_exact!(TimestampTz, FVRef::TimestampTz(x) => x, cast_to_TimestampTz_s, "T
 decode_exact!(ShortInterval, FVRef::ShortInterval(x) => x, cast_to_ShortInterval_DAYS_TO_MINUTES_s, "INTERVAL DAYS TO MINUTES");
 decode_exact!(LongInterval, FVRef::LongInterval(x) => x, cast_to_LongInterval_YEARS_TO_MONTHS_s, "INTERVAL YEARS TO MONTHS");
 decode_exact!(Uuid, FVRef::Uuid(x) => x, cast_to_Uuid_s, "UUID");
-decode_exact!(GeoPoint, FVRef::Geometry(x) => x, "GEOPOINT");
+decode_exact!(GeoPoint, FVRef::GeoPoint(x) => x, "GEOPOINT");
 decode_exact!(ByteArray, FVRef::Binary(x) => ByteArray::new(x), "BINARY");
 
 macro_rules! decode_numeric {
@@ -670,8 +670,8 @@ cast_to_flat_variant!(Timestamp, Timestamp);
 cast_from_flat_variant!(Timestamp, Timestamp, FVRef::Timestamp(x) => x);
 cast_to_flat_variant!(TimestampTz, TimestampTz);
 cast_from_flat_variant!(TimestampTz, TimestampTz, FVRef::TimestampTz(x) => x);
-cast_to_flat_variant!(GeoPoint, GeoPoint);
-cast_from_flat_variant!(GeoPoint, GeoPoint, FVRef::Geometry(x) => x);
+cast_to_flat_variant!(geopoint, GeoPoint);
+cast_from_flat_variant!(geopoint, GeoPoint, FVRef::GeoPoint(x) => x);
 
 macro_rules! cast_flat_variant_interval {
     ($name: ident, $type: ty, $refvariant: ident) => {

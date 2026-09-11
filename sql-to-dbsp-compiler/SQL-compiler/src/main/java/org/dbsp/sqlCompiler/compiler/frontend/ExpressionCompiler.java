@@ -43,7 +43,6 @@ import org.apache.calcite.util.DateString;
 import org.apache.calcite.util.TimeString;
 import org.apache.calcite.util.TimestampString;
 import org.apache.calcite.util.TimestampWithTimeZoneString;
-import org.dbsp.sqlCompiler.compiler.VariantMode;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
@@ -1640,7 +1639,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                     case "variantnull":
                         return compileFunction(
-                                VariantMode.isEnabled() ? "variantnull_fv" : "variantnull",
+                                DBSPTypeVariant.legacyRepresentation() ? "variantnull" : "variantnull_fv",
                                 node, type, ops, 0);
                     case "now":
                     case "connector_metadata":
@@ -1653,7 +1652,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                     case "typeof":
                         return compileFunction(
-                                VariantMode.isEnabled() ? "typeof_fv" : "typeof",
+                                DBSPTypeVariant.legacyRepresentation() ? "typeof" : "typeof_fv",
                                 node, type, ops, 1);
                     case "to_int":
                         return compileFunction(call, node, type, ops, 1);
@@ -1664,7 +1663,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             return expr;
                         // The argument is a string, so the polymorphic suffix
                         // cannot distinguish the variant representation.
-                        String baseName = VariantMode.isEnabled() ? opName + "_fv" : opName;
+                        String baseName = DBSPTypeVariant.legacyRepresentation() ? opName : opName + "_fv";
                         return compilePolymorphicFunction(false, baseName, node, type, ops, 1);
                     }
                     case "to_json":
@@ -1860,7 +1859,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         // The base name switches with the variant representation,
                         // like typeof.  The result is nullable regardless of the
                         // argument: a dropped non-map variant produces NULL
-                        String method = (VariantMode.isEnabled() ? opName + "_fv" : opName) +
+                        String method = (DBSPTypeVariant.legacyRepresentation() ? opName : opName + "_fv") +
                                 ops.get(0).getType().nullableUnderlineSuffix();
                         return new DBSPApplyExpression(node, method, type, ops.get(0), ops.get(1));
                     }
@@ -1876,7 +1875,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             converted = mapper.body
                                     .cast(node, variant, DBSPCastExpression.CastType.SqlUnsafe)
                                     .closure(mapper.parameters);
-                        String method = (VariantMode.isEnabled() ? opName + "_fv" : opName) +
+                        String method = (DBSPTypeVariant.legacyRepresentation() ? opName : opName + "_fv") +
                                 ops.get(0).getType().nullableUnderlineSuffix();
                         return new DBSPApplyExpression(node, method, type, ops.get(0), converted);
                     }
