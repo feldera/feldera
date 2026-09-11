@@ -10,8 +10,24 @@
 import { CountValue, PercentValue, type TooltipRow } from 'profiler-lib'
 import { afterEach, describe, expect, it } from 'vitest'
 import { render } from 'vitest-browser-svelte'
+import { setCollapsed } from '../collapsedBlocks.svelte'
 import type { RenderableMetric } from '../dispatch'
 import MetricsDistributionBlock from './MetricsDistributionBlock.svelte'
+
+/** Load the real stylesheets, for the tests that read the colors and sizes the browser resolved.
+ * The tests that read a declared style run without them: a loaded theme reports a transparent
+ * background as `oklab(0 0 0 / 0)` rather than `rgba(0, 0, 0, 0)`. */
+const loadTheme = async (theme: 'light' | 'dark' = 'light') => {
+  await import('../../../../routes/layout.css')
+  await import('feldera-theme/feldera-modern.css')
+  document.documentElement.dataset.theme = 'feldera-modern-theme'
+  document.documentElement.classList.toggle('dark', theme === 'dark')
+}
+
+afterEach(() => {
+  document.documentElement.classList.remove('dark')
+  delete document.documentElement.dataset.theme
+})
 
 const cells = (values: Array<CountValue | PercentValue>) =>
   values.map((value) => ({ value, percentile: 50 }))
@@ -171,6 +187,110 @@ describe('MetricsDistributionBlock total column', () => {
     // The rate's Avg is the pooled 2/6, not the mean of the two rates.
     expect(texts(container)).toEqual(['20', '10', '30', '40', '33.3%', '25.0%', '50.0%', ''])
   })
+
+  // Issue 6993: a category the user collapsed stays collapsed from node to node, so the metrics
+  // of interest need no scrolling to reach.
+  describe('collapsing', () => {
+    const titleButton = (container: HTMLElement) =>
+      container.querySelector<HTMLButtonElement>('h3 button')!
+    const valueCells = (container: HTMLElement) => container.querySelectorAll('.value-cell').length
+
+    it('collapses to its title on a click and expands on the next', async () => {
+      const { container } = render(MetricsDistributionBlock, {
+        props: { id: 'collapse-toggle', title: 'State', entries: [adds, doesNotAdd] }
+      })
+      titleButton(container).click()
+      await expect.poll(() => valueCells(container)).toBe(0)
+      expect(container.textContent).toContain('State')
+      expect(container.textContent).not.toContain('Avg')
+      expect(titleButton(container).getAttribute('aria-expanded')).toBe('false')
+
+      titleButton(container).click()
+      await expect.poll(() => valueCells(container)).toBe(8)
+      expect(titleButton(container).getAttribute('aria-expanded')).toBe('true')
+    })
+
+    it('remembers the choice for the category, not for the block instance', async () => {
+      // Switching nodes rebuilds the blocks with new entries.
+      const first = render(MetricsDistributionBlock, {
+        props: { id: 'collapse-remembered', title: 'Time', entries: [adds] }
+      })
+      titleButton(first.container).click()
+      await expect.poll(() => valueCells(first.container)).toBe(0)
+      await first.unmount()
+
+      const again = render(MetricsDistributionBlock, {
+        props: { id: 'collapse-remembered', title: 'Time', entries: [doesNotAdd] }
+      })
+      expect(valueCells(again.container)).toBe(0)
+      const other = render(MetricsDistributionBlock, {
+        props: { id: 'collapse-other', title: 'Memory', entries: [adds] }
+      })
+      expect(valueCells(other.container)).toBe(4)
+    })
+
+    // A collapsed block is a title and the padding around it, nothing more: the point of
+    // collapsing is to fit the categories a reader ignores into as little height as possible.
+    it('shrinks to its title, with no room left for the rows', async () => {
+      // Real padding and radius come from the theme, so the size is only meaningful with it.
+      await loadTheme()
+      const { container } = render(MetricsDistributionBlock, {
+        props: { id: 'collapse-height', title: 'State', entries: [adds, doesNotAdd] }
+      })
+      // A pane narrower than the table's 30rem minimum, where the expanded block scrolls.
+      container.style.width = '360px'
+      const card = container.querySelector<HTMLElement>('.metrics-block')!
+      const expanded = card.getBoundingClientRect().height
+      setCollapsed('collapse-height', true)
+      await expect.poll(() => card.querySelectorAll('.value-cell').length).toBe(0)
+
+      const title = card.querySelector<HTMLElement>('h3')!.getBoundingClientRect().height
+      const height = card.getBoundingClientRect().height
+      // The card's own padding, top and bottom, is all that surrounds the title.
+      expect(height - title).toBeLessThanOrEqual(12)
+      expect(height).toBeLessThan(expanded / 2)
+      // Nothing of the table is left to widen the card, so a title-only card cannot scroll
+      // sideways and take its title out of view.
+      const scrolls = (el: HTMLElement) => el.scrollWidth > el.clientWidth + 1
+      expect([card, ...card.querySelectorAll<HTMLElement>('*')].filter(scrolls)).toEqual([])
+    })
+
+    it('stays open while it holds the current metric, keeping the choice for later', async () => {
+      const current = entry('records', {
+        cells: cells([new CountValue(1)]),
+        isCurrentMetric: true
+      })
+      const plain = render(MetricsDistributionBlock, {
+        props: { id: 'collapse-current', title: 'State', entries: [adds] }
+      })
+      titleButton(plain.container).click()
+      await expect.poll(() => valueCells(plain.container)).toBe(0)
+      await plain.unmount()
+
+      // The panel leads with the current metric's value, so its block cannot hide it.
+      const holding = render(MetricsDistributionBlock, {
+        props: { id: 'collapse-current', title: 'State', entries: [current, adds] }
+      })
+      expect(valueCells(holding.container)).toBe(8)
+      const pinned = titleButton(holding.container)
+      expect(pinned.getAttribute('aria-expanded')).toBe('true')
+      // Marked rather than `disabled`: a disabled button leaves the tab order and stops firing
+      // pointer events, hiding the tooltip that explains why it will not move.
+      expect(pinned.getAttribute('aria-disabled')).toBe('true')
+      expect(pinned.title).toContain('current metric')
+      pinned.focus()
+      expect(document.activeElement).toBe(pinned)
+      pinned.click()
+      await expect.poll(() => valueCells(holding.container)).toBe(8)
+      await holding.unmount()
+
+      // Once the current metric lives in another category, the choice applies again.
+      const after = render(MetricsDistributionBlock, {
+        props: { id: 'collapse-current', title: 'State', entries: [adds] }
+      })
+      expect(valueCells(after.container)).toBe(0)
+    })
+  })
 })
 
 // Issue 6990: the diagram is colored by one metric, and reading its value meant hunting for the
@@ -186,19 +306,11 @@ describe('MetricsDistributionBlock selected metric', () => {
   ]
 
   const themed = async (theme: 'light' | 'dark') => {
-    await import('../../../../routes/layout.css')
-    await import('feldera-theme/feldera-modern.css')
-    document.documentElement.dataset.theme = 'feldera-modern-theme'
-    document.documentElement.classList.toggle('dark', theme === 'dark')
+    await loadTheme(theme)
     return render(MetricsDistributionBlock, {
       props: { id: 'b', title: 'State', entries: rows }
     })
   }
-
-  afterEach(() => {
-    document.documentElement.classList.remove('dark')
-    delete document.documentElement.dataset.theme
-  })
 
   // One subgrid element per row, marked for assistive technology as the current one.
   const rowElements = (container: HTMLElement) =>
