@@ -18,6 +18,7 @@ from feldera.rest._httprequests import HttpRequests
 from feldera.rest.config import ApiKey, Config  # noqa: F401 — re-exported
 from feldera.rest.errors import FelderaAPIError, FelderaTimeoutError
 from feldera.rest.feldera_config import FelderaConfig
+from feldera.rest.logs import LogPosition, LogStream
 from feldera.rest.pipeline import Pipeline
 from feldera.tags import _normalize_tags
 from feldera.rest.retry import RetryConfig
@@ -519,6 +520,33 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             for chunk in resp.iter_lines(chunk_size=50000000):
                 if chunk:
                     yield chunk.decode("utf-8")
+
+    def resume_pipeline_logs(
+        self, pipeline_name: str, cursor: Optional[str] = None
+    ) -> LogStream:
+        """
+        Open the pipeline logs stream, starting from the last read line (cursor).
+
+        Where :meth:`get_pipeline_logs` replays the whole retained buffer on every
+        connection, this delivers only the lines following `cursor`.
+
+        A cursor issued during an earlier lifetime of the logs buffer, such as before a
+        pipeline restart, is not an error: the stream starts at the beginning of the
+        retained buffer, and `LogPosition.gap` names the lines that were lost. A reader is
+        therefore never locked out of its logs by a stale cursor.
+
+        :param pipeline_name: The name of the pipeline.
+        :param cursor: The position to resume after, as returned by
+            :meth:`feldera.rest.logs.LogPosition.cursor`. `None` starts at the beginning
+            of the retained buffer.
+        :return: The open stream. Close it when done reading.
+        """
+        resp = self.http.get(
+            path=f"/pipelines/{pipeline_name}/logs",
+            params={"cursor": cursor if cursor is not None else ""},
+            stream=True,
+        )
+        return LogStream(resp, LogPosition.from_headers(resp.headers))
 
     def activate_pipeline(
         self, pipeline_name: str, wait: bool = True, timeout_s: Optional[float] = None
