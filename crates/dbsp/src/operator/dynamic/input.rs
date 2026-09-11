@@ -952,7 +952,7 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> Clone for UpsertHandle<K, V> 
 }
 
 impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> UpsertHandle<K, V> {
-    fn new(
+    pub(crate) fn new(
         pair_factory: &'static dyn Factory<DynPair<K, V>>,
         pairs_factory: &'static dyn Factory<DynPairs<K, V>>,
         input_handle: InputHandle<Vec<Box<DynPairs<K, V>>>>,

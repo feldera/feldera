@@ -17,10 +17,11 @@
 //! one pass.
 
 use crate::{
-    DBData, Error, NumEntries, Position, ZWeight,
+    Circuit, DBData, Error, NumEntries, Position, RootCircuit, Runtime, Stream, ZWeight,
     algebra::{IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories},
     circuit::{
         GlobalNodeId, OwnershipPreference, Scope,
+        circuit_builder::CircuitBase,
         circuit_builder::RefStreamValue,
         metadata::{
             ALLOCATED_MEMORY_BYTES, BatchSizeStats, CONFLICTING_UPDATES_COUNT, INPUT_BATCHES_STATS,
@@ -35,12 +36,21 @@ use crate::{
     },
     dynamic::{DataTrait, DowncastTrait, DynData, DynPair, DynPairs, Erase, Factory, WithFactory},
     operator::{
-        async_stream_operators::StreamingBinaryOperator,
-        dynamic::input_upsert::{DynUpdate, Update, UpdateRef},
+        Input,
+        async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper},
+        dynamic::{
+            accumulate_trace::{
+                AccumulateTraceId, AccumulateUntimedTraceAppend, AccumulateZ1Trace,
+            },
+            accumulator::{Accumulation, AccumulatorId, EnableCount},
+            input::{IndexedZSetStream, UpsertHandle},
+            input_upsert::{DynUpdate, Update, UpdateRef},
+            trace::TraceBounds,
+        },
     },
     trace::{
         BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Spine, Trace,
-        WithSnapshot,
+        WithSnapshot, merge_batches_by_reference,
     },
     utils::Tup2,
 };
@@ -51,6 +61,7 @@ use std::{
     borrow::Cow,
     cell::{Cell, RefCell},
     marker::PhantomData,
+    panic::Location,
     rc::Rc,
     sync::Arc,
 };
@@ -737,6 +748,164 @@ where
             let accumulator = self.state.borrow_mut().take();
             yield (accumulator, true, position);
         }
+    }
+}
+
+impl RootCircuit {
+    /// An input map that resolves its updates when the transaction commits.
+    ///
+    /// Same interface and semantics as
+    /// [`dyn_add_input_map`](RootCircuit::dyn_add_input_map), minus `Update`
+    /// commands, but the integral is read once per transaction in key order
+    /// rather than once per key per step at random.
+    ///
+    /// ```text
+    ///                                          ┌──────────── integral ───────────┐
+    ///                                          ▼                                 │
+    ///  updates ──► Stamp ──┬──► shard_accumulate ──► LazyUpsert ──┬──► integrate ─┘
+    ///                      │                            │         │
+    ///                      │                      adjustments   accumulator
+    ///                      │                            │
+    ///                      └────────► project ──► concat ──► delta
+    /// ```
+    ///
+    /// `Stamp` gives each update the step it arrived in; the accumulator gathers
+    /// the transaction's updates; `LazyUpsert` resolves them against the
+    /// integral in one scan and emits both the accumulator that feeds the
+    /// integral and the adjustments that, with the projected updates, make the
+    /// delta.
+    #[track_caller]
+    pub fn dyn_add_lazy_input_map<K, V, U>(
+        &self,
+        persistent_id: Option<&str>,
+        factories: &AddLazyInputMapFactories<OrdIndexedZSet<K, V>, U>,
+    ) -> (IndexedZSetStream<K, V>, UpsertHandle<K, DynUpdate<V, U>>)
+    where
+        K: DataTrait + ?Sized,
+        V: DataTrait + ?Sized,
+        U: DataTrait + ?Sized,
+    {
+        self.region("lazy_input_map", || {
+            let (input, input_handle) = Input::new(
+                Location::caller(),
+                |tuples: Vec<Box<DynPairs<K, DynUpdate<V, U>>>>| tuples,
+                Arc::new(|| vec![factories.input_pairs_factory.default_box()]),
+            );
+            let input_stream = self.add_source(input);
+            let zset_handle = <UpsertHandle<K, DynUpdate<V, U>>>::new(
+                factories.input_pair_factory,
+                factories.input_pairs_factory,
+                input_handle,
+            );
+
+            // No exchange.  `UpsertHandle` hashes each key to a worker as the
+            // client appends, so a key's updates all reach one worker on their
+            // host, which is everything `Stamp` needs to order them.
+            let stamped = self.add_unary_operator(
+                <Stamp<K, V, U, OrdIndexedZSet<K, V>>>::new(factories),
+                &input_stream,
+            );
+
+            // On one host those local shards are the global ones, so say so and
+            // `dyn_shard_accumulate` moves nothing.  Across hosts they are not,
+            // and leaving the stream unmarked is what lets the accumulator do
+            // the sharding: it exchanges a transaction's batches rather than
+            // every step's loose pairs.
+            if Runtime::runtime().is_none_or(|runtime| runtime.layout().is_solo()) {
+                stamped.mark_sharded();
+            }
+
+            let accumulated = stamped
+                .dyn_shard_accumulate(&factories.stamped_factories)
+                .into_enabled_stream();
+
+            let bounds = <TraceBounds<K, V>>::unbounded();
+            let (delayed_integral, z1feedback) =
+                self.add_feedback_persistent(
+                    persistent_id
+                        .map(|name| format!("{name}.accintegral"))
+                        .as_deref(),
+                    <AccumulateZ1Trace<
+                        RootCircuit,
+                        OrdIndexedZSet<K, V>,
+                        Spine<OrdIndexedZSet<K, V>>,
+                    >>::new(
+                        &factories.batch_factories,
+                        &factories.batch_factories,
+                        false,
+                        self.root_scope(),
+                        bounds.clone(),
+                    ),
+                );
+            delayed_integral.mark_sharded();
+
+            let adjustments_value = RefStreamValue::empty();
+            let accumulator = self.add_binary_operator(
+                StreamingBinaryWrapper::new(<LazyUpsert<K, V, U, OrdIndexedZSet<K, V>>>::new(
+                    factories,
+                    adjustments_value.clone(),
+                )),
+                &delayed_integral,
+                &accumulated,
+            );
+            accumulator.mark_sharded();
+
+            let integral = self.add_binary_operator_with_preference(
+                AccumulateUntimedTraceAppend::<Spine<OrdIndexedZSet<K, V>>>::new(),
+                (
+                    &delayed_integral,
+                    OwnershipPreference::STRONGLY_PREFER_OWNED,
+                ),
+                (&accumulator, OwnershipPreference::PREFER_OWNED),
+            );
+            integral.mark_sharded();
+            z1feedback
+                .connect_with_preference(&integral, OwnershipPreference::STRONGLY_PREFER_OWNED);
+
+            let adjustments =
+                Stream::with_value(self.clone(), accumulator.local_node_id(), adjustments_value);
+
+            // `project` and `concat` in one step: the projection is free, since
+            // a stamped batch can present itself as an unstamped one, so a step
+            // whose adjustments are empty -- every step but a transaction's last
+            // -- hands the projected batch straight through without copying it.
+            let batch_factories = factories.batch_factories.clone();
+            let delta = stamped.apply2(&adjustments, move |stamped, adjustments| {
+                let projected = OrdIndexedZSet::project_batch(&batch_factories, stamped);
+                if adjustments.is_empty() {
+                    projected
+                } else if projected.is_empty() {
+                    (**adjustments).clone()
+                } else {
+                    merge_batches_by_reference(
+                        &batch_factories,
+                        [&projected, &**adjustments],
+                        &None,
+                        &None,
+                    )
+                }
+            });
+            // The updates reach the map sharded within a host only, and the
+            // adjustments come back from the accumulator sharded across all of
+            // them, so the two halves of the delta agree on one host and on no
+            // more than that.
+            if Runtime::runtime().is_none_or(|runtime| runtime.layout().is_solo()) {
+                delta.mark_sharded();
+            }
+
+            let enable_count = EnableCount::new();
+            enable_count.enable();
+            self.cache_insert(
+                AccumulatorId::new(delta.stream_id()),
+                Accumulation {
+                    stream: accumulator,
+                    enable_count,
+                },
+            );
+            self.cache_insert(AccumulateTraceId::new(delta.stream_id()), integral);
+
+            (delta, zset_handle)
+        })
     }
 }
 
@@ -1625,5 +1794,207 @@ mod lazy_upsert_tests {
                 "three steps of two keys each, then one to finish"
             );
         });
+    }
+}
+
+#[cfg(test)]
+mod circuit_tests {
+    use super::*;
+    use crate::Runtime;
+    use crate::circuit::CircuitConfig;
+    use crate::dynamic::LeanVec;
+    use crate::operator::dynamic::input::AddInputMapFactories;
+    use crate::trace::Cursor;
+    use std::sync::Mutex;
+
+    type Key = DynData;
+    type Val = DynData;
+    type Upd = DynData;
+    type Batched = OrdIndexedZSet<Key, Val>;
+
+    /// `Some(v)` inserts, `None` deletes.
+    type Command = (i32, Option<i32>);
+
+    fn push(handle: &mut UpsertHandle<Key, DynUpdate<Val, Upd>>, commands: &[Command]) {
+        let mut batch: Vec<Tup2<i32, Update<i32, i32>>> = commands
+            .iter()
+            .map(|&(key, value)| {
+                Tup2(
+                    key,
+                    match value {
+                        Some(value) => Update::Insert(value),
+                        None => Update::Delete,
+                    },
+                )
+            })
+            .collect();
+        let mut batch = Box::new(LeanVec::from(std::mem::take(&mut batch))).erase_box();
+        handle.dyn_append(&mut batch);
+    }
+
+    /// Everything a stream emitted, summed over the run and consolidated, which
+    /// is the collection the deltas describe.
+    fn total(recorded: &Mutex<Vec<(i32, i32, ZWeight)>>) -> Vec<(i32, i32, ZWeight)> {
+        let mut sums: std::collections::BTreeMap<(i32, i32), ZWeight> =
+            std::collections::BTreeMap::new();
+        for &(key, value, weight) in recorded.lock().unwrap().iter() {
+            *sums.entry((key, value)).or_default() += weight;
+        }
+        sums.into_iter()
+            .filter(|(_, weight)| *weight != 0)
+            .map(|((key, value), weight)| (key, value, weight))
+            .collect()
+    }
+
+    fn record(stream: &IndexedZSetStream<Key, Val>, into: Arc<Mutex<Vec<(i32, i32, ZWeight)>>>) {
+        stream.inspect(move |batch| {
+            let mut cursor = batch.cursor();
+            let mut recorded = into.lock().unwrap();
+            while cursor.key_valid() {
+                while cursor.val_valid() {
+                    recorded.push((
+                        *unsafe { cursor.key().downcast::<i32>() },
+                        *unsafe { cursor.val().downcast::<i32>() },
+                        **cursor.weight(),
+                    ));
+                    cursor.step_val();
+                }
+                cursor.step_key();
+            }
+        });
+    }
+
+    /// The lazy map agrees with the eager one on the collection every command
+    /// sequence leaves behind.
+    ///
+    /// Both are fed the same commands in the same steps and transactions, and
+    /// their deltas are summed over the run: the two operators emit on different
+    /// schedules, so the sums are what must agree, not the individual batches.
+    fn agrees_with_eager(transactions: &[Vec<Vec<Command>>]) {
+        let lazy_records = Arc::new(Mutex::new(Vec::new()));
+        let eager_records = Arc::new(Mutex::new(Vec::new()));
+        let (lazy_out, eager_out) = (lazy_records.clone(), eager_records.clone());
+
+        let (mut dbsp, (mut lazy_handle, mut eager_handle)) =
+            Runtime::init_circuit(CircuitConfig::with_workers(1), move |circuit| {
+                let lazy_factories =
+                    <AddLazyInputMapFactories<Batched, Upd>>::new::<i32, i32, i32>();
+                let (lazy, lazy_handle) = circuit.dyn_add_lazy_input_map(None, &lazy_factories);
+                record(&lazy, lazy_out.clone());
+
+                let eager_factories = <AddInputMapFactories<Batched, Upd>>::new::<i32, i32, i32>();
+                let (eager, eager_handle) = circuit.dyn_add_input_map(
+                    None,
+                    &eager_factories,
+                    Box::new(|_value: &mut Val, _update: &Upd| {
+                        unreachable!("no `Update` commands are sent")
+                    }),
+                );
+                record(&eager, eager_out.clone());
+
+                Ok((lazy_handle, eager_handle))
+            })
+            .unwrap();
+
+        for transaction in transactions {
+            dbsp.start_transaction().unwrap();
+            for step in transaction {
+                push(&mut lazy_handle, step);
+                push(&mut eager_handle, step);
+                dbsp.step().unwrap();
+            }
+            dbsp.commit_transaction().unwrap();
+        }
+        dbsp.kill().unwrap();
+
+        assert_eq!(
+            total(&lazy_records),
+            total(&eager_records),
+            "the lazy and eager maps disagree on the collection"
+        );
+    }
+
+    /// One insert, one transaction: the smallest thing the circuit can do.
+    #[test]
+    fn a_single_insert() {
+        agrees_with_eager(&[vec![vec![(1, Some(10))]]]);
+    }
+
+    /// A key written again in a later transaction, which is where the integral
+    /// holds the value being replaced.
+    #[test]
+    fn a_key_overwritten_across_transactions() {
+        agrees_with_eager(&[
+            vec![vec![(1, Some(10))]],
+            vec![vec![(1, Some(20))]],
+            vec![vec![(1, Some(30))]],
+        ]);
+    }
+
+    /// Deleting a key the integral holds, and one it does not.
+    #[test]
+    fn deletes() {
+        agrees_with_eager(&[vec![vec![(1, Some(10))]], vec![vec![(1, None), (2, None)]]]);
+    }
+
+    /// Several updates to one key inside one transaction, across several steps.
+    /// This is what the stamp exists for: the eager operator resolves each step
+    /// against the integral, and the lazy one has to reach the same place from
+    /// the accumulated sequence.
+    #[test]
+    fn several_updates_to_one_key_in_one_transaction() {
+        agrees_with_eager(&[vec![
+            vec![(1, Some(10))],
+            vec![(1, Some(20))],
+            vec![(1, Some(30))],
+        ]]);
+    }
+
+    /// An insert and a delete of the same key inside one transaction, in both
+    /// orders.
+    #[test]
+    fn an_insert_and_a_delete_in_one_transaction() {
+        agrees_with_eager(&[vec![vec![(1, Some(10))], vec![(1, None)]]]);
+        agrees_with_eager(&[
+            vec![vec![(1, Some(10))]],
+            vec![vec![(1, None)], vec![(1, Some(20))]],
+        ]);
+    }
+
+    /// Several commands for one key inside a single step, where the last one
+    /// wins before the stamp ever sees them.
+    #[test]
+    fn several_commands_for_one_key_in_one_step() {
+        agrees_with_eager(&[vec![vec![(1, Some(10)), (1, Some(20)), (1, None)]]]);
+        agrees_with_eager(&[vec![vec![(1, None), (1, Some(10))]]]);
+    }
+
+    /// Many keys over many steps and transactions, mixing every command shape.
+    #[test]
+    fn a_longer_sequence() {
+        agrees_with_eager(&[
+            vec![
+                vec![(1, Some(10)), (2, Some(20)), (3, Some(30))],
+                vec![(2, Some(21)), (4, Some(40))],
+            ],
+            vec![
+                vec![(1, None), (3, Some(31))],
+                vec![(3, Some(32)), (5, Some(50))],
+                vec![(2, None), (5, None)],
+            ],
+            vec![vec![(1, Some(11)), (4, None)]],
+            vec![vec![(3, None), (6, None)]],
+        ]);
+    }
+
+    /// A sequence with no commands at all in some steps and transactions.
+    #[test]
+    fn empty_steps_and_transactions() {
+        agrees_with_eager(&[
+            vec![vec![]],
+            vec![vec![(1, Some(10))], vec![]],
+            vec![vec![]],
+            vec![vec![(1, None)]],
+        ]);
     }
 }
