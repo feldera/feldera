@@ -17,19 +17,44 @@
 //! one pass.
 
 use crate::{
-    DBData, ZWeight,
+    DBData, Error, NumEntries, Position, ZWeight,
     algebra::{IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories},
     circuit::{
-        OwnershipPreference, Scope,
-        metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OperatorMeta},
-        operator_traits::{Operator, UnaryOperator},
+        GlobalNodeId, OwnershipPreference, Scope,
+        circuit_builder::RefStreamValue,
+        metadata::{
+            ALLOCATED_MEMORY_BYTES, BatchSizeStats, CONFLICTING_UPDATES_COUNT, INPUT_BATCHES_STATS,
+            MEMORY_ALLOCATIONS_COUNT, MetaItem, OUTPUT_ADJUSTMENT_STATS, OperatorMeta,
+            SHARED_MEMORY_BYTES, STATE_RECORDS_COUNT, USED_MEMORY_BYTES,
+        },
+        operator_traits::{Operator, OperatorName, UnaryOperator},
+        {
+            lazy_input_map_keys_per_step, splitter_output_chunk_size,
+            splitter_output_first_chunk_size,
+        },
     },
     dynamic::{DataTrait, DowncastTrait, DynData, DynPair, DynPairs, Erase, Factory, WithFactory},
-    operator::dynamic::input_upsert::{DynUpdate, Update, UpdateRef},
-    trace::{BatchReader, BatchReaderFactories, Builder, Spine, Trace},
+    operator::{
+        async_stream_operators::StreamingBinaryOperator,
+        dynamic::input_upsert::{DynUpdate, Update, UpdateRef},
+    },
+    trace::{
+        BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Spine, Trace,
+        WithSnapshot,
+    },
     utils::Tup2,
 };
-use std::{borrow::Cow, marker::PhantomData, sync::Arc};
+use async_stream::stream;
+use futures::Stream as AsyncStream;
+use size_of::SizeOf;
+use std::{
+    borrow::Cow,
+    cell::{Cell, RefCell},
+    marker::PhantomData,
+    rc::Rc,
+    sync::Arc,
+};
+use tracing::warn;
 
 /// The stamped form of `B`: the same keys, with each value paired with the
 /// `u32` step it arrived in.
@@ -356,6 +381,363 @@ fn push_stamped<K, V, B>(
     let mut weight = weight;
     builder.push_val_diff_mut(&mut **stamped_val, weight.erase_mut());
     builder.push_key(key);
+}
+
+/// Resolves a transaction's accumulated updates against the integral.
+///
+/// The eager operator probes the integral once per key per step.  This one is
+/// handed every update the transaction made, already ordered by the stamp, and
+/// the integral as it stood when the transaction began, and walks both in key
+/// order: the probes become one sequential pass.
+///
+/// It computes the adjustments `A` such that `project(U) + I + A` is the
+/// collection's new state.  For each key the accumulator holds:
+///
+/// * the integral's current value is retracted, since the key is being written;
+/// * every update but the one with the largest stamp is retracted, since only
+///   the last one survives;
+/// * if the survivor is a delete, it is retracted too, which cancels the record
+///   `project(U)` contributes and leaves the key with nothing.
+///
+/// The main output is the accumulator: `project(U)` with the adjustments added.
+/// The adjustments also leave on a second stream, which the circuit concatenates
+/// with the projected updates to form the delta.
+pub struct LazyUpsert<K, V, U, B>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    U: DataTrait + ?Sized,
+    B: IndexedZSet<Key = K, Val = V>,
+{
+    factories: AddLazyInputMapFactories<B, U>,
+
+    /// The adjustments of the step that just ran, for the delta stream.
+    adjustments: RefStreamValue<Arc<OrdIndexedZSet<K, V>>>,
+
+    /// The accumulator under construction.
+    ///
+    /// It holds the transaction's updates with their stamps dropped, and grows
+    /// by a chunk of adjustments per step until the commit finishes, so it is
+    /// state the operator carries between steps and worth reporting as such.
+    state: RefCell<Option<Spine<OrdIndexedZSet<K, V>>>>,
+
+    output_adjustment_stats: RefCell<BatchSizeStats>,
+
+    /// Updates that arrived at the same step as another update to their key.
+    ///
+    /// Each host stamps its own steps from zero and `UpsertHandle` shards only
+    /// within a host, so two hosts ingesting one key in a transaction give it
+    /// two updates at the same stamp.  The resolution still has to pick one.
+    conflicting_updates: Cell<u64>,
+
+    name: OperatorName,
+    phantom: PhantomData<fn(&K, &V, &U)>,
+}
+
+impl<K, V, U, B> LazyUpsert<K, V, U, B>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    U: DataTrait + ?Sized,
+    B: IndexedZSet<Key = K, Val = V>,
+{
+    pub fn new(
+        factories: &AddLazyInputMapFactories<B, U>,
+        adjustments: RefStreamValue<Arc<OrdIndexedZSet<K, V>>>,
+    ) -> Self {
+        Self {
+            factories: factories.clone(),
+            adjustments,
+            state: RefCell::new(None),
+            output_adjustment_stats: RefCell::new(BatchSizeStats::new()),
+            conflicting_updates: Cell::new(0),
+            name: OperatorName::new("LazyUpsert"),
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<K, V, U, B> Operator for LazyUpsert<K, V, U, B>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    U: DataTrait + ?Sized,
+    B: IndexedZSet<Key = K, Val = V>,
+{
+    fn name(&self) -> Cow<'static, str> {
+        Cow::Borrowed("LazyUpsert")
+    }
+
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.name.init(global_id);
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            OUTPUT_ADJUSTMENT_STATS => self.output_adjustment_stats.borrow().metadata(),
+            CONFLICTING_UPDATES_COUNT => MetaItem::Count(self.conflicting_updates.get() as usize),
+        });
+
+        // The accumulator exists only while a transaction commits, and is out of
+        // the cell while a chunk of it is being inserted.
+        let state = self.state.borrow();
+        let Some(state) = state.as_ref() else {
+            return;
+        };
+
+        let bytes = state.size_of();
+        meta.extend(metadata! {
+            STATE_RECORDS_COUNT => MetaItem::Count(state.num_entries_deep()),
+            ALLOCATED_MEMORY_BYTES => MetaItem::bytes(bytes.total_bytes()),
+            USED_MEMORY_BYTES => MetaItem::bytes(bytes.used_bytes()),
+            MEMORY_ALLOCATIONS_COUNT => MetaItem::Count(bytes.distinct_allocations()),
+            SHARED_MEMORY_BYTES => MetaItem::bytes(bytes.shared_bytes()),
+        });
+        state.metadata(meta);
+    }
+
+    fn fixedpoint(&self, _scope: Scope) -> bool {
+        true
+    }
+
+    fn clear_state(&mut self) -> Result<(), Error> {
+        *self.state.borrow_mut() = None;
+        Ok(())
+    }
+}
+
+impl<K, V, U> LazyUpsert<K, V, U, OrdIndexedZSet<K, V>>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    U: DataTrait + ?Sized,
+{
+    fn builder(&self, capacity: usize) -> <OrdIndexedZSet<K, V> as crate::trace::Batch>::Builder {
+        <OrdIndexedZSet<K, V> as crate::trace::Batch>::Builder::with_capacity(
+            &self.factories.batch_factories,
+            capacity,
+            capacity,
+        )
+    }
+
+    /// Records an update that collided with another at its key's stamp, and
+    /// says so once, since the count alone does not say where to look.
+    fn count_conflict(&self) {
+        let seen = self.conflicting_updates.get();
+        if seen == 0 {
+            warn!(
+                "{}: a key was written by more than one host in one transaction. \
+                 The update whose value sorts first wins, the same way on every \
+                 replay. `{CONFLICTING_UPDATES_COUNT}` counts how often this happens.",
+                self.name.get()
+            );
+        }
+        self.conflicting_updates.set(seen + 1);
+    }
+
+    /// Hands one chunk of adjustments to the delta stream and to the
+    /// accumulator, which are the two places every adjustment has to reach.
+    async fn emit(&self, batch: Arc<OrdIndexedZSet<K, V>>) {
+        self.output_adjustment_stats
+            .borrow_mut()
+            .add_batch(batch.approx_len());
+        self.adjustments.put(Arc::clone(&batch));
+
+        // Taken out for the insert rather than borrowed across it, so no borrow
+        // of the accumulator outlives a call that can suspend.
+        let mut accumulator = self
+            .state
+            .borrow_mut()
+            .take()
+            .expect("the accumulator outlives the step that fills it");
+        accumulator.insert(batch).await;
+        *self.state.borrow_mut() = Some(accumulator);
+    }
+}
+
+impl<K, V, U>
+    StreamingBinaryOperator<
+        Spine<OrdIndexedZSet<K, V>>,
+        Option<Spine<Stamped<OrdIndexedZSet<K, V>>>>,
+        Option<Spine<OrdIndexedZSet<K, V>>>,
+    > for LazyUpsert<K, V, U, OrdIndexedZSet<K, V>>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    U: DataTrait + ?Sized,
+{
+    fn eval(
+        self: Rc<Self>,
+        integral: &Spine<OrdIndexedZSet<K, V>>,
+        updates: &Option<Spine<Stamped<OrdIndexedZSet<K, V>>>>,
+    ) -> impl AsyncStream<Item = (Option<Spine<OrdIndexedZSet<K, V>>>, bool, Option<Position>)> + 'static
+    {
+        // The stream outlives this call, so everything it reads is taken now:
+        // the updates as batches for the accumulator and as a snapshot to walk,
+        // and the integral as a snapshot to probe.
+        let stamped = updates.as_ref().map(|updates| updates.get_batches());
+        let updates = updates.as_ref().map(|updates| updates.ro_snapshot());
+        let integral = updates.is_some().then(|| integral.ro_snapshot());
+
+        stream! {
+            // The accumulator delivers its spine when the transaction commits
+            // and nothing in between, so this is the only step with work to do.
+            let Some(updates) = updates else {
+                self.adjustments.put(Arc::new(self.builder(0).done()));
+                yield (None, true, None);
+                return;
+            };
+            let integral = integral.unwrap();
+
+            let factories = &self.factories.batch_factories;
+
+            // The accumulator starts as the transaction's updates with their
+            // stamps dropped; the adjustments join it as they are resolved.
+            *self.state.borrow_mut() = Some(
+                remove_stamp(
+                    factories,
+                    stamped.unwrap(),
+                    Arc::new(String::from("lazy_input_upsert.accumulator")),
+                )
+                .await,
+            );
+
+            let chunk_size = splitter_output_chunk_size();
+            let keys_per_step = lazy_input_map_keys_per_step();
+            let capacity = splitter_output_first_chunk_size();
+
+            let mut updates_cursor = updates.cursor();
+            let mut integral_cursor = integral.cursor();
+
+            // One key's adjustments, consolidated before they reach the builder:
+            // they arrive in no particular value order, and a builder takes
+            // values in order and once each.
+            let mut key_adjustments = factories.weighted_vals_factory().default_box();
+
+            let mut key = factories.key_factory().default_box();
+            let mut max_val = factories.val_factory().default_box();
+
+            let mut builder = self.builder(capacity);
+            let mut in_chunk = 0usize;
+            let mut walked = 0usize;
+
+            while updates_cursor.key_valid() {
+                updates_cursor.key().clone_to(&mut key);
+                key_adjustments.clear();
+
+                // The key is being written, so whatever the integral holds for
+                // it goes.  The integral is a map this operator alone writes, so
+                // a key it holds has one value and that value has weight one.
+                if integral_cursor.seek_key_exact(&key, None) {
+                    debug_assert!(integral_cursor.val_valid());
+                    assert_eq!(
+                        **integral_cursor.weight(),
+                        1,
+                        "the integral holds a key at a weight other than one"
+                    );
+                    let val = integral_cursor.val();
+                    key_adjustments.push_with(&mut |item| {
+                        let (v, w) = item.split_mut();
+                        val.clone_to(v);
+                        **w = -1;
+                    });
+                    integral_cursor.step_val();
+                    debug_assert!(
+                        !integral_cursor.val_valid(),
+                        "the integral holds a key at more than one value"
+                    );
+                }
+
+                // Only the largest stamp survives.  The cursor walks values in
+                // value order rather than stamp order, so the running maximum is
+                // retracted whenever a later stamp displaces it.
+                let mut max_stamp: Option<u32> = None;
+                let mut max_weight: ZWeight = 0;
+
+                while updates_cursor.val_valid() {
+                    // The weight is read first: it needs the cursor mutably, and
+                    // the value borrows it for the rest of the iteration.
+                    let weight = **updates_cursor.weight();
+                    let (val, stamp) = updates_cursor.val().split();
+                    let stamp = *unsafe { stamp.downcast::<u32>() };
+
+                    // Two hosts ingesting one key in a transaction give it two
+                    // updates at the same stamp, since each host stamps its own
+                    // steps.  The cursor walks values in value order, so the one
+                    // whose value sorts first wins: arbitrary, but the same on
+                    // every replay of the same input.
+                    if max_stamp.is_some_and(|max| stamp == max) {
+                        self.count_conflict();
+                    }
+
+                    if max_stamp.is_none_or(|max| stamp > max) {
+                        if max_stamp.is_some() {
+                            // The displaced value is about to be overwritten,
+                            // so it moves out rather than being copied.
+                            key_adjustments.push_with(&mut |item| {
+                                let (v, w) = item.split_mut();
+                                max_val.move_to(v);
+                                **w = -max_weight;
+                            });
+                        }
+                        max_stamp = Some(stamp);
+                        val.clone_to(&mut max_val);
+                        max_weight = weight;
+                    } else {
+                        key_adjustments.push_with(&mut |item| {
+                            let (v, w) = item.split_mut();
+                            val.clone_to(v);
+                            **w = -weight;
+                        });
+                    }
+
+                    updates_cursor.step_val();
+                }
+
+                // A surviving delete cancels the record `project(U)` contributes
+                // for it, which is what leaves the key with nothing.
+                if max_weight < 0 {
+                    // The key is done, so this value moves out too.
+                    key_adjustments.push_with(&mut |item| {
+                        let (v, w) = item.split_mut();
+                        max_val.move_to(v);
+                        **w = -max_weight;
+                    });
+                }
+
+                key_adjustments.consolidate();
+                if !key_adjustments.is_empty() {
+                    in_chunk += key_adjustments.len();
+                    for pair in key_adjustments.dyn_iter_mut() {
+                        let (v, w) = pair.split_mut();
+                        builder.push_val_diff_mut(v, w);
+                    }
+                    builder.push_key(&key);
+                }
+
+                updates_cursor.step_key();
+                walked += 1;
+
+                // A step ends on a chunk of adjustments, or on a run of keys
+                // that produced too few of them to end it that way.  Either way
+                // it ends at a key boundary, which is where a builder can be
+                // finished.
+                if in_chunk >= chunk_size || walked >= keys_per_step {
+                    let position = updates_cursor.position();
+                    self.emit(Arc::new(builder.done())).await;
+                    yield (None, false, position);
+                    builder = self.builder(capacity);
+                    in_chunk = 0;
+                    walked = 0;
+                }
+            }
+
+            let position = updates_cursor.position();
+            self.emit(Arc::new(builder.done())).await;
+            let accumulator = self.state.borrow_mut().take();
+            yield (accumulator, true, position);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -858,6 +1240,390 @@ mod remove_stamp_tests {
             // Key 1 keeps value 10 with the summed weight; key 2's two stamps
             // cancel, so both the value and the key are gone.
             assert_eq!(contents(&unstamped), vec![(1, 10, 3)]);
+        });
+    }
+}
+
+#[cfg(test)]
+mod lazy_upsert_tests {
+    use super::*;
+    use crate::circuit::{CircuitConfig, mkconfig};
+    use crate::dynamic::LeanVec;
+    use crate::trace::{
+        Batch, Cursor,
+        test::{run_in_circuit_with_storage, run_in_circuit_with_storage_config},
+    };
+    use feldera_storage::tokio::TOKIO;
+    use futures_util::StreamExt;
+    use tempfile::tempdir;
+
+    type Key = DynData;
+    type Val = DynData;
+    type Batched = OrdIndexedZSet<Key, Val>;
+    type Factories = AddLazyInputMapFactories<Batched, DynData>;
+
+    fn factories() -> Factories {
+        AddLazyInputMapFactories::new::<i32, i32, i32>()
+    }
+
+    /// The collection as it stood when the transaction began.
+    fn integral(factories: &Factories, rows: &[(i32, i32, ZWeight)]) -> Spine<Batched> {
+        let tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>> = rows
+            .iter()
+            .map(|&(key, value, weight)| Tup2(Tup2(key, value), weight))
+            .collect();
+        let mut tuples = Box::new(LeanVec::from(tuples)).erase_box();
+        let batch = Batched::dyn_from_tuples(&factories.batch_factories, (), &mut tuples);
+
+        let mut spine =
+            <Spine<Batched> as Trace>::new(&factories.batch_factories, Arc::new("I".to_string()));
+        TOKIO.block_on(spine.insert(batch));
+        spine
+    }
+
+    /// Everything the transaction did, stamped with the step it happened in.
+    fn updates(
+        factories: &Factories,
+        rows: &[(i32, i32, u32, ZWeight)],
+    ) -> Spine<Stamped<Batched>> {
+        let tuples: Vec<Tup2<Tup2<i32, Tup2<i32, u32>>, ZWeight>> = rows
+            .iter()
+            .map(|&(key, value, stamp, weight)| Tup2(Tup2(key, Tup2(value, stamp)), weight))
+            .collect();
+        let mut tuples = Box::new(LeanVec::from(tuples)).erase_box();
+        let batch =
+            Stamped::<Batched>::dyn_from_tuples(&factories.stamped_factories, (), &mut tuples);
+
+        let mut spine = <Spine<Stamped<Batched>> as Trace>::new(
+            &factories.stamped_factories,
+            Arc::new("U".to_string()),
+        );
+        TOKIO.block_on(spine.insert(batch));
+        spine
+    }
+
+    fn contents<B>(batch: &B) -> Vec<(i32, i32, ZWeight)>
+    where
+        B: BatchReader<Key = Key, Val = Val, Time = (), R = crate::DynZWeight>,
+    {
+        let mut out = Vec::new();
+        let mut cursor = batch.cursor();
+        while cursor.key_valid() {
+            while cursor.val_valid() {
+                out.push((
+                    *unsafe { cursor.key().downcast::<i32>() },
+                    *unsafe { cursor.val().downcast::<i32>() },
+                    **cursor.weight(),
+                ));
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+        out
+    }
+
+    /// What one call to the operator produced.
+    ///
+    /// The operator spreads its work over as many steps as the chunking asks
+    /// for, so how many it took is part of what a test can check.  The
+    /// adjustments themselves are not: a stream value with no consumer attached
+    /// drops what is put on it, so only a circuit can observe them.
+    struct Resolution {
+        steps: usize,
+        accumulator: Option<Vec<(i32, i32, ZWeight)>>,
+        conflicts: u64,
+    }
+
+    /// Runs the operator to completion, one yield at a time, as the circuit
+    /// would over as many steps.
+    fn run(
+        factories: &Factories,
+        integral_rows: &[(i32, i32, ZWeight)],
+        update_rows: Option<&[(i32, i32, u32, ZWeight)]>,
+    ) -> Resolution {
+        let operator = Rc::new(<LazyUpsert<Key, Val, DynData, Batched>>::new(
+            factories,
+            RefStreamValue::empty(),
+        ));
+        let integral = integral(factories, integral_rows);
+        let updates = update_rows.map(|rows| updates(factories, rows));
+
+        let mut steps = 0;
+        let mut accumulator = None;
+        TOKIO.block_on(async {
+            let mut stream: std::pin::Pin<
+                Box<dyn AsyncStream<Item = (Option<Spine<Batched>>, bool, Option<Position>)>>,
+            > = Box::pin(Rc::clone(&operator).eval(&integral, &updates));
+            loop {
+                let (output, complete, _position) = stream
+                    .next()
+                    .await
+                    .expect("the operator yields until it reports completion");
+                steps += 1;
+                if let Some(output) = output {
+                    accumulator = Some(contents(&output));
+                }
+                if complete {
+                    break;
+                }
+            }
+        });
+        Resolution {
+            steps,
+            accumulator,
+            conflicts: operator.conflicting_updates.get(),
+        }
+    }
+
+    /// The accumulator the operator produces: `project(U)` with the adjustments
+    /// added, which is the delta the transaction applies to the integral.
+    fn resolve(
+        factories: &Factories,
+        integral_rows: &[(i32, i32, ZWeight)],
+        update_rows: &[(i32, i32, u32, ZWeight)],
+    ) -> Vec<(i32, i32, ZWeight)> {
+        run(factories, integral_rows, Some(update_rows))
+            .accumulator
+            .expect("a delivered accumulation produces an accumulator")
+    }
+
+    /// A key the integral does not hold takes the inserted value, with nothing
+    /// to retract.
+    #[test]
+    fn a_new_key_is_inserted() {
+        run_in_circuit_with_storage(|| {
+            let factories = factories();
+            assert_eq!(resolve(&factories, &[], &[(1, 10, 0, 1)]), vec![(1, 10, 1)]);
+        });
+    }
+
+    /// Writing a key the integral holds retracts the old value and inserts the
+    /// new one.
+    #[test]
+    fn an_existing_key_is_overwritten() {
+        run_in_circuit_with_storage(|| {
+            let factories = factories();
+            assert_eq!(
+                resolve(&factories, &[(1, 7, 1)], &[(1, 10, 0, 1)]),
+                vec![(1, 7, -1), (1, 10, 1)]
+            );
+        });
+    }
+
+    /// Deleting a key the integral holds leaves only the retraction: the record
+    /// the delete contributed cancels against the adjustment for it.
+    #[test]
+    fn deleting_an_existing_key_leaves_only_the_retraction() {
+        run_in_circuit_with_storage(|| {
+            let factories = factories();
+            // The value a delete carries is a default and means nothing; here it
+            // is 0, and it must not appear in the result.
+            assert_eq!(
+                resolve(&factories, &[(1, 7, 1)], &[(1, 0, 0, -1)]),
+                vec![(1, 7, -1)]
+            );
+        });
+    }
+
+    /// Deleting a key the integral does not hold changes nothing.
+    #[test]
+    fn deleting_an_absent_key_changes_nothing() {
+        run_in_circuit_with_storage(|| {
+            let factories = factories();
+            assert_eq!(resolve(&factories, &[], &[(1, 0, 0, -1)]), vec![]);
+        });
+    }
+
+    /// Two updates to one key at the same stamp resolve to the one whose value
+    /// sorts first, and are counted.
+    ///
+    /// A stamp orders the steps of one host, and `UpsertHandle` shards only
+    /// within a host, so two hosts ingesting a key in one transaction give it
+    /// two updates the stamp cannot order.  One of them still has to win, and
+    /// the choice has to fall the same way on every replay or a restart would
+    /// reach a different collection.
+    #[test]
+    fn updates_at_the_same_stamp_resolve_to_the_first_value() {
+        run_in_circuit_with_storage(|| {
+            let factories = factories();
+
+            // 10 and 20 at stamp 0, over a key the integral holds at 7.
+            let resolved = run(
+                &factories,
+                &[(1, 7, 1)],
+                Some(&[(1, 10, 0, 1), (1, 20, 0, 1)]),
+            );
+            assert_eq!(
+                resolved.accumulator,
+                Some(vec![(1, 7, -1), (1, 10, 1)]),
+                "the value that sorts first wins"
+            );
+            assert_eq!(resolved.conflicts, 1);
+
+            // The same updates in the other order reach the same collection,
+            // because the cursor presents them in value order either way.
+            let resolved = run(
+                &factories,
+                &[(1, 7, 1)],
+                Some(&[(1, 20, 0, 1), (1, 10, 0, 1)]),
+            );
+            assert_eq!(resolved.accumulator, Some(vec![(1, 7, -1), (1, 10, 1)]));
+            assert_eq!(resolved.conflicts, 1);
+
+            // Three at one stamp count twice: every update but the winner.
+            let resolved = run(
+                &factories,
+                &[],
+                Some(&[(1, 10, 0, 1), (1, 20, 0, 1), (1, 30, 0, 1)]),
+            );
+            assert_eq!(resolved.accumulator, Some(vec![(1, 10, 1)]));
+            assert_eq!(resolved.conflicts, 2);
+
+            // Distinct stamps are not conflicts, whatever the values do.
+            let resolved = run(&factories, &[], Some(&[(1, 30, 0, 1), (1, 10, 1, 1)]));
+            assert_eq!(resolved.accumulator, Some(vec![(1, 10, 1)]));
+            assert_eq!(resolved.conflicts, 0);
+        });
+    }
+
+    /// Only the largest stamp survives a transaction: the updates it displaced
+    /// are retracted.
+    #[test]
+    fn only_the_last_update_of_a_transaction_survives() {
+        run_in_circuit_with_storage(|| {
+            let factories = factories();
+            assert_eq!(
+                resolve(
+                    &factories,
+                    &[(1, 7, 1)],
+                    &[(1, 10, 0, 1), (1, 20, 1, 1), (1, 30, 2, 1)]
+                ),
+                vec![(1, 7, -1), (1, 30, 1)]
+            );
+        });
+    }
+
+    /// An insert followed by a delete inside one transaction leaves the key
+    /// gone, whichever order the values happen to sort in.
+    #[test]
+    fn an_insert_then_a_delete_leaves_the_key_gone() {
+        run_in_circuit_with_storage(|| {
+            let factories = factories();
+            // The delete's value sorts after the insert's.
+            assert_eq!(
+                resolve(&factories, &[(1, 7, 1)], &[(1, 10, 0, 1), (1, 99, 1, -1)]),
+                vec![(1, 7, -1)]
+            );
+            // ... and before it, which reaches the other branch of the scan.
+            assert_eq!(
+                resolve(&factories, &[(1, 7, 1)], &[(1, 10, 0, 1), (1, 2, 1, -1)]),
+                vec![(1, 7, -1)]
+            );
+        });
+    }
+
+    /// A delete followed by an insert leaves the inserted value.
+    #[test]
+    fn a_delete_then_an_insert_leaves_the_insert() {
+        run_in_circuit_with_storage(|| {
+            let factories = factories();
+            assert_eq!(
+                resolve(&factories, &[(1, 7, 1)], &[(1, 0, 0, -1), (1, 20, 1, 1)]),
+                vec![(1, 7, -1), (1, 20, 1)]
+            );
+        });
+    }
+
+    /// Keys are independent, and a key the transaction never mentions is left
+    /// alone.
+    #[test]
+    fn untouched_keys_are_left_alone() {
+        run_in_circuit_with_storage(|| {
+            let factories = factories();
+            assert_eq!(
+                resolve(
+                    &factories,
+                    &[(1, 7, 1), (2, 8, 1), (3, 9, 1)],
+                    &[(1, 10, 0, 1), (3, 0, 0, -1)]
+                ),
+                vec![(1, 7, -1), (1, 10, 1), (3, 9, -1)]
+            );
+        });
+    }
+
+    /// No accumulation means no work and no accumulator, which is every step of
+    /// a transaction but its last.
+    #[test]
+    fn a_step_without_an_accumulation_produces_nothing() {
+        run_in_circuit_with_storage(|| {
+            let factories = factories();
+            let resolved = run(&factories, &[(1, 7, 1)], None);
+            assert!(resolved.accumulator.is_none());
+            assert_eq!(
+                resolved.steps, 1,
+                "a step with no work to do takes one step"
+            );
+        });
+    }
+
+    /// Cutting the adjustments into chunks spreads the work over steps without
+    /// changing it.  A chunk of one record ends a chunk at every key, so each of
+    /// the three keys takes a step, and the operator takes one more to report
+    /// that it has finished.
+    #[test]
+    fn chunking_spreads_the_work_over_steps() {
+        let dir = tempdir().expect("temp dir");
+        let config: CircuitConfig = mkconfig(dir.path()).with_splitter_chunk_size_records(1);
+        run_in_circuit_with_storage_config(config, || {
+            let factories = factories();
+            let resolved = run(
+                &factories,
+                &[(1, 7, 1), (2, 8, 1), (3, 9, 1)],
+                Some(&[(1, 10, 0, 1), (2, 20, 0, 1), (3, 0, 0, -1)]),
+            );
+            assert_eq!(
+                resolved.accumulator,
+                Some(vec![
+                    (1, 7, -1),
+                    (1, 10, 1),
+                    (2, 8, -1),
+                    (2, 20, 1),
+                    (3, 9, -1)
+                ])
+            );
+            assert_eq!(resolved.steps, 4, "a step per key, then one to finish");
+        });
+    }
+
+    /// A run of keys that produces no adjustments still ends a step.
+    ///
+    /// Rewriting a key with the value it already holds cancels out, so the chunk
+    /// never fills and only the bound on keys walked can end the step.  Without
+    /// it a transaction of such writes would resolve in a single step however
+    /// long it ran.
+    #[test]
+    fn a_run_of_keys_without_adjustments_still_ends_a_step() {
+        let dir = tempdir().expect("temp dir");
+        let config: CircuitConfig = mkconfig(dir.path()).with_lazy_input_map_keys_per_step(2);
+        run_in_circuit_with_storage_config(config, || {
+            let factories = factories();
+
+            // Six keys, each written the value it already holds, so every key
+            // cancels and the chunk stays empty.
+            let held: Vec<(i32, i32, ZWeight)> = (1..=6).map(|key| (key, key * 10, 1)).collect();
+            let rewritten: Vec<(i32, i32, u32, ZWeight)> =
+                (1..=6).map(|key| (key, key * 10, 0, 1)).collect();
+
+            let resolved = run(&factories, &held, Some(&rewritten));
+            assert_eq!(
+                resolved.accumulator,
+                Some(Vec::new()),
+                "rewriting a key with its own value leaves the integral alone"
+            );
+            assert_eq!(
+                resolved.steps, 4,
+                "three steps of two keys each, then one to finish"
+            );
         });
     }
 }

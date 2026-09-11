@@ -82,6 +82,18 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub splitter_chunk_size_records: Option<u64>,
 
+    /// How many keys a lazy input map resolves against its integral before it
+    /// yields to the rest of the circuit.
+    ///
+    /// The map yields once it has produced a chunk of adjustments, which bounds
+    /// a step by its output.  A transaction that rewrites keys with the values
+    /// they already hold produces almost no adjustments, so this bounds the same
+    /// step by its input.
+    ///
+    /// The default is 100,000.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lazy_input_map_keys_per_step: Option<u64>,
+
     /// Enable adaptive joins.
     ///
     /// Adaptive joins dynamically change their partitioning policy to avoid skew.
@@ -296,6 +308,9 @@ impl DevTweaks {
     }
     pub fn splitter_chunk_size_records(&self) -> u64 {
         self.splitter_chunk_size_records.unwrap_or(10_000)
+    }
+    pub fn lazy_input_map_keys_per_step(&self) -> u64 {
+        self.lazy_input_map_keys_per_step.unwrap_or(100_000)
     }
     pub fn adaptive_joins(&self) -> bool {
         self.adaptive_joins.unwrap_or(false)

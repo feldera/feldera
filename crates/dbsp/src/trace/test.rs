@@ -1467,7 +1467,7 @@ where
 /// Like [`run_in_circuit_with_storage`], but lets the caller supply the
 /// `CircuitConfig` (e.g. to flip `dev_tweaks` flags). Storage-backing for
 /// the config is the caller's responsibility.
-fn run_in_circuit_with_storage_config<F>(config: CircuitConfig, f: F)
+pub(crate) fn run_in_circuit_with_storage_config<F>(config: CircuitConfig, f: F)
 where
     F: FnOnce() + Clone + Send + 'static,
 {

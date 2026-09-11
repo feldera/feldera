@@ -71,6 +71,9 @@ pub const STATE_RECORDS_COUNT: MetricId = MetricId(Cow::Borrowed("state_records_
 pub const INPUT_RECORDS_COUNT: MetricId = MetricId(Cow::Borrowed("input_records_count"));
 pub const INPUT_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("input_batches_stats"));
 pub const OUTPUT_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("output_batches_stats"));
+pub const OUTPUT_ADJUSTMENT_STATS: MetricId = MetricId(Cow::Borrowed("output_adjustment_stats"));
+pub const CONFLICTING_UPDATES_COUNT: MetricId =
+    MetricId(Cow::Borrowed("conflicting_updates_count"));
 pub const EXCHANGE_WAIT_TIME_SECONDS: MetricId =
     MetricId(Cow::Borrowed("exchange_wait_time_seconds"));
 pub const EXCHANGE_SERIALIZATION_TIME_SECONDS: MetricId =
@@ -187,7 +190,7 @@ pub const PREFIX_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("prefix_batche
 pub const INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("input_integral_records_count"));
 
-pub const CIRCUIT_METRICS: [CircuitMetric; 78] = [
+pub const CIRCUIT_METRICS: [CircuitMetric; 80] = [
     // State
     CircuitMetric {
         name: USED_MEMORY_BYTES,
@@ -442,6 +445,18 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 78] = [
         category: CircuitMetricCategory::Outputs,
         advanced: false,
         description: "Distribution of output batch sizes produced by the operator.",
+    },
+    CircuitMetric {
+        name: OUTPUT_ADJUSTMENT_STATS,
+        category: CircuitMetricCategory::Outputs,
+        advanced: false,
+        description: "Distribution of the sizes of the adjustments an input map resolves a transaction's updates into.",
+    },
+    CircuitMetric {
+        name: CONFLICTING_UPDATES_COUNT,
+        category: CircuitMetricCategory::Multihost,
+        advanced: false,
+        description: "Updates that arrived at the same step as another update to their key, which happens when several hosts ingest that key in one transaction.",
     },
     CircuitMetric {
         name: COMPUTED_OUTPUT_RECORDS_COUNT,
