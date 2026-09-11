@@ -78,6 +78,7 @@ use feldera_adapterlib::transport::{
 use feldera_adapterlib::utils::datafusion::{create_runtime_env, create_session_context};
 use feldera_ir::LirCircuit;
 use feldera_samply::{AnnotationOptions, CaptureOptions, Span};
+use feldera_storage::disk::DiskUsage;
 use feldera_storage::fbuf::slab::FBufSlabsStats;
 use feldera_storage::histogram::{ExponentialHistogram, ExponentialHistogramSnapshot};
 use feldera_storage::metrics::{
@@ -1061,6 +1062,11 @@ impl Controller {
 
         let checkpoint_activity = self.checkpoint_activity();
         let permanent_checkpoint_errors = self.permanent_suspend_errors();
+        let disk_usage = self
+            .inner
+            .storage_path
+            .as_deref()
+            .and_then(DiskUsage::from_path);
 
         self.status().to_api_type(ControllerStatusContext {
             suspend_error: self.can_suspend(),
@@ -1070,6 +1076,7 @@ impl Controller {
             transaction_info: self.inner.transaction_info.lock().unwrap().clone(),
             memory_pressure,
             memory_pressure_epoch,
+            disk_usage,
             include_connector_errors,
         })
     }
@@ -3194,6 +3201,10 @@ impl CircuitThread {
             step_receiver,
             checkpoint_receiver,
             incarnation_uuid,
+            storage
+                .as_ref()
+                .and_then(|backend| backend.file_system_path())
+                .map(PathBuf::from),
         )?;
 
         let bootstrapping = circuit.bootstrap_in_progress();
@@ -7128,6 +7139,9 @@ pub struct ControllerInner {
     last_checkpoint: Mutex<LastCheckpoint>,
     last_checkpoint_sync: Mutex<LastCheckpoint>,
     secrets_dir: PathBuf,
+    /// Directory holding the pipeline's storage, or `None` when the backend
+    /// keeps its data in an object store or in memory.
+    storage_path: Option<PathBuf>,
     num_api_connections: AtomicU64,
     command_sender: Sender<Command>,
     catalog: Arc<Box<dyn CircuitCatalog>>,
@@ -7228,6 +7242,7 @@ impl ControllerInner {
         step_receiver: tokio::sync::watch::Receiver<StepStatus>,
         checkpoint_receiver: tokio::sync::watch::Receiver<Option<CheckpointCoordination>>,
         incarnation_uuid: Uuid,
+        storage_path: Option<PathBuf>,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let status = Arc::new(ControllerStatus::new(
             config.clone(),
@@ -7248,6 +7263,7 @@ impl ControllerInner {
             Self {
                 status,
                 secrets_dir: config.secrets_dir().to_path_buf(),
+                storage_path,
                 num_api_connections: AtomicU64::new(0),
                 command_sender,
                 catalog: Arc::new(catalog),
