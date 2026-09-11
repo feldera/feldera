@@ -70,6 +70,17 @@ describe('setSelections over compiler source positions', () => {
     expect(selected(editorRef)).toBe('*')
   })
 
+  it('selects nothing when given no ranges', () => {
+    // A profile node compiled from no SQL: the panel must stop showing the statements of the
+    // node selected before it.  Monaco rejects an empty selection list, so the selection
+    // collapses instead.
+    const e = open()
+    setSelections(e, [{ start: { line: 2, column: 1 }, end: { line: 2, column: 4 } }])
+    expect(e.getModel()!.getValueInRange(e.getSelection()!)).toBe('FROM')
+    setSelections(e, [])
+    expect(e.getModel()!.getValueInRange(e.getSelection()!)).toBe('')
+  })
+
   it('applies every range it is given', () => {
     const editorRef = open()
     setSelections(editorRef, [

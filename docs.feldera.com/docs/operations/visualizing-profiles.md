@@ -100,7 +100,9 @@ contracted, as described below.
 Some nodes in a dataflow graph are in turn composed of other nodes and
 edges.  Such nodes are shown with rounded corners.  Double-clicking on
 such a node will expand it into the component nodes.  Double-clicking
-on an expanded node will contract it.
+on an expanded node will contract it.  Clicking on an expanded node,
+away from the nodes inside it, displays the measurements of the
+composite node itself.
 
 ![expanding composite nodes](expanding.png)
 
@@ -121,7 +123,10 @@ collected for the node.  The measurements are displayed in a table.
 
 Clicking on a node will make the table of measurements "sticky": the
 table will remain visible until either the user presses the ESCAPE
-key, or the user clicks on another node.
+key, or the user clicks on another node.  Clicking also selects the SQL
+the node was compiled from in the program shown beside the graph, and
+scrolls it into view.  A node that groups other nodes stands for all the
+SQL inside it, so clicking one selects every statement it covers.
 
 ### Understanding graph reachability
 
