@@ -10,6 +10,15 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- The pipeline logs stream can be resumed instead of replayed from the
+  start of the buffer. Passing `cursor=<epoch>:<sequence>` to
+  `GET /v0/pipelines/{pipeline}/logs` returns only the lines that follow
+  that position, and the response reports where the stream starts in the
+  `feldera-logs-epoch`, `feldera-logs-seq` and `feldera-logs-gap`
+  headers. A request without a `cursor` behaves as before. In Python, use
+  `Pipeline.resume_logs` or `FelderaClient.resume_pipeline_logs`, which
+  returns the open stream and its `LogPosition`.
+
 - Bug fix (Delta Lake input connector, `cdc` mode): a CDC read no longer
   decodes columns the pipeline does not need. A column the SQL table
   never declares, and that no connector expression names, is left out of
