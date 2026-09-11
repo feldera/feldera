@@ -2754,6 +2754,152 @@ async fn pipeline_program_compilation() {
     );
 }
 
+fn empty_program_info() -> serde_json::Value {
+    serde_json::to_value(ProgramInfo {
+        schema: serde_json::to_value(ProgramSchema {
+            inputs: vec![],
+            outputs: vec![],
+        })
+        .unwrap(),
+        main_rust: "".to_string(),
+        udf_stubs: "".to_string(),
+        input_connectors: BTreeMap::new(),
+        output_connectors: BTreeMap::new(),
+        circuit_ir: None,
+        dataflow: None,
+    })
+    .unwrap()
+}
+
+async fn new_sql_compiled_pipeline(
+    db: &StoragePostgres,
+    tenant_id: TenantId,
+    name: &str,
+    program_config: serde_json::Value,
+) -> ExtendedPipelineDescr {
+    let pipeline = db
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            "v0",
+            PipelineDescr {
+                name: name.to_string(),
+                description: "".to_string(),
+                tags: vec![],
+                runtime_config: json!({}),
+                program_code: "".to_string(),
+                udf_rust: "".to_string(),
+                udf_toml: "".to_string(),
+                program_config,
+            },
+        )
+        .await
+        .unwrap();
+    db.transit_program_status_to_compiling_sql(tenant_id, pipeline.id, Version(1))
+        .await
+        .unwrap();
+    db.transit_program_status_to_sql_compiled(
+        tenant_id,
+        pipeline.id,
+        Version(1),
+        &SqlCompilationInfo {
+            exit_code: 0,
+            messages: vec![],
+        },
+        &empty_program_info(),
+    )
+    .await
+    .unwrap();
+    db.get_pipeline_by_id(tenant_id, pipeline.id)
+        .await
+        .unwrap()
+}
+
+/// A program with no `runtime_version` (the default) must enter the Rust
+/// queue after SQL, and the owner worker must claim it (#6496).
+#[tokio::test]
+async fn rust_claim_picks_sql_compiled_when_runtime_version_is_unset() {
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+    let pipeline =
+        new_sql_compiled_pipeline(&handle.db, tenant_id, "unset-runtime", json!({})).await;
+
+    assert_eq!(pipeline.program_status, ProgramStatus::SqlCompiled);
+    assert!(
+        pipeline.program_config.get("runtime_version").is_none()
+            || pipeline.program_config["runtime_version"].is_null()
+    );
+
+    let claimed = handle
+        .db
+        .claim_next_rust_compilation("v0", 0, 1)
+        .await
+        .unwrap()
+        .expect("SqlCompiled with an empty program_config must be claimable");
+    assert_eq!(claimed.1.id, pipeline.id);
+
+    let after = handle
+        .db
+        .get_pipeline_by_id(tenant_id, pipeline.id)
+        .await
+        .unwrap();
+    assert_eq!(after.program_status, ProgramStatus::CompilingRust);
+    assert!(handle
+        .db
+        .claim_next_rust_compilation("v0", 0, 1)
+        .await
+        .unwrap()
+        .is_none());
+}
+
+/// Two compiler servers must not both claim the same row, and a worker
+/// must not compile another worker's shard (#6496).
+#[tokio::test]
+async fn rust_claim_is_exclusive_and_respects_worker_shards() {
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+
+    let mut have_shard0 = false;
+    let mut have_shard1 = false;
+    for i in 0..32 {
+        let pipeline =
+            new_sql_compiled_pipeline(&handle.db, tenant_id, &format!("shard-{i}"), json!({}))
+                .await;
+        have_shard0 |= is_pipeline_assigned_to_worker(pipeline.id, 0, 2);
+        have_shard1 |= is_pipeline_assigned_to_worker(pipeline.id, 1, 2);
+        if have_shard0 && have_shard1 {
+            break;
+        }
+    }
+    assert!(have_shard0 && have_shard1, "need a pipeline on each shard");
+
+    let claimed0 = handle
+        .db
+        .claim_next_rust_compilation("v0", 0, 2)
+        .await
+        .unwrap()
+        .expect("worker 0 must claim its shard");
+    assert!(is_pipeline_assigned_to_worker(claimed0.1.id, 0, 2));
+    assert_eq!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, claimed0.1.id)
+            .await
+            .unwrap()
+            .program_status,
+        ProgramStatus::CompilingRust
+    );
+
+    let claimed1 = handle
+        .db
+        .claim_next_rust_compilation("v0", 1, 2)
+        .await
+        .unwrap()
+        .expect("worker 1 must claim its shard");
+    assert!(is_pipeline_assigned_to_worker(claimed1.1.id, 1, 2));
+    assert_ne!(claimed0.1.id, claimed1.1.id);
+}
+
 /// Checks that `count_pipelines_needing_compilation` counts exactly the stopped
 /// pipelines whose program status is pending, compiling_sql, sql_compiled or
 /// compiling_rust.
@@ -8963,6 +9109,29 @@ impl Storage for Mutex<DbModel> {
         });
         let chosen = pipelines.first().unwrap().clone(); // Already checked for empty
         Ok(Some((chosen.0, chosen.1)))
+    }
+
+    async fn claim_next_rust_compilation(
+        &self,
+        platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
+    ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
+        let Some((tenant_id, pipeline)) = self
+            .get_next_rust_compilation(platform_version, worker_id, total_workers)
+            .await?
+        else {
+            return Ok(None);
+        };
+
+        self.transit_program_status_to_compiling_rust(
+            tenant_id,
+            pipeline.id,
+            pipeline.program_version,
+        )
+        .await?;
+
+        Ok(Some((tenant_id, pipeline)))
     }
 
     async fn count_pipelines_needing_compilation(&self) -> Result<u64, DBError> {
