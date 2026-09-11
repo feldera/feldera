@@ -273,7 +273,7 @@ impl Encoder for JsonEncoder {
                 let _ = cursor.serialize_key(unsafe { key_str.as_mut_vec() });
                 bail!(
                     "Unable to output record '{}' with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'.",
-                    &key_str
+                    key_str
                 );
             }
 

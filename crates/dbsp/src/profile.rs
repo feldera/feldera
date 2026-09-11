@@ -384,7 +384,7 @@ impl Profiler {
 
         // Compute total time
         let mut total_time: Duration = Duration::default();
-        for (node_id, _) in metadata.iter_mut() {
+        for node_id in metadata.keys() {
             if let Some(profile) = self.cpu_profiler.operator_profile(node_id) {
                 total_time += profile.real_time();
             }

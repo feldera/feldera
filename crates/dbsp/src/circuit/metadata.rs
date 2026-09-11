@@ -725,11 +725,7 @@ impl BatchSizeStats {
             ),
             (
                 Cow::Borrowed("avg_records_count"),
-                MetaItem::Count(if self.cnt == 0 {
-                    0
-                } else {
-                    self.total / self.cnt
-                }),
+                MetaItem::Count(self.total.checked_div(self.cnt).unwrap_or(0)),
             ),
             (
                 Cow::Borrowed("total_records_count"),

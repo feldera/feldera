@@ -488,11 +488,7 @@ impl ExchangeClient {
                 .with_start(message.start)
                 .with_category("Exchange")
                 .with_tooltip(|| {
-                    format!(
-                        "{} send {}",
-                        &message.global_node_id,
-                        HumanBytes::from(size),
-                    )
+                    format!("{} send {}", message.global_node_id, HumanBytes::from(size),)
                 });
             while !bufs.is_empty() {
                 let n = tx.write_vectored(bufs).await?;

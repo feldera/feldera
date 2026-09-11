@@ -510,7 +510,7 @@ async fn fetch_sql_compiler(
         .map_err(|e| {
         SqlCompilationError::SystemError(format!(
             "Unable to fetch SQL-to-DBSP compiler at '{}': {}, source error: {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
-            &jar_cache_url,
+            jar_cache_url,
             e,
             source_error(&e)
         ))
@@ -542,7 +542,7 @@ async fn fetch_sql_compiler(
             SqlCompilationError::SystemError(format!(
                 "Timed out while waiting for the next HTTP response chunk when downloading the SQL-to-DBSP compiler from '{}'.
                 This might be due to slow network, please retry compilation; alternatively, fall back to the platform compiler by removing or changing `runtime_version` in the program config.",
-                &jar_cache_url,
+                jar_cache_url,
             ))
         })?;
 
@@ -550,7 +550,7 @@ async fn fetch_sql_compiler(
             Some(chunk) => {
                 let bytes = chunk.map_err(|e| SqlCompilationError::SystemError(format!(
                     "Unable to read JAR from HTTP stream '{}': {}, source error: {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
-                    &jar_cache_url,
+                    jar_cache_url,
                     e,
                     source_error(&e)
                 )))?;

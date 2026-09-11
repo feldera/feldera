@@ -598,7 +598,7 @@ impl StorageBackend for PosixBackend {
                     error.kind(),
                     "recursive delete",
                     path.display(),
-                ))?;
+                ));
             }
             Ok(()) => (),
         }
