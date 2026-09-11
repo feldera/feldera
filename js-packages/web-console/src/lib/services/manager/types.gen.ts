@@ -2351,6 +2351,11 @@ export type GlobalControllerMetrics = {
    */
   pipeline_complete: boolean
   /**
+   * Version of the platform that built the pipeline binary, such as
+   * `0.349.0`.
+   */
+  platform_version: string
+  /**
    * Resident set size of the pipeline process, in bytes.
    */
   rss_bytes: number
@@ -2358,6 +2363,14 @@ export type GlobalControllerMetrics = {
    * Time elapsed while the pipeline is executing a step, multiplied by the number of threads, in milliseconds.
    */
   runtime_elapsed_msecs: number
+  /**
+   * Git revision of the sources the pipeline binary was built from.
+   *
+   * `None` unless the binary was built from a source tree, which is the
+   * case when the platform compiles against a runtime override rather than
+   * against published crates.
+   */
+  runtime_revision?: string | null
   /**
    * Time at which the pipeline process started, in seconds since the epoch.
    */

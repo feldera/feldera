@@ -476,6 +476,15 @@ pub struct ExternalGlobalControllerMetrics {
     pub total_completed_steps: Step,
     /// True if the pipeline has processed all input data to completion.
     pub pipeline_complete: bool,
+    /// Version of the platform that built the pipeline binary, such as
+    /// `0.349.0`.
+    pub platform_version: String,
+    /// Git revision of the sources the pipeline binary was built from.
+    ///
+    /// `None` unless the binary was built from a source tree, which is the
+    /// case when the platform compiles against a runtime override rather than
+    /// against published crates.
+    pub runtime_revision: Option<String>,
 }
 
 /// Complete pipeline statistics returned by the `/stats` endpoint.

@@ -155,6 +155,12 @@ def test_pipeline_stats(pipeline_name):
     assert gm.pipeline_complete
     assert gm.buffered_input_records == 0
     assert gm.buffered_input_bytes == 0
+    # The pipeline reports the platform that built it.  `runtime_revision` is
+    # set only when that build had a source tree, so its presence is not
+    # asserted, but it must be a string when present.
+    assert gm.platform_version
+    assert isinstance(gm.platform_version, str)
+    assert gm.runtime_revision is None or isinstance(gm.runtime_revision, str)
 
     inputs = stats.inputs
     assert len(inputs) == 1

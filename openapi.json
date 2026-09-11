@@ -10887,7 +10887,8 @@
           "output_stall_msecs",
           "total_initiated_steps",
           "total_completed_steps",
-          "pipeline_complete"
+          "pipeline_complete",
+          "platform_version"
         ],
         "properties": {
           "bootstrap_in_progress": {
@@ -10961,6 +10962,10 @@
             "type": "boolean",
             "description": "True if the pipeline has processed all input data to completion."
           },
+          "platform_version": {
+            "type": "string",
+            "description": "Version of the platform that built the pipeline binary, such as\n`0.349.0`."
+          },
           "rss_bytes": {
             "type": "integer",
             "format": "int64",
@@ -10972,6 +10977,11 @@
             "format": "int64",
             "description": "Time elapsed while the pipeline is executing a step, multiplied by the number of threads, in milliseconds.",
             "minimum": 0
+          },
+          "runtime_revision": {
+            "type": "string",
+            "description": "Git revision of the sources the pipeline binary was built from.\n\n`None` unless the binary was built from a source tree, which is the\ncase when the platform compiles against a runtime override rather than\nagainst published crates.",
+            "nullable": true
           },
           "start_time": {
             "type": "integer",
