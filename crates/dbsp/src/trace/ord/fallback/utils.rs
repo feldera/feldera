@@ -115,14 +115,17 @@ where
     }
 }
 
-pub fn pick_insert_destination<B>(batch: &B) -> BatchLocation
+pub fn pick_insert_destination<B>(runtime: Option<&Runtime>, batch: &B) -> BatchLocation
 where
     B: BatchReader,
 {
     if batch.is_empty() {
         return BatchLocation::Memory;
     }
-    match Runtime::min_insert_storage_bytes().unwrap_or(usize::MAX) {
+    match runtime
+        .and_then(Runtime::min_insert_storage_bytes)
+        .unwrap_or(usize::MAX)
+    {
         0 => BatchLocation::Storage,
         usize::MAX => BatchLocation::Memory,
         min_storage_bytes => {
