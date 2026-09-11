@@ -209,10 +209,8 @@ where
     }
 
     fn process_read_results(&mut self, read_results: BulkReadResults) -> Result<(), Error> {
-        for (BulkRead { node, level }, result) in read_results
-            .reads
-            .into_iter()
-            .zip(read_results.results.into_iter())
+        for (BulkRead { node, level }, result) in
+            read_results.reads.into_iter().zip(read_results.results)
         {
             let raw = decompress(self.reader.file.compression, node.location, result?)?;
             let file_id = self.reader.file.file_handle.file_id();

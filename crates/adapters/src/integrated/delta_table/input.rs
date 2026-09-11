@@ -2519,7 +2519,7 @@ impl DeltaTableInputEndpointInner {
         let url = ensure_table_uri(&self.config.uri).map_err(|e| {
             ControllerError::invalid_transport_configuration(
                 &self.endpoint_name,
-                &format!("invalid Delta table uri '{}': {e}", &self.config.uri),
+                &format!("invalid Delta table uri '{}': {e}", self.config.uri),
             )
         })?;
 
@@ -2608,7 +2608,7 @@ impl DeltaTableInputEndpointInner {
                         } else {
                             return Err(ControllerError::invalid_transport_configuration(
                                 &self.endpoint_name,
-                                &format!("error opening delta table '{}': {e:?}", &self.config.uri),
+                                &format!("error opening delta table '{}': {e:?}", self.config.uri),
                             ));
                         }
                     }
@@ -2618,7 +2618,7 @@ impl DeltaTableInputEndpointInner {
                                 &self.endpoint_name,
                                 &format!(
                                     "timeout loading delta table '{}' after {retry_count} attempts",
-                                    &self.config.uri,
+                                    self.config.uri,
                                 ),
                             ));
                         } else {
@@ -2878,7 +2878,7 @@ impl DeltaTableInputEndpointInner {
                      the '{ENABLE_CHANGE_DATA_FEED}' property set to 'true', so it records no \
                      change data. Set the property on the table (changes committed before it is set \
                      are not recorded), or set 'change_feed' to 'auto'.",
-                    &self.config.uri,
+                    self.config.uri,
                 )))
             } else {
                 Ok(())
@@ -2894,7 +2894,7 @@ impl DeltaTableInputEndpointInner {
                  '{column}', which the feed reserves under the name \
                  '{CHANGE_TYPE_COLUMN}'; set 'change_feed' to 'off' to read this table from its \
                  file actions instead.",
-                &self.config.uri,
+                self.config.uri,
             )));
         }
 
@@ -3950,7 +3950,7 @@ impl DeltaTableInputEndpointInner {
             return Ok(());
         }
         let url = ensure_table_uri(&self.config.uri)
-            .map_err(|e| anyhow!("invalid Delta table uri '{}': {e}", &self.config.uri))?;
+            .map_err(|e| anyhow!("invalid Delta table uri '{}': {e}", self.config.uri))?;
         let table = self
             .retry(
                 &format!("error loading Delta table schema at version {version}"),

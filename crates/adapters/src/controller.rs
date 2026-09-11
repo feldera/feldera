@@ -9323,7 +9323,7 @@ impl InputConsumer for InputProbe {
             debug_assert!(
                 resume_ft >= self.controller.fault_tolerance,
                 "endpoint {} produced input at fault tolerance level {resume_ft:?} in pipeline with fault tolerance level {pipeline_ft:?}",
-                &self.endpoint_name
+                self.endpoint_name
             );
         }
         self.controller.status.extended(

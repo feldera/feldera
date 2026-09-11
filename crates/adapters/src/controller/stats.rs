@@ -1145,7 +1145,7 @@ impl ControllerStatus {
         if completion_token.incarnation != self.global_metrics.incarnation_uuid {
             return Err(ControllerError::pipeline_restarted(&format!(
                 "Completion token was created by a previous incarnation of the pipeline (incarnation uuid: {}) and is not valid for the current incarnation ({}). This indicates that the pipeline was suspended and resumed from a checkpoint or restarted after a failure.",
-                &completion_token.incarnation, &self.global_metrics.incarnation_uuid
+                completion_token.incarnation, self.global_metrics.incarnation_uuid
             )));
         }
 
@@ -2453,7 +2453,7 @@ impl InputEndpointStatus {
                 .with_tooltip(|| {
                     format!(
                         "{} submitted {num_records} records ({} bytes) for step {total_initiated_steps}",
-                        &self.endpoint_name,
+                        self.endpoint_name,
                         HumanBytes::from(num_bytes)
                     )
                 })
@@ -2742,8 +2742,8 @@ impl ConnectorErrorList {
     pub fn to_api_type(&self) -> Vec<ConnectorError> {
         let mut errors = self
             .errors
-            .iter()
-            .flat_map(|(_tag, errors)| errors.iter().cloned())
+            .values()
+            .flat_map(|errors| errors.iter().cloned())
             .collect::<Vec<_>>();
         errors.sort_by_key(|error| error.index);
         errors

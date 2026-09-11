@@ -2570,7 +2570,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
 
             match format {
                 OutputFormat::Text => {
-                    println!("{}", &response.into_inner().token.to_string());
+                    println!("{}", response.into_inner().token);
                 }
                 OutputFormat::Json => {
                     println!(
@@ -2584,7 +2584,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         "Unsupported output format: {}, falling back to text",
                         format
                     );
-                    println!("{}", &response.into_inner().token.to_string());
+                    println!("{}", response.into_inner().token);
                     std::process::exit(1);
                 }
             }
@@ -2605,7 +2605,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
 
             match format {
                 OutputFormat::Text => {
-                    println!("{}", &response.into_inner().status.to_string());
+                    println!("{}", response.into_inner().status);
                 }
                 OutputFormat::Json => {
                     println!(
@@ -2619,7 +2619,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         "Unsupported output format, falling back to text: {}",
                         format
                     );
-                    println!("{}", &response.into_inner().status.to_string());
+                    println!("{}", response.into_inner().status);
                     std::process::exit(1);
                 }
             }

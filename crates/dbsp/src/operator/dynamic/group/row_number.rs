@@ -182,13 +182,12 @@ where
                 &factories.output_factories,
                 Box::new(move |(k, v_rn), f| {
                     let (v, rn) = v_rn.split();
-                    let (row_number, num_rows) = unsafe { rn.downcast::<(RankType, RankType)>() };
-                    let mut row_number = *row_number;
+                    let (first_row_number, num_rows) =
+                        unsafe { rn.downcast::<(RankType, RankType)>() };
 
-                    for _ in 0..*num_rows {
+                    for row_number in *first_row_number..*first_row_number + *num_rows {
                         k.clone_to(&mut out_k);
                         output_func(row_number, v, &mut out_v);
-                        row_number += 1;
                         f(&mut out_k, &mut out_v);
                     }
                 }),

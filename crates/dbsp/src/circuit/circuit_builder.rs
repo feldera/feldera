@@ -3048,13 +3048,13 @@ where
     }
 
     fn log_circuit_event(&self, event: &CircuitEvent) {
-        for (_, handler) in self.circuit_event_handlers.borrow().iter() {
+        for handler in self.circuit_event_handlers.borrow().values() {
             handler(event)
         }
     }
 
     fn log_scheduler_event(&self, event: &SchedulerEvent<'_>) {
-        for (_, handler) in self.scheduler_event_handlers.borrow_mut().iter_mut() {
+        for handler in self.scheduler_event_handlers.borrow_mut().values_mut() {
             handler(event)
         }
     }
