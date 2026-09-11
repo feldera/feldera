@@ -16,6 +16,9 @@
 //! [`VariantFormat::JsonString`]: feldera_types::serde_with_context::serde_config::VariantFormat::JsonString
 //! [`VariantFormat::ParquetVariant`]: feldera_types::serde_with_context::serde_config::VariantFormat::ParquetVariant
 
+// This module encodes and decodes both VARIANT representations
+#![allow(deprecated)]
+
 use crate::{
     Date, SqlString, Time, Timestamp, TimestampTz, Uuid, binary::ByteArray,
     flat_variant::FlatVariant, variant::Variant,

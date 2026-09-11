@@ -17,8 +17,8 @@ The primary purpose is comparing the two VARIANT runtime representations:
     uv run python tests/workloads/test_jsonbench.py --variant 1   # enum Variant
     uv run python tests/workloads/test_jsonbench.py --variant 2   # FlatVariant
 
-The flag pins the representation with SET feldera_flat_variant, overriding the
-manager's FELDERA_FLAT_VARIANT environment default in either direction. The test
+The flag pins the representation with SET feldera_flat_variant in either
+direction; without it a pipeline uses FlatVariant. The test
 reports ingest wall time and rows/s and cross-checks the query outputs
 (the table row count must equal the sum of per-event counts in q1).
 """

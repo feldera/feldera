@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.util.IJson;
 import org.dbsp.util.Utilities;
 
@@ -39,6 +40,7 @@ public class ProgramMetadata implements IJson {
         this.inputTables = new LinkedHashMap<>();
         this.outputViews = new LinkedHashMap<>();
         this.variables = new LinkedHashMap<>();
+        DBSPTypeVariant.useLegacyRepresentation(false);
     }
 
     private static String canonicalVariableName(String variable) {
@@ -82,11 +84,11 @@ public class ProgramMetadata implements IJson {
                             + ToSqlVisitor.convert(compiler, value) + " is ignored");
         }
         this.variables.put(variable, value);
-        // The variant representation must be fixed before any expression of
-        // the program is compiled to Rust names; SET statements precede other
-        // statements, so updating the global mode here is early enough.
+        // The representation must be fixed before any expression of the program
+        // is compiled to Rust names; SET statements precede other statements,
+        // so updating it here is early enough.
         if (variable.equals(USE_FLAT_VARIANT.toLowerCase(Locale.ENGLISH)))
-            VariantMode.set(!this.isFalsy(variable));
+            DBSPTypeVariant.useLegacyRepresentation(!this.useFlatVariant());
     }
 
     public boolean hasValue(String variable) {
@@ -169,10 +171,9 @@ public class ProgramMetadata implements IJson {
     /** When set to {@code true}, inserts a weight-validation check after every
      * input table that has no primary key. */
     public static final String ENFORCE_POSITIVE_INPUTS = "ENFORCE_POSITIVE_INPUTS";
-    /** When set to {@code true}, VARIANT columns use the flat-buffer
-     * {@code FlatVariant} runtime type instead of the enum {@code Variant}.
-     * Programs that cast or index VARIANT values cannot enable this yet:
-     * the runtime cast/index function grid still operates on the enum. */
+    /** VARIANT columns use the flat-buffer {@code FlatVariant} runtime type,
+     * which is the default; setting this to {@code false} selects the enum
+     * {@code Variant} instead. */
     public static final String USE_FLAT_VARIANT = "FELDERA_FLAT_VARIANT";
     /** How many temporal filters need to share an input to for sharing an integral. */
     public static final String WINDOW_SHARING_THRESHOLD = "FELDERA_WINDOW_SHARING_THRESHOLD";
@@ -194,16 +195,11 @@ public class ProgramMetadata implements IJson {
         return this.isExplicitlyOn(AVOID_STAR_JOINS);
     }
 
-    /** Returns {@code true} if VARIANT columns should use the flat-buffer
-     * {@code FlatVariant} runtime type.
-     *
-     * Programs opt in with {@code SET feldera_flat_variant = 'on'}. The
-     * {@code FELDERA_FLAT_VARIANT} environment variable sets the default for
-     * every program compiled by this process, so a whole test suite can run
-     * against FlatVariant without editing each test; an explicit SET statement
-     * still wins over the environment. See {@link VariantMode}. */
+    /** Returns {@code true} if VARIANT values use the flat-buffer
+     * {@code FlatVariant} runtime type, which is the default.  Programs opt
+     * out of it with {@code SET feldera_flat_variant = 'off'}. */
     public boolean useFlatVariant() {
-        return VariantMode.isEnabled();
+        return !this.isExplicitlyOff(USE_FLAT_VARIANT);
     }
 
     /** Returns {@code true} if weight validation should be inserted after
