@@ -4581,12 +4581,35 @@ where
         + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
 {
+    let arrow_schema = ArrowSchema::new(relation_to_arrow_fields(relation, delta_schema_options()));
+    run_follow_partition_test_on(&arrow_schema, relation, rows, rows, partition_columns).await
+}
+
+/// [`run_follow_partition_test`] with the Delta table's columns named apart from
+/// the SQL table's, for a test whose two sides spell them differently.
+///
+/// Hence the two record types: `W` serializes under the Delta table's column
+/// names, which is what the writer needs, and `T` under the SQL table's, which
+/// is what the ad hoc query reading the output back needs. They hold the same
+/// rows.
+async fn run_follow_partition_test_on<W, T>(
+    arrow_schema: &ArrowSchema,
+    relation: &[Field],
+    written_rows: &[W],
+    expected_rows: &[T],
+    partition_columns: &[&str],
+) where
+    W: DBData + SerializeWithContext<SqlSerdeConfig> + Sync,
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+{
     init_logging();
 
-    let arrow_schema = ArrowSchema::new(relation_to_arrow_fields(relation, delta_schema_options()));
     let table_dir = TempDir::new().unwrap();
     let table_uri = table_dir.path().display().to_string();
-    let table = create_table_from_arrow(&table_uri, &arrow_schema, partition_columns).await;
+    let table = create_table_from_arrow(&table_uri, arrow_schema, partition_columns).await;
 
     let storage_dir = TempDir::new().unwrap();
     let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
@@ -4601,11 +4624,11 @@ where
     .unwrap();
     read_pipeline.start();
 
-    write_data_to_table(table, &arrow_schema, rows).await;
+    write_data_to_table(table, arrow_schema, written_rows).await;
     wait_or_connector_error(
         &read_pipeline,
         &SqlIdentifier::from("test_output1"),
-        rows,
+        expected_rows,
         &errors,
     )
     .await;
@@ -4669,6 +4692,225 @@ async fn delta_table_follow_partition_column_types_test() {
     rows[1].unused = Some("present".to_string());
 
     run_follow_partition_test(&DeltaTestStruct::schema(), &rows, PARTITION_COLUMNS).await;
+}
+
+/// A table whose column names are quoted uppercase SQL identifiers, as a table
+/// imported from a system that folds identifiers to upper case carries.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    IsNone,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+struct UpperCaseTestStruct {
+    id: i64,
+    payload: String,
+    region: String,
+}
+
+serialize_table_record!(UpperCaseTestStruct[3]{
+    id["ID"]: i64,
+    payload["PAYLOAD"]: String,
+    region["REGION"]: String
+});
+
+// Deserialized case-sensitively: the connector must deliver each column under
+// the name the Delta table gives it, not a case-folded one.
+deserialize_table_record!(UpperCaseTestStruct["UpperCaseTestStruct", Variant, 3] {
+    (id, "ID", true, i64, |_| None),
+    (payload, "PAYLOAD", true, String, |_| None),
+    (region, "REGION", true, String, |_| None)
+});
+
+impl UpperCaseTestStruct {
+    fn schema() -> Vec<Field> {
+        vec![
+            Field::new(SqlIdentifier::new("ID", true), ColumnType::bigint(false)),
+            Field::new(
+                SqlIdentifier::new("PAYLOAD", true),
+                ColumnType::varchar(false),
+            ),
+            Field::new(
+                SqlIdentifier::new("REGION", true),
+                ColumnType::varchar(false),
+            ),
+        ]
+    }
+}
+
+/// Follow a partitioned table whose column names are not lower case.
+///
+/// A partitioned read names every other column in a projection, and a name read
+/// as SQL rather than taken verbatim would arrive lowercased, matching no column
+/// of such a table.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_follow_partition_uppercase_columns_test() {
+    let rows: Vec<UpperCaseTestStruct> = (0..6)
+        .map(|id| UpperCaseTestStruct {
+            id,
+            payload: format!("row-{id}"),
+            region: if id % 2 == 0 { "EAST" } else { "WEST" }.to_string(),
+        })
+        .collect();
+
+    run_follow_partition_test(&UpperCaseTestStruct::schema(), &rows, &["REGION"]).await;
+}
+
+/// The same table declared in SQL without quotes, so the two sides spell the
+/// columns differently.
+///
+/// An unquoted SQL identifier folds to lower case, and the compiler then emits a
+/// deserializer that matches column names ignoring case: the `false` below is
+/// the column's `isQuoted()` flag, and the names are the folded ones.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+    IsNone,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+struct UnquotedSqlTestStruct {
+    id: i64,
+    payload: String,
+    region: String,
+}
+
+serialize_table_record!(UnquotedSqlTestStruct[3]{
+    id["id"]: i64,
+    payload["payload"]: String,
+    region["region"]: String
+});
+
+deserialize_table_record!(UnquotedSqlTestStruct["UnquotedSqlTestStruct", Variant, 3] {
+    (id, "id", false, i64, |_| None),
+    (payload, "payload", false, String, |_| None),
+    (region, "region", false, String, |_| None)
+});
+
+impl UnquotedSqlTestStruct {
+    fn schema() -> Vec<Field> {
+        vec![
+            Field::new("id".into(), ColumnType::bigint(false)),
+            Field::new("payload".into(), ColumnType::varchar(false)),
+            Field::new("region".into(), ColumnType::varchar(false)),
+        ]
+    }
+}
+
+/// Follow the same uppercase partitioned table through a SQL table that declares
+/// its columns unquoted.
+///
+/// The connector matches the two schemas ignoring case, so the SQL side resolves
+/// whatever it is spelled; the projection still has to name each column the way
+/// the Delta table does.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_follow_partition_unquoted_sql_columns_test() {
+    let arrow_schema = ArrowSchema::new(relation_to_arrow_fields(
+        &UpperCaseTestStruct::schema(),
+        delta_schema_options(),
+    ));
+    let written_rows: Vec<UpperCaseTestStruct> = (0..6)
+        .map(|id| UpperCaseTestStruct {
+            id,
+            payload: format!("row-{id}"),
+            region: if id % 2 == 0 { "EAST" } else { "WEST" }.to_string(),
+        })
+        .collect();
+    let expected_rows: Vec<UnquotedSqlTestStruct> = written_rows
+        .iter()
+        .map(|row| UnquotedSqlTestStruct {
+            id: row.id,
+            payload: row.payload.clone(),
+            region: row.region.clone(),
+        })
+        .collect();
+
+    run_follow_partition_test_on(
+        &arrow_schema,
+        &UnquotedSqlTestStruct::schema(),
+        &written_rows,
+        &expected_rows,
+        &["REGION"],
+    )
+    .await;
+}
+
+/// An ordered snapshot read of a table whose column names are case sensitive.
+///
+/// `timestamp_column` holds an SQL identifier rather than a bare column name,
+/// so a case-sensitive column has to be quoted. Unquoted, it folds to lower
+/// case and the connector rejects it at startup as missing from the table.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_snapshot_uppercase_timestamp_column_test() {
+    init_logging();
+
+    // An ordered read needs LATENESS on the timestamp column.
+    let relation = vec![
+        Field::new(SqlIdentifier::new("ID", true), ColumnType::bigint(false)).with_lateness("2"),
+        Field::new(
+            SqlIdentifier::new("PAYLOAD", true),
+            ColumnType::varchar(false),
+        ),
+        Field::new(
+            SqlIdentifier::new("REGION", true),
+            ColumnType::varchar(false),
+        ),
+    ];
+    let rows: Vec<UpperCaseTestStruct> = (0..6)
+        .map(|id| UpperCaseTestStruct {
+            id,
+            payload: format!("row-{id}"),
+            region: "EAST".to_string(),
+        })
+        .collect();
+
+    let arrow_schema =
+        ArrowSchema::new(relation_to_arrow_fields(&relation, delta_schema_options()));
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let table = create_table_from_arrow(&table_uri, &arrow_schema, &[]).await;
+    write_data_to_table(table, &arrow_schema, &rows).await;
+
+    let storage_dir = TempDir::new().unwrap();
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let pipeline = delta_input_controller::<UpperCaseTestStruct>(
+        &table_uri,
+        json!({ "mode": "snapshot", "timestamp_column": "\"ID\"" }),
+        &relation,
+        storage_dir.path(),
+        &errors,
+    )
+    .await
+    .unwrap();
+    pipeline.start();
+
+    wait_or_connector_error(
+        &pipeline,
+        &SqlIdentifier::from("test_output1"),
+        &rows,
+        &errors,
+    )
+    .await;
+    pipeline.stop().unwrap();
 }
 
 /// CDC mode over a partitioned table: the adds side reads files that span two
