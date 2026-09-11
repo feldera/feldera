@@ -1032,15 +1032,15 @@ impl<Z, IT, Acc, Out, Clk>
 where
     Clk: WithClock<Time = <IT::Batch as BatchReader>::Time> + 'static,
     Z: Batch<Time = ()>,
-    IT: WithSnapshot + 'static,
+    IT: WithSnapshot + Clone + 'static,
     IT::Batch: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R>,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
 {
     fn eval(
         self: Rc<Self>,
-        delta: &Option<Spine<Z>>,
-        input_trace: &IT,
+        delta: Cow<'_, Option<Spine<Z>>>,
+        input_trace: Cow<'_, IT>,
     ) -> impl AsyncStream<Item = (Box<DynPairs<Z::Key, DynOpt<Out>>>, bool, Option<Position>)> + 'static
     {
         let chunk_size = splitter_output_chunk_size();
@@ -1049,7 +1049,7 @@ where
         //     "{}: AggregateIncremental::eval({delta:?})",
         //     Runtime::worker_index()
         // );
-        let delta = delta.as_ref().map(|b| b.ro_snapshot());
+        let delta = (*delta).as_ref().map(|b| b.ro_snapshot());
 
         // We assume that delta.is_some() implies that the operator is being flushed,
         // since the integral is always flushed in same step as delta.

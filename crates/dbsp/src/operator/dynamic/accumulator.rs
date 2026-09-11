@@ -27,7 +27,6 @@ use crate::{
 };
 
 circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => Accumulation<Stream<C, Option<Spine<B>>>>));
-circuit_cache_key!(ShardedAccumulatorId<C, B: Batch>(StreamId => Stream<C, Option<Spine<B>>>));
 
 /// A stream produced by accumulating batches into a spine.
 ///

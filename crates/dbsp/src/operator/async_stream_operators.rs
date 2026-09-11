@@ -21,7 +21,7 @@ use std::{any::Any, borrow::Cow, marker::PhantomData, pin::Pin, rc::Rc};
 use crate::{
     Error, Position, Scope,
     circuit::{
-        GlobalNodeId,
+        GlobalNodeId, OwnershipPreference,
         metadata::{OperatorLocation, OperatorMeta},
         operator_traits::{
             BinaryOperator, NaryOperator, Operator, OperatorCheckpoint, QuaternaryOperator,
@@ -33,11 +33,31 @@ use feldera_storage::StoragePath;
 use futures::Stream as AsyncStream;
 use futures_util::StreamExt;
 
-pub trait StreamingBinaryOperator<I1, I2, O>: Operator {
+pub trait StreamingBinaryOperator<I1, I2, O>: Operator
+where
+    I1: Clone,
+    I2: Clone,
+{
+    /// Starts the stream that consumes one pair of inputs.
+    ///
+    /// The inputs arrive owned or borrowed as the circuit decides, guided by
+    /// the preferences the wrapper was given (see
+    /// [`StreamingBinaryWrapper::with_preferences`]).  An operator that needs
+    /// an input owned asks for it that way and may refuse a borrowed one.
+    ///
+    /// # Arguments
+    ///
+    /// * `lhs` - the left input for this pair.
+    /// * `rhs` - the right input for this pair.
+    ///
+    /// # Returns
+    ///
+    /// The stream of outputs, each paired with whether the operator has more to give
+    /// and the position it reached.
     fn eval(
         self: Rc<Self>,
-        lhs: &I1,
-        rhs: &I2,
+        lhs: Cow<'_, I1>,
+        rhs: Cow<'_, I2>,
     ) -> impl AsyncStream<Item = (O, bool, Option<Position>)> + 'static;
 }
 
@@ -45,24 +65,81 @@ pub struct StreamingBinaryWrapper<I1, I2, O, Op> {
     operator: Rc<Op>,
     stream: Option<Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>>,
     progress: Option<Position>,
+    /// What the operator asks of each input's ownership.
+    preferences: (OwnershipPreference, OwnershipPreference),
     phantom: PhantomData<fn(&I1, &I2, &O)>,
 }
 
 impl<I1, I2, O, Op> StreamingBinaryWrapper<I1, I2, O, Op> {
     pub fn new(operator: Op) -> Self {
+        Self::with_preferences(
+            operator,
+            (
+                OwnershipPreference::INDIFFERENT,
+                OwnershipPreference::INDIFFERENT,
+            ),
+        )
+    }
+
+    /// Wraps `operator`, asking the circuit for its inputs as `preferences`
+    /// say (see [`OwnershipPreference`]).
+    ///
+    /// # Arguments
+    ///
+    /// * `operator` - the operator to wrap.
+    /// * `preferences` - how the operator wants its left and right inputs.
+    pub fn with_preferences(
+        operator: Op,
+        preferences: (OwnershipPreference, OwnershipPreference),
+    ) -> Self {
         Self {
             operator: Rc::new(operator),
             stream: None,
             progress: None,
+            preferences,
             phantom: PhantomData,
         }
     }
 }
 
+impl<I1, I2, O, Op> StreamingBinaryWrapper<I1, I2, O, Op>
+where
+    I1: Clone + 'static,
+    I2: Clone + 'static,
+    O: 'static,
+    Op: StreamingBinaryOperator<I1, I2, O> + 'static,
+{
+    /// Feeds one pair of inputs to the operator's stream, starting a stream if
+    /// the last one has ended.
+    ///
+    /// # Arguments
+    ///
+    /// * `lhs` - the left input for this pair.
+    /// * `rhs` - the right input for this pair.
+    ///
+    /// # Returns
+    ///
+    /// The operator's output for the pair.
+    async fn eval_cow(&mut self, lhs: Cow<'_, I1>, rhs: Cow<'_, I2>) -> O {
+        let stream = self.stream.get_or_insert_with(|| {
+            Box::pin(self.operator.clone().eval(lhs, rhs))
+                as Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>
+        });
+        let Some((output, complete, progress)) = stream.next().await else {
+            panic!("StreamingBinaryOperator unexpectedly reached end of stream");
+        };
+        self.progress = progress;
+        if complete {
+            self.stream = None;
+        }
+        output
+    }
+}
+
 impl<I1, I2, O, Op> Operator for StreamingBinaryWrapper<I1, I2, O, Op>
 where
-    I1: 'static,
-    I2: 'static,
+    I1: Clone + 'static,
+    I2: Clone + 'static,
     O: 'static,
     Op: StreamingBinaryOperator<I1, I2, O> + 'static,
 {
@@ -179,29 +256,29 @@ where
 
 impl<I1, I2, O, Op> BinaryOperator<I1, I2, O> for StreamingBinaryWrapper<I1, I2, O, Op>
 where
-    I1: 'static,
-    I2: 'static,
+    I1: Clone + 'static,
+    I2: Clone + 'static,
     O: 'static,
     Op: StreamingBinaryOperator<I1, I2, O> + 'static,
 {
     async fn eval(&mut self, lhs: &I1, rhs: &I2) -> O {
-        let stream = self.stream.get_or_insert_with(|| {
-            Box::pin(self.operator.clone().eval(lhs, rhs))
-                as Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>
-        });
+        self.eval_cow(Cow::Borrowed(lhs), Cow::Borrowed(rhs)).await
+    }
 
-        let Some((output, complete, progress)) = stream.next().await else {
-            panic!("StreamingBinaryOperator unexpectedly reached end of stream");
-        };
+    async fn eval_owned(&mut self, lhs: I1, rhs: I2) -> O {
+        self.eval_cow(Cow::Owned(lhs), Cow::Owned(rhs)).await
+    }
 
-        self.progress = progress;
+    async fn eval_owned_and_ref(&mut self, lhs: I1, rhs: &I2) -> O {
+        self.eval_cow(Cow::Owned(lhs), Cow::Borrowed(rhs)).await
+    }
 
-        if complete {
-            self.stream = None;
-            output
-        } else {
-            output
-        }
+    async fn eval_ref_and_owned(&mut self, lhs: &I1, rhs: I2) -> O {
+        self.eval_cow(Cow::Borrowed(lhs), Cow::Owned(rhs)).await
+    }
+
+    fn input_preference(&self) -> (OwnershipPreference, OwnershipPreference) {
+        self.preferences
     }
 }
 
@@ -935,5 +1012,62 @@ where
         if complete {
             self.stream = None;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use futures::executor::block_on;
+
+    /// Reports, per input, whether it arrived owned.
+    struct Probe;
+
+    impl Operator for Probe {
+        fn name(&self) -> Cow<'static, str> {
+            Cow::Borrowed("Probe")
+        }
+
+        fn fixedpoint(&self, _scope: Scope) -> bool {
+            true
+        }
+    }
+
+    impl StreamingBinaryOperator<u32, u32, (bool, bool)> for Probe {
+        fn eval(
+            self: Rc<Self>,
+            lhs: Cow<'_, u32>,
+            rhs: Cow<'_, u32>,
+        ) -> impl AsyncStream<Item = ((bool, bool), bool, Option<Position>)> + 'static {
+            let owned = (matches!(lhs, Cow::Owned(_)), matches!(rhs, Cow::Owned(_)));
+            futures::stream::once(async move { (owned, true, None) })
+        }
+    }
+
+    type ProbeWrapper = StreamingBinaryWrapper<u32, u32, (bool, bool), Probe>;
+
+    /// The wrapper reports the preferences it was given and hands each input
+    /// on with the ownership the circuit chose.
+    #[test]
+    fn the_wrapper_keeps_preferences_and_ownership() {
+        let preferences = (
+            OwnershipPreference::INDIFFERENT,
+            OwnershipPreference::STRONGLY_PREFER_OWNED,
+        );
+        let mut wrapper = ProbeWrapper::with_preferences(Probe, preferences);
+        assert_eq!(wrapper.input_preference(), preferences);
+        assert_eq!(
+            ProbeWrapper::new(Probe).input_preference(),
+            (
+                OwnershipPreference::INDIFFERENT,
+                OwnershipPreference::INDIFFERENT
+            )
+        );
+        block_on(async {
+            assert_eq!(wrapper.eval(&1, &2).await, (false, false));
+            assert_eq!(wrapper.eval_owned(1, 2).await, (true, true));
+            assert_eq!(wrapper.eval_owned_and_ref(1, &2).await, (true, false));
+            assert_eq!(wrapper.eval_ref_and_owned(&1, 2).await, (false, true));
+        });
     }
 }
