@@ -27,7 +27,7 @@ use delta_kernel::schema::{ColumnMetadataKey, MetadataValue};
 use deltalake::datafusion::dataframe::DataFrame;
 use deltalake::datafusion::execution::context::SQLOptions;
 use deltalake::datafusion::logical_expr::{ExprSchemable, SortExpr};
-use deltalake::datafusion::prelude::{Expr, SessionContext, col, lit};
+use deltalake::datafusion::prelude::{Expr, SessionContext, ident, lit};
 use deltalake::datafusion::sql::sqlparser::dialect::GenericDialect;
 use deltalake::datafusion::sql::sqlparser::parser::Parser;
 use deltalake::datafusion::sql::sqlparser::tokenizer::Token;
@@ -3769,9 +3769,42 @@ impl DeltaTableInputEndpointInner {
             return Ok(df);
         }
 
-        let schema = df.schema().clone();
+        let file_schema = df.schema().clone();
+        let logical_schema = self.logical_schema()?;
+        let projection = Self::partition_projection(
+            &logical_schema,
+            &partition_columns,
+            partition_values,
+            &file_schema,
+            extra_columns,
+            description,
+        )?;
+
+        df.select(projection).map_err(|e| {
+            anyhow!("internal error processing {description}; {REPORT_ERROR}; error adding partition columns: {e}")
+        })
+    }
+
+    /// The projection [`add_partition_columns`](Self::add_partition_columns)
+    /// applies: every column the table declares, in schema order, with each
+    /// partition column supplied as a literal from `partition_values`, followed
+    /// by whichever `extra_columns` the data file's `file_schema` carries.
+    ///
+    /// Columns are named with `ident`, never `col`: `col` reads its argument as
+    /// SQL and lowercases an unquoted identifier, so a table holding an uppercase
+    /// column `ORDER_ID` would be projected through a reference to
+    /// `order_id`, which matches nothing. `ident` takes the name verbatim, as
+    /// does `alias`.
+    fn partition_projection(
+        logical_schema: &ArrowSchema,
+        partition_columns: &[String],
+        partition_values: Option<&HashMap<String, Option<String>>>,
+        file_schema: &DFSchema,
+        extra_columns: &[&str],
+        description: &str,
+    ) -> AnyResult<Vec<Expr>> {
         let mut projection: Vec<Expr> = Vec::new();
-        for field in self.logical_schema()?.fields() {
+        for field in logical_schema.fields() {
             if partition_columns.contains(field.name()) {
                 // The log keys partition values by physical name. The Hive
                 // `key=value` directory layout is convention, not protocol, so
@@ -3792,7 +3825,7 @@ impl DeltaTableInputEndpointInner {
                 };
                 projection.push(
                     literal
-                        .cast_to(field.data_type(), &schema)
+                        .cast_to(field.data_type(), file_schema)
                         .map_err(|e| {
                             anyhow!(
                                 "error processing {description}: cannot read partition column '{}' as {}: {e}",
@@ -3802,19 +3835,17 @@ impl DeltaTableInputEndpointInner {
                         })?
                         .alias(field.name()),
                 );
-            } else if schema.has_column_with_unqualified_name(field.name()) {
-                projection.push(col(field.name()));
+            } else if file_schema.has_column_with_unqualified_name(field.name()) {
+                projection.push(ident(field.name()));
             }
         }
         for name in extra_columns {
-            if schema.has_column_with_unqualified_name(name) {
-                projection.push(col(*name));
+            if file_schema.has_column_with_unqualified_name(name) {
+                projection.push(ident(*name));
             }
         }
 
-        df.select(projection).map_err(|e| {
-            anyhow!("internal error processing {description}; {REPORT_ERROR}; error adding partition columns: {e}")
-        })
+        Ok(projection)
     }
 
     /// The Delta table's logical Arrow schema at the version being read.
@@ -3858,6 +3889,9 @@ impl DeltaTableInputEndpointInner {
     /// while the rest of the pipeline expects logical names. Unmapped columns
     /// (already logical, or Delta metadata like `__feldera_op`) pass through.
     /// This function is a no-op when column mapping is off.
+    ///
+    /// Names are taken verbatim, with `ident`, for the reason
+    /// [`partition_projection`](Self::partition_projection) gives.
     fn project_physical_to_logical(&self, df: DataFrame) -> AnyResult<DataFrame> {
         let pairs = self.column_mapping()?;
         if pairs.is_empty() {
@@ -3872,8 +3906,8 @@ impl DeltaTableInputEndpointInner {
             .fields()
             .iter()
             .map(|f| match to_logical.get(f.name().as_str()) {
-                Some(logical) => col(f.name()).alias(*logical),
-                None => col(f.name()),
+                Some(logical) => ident(f.name()).alias(*logical),
+                None => ident(f.name()),
             })
             .collect();
         df.select(exprs)
@@ -4826,6 +4860,110 @@ mod column_mapping_tests {
             .downcast_ref::<StructArray>()
             .unwrap();
         assert_eq!(element.column(0).as_ref(), ids.as_ref());
+    }
+}
+
+#[cfg(test)]
+mod partition_projection_tests {
+    use super::*;
+    use arrow::array::Int64Array;
+    use datafusion::prelude::SessionContext;
+    use std::sync::Arc;
+
+    /// The partition value the log action records for the file under test.
+    const PARTITION_VALUE: &str = "EAST";
+
+    /// Project one data file holding `data_column` from a table partitioned by
+    /// `partition_column`, the way a follow-mode read does.
+    ///
+    /// Delta keeps a partition column in the log action alone, so the file holds
+    /// every other column and the projection puts the partition value back.
+    async fn project(data_column: &str, partition_column: &str) -> DataFrame {
+        let table_schema = ArrowSchema::new(vec![
+            ArrowField::new(data_column, ArrowDataType::Int64, false),
+            ArrowField::new(partition_column, ArrowDataType::Utf8, false),
+        ]);
+        let batch = RecordBatch::try_new(
+            Arc::new(ArrowSchema::new(vec![ArrowField::new(
+                data_column,
+                ArrowDataType::Int64,
+                false,
+            )])),
+            vec![Arc::new(Int64Array::from(vec![1i64, 2]))],
+        )
+        .expect("the batch is well formed");
+
+        let df = SessionContext::new()
+            .read_batch(batch)
+            .expect("a batch reads as a frame");
+        let file_schema = df.schema().clone();
+        let partition_values = HashMap::from([(
+            partition_column.to_string(),
+            Some(PARTITION_VALUE.to_string()),
+        )]);
+        let projection = DeltaTableInputEndpointInner::partition_projection(
+            &table_schema,
+            &[partition_column.to_string()],
+            Some(&partition_values),
+            &file_schema,
+            &[],
+            "a data file",
+        )
+        .expect("the projection is built");
+
+        df.select(projection)
+            .expect("the projection resolves against the file's columns")
+    }
+
+    fn column_names(df: &DataFrame) -> Vec<String> {
+        df.schema()
+            .fields()
+            .iter()
+            .map(|field| field.name().clone())
+            .collect()
+    }
+
+    async fn partition_column_values(df: DataFrame, column: &str) -> Vec<String> {
+        df.collect()
+            .await
+            .expect("the frame collects")
+            .iter()
+            .flat_map(|batch| {
+                batch
+                    .column_by_name(column)
+                    .expect("the partition column is projected")
+                    .as_any()
+                    .downcast_ref::<StringArray>()
+                    .expect("the partition column reads as a string")
+                    .iter()
+                    .map(|value| value.expect("the log recorded a value").to_string())
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    /// Uppercase column names, as a table loaded from a system that folds
+    /// identifiers to upper case carries. Read as SQL, an unquoted `ID` names
+    /// column `id`, which such a table does not have.
+    #[tokio::test]
+    async fn an_uppercase_column_keeps_its_case() {
+        let df = project("ID", "REGION").await;
+
+        assert_eq!(column_names(&df), vec!["ID", "REGION"]);
+        assert_eq!(
+            partition_column_values(df, "REGION").await,
+            vec![PARTITION_VALUE; 2],
+            "every row takes the partition value from the log action"
+        );
+    }
+
+    /// A column name holding a dot. Read as SQL it splits into a table
+    /// qualifier and a column, naming neither.
+    #[tokio::test]
+    async fn a_dotted_column_name_is_not_a_qualifier() {
+        let df = project("src.id", "src.app").await;
+
+        assert_eq!(column_names(&df), vec!["src.id", "src.app"]);
     }
 }
 
