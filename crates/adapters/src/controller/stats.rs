@@ -1611,6 +1611,15 @@ impl ControllerStatus {
             total_initiated_steps: self.global_metrics.total_initiated_steps(),
             total_completed_steps: self.global_metrics.total_completed_steps(),
             pipeline_complete: ctx.pipeline_complete,
+            platform_version: option_env!("FELDERA_PLATFORM_VERSION")
+                .unwrap_or(env!("CARGO_PKG_VERSION"))
+                .to_string(),
+            // A pipeline-manager older than FELDERA_RUNTIME_VERSION still sets the
+            // override, which holds the resolved git SHA of the selected runtime.
+            runtime_version: option_env!("FELDERA_RUNTIME_VERSION")
+                .or(option_env!("FELDERA_RUNTIME_OVERRIDE"))
+                .unwrap_or(env!("CARGO_PKG_VERSION"))
+                .to_string(),
         };
 
         // Convert input endpoints and sort by endpoint_name to match serialize_inputs behavior
