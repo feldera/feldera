@@ -2352,6 +2352,14 @@ export type GlobalControllerMetrics = {
    */
   pipeline_complete: boolean
   /**
+   * Version of the platform that compiled the pipeline, such as
+   * `0.349.0+enterprise`.
+   *
+   * This is the platform's own version, which the compiler records in the
+   * binary.
+   */
+  platform_version: string
+  /**
    * Resident set size of the pipeline process, in bytes.
    */
   rss_bytes: number
@@ -2359,6 +2367,14 @@ export type GlobalControllerMetrics = {
    * Time elapsed while the pipeline is executing a step, multiplied by the number of threads, in milliseconds.
    */
   runtime_elapsed_msecs: number
+  /**
+   * Runtime the pipeline was compiled against.
+   *
+   * Equal to `platform_version` when the program uses the platform's own
+   * runtime; otherwise the selected runtime, a git SHA, a `vX.Y.Z` tag,
+   * or `gen2`.
+   */
+  runtime_version: string
   /**
    * Time at which the pipeline process started, in seconds since the epoch.
    */
