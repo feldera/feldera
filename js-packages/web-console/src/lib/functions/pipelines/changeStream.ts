@@ -396,9 +396,15 @@ export const newlineJsonDecoder = <T>(
 /**
  * Decoder for newline-delimited UTF-8 text. Same line-aligned chunking and
  * per-window byte budget as `newlineJsonDecoder`, but each parser chunk is
- * split into its constituent lines and admitted one string at a time (with
- * the trailing `\n` or `\r\n` preserved on each line). Suitable for log
- * viewers and other "byte stream → string[]" consumers.
+ * split into its constituent lines and admitted one string at a time, with the
+ * terminating `\n` or `\r\n` stripped. Suitable for log viewers and other
+ * "byte stream → string[]" consumers.
+ *
+ * The terminator is dropped rather than kept because a line that carries its
+ * own newline is not a line: joining such rows needs an empty separator rather
+ * than the obvious `'\n'`, and every row then holds a character outside the
+ * printable-ASCII grid, which makes the log viewer's height model decline all
+ * of them and leaves its size cache empty.
  *
  * Shedding granularity is the parser chunk, not the individual line: when the
  * budget is exhausted, the whole parser chunk's worth of lines is dropped and
@@ -482,7 +488,11 @@ export const newlineTextDecoder = (opts?: {
               } else {
                 let lineStart = cursor
                 for (const lineEnd of lineEnds) {
-                  ctx.admit(text.slice(lineStart, lineEnd))
+                  // `lineEnd` is one past the '\n'. The '\r' test is bounded by
+                  // `lineStart` so an empty line, whose whole record is the
+                  // terminator, cannot read the previous line's last byte.
+                  const crlf = lineEnd - 2 >= lineStart && text[lineEnd - 2] === '\r'
+                  ctx.admit(text.slice(lineStart, lineEnd - (crlf ? 2 : 1)))
                   lineStart = lineEnd
                 }
                 pendingBytes += parserChunkLen

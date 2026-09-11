@@ -19,7 +19,7 @@
   import invariant from 'tiny-invariant'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
   import { enclosure, reclosureKey } from '$lib/functions/common/function'
-  import { useReverseScrollContainer } from 'common-ui'
+  import { useStickToBottom } from 'common-ui'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { getSelectedTenant } from '$lib/services/auth'
 
@@ -31,8 +31,11 @@
   let tenantName = $derived(getSelectedTenant() || '')
   let isInteractive = $derived(!deleted && isPipelineInteractive(pipeline.current.status))
 
-  const reverseScroll = useReverseScrollContainer({
-    observeContentElement: (e) => e.firstElementChild!
+  // The queries stack is what grows, and it is sized by its content rather than by a row count,
+  // so the anchor watches the element itself.
+  let queries: HTMLDivElement | undefined = $state()
+  const stickToBottom = useStickToBottom({
+    observeElement: () => queries
   })
 
   $effect.pre(() => {
@@ -155,8 +158,8 @@
     }
 </script>
 
-<div class="scrollbar h-full min-h-full overflow-y-auto" use:reverseScroll.action>
-  <div class="flex flex-col gap-6">
+<div class="scrollbar h-full min-h-full overflow-y-auto" use:stickToBottom.action>
+  <div bind:this={queries} class="flex flex-col gap-6">
     {#if deleted}
       <div data-testid="box-adhoc-banner">
         <WarningBanner class="sticky top-0 z-20 -mb-2" variant="info">

@@ -2,13 +2,13 @@
  * Real-wiring tests for the Logs-tab search experience in MonitoringPanel:
  *
  *   SearchBar (popup overlay, owned by TabLogs)
- *        ↳ logSearch ────▶ LogsStreamList ▶ LogList (virtualised)
- *        ↳ focusInput() ◀── Ctrl/Cmd-F handler in LogList
+ *        ↳ logSearch ────▶ LogsStreamList ▶ LogView (virtualised)
+ *        ↳ focusInput() ◀── Ctrl/Cmd-F handler in MonitoringPanel
  *
  * The test mounts the production `MonitoringPanel` and feeds it 1 000 log lines (each line
  * is just its own 1-based line number — so a search for "42" deterministically hits lines
  * 42, 142, 242, ...) through a mocked `pipelineLogsStream`. Every component in the
- * SearchBar → LogList chain is the real one — nothing is re-wired in the test file itself.
+ * SearchBar → LogView chain is the real one — nothing is re-wired in the test file itself.
  *
  * The search is a popup: collapsed it is just a search-icon button, so tests open it first
  * (click the button, or trigger Ctrl/Cmd-F which opens + focuses it).
@@ -103,7 +103,7 @@ async function mountLogsTab() {
   pipelineLogsStreamMock.mockImplementation(async () => buildFakeLogsStream())
 
   // MonitoringPanel's elements size themselves to their parent (TailwindCSS `h-full`, i.e.
-  // height: 100%); without a sized ancestor the LogList's scroll container collapses to
+  // height: 100%); without a sized ancestor the LogView's scroll container collapses to
   // clientHeight=0 and virtua never mounts any rows. A flex column of fixed height gives the
   // same shape the real app provides via the page layout.
   mountTarget = document.createElement('div')
@@ -124,15 +124,15 @@ async function mountLogsTab() {
   // Wait until the first log row has been mounted by the virtualiser — proves the
   // streaming pipeline parsed → pushed → rendered the lines we enqueued.
   await expect
-    .poll(() => document.querySelector('[data-rowindex]'), { timeout: ROW_MOUNT_TIMEOUT_MS })
+    .poll(() => document.querySelector('[data-line]'), { timeout: ROW_MOUNT_TIMEOUT_MS })
     .toBeTruthy()
 }
 
-// data-rowindex on each line is its position in the rows array (zero-based).
-// Line "N" is at row-index N-1.
+// data-line on each row is its position in the rows array (zero-based).
+// Line "N" is at data-line N-1.
 async function expectRowMounted(rowIndex: number) {
   await expect
-    .poll(() => document.querySelector(`[data-rowindex="${rowIndex}"]`), {
+    .poll(() => document.querySelector(`[data-line="${rowIndex}"]`), {
       timeout: ROW_MOUNT_TIMEOUT_MS
     })
     .toBeTruthy()
@@ -185,7 +185,7 @@ describe('MonitoringPanel — log-search wiring', () => {
     await input.fill('42')
     await userEvent.keyboard('{Enter}')
     await expectRowMounted(41)
-    await expect.poll(() => CSS.highlights.has('feldera-log-list-search')).toBe(true)
+    await expect.poll(() => CSS.highlights.has('feldera-log-view-search')).toBe(true)
     const next = page.getByRole('button', { name: 'Next match' })
     expect((next.element() as HTMLButtonElement).disabled).toBe(false)
     await expect.element(page.getByText(/\d+ of \d+/)).toBeInTheDocument()
@@ -193,7 +193,7 @@ describe('MonitoringPanel — log-search wiring', () => {
     // Type more — the submitted results must be dropped as one: highlight gone, counter gone,
     // and nav disabled (single source of truth).
     await userEvent.keyboard('7')
-    await expect.poll(() => CSS.highlights.has('feldera-log-list-search')).toBe(false)
+    await expect.poll(() => CSS.highlights.has('feldera-log-view-search')).toBe(false)
     await expect.element(page.getByText(/\d+ of \d+/)).not.toBeInTheDocument()
     await expect.poll(() => (next.element() as HTMLButtonElement).disabled).toBe(true)
   })
@@ -206,21 +206,21 @@ describe('MonitoringPanel — log-search wiring', () => {
     await input.fill('42')
     await userEvent.keyboard('{Enter}')
     await expectRowMounted(41)
-    // The match is painted via the CSS Custom Highlight API under LogList's fixed name.
+    // The match is painted via the CSS Custom Highlight API under LogView's fixed name.
     await expect
-      .poll(() => CSS.highlights.has('feldera-log-list-search'), { timeout: ROW_MOUNT_TIMEOUT_MS })
+      .poll(() => CSS.highlights.has('feldera-log-view-search'), { timeout: ROW_MOUNT_TIMEOUT_MS })
       .toBe(true)
 
     await userEvent.keyboard('{Escape}')
     await expect.element(page.getByPlaceholder('Search logs')).not.toBeInTheDocument()
-    await expect.poll(() => CSS.highlights.has('feldera-log-list-search')).toBe(false)
+    await expect.poll(() => CSS.highlights.has('feldera-log-view-search')).toBe(false)
   })
 
   it('Ctrl+F opens, Esc closes and returns focus to the container, Ctrl+F reopens', async () => {
     await mountLogsTab()
 
     // The reported flow: focus the log container, then drive the search entirely by keyboard.
-    const scrollContainer = document.querySelector<HTMLElement>('.log-list-scroll')!
+    const scrollContainer = document.querySelector<HTMLElement>('.log-view-scroll')!
     scrollContainer.focus()
 
     // Ctrl+F opens the search (handled at the window level, so it works regardless of focus).
@@ -268,7 +268,7 @@ describe('MonitoringPanel — log-search wiring', () => {
   it('Ctrl+F from the log list focuses the search input; typing + Enter searches', async () => {
     await mountLogsTab()
 
-    const scrollContainer = document.querySelector<HTMLElement>('.log-list-scroll')
+    const scrollContainer = document.querySelector<HTMLElement>('.log-view-scroll')
     expect(scrollContainer).toBeTruthy()
     scrollContainer!.focus()
 
@@ -290,7 +290,7 @@ describe('MonitoringPanel — log-search wiring', () => {
   it('Cmd+F (Meta+F) from the log list also focuses the search input', async () => {
     await mountLogsTab()
 
-    const scrollContainer = document.querySelector<HTMLElement>('.log-list-scroll')
+    const scrollContainer = document.querySelector<HTMLElement>('.log-view-scroll')
     expect(scrollContainer).toBeTruthy()
     scrollContainer!.focus()
 

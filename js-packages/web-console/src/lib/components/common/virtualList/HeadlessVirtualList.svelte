@@ -68,9 +68,11 @@
       binarySearchMax(stickyIndices, indexOffset + 1)
     )
   )
-  // `visibleCount - 1` displays one less element than needed to cover the visible area at all times (without any extra `overScan`).
-  // This is done as a workaround to a flickering issue when trying to scroll-to-bottom of a long list
-  let indices = $derived(Array.from({ length: visibleCount - 1 }, (_, i) => i + indexOffset))
+  // `visibleCount` rows exactly cover the viewport in the worst rounding case: `indexOffset` may
+  // start half a row above it and the count may round half a row down, and the two spare rows in
+  // `visibleCount` pay for both. Rendering one fewer left a strip up to a row tall blank along the
+  // bottom edge at some offsets, which is what used to read as the list flickering while scrolling.
+  let indices = $derived(Array.from({ length: visibleCount }, (_, i) => i + indexOffset))
 
   const onscroll = (event: ScrollEvent) => {
     scrollTop = event.currentTarget.scrollTop

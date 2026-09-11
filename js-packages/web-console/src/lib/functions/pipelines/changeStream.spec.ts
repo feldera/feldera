@@ -241,9 +241,9 @@ const runNewlineTextDecoder = (
   })
 
 describe('newlineTextDecoder', () => {
-  it('emits each LF-terminated line with the trailing newline preserved', async () => {
+  it('emits each LF-terminated line with the terminator stripped', async () => {
     const { values, skipped } = await runNewlineTextDecoder(['a\nb\nc\n'])
-    expect(values).toEqual(['a\n', 'b\n', 'c\n'])
+    expect(values).toEqual(['a', 'b', 'c'])
     expect(skipped).toEqual([])
   })
 
@@ -251,21 +251,22 @@ describe('newlineTextDecoder', () => {
     // `bar` arrives in chunk 1 with no terminator; it must be held as leftover
     // and joined to `baz\n` from chunk 2 to form a single `barbaz\n` line.
     const { values, skipped } = await runNewlineTextDecoder(['foo\nbar', 'baz\nqux\n'])
-    expect(values).toEqual(['foo\n', 'barbaz\n', 'qux\n'])
+    expect(values).toEqual(['foo', 'barbaz', 'qux'])
     expect(skipped).toEqual([])
   })
 
-  it('preserves CRLF line terminators on each emitted line', async () => {
-    // The docstring explicitly promises CRLF is preserved — log viewers rely on
-    // it so that copy-out round-trips byte-for-byte to the server's framing.
+  it('strips a CRLF terminator whole, leaving no stray carriage return', async () => {
+    // A surviving '\r' is worse than a surviving '\n': it is invisible in the
+    // rendered row but still steps outside the printable-ASCII grid, so the
+    // height model would decline every line for a reason nothing on screen shows.
     const { values, skipped } = await runNewlineTextDecoder(['one\r\ntwo\r\nthree\r\n'])
-    expect(values).toEqual(['one\r\n', 'two\r\n', 'three\r\n'])
+    expect(values).toEqual(['one', 'two', 'three'])
     expect(skipped).toEqual([])
   })
 
   it('does not emit a trailing partial line that lacks a newline', async () => {
     const { values, skipped } = await runNewlineTextDecoder(['done\ndangling'])
-    expect(values).toEqual(['done\n'])
+    expect(values).toEqual(['done'])
     // Partial-tail-on-close is the connection-cut case, not a shedding event.
     expect(skipped).toEqual([])
   })
@@ -283,25 +284,26 @@ describe('newlineTextDecoder', () => {
       bufferSize: 25,
       bufferWindowMs: 60_000
     })
-    expect(values).toEqual([lineA])
+    expect(values).toEqual([lineA.trimEnd()])
     expect(skipped).toEqual([lineB.length, lineC.length])
   })
 
-  it("emits an empty line as just '\\n' (the line terminator is the whole record)", async () => {
+  it("emits an empty line as '' rather than dropping it", async () => {
     // Blank lines are real records in log streams — the forward scan must not
-    // collapse them into a no-op.
+    // collapse them into a no-op, and stripping a terminator that is the whole
+    // record must leave an empty string behind rather than nothing.
     const { values, skipped } = await runNewlineTextDecoder(['a\n\nb\n'])
-    expect(values).toEqual(['a\n', '\n', 'b\n'])
+    expect(values).toEqual(['a', '', 'b'])
     expect(skipped).toEqual([])
   })
 
   it('reassembles a CRLF whose CR and LF arrive in different network chunks', async () => {
     // The text decoder scans for '\n', so a lone '\r' at the end of a network
     // chunk must be held as leftover and merged with the leading '\n' of the
-    // next chunk; the resulting line must still end in '\r\n' (not '\n' with
-    // the '\r' eaten or stranded as a partial record).
+    // next chunk, and the reassembled '\r\n' must then be stripped as a unit
+    // rather than leaving the '\r' on the line or stranding it as a record.
     const { values, skipped } = await runNewlineTextDecoder(['foo\r', '\nbar\r\n'])
-    expect(values).toEqual(['foo\r\n', 'bar\r\n'])
+    expect(values).toEqual(['foo', 'bar'])
     expect(skipped).toEqual([])
   })
 
@@ -316,8 +318,18 @@ describe('newlineTextDecoder', () => {
     const bigLine = 'A'.repeat(PARSER_CHUNK_TARGET_BYTES - 1) + '\n'
     const tail = 'tail\n'
     const { values, skipped } = await runNewlineTextDecoder([bigLine + tail])
-    expect(values).toEqual([bigLine, tail])
+    expect(values).toEqual([bigLine.trimEnd(), tail.trimEnd()])
     expect(skipped).toEqual([])
+  })
+
+  it('emits only lines the log viewer can predict the height of', async () => {
+    // LogView seeds its virtualiser from a wrap model that accepts printable ASCII and tabs and
+    // declines everything else, and one declined line costs the whole 50-line chunk its cache
+    // entry. A surviving '\n' — or an invisible surviving '\r' — therefore does not merely look
+    // untidy in a copy: it empties the size cache for the entire stream.
+    const { values } = await runNewlineTextDecoder(['plain\n', 'crlf\r\n', '\n', '\ttabbed\n'])
+    expect(values).toEqual(['plain', 'crlf', '', '\ttabbed'])
+    expect(values.every((line) => /^[\x20-\x7e\t]*$/.test(line))).toBe(true)
   })
 
   it('purges a runaway record whose unterminated leftover exceeds MAX_LINE_SIZE', async () => {
