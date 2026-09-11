@@ -94,10 +94,11 @@ jobs:
 
       - name: Validate OpenAPI codegen
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        working-directory: js-packages/web-console
         run: |
-          bun install --frozen-lockfile
-          bunx openapi-ts --output /tmp/openapi-ts-check
+          if ! pre-commit run update-api-client --all-files --show-diff-on-failure; then
+            echo "::error::The generated API client no longer matches openapi.json. Run 'pre-commit run update-api-client --all-files' and commit the result."
+            exit 1
+          fi
 
       - name: Print sccache stats
         run: sccache --show-stats

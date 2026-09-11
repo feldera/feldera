@@ -65,6 +65,17 @@ repos:
         language: system
         files: \.rs$
         pass_filenames: false
+      # Runs after the openapi update, which is what it reads.  The generated
+      # client is openapi-ts output passed through prettier and then biome;
+      # biome reports findings it cannot fix in the generator's own code, so
+      # its status is ignored and the files are the verdict.
+      - id: update-api-client
+        name: Update API client
+        description: Regenerate the TypeScript API client from openapi.json
+        entry: bash -c 'cd js-packages/web-console && bun install --frozen-lockfile && bunx openapi-ts && bunx prettier --log-level warn --write src/lib/services/manager && { bunx biome check --write src/lib/services/manager || true; }'
+        language: system
+        files: '(\.rs$|^openapi\.json$)'
+        pass_filenames: false
       # The reason this runs after the openapi update is because the openapi
       # generation adds documentation to e.g., the rest-api crate.
       - id: cargo-doc
