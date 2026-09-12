@@ -1496,7 +1496,7 @@ where
 
 /// Estimates the key counts used to choose which side the joint cursor drives.
 ///
-/// [`BatchReader::key_count`] reports the sum of key counts across all batches,
+/// [`BatchReader::approx_key_count`] reports the sum of key counts across all batches,
 /// which overstates what a cursor yields in two ways: a key held by several
 /// batches is counted once per batch, and keys whose weights add up to zero are
 /// counted even though the cursor skips them.
