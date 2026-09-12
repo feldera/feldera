@@ -188,7 +188,7 @@ Default settings applied to all pipeline pods.
 | `pipeline.serviceAccountName` | `null` | Default Kubernetes service account for pipeline pods. Typically used for IRSA-based cloud authentication. |
 | `pipeline.env` | `null` | List of environment variables injected into all pipeline pods. |
 | `pipeline.allowInitContainers` | `true` | Allow pipelines to specify init containers (e.g., sidecars) via runtime configuration. See [sidecar containers](/pipelines/sidecar). |
-| `pipeline.allowProfiling` | `false` | Grant the `PERFMON` capability to pipeline containers, enabling performance profiling. |
+| `pipeline.allowProfiling` | `false` | Grant the `PERFMON` and `IPC_LOCK` capabilities to pipeline containers, enabling performance profiling. Node kernel settings may also be required, see [Visualizing profiles](/operations/visualizing-profiles.md#enterprise-environments). |
 
 ---
 

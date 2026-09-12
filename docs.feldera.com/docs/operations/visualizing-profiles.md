@@ -301,11 +301,94 @@ Before profiling in local environments, ensure the following requirements are me
 
 ### Enterprise environments
 
-For pipelines running in enterprise Kubernetes environments, profiling must be explicitly enabled during installation.
+Profiling a pipeline in Kubernetes needs two capabilities on the
+pipeline container:
 
-To enable profiling, install Feldera with the Helm flag `pipeline.allowProfiling` set to `true`.
+| Capability | What samply needs it for                                                  |
+|------------|---------------------------------------------------------------------------|
+| `PERFMON`  | Opening perf events under the node's `kernel.perf_event_paranoid` setting. |
+| `IPC_LOCK` | Mapping the perf ring buffer beyond the container's `RLIMIT_MEMLOCK`.      |
 
-This flag adds the `PERFMON` capability to the pipeline pod to enable profiling.
+Install or upgrade Feldera with the Helm value `pipeline.allowProfiling`
+set to `true`, and the chart grants both.  On a cluster that accepts
+them, nothing else is needed.
+
+#### When profiling still fails
+
+The pipeline log carries the same `perf_event_paranoid` advice for
+either failure.  The first line tells them apart:
+
+| samply error                                                      | Cause                                                     |
+|-------------------------------------------------------------------|-----------------------------------------------------------|
+| `Failed to start profiling: Operation not permitted`               | The container lacks `PERFMON`.                            |
+| `Failed to start profiling: mmap failed: Operation not permitted`  | The container lacks `IPC_LOCK`.                           |
+
+In both cases, check what the pod actually got.  Capabilities appear on
+the pod, not on the pipeline's service:
+
+```bash
+kubectl get pod -n <pipeline-namespace> <pipeline-pod> \
+  -o jsonpath='{.spec.containers[0].securityContext.capabilities.add}'
+```
+
+The command prints `["PERFMON","IPC_LOCK"]` when both are in place.
+
+If a capability is missing, `pipeline.allowProfiling` is not reaching
+this pipeline.  Check that the value is set, and stop and start the
+pipeline so that it picks up the change.  A pipeline that uses a custom
+template through `pipeline_template_configmap` needs both capabilities
+added to that template by hand.
+
+The chart started granting `IPC_LOCK` in Feldera `0.328.0`.  Earlier
+versions grant `PERFMON` alone, and no Helm value adds `IPC_LOCK` to
+them.  A pipeline running there needs either an upgrade of the Feldera
+release to `0.328.0` or later, or the node kernel setting below.
+
+If a capability is still missing after all of that, cluster policy is
+removing it.  If both are listed and profiling still fails, the node or
+the platform underneath it denies the operation.  Either way, relax the
+node kernel setting, and contact Feldera support if that does not help.
+
+#### Relaxing the node kernel setting
+
+`kernel.perf_event_paranoid` defaults to `2`.  Setting it to `-1`
+replaces both capabilities: it permits all perf events and skips the
+memlock check.  The value `1` that the log suggests replaces `PERFMON`
+alone, and the ring buffer mmap still fails.
+
+The setting is not namespaced, so no pod can set it for itself.  It has
+to be applied to the node.
+
+:::warning
+
+The setting applies to the whole node, so it relaxes the restriction for
+every pod scheduled there.  Confine it to a node pool dedicated to
+pipelines.
+
+:::
+
+How to apply it depends on the node operating system.  On EKS,
+[Karpenter](https://karpenter.sh) often provisions Bottlerocket nodes,
+which have no shell and accept configuration only as TOML in `userData`:
+
+```yaml
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: feldera-pipelines
+spec:
+  amiSelectorTerms:
+    - alias: bottlerocket@latest
+  # role, subnetSelectorTerms and securityGroupSelectorTerms unchanged
+  userData: |
+    [settings.kernel.sysctl]
+    "kernel.perf_event_paranoid" = "-1"
+```
+
+Quote both the key and the value.  Karpenter merges the block with the
+settings it generates itself.  Existing nodes keep their old value, so
+replace them before profiling.  On other node operating systems, apply
+the same sysctl through cloud-init user data or a node bootstrap script.
 
 ### Example usage
 
