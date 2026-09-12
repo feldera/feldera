@@ -1083,4 +1083,38 @@ public class VariantTests extends SqlIoTest {
                  2024-02-02
                 (1 row)""");
     }
+    /** GeoPoint converted to VARIANT. */
+    @Test
+    public void testVariantGeoPoint() {
+        this.qst("""
+                SELECT TYPEOF(CAST(ST_POINT(1, 2) AS VARIANT));
+                 r
+                ---
+                 GEOPOINT
+                (1 row)
+
+                SELECT CAST(ST_POINT(1, 2) AS VARIANT) = CAST(ST_POINT(1, 2) AS VARIANT);
+                 r
+                ---
+                 true
+                (1 row)
+
+                SELECT CAST(ST_POINT(1, 2) AS VARIANT) = CAST(ST_POINT(2, 1) AS VARIANT);
+                 r
+                ---
+                 false
+                (1 row)
+
+                SELECT CAST(CAST(ST_POINT(1, 2) AS VARIANT) AS GEOMETRY) = ST_POINT(1, 2);
+                 r
+                ---
+                 true
+                (1 row)
+
+                SELECT CAST(PARSE_JSON('5') AS GEOMETRY) IS NULL;
+                 r
+                ---
+                 true
+                (1 row)""");
+    }
 }

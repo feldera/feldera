@@ -2822,6 +2822,10 @@ mod tests {
 
 #[cfg(test)]
 mod variant_tests {
+    // Connector metadata is still the deprecated enum, so the record fixtures
+    // below name it.
+    #![allow(deprecated)]
+
     use crate::iceberg_input_serde_config;
     use datafusion::arrow::array::{ArrayRef, Int64Array, RecordBatch};
     use datafusion::arrow::datatypes::{

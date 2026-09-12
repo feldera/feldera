@@ -21,6 +21,42 @@ import TabItem from '@theme/TabItem';
           reserved keyword, so a program may use it as an identifier, and a column's
           `watermark` property no longer appears in a program's schema.
 
+        - `VARIANT` values are implemented by the `SqlVariant` Rust
+          struct.  This feature previously required
+          `SET FELDERA_FLAT_VARIANT = 'ON'`.
+
+          Breaking change (Rust UDFs): a user-defined function that takes or
+          returns a `VARIANT` now receives `feldera_sqllib::SqlVariant`, which
+          names whichever representation `VARIANT` uses, rather than the enum
+          `feldera_sqllib::Variant`.  `SqlVariant` is not an enum, so code that
+          matched on `Variant::String(..)` and the other arms needs rewriting.
+          The enum is deprecated and will be removed.
+
+          Because connectors still report record metadata as the enum, building
+          a pipeline reports one deprecation warning per table and view, naming
+          `Variant` in code the compiler generates rather than in anything you
+          wrote.  Those warnings are harmless and go away with the enum.
+          Connector metadata itself will move to `SqlVariant` in a future
+          release, so a preprocessor that matches on the arms of the enum will
+          need rewriting then; see
+          [`ConnectorMetadata`](https://docs.feldera.com/sql/udf#connectormetadata).
+
+          The storage formats of the two representations are not compatible, so
+          a pipeline with a `VARIANT` column rebuilds its state from scratch on
+          upgrade: a view is recomputed from its inputs, and a table re-ingests
+          from its connector.  The pipeline does not do this on its own.  It
+          reports the tables and views it would rebuild and waits for approval,
+          so an upgrade never discards state without consent.
+
+          Setting
+          [`FELDERA_FLAT_VARIANT`](https://docs.feldera.com/sql/grammar#experimental-options)
+          to `OFF` keeps the previous behavior on both counts: the program's
+          user-defined functions continue using the legacy representation and need no changes,
+          and the pipeline resumes from its existing checkpoint instead of
+          rebuilding.  Set it before the pipeline runs with the new
+          representation: once the pipeline checkpoints, setting it no longer
+          recovers the earlier state.
+
         - The Kafka connector's `sasl.mechanism = OAUTHBEARER` authentication can now
           target GCP Managed Service for Apache Kafka, in addition to AWS MSK. Set the
           new `oauth_provider` field to `gcp` to mint tokens from Google Application

@@ -280,7 +280,7 @@ crate, which is part of the Feldera SQL runtime.
 | `T ARRAY`                | `feldera_sqllib::Array<T>`              |
 | `MAP<K, V>`              | `feldera_sqllib::Map<K, V>`             |
 | `UUID`                   | `feldera_sqllib::Uuid`                  |
-| `VARIANT`                | `feldera_sqllib::Variant`               |
+| `VARIANT`                | `feldera_sqllib::SqlVariant`            |
 | `ROW`                    | `Tup`N                                  |
 | User-defined struct type | `Tup`N                                  |
 
@@ -298,6 +298,12 @@ Currently `feldera_sqllib::Map` is defined as `type Map =
 Arc<BTreeMap>`, and `feldera_sqllib::Array` is defined as `type Array
 = Arc<Vec>`.  Currently `feldera_sqllib::SqlString` is a thin wrapper
 type around the `ArcStr` type from the `arcstr` crate.
+
+`feldera_sqllib::SqlVariant` is the Rust representation of
+`VARIANT` values.  However, a SQL program compiled with the
+setting [`FELDERA_FLAT_VARIANT`](/sql/grammar/#experimental-options) to `OFF`
+will generate code using `Variant`.  `Variant` will
+be soon removed, and we suggest migrating away from it.
 
 A `ROW` type with N fields is represented by a Rust `Tup`N datatype.  A
 user-defined structure type is also represented by a tuple `Tup`N
@@ -821,9 +827,18 @@ pub struct ConnectorMetadata(BTreeMap<Variant, Variant>);
 ```
 
 Attribute names are `Variant::String` keys; values are
-[`Variant`](/sql/json/#the-variant-type)s.
+[`Variant`](/sql/json/#the-variant-type)s.  Connector metadata is the one
+place that still uses the deprecated enum rather than `SqlVariant`.
 For example, the Kafka connector may attach an attribute `kafka_timestamp` with a
 type `feldera_sqllib::Timestamp`.
+
+:::warning
+
+Connector metadata will likely move to `SqlVariant` in a future release, as
+`VARIANT` columns already have.  A preprocessor that matches on
+`Variant::String` or the other arms of the enum will have to be rewritten then.
+
+:::
 
 If the connector does not provide metadata, its value is `None`.
 

@@ -576,6 +576,7 @@ pub fn cast_to_SqlDecimal_sN<const P: usize, const S: usize>(
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_SqlDecimalN_V<const P: usize, const S: usize>(
     value: Variant,
 ) -> SqlResult<Option<SqlDecimal<P, S>>> {
@@ -606,6 +607,7 @@ pub fn cast_to_SqlDecimalN_V<const P: usize, const S: usize>(
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_SqlDecimalN_VN<const P: usize, const S: usize>(
     value: Option<Variant>,
 ) -> SqlResult<Option<SqlDecimal<P, S>>> {
@@ -1266,6 +1268,7 @@ pub fn cast_to_s_u64(value: u64, size: i32, fixed: bool) -> SqlResult<SqlString>
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_s_V(value: Variant, size: i32, fixed: bool) -> SqlResult<SqlString> {
     // This function should never be called
     let result: SqlString = value.try_into().unwrap();
@@ -1273,12 +1276,14 @@ pub fn cast_to_s_V(value: Variant, size: i32, fixed: bool) -> SqlResult<SqlStrin
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_s_VN(value: Option<Variant>, size: i32, fixed: bool) -> SqlResult<SqlString> {
     // This function should never be called
     cast_to_s_V(value.unwrap(), size, fixed)
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_sN_V(value: Variant, size: i32, fixed: bool) -> SqlResult<Option<SqlString>> {
     let result: Result<SqlString, _> = value.try_into();
     match result {
@@ -1288,6 +1293,7 @@ pub fn cast_to_sN_V(value: Variant, size: i32, fixed: bool) -> SqlResult<Option<
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_sN_VN(
     value: Option<Variant>,
     size: i32,
@@ -1300,6 +1306,7 @@ pub fn cast_to_sN_VN(
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_bytes_V(value: Variant, size: i32, fixed: bool) -> SqlResult<ByteArray> {
     // Should never be called
     let result: Result<ByteArray, _> = value.try_into();
@@ -1313,6 +1320,7 @@ pub fn cast_to_bytes_V(value: Variant, size: i32, fixed: bool) -> SqlResult<Byte
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_bytes_VN(value: Option<Variant>, size: i32, fixed: bool) -> SqlResult<ByteArray> {
     match value {
         None => Err(cast_null("BINARY")),
@@ -1321,6 +1329,7 @@ pub fn cast_to_bytes_VN(value: Option<Variant>, size: i32, fixed: bool) -> SqlRe
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_bytesN_V(value: Variant, size: i32, fixed: bool) -> SqlResult<Option<ByteArray>> {
     let result: Result<ByteArray, _> = value.try_into();
     match result {
@@ -1330,6 +1339,7 @@ pub fn cast_to_bytesN_V(value: Variant, size: i32, fixed: bool) -> SqlResult<Opt
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_bytesN_VN(
     value: Option<Variant>,
     size: i32,
@@ -2684,13 +2694,13 @@ pub fn cast_to_ShortInterval_DAYS_TO_MINUTES_s(value: SqlString) -> SqlResult<Sh
 }
 
 #[doc(hidden)]
-pub fn cast_to_GeoPoint_s(value: SqlString) -> SqlResult<GeoPoint> {
+pub fn cast_to_geopoint_s(value: SqlString) -> SqlResult<GeoPoint> {
     Err(SqlRuntimeError::from_string(format!(
         "String '{value}' cannot be cast to ST_POINT"
     )))
 }
 
-cast_function!(GeoPoint, GeoPoint, s, SqlString);
+cast_function!(geopoint, GeoPoint, s, SqlString);
 
 #[doc(hidden)]
 pub fn cast_to_ShortInterval_HOURS_TO_MINUTES_s(value: SqlString) -> SqlResult<ShortInterval> {
@@ -3646,18 +3656,21 @@ macro_rules! cast_to_variant {
             // cast_to_V_i32
             #[doc(hidden)]
             #[inline]
+            #[allow(deprecated)]
             pub fn [<cast_to_ V_ $result_name >] $(< $( const $var : $ty),* >)? ( value: $result_type ) -> SqlResult<Variant> {
                 Ok(Variant::from(value))
             }
 
             // cast_to_VN_i32
             #[doc(hidden)]
+            #[allow(deprecated)]
             pub fn [<cast_to_ VN_ $result_name >] $(< $( const $var : $ty),* >)? ( value: $result_type ) -> SqlResult<Option<Variant>> {
                 Ok(Some(Variant::from(value)))
             }
 
             // cast_to_V_i32N
             #[doc(hidden)]
+            #[allow(deprecated)]
             pub fn [<cast_to_ V_ $result_name N>] $(< $( const $var : $ty),* >)? ( value: Option<$result_type> ) -> SqlResult<Variant> {
                 match value {
                     None => Ok(Variant::SqlNull),
@@ -3667,6 +3680,7 @@ macro_rules! cast_to_variant {
 
             // cast_to_VN_i32N
             #[doc(hidden)]
+            #[allow(deprecated)]
             pub fn [<cast_to_ VN_ $result_name N>] $(< $( const $var : $ty),* >)? ( value: Option<$result_type> ) -> SqlResult<Option<Variant>> {
                 r2o([ <cast_to_ V_ $result_name N >] $(:: < $($var),* >)? (value))
             }
@@ -3682,6 +3696,7 @@ macro_rules! cast_from_variant {
         ::paste::paste! {
             // cast_to_i32N_V
             #[doc(hidden)]
+            #[allow(deprecated)]
             pub fn [< cast_to_ $result_name N _V >](value: Variant) -> SqlResult<Option<$result_type>> {
                 match value {
                     Variant::String(x) => r2o([< cast_to_ $result_name _s>](x)),
@@ -3692,6 +3707,7 @@ macro_rules! cast_from_variant {
 
             // cast_to_i32N_VN
             #[doc(hidden)]
+            #[allow(deprecated)]
             pub fn [<cast_to_ $result_name N_ VN >]( value: Option<Variant> ) -> SqlResult<Option<$result_type>> {
                 match value {
                     None => Ok(None),
@@ -3714,6 +3730,7 @@ macro_rules! cast_from_variant_numeric {
         ::paste::paste! {
             // e.g., cast_to_i32N_V
             #[doc(hidden)]
+            #[allow(deprecated)]
             pub fn [< cast_to_ $result_name N _V >](value: Variant) -> SqlResult<Option<$result_type>> {
                 match value {
                     Variant::String(x) => r2o([< cast_to_ $result_name _s>](x)),
@@ -3744,6 +3761,7 @@ macro_rules! cast_from_variant_numeric {
 
             // e.g., cast_to_i32N_VN
             #[doc(hidden)]
+            #[allow(deprecated)]
             pub fn [<cast_to_ $result_name N_ VN >]( value: Option<Variant> ) -> SqlResult<Option<$result_type>> {
                 match value {
                     None => Ok(None),
@@ -3754,6 +3772,7 @@ macro_rules! cast_from_variant_numeric {
     };
 }
 
+#[allow(deprecated)]
 macro_rules! cast_variant_numeric {
     ($result_name: ident, $result_type: ty, $enum: ident) => {
         cast_to_variant!($result_name, $result_type, $enum);
@@ -3797,9 +3816,10 @@ cast_variant!(
 cast_variant!(LongInterval_YEARS_TO_MONTHS, LongInterval, LongInterval);
 cast_variant!(LongInterval_MONTHS, LongInterval, LongInterval);
 cast_variant!(LongInterval_YEARS, LongInterval, LongInterval);
-cast_variant!(GeoPoint, GeoPoint, Geometry);
+cast_variant!(geopoint, GeoPoint, Geometry);
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_V_vec<T>(vec: Array<T>) -> SqlResult<Variant>
 where
     Variant: From<T>,
@@ -3809,6 +3829,7 @@ where
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_VN_vec<T>(vec: Array<T>) -> SqlResult<Option<Variant>>
 where
     Variant: From<T>,
@@ -3818,6 +3839,7 @@ where
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_V_vecN<T>(vec: Option<Array<T>>) -> SqlResult<Variant>
 where
     Variant: From<T>,
@@ -3830,6 +3852,7 @@ where
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_VN_vecN<T>(vec: Option<Array<T>>) -> SqlResult<Option<Variant>>
 where
     Variant: From<T>,
@@ -3839,6 +3862,7 @@ where
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_vec_V<T>(value: Variant) -> SqlResult<Array<T>>
 where
     Array<T>: TryFrom<Variant, Error = Box<dyn Error>>,
@@ -3853,6 +3877,7 @@ where
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_vec_VN<T>(value: Option<Variant>) -> SqlResult<Option<Array<T>>>
 where
     Array<T>: TryFrom<Variant, Error = Box<dyn Error>>,
@@ -3865,6 +3890,7 @@ where
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_vecN_V<T>(value: Variant) -> SqlResult<Option<Array<T>>>
 where
     Array<T>: TryFrom<Variant, Error = Box<dyn Error>>,
@@ -3878,6 +3904,7 @@ where
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_vecN_VN<T>(value: Option<Variant>) -> SqlResult<Option<Array<T>>>
 where
     Array<T>: TryFrom<Variant, Error = Box<dyn Error>>,
@@ -3890,6 +3917,7 @@ where
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_V_VN(value: Option<Variant>) -> SqlResult<Variant> {
     match value {
         None => Ok(Variant::SqlNull),
@@ -3900,6 +3928,7 @@ pub fn cast_to_V_VN(value: Option<Variant>) -> SqlResult<Variant> {
 /////// cast variant to map
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_V_map<K, V>(map: Map<K, V>) -> SqlResult<Variant>
 where
     Variant: From<K> + From<V>,
@@ -3910,6 +3939,7 @@ where
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_VN_map<K, V>(map: Map<K, V>) -> SqlResult<Option<Variant>>
 where
     Variant: From<K> + From<V>,
@@ -3919,6 +3949,7 @@ where
     r2o(cast_to_V_map(map))
 }
 
+#[allow(deprecated)]
 pub fn cast_to_V_mapN<K, V>(map: Option<Map<K, V>>) -> SqlResult<Variant>
 where
     Variant: From<K> + From<V>,
@@ -3932,6 +3963,7 @@ where
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_VN_mapN<K, V>(map: Option<Map<K, V>>) -> SqlResult<Option<Variant>>
 where
     Variant: From<K> + From<V>,
@@ -3941,6 +3973,7 @@ where
     r2o(cast_to_V_mapN(map))
 }
 
+#[allow(deprecated)]
 pub fn cast_to_map_V<K, V>(value: Variant) -> SqlResult<Map<K, V>>
 where
     Map<K, V>: TryFrom<Variant, Error = Box<dyn Error>>,
@@ -3955,6 +3988,7 @@ where
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_map_VN<K, V>(value: Option<Variant>) -> SqlResult<Option<Map<K, V>>>
 where
     Map<K, V>: TryFrom<Variant, Error = Box<dyn Error>>,
@@ -3966,6 +4000,7 @@ where
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_mapN_V<K, V>(value: Variant) -> SqlResult<Option<Map<K, V>>>
 where
     Map<K, V>: TryFrom<Variant, Error = Box<dyn Error>>,
@@ -3977,6 +4012,7 @@ where
 }
 
 #[doc(hidden)]
+#[allow(deprecated)]
 pub fn cast_to_mapN_VN<K, V>(value: Option<Variant>) -> SqlResult<Option<Map<K, V>>>
 where
     Map<K, V>: TryFrom<Variant, Error = Box<dyn Error>>,
