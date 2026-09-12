@@ -147,6 +147,7 @@ struct ShardedAccumulator<B>
 where
     B: Batch,
 {
+    runtime: Runtime,
     name: OperatorName,
     exchange_id: ExchangeId,
 
@@ -218,6 +219,7 @@ where
 
         let name = OperatorName::new("ShardedAccumulatorReceiver");
         let exchange = Arc::new(Self {
+            runtime: runtime.clone(),
             exchange_id,
             workers,
             local_workers: layout.local_workers(),
@@ -257,7 +259,8 @@ where
         flush: bool,
     ) -> bool {
         // Spill the batch to disk, if we should, without taking the rxq lock.
-        let batch = Spine::maybe_flush_batch(batch, factories, || (None, None));
+        let batch =
+            Spine::maybe_flush_batch(Some(&self.runtime), batch, factories, || (None, None));
         if flush || !batch.is_empty() {
             self.rxq(receiver).deliver(factories, sender, batch, flush)
         } else {

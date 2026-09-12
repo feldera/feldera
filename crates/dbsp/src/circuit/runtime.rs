@@ -1256,31 +1256,28 @@ impl Runtime {
     ///
     /// # Returns
     ///
-    /// - `None` - if this thread doesn't have a Runtime or if it doesn't have storage configured.
+    /// - `None` - if this `Runtime` doesn't have storage configured.
     /// - `Some(0)` - spill all batches to storage.
     /// - `Some(N)` - spill batches with size >= N to storage.
-    pub fn min_insert_storage_bytes() -> Option<usize> {
-        RUNTIME.with(|rt| {
-            let rt = rt.borrow();
-            let inner = rt.as_ref()?.inner();
-            let storage = inner.storage.as_ref()?;
+    pub fn min_insert_storage_bytes(&self) -> Option<usize> {
+        let inner = &self.0;
+        let storage = inner.storage.as_ref()?;
 
-            if inner.memory_pressure() >= MemoryPressure::High {
-                Some(0)
-            } else if inner.memory_pressure() >= MemoryPressure::Moderate {
-                // Moderate pressure: spill large batches to storage in the foreground; the merger will take care of the rest.
-                Some(
-                    storage
-                        .options
-                        .min_storage_bytes
-                        .unwrap_or(10 * 1024 * 1024),
-                )
-            } else {
-                // When there is no memory pressure, we leave it to the merger to write the batches to storage
-                // eventually.
-                Some(usize::MAX)
-            }
-        })
+        if inner.memory_pressure() >= MemoryPressure::High {
+            Some(0)
+        } else if inner.memory_pressure() >= MemoryPressure::Moderate {
+            // Moderate pressure: spill large batches to storage in the foreground; the merger will take care of the rest.
+            Some(
+                storage
+                    .options
+                    .min_storage_bytes
+                    .unwrap_or(10 * 1024 * 1024),
+            )
+        } else {
+            // When there is no memory pressure, we leave it to the merger to write the batches to storage
+            // eventually.
+            Some(usize::MAX)
+        }
     }
 
     /// Returns the minimum number of bytes in a transient batch exchanged between DBSP operators during a step of the
@@ -1853,10 +1850,13 @@ mod tests {
             "memory-pressure-test-query",
             super::Parker::new(),
             move |_parker| {
+                let runtime = Runtime::runtime().expect("query thread should run inside runtime");
                 let _ = sender.send((
                     Runtime::memory_pressure().expect("query thread should run inside runtime"),
                     Runtime::min_merge_storage_bytes().expect("runtime has storage configured"),
-                    Runtime::min_insert_storage_bytes().expect("runtime has storage configured"),
+                    runtime
+                        .min_insert_storage_bytes()
+                        .expect("runtime has storage configured"),
                     Runtime::min_step_storage_bytes().expect("runtime has storage configured"),
                 ));
             },
@@ -2345,7 +2345,8 @@ mod tests {
         hruntime.kill().unwrap();
     }
 
-    // Test the memory pressure thresholds and how merger threads behave under different memory pressure levels.
+    /// Test the memory pressure thresholds and how merger threads behave
+    /// under different memory pressure levels.
     #[test]
     fn memory_pressure_thresholds_and_spill_behavior() {
         const GIB: u64 = 1024 * 1024 * 1024;
