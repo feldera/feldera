@@ -203,6 +203,21 @@ jobs:
           else
             echo "bump=true" >> "$GITHUB_OUTPUT"
           fi
+      # The release is built from one commit, and more pull requests may merge into
+      # main before this job runs.
+      - name: File changelog entries under the released version
+        id: filing
+        continue-on-error: true
+        if: ${{ steps.bump-check.outputs.bump == 'true' && github.event.release.tag_name != '' }}
+        env:
+          RELEASED_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -eu
+          git fetch --no-tags --depth 1 origin "+refs/tags/$RELEASED_TAG:refs/tags/$RELEASED_TAG"
+          python3 scripts/file_changelog_release.py \
+            --tag "$RELEASED_TAG" \
+            --changelog docs.feldera.com/docs/changelog.md
+
       - name: Bump cargo versions
         if: ${{ steps.bump-check.outputs.bump == 'true' }}
         run: |
@@ -238,6 +253,15 @@ jobs:
         if: ${{ steps.bump-check.outputs.bump == 'true' }}
         run: |
           git diff
+      # Filing the changelog is cosmetic, the version bump is not: a changelog
+      # the filing cannot handle warns and leaves the entries unreleased, while
+      # the bump still commits and pushes.  The merge queue runs the same filing
+      # as a dry run, so a changelog that breaks it fails its own pull request.
+      - name: Warn when the job could not file the changelog
+        if: ${{ steps.filing.outcome == 'failure' }}
+        run: |
+          echo "::warning::the released entries stay under \`## Unreleased\`; file them by hand"
+
       - uses: EndBug/add-and-commit@a94899bca583c204427a224a7af87c02f9b325d5 # a94899bca583c204427a224a7af87c02f9b325d5
         if: ${{ vars.RELEASE_DRY_RUN == 'false' && steps.bump-check.outputs.bump == 'true' }}
         with:
