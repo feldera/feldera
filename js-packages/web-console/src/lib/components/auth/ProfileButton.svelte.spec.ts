@@ -11,6 +11,7 @@
  */
 import { describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-svelte'
+import type { ClusterHealthStatus } from '$lib/compositions/health/useClusterHealth.svelte'
 import { permissionsOf, roleOf } from '$lib/services/rbac'
 
 // Hoisted so the `$app/state` factory below can close over it: each test sets
@@ -57,10 +58,16 @@ const session = (sessionRole: string | null, tenantId: string) => {
   }
 }
 
-const healthStatus = { api: 'healthy', compiler: 'healthy', runner: 'healthy' } as const
+const healthStatus: ClusterHealthStatus = {
+  api: 'healthy',
+  compiler: 'healthy',
+  runner: 'healthy',
+  stale: false,
+  recordedAt: null
+}
 
-const openMenu = async () => {
-  await render(ProfileButton, { healthStatus })
+const openMenu = async (status: ClusterHealthStatus = healthStatus) => {
+  await render(ProfileButton, { healthStatus: status })
   document.querySelector<HTMLButtonElement>('button:has(.fd-circle-user)')!.click()
   await expect.poll(() => document.body.textContent).toContain('Sign Out')
   return document.body.textContent ?? ''
@@ -70,6 +77,21 @@ describe('ProfileButton', () => {
   it('offers cluster health to the lowest role that resolves a tenant', async () => {
     state.data = session('read', 't-acme')
     expect(await openMenu()).toContain('Feldera Health')
+  })
+
+  // Nothing labels the health dot, so the colour it carries is the assertion.
+  it('marks stale monitoring data as a warning rather than as healthy', async () => {
+    state.data = session('read', 't-acme')
+    await openMenu({ ...healthStatus, stale: true })
+    expect(document.querySelector('.bg-success-500')).toBeNull()
+    expect(document.querySelector('.bg-warning-500')).not.toBeNull()
+  })
+
+  it('keeps the recorded major issue red once the data goes stale', async () => {
+    state.data = session('read', 't-acme')
+    await openMenu({ ...healthStatus, stale: true, runner: 'major_issue' })
+    expect(document.querySelector('.bg-error-500')).not.toBeNull()
+    expect(document.querySelector('.bg-warning-500')).toBeNull()
   })
 
   it('hides cluster health when no session data resolved at all', async () => {

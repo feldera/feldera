@@ -1,8 +1,11 @@
 import Dayjs from 'dayjs'
 import { useInterval } from '$lib/compositions/common/useInterval.svelte'
+import { ServerDate } from '$lib/compositions/serverTime'
 
 export const useElapsedTime = () => {
-  const now = useInterval(() => new Date(), 1000, 1000 - (Date.now() % 1000))
+  // Every timestamp measured here comes from the server, so ageing it against a skewed
+  // browser clock would report drift as elapsed time.
+  const now = useInterval(() => new ServerDate(), 1000, 1000 - (Date.now() % 1000))
   const formatElapsedTime = (timestamp: Date, precision: 'dhms' | 'dhm' = 'dhms') => {
     const delta = now.current.valueOf() - timestamp.valueOf()
     const d = Dayjs.duration(delta)

@@ -14,9 +14,9 @@ import {
   findMatchOffsets,
   findOccurrence,
   isFindShortcut,
+  positiveMod,
   type SearchPattern,
-  searchPatternsEqual,
-  positiveMod
+  searchPatternsEqual
 } from 'common-ui'
 import { afterEach, describe, expect, it } from 'vitest'
 

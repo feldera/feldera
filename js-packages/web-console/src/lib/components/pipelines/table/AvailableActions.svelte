@@ -5,10 +5,10 @@
   import { duplicatePipeline, duplicatePipelineTooltip } from '$lib/compositions/duplicatePipeline'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { useIsEnterprise } from '$lib/compositions/useEdition.svelte'
   import { usePermission } from '$lib/compositions/usePermission.svelte'
   import { getPipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { isPipelineCodeEditable } from '$lib/functions/pipelines/status'
   import type { PipelineThumb } from '$lib/services/pipelineManager'
@@ -42,8 +42,8 @@
     (EXEC_BULK.has(action) ? canExec.allowed : true) &&
     (WRITE_BULK.has(action) ? canWrite.allowed : true)
 
-  const isPremium = usePremiumFeatures()
-  const stop = isPremium.value ? ['stop' as const] : []
+  const isEnterprise = useIsEnterprise()
+  const stop = isEnterprise.value ? ['stop' as const] : []
   const statusActions = ({ status, storageStatus }: (typeof selected)[number]) => {
     const storageAction = storageStatus === 'InUse' ? ['clear' as const] : []
     return match(status)
@@ -131,11 +131,11 @@
       if (!isPipelineCodeEditable(pipeline.status)) {
         const { waitFor } = await postPipelineAction(
           pipeline.name,
-          isPremium.value ? 'stop' : 'kill'
+          isEnterprise.value ? 'stop' : 'kill'
         )
         updatePipeline(pipeline.name, (p) => ({
           ...p,
-          status: isPremium.value ? 'Stopping' : 'Stopping'
+          status: isEnterprise.value ? 'Stopping' : 'Stopping'
         }))
         await waitFor().catch(toastError('Waiting for pipeline to stop'))
       }

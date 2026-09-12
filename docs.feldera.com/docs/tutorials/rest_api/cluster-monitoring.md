@@ -26,6 +26,27 @@ The cluster monitor events can be retrieved via two endpoints:
   including a human-readable description of the status reported
   by the services themselves and of the Kubernetes resources that back them.
 
+- [**GET /v0/cluster_healthz**](/api/check-cluster-health):
+  reports the health of the cluster derived from the latest event. It answers `200` when
+  every service is healthy and the data behind the report is fresh, and `503` otherwise.
+
+## Stale monitoring data
+
+The monitor is the only writer of these events. In the enterprise edition it runs within
+the runner process, so when the runner dies the newest event keeps describing a cluster
+that no longer exists. Because a service cannot report its own death, the reader checks how
+old that event is instead.
+
+The monitor writes at least every 10 minutes. Once the latest event is older than three
+such intervals, that is 30 minutes, it carries `stale: true`. Only `latest` reports the
+field, since older events are old by design. The `all_healthy` field of an event keeps
+describing that event, so read `stale` alongside it.
+
+`GET /v0/cluster_healthz` answers the question "is the cluster healthy now", so there
+staleness sets `all_healthy` to `false` and the response code to `503`: monitoring that has
+died cannot vouch for anything. Its response then carries the last recorded statuses rather
+than a description of the cluster now.
+
 ## Examples
 
 ### All events
@@ -70,6 +91,7 @@ curl -X GET 'http://127.0.0.1:8080/v0/cluster/events/latest' | jq
 {
   "id": "019afe45-ec1f-7de0-9cd1-3a6a4350b5e9",
   "recorded_at": "2025-12-08T14:03:06.655736Z",
+  "stale": false,
   "all_healthy": true,
   "api_status": "Healthy",
   "compiler_status": "Healthy",

@@ -10,7 +10,7 @@
   import VersionDisplay from '$lib/components/version/VersionDisplay.svelte'
   import type { ClusterHealthStatus } from '$lib/compositions/health/useClusterHealth.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import type { ClusterEventType } from '$lib/functions/pipelines/health'
+  import { type ClusterEventType, worstClusterStatus } from '$lib/functions/pipelines/health'
   import { resolve } from '$lib/functions/svelte'
   import type { AuthDetails } from '$lib/types/auth'
   import type { Snippet } from '$lib/types/svelte'
@@ -23,13 +23,10 @@
 
   const globalDialog = useGlobalDialog()
 
-  let combinedStatus: ClusterEventType = $derived.by(() => {
-    const all = Object.values(healthStatus)
-    return all.some((e) => e === 'major_issue')
-      ? 'major_issue'
-      : all.some((e) => e === 'unhealthy')
-        ? 'unhealthy'
-        : 'healthy'
+  // Stale data cannot claim health, but a recorded issue keeps its own colour.
+  let combinedStatus: ClusterEventType | 'stale' = $derived.by(() => {
+    const worst = worstClusterStatus([healthStatus.api, healthStatus.compiler, healthStatus.runner])
+    return healthStatus.stale && worst === 'healthy' ? 'stale' : worst
   })
 </script>
 
@@ -89,7 +86,7 @@
           <div
             class="m-2 h-2.5 w-2.5 rounded-full text-[64px] {combinedStatus === 'healthy'
               ? 'bg-success-500'
-              : combinedStatus === 'unhealthy'
+              : combinedStatus === 'unhealthy' || combinedStatus === 'stale'
                 ? 'bg-warning-500'
                 : 'bg-error-500'}"
           ></div>

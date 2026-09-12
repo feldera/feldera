@@ -20,11 +20,13 @@
   import { useContextDrawer } from '$lib/compositions/layout/useContextDrawer.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { useRefreshPipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { useIsEnterprise } from '$lib/compositions/useEdition.svelte'
   import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { closedIntervalAction } from '$lib/functions/common/promise'
+  import { clusterHealthMessage } from '$lib/functions/pipelines/health'
   import type { Snippet } from '$lib/types/svelte'
   import type { LayoutData } from './$types'
 
@@ -103,15 +105,8 @@
       return { ...message, text }
     })
   )
-  const healthMessage = $derived(
-    clusterHealth.current.api !== 'healthy'
-      ? 'There is an issue with the API server.'
-      : clusterHealth.current.compiler !== 'healthy'
-        ? 'There is an issue with the compiler server.'
-        : clusterHealth.current.runner !== 'healthy'
-          ? 'There is an issue with the runner.'
-          : null
-  )
+  const isEnterprise = useIsEnterprise()
+  const healthMessage = $derived(clusterHealthMessage(clusterHealth.current, isEnterprise.value))
 
   const api = usePipelineManager()
   const { toastMain, dismissMain } = useToast()
