@@ -751,6 +751,24 @@ where
 }
 
 impl RootCircuit {
+    /// [`dyn_add_lazy_input_map`](Self::dyn_add_lazy_input_map) with its type
+    /// parameters pinned to the only types the typed wrapper instantiates it
+    /// with.
+    ///
+    /// Going through this monomorphizes the operator once here rather than
+    /// again for every `K`, `V` and `U` a caller names, which is what the
+    /// generic form would otherwise cost at each call site.
+    pub fn dyn_add_lazy_input_map_mono(
+        &self,
+        persistent_id: Option<&str>,
+        factories: &AddLazyInputMapFactories<OrdIndexedZSet<DynData, DynData>, DynData>,
+    ) -> (
+        IndexedZSetStream<DynData, DynData>,
+        UpsertHandle<DynData, DynUpdate<DynData, DynData>>,
+    ) {
+        self.dyn_add_lazy_input_map(persistent_id, factories)
+    }
+
     /// An input map that resolves its updates when the transaction commits.
     ///
     /// Same interface and semantics as
