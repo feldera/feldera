@@ -529,7 +529,7 @@ impl RootCircuit {
         U: DBData + Erase<DynData>,
     {
         let factories = AddLazyInputMapFactories::new::<K, V, U>();
-        let (stream, handle) = self.dyn_add_lazy_input_map(persistent_id, &factories);
+        let (stream, handle) = self.dyn_add_lazy_input_map_mono(persistent_id, &factories);
 
         (stream.typed(), MapHandle::new(handle))
     }
