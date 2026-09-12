@@ -58,22 +58,21 @@
 //! * A step reports completion before the operator has finished.
 
 use super::*;
-use crate::Runtime;
 use crate::circuit::{CircuitConfig, CircuitStorageConfig};
-use crate::dynamic::LeanVec;
-use crate::operator::dynamic::input::AddInputMapFactories;
+use crate::operator::input::{MapHandle, StagedBuffers};
 use crate::trace::Cursor;
+use crate::typed_batch::OrdIndexedZSet as TypedIndexedZSet;
+use crate::{Runtime, Stream};
 use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use proptest::prelude::*;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::Path;
 use std::sync::Mutex;
 use tempfile::TempDir;
 
-type Key = DynData;
-type Val = DynData;
-type Upd = DynData;
-type Batched = OrdIndexedZSet<Key, Val>;
+/// The map under test, and the eager map it is checked against.
+type Map = TypedIndexedZSet<i32, i32>;
+type Handle = MapHandle<i32, i32, i32>;
 
 /// A write, `Some(value)`, or a delete, `None`.
 type Command = (i32, Option<i32>);
@@ -183,8 +182,8 @@ impl Config {
 }
 
 /// The commands of one step, as the handle takes them.
-fn pairs(commands: &[Command]) -> Box<DynPairs<Key, DynUpdate<Val, Upd>>> {
-    let batch: Vec<Tup2<i32, Update<i32, i32>>> = commands
+fn pairs(commands: &[Command]) -> Vec<Tup2<i32, Update<i32, i32>>> {
+    commands
         .iter()
         .map(|&(key, value)| {
             Tup2(
@@ -195,8 +194,7 @@ fn pairs(commands: &[Command]) -> Box<DynPairs<Key, DynUpdate<Val, Upd>>> {
                 },
             )
         })
-        .collect();
-    Box::new(LeanVec::from(batch)).erase_box()
+        .collect()
 }
 
 /// The number of staged appends a step is split into, when it is split at all.
@@ -206,17 +204,13 @@ fn pairs(commands: &[Command]) -> Box<DynPairs<Key, DynUpdate<Val, Upd>>> {
 const APPENDS_PER_STEP: usize = 3;
 
 /// One staged append, which reaches each worker as a vector of its own.
-fn push_staged(handle: &UpsertHandle<Key, DynUpdate<Val, Upd>>, commands: &[Command]) {
-    let mut partitions: Vec<_> = (0..handle.num_partitions())
-        .map(|_| handle.pairs_factory.default_box())
-        .collect();
-    handle.dyn_stage(&mut pairs(commands), &mut partitions);
-    handle.dyn_append_staged(partitions);
+fn push_staged(handle: &Handle, commands: &[Command]) {
+    handle.stage([VecDeque::from(pairs(commands))]).flush();
 }
 
-fn push(handle: &mut UpsertHandle<Key, DynUpdate<Val, Upd>>, commands: &[Command], staged: bool) {
+fn push(handle: &mut Handle, commands: &[Command], staged: bool) {
     if !staged {
-        handle.dyn_append(&mut pairs(commands));
+        handle.append(&mut pairs(commands));
         return;
     }
 
@@ -230,8 +224,8 @@ fn push(handle: &mut UpsertHandle<Key, DynUpdate<Val, Upd>>, commands: &[Command
 
 /// Collects every batch a stream emits.  With several workers a step emits one
 /// batch per worker, and each lands here on its own.
-fn record(stream: &IndexedZSetStream<Key, Val>, into: Arc<Mutex<Vec<Batch>>>) {
-    stream.inspect(move |batch| {
+fn record(stream: &Stream<RootCircuit, Map>, into: Arc<Mutex<Vec<Batch>>>) {
+    stream.inner().inspect(move |batch| {
         let mut records = Vec::new();
         let mut cursor = batch.cursor();
         while cursor.key_valid() {
@@ -257,9 +251,10 @@ fn record(stream: &IndexedZSetStream<Key, Val>, into: Arc<Mutex<Vec<Batch>>>) {
 /// one rather than building a second from the deltas.  The factories are what a
 /// miss would build from, and a miss would make this check say nothing new: an
 /// integral summed from the deltas agrees with them by construction.
-fn record_integral(stream: &IndexedZSetStream<Key, Val>, into: Arc<Mutex<Vec<Batch>>>) {
-    let factories = <OrdIndexedZSetFactories<Key, Val>>::new::<i32, i32, ZWeight>();
+fn record_integral(stream: &Stream<RootCircuit, Map>, into: Arc<Mutex<Vec<Batch>>>) {
+    let factories = <OrdIndexedZSetFactories<DynData, DynData>>::new::<i32, i32, ZWeight>();
     stream
+        .inner()
         .dyn_accumulate_integrate_trace(&factories)
         // `apply` rather than `inspect`: a `Spine` cannot be cloned, and
         // `inspect` clones what it passes through.
@@ -390,19 +385,13 @@ fn check_explained(program: &Program, config: Config, explain: Explain) {
     let storage_dir = TempDir::new().expect("cannot create a directory for storage");
     let (mut dbsp, (mut lazy_handle, mut eager_handle)) =
         Runtime::init_circuit(config.circuit_config(storage_dir.path()), move |circuit| {
-            let lazy_factories = <AddLazyInputMapFactories<Batched, Upd>>::new::<i32, i32, i32>();
-            let (lazy, lazy_handle) = circuit.dyn_add_lazy_input_map(None, &lazy_factories);
+            let (lazy, lazy_handle) = circuit.add_lazy_input_map::<i32, i32, i32>();
             record(&lazy, lazy_out.clone());
             record_integral(&lazy, integral_out.clone());
 
-            let eager_factories = <AddInputMapFactories<Batched, Upd>>::new::<i32, i32, i32>();
-            let (eager, eager_handle) = circuit.dyn_add_input_map(
-                None,
-                &eager_factories,
-                Box::new(|_value: &mut Val, _update: &Upd| {
-                    unreachable!("no `Update` commands are sent")
-                }),
-            );
+            let (eager, eager_handle) = circuit.add_input_map::<i32, i32, i32, _>(|_, _| {
+                unreachable!("no `Update` commands are sent")
+            });
             record(&eager, eager_out.clone());
 
             Ok((lazy_handle, eager_handle))
@@ -647,8 +636,7 @@ fn every_short_program_in_staged_appends_across_four_workers() {
 #[test]
 fn a_single_host_map_builds_no_exchange() {
     let (dbsp, _handle) = Runtime::init_circuit(CircuitConfig::with_workers(4), |circuit| {
-        let factories = <AddLazyInputMapFactories<Batched, Upd>>::new::<i32, i32, i32>();
-        let (delta, handle) = circuit.dyn_add_lazy_input_map(None, &factories);
+        let (delta, handle) = circuit.add_lazy_input_map::<i32, i32, i32>();
         delta.inspect(|_| {});
         let graph = circuit.to_dot(
             |node| {
@@ -680,8 +668,7 @@ fn a_single_host_map_builds_no_exchange() {
 #[test]
 fn the_integral_is_named_for_a_restart() {
     let (dbsp, _handle) = Runtime::init_circuit(CircuitConfig::with_workers(1), |circuit| {
-        let factories = <AddLazyInputMapFactories<Batched, Upd>>::new::<i32, i32, i32>();
-        let (delta, handle) = circuit.dyn_add_lazy_input_map(Some("table"), &factories);
+        let (delta, handle) = circuit.add_lazy_input_map_persistent::<i32, i32, i32>(Some("table"));
         delta.inspect(|_| {});
         let graph = circuit.to_dot(
             |node| {
@@ -942,19 +929,12 @@ mod staged {
 
         let (mut dbsp, (lazy_handle, eager_handle)) =
             Runtime::init_circuit(CircuitConfig::with_workers(workers), move |circuit| {
-                let lazy_factories =
-                    <AddLazyInputMapFactories<Batched, Upd>>::new::<i32, i32, i32>();
-                let (lazy, lazy_handle) = circuit.dyn_add_lazy_input_map(None, &lazy_factories);
+                let (lazy, lazy_handle) = circuit.add_lazy_input_map::<i32, i32, i32>();
                 record(&lazy, lazy_out.clone());
 
-                let eager_factories = <AddInputMapFactories<Batched, Upd>>::new::<i32, i32, i32>();
-                let (eager, eager_handle) = circuit.dyn_add_input_map(
-                    None,
-                    &eager_factories,
-                    Box::new(|_value: &mut Val, _update: &Upd| {
-                        unreachable!("no `Update` commands are sent")
-                    }),
-                );
+                let (eager, eager_handle) = circuit.add_input_map::<i32, i32, i32, _>(|_, _| {
+                    unreachable!("no `Update` commands are sent")
+                });
                 record(&eager, eager_out.clone());
 
                 Ok((lazy_handle, eager_handle))
