@@ -203,6 +203,19 @@ jobs:
           else
             echo "bump=true" >> "$GITHUB_OUTPUT"
           fi
+      # The release is built from one commit, and more pull requests may merge into
+      # main before this job runs.
+      - name: File changelog entries under the released version
+        if: ${{ steps.bump-check.outputs.bump == 'true' && github.event.release.tag_name != '' }}
+        env:
+          RELEASED_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -eu
+          git fetch --no-tags --depth 1 origin "+refs/tags/$RELEASED_TAG:refs/tags/$RELEASED_TAG"
+          python3 scripts/file_changelog_release.py \
+            --tag "$RELEASED_TAG" \
+            --changelog docs.feldera.com/docs/changelog.md
+
       - name: Bump cargo versions
         if: ${{ steps.bump-check.outputs.bump == 'true' }}
         run: |

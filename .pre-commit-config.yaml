@@ -53,6 +53,20 @@ repos:
         language: system
         files: Cargo\.(toml|lock)$
         pass_filenames: false
+      - id: changelog-unreleased-section
+        name: Changelog Unreleased section
+        description: Mark changelog entries which are released in this version.
+        entry: python3 scripts/file_changelog_release.py --check --changelog docs.feldera.com/docs/changelog.md
+        language: system
+        files: '^docs\.feldera\.com/docs/changelog\.md$'
+        pass_filenames: false
+      - id: changelog-release-tests
+        name: Changelog release tests
+        description: Unit tests for the script creating the changelog.
+        entry: python3 scripts/tests/test_file_changelog_release.py
+        language: system
+        files: '^scripts/(file_changelog_release\.py|tests/)'
+        pass_filenames: false
       - id: fix-rust-mod-naming
         name: Rust module naming
         entry: scripts/fix-rust-module-naming

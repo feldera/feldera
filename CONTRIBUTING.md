@@ -237,7 +237,19 @@ the new version. The release CI scripts will then run in this order:
   - Releases the rust crates to crates.io
   - Determines the next version (this is controlled by a `RELEASE_NEXT_VERSION` variable in the repo settings)
   - Bumps the versions in Cargo.toml and pyproject.toml and openapi.yaml to the next version
+  - Files the changelog entries the released commit carried under a `## v$version` heading
   - Commits and pushes the changes to main
 
 Note that the release process requires that the commit you want to release was merged into main
 through the merge queue, otherwise the build artifacts will not be available.
+
+### Changelog entries
+
+Add a user-visible change as a bullet under `## Unreleased` in
+`docs.feldera.com/docs/changelog.md`, and leave it there.  The post-release job
+files the entries the release carried under its own heading by running
+
+```
+scripts/file_changelog_release.py --tag v0.348.0 --changelog docs.feldera.com/docs/changelog.md
+```
+
