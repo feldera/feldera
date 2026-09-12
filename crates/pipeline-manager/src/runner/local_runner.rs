@@ -10,6 +10,7 @@ use crate::db::types::version::Version;
 use crate::error::{ManagerError, source_error};
 use crate::pipeline_env::validate_pipeline_env;
 use crate::runner::error::RunnerError;
+use crate::runner::executable_busy::retry_on_executable_busy;
 use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
 use crate::runner::pipeline_logs::{LogMessage, LogsSender};
 use async_trait::async_trait;
@@ -21,7 +22,6 @@ use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus};
 use reqwest::StatusCode;
 use serde_json::json;
 use std::ffi::OsString;
-use std::io::ErrorKind;
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -1241,8 +1241,10 @@ impl PipelineExecutor for LocalRunner {
             binary_file_path
         };
 
-        let mut retries = 0..3;
-        let mut process = loop {
+        // Under heavy concurrency the filesystem can temporarily report
+        // ETXTBSY when spawning an executable that was just written. Retry
+        // with a budget that stays inside the default provisioning timeout.
+        let mut process = retry_on_executable_busy(|| {
             // Run executable:
             // - Current directory: pipeline working directory
             // - Configuration file: path to config.yaml
@@ -1301,24 +1303,10 @@ impl PipelineExecutor for LocalRunner {
                     .arg("--https-tls-key-path")
                     .arg(https_tls_key_path);
             }
-            match command.spawn() {
-                Ok(process) => break process,
-                Err(e) if e.kind() == ErrorKind::ExecutableFileBusy && retries.next().is_some() => {
-                    // This race appears very occasionally in testing.  It might
-                    // be that tokio in some cases keeps an `Arc<File>` for the
-                    // underlying file in some background task after we've
-                    // finished retrieving the binary.
-                    warn!("pipeline executable is busy, retrying in 1 second...");
-                    sleep(Duration::from_secs(1)).await;
-                }
-                Err(e) => {
-                    return Err(RunnerError::RunnerProvisionError {
-                        error: format!("unable to spawn process due to: {e}"),
-                    }
-                    .into());
-                }
-            }
-        };
+            command.spawn()
+        })
+        .await
+        .map_err(|e| ManagerError::from(e.into_provision_error()))?;
 
         // Spawn a thread which follows the process stdout and stderr
         let stdout = process
