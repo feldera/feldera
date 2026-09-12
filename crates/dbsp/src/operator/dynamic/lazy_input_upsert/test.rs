@@ -658,6 +658,59 @@ fn a_single_host_map_builds_no_exchange() {
     dbsp.kill().unwrap();
 }
 
+/// A downstream operator asking for the map's integral finds the one the map
+/// already built.
+///
+/// The map caches its integral under the stream's id, and an operator that wants
+/// the table's state looks it up there.  A key that does not match is not an
+/// error: the lookup builds a second integral from the delta stream instead, so
+/// the circuit carries two copies of the table and every check against "the
+/// integral" compares the deltas with themselves.  Counting the nodes the lookup
+/// adds is what tells the two apart.
+///
+/// Both spellings are checked because both have to resolve here.  The sharded
+/// one hands a sharded stream to the plain one, and on a single host this stream
+/// is sharded.
+#[test]
+fn a_downstream_operator_finds_the_maps_integral() {
+    fn nodes(circuit: &RootCircuit) -> usize {
+        circuit
+            .to_dot(
+                |_| Some(crate::utils::DotNodeAttributes::new().with_label("n")),
+                |_| None,
+            )
+            .matches("[label=")
+            .count()
+    }
+
+    for workers in [1, 4] {
+        let (dbsp, _handle) =
+            Runtime::init_circuit(CircuitConfig::with_workers(workers), |circuit| {
+                let (delta, handle) = circuit.add_lazy_input_map::<i32, i32, i32>();
+                delta.inner().inspect(|_| {});
+                let factories =
+                    <OrdIndexedZSetFactories<DynData, DynData>>::new::<i32, i32, ZWeight>();
+
+                let before = nodes(circuit);
+                let plain = delta.inner().dyn_accumulate_integrate_trace(&factories);
+                let sharded = delta
+                    .inner()
+                    .dyn_shard_accumulate_integrate_trace(&factories);
+                assert_eq!(
+                    nodes(circuit),
+                    before,
+                    "asking for the integral built another one instead of finding the map's"
+                );
+
+                plain.apply(|_| {});
+                sharded.apply(|_| {});
+                Ok(handle)
+            })
+            .unwrap();
+        dbsp.kill().unwrap();
+    }
+}
+
 /// The integral carries the persistent id a restart looks it up by.
 ///
 /// A persistent id names an operator's state across restarts, so renaming one
