@@ -18,7 +18,7 @@ public class TopKUnusedFieldsIncrementalTests extends StreamingTestBase {
                 SELECT id, a FROM (
                     SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ts DESC) AS rn FROM T)
                 WHERE rn = 1;""");
-        Assert.assertEquals(new TopKUnusedFieldsTests.Shape(3, 2, false), shape(ccs));
+        Assert.assertEquals(new TopKUnusedFieldsTests.Shape(2, 1, false), shape(ccs));
         // Expected output validated with Postgres 14.
         ccs.stepWeightOne("INSERT INTO T VALUES (1, 10, 100, 0, 0), (1, 20, 200, 0, 0), (2, 5, 500, 0, 0);",
                 """

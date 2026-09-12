@@ -77,7 +77,7 @@ public class TopKUnusedFieldsTests extends SqlIoTest {
                 SELECT id, a FROM (
                     SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ts DESC) AS rn FROM T)
                 WHERE rn = 1;""");
-        Assert.assertEquals(new Shape(3, 2, false), shape(ccs));
+        Assert.assertEquals(new Shape(2, 1, false), shape(ccs));
         // Expected output validated with Postgres 14.
         ccs.stepWeightOne("INSERT INTO T VALUES (1, 10, 100, 0, 0), (1, 20, 200, 0, 0), (2, 5, 500, 0, 0);",
                 """
@@ -95,7 +95,7 @@ public class TopKUnusedFieldsTests extends SqlIoTest {
                 SELECT id, a, rn FROM (
                     SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ts DESC) AS rn FROM T)
                 WHERE rn <= 2;""");
-        Assert.assertEquals(new Shape(3, 3, false), shape(ccs));
+        Assert.assertEquals(new Shape(2, 2, false), shape(ccs));
         // Expected output validated with Postgres 14.
         ccs.stepWeightOne("INSERT INTO T VALUES (1, 10, 100, 0, 0), (1, 20, 200, 0, 0), (1, 30, 300, 0, 0), (2, 5, 500, 0, 0);",
                 """
@@ -114,7 +114,7 @@ public class TopKUnusedFieldsTests extends SqlIoTest {
                 SELECT rn, id FROM (
                     SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ts DESC) AS rn FROM T)
                 WHERE rn <= 2;""");
-        Assert.assertEquals(new Shape(2, 2, false), shape(ccs));
+        Assert.assertEquals(new Shape(1, 1, false), shape(ccs));
         // Expected output validated with Postgres 14.
         ccs.stepWeightOne("INSERT INTO T VALUES (1, 10, 100, 0, 0), (1, 20, 200, 0, 0), (1, 30, 300, 0, 0), (2, 5, 500, 0, 0);",
                 """
@@ -134,7 +134,7 @@ public class TopKUnusedFieldsTests extends SqlIoTest {
                 SELECT id, a FROM (
                     SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ts DESC) AS rn FROM T)
                 WHERE rn <= 3 AND MOD(rn, 2) = 1;""");
-        Assert.assertEquals(new Shape(3, 3, false), shape(ccs));
+        Assert.assertEquals(new Shape(2, 2, false), shape(ccs));
         // Expected output validated with Postgres 14.
         ccs.stepWeightOne("INSERT INTO T VALUES (1, 10, 100, 0, 0), (1, 20, 200, 0, 0), (1, 30, 300, 0, 0), (2, 5, 500, 0, 0);",
                 """
@@ -155,7 +155,7 @@ public class TopKUnusedFieldsTests extends SqlIoTest {
                 SELECT DISTINCT id, a FROM (
                     SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ts DESC) AS rn FROM T)
                 WHERE rn <= 2;""");
-        Assert.assertEquals(new Shape(3, 2, true), shape(ccs));
+        Assert.assertEquals(new Shape(2, 1, true), shape(ccs));
         CountDistinct distinct = new CountDistinct(ccs.compiler);
         ccs.visit(distinct);
         Assert.assertEquals(1, distinct.count);
@@ -175,7 +175,7 @@ public class TopKUnusedFieldsTests extends SqlIoTest {
                 SELECT id, a + b AS s FROM (
                     SELECT *, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ts DESC) AS rn FROM T)
                 WHERE rn = 1;""");
-        Assert.assertEquals(new Shape(4, 3, false), shape(ccs));
+        Assert.assertEquals(new Shape(3, 2, false), shape(ccs));
         // Expected output validated with Postgres 14.
         ccs.stepWeightOne("INSERT INTO T VALUES (1, 10, 100, 1, 0), (1, 20, 200, 2, 0);",
                 """
@@ -193,7 +193,7 @@ public class TopKUnusedFieldsTests extends SqlIoTest {
                 SELECT id, a FROM (
                     SELECT *, RANK() OVER (PARTITION BY id ORDER BY ts DESC) AS rn FROM T)
                 WHERE rn <= 1;""");
-        Assert.assertEquals(new Shape(3, 2, true), shape(ccs));
+        Assert.assertEquals(new Shape(2, 1, true), shape(ccs));
         // Expected output validated with Postgres 14.
         ccs.stepWeightOne("INSERT INTO T VALUES (1, 10, 100, 0, 0), (1, 10, 200, 0, 0), (1, 5, 300, 0, 0);",
                 """
@@ -234,8 +234,8 @@ public class TopKUnusedFieldsTests extends SqlIoTest {
                 SELECT id, a AS v FROM L
                 UNION ALL
                 SELECT id, c AS v FROM L;""");
-        // Stored: id, ts, a, c.  Emitted: id, a, c.
-        Assert.assertEquals(new Shape(4, 3, false), shape(ccs));
+        // Stored: ts, a, c.  Emitted: a, c.  id is not stored: it is the TopK's key.
+        Assert.assertEquals(new Shape(3, 2, false), shape(ccs));
         // Expected output validated with Postgres 14.
         ccs.stepWeightOne("INSERT INTO T VALUES (1, 10, 100, 0, 7), (1, 20, 200, 0, 8), (2, 5, 500, 0, 9);",
                 """
@@ -255,7 +255,7 @@ public class TopKUnusedFieldsTests extends SqlIoTest {
                 SELECT id, a FROM (
                     SELECT *, DENSE_RANK() OVER (PARTITION BY id ORDER BY ts DESC) AS rn FROM T)
                 WHERE rn <= 2;""");
-        Assert.assertEquals(new Shape(3, 2, true), shape(ccs));
+        Assert.assertEquals(new Shape(2, 1, true), shape(ccs));
         // Expected output validated with Postgres 14.
         ccs.stepWeightOne("INSERT INTO T VALUES (1, 10, 100, 0, 0), (1, 10, 200, 0, 0), (1, 5, 300, 0, 0), (1, 1, 400, 0, 0);",
                 """

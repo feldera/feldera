@@ -226,8 +226,8 @@ public class KeyAnalysisTests extends SqlIoTest {
                 QUALIFY row_number() OVER (PARTITION BY a + b ORDER BY c) = 1;""");
     }
 
-    /** The TOP-1 output is indexed by the seven partition columns and repeats them in its
-     * value tuple.  Each value of the key is named by both its columns. */
+    /** The TOP-1 output is indexed by the seven partition columns; the TopK elides them
+     * from its value tuple, since they are already carried by the key. */
     @Test
     public void wideKeyOfDuplicatedColumnsStaysOneKey() {
         String view = """
@@ -235,11 +235,11 @@ public class KeyAnalysisTests extends SqlIoTest {
                                c5 INT NOT NULL, c6 INT NOT NULL, c7 INT NOT NULL, x INT);
                 CREATE VIEW v AS SELECT c1, c2, c3, c4, c5, c6, c7, x FROM w
                 QUALIFY row_number() OVER (PARTITION BY c1, c2, c3, c4, c5, c6, c7 ORDER BY x) = 1;""";
-        // The TOP-1 partition columns are its index, and its value tuple repeats them, so
-        // each of the seven values of the key is named by an index and a value column
+        // The TOP-1 partition columns are its index; the TopK does not repeat them in its
+        // value tuple, since each is already available from the key.
         // This is an approximation of the true key, which has 2^7 members
         Analyzed analyzed = this.analyze(view);
-        Assert.assertEquals("[[i0=v0, i1=v1, i2=v2, i3=v3, i4=v4, i5=v5, i6=v6]]",
+        Assert.assertEquals("[[i0, i1, i2, i3, i4, i5, i6]]",
                 analyzed.keysOf(DBSPIndexedTopKOperator.class));
         Assert.assertEquals("[[0, 1, 2, 3, 4, 5, 6]]", analyzed.viewKeys());
     }
