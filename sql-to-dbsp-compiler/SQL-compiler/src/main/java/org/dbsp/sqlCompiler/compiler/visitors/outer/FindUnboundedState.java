@@ -67,6 +67,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LosslessCastKeyAnalysis
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -180,15 +181,29 @@ public class FindUnboundedState extends Passes {
     /** A group-by key has a bounded number of values when it has at most this many */
     static final long MAX_KEY_VALUES = 1024;
 
-    /** True if the tuple type has a bounded number of values: it has no fields, or all its
-     * fields are booleans and they admit at most {@link #MAX_KEY_VALUES} combinations
-     * (2 values for a boolean and 3 for a nullable one). */
+    /** Number of values a field of this type can hold, or 0 when they are too many to
+     * enumerate: 2 for a boolean and 256 for an 8-bit integer, one more when nullable. */
+    static long domainSize(DBSPType type) {
+        final long values;
+        if (type.is(DBSPTypeBool.class))
+            values = 2;
+        else if (type.code == DBSPTypeCode.INT8 || type.code == DBSPTypeCode.UINT8)
+            values = 256;
+        else
+            return 0;
+        return type.mayBeNull ? values + 1 : values;
+    }
+
+    /** True if the tuple type has a bounded number of values: it has no fields, or every
+     * field has a countable domain and together they admit at most
+     * {@link #MAX_KEY_VALUES} combinations. */
     static boolean hasBoundedDomain(DBSPTypeTupleBase tuple) {
         long values = 1;
         for (DBSPType field : tuple.tupFields) {
-            if (!field.is(DBSPTypeBool.class))
+            long size = domainSize(field);
+            if (size == 0)
                 return false;
-            values *= field.mayBeNull ? 3 : 2;
+            values *= size;
             if (values > MAX_KEY_VALUES)
                 return false;
         }
