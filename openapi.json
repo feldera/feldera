@@ -10887,7 +10887,9 @@
           "output_stall_msecs",
           "total_initiated_steps",
           "total_completed_steps",
-          "pipeline_complete"
+          "pipeline_complete",
+          "platform_version",
+          "runtime_version"
         ],
         "properties": {
           "bootstrap_in_progress": {
@@ -10961,6 +10963,10 @@
             "type": "boolean",
             "description": "True if the pipeline has processed all input data to completion."
           },
+          "platform_version": {
+            "type": "string",
+            "description": "Version of the platform that compiled the pipeline, such as\n`0.349.0+enterprise`.\n\nThis is the platform's own version, which the compiler records in the\nbinary."
+          },
           "rss_bytes": {
             "type": "integer",
             "format": "int64",
@@ -10972,6 +10978,10 @@
             "format": "int64",
             "description": "Time elapsed while the pipeline is executing a step, multiplied by the number of threads, in milliseconds.",
             "minimum": 0
+          },
+          "runtime_version": {
+            "type": "string",
+            "description": "Runtime the pipeline was compiled against: a git SHA, a `vX.Y.Z` tag,\nor `gen2`.\n\nThis differs from `platform_version` when the program selects a runtime\nother than the platform's own."
           },
           "start_time": {
             "type": "integer",

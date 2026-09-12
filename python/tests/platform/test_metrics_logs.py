@@ -155,6 +155,17 @@ def test_pipeline_stats(pipeline_name):
     assert gm.pipeline_complete
     assert gm.buffered_input_records == 0
     assert gm.buffered_input_bytes == 0
+    # The compiler records both in the pipeline binary. Comparing against the
+    # version the manager reports for this pipeline checks that the injection
+    # happened: the pipeline falls back to its own crate version when the
+    # platform did not supply one.
+    r_pipeline = get(api_url(f"/pipelines/{pipeline_name}"))
+    assert r_pipeline.status_code == HTTPStatus.OK, (
+        r_pipeline.status_code,
+        r_pipeline.text,
+    )
+    assert gm.platform_version == r_pipeline.json()["platform_version"]
+    assert gm.runtime_version
 
     inputs = stats.inputs
     assert len(inputs) == 1
