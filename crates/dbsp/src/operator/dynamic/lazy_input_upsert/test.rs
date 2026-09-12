@@ -1,8 +1,8 @@
-//! An exhaustive test framework for [`RootCircuit::dyn_add_lazy_input_map`].
+//! An exhaustive test framework for [`RootCircuit::add_lazy_input_map`].
 //!
 //! A program is a list of commands grouped into steps and steps into
 //! transactions.  [`check`] runs one through a circuit holding both the lazy map
-//! and the eager [`dyn_add_input_map`](RootCircuit::dyn_add_input_map), and
+//! and the eager [`add_input_map`](RootCircuit::add_input_map), and
 //! checks four things after every transaction:
 //!
 //! | Check | What it catches |
@@ -61,7 +61,7 @@ use super::*;
 use crate::circuit::{CircuitConfig, CircuitStorageConfig};
 use crate::operator::input::{MapHandle, StagedBuffers};
 use crate::trace::Cursor;
-use crate::typed_batch::OrdIndexedZSet as TypedIndexedZSet;
+use crate::typed_batch::{BatchReader as _, OrdIndexedZSet as TypedIndexedZSet};
 use crate::{Runtime, Stream};
 use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use proptest::prelude::*;
@@ -131,9 +131,9 @@ struct Config {
     keys_per_step: Option<u64>,
 
     /// Whether a step's commands arrive as several staged appends rather than
-    /// one.  `dyn_append` concatenates into one vector per worker, so only
-    /// `dyn_append_staged` gives a step more than one, which is what makes the
-    /// merge in `Stamp` do any merging.
+    /// one.  `MapHandle::append` concatenates into one vector per worker, so
+    /// only `MapHandle::stage` gives a step more than one, which is what makes
+    /// the merge in `Stamp` do any merging.
     staged: bool,
 }
 
@@ -225,9 +225,9 @@ fn push(handle: &mut Handle, commands: &[Command], staged: bool) {
 /// Collects every batch a stream emits.  With several workers a step emits one
 /// batch per worker, and each lands here on its own.
 fn record(stream: &Stream<RootCircuit, Map>, into: Arc<Mutex<Vec<Batch>>>) {
-    stream.inner().inspect(move |batch| {
+    stream.inspect(move |batch| {
         let mut records = Vec::new();
-        let mut cursor = batch.cursor();
+        let mut cursor = batch.inner().cursor();
         while cursor.key_valid() {
             while cursor.val_valid() {
                 let key = *unsafe { cursor.key().downcast::<i32>() };
@@ -252,15 +252,13 @@ fn record(stream: &Stream<RootCircuit, Map>, into: Arc<Mutex<Vec<Batch>>>) {
 /// miss would build from, and a miss would make this check say nothing new: an
 /// integral summed from the deltas agrees with them by construction.
 fn record_integral(stream: &Stream<RootCircuit, Map>, into: Arc<Mutex<Vec<Batch>>>) {
-    let factories = <OrdIndexedZSetFactories<DynData, DynData>>::new::<i32, i32, ZWeight>();
     stream
-        .inner()
-        .dyn_accumulate_integrate_trace(&factories)
+        .accumulate_integrate_trace()
         // `apply` rather than `inspect`: a `Spine` cannot be cloned, and
         // `inspect` clones what it passes through.
         .apply(move |spine| {
             let mut records = Vec::new();
-            let mut cursor = spine.cursor();
+            let mut cursor = spine.inner().cursor();
             while cursor.key_valid() {
                 while cursor.val_valid() {
                     let key = *unsafe { cursor.key().downcast::<i32>() };
@@ -687,15 +685,11 @@ fn a_downstream_operator_finds_the_maps_integral() {
         let (dbsp, _handle) =
             Runtime::init_circuit(CircuitConfig::with_workers(workers), |circuit| {
                 let (delta, handle) = circuit.add_lazy_input_map::<i32, i32, i32>();
-                delta.inner().inspect(|_| {});
-                let factories =
-                    <OrdIndexedZSetFactories<DynData, DynData>>::new::<i32, i32, ZWeight>();
+                delta.inspect(|_| {});
 
                 let before = nodes(circuit);
-                let plain = delta.inner().dyn_accumulate_integrate_trace(&factories);
-                let sharded = delta
-                    .inner()
-                    .dyn_shard_accumulate_integrate_trace(&factories);
+                let plain = delta.accumulate_integrate_trace();
+                let sharded = delta.shard_accumulate_integrate_trace();
                 assert_eq!(
                     nodes(circuit),
                     before,
@@ -964,8 +958,8 @@ fn the_enumeration_lays_out_every_program() {
 
 /// Updates that reach a worker as several vectors.
 ///
-/// `dyn_append` concatenates everything a client writes in a step into one
-/// vector per worker, so `Stamp` has nothing to merge.  `dyn_append_staged`
+/// `MapHandle::append` concatenates everything a client writes in a step into
+/// one vector per worker, so `Stamp` has nothing to merge.  `MapHandle::stage`
 /// hands each call its own vector, and the last update to a key then lives in
 /// whichever vector wrote it last.  These tests drive that path directly, with
 /// control over how the appends are shaped, rather than through the chunking
