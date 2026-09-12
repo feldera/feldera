@@ -40,7 +40,11 @@ vi.mock('$app/state', () => ({
 // chunk and closes — exactly the shape the production code expects (it consumes
 // the stream via `parseCancellable` and `SplitNewlineTransformStream`).
 
-type FakeLogsStream = { stream: ReadableStream<Uint8Array>; cancel: () => void }
+type FakeLogsStream = {
+  response: Response
+  stream: ReadableStream<Uint8Array>
+  cancel: () => void
+}
 
 const pipelineLogsStreamMock = vi.fn<(...args: unknown[]) => Promise<FakeLogsStream>>()
 
@@ -56,7 +60,17 @@ import MonitoringPanel from './MonitoringPanel.svelte'
 const LOG_TEXT = Array.from({ length: 1000 }, (_, i) => `${i + 1}\n`).join('')
 const encoder = new TextEncoder()
 
+// The response headers report where the server picked us up, which is what TabLogs reads
+// to decide whether to keep or clear the rows already on screen. These describe a first
+// connection: the start of the stream, with nothing lost along the way.
 const buildFakeLogsStream = (): FakeLogsStream => ({
+  response: new Response(null, {
+    headers: {
+      'feldera-logs-epoch': '0199c3f1-2d0a-7e84-b711-6f2c9a1d4e08',
+      'feldera-logs-seq': '0',
+      'feldera-logs-gap': '0'
+    }
+  }),
   stream: new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(encoder.encode(LOG_TEXT))
@@ -396,5 +410,220 @@ describe('MonitoringPanel — exec:pipeline_data tab gating', () => {
     // Logs rows render → the saved 'Ad-Hoc Queries' was replaced by a visible tab.
     await expectRowMounted(0)
     expect(tabTexts().some((t) => t.includes('Ad-Hoc'))).toBe(false)
+  })
+})
+
+// --- Log stream resume --------------------------------------------------------
+
+const EPOCH = '0199c3f1-2d0a-7e84-b711-6f2c9a1d4e08'
+
+/**
+ * A log stream that supports resuming: the position in the headers, the lines in the body.
+ * The body holds log lines and nothing else, which is what lets the viewer take its next
+ * position by counting what it received.
+ */
+const buildCursorLogsStream = (
+  position: { epoch: string; seq: number; gap: number },
+  lines: string[]
+): FakeLogsStream => ({
+  response: new Response(null, {
+    headers: {
+      'feldera-logs-epoch': position.epoch,
+      'feldera-logs-seq': String(position.seq),
+      'feldera-logs-gap': String(position.gap)
+    }
+  }),
+  stream: new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(lines.map((l) => `${l}\n`).join('')))
+      controller.close()
+    }
+  }),
+  cancel: () => {}
+})
+
+/** A log stream from an older server: no position headers, just the lines. */
+const buildPlainLogsStream = (lines: string[]): FakeLogsStream => ({
+  response: new Response(null, { headers: { 'content-type': 'text/plain' } }),
+  stream: new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode(lines.map((l) => `${l}\n`).join('')))
+      controller.close()
+    }
+  }),
+  cancel: () => {}
+})
+
+/** Mounts the Logs tab for a specific pipeline, so a remount reuses its stream state. */
+async function mountLogsTabFor(name: string) {
+  mountTarget = document.createElement('div')
+  mountTarget.style.cssText = 'height: 800px; width: 1200px; display: flex; flex-direction: column;'
+  document.body.appendChild(mountTarget)
+
+  mounted = render(MonitoringPanel, {
+    target: mountTarget,
+    props: {
+      pipeline: pipelineProp(name),
+      metrics: metricsProp(),
+      deleted: false,
+      hiddenTabs: HIDDEN_TABS,
+      currentTab: 'Logs'
+    }
+  } as any)
+}
+
+async function unmountLogsTab() {
+  await mounted?.unmount()
+  mounted = undefined
+  mountTarget?.remove()
+  mountTarget = undefined
+}
+
+/** The `cursor` argument of the nth call to the log stream endpoint. */
+const cursorOfCall = (n: number) => pipelineLogsStreamMock.mock.calls[n]?.[1]
+
+const rowText = (index: number) =>
+  document.querySelector(`[data-rowindex="${index}"]`)?.textContent?.trim()
+
+/**
+ * Waits for a row to show `text`. We have to poll rather than assert straight away: on a
+ * remount the rows from before render first, and are only replaced once the new
+ * connection delivers something. That delay is deliberate, so the view does not go blank
+ * while a reconnect is in flight.
+ */
+const expectRowText = (index: number, text: string) =>
+  expect.poll(() => rowText(index), { timeout: ROW_MOUNT_TIMEOUT_MS }).toBe(text)
+
+/**
+ * TabLogs keeps its streams in module state keyed by pipeline name, so they outlive the
+ * component. Unmounting and remounting therefore stands in for a dropped connection, and
+ * saves us waiting out the five second retry timer.
+ */
+describe('MonitoringPanel — log stream resume', () => {
+  afterEach(async () => {
+    await unmountLogsTab()
+    vi.clearAllMocks()
+  })
+
+  it('asks to resume from where the previous connection stopped', async () => {
+    const name = nextPipelineName()
+    pipelineLogsStreamMock.mockImplementation(async () =>
+      buildCursorLogsStream({ epoch: EPOCH, seq: 0, gap: 0 }, ['one', 'two', 'three'])
+    )
+    await mountLogsTabFor(name)
+    await expectRowMounted(2)
+    // Nothing has been read yet, so there is no position to send. The empty cursor is
+    // still what asks the server to report where it picked us up.
+    expect(cursorOfCall(0)).toBe('')
+
+    await unmountLogsTab()
+    pipelineLogsStreamMock.mockImplementation(async () =>
+      buildCursorLogsStream({ epoch: EPOCH, seq: 3, gap: 0 }, ['four'])
+    )
+    await mountLogsTabFor(name)
+    await expectRowMounted(3)
+
+    // Three lines arrived, so we ask to carry on from three. Everything in the body is a
+    // log line, so the count is simply how many rows we received.
+    expect(cursorOfCall(1)).toBe(`${EPOCH}:3`)
+    // The rows already on screen were kept and the new line appended after them.
+    expect(rowText(0)).toBe('one')
+    expect(rowText(3)).toBe('four')
+  })
+
+  it('starts over when the server restarted its log buffer', async () => {
+    const name = nextPipelineName()
+    pipelineLogsStreamMock.mockImplementation(async () =>
+      buildCursorLogsStream({ epoch: EPOCH, seq: 0, gap: 0 }, ['one', 'two'])
+    )
+    await mountLogsTabFor(name)
+    await expectRowMounted(1)
+
+    await unmountLogsTab()
+    // A new epoch means the counts refer to different lines. Keeping the old rows would
+    // show two unrelated stretches of log as though they ran together.
+    pipelineLogsStreamMock.mockImplementation(async () =>
+      buildCursorLogsStream({ epoch: '0199d000-0000-7000-8000-000000000000', seq: 0, gap: 0 }, [
+        'fresh'
+      ])
+    )
+    await mountLogsTabFor(name)
+    await expectRowText(0, 'fresh')
+
+    expect(document.querySelector('[data-rowindex="1"]')).toBeNull()
+  })
+
+  it('reports discarded lines and starts over when the resume point is gone', async () => {
+    const name = nextPipelineName()
+    pipelineLogsStreamMock.mockImplementation(async () =>
+      buildCursorLogsStream({ epoch: EPOCH, seq: 0, gap: 0 }, ['one', 'two'])
+    )
+    await mountLogsTabFor(name)
+    await expectRowMounted(1)
+
+    await unmountLogsTab()
+    pipelineLogsStreamMock.mockImplementation(async () =>
+      buildCursorLogsStream({ epoch: EPOCH, seq: 900, gap: 898 }, ['late'])
+    )
+    await mountLogsTabFor(name)
+    await expectRowText(0, 'late')
+
+    // The server used to print this as a log line. Now it only says so in a header, so
+    // the console has to show it.
+    await expect
+      .poll(() => document.body.textContent, { timeout: ROW_MOUNT_TIMEOUT_MS })
+      .toContain('898 earlier log lines are no longer available')
+  })
+
+  it('starts over after the server rejects the cursor', async () => {
+    const name = nextPipelineName()
+    pipelineLogsStreamMock.mockImplementation(async () =>
+      buildCursorLogsStream({ epoch: EPOCH, seq: 0, gap: 0 }, ['one', 'two'])
+    )
+    await mountLogsTabFor(name)
+    await expectRowMounted(1)
+
+    // The server refuses the cursor. Keeping it would send the same rejected value on
+    // every retry, so the viewer would never show another log line.
+    await unmountLogsTab()
+    pipelineLogsStreamMock.mockImplementation(
+      async () =>
+        new Error("Invalid log cursor 'x:1'", {
+          cause: { response: { status: 400 } }
+        }) as unknown as FakeLogsStream
+    )
+    await mountLogsTabFor(name)
+    await expect
+      .poll(() => document.body.textContent, { timeout: ROW_MOUNT_TIMEOUT_MS })
+      .toContain('Invalid log cursor')
+
+    await unmountLogsTab()
+    pipelineLogsStreamMock.mockImplementation(async () =>
+      buildCursorLogsStream({ epoch: EPOCH, seq: 0, gap: 0 }, ['fresh'])
+    )
+    await mountLogsTabFor(name)
+    await expectRowText(0, 'fresh')
+
+    expect(cursorOfCall(1)).toBe(`${EPOCH}:2`)
+    expect(cursorOfCall(2)).toBe('')
+  })
+
+  it('replays from the beginning against a server that reports no position', async () => {
+    const name = nextPipelineName()
+    // An older server ignores the parameter and starts sending logs straight away, with no
+    // headers saying where we are, so there is no cursor to keep.
+    pipelineLogsStreamMock.mockImplementation(async () => buildPlainLogsStream(['a', 'b']))
+    await mountLogsTabFor(name)
+    await expectRowText(0, 'a')
+
+    await unmountLogsTab()
+    pipelineLogsStreamMock.mockImplementation(async () => buildPlainLogsStream(['c', 'd']))
+    await mountLogsTabFor(name)
+    await expectRowText(0, 'c')
+
+    // With no position reported there is no cursor to send, and the new lines replace the
+    // old rows rather than being added after them.
+    expect(cursorOfCall(1)).toBe('')
+    expect(document.querySelector('[data-rowindex="2"]')).toBeNull()
   })
 })

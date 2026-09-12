@@ -4760,7 +4760,7 @@
           "Metrics & Debugging"
         ],
         "summary": "Stream Pipeline Logs",
-        "description": "Required role: `read` or higher.\n\nRetrieve logs of a pipeline as a stream.\n\nThe logs stream catches up to the extent of the internally configured per-pipeline\ncircular logs buffer (limited to a certain byte size and number of lines, whichever\nis reached first). After the catch-up, new lines are pushed whenever they become\navailable.\n\nIt is possible for the logs stream to end prematurely due to the API server temporarily losing\nconnection to the runner. In this case, it is needed to issue again a new request to this\nendpoint.\n\nThe logs stream will end when the pipeline is deleted, or if the runner restarts. Note that in\nboth cases the logs will be cleared.",
+        "description": "Required role: `read` or higher.\n\nRetrieve logs of a pipeline as a stream.\n\nThe logs stream catches up to the extent of the internally configured per-pipeline\ncircular logs buffer (limited to a certain byte size and number of lines, whichever\nis reached first). After the catch-up, new lines are pushed whenever they become\navailable.\n\nIt is possible for the logs stream to end prematurely due to the API server temporarily losing\nconnection to the runner. In this case, it is needed to issue again a new request to this\nendpoint.\n\nThe logs stream will end when the pipeline is deleted, or if the runner restarts. Note that in\nboth cases the logs will be cleared.\n\n## Resuming a stream\n\nSupplying the `cursor` parameter asks for only the lines the caller is missing, rather\nthan the whole retained buffer. This matters on an unstable connection, where replaying\nthe buffer on every reconnect can consume the entire link and leave the caller unable to\nreach the live tail.\n\nA caller that supplies `cursor` is answered with three response headers:\n\n```text\nfeldera-logs-epoch: 0199c3f1-2d0a-7e84-b711-6f2c9a1d4e08\nfeldera-logs-seq: 41272\nfeldera-logs-gap: 0\n```\n\n- `feldera-logs-epoch` identifies this lifetime of the logs buffer. Pass it back unchanged.\n- `feldera-logs-seq` is the sequence number of the line preceding the response's first\nlog line.\n- `feldera-logs-gap` counts lines that were discarded between the requested cursor and\nthe sequence number above, and which the caller will therefore never receive. Zero\nmeans the resume is exact.\n\nThe body is log lines and nothing else, one per sequence number, so the caller's current\nposition is `feldera-logs-seq` plus the number of lines it has received. To reconnect,\npass `cursor=<epoch>:<position>`.\n\nThe epoch changes whenever the logs buffer is recreated, which clears the logs. A cursor\ncarrying a stale epoch is not an error: it is answered with a full catch-up and a gap\nnaming what was lost, so a caller can never be locked out of its logs by an old cursor.\n\nCallers that supply `cursor` receive no informational lines in the body, which is what\nmakes the one-line-per-sequence-number correspondence exact. Callers that omit it get\nthe body they have always received, and no position headers.",
         "operationId": "get_pipeline_logs",
         "parameters": [
           {
@@ -4770,6 +4770,16 @@
             "required": true,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Resume the stream after this position, formatted as `<epoch>:<sequence>` and derived from a previous response's `feldera-logs-epoch` and `feldera-logs-seq` headers. Omit for the whole retained buffer with no position headers. Pass empty to start from the beginning of the buffer and be told the position.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
             }
           }
         ],
@@ -4781,6 +4791,16 @@
                 "schema": {
                   "type": "string",
                   "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Cursor is malformed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
