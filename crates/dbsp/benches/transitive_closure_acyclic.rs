@@ -6,6 +6,12 @@
 //! - **iterate**: `Circuit::iterate` with a manual feedback loop that only
 //!   carries the per-iteration frontier and therefore skips the `distinct`.
 //!   See [`build_iterate_variant`].
+//! - **recursion**: `Circuit::recursion` (the `RecursionBuilder` API) with
+//!   `without_distinct`.  It keeps the concise fixed-point form of the
+//!   `recursive` variant, but — like the `iterate` variant — drops the
+//!   `distinct` altogether, expressing declaratively what the `recursive`
+//!   variant achieves with the `mark_distinct` trick.
+//!   See [`build_recursion_variant`].
 //!
 //! The two variants are only semantically equivalent when there is at most one
 //! path between any pair of nodes (see [`generate_forest`] for why), so the
@@ -115,21 +121,30 @@ fn drive_once(mut circuit: TransClosureCircuit, mut workload: Workload) -> usize
 fn assert_variants_agree(workload: &Workload) -> usize {
     let recursive = build_recursive_variant().expect("build recursive circuit");
     let iterate = build_iterate_variant().expect("build iterate circuit");
+    let recursion = build_recursion_variant().expect("build recursion circuit");
 
     let mut recursive_circuit = recursive.handle;
     let mut iterate_circuit = iterate.handle;
+    let mut recursion_circuit = recursion.handle;
 
     recursive.edges_input.append(&mut workload.clone());
     iterate.edges_input.append(&mut workload.clone());
+    recursion.edges_input.append(&mut workload.clone());
     recursive_circuit.transaction().unwrap();
     iterate_circuit.transaction().unwrap();
+    recursion_circuit.transaction().unwrap();
 
     let recursive_closure = recursive.closure_output.concat().consolidate();
     let iterate_closure = iterate.closure_output.concat().consolidate();
+    let recursion_closure = recursion.closure_output.concat().consolidate();
 
     assert_eq!(
         recursive_closure, iterate_closure,
         "recursive and iterate variants must agree on acyclic input"
+    );
+    assert_eq!(
+        recursive_closure, recursion_closure,
+        "recursive and recursion variants must agree on acyclic input"
     );
 
     recursive_closure.num_entries_shallow()
@@ -190,6 +205,23 @@ fn transitive_closure_benches(c: &mut Criterion) {
                 );
             },
         );
+
+        group.bench_with_input(
+            BenchmarkId::new("recursion", &shape),
+            &workload,
+            |b, workload| {
+                b.iter_batched(
+                    || {
+                        (
+                            build_recursion_variant().expect("build recursion circuit"),
+                            workload.clone(),
+                        )
+                    },
+                    |(circuit, workload)| drive_once(circuit, workload),
+                    BatchSize::PerIteration,
+                );
+            },
+        );
     }
 
     group.finish();
@@ -242,6 +274,72 @@ fn build_recursive_variant() -> anyhow::Result<TransClosureCircuit> {
 
                 Ok(closure)
             })?;
+
+            Ok((edges_input, closure.accumulate_output()))
+        })?;
+
+    Ok(TransClosureCircuit {
+        handle,
+        edges_input,
+        closure_output,
+    })
+}
+
+/// Computes the transitive closure of an acyclic graph using DBSP's
+/// [`recursion` builder API](dbsp::circuit::ChildCircuit::recursion).
+///
+/// This is the same fixed-point computation as [`build_recursive_variant`], but
+/// [`without_distinct`](dbsp::operator::RecursionBuilder::without_distinct)
+/// drops the implicit `distinct` outright instead of neutralizing it with
+/// `mark_distinct`.  On a forest that `distinct` removes nothing, so the result
+/// is identical while the operator is gone entirely.
+fn build_recursion_variant() -> anyhow::Result<TransClosureCircuit> {
+    let (handle, (edges_input, closure_output)) =
+        Runtime::init_circuit(WORKERS, move |root_circuit| {
+            let (edges, edges_input) = root_circuit.add_input_zset::<WeightedEdge>();
+
+            let len_1 = edges.map_index(|Tup3(from, to, weight)| {
+                (Tup2(*from, *to), Tup4(*from, *to, *weight, 1))
+            });
+
+            let closure = root_circuit
+                .recursion(
+                    // A single recursive relation; its arity is inferred, so
+                    // none is supplied.
+                    |child_circuit| {
+                        Ok(child_circuit.recursive_var::<OrdIndexedZSet<Path, TransClosurePath>>())
+                    },
+                    |child_circuit, closure: Accumulator| {
+                        let edges = edges.delta0(child_circuit);
+                        let len_1 = len_1.delta0(child_circuit);
+
+                        Ok(len_1.plus(
+                            &closure
+                                .map_index(
+                                    |(Tup2(_start, _end), Tup4(start, end, cum_weight, hopcnt))| {
+                                        (*end, Tup4(*start, *end, *cum_weight, *hopcnt))
+                                    },
+                                )
+                                .join_index(
+                                    &edges.map_index(|Tup3(from, to, weight)| {
+                                        (*from, Tup3(*from, *to, *weight))
+                                    }),
+                                    |_end_from,
+                                     Tup4(start, _end, cum_weight, hopcnt),
+                                     Tup3(_from, to, weight)| {
+                                        Some((
+                                            Tup2(*start, *to),
+                                            Tup4(*start, *to, cum_weight + weight, hopcnt + 1),
+                                        ))
+                                    },
+                                ),
+                        ))
+                    },
+                )
+                // A forest has a unique path per pair, so `distinct` would be
+                // pure overhead; drop it declaratively.
+                .without_distinct()
+                .finish()?;
 
             Ok((edges_input, closure.accumulate_output()))
         })?;
