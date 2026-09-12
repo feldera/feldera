@@ -57,10 +57,6 @@ Source edition can be found on github.
   compares floating point values no longer compiles until it does.
   See [comparing floating point values](/sql/comparisons#comparing-floating-point-values).
 
-- The SQL compiler reports an error inside a multi-line `CREATE FUNCTION`
-  body at its line; an error past the first line of the body used to be
-  reported above the statement.
-
 ## v0.344.0
 
 - The Delta Lake and Iceberg input connectors read a `VARIANT` column
