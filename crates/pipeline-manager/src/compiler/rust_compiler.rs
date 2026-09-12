@@ -1676,6 +1676,8 @@ async fn call_compiler(
 
     command.env_clear();
     command.env("PATH", env_path);
+    command.env("FELDERA_PLATFORM_VERSION", &common_config.platform_version);
+    command.env("FELDERA_RUNTIME_VERSION", runtime_selector.to_string());
     if !runtime_selector.is_platform() {
         command.env(
             "FELDERA_RUNTIME_OVERRIDE",

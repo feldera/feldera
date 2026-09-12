@@ -2351,8 +2351,11 @@ export type GlobalControllerMetrics = {
    */
   pipeline_complete: boolean
   /**
-   * Version of the platform that built the pipeline binary, such as
-   * `0.349.0`.
+   * Version of the platform that compiled the pipeline, such as
+   * `0.349.0+enterprise`.
+   *
+   * This is the platform's own version, which the compiler records in the
+   * binary.
    */
   platform_version: string
   /**
@@ -2364,13 +2367,13 @@ export type GlobalControllerMetrics = {
    */
   runtime_elapsed_msecs: number
   /**
-   * Git revision of the sources the pipeline binary was built from.
+   * Runtime the pipeline was compiled against: a git SHA, a `vX.Y.Z` tag,
+   * or `gen2`.
    *
-   * `None` unless the binary was built from a source tree, which is the
-   * case when the platform compiles against a runtime override rather than
-   * against published crates.
+   * This differs from `platform_version` when the program selects a runtime
+   * other than the platform's own.
    */
-  runtime_revision?: string | null
+  runtime_version: string
   /**
    * Time at which the pipeline process started, in seconds since the epoch.
    */

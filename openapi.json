@@ -10888,7 +10888,8 @@
           "total_initiated_steps",
           "total_completed_steps",
           "pipeline_complete",
-          "platform_version"
+          "platform_version",
+          "runtime_version"
         ],
         "properties": {
           "bootstrap_in_progress": {
@@ -10964,7 +10965,7 @@
           },
           "platform_version": {
             "type": "string",
-            "description": "Version of the platform that built the pipeline binary, such as\n`0.349.0`."
+            "description": "Version of the platform that compiled the pipeline, such as\n`0.349.0+enterprise`.\n\nThis is the platform's own version, which the compiler records in the\nbinary."
           },
           "rss_bytes": {
             "type": "integer",
@@ -10978,10 +10979,9 @@
             "description": "Time elapsed while the pipeline is executing a step, multiplied by the number of threads, in milliseconds.",
             "minimum": 0
           },
-          "runtime_revision": {
+          "runtime_version": {
             "type": "string",
-            "description": "Git revision of the sources the pipeline binary was built from.\n\n`None` unless the binary was built from a source tree, which is the\ncase when the platform compiles against a runtime override rather than\nagainst published crates.",
-            "nullable": true
+            "description": "Runtime the pipeline was compiled against: a git SHA, a `vX.Y.Z` tag,\nor `gen2`.\n\nThis differs from `platform_version` when the program selects a runtime\nother than the platform's own."
           },
           "start_time": {
             "type": "integer",

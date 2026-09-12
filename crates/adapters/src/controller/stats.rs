@@ -1605,11 +1605,12 @@ impl ControllerStatus {
             total_initiated_steps: self.global_metrics.total_initiated_steps(),
             total_completed_steps: self.global_metrics.total_completed_steps(),
             pipeline_complete: ctx.pipeline_complete,
-            // Both describe the binary serving these metrics, so they come
-            // from this crate's build rather than from the controller state.
-            // VERGEN_GIT_SHA is absent when the build had no source tree.
-            platform_version: env!("CARGO_PKG_VERSION").to_string(),
-            runtime_revision: option_env!("VERGEN_GIT_SHA").map(str::to_string),
+            platform_version: option_env!("FELDERA_PLATFORM_VERSION")
+                .unwrap_or(env!("CARGO_PKG_VERSION"))
+                .to_string(),
+            runtime_version: option_env!("FELDERA_RUNTIME_VERSION")
+                .unwrap_or(env!("CARGO_PKG_VERSION"))
+                .to_string(),
         };
 
         // Convert input endpoints and sort by endpoint_name to match serialize_inputs behavior

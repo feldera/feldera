@@ -155,12 +155,17 @@ def test_pipeline_stats(pipeline_name):
     assert gm.pipeline_complete
     assert gm.buffered_input_records == 0
     assert gm.buffered_input_bytes == 0
-    # The pipeline reports the platform that built it.  `runtime_revision` is
-    # set only when that build had a source tree, so its presence is not
-    # asserted, but it must be a string when present.
-    assert gm.platform_version
-    assert isinstance(gm.platform_version, str)
-    assert gm.runtime_revision is None or isinstance(gm.runtime_revision, str)
+    # The compiler records both in the pipeline binary. Comparing against the
+    # version the manager reports for this pipeline checks that the injection
+    # happened: the pipeline falls back to its own crate version when the
+    # platform did not supply one.
+    r_pipeline = get(api_url(f"/pipelines/{pipeline_name}"))
+    assert r_pipeline.status_code == HTTPStatus.OK, (
+        r_pipeline.status_code,
+        r_pipeline.text,
+    )
+    assert gm.platform_version == r_pipeline.json()["platform_version"]
+    assert gm.runtime_version
 
     inputs = stats.inputs
     assert len(inputs) == 1

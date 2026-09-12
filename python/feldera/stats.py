@@ -77,7 +77,7 @@ class GlobalPipelineMetrics:
         self.total_completed_steps: Optional[int] = None
         self.pipeline_complete: Optional[bool] = None
         self.platform_version: Optional[str] = None
-        self.runtime_revision: Optional[str] = None
+        self.runtime_version: Optional[str] = None
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]):
