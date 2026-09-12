@@ -67,6 +67,17 @@ const openMenu = async () => {
 }
 
 describe('ProfileButton', () => {
+  it('gives no verdict on cluster health before a poll has answered', async () => {
+    // Only the app shell polls; a page outside it, like the profile viewer, must not show the
+    // cluster as healthy when it is not, and could not know either way.
+    state.data = session('read', 't-acme')
+    await render(ProfileButton, { healthStatus: undefined })
+    document.querySelector<HTMLButtonElement>('button:has(.fd-circle-user)')!.click()
+    await expect.poll(() => document.body.textContent).toContain('Feldera Health')
+    const dot = document.querySelector('.h-2\\.5.rounded-full')!
+    expect(dot.className).not.toMatch(/bg-(success|warning|error)-500/)
+  })
+
   it('offers cluster health to the lowest role that resolves a tenant', async () => {
     state.data = session('read', 't-acme')
     expect(await openMenu()).toContain('Feldera Health')

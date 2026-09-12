@@ -2,18 +2,20 @@ import { useInterval } from '$lib/compositions/common/useInterval.svelte'
 import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 import { type ClusterEventType, toEventType } from '$lib/functions/pipelines/health'
 
-export type ClusterHealthStatus = typeof status
+export type ClusterHealthStatus = {
+  api: ClusterEventType
+  compiler: ClusterEventType
+  runner: ClusterEventType
+}
 
-let status = $state({
-  api: 'healthy' as ClusterEventType,
-  compiler: 'healthy' as ClusterEventType,
-  runner: 'healthy' as ClusterEventType
-})
+// Unknown until the first poll answers: a page that never polls, such as the profile viewer,
+// must not present the cluster as healthy.
+let status = $state<ClusterHealthStatus | undefined>(undefined)
 
 /**
  * Poll cluster health every 10 seconds (with an immediate first call) and
  * publish the result to the module-level `status` store. A single instance of
- * this hook should be mounted at one time (the `(authorized)` layout owns it);
+ * this hook should be mounted at one time (the `(shell)` layout owns it);
  * consumers read the state via {@link useClusterHealth}.
  */
 export const useRefreshClusterHealth = () => {

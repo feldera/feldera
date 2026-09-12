@@ -1,4 +1,4 @@
-import { type BrowserContext, expect, type Page, test } from '@playwright/test'
+import { type BrowserContext, expect, type Page, type Request, test } from '@playwright/test'
 import { putPipeline } from '$lib/services/pipelineManager'
 import {
   cleanupPipeline,
@@ -84,6 +84,26 @@ test.describe('Profile viewer', () => {
 
     await withProfileViewer(context, () => confirmViewProfile.click())
   })
+
+  test('opens an uploaded bundle with the manager unreachable', async ({ browser }) => {
+    // Issue #6819: the console is served, the pipeline manager is gone. Every manager request
+    // is refused, the way a dead instance refuses them; the viewer must still open the bundle
+    // and raise no error.
+    const context = await browser.newContext()
+    await context.route(/\/v0\//, (route) => route.abort('connectionrefused'))
+    const viewer = await context.newPage()
+    try {
+      // The bare route is the viewer with nothing to load, offering the upload.
+      await viewer.goto('/profile-viewer')
+      await expect(viewer.getByText('Upload a support bundle zip')).toBeVisible({ timeout: 30_000 })
+      await viewer.locator('input[type="file"]').setInputFiles(bundlePath)
+      await assertLogsPanelPopulates(viewer)
+      // Error toasts carry role=status.
+      await expect(viewer.getByRole('status')).toHaveCount(0)
+    } finally {
+      await context.close()
+    }
+  })
 })
 
 /**
@@ -109,15 +129,41 @@ async function withProfileViewer(context: BrowserContext, trigger: () => Promise
   const viewerPromise = context.waitForEvent('page')
   await trigger()
   const viewer = await viewerPromise
+  const requests = recordManagerRequests(viewer)
   try {
     await viewer.waitForLoadState('domcontentloaded')
     await expect(viewer.getByTestId('box-profile-viewer-page')).toBeVisible({ timeout: 30_000 })
 
     await assertLogsPanelPopulates(viewer)
     await assertNodeMetricsShowPersistentId(viewer)
+    // The viewer reads a bundle, so nothing on its route may poll the manager.
+    expect(requests.paths.filter((path) => !viewerMayRequest(path))).toEqual([])
   } finally {
+    requests.stop()
     await viewer.close()
   }
+}
+
+/**
+ * The manager endpoints the viewer's route legitimately reaches: the configuration the root
+ * layout boots from, and the bundle download itself. Anything else, such as the pipeline list
+ * or cluster health the app shell polls, is a poller that leaked onto the route.
+ */
+const viewerMayRequest = (pathname: string) =>
+  /\/v0\/config(\/session)?$/.test(pathname) ||
+  /\/v0\/pipelines\/[^/]+\/support_bundle$/.test(pathname)
+
+/** Collect the path of every manager request `page` makes until `stop` is called. */
+function recordManagerRequests(page: Page): { paths: string[]; stop: () => void } {
+  const paths: string[] = []
+  const record = (request: Request) => {
+    const { pathname } = new URL(request.url())
+    if (pathname.includes('/v0/')) {
+      paths.push(pathname)
+    }
+  }
+  page.on('request', record)
+  return { paths, stop: () => page.off('request', record) }
 }
 
 /**

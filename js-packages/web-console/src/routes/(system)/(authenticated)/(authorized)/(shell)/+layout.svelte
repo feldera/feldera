@@ -3,7 +3,6 @@
   import { invalidateAll } from '$app/navigation'
   import { page } from '$app/state'
   import SvelteKitTopLoader from '$lib/components/common/SvelteKitTopLoader.svelte'
-  import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
   import LineBanner, { BannerButton } from '$lib/components/layout/LineBanner.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import OverlayDrawer from '$lib/components/layout/OverlayDrawer.svelte'
@@ -18,7 +17,6 @@
   } from '$lib/compositions/health/useClusterHealth.svelte'
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
   import { useContextDrawer } from '$lib/compositions/layout/useContextDrawer.svelte'
-  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { useRefreshPipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
@@ -28,13 +26,16 @@
   import type { Snippet } from '$lib/types/svelte'
   import type { LayoutData } from './$types'
 
-  const dialog = useGlobalDialog()
-
   const { children, data }: { children: Snippet; data: LayoutData } = $props()
 
-  // This layout only ever mounts with an acting tenant resolved: the group's
-  // `+layout.ts` redirects to /select-tenant otherwise. So the pollers need no
-  // guard, and unmounting on the way out stops them.
+  // The app shell: pollers that keep the pipeline list, cluster health and backend version
+  // current, the navigation drawers, and the banners. Every page that works on a live Feldera
+  // instance lives in this group; a page that reads uploaded data, like the profile viewer,
+  // sits beside it under `(authorized)` and never mounts these pollers.
+  //
+  // This layout only ever mounts with an acting tenant resolved: the enclosing `(authorized)`
+  // group's `+layout.ts` redirects to /select-tenant otherwise. So the pollers need no guard,
+  // and unmounting on the way out stops them.
   useRefreshPipelineList()
   useRefreshClusterHealth()
   usePipelineAction()
@@ -103,15 +104,19 @@
       return { ...message, text }
     })
   )
-  const healthMessage = $derived(
-    clusterHealth.current.api !== 'healthy'
+  const healthMessage = $derived.by(() => {
+    const health = clusterHealth.current
+    if (!health) {
+      return null
+    }
+    return health.api !== 'healthy'
       ? 'There is an issue with the API server.'
-      : clusterHealth.current.compiler !== 'healthy'
+      : health.compiler !== 'healthy'
         ? 'There is an issue with the compiler server.'
-        : clusterHealth.current.runner !== 'healthy'
+        : health.runner !== 'healthy'
           ? 'There is an issue with the runner.'
           : null
-  )
+  })
 
   const api = usePipelineManager()
   const { toastMain, dismissMain } = useToast()
@@ -243,4 +248,3 @@
     {@render contextDrawer.content?.()}
   </OverlayDrawer>
 </div>
-<GlobalModal dialog={dialog.dialog}></GlobalModal>

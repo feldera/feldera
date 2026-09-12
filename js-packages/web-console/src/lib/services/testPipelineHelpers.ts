@@ -142,7 +142,7 @@ export async function cleanupPipeline(pipelineName: string) {
   }
 }
 
-const WARMUP_PIPELINE = '__test_warmup__'
+const WARMUP_PIPELINE = 'e2e-warmup'
 
 /**
  * Warm the Rust compilation cache by creating, compiling, and deleting a
