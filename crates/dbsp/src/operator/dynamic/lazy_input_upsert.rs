@@ -21,18 +21,15 @@ use crate::{
     algebra::{IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories},
     circuit::{
         GlobalNodeId, OwnershipPreference, Scope,
-        circuit_builder::CircuitBase,
-        circuit_builder::RefStreamValue,
+        circuit_builder::{CircuitBase, RefStreamValue},
+        lazy_input_map_keys_per_step,
         metadata::{
             ALLOCATED_MEMORY_BYTES, BatchSizeStats, CONFLICTING_UPDATES_COUNT, INPUT_BATCHES_STATS,
             MEMORY_ALLOCATIONS_COUNT, MetaItem, OUTPUT_ADJUSTMENT_STATS, OperatorMeta,
             SHARED_MEMORY_BYTES, STATE_RECORDS_COUNT, USED_MEMORY_BYTES,
         },
         operator_traits::{Operator, OperatorName, UnaryOperator},
-        {
-            lazy_input_map_keys_per_step, splitter_output_chunk_size,
-            splitter_output_first_chunk_size,
-        },
+        splitter_output_chunk_size, splitter_output_first_chunk_size,
     },
     dynamic::{DataTrait, DowncastTrait, DynData, DynPair, DynPairs, Erase, Factory, WithFactory},
     operator::{
@@ -41,10 +38,12 @@ use crate::{
         dynamic::{
             accumulate_trace::{
                 AccumulateTraceId, AccumulateUntimedTraceAppend, AccumulateZ1Trace,
+                ShardedAccumulateTraceId,
             },
             accumulator::{Accumulation, AccumulatorId, EnableCount},
             input::{IndexedZSetStream, UpsertHandle},
             input_upsert::{DynUpdate, Update, UpdateRef},
+            sharded_accumulator::ShardedAccumulatorId,
             trace::TraceBounds,
         },
     },
@@ -885,24 +884,34 @@ impl RootCircuit {
                     )
                 }
             });
+            let enable_count = EnableCount::new();
+            enable_count.enable();
+
             // The updates reach the map sharded within a host only, and the
             // adjustments come back from the accumulator sharded across all of
             // them, so the two halves of the delta agree on one host and on no
             // more than that.
             if Runtime::runtime().is_none_or(|runtime| runtime.layout().is_solo()) {
                 delta.mark_sharded();
-            }
 
-            let enable_count = EnableCount::new();
-            enable_count.enable();
-            self.cache_insert(
-                AccumulatorId::new(delta.stream_id()),
-                Accumulation {
-                    stream: accumulator,
-                    enable_count,
-                },
-            );
-            self.cache_insert(AccumulateTraceId::new(delta.stream_id()), integral);
+                self.cache_insert(
+                    AccumulatorId::new(delta.stream_id()),
+                    Accumulation {
+                        stream: accumulator,
+                        enable_count,
+                    },
+                );
+                self.cache_insert(AccumulateTraceId::new(delta.stream_id()), integral);
+            } else {
+                self.cache_insert(
+                    ShardedAccumulatorId::new((delta.stream_id(), 0..Runtime::num_workers())),
+                    Accumulation {
+                        stream: accumulator,
+                        enable_count,
+                    },
+                );
+                self.cache_insert(ShardedAccumulateTraceId::new(delta.stream_id()), integral);
+            }
 
             (delta, zset_handle)
         })
