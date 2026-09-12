@@ -326,6 +326,7 @@ impl Catalog {
                         None,
                         &relation_schema,
                         &key_schema_name,
+                        true,
                         false,
                         false,
                         primary_key.as_slice(),
@@ -408,6 +409,7 @@ impl Catalog {
                         None,
                         &relation_schema,
                         &key_schema_name,
+                        true,
                         true,
                         false,
                         primary_key.as_slice(),
@@ -742,6 +744,7 @@ impl Catalog {
                         alias_as_index,
                         &schema,
                         &SqlIdentifier::new(format!("{}.key", schema.name.name()), false),
+                        false,
                         true,
                         true,
                         key_fields,
@@ -775,6 +778,7 @@ impl Catalog {
         alias_as_index: Option<SqlIdentifier>,
         schema: &Relation,
         key_schema_name: &SqlIdentifier,
+        is_input: bool,
         materialized: bool,
         accumulate: bool,
         key_fields: &[String],
@@ -808,7 +812,7 @@ impl Catalog {
             &name,
             &stream,
             materialized && accumulate,
-            materialized && accumulate,
+            materialized && !is_input,
         );
 
         let (delta_handle, delta_gid) = circuit
@@ -823,6 +827,8 @@ impl Catalog {
             let (integrate_handle, integral_gid) =
                 if let Some(gathered_integral_stream) = gathered_integral_stream {
                     gathered_integral_stream
+                } else if accumulate {
+                    stream.shard_accumulate_integrate_trace()
                 } else {
                     // This is an integral of an input table with a primary key. We don't support sending a snapshot
                     // of table to a connector, so we don't need to use the gathered stream.
@@ -936,6 +942,7 @@ impl Catalog {
                 index_name,
                 false,
                 false,
+                false,
                 key_fields,
             )?;
 
@@ -1026,6 +1033,7 @@ impl Catalog {
                     None,
                     &value_schema,
                     index_name,
+                    false,
                     true,
                     true,
                     key_fields,
