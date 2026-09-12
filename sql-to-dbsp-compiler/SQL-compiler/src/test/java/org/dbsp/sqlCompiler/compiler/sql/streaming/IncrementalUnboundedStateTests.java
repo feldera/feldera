@@ -154,6 +154,22 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
     }
 
     @Test
+    public void groupByTinyint() {
+        // A TINYINT key admits 256 values, and 257 when it is nullable
+        this.assertNoUnboundedStateWarnings("""
+                CREATE TABLE input(code TINYINT, ts TIMESTAMP LATENESS INTERVAL 10 DAYS);
+                CREATE VIEW output AS SELECT code, COUNT(*) AS cnt FROM input GROUP BY code;""");
+    }
+
+    @Test
+    public void groupByTinyintAndBoolean() {
+        // 256 times 2 is within MAX_KEY_VALUES = 1024
+        this.assertNoUnboundedStateWarnings("""
+                CREATE TABLE input(code TINYINT NOT NULL, paid BOOLEAN NOT NULL, ts TIMESTAMP LATENESS INTERVAL 10 DAYS);
+                CREATE VIEW output AS SELECT code, paid, COUNT(*) AS cnt FROM input GROUP BY code, paid;""");
+    }
+
+    @Test
     public void chainAggregateByBoolean() {
         // Over an append-only table MAX keeps one running value per group, a chain aggregate,
         // and a boolean key allows a bounded number of groups
