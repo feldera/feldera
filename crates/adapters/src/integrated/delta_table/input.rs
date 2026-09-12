@@ -3731,11 +3731,10 @@ impl DeltaTableInputEndpointInner {
         read(provider)
     }
 
-    /// Arrow schema for reading a change data file: the table's own columns as
-    /// [`physical_read_schema`](Self::physical_read_schema) names them, plus the
-    /// [`CHANGE_TYPE_COLUMN`] that only these files carry.
+    /// The Arrow schema for reading a change data file: the columns the
+    /// connector needs, plus the [`CHANGE_TYPE_COLUMN`] the feed adds.
     fn change_data_read_schema(&self) -> AnyResult<ReadSchema> {
-        let table_schema = self.physical_read_schema(|_| true)?;
+        let table_schema = self.physical_read_schema(|name| self.needs_column(name))?;
         let mut fields: Vec<FieldRef> = table_schema.schema().fields().to_vec();
         fields.push(Arc::new(ArrowField::new(
             CHANGE_TYPE_COLUMN,
