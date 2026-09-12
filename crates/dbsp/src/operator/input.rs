@@ -12,6 +12,7 @@ use crate::{
             AddInputZSetFactories, CollectionHandle, UpsertHandle,
         },
         input_upsert::DynUpdate,
+        lazy_input_upsert::AddLazyInputMapFactories,
     },
     typed_batch::{OrdIndexedZSet, OrdZSet},
     utils::Tup2,
@@ -484,6 +485,51 @@ impl RootCircuit {
                 patch_func(v.downcast_mut::<V>(), u.downcast::<U>())
             }),
         );
+
+        (stream.typed(), MapHandle::new(handle))
+    }
+
+    /// An input map that resolves its updates when the transaction commits.
+    ///
+    /// The same interface and semantics as [`add_input_map`](Self::add_input_map),
+    /// minus `Update` commands, which this map rejects: it resolves updates by
+    /// keeping the last one, which a patch cannot express.  What it buys is the
+    /// integral read once per transaction in key order rather than once per key
+    /// per step at random.  See
+    /// [`dyn_add_lazy_input_map`](RootCircuit::dyn_add_lazy_input_map).
+    ///
+    /// `U` names the update payload the handle will not carry.  It is there
+    /// because the handle is a [`MapHandle`], which has a slot for one.
+    #[track_caller]
+    pub fn add_lazy_input_map<K, V, U>(
+        &self,
+    ) -> (
+        Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        MapHandle<K, V, U>,
+    )
+    where
+        K: DBData,
+        V: DBData,
+        U: DBData + Erase<DynData>,
+    {
+        self.add_lazy_input_map_persistent(None)
+    }
+
+    #[track_caller]
+    pub fn add_lazy_input_map_persistent<K, V, U>(
+        &self,
+        persistent_id: Option<&str>,
+    ) -> (
+        Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        MapHandle<K, V, U>,
+    )
+    where
+        K: DBData,
+        V: DBData,
+        U: DBData + Erase<DynData>,
+    {
+        let factories = AddLazyInputMapFactories::new::<K, V, U>();
+        let (stream, handle) = self.dyn_add_lazy_input_map(persistent_id, &factories);
 
         (stream.typed(), MapHandle::new(handle))
     }
