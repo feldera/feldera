@@ -31,7 +31,9 @@ use crate::{
         operator_traits::{Operator, OperatorName, UnaryOperator},
         splitter_output_chunk_size, splitter_output_first_chunk_size,
     },
-    dynamic::{DataTrait, DowncastTrait, DynData, DynPair, DynPairs, Erase, Factory, WithFactory},
+    dynamic::{
+        DataTrait, DowncastTrait, DynData, DynOpt, DynPair, DynPairs, Erase, Factory, WithFactory,
+    },
     operator::{
         Input,
         async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper},
@@ -42,7 +44,6 @@ use crate::{
             },
             accumulator::{Accumulation, AccumulatorId, EnableCount},
             input::{IndexedZSetStream, UpsertHandle},
-            input_upsert::{DynUpdate, Update, UpdateRef},
             sharded_accumulator::ShardedAccumulatorId,
             trace::TraceBounds,
         },
@@ -72,10 +73,9 @@ pub type Stamped<B> =
     OrdIndexedZSet<<B as BatchReader>::Key, DynPair<<B as BatchReader>::Val, DynData>>;
 
 /// Factories for [`RootCircuit::dyn_add_lazy_input_map`].
-pub struct AddLazyInputMapFactories<B, U>
+pub struct AddLazyInputMapFactories<B>
 where
     B: IndexedZSet,
-    U: DataTrait + ?Sized,
 {
     /// The unstamped batches the operator emits.
     pub batch_factories: B::Factories,
@@ -84,25 +84,23 @@ where
     /// a stamped batch can present itself as an unstamped one.
     pub stamped_factories: <Stamped<B> as BatchReader>::Factories,
 
-    input_pair_factory: &'static dyn Factory<DynPair<B::Key, DynUpdate<B::Val, U>>>,
-    input_pairs_factory: &'static dyn Factory<DynPairs<B::Key, DynUpdate<B::Val, U>>>,
+    input_pair_factory: &'static dyn Factory<DynPair<B::Key, DynOpt<B::Val>>>,
+    input_pairs_factory: &'static dyn Factory<DynPairs<B::Key, DynOpt<B::Val>>>,
 
     /// A `(value, stamp)` pair, built once per surviving update.
     stamped_val_factory: &'static dyn Factory<DynPair<B::Val, DynData>>,
 }
 
-impl<K, V, U> AddLazyInputMapFactories<OrdIndexedZSet<K, V>, U>
+impl<K, V> AddLazyInputMapFactories<OrdIndexedZSet<K, V>>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
-    U: DataTrait + ?Sized,
 {
-    pub fn new<KType, VType, UType>() -> Self
+    pub fn new<KType, VType>() -> Self
     where
         KType: DBData + Erase<K>,
         VType: DBData + Erase<V>,
-        UType: DBData + Erase<U>,
-        Tup2<KType, Update<VType, UType>>: DBData,
+        Tup2<KType, Option<VType>>: DBData,
         Tup2<VType, u32>: DBData + Erase<DynPair<V, DynData>>,
     {
         Self {
@@ -110,19 +108,17 @@ where
             // be stamped batches presenting themselves as unstamped ones.
             batch_factories: OrdIndexedZSetFactories::with_projection::<KType, VType, ZWeight>(),
             stamped_factories: BatchReaderFactories::new::<KType, Tup2<VType, u32>, ZWeight>(),
-            input_pair_factory: WithFactory::<Tup2<KType, Update<VType, UType>>>::FACTORY,
-            input_pairs_factory: WithFactory::<
-                crate::dynamic::LeanVec<Tup2<KType, Update<VType, UType>>>,
-            >::FACTORY,
+            input_pair_factory: WithFactory::<Tup2<KType, Option<VType>>>::FACTORY,
+            input_pairs_factory:
+                WithFactory::<crate::dynamic::LeanVec<Tup2<KType, Option<VType>>>>::FACTORY,
             stamped_val_factory: WithFactory::<Tup2<VType, u32>>::FACTORY,
         }
     }
 }
 
-impl<B, U> Clone for AddLazyInputMapFactories<B, U>
+impl<B> Clone for AddLazyInputMapFactories<B>
 where
     B: IndexedZSet,
-    U: DataTrait + ?Sized,
 {
     fn clone(&self) -> Self {
         Self {
@@ -175,31 +171,29 @@ where
 ///
 /// The stamp is the step's index within the transaction, so it orders a key's
 /// updates across the whole transaction.
-pub struct Stamp<K, V, U, B>
+pub struct Stamp<K, V, B>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
-    U: DataTrait + ?Sized,
     B: IndexedZSet<Key = K, Val = V>,
 {
-    factories: AddLazyInputMapFactories<B, U>,
+    factories: AddLazyInputMapFactories<B>,
 
     /// Steps elapsed in this transaction, and so the stamp the next step's
     /// updates carry.
     stamp: u32,
 
     input_batch_stats: BatchSizeStats,
-    phantom: PhantomData<fn(&K, &V, &U)>,
+    phantom: PhantomData<fn(&K, &V)>,
 }
 
-impl<K, V, U, B> Stamp<K, V, U, B>
+impl<K, V, B> Stamp<K, V, B>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
-    U: DataTrait + ?Sized,
     B: IndexedZSet<Key = K, Val = V>,
 {
-    pub fn new(factories: &AddLazyInputMapFactories<B, U>) -> Self {
+    pub fn new(factories: &AddLazyInputMapFactories<B>) -> Self {
         Self {
             factories: factories.clone(),
             stamp: 0,
@@ -209,11 +203,10 @@ where
     }
 }
 
-impl<K, V, U, B> Operator for Stamp<K, V, U, B>
+impl<K, V, B> Operator for Stamp<K, V, B>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
-    U: DataTrait + ?Sized,
     B: IndexedZSet<Key = K, Val = V>,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -237,15 +230,13 @@ where
     }
 }
 
-impl<K, V, U, B> UnaryOperator<Vec<Box<DynPairs<K, DynUpdate<V, U>>>>, Stamped<B>>
-    for Stamp<K, V, U, B>
+impl<K, V, B> UnaryOperator<Vec<Box<DynPairs<K, DynOpt<V>>>>, Stamped<B>> for Stamp<K, V, B>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
-    U: DataTrait + ?Sized,
     B: IndexedZSet<Key = K, Val = V>,
 {
-    async fn eval(&mut self, _updates: &Vec<Box<DynPairs<K, DynUpdate<V, U>>>>) -> Stamped<B> {
+    async fn eval(&mut self, _updates: &Vec<Box<DynPairs<K, DynOpt<V>>>>) -> Stamped<B> {
         // The operator sorts its input in place, so it cannot take it by
         // reference.  Nothing else reads the input stream, so a correctly built
         // circuit never asks it to.
@@ -256,10 +247,7 @@ where
         OwnershipPreference::STRONGLY_PREFER_OWNED
     }
 
-    async fn eval_owned(
-        &mut self,
-        mut updates: Vec<Box<DynPairs<K, DynUpdate<V, U>>>>,
-    ) -> Stamped<B> {
+    async fn eval_owned(&mut self, mut updates: Vec<Box<DynPairs<K, DynOpt<V>>>>) -> Stamped<B> {
         let stamp = self.stamp;
         // A transaction of four billion steps is not reachable in practice, but
         // wrapping here would silently reorder a key's updates.
@@ -286,7 +274,7 @@ where
         // The vectors are in append order, so an n-way merge visits a key's
         // updates in that order too: `min_by` returns the first among equal
         // keys.
-        let mut sources: Vec<(&DynPairs<K, DynUpdate<V, U>>, usize)> =
+        let mut sources: Vec<(&DynPairs<K, DynOpt<V>>, usize)> =
             updates.iter().map(|pairs| (&**pairs, 0)).collect();
         let n_updates: usize = sources.iter().map(|(pairs, _)| pairs.len()).sum();
         self.input_batch_stats.add_batch(n_updates);
@@ -341,18 +329,15 @@ where
             // The last update for a key wins, so each one simply overwrites the
             // one before it.
             match update.get() {
-                UpdateRef::Insert(val) => {
+                Some(val) => {
                     val.clone_to(&mut surviving_val);
                     surviving_weight = 1;
                 }
-                UpdateRef::Delete => {
+                None => {
                     // Any value works here; see the type's documentation.
                     default_val.clone_to(&mut surviving_val);
                     surviving_weight = -1;
                 }
-                UpdateRef::Update(_) => panic!(
-                    "dyn_add_lazy_input_map does not support `Update` commands, only `Insert` and `Delete`"
-                ),
             }
         }
 
@@ -412,14 +397,13 @@ fn push_stamped<K, V, B>(
 /// The main output is the accumulator: `project(U)` with the adjustments added.
 /// The adjustments also leave on a second stream, which the circuit concatenates
 /// with the projected updates to form the delta.
-pub struct LazyUpsert<K, V, U, B>
+pub struct LazyUpsert<K, V, B>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
-    U: DataTrait + ?Sized,
     B: IndexedZSet<Key = K, Val = V>,
 {
-    factories: AddLazyInputMapFactories<B, U>,
+    factories: AddLazyInputMapFactories<B>,
 
     /// The adjustments of the step that just ran, for the delta stream.
     adjustments: RefStreamValue<Arc<OrdIndexedZSet<K, V>>>,
@@ -441,18 +425,17 @@ where
     conflicting_updates: Cell<u64>,
 
     name: OperatorName,
-    phantom: PhantomData<fn(&K, &V, &U)>,
+    phantom: PhantomData<fn(&K, &V)>,
 }
 
-impl<K, V, U, B> LazyUpsert<K, V, U, B>
+impl<K, V, B> LazyUpsert<K, V, B>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
-    U: DataTrait + ?Sized,
     B: IndexedZSet<Key = K, Val = V>,
 {
     pub fn new(
-        factories: &AddLazyInputMapFactories<B, U>,
+        factories: &AddLazyInputMapFactories<B>,
         adjustments: RefStreamValue<Arc<OrdIndexedZSet<K, V>>>,
     ) -> Self {
         Self {
@@ -467,11 +450,10 @@ where
     }
 }
 
-impl<K, V, U, B> Operator for LazyUpsert<K, V, U, B>
+impl<K, V, B> Operator for LazyUpsert<K, V, B>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
-    U: DataTrait + ?Sized,
     B: IndexedZSet<Key = K, Val = V>,
 {
     fn name(&self) -> Cow<'static, str> {
@@ -516,11 +498,10 @@ where
     }
 }
 
-impl<K, V, U> LazyUpsert<K, V, U, OrdIndexedZSet<K, V>>
+impl<K, V> LazyUpsert<K, V, OrdIndexedZSet<K, V>>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
-    U: DataTrait + ?Sized,
 {
     fn builder(&self, capacity: usize) -> <OrdIndexedZSet<K, V> as crate::trace::Batch>::Builder {
         <OrdIndexedZSet<K, V> as crate::trace::Batch>::Builder::with_capacity(
@@ -565,16 +546,15 @@ where
     }
 }
 
-impl<K, V, U>
+impl<K, V>
     StreamingBinaryOperator<
         Spine<OrdIndexedZSet<K, V>>,
         Option<Spine<Stamped<OrdIndexedZSet<K, V>>>>,
         Option<Spine<OrdIndexedZSet<K, V>>>,
-    > for LazyUpsert<K, V, U, OrdIndexedZSet<K, V>>
+    > for LazyUpsert<K, V, OrdIndexedZSet<K, V>>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
-    U: DataTrait + ?Sized,
 {
     fn eval(
         self: Rc<Self>,
@@ -761,10 +741,10 @@ impl RootCircuit {
     pub fn dyn_add_lazy_input_map_mono(
         &self,
         persistent_id: Option<&str>,
-        factories: &AddLazyInputMapFactories<OrdIndexedZSet<DynData, DynData>, DynData>,
+        factories: &AddLazyInputMapFactories<OrdIndexedZSet<DynData, DynData>>,
     ) -> (
         IndexedZSetStream<DynData, DynData>,
-        UpsertHandle<DynData, DynUpdate<DynData, DynData>>,
+        UpsertHandle<DynData, DynOpt<DynData>>,
     ) {
         self.dyn_add_lazy_input_map(persistent_id, factories)
     }
@@ -792,24 +772,23 @@ impl RootCircuit {
     /// integral and the adjustments that, with the projected updates, make the
     /// delta.
     #[track_caller]
-    pub fn dyn_add_lazy_input_map<K, V, U>(
+    pub fn dyn_add_lazy_input_map<K, V>(
         &self,
         persistent_id: Option<&str>,
-        factories: &AddLazyInputMapFactories<OrdIndexedZSet<K, V>, U>,
-    ) -> (IndexedZSetStream<K, V>, UpsertHandle<K, DynUpdate<V, U>>)
+        factories: &AddLazyInputMapFactories<OrdIndexedZSet<K, V>>,
+    ) -> (IndexedZSetStream<K, V>, UpsertHandle<K, DynOpt<V>>)
     where
         K: DataTrait + ?Sized,
         V: DataTrait + ?Sized,
-        U: DataTrait + ?Sized,
     {
         self.region("lazy_input_map", || {
             let (input, input_handle) = Input::new(
                 Location::caller(),
-                |tuples: Vec<Box<DynPairs<K, DynUpdate<V, U>>>>| tuples,
+                |tuples: Vec<Box<DynPairs<K, DynOpt<V>>>>| tuples,
                 Arc::new(|| vec![factories.input_pairs_factory.default_box()]),
             );
             let input_stream = self.add_source(input);
-            let zset_handle = <UpsertHandle<K, DynUpdate<V, U>>>::new(
+            let zset_handle = <UpsertHandle<K, DynOpt<V>>>::new(
                 factories.input_pair_factory,
                 factories.input_pairs_factory,
                 input_handle,
@@ -819,7 +798,7 @@ impl RootCircuit {
             // client appends, so a key's updates all reach one worker on their
             // host, which is everything `Stamp` needs to order them.
             let stamped = self.add_unary_operator(
-                <Stamp<K, V, U, OrdIndexedZSet<K, V>>>::new(factories),
+                <Stamp<K, V, OrdIndexedZSet<K, V>>>::new(factories),
                 &input_stream,
             );
 
@@ -858,7 +837,7 @@ impl RootCircuit {
 
             let adjustments_value = RefStreamValue::empty();
             let accumulator = self.add_binary_operator(
-                StreamingBinaryWrapper::new(<LazyUpsert<K, V, U, OrdIndexedZSet<K, V>>>::new(
+                StreamingBinaryWrapper::new(<LazyUpsert<K, V, OrdIndexedZSet<K, V>>>::new(
                     factories,
                     adjustments_value.clone(),
                 )),
@@ -945,40 +924,31 @@ mod stamp_tests {
 
     type Key = DynData;
     type Val = DynData;
-    type Upd = DynData;
     type Batched = OrdIndexedZSet<Key, Val>;
 
-    /// `Some(v)` is an insert, `None` a delete.
+    /// `Some(v)` is a write, `None` a delete.
     type Command = (i32, Option<i32>);
 
-    fn factories() -> AddLazyInputMapFactories<Batched, Upd> {
-        AddLazyInputMapFactories::new::<i32, i32, i32>()
+    fn factories() -> AddLazyInputMapFactories<Batched> {
+        AddLazyInputMapFactories::new::<i32, i32>()
     }
 
     /// One worker's commands for a step, in the order the client wrote them.
     /// The operator sorts them, so they need no order here.
-    fn commands(commands: &[Command]) -> Box<DynPairs<Key, DynUpdate<Val, Upd>>> {
-        let pairs: Vec<Tup2<i32, Update<i32, i32>>> = commands
+    fn commands(commands: &[Command]) -> Box<DynPairs<Key, DynOpt<Val>>> {
+        let pairs: Vec<Tup2<i32, Option<i32>>> = commands
             .iter()
-            .map(|&(key, value)| {
-                Tup2(
-                    key,
-                    match value {
-                        Some(value) => Update::Insert(value),
-                        None => Update::Delete,
-                    },
-                )
-            })
+            .map(|&(key, value)| Tup2(key, value))
             .collect();
         Box::new(LeanVec::from(pairs)).erase_box()
     }
 
     /// `(key, value, stamp, weight)` for every record a step emits.
     fn step(
-        operator: &mut Stamp<Key, Val, Upd, Batched>,
+        operator: &mut Stamp<Key, Val, Batched>,
         vectors: &[&[Command]],
     ) -> Vec<(i32, i32, u32, ZWeight)> {
-        let input: Vec<Box<DynPairs<Key, DynUpdate<Val, Upd>>>> =
+        let input: Vec<Box<DynPairs<Key, DynOpt<Val>>>> =
             vectors.iter().map(|v| commands(v)).collect();
         let batch = TOKIO.block_on(operator.eval_owned(input));
 
@@ -1296,21 +1266,6 @@ mod stamp_tests {
             let _ = TOKIO.block_on(operator.eval_owned(Vec::new()));
         });
     }
-
-    /// The operator resolves updates by keeping the last one, which an `Update`
-    /// command cannot express, so it is rejected rather than misapplied.
-    #[test]
-    #[should_panic(expected = "does not support `Update`")]
-    fn an_update_command_is_rejected() {
-        run_in_circuit_with_storage(|| {
-            let factories = factories();
-            let mut operator = Stamp::new(&factories);
-            let pairs: Vec<Tup2<i32, Update<i32, i32>>> = vec![Tup2(1, Update::Update(7))];
-            let input: Vec<Box<DynPairs<Key, DynUpdate<Val, Upd>>>> =
-                vec![Box::new(LeanVec::from(pairs)).erase_box()];
-            let _ = TOKIO.block_on(operator.eval_owned(input));
-        });
-    }
 }
 
 #[cfg(test)]
@@ -1327,12 +1282,12 @@ mod remove_stamp_tests {
     /// `(key, value, stamp, weight)`.
     type Row = (i32, i32, u32, ZWeight);
 
-    fn factories() -> AddLazyInputMapFactories<Batched, DynData> {
-        AddLazyInputMapFactories::new::<i32, i32, i32>()
+    fn factories() -> AddLazyInputMapFactories<Batched> {
+        AddLazyInputMapFactories::new::<i32, i32>()
     }
 
     fn stamped_batch(
-        factories: &AddLazyInputMapFactories<Batched, DynData>,
+        factories: &AddLazyInputMapFactories<Batched>,
         rows: &[Row],
     ) -> Stamped<Batched> {
         let tuples: Vec<Tup2<Tup2<i32, Tup2<i32, u32>>, ZWeight>> = rows
@@ -1456,10 +1411,10 @@ mod lazy_upsert_tests {
     type Key = DynData;
     type Val = DynData;
     type Batched = OrdIndexedZSet<Key, Val>;
-    type Factories = AddLazyInputMapFactories<Batched, DynData>;
+    type Factories = AddLazyInputMapFactories<Batched>;
 
     fn factories() -> Factories {
-        AddLazyInputMapFactories::new::<i32, i32, i32>()
+        AddLazyInputMapFactories::new::<i32, i32>()
     }
 
     /// The collection as it stood when the transaction began.
@@ -1537,7 +1492,7 @@ mod lazy_upsert_tests {
         integral_rows: &[(i32, i32, ZWeight)],
         update_rows: Option<&[(i32, i32, u32, ZWeight)]>,
     ) -> Resolution {
-        let operator = Rc::new(<LazyUpsert<Key, Val, DynData, Batched>>::new(
+        let operator = Rc::new(<LazyUpsert<Key, Val, Batched>>::new(
             factories,
             RefStreamValue::empty(),
         ));

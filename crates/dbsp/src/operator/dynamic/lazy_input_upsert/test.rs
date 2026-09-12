@@ -59,7 +59,8 @@
 
 use super::*;
 use crate::circuit::{CircuitConfig, CircuitStorageConfig};
-use crate::operator::input::{MapHandle, StagedBuffers};
+use crate::operator::dynamic::input_upsert::Update;
+use crate::operator::input::{LazyMapHandle, MapHandle, StagedBuffers};
 use crate::trace::Cursor;
 use crate::typed_batch::{BatchReader as _, OrdIndexedZSet as TypedIndexedZSet};
 use crate::{Runtime, Stream};
@@ -72,7 +73,6 @@ use tempfile::TempDir;
 
 /// The map under test, and the eager map it is checked against.
 type Map = TypedIndexedZSet<i32, i32>;
-type Handle = MapHandle<i32, i32, i32>;
 
 /// A write, `Some(value)`, or a delete, `None`.
 type Command = (i32, Option<i32>);
@@ -131,8 +131,8 @@ struct Config {
     keys_per_step: Option<u64>,
 
     /// Whether a step's commands arrive as several staged appends rather than
-    /// one.  `MapHandle::append` concatenates into one vector per worker, so
-    /// only `MapHandle::stage` gives a step more than one, which is what makes
+    /// one.  `LazyMapHandle::append` concatenates into one vector per worker, so
+    /// only `LazyMapHandle::stage` gives a step more than one, which is what makes
     /// the merge in `Stamp` do any merging.
     staged: bool,
 }
@@ -181,20 +181,52 @@ impl Config {
     }
 }
 
-/// The commands of one step, as the handle takes them.
-fn pairs(commands: &[Command]) -> Vec<Tup2<i32, Update<i32, i32>>> {
-    commands
-        .iter()
-        .map(|&(key, value)| {
-            Tup2(
-                key,
-                match value {
-                    Some(value) => Update::Insert(value),
-                    None => Update::Delete,
-                },
-            )
-        })
-        .collect()
+/// Writes a step's commands to one of the two maps.
+///
+/// The maps take them through different handles.  The lazy one's cannot be sent
+/// an `Update`, so it takes an option; the eager one's takes an `Update` whose
+/// third variant this framework never writes.  A test drives both from one list
+/// of commands, so each handle says how to take them.
+trait Push {
+    fn append_commands(&mut self, commands: &[Command]);
+
+    /// One staged append, which reaches each worker as a vector of its own.
+    fn stage_commands(&self, commands: &[Command]);
+}
+
+impl Push for LazyMapHandle<i32, i32> {
+    fn append_commands(&mut self, commands: &[Command]) {
+        let mut pairs: Vec<Tup2<i32, Option<i32>>> =
+            commands.iter().map(|&(k, v)| Tup2(k, v)).collect();
+        self.append(&mut pairs);
+    }
+
+    fn stage_commands(&self, commands: &[Command]) {
+        let pairs: Vec<Tup2<i32, Option<i32>>> =
+            commands.iter().map(|&(k, v)| Tup2(k, v)).collect();
+        self.stage([VecDeque::from(pairs)]).flush();
+    }
+}
+
+impl Push for MapHandle<i32, i32, i32> {
+    fn append_commands(&mut self, commands: &[Command]) {
+        let mut pairs: Vec<Tup2<i32, Update<i32, i32>>> =
+            commands.iter().map(|&(k, v)| Tup2(k, update(v))).collect();
+        self.append(&mut pairs);
+    }
+
+    fn stage_commands(&self, commands: &[Command]) {
+        let pairs: Vec<Tup2<i32, Update<i32, i32>>> =
+            commands.iter().map(|&(k, v)| Tup2(k, update(v))).collect();
+        self.stage([VecDeque::from(pairs)]).flush();
+    }
+}
+
+fn update(value: Option<i32>) -> Update<i32, i32> {
+    match value {
+        Some(value) => Update::Insert(value),
+        None => Update::Delete,
+    }
 }
 
 /// The number of staged appends a step is split into, when it is split at all.
@@ -203,14 +235,13 @@ fn pairs(commands: &[Command]) -> Vec<Tup2<i32, Update<i32, i32>>> {
 /// in different appends, which is the order the merge in `Stamp` has to keep.
 const APPENDS_PER_STEP: usize = 3;
 
-/// One staged append, which reaches each worker as a vector of its own.
-fn push_staged(handle: &Handle, commands: &[Command]) {
-    handle.stage([VecDeque::from(pairs(commands))]).flush();
+fn push_staged(handle: &impl Push, commands: &[Command]) {
+    handle.stage_commands(commands);
 }
 
-fn push(handle: &mut Handle, commands: &[Command], staged: bool) {
+fn push(handle: &mut impl Push, commands: &[Command], staged: bool) {
     if !staged {
-        handle.append(&mut pairs(commands));
+        handle.append_commands(commands);
         return;
     }
 
@@ -218,7 +249,7 @@ fn push(handle: &mut Handle, commands: &[Command], staged: bool) {
     // commands were written in.
     let chunk = commands.len().div_ceil(APPENDS_PER_STEP).max(1);
     for commands in commands.chunks(chunk) {
-        push_staged(handle, commands);
+        handle.stage_commands(commands);
     }
 }
 
@@ -383,7 +414,7 @@ fn check_explained(program: &Program, config: Config, explain: Explain) {
     let storage_dir = TempDir::new().expect("cannot create a directory for storage");
     let (mut dbsp, (mut lazy_handle, mut eager_handle)) =
         Runtime::init_circuit(config.circuit_config(storage_dir.path()), move |circuit| {
-            let (lazy, lazy_handle) = circuit.add_lazy_input_map::<i32, i32, i32>();
+            let (lazy, lazy_handle) = circuit.add_lazy_input_map::<i32, i32>();
             record(&lazy, lazy_out.clone());
             record_integral(&lazy, integral_out.clone());
 
@@ -634,7 +665,7 @@ fn every_short_program_in_staged_appends_across_four_workers() {
 #[test]
 fn a_single_host_map_builds_no_exchange() {
     let (dbsp, _handle) = Runtime::init_circuit(CircuitConfig::with_workers(4), |circuit| {
-        let (delta, handle) = circuit.add_lazy_input_map::<i32, i32, i32>();
+        let (delta, handle) = circuit.add_lazy_input_map::<i32, i32>();
         delta.inspect(|_| {});
         let graph = circuit.to_dot(
             |node| {
@@ -684,7 +715,7 @@ fn a_downstream_operator_finds_the_maps_integral() {
     for workers in [1, 4] {
         let (dbsp, _handle) =
             Runtime::init_circuit(CircuitConfig::with_workers(workers), |circuit| {
-                let (delta, handle) = circuit.add_lazy_input_map::<i32, i32, i32>();
+                let (delta, handle) = circuit.add_lazy_input_map::<i32, i32>();
                 delta.inspect(|_| {});
 
                 let before = nodes(circuit);
@@ -715,7 +746,7 @@ fn a_downstream_operator_finds_the_maps_integral() {
 #[test]
 fn the_integral_is_named_for_a_restart() {
     let (dbsp, _handle) = Runtime::init_circuit(CircuitConfig::with_workers(1), |circuit| {
-        let (delta, handle) = circuit.add_lazy_input_map_persistent::<i32, i32, i32>(Some("table"));
+        let (delta, handle) = circuit.add_lazy_input_map_persistent::<i32, i32>(Some("table"));
         delta.inspect(|_| {});
         let graph = circuit.to_dot(
             |node| {
@@ -958,8 +989,8 @@ fn the_enumeration_lays_out_every_program() {
 
 /// Updates that reach a worker as several vectors.
 ///
-/// `MapHandle::append` concatenates everything a client writes in a step into
-/// one vector per worker, so `Stamp` has nothing to merge.  `MapHandle::stage`
+/// `LazyMapHandle::append` concatenates everything a client writes in a step into
+/// one vector per worker, so `Stamp` has nothing to merge.  `LazyMapHandle::stage`
 /// hands each call its own vector, and the last update to a key then lives in
 /// whichever vector wrote it last.  These tests drive that path directly, with
 /// control over how the appends are shaped, rather than through the chunking
@@ -976,7 +1007,7 @@ mod staged {
 
         let (mut dbsp, (lazy_handle, eager_handle)) =
             Runtime::init_circuit(CircuitConfig::with_workers(workers), move |circuit| {
-                let (lazy, lazy_handle) = circuit.add_lazy_input_map::<i32, i32, i32>();
+                let (lazy, lazy_handle) = circuit.add_lazy_input_map::<i32, i32>();
                 record(&lazy, lazy_out.clone());
 
                 let (eager, eager_handle) = circuit.add_input_map::<i32, i32, i32, _>(|_, _| {
@@ -1145,3 +1176,4 @@ mod staged {
         }
     }
 }
+

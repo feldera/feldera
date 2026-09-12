@@ -5,7 +5,7 @@ use crate::{
         metadata::OperatorLocation,
         operator_traits::{Operator, SourceOperator},
     },
-    dynamic::{DowncastTrait, DynData, DynPair, DynPairs, DynUnit, Erase, LeanVec},
+    dynamic::{DowncastTrait, DynData, DynOpt, DynPair, DynPairs, DynUnit, Erase, LeanVec},
     operator::dynamic::{
         input::{
             AddInputIndexedZSetFactories, AddInputMapFactories, AddInputMapWithWaterlineFactories,
@@ -206,6 +206,83 @@ impl StagedBuffers for MapStagedBuffers {
             self.input_handle.update_for_worker(worker, |tuples| {
                 tuples.push(vals);
             });
+        }
+    }
+}
+
+pub struct LazyMapStagedBuffers {
+    input_handle: InputHandle<Vec<Box<DynPairs<DynData, DynOpt<DynData>>>>>,
+    vals: Vec<Box<DynPairs<DynData, DynOpt<DynData>>>>,
+}
+
+impl StagedBuffers for LazyMapStagedBuffers {
+    fn flush(&mut self) {
+        for (worker, vals) in self.vals.drain(..).enumerate() {
+            self.input_handle.update_for_worker(worker, |tuples| {
+                tuples.push(vals);
+            });
+        }
+    }
+}
+
+/// A handle to a map that takes writes and deletes and nothing else.
+///
+/// `Some(value)` writes, `None` deletes.  A [`MapHandle`] carries an
+/// [`Update`], whose `Update` variant asks for a value to be patched in place;
+/// the lazy map resolves a key by keeping its last command, which a patch
+/// cannot express.  Taking an option rather than an `Update` is what leaves the
+/// command that cannot be honoured with no way to write it.
+#[repr(transparent)]
+pub struct LazyMapHandle<K, V> {
+    handle: UpsertHandle<DynData, DynOpt<DynData>>,
+    phantom: PhantomData<fn(&K, &V)>,
+}
+
+impl<K, V> Clone for LazyMapHandle<K, V> {
+    fn clone(&self) -> Self {
+        Self {
+            handle: self.handle.clone(),
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<K, V> LazyMapHandle<K, V>
+where
+    K: DBData,
+    V: DBData,
+{
+    fn new(handle: UpsertHandle<DynData, DynOpt<DynData>>) -> Self {
+        Self {
+            handle,
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn push(&self, mut k: K, mut v: Option<V>) {
+        self.handle.dyn_push(k.erase_mut(), v.erase_mut())
+    }
+
+    pub fn append(&mut self, vals: &mut Vec<Tup2<K, Option<V>>>) {
+        let vals = Box::new(LeanVec::from(take(vals)));
+        self.handle.dyn_append(&mut vals.erase_box())
+    }
+
+    pub fn stage(
+        &self,
+        buffers: impl IntoIterator<Item = VecDeque<Tup2<K, Option<V>>>>,
+    ) -> LazyMapStagedBuffers {
+        let num_partitions = self.handle.num_partitions();
+        let mut partitions = vec![self.handle.pairs_factory.default_box(); num_partitions];
+        for vals in buffers {
+            let vec = Vec::from(vals);
+            let vals = Box::new(LeanVec::from(vec));
+            self.handle
+                .dyn_stage(&mut vals.erase_box(), &mut partitions);
+        }
+        LazyMapStagedBuffers {
+            input_handle: self.handle.input_handle.clone(),
+            vals: partitions,
         }
     }
 }
@@ -501,37 +578,35 @@ impl RootCircuit {
     /// `U` names the update payload the handle will not carry.  It is there
     /// because the handle is a [`MapHandle`], which has a slot for one.
     #[track_caller]
-    pub fn add_lazy_input_map<K, V, U>(
+    pub fn add_lazy_input_map<K, V>(
         &self,
     ) -> (
         Stream<RootCircuit, OrdIndexedZSet<K, V>>,
-        MapHandle<K, V, U>,
+        LazyMapHandle<K, V>,
     )
     where
         K: DBData,
         V: DBData,
-        U: DBData + Erase<DynData>,
     {
         self.add_lazy_input_map_persistent(None)
     }
 
     #[track_caller]
-    pub fn add_lazy_input_map_persistent<K, V, U>(
+    pub fn add_lazy_input_map_persistent<K, V>(
         &self,
         persistent_id: Option<&str>,
     ) -> (
         Stream<RootCircuit, OrdIndexedZSet<K, V>>,
-        MapHandle<K, V, U>,
+        LazyMapHandle<K, V>,
     )
     where
         K: DBData,
         V: DBData,
-        U: DBData + Erase<DynData>,
     {
-        let factories = AddLazyInputMapFactories::new::<K, V, U>();
+        let factories = AddLazyInputMapFactories::new::<K, V>();
         let (stream, handle) = self.dyn_add_lazy_input_map_mono(persistent_id, &factories);
 
-        (stream.typed(), MapHandle::new(handle))
+        (stream.typed(), LazyMapHandle::new(handle))
     }
 
     /// Like `add_input_map`, but additionally tracks a waterline of the input collection and
