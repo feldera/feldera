@@ -82,17 +82,21 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub splitter_chunk_size_records: Option<u64>,
 
-    /// How many keys a lazy input map resolves against its integral before it
-    /// yields to the rest of the circuit.
+    /// How long an operator may hold one step, in microseconds.
     ///
-    /// The map yields once it has produced a chunk of adjustments, which bounds
-    /// a step by its output.  A transaction that rewrites keys with the values
-    /// they already hold produces almost no adjustments, so this bounds the same
-    /// step by its input.
+    /// An operator that walks a long input has to yield periodically, or it
+    /// holds the step for as long as the whole input takes.  Counting what it
+    /// walks or produces bounds the wrong quantity: the workers meet at a
+    /// barrier at the end of every step, so what they wait for is time, and how
+    /// much time an item costs depends on whether it had to be read from
+    /// storage.  Only operators that opt into a [`StepBudget`] are bounded by
+    /// this; the rest run to completion.
     ///
-    /// The default is 100,000.
+    /// [`StepBudget`]: https://docs.rs/dbsp/latest/dbsp/circuit/struct.StepBudget.html
+    ///
+    /// The default is 10,000, ten milliseconds.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub lazy_input_map_keys_per_step: Option<u64>,
+    pub operator_usecs_per_step: Option<u64>,
 
     /// Enable adaptive joins.
     ///
@@ -309,8 +313,8 @@ impl DevTweaks {
     pub fn splitter_chunk_size_records(&self) -> u64 {
         self.splitter_chunk_size_records.unwrap_or(10_000)
     }
-    pub fn lazy_input_map_keys_per_step(&self) -> u64 {
-        self.lazy_input_map_keys_per_step.unwrap_or(100_000)
+    pub fn operator_usecs_per_step(&self) -> u64 {
+        self.operator_usecs_per_step.unwrap_or(10_000)
     }
     pub fn adaptive_joins(&self) -> bool {
         self.adaptive_joins.unwrap_or(false)

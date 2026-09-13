@@ -125,10 +125,10 @@ struct Config {
     /// is the step the operator does all of its work in.
     input_during_commit: bool,
 
-    /// Keys the map resolves before it yields.  Two ends a step on nearly every
-    /// key, whichever way the adjustments fall, which no program here reaches by
-    /// default.
-    keys_per_step: Option<u64>,
+    /// How long the map may hold a step, in microseconds.  Zero ends a step on
+    /// every key, whichever way the adjustments fall, which no program here
+    /// reaches by default.
+    usecs_per_step: Option<u64>,
 
     /// Whether a step's commands arrive as several staged appends rather than
     /// one.  `LazyMapHandle::append` concatenates into one vector per worker, so
@@ -144,7 +144,7 @@ impl Default for Config {
             chunk_size: None,
             storage: false,
             input_during_commit: true,
-            keys_per_step: None,
+            usecs_per_step: None,
             staged: false,
         }
     }
@@ -157,8 +157,8 @@ impl Config {
         if let Some(chunk_size) = self.chunk_size {
             config = config.with_splitter_chunk_size_records(chunk_size);
         }
-        if let Some(keys_per_step) = self.keys_per_step {
-            config = config.with_lazy_input_map_keys_per_step(keys_per_step);
+        if let Some(usecs_per_step) = self.usecs_per_step {
+            config = config.with_operator_usecs_per_step(usecs_per_step);
         }
         if self.storage {
             config = config.with_storage(Some(
@@ -782,15 +782,15 @@ fn every_short_program_without_input_during_commit() {
     }
 }
 
-/// Every short program with the map yielding every second key, so a transaction
+/// Every short program with the map yielding on every key, so a transaction
 /// resolves over several steps whatever its adjustments look like.
 #[test]
-fn every_short_program_yielding_every_second_key() {
+fn every_short_program_yielding_on_every_key() {
     for length in 1..=4 {
         check_every_program(
             length,
             Config {
-                keys_per_step: Some(2),
+                usecs_per_step: Some(0),
                 ..Config::default()
             },
         );
@@ -809,7 +809,7 @@ fn every_short_program_under_every_knob() {
                 chunk_size: Some(1),
                 storage: true,
                 input_during_commit: false,
-                keys_per_step: Some(2),
+                usecs_per_step: Some(0),
                 staged: true,
             },
         );
@@ -844,7 +844,7 @@ proptest! {
                 chunk_size: Some(1),
                 storage: true,
                 input_during_commit: false,
-                keys_per_step: Some(2),
+                usecs_per_step: Some(0),
                 staged: true,
             },
         );
@@ -1176,4 +1176,3 @@ mod staged {
         }
     }
 }
-

@@ -15,6 +15,7 @@
 //! output.
 
 mod dbsp_handle;
+mod step_budget;
 
 pub(crate) mod runtime;
 
@@ -43,13 +44,14 @@ pub use dbsp_handle::{
     LayoutError, Mode, StepSize, StorageCacheConfig, StorageConfig, StorageOptions,
     adaptive_joins_enabled, balancer_balance_tax, balancer_key_distribution_refresh_threshold,
     balancer_min_absolute_improvement_threshold, balancer_min_relative_improvement_threshold,
-    lazy_input_map_keys_per_step, max_level0_batch_size_records, negative_weight_multiplier,
+    max_level0_batch_size_records, negative_weight_multiplier, operator_step_budget,
     splitter_output_chunk_size, splitter_output_first_chunk_size,
 };
 pub use runtime::{
     Consensus, Error as RuntimeError, LocalStore, LocalStoreMarker, Runtime, RuntimeHandle,
     WeakRuntime, WorkerLocation, WorkerLocations,
 };
+pub use step_budget::StepBudget;
 
 pub use schedule::Error as SchedulerError;
 

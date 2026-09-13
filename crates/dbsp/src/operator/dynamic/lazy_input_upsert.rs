@@ -20,9 +20,8 @@ use crate::{
     Circuit, DBData, Error, NumEntries, Position, RootCircuit, Runtime, Stream, ZWeight,
     algebra::{IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories},
     circuit::{
-        GlobalNodeId, OwnershipPreference, Scope,
+        GlobalNodeId, OwnershipPreference, Scope, StepBudget,
         circuit_builder::{CircuitBase, RefStreamValue},
-        lazy_input_map_keys_per_step,
         metadata::{
             ALLOCATED_MEMORY_BYTES, BatchSizeStats, CONFLICTING_UPDATES_COUNT, DurationHistogram,
             INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT, MetaItem, OUTPUT_ADJUSTMENT_STATS,
@@ -604,7 +603,11 @@ where
             );
 
             let chunk_size = splitter_output_chunk_size();
-            let keys_per_step = lazy_input_map_keys_per_step();
+            // The scan reads the integral as it goes, so how long a key takes
+            // depends on whether it had to come off storage.  A step is bounded
+            // by the clock rather than by a count of keys, since the clock is
+            // what the other workers wait through at the barrier.
+            let mut budget = StepBudget::new();
             let capacity = splitter_output_first_chunk_size();
 
             let mut updates_cursor = updates.cursor();
@@ -620,7 +623,6 @@ where
 
             let mut builder = self.builder(capacity);
             let mut in_chunk = 0usize;
-            let mut walked = 0usize;
 
             // One clock read per step rather than per key: the loop below runs
             // millions of times and a step ends only at a yield.
@@ -721,21 +723,26 @@ where
                 }
 
                 updates_cursor.step_key();
-                walked += 1;
+
+                // Counted before the test below rather than inside it, so that
+                // every key reaches the budget whichever bound ends the step.
+                let out_of_time = budget.spent();
 
                 // A step ends on a chunk of adjustments, or on a run of keys
                 // that produced too few of them to end it that way.  Either way
                 // it ends at a key boundary, which is where a builder can be
                 // finished.
-                if in_chunk >= chunk_size || walked >= keys_per_step {
+                if in_chunk >= chunk_size || out_of_time {
                     let position = updates_cursor.position();
                     self.emit(Arc::new(builder.done())).await;
                     self.step_durations.borrow_mut().add(step_start.elapsed());
                     yield (None, false, position);
                     step_start = Instant::now();
+                    // After the yield, so that handing the chunk on and waiting
+                    // for the spine are not charged to the next step's scan.
+                    budget.restart();
                     builder = self.builder(capacity);
                     in_chunk = 0;
-                    walked = 0;
                 }
             }
 
@@ -1767,13 +1774,15 @@ mod lazy_upsert_tests {
     /// A run of keys that produces no adjustments still ends a step.
     ///
     /// Rewriting a key with the value it already holds cancels out, so the chunk
-    /// never fills and only the bound on keys walked can end the step.  Without
-    /// it a transaction of such writes would resolve in a single step however
-    /// long it ran.
+    /// never fills and only the time budget can end the step.  Without it a
+    /// transaction of such writes would resolve in a single step however long it
+    /// ran.
     #[test]
     fn a_run_of_keys_without_adjustments_still_ends_a_step() {
         let dir = tempdir().expect("temp dir");
-        let config: CircuitConfig = mkconfig(dir.path()).with_lazy_input_map_keys_per_step(2);
+        // A budget of zero ends a step on every key, which is the only setting
+        // that makes the count below independent of how fast the machine is.
+        let config: CircuitConfig = mkconfig(dir.path()).with_operator_usecs_per_step(0);
         run_in_circuit_with_storage_config(config, || {
             let factories = factories();
 
@@ -1789,10 +1798,7 @@ mod lazy_upsert_tests {
                 Some(Vec::new()),
                 "rewriting a key with its own value leaves the integral alone"
             );
-            assert_eq!(
-                resolved.steps, 4,
-                "three steps of two keys each, then one to finish"
-            );
+            assert_eq!(resolved.steps, 7, "a step per key, then one to finish");
         });
     }
 }

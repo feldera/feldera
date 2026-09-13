@@ -383,13 +383,14 @@ pub fn splitter_output_chunk_size() -> usize {
     Runtime::with_dev_tweaks(|d| d.splitter_chunk_size_records() as usize)
 }
 
-/// Returns how many keys a lazy input map resolves before it yields, in keys.
+/// Returns how long an operator may hold one step.
 ///
 /// [splitter_output_chunk_size] bounds a step by what it produces, which says
-/// nothing about a step that walks many keys and produces almost nothing.  This
-/// bounds the same step by what it reads.
-pub fn lazy_input_map_keys_per_step() -> usize {
-    Runtime::with_dev_tweaks(|d| d.lazy_input_map_keys_per_step() as usize)
+/// nothing about a step that walks a long input and produces almost nothing.
+/// This bounds the same step by the clock, which is what the other workers
+/// wait through at the end-of-step barrier.  See [`StepBudget`].
+pub fn operator_step_budget() -> Duration {
+    Duration::from_micros(Runtime::with_dev_tweaks(|d| d.operator_usecs_per_step()))
 }
 
 /// Returns the number of records to preallocate in the first iteration of loops
@@ -586,8 +587,8 @@ impl CircuitConfig {
         self
     }
 
-    pub fn with_lazy_input_map_keys_per_step(mut self, keys: u64) -> Self {
-        self.dev_tweaks.lazy_input_map_keys_per_step = Some(keys);
+    pub fn with_operator_usecs_per_step(mut self, usecs: u64) -> Self {
+        self.dev_tweaks.operator_usecs_per_step = Some(usecs);
         self
     }
 

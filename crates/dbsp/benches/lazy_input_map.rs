@@ -272,6 +272,16 @@ struct Args {
     /// which is what says how much of the eager map's speed they are carrying.
     #[arg(long)]
     bloom_rate: Option<f64>,
+    /// How long an operator may hold one step, in microseconds.
+    ///
+    /// The other bound is the chunk of adjustments a step produces, but a
+    /// backfill of fresh keys produces almost none: nothing in the integral to
+    /// retract, so the record `project(U)` contributes already stands.  That
+    /// leaves this the bound that decides how long a commit step runs, and so
+    /// how long the other workers wait at the barrier for the slowest.
+    /// Defaults to 10,000, ten milliseconds.
+    #[arg(long)]
+    usecs_per_step: Option<u64>,
     /// Let file-backed batches carry roaring membership filters.
     ///
     /// On by default, and for an `i64` key it displaces the Bloom filter
@@ -528,7 +538,7 @@ fn main() -> Result<()> {
     });
 
     println!(
-        "value_bytes={} records={} load_batch={} transactions={}x{} workers={} merger_threads={} bloom_rate={} roaring={} staging={} keys={}",
+        "value_bytes={} records={} load_batch={} transactions={}x{} workers={} merger_threads={} bloom_rate={} roaring={} staging={} keys={} usecs_per_step={}",
         args.value_bytes,
         records,
         args.load_batch,
@@ -554,6 +564,10 @@ fn main() -> Result<()> {
             "ascending"
         } else {
             "shuffled"
+        },
+        match args.usecs_per_step {
+            Some(usecs) => usecs.to_string(),
+            None => "10000 (default)".to_string(),
         }
     );
 
@@ -876,6 +890,7 @@ where
     ));
     config.dev_tweaks.merger_threads = args.merger_threads;
     config.dev_tweaks.enable_roaring = Some(args.roaring);
+    config.dev_tweaks.operator_usecs_per_step = args.usecs_per_step;
 
     let weights = Arc::new(AtomicI64::new(0));
     let (verify, counter) = (args.verify, weights.clone());
