@@ -150,6 +150,10 @@ name = "input_map_ingest"
 harness = false
 
 [[bench]]
+name = "lazy_input_map"
+harness = false
+
+[[bench]]
 name = "buffer_cache"
 harness = false
 
