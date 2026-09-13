@@ -546,6 +546,7 @@ mod tests {
         circuit::{
             Circuit, CircuitConfig,
             circuit_builder::{NodeId, Scope},
+            metadata::{SPINE_ADD_BATCH_TIME_SECONDS, SPINE_FLUSH_BATCH_TIME_SECONDS},
             operator_traits::{Operator, UnaryOperator},
         },
         operator::Generator,
@@ -613,6 +614,21 @@ mod tests {
 
     fn parked_under(breakdown: &BTreeMap<String, Duration>, reason: ParkReason) -> Duration {
         breakdown[reason.name()]
+    }
+
+    /// Sums a duration metric over every operator that reports it, skipping the
+    /// root, whose entry merges its children's.
+    fn total_duration(profile: &DbspProfile, metric: &MetricId) -> Duration {
+        profile
+            .worker_profiles
+            .iter()
+            .flat_map(|worker| worker.attribute_profile(metric))
+            .filter(|(node_id, _)| *node_id != GlobalNodeId::root())
+            .map(|(_, value)| match value {
+                MetaItem::Duration(duration) => duration,
+                value => panic!("{metric} must be a duration: {value:?}"),
+            })
+            .sum()
     }
 
     /// The breakdown names every reason and adds up to the wait it splits.
@@ -772,6 +788,21 @@ mod tests {
                     "circuit {node_id} waited without declaring why: {breakdown:?}"
                 );
             }
+        }
+    }
+
+    /// The two halves of an insert that block the operator's own thread are
+    /// measured, which is what makes them visible: neither is an await, so
+    /// neither reaches the circuit's wait time.
+    #[test]
+    fn a_spine_times_the_blocking_halves_of_an_insert() {
+        let profile = profile_of_a_spine_under_load(2, true, 100);
+
+        for metric in [SPINE_FLUSH_BATCH_TIME_SECONDS, SPINE_ADD_BATCH_TIME_SECONDS] {
+            assert!(
+                total_duration(&profile, &metric) > Duration::ZERO,
+                "{metric} stayed at zero across every spine"
+            );
         }
     }
 

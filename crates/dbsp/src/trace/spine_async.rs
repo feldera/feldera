@@ -19,8 +19,8 @@ use crate::{
             MetaItem, MetricId, MetricReading, NEGATIVE_WEIGHT_COUNT, OperatorMeta,
             RANGE_FILTER_HIT_RATE_PERCENT, RANGE_FILTER_HITS_COUNT, RANGE_FILTER_MISSES_COUNT,
             RANGE_FILTER_SIZE_BYTES, ROARING_FILTER_HIT_RATE_PERCENT, ROARING_FILTER_HITS_COUNT,
-            ROARING_FILTER_MISSES_COUNT, ROARING_FILTER_SIZE_BYTES, SPINE_BATCHES_COUNT,
-            SPINE_STORAGE_SIZE_BYTES,
+            ROARING_FILTER_MISSES_COUNT, ROARING_FILTER_SIZE_BYTES, SPINE_ADD_BATCH_TIME_SECONDS,
+            SPINE_BATCHES_COUNT, SPINE_FLUSH_BATCH_TIME_SECONDS, SPINE_STORAGE_SIZE_BYTES,
         },
         metrics::COMPACTION_STALL_TIME_NANOSECONDS,
         negative_weight_multiplier,
@@ -1139,6 +1139,16 @@ where
                 MetaItem::Duration(spine_stats.backpressure_wait),
             ),
             MetricReading::new(
+                SPINE_FLUSH_BATCH_TIME_SECONDS,
+                Vec::new(),
+                MetaItem::Duration(spine_stats.flush_batch),
+            ),
+            MetricReading::new(
+                SPINE_ADD_BATCH_TIME_SECONDS,
+                Vec::new(),
+                MetaItem::Duration(spine_stats.add_batch),
+            ),
+            MetricReading::new(
                 BLOOM_FILTER_SIZE_BYTES,
                 Vec::new(),
                 MetaItem::bytes(bloom_filter_stats.size_byte),
@@ -1598,6 +1608,10 @@ struct SpineStats {
     cache_stats: CacheStats,
     /// Time spent waiting for backpressure.
     backpressure_wait: Duration,
+    /// Time operators spent in [`Spine::maybe_flush_batch`] before inserting.
+    flush_batch: Duration,
+    /// Time operators spent inside [`MergerInner::add_batch`].
+    add_batch: Duration,
 }
 
 impl SpineStats {
@@ -2117,19 +2131,32 @@ where
     }
 
     async fn insert(&mut self, batch: impl Into<Arc<Self::Batch>>) {
+        // Both halves below block the calling thread rather than awaiting, so
+        // they are invisible in the circuit's wait time.  Time them apart to
+        // tell a slow spill from contention on the spine's state.
+        let flush_start = Instant::now();
         let batch = Self::maybe_flush_batch(batch, &self.factories, || {
             self.merger.state.lock().unwrap().get_filters()
         });
-        if !batch.is_empty() {
-            self.dirty = true;
-            if self
-                .merger
-                .add_batch(batch, false)
-                .count_loose_batches()
-                .should_apply_backpressure()
-            {
-                self.merger.backpressure_wait().await;
-            }
+        let flush_batch = flush_start.elapsed();
+
+        if batch.is_empty() {
+            return;
+        }
+        self.dirty = true;
+
+        let backpressure = {
+            let add_start = Instant::now();
+            let mut state = self.merger.add_batch(batch, false);
+            let add_batch = add_start.elapsed();
+
+            state.spine_stats.flush_batch += flush_batch;
+            state.spine_stats.add_batch += add_batch;
+            state.count_loose_batches().should_apply_backpressure()
+        };
+
+        if backpressure {
+            self.merger.backpressure_wait().await;
         }
     }
 

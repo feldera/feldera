@@ -161,6 +161,10 @@ pub const MERGING_SIZE_BYTES: MetricId = MetricId(Cow::Borrowed("merging_size_by
 pub const MERGE_REDUCTION_PERCENT: MetricId = MetricId(Cow::Borrowed("merge_reduction_percent"));
 pub const MERGE_BACKPRESSURE_WAIT_TIME_SECONDS: MetricId =
     MetricId(Cow::Borrowed("merge_backpressure_wait_time_seconds"));
+pub const SPINE_FLUSH_BATCH_TIME_SECONDS: MetricId =
+    MetricId(Cow::Borrowed("spine_flush_batch_time_seconds"));
+pub const SPINE_ADD_BATCH_TIME_SECONDS: MetricId =
+    MetricId(Cow::Borrowed("spine_add_batch_time_seconds"));
 pub const INVOCATIONS_COUNT: MetricId = MetricId(Cow::Borrowed("invocations_count"));
 pub const RUNTIME_SECONDS: MetricId = MetricId(Cow::Borrowed("runtime_seconds"));
 /// The fraction of an operator's runtime that it is actually running as opposed
@@ -192,7 +196,7 @@ pub const PREFIX_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("prefix_batche
 pub const INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("input_integral_records_count"));
 
-pub const CIRCUIT_METRICS: [CircuitMetric; 81] = [
+pub const CIRCUIT_METRICS: [CircuitMetric; 83] = [
     // State
     CircuitMetric {
         name: USED_MEMORY_BYTES,
@@ -550,6 +554,18 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 81] = [
         category: CircuitMetricCategory::Time,
         advanced: false,
         description: "Time spent waiting for backpressure.",
+    },
+    CircuitMetric {
+        name: SPINE_FLUSH_BATCH_TIME_SECONDS,
+        category: CircuitMetricCategory::Time,
+        advanced: true,
+        description: "Time an operator spent in the spine's pre-insert flush, which writes a batch to storage when the batch is large enough that the spine would rather not hold it in memory. The operator's thread is blocked throughout, so this time counts against 'circuit_nonblocking_percent' without showing up as a wait.",
+    },
+    CircuitMetric {
+        name: SPINE_ADD_BATCH_TIME_SECONDS,
+        category: CircuitMetricCategory::Time,
+        advanced: true,
+        description: "Time an operator spent inserting a batch into the spine, excluding the eager spill and the backpressure wait that bracket it. This is mostly contention on the lock that the mergers hold while they rearrange the same state.",
     },
     CircuitMetric {
         name: RUNTIME_NONBLOCKING_PERCENT,
