@@ -27,6 +27,10 @@ default = ["backend-mode"]
 # See comments in `mono.rs`
 backend-mode = []
 
+# Lets a benchmark allocate through jemalloc with its heap profiler on and
+# write pprof heap profiles; see `--heap-profile-dir` in `lazy_input_map`.
+heap-profile = ["dep:tikv-jemallocator", "dep:jemalloc_pprof"]
+
 [dependencies]
 num = { workspace = true }
 anyhow = { workspace = true }
@@ -43,6 +47,8 @@ ordered-float = { workspace = true, features = ["rkyv_64"] }
 xxhash-rust = { workspace = true, features = ["xxh3"] }
 crossbeam = { workspace = true }
 arc-swap = { workspace = true }
+tikv-jemallocator = { workspace = true, features = ["profiling", "unprefixed_malloc_on_supported_platforms"], optional = true }
+jemalloc_pprof = { workspace = true, features = ["symbolize"], optional = true }
 rand = { workspace = true }
 rkyv = { workspace = true, features = ["std", "size_64", "validation", "uuid"] }
 size-of = { workspace = true, features = [ "hashbrown", "xxhash-xxh3" ] }
@@ -164,6 +170,10 @@ harness = false
 
 [[bench]]
 name = "input_map_ingest"
+harness = false
+
+[[bench]]
+name = "lazy_input_map"
 harness = false
 
 [[bench]]
