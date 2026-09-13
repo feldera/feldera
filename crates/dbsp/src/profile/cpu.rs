@@ -9,14 +9,121 @@
 use crate::circuit::{GlobalNodeId, RootCircuit, ThreadCpuTime, trace::SchedulerEvent};
 use hashbrown::HashMap;
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicU64, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
+
+/// Why a worker's runtime is parked.
+///
+/// The park hook can see *that* the runtime has nothing to run, never why.  A
+/// site that is about to block declares the reason with [`ParkingFor`] and the
+/// hook reads it back, which turns one number into a breakdown.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(usize)]
+pub enum ParkReason {
+    /// No site declared a reason.  The runtime ran out of work between steps,
+    /// or inside machinery that this instrumentation does not cover.
+    Unattributed = 0,
+    /// A spine is waiting for its mergers to bring the batch count back below
+    /// the backpressure threshold.
+    MergeBackpressure = 1,
+    /// An exchange or a broadcast is waiting for the other workers.
+    Peers = 2,
+    /// An operator task is in flight and awaiting something that none of the
+    /// reasons above declared, such as background I/O.
+    OperatorPending = 3,
+    /// No operator task is running: the scheduler is waiting for an
+    /// asynchronous operator to signal that it can run at all.
+    Scheduler = 4,
+}
+
+impl ParkReason {
+    pub const COUNT: usize = 5;
+
+    /// Every reason, in the order a breakdown indexes them.
+    pub const ALL: [Self; Self::COUNT] = [
+        Self::Unattributed,
+        Self::MergeBackpressure,
+        Self::Peers,
+        Self::OperatorPending,
+        Self::Scheduler,
+    ];
+
+    /// Which reason wins when several are live at once.
+    ///
+    /// Guards nest: an operator that blocks on backpressure does so inside the
+    /// scheduler's own wait, and the inner, more specific declaration is the
+    /// one worth reporting.
+    const PRIORITY: [Self; Self::COUNT - 1] = [
+        Self::MergeBackpressure,
+        Self::Peers,
+        Self::OperatorPending,
+        Self::Scheduler,
+    ];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Unattributed => "unattributed",
+            Self::MergeBackpressure => "merge_backpressure",
+            Self::Peers => "peers",
+            Self::OperatorPending => "operator_pending",
+            Self::Scheduler => "scheduler",
+        }
+    }
+}
+
+thread_local! {
+    /// How many live [`ParkingFor`] guards declare each reason.
+    ///
+    /// A count rather than a single value because a guard stays live across the
+    /// await it covers, so a task that yields leaves its declaration standing
+    /// while its siblings run.
+    static PARKING_FOR: Cell<[u32; ParkReason::COUNT]> =
+        const { Cell::new([0; ParkReason::COUNT]) };
+}
+
+fn current_park_reason() -> ParkReason {
+    let counts = PARKING_FOR.with(|counts| counts.get());
+    ParkReason::PRIORITY
+        .into_iter()
+        .find(|reason| counts[*reason as usize] > 0)
+        .unwrap_or(ParkReason::Unattributed)
+}
+
+/// Declares why this thread is about to block, for as long as the guard lives.
+///
+/// Hold one across the await that blocks, not merely around the call that sets
+/// it up: the runtime parks after the await returns `Pending`, and only a live
+/// guard is visible then.
+#[must_use = "the declaration lasts only as long as the guard"]
+pub struct ParkingFor(ParkReason);
+
+impl ParkingFor {
+    pub fn new(reason: ParkReason) -> Self {
+        Self::adjust(reason, 1);
+        Self(reason)
+    }
+
+    fn adjust(reason: ParkReason, delta: i32) {
+        PARKING_FOR.with(|counts| {
+            let mut counts_value = counts.get();
+            counts_value[reason as usize] =
+                counts_value[reason as usize].wrapping_add_signed(delta);
+            counts.set(counts_value);
+        });
+    }
+}
+
+impl Drop for ParkingFor {
+    fn drop(&mut self) {
+        Self::adjust(self.0, -1);
+    }
+}
 
 /// Time a worker's async runtime spent with nothing to run.
 ///
@@ -38,6 +145,10 @@ pub struct RuntimeIdle {
     park_start: Arc<AtomicU64>,
     /// Total time parked.
     total: Arc<AtomicU64>,
+    /// The same total, split by the reason in force when the park began.
+    by_reason: Arc<[AtomicU64; ParkReason::COUNT]>,
+    /// The reason the current park began under.
+    park_reason: Arc<AtomicUsize>,
 }
 
 impl Default for RuntimeIdle {
@@ -52,6 +163,8 @@ impl RuntimeIdle {
             base: Instant::now(),
             park_start: Arc::new(AtomicU64::new(0)),
             total: Arc::new(AtomicU64::new(0)),
+            by_reason: Arc::new([const { AtomicU64::new(0) }; ParkReason::COUNT]),
+            park_reason: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -61,6 +174,8 @@ impl RuntimeIdle {
 
     /// Called by the runtime's `on_thread_park` hook.
     pub fn park(&self) {
+        self.park_reason
+            .store(current_park_reason() as usize, Ordering::Release);
         self.park_start.store(self.now(), Ordering::Release);
     }
 
@@ -71,14 +186,23 @@ impl RuntimeIdle {
     pub fn unpark(&self) {
         let start = self.park_start.swap(0, Ordering::AcqRel);
         if start != 0 {
-            self.total
-                .fetch_add(self.now().saturating_sub(start), Ordering::Release);
+            let parked = self.now().saturating_sub(start);
+            self.total.fetch_add(parked, Ordering::Release);
+            self.by_reason[self.park_reason.load(Ordering::Acquire)]
+                .fetch_add(parked, Ordering::Release);
         }
     }
 
     /// Total time parked so far.
     pub fn total(&self) -> Duration {
         Duration::from_nanos(self.total.load(Ordering::Acquire))
+    }
+
+    /// Time parked so far under each reason, indexed by [`ParkReason`].
+    pub fn by_reason(&self) -> [Duration; ParkReason::COUNT] {
+        std::array::from_fn(|index| {
+            Duration::from_nanos(self.by_reason[index].load(Ordering::Acquire))
+        })
     }
 }
 
@@ -126,6 +250,9 @@ pub struct CircuitCPUProfile {
     /// time spent between `StepStart` and `StepEnd`.
     pub step_profile: OperatorCPUProfile,
 
+    /// The step's wait time split by what the runtime was parked for.
+    pub wait_by_reason: [Duration; ParkReason::COUNT],
+
     /// Idle periods when the circuit is not performing a step.
     ///
     /// There are two sources of idle time:
@@ -143,6 +270,8 @@ struct CPUProfilerInner {
     step_start_cpu: HashMap<GlobalNodeId, Duration>,
     /// Runtime idle total when the current step started, per circuit.
     step_start_idle: HashMap<GlobalNodeId, Duration>,
+    /// The same, split by reason.
+    step_start_idle_by_reason: HashMap<GlobalNodeId, [Duration; ParkReason::COUNT]>,
     circuit_profiles: HashMap<GlobalNodeId, CircuitCPUProfile>,
     /// Set when the profiler is attached; `None` leaves the wait and CPU
     /// figures at zero rather than reporting a number with nothing behind it.
@@ -171,6 +300,8 @@ impl CPUProfilerInner {
                 if let Some(idle) = &self.runtime_idle {
                     self.step_start_idle
                         .insert((*circuit_id).clone(), idle.total());
+                    self.step_start_idle_by_reason
+                        .insert((*circuit_id).clone(), idle.by_reason());
                 }
             }
             SchedulerEvent::StepEnd { circuit_id } => {
@@ -199,6 +330,17 @@ impl CPUProfilerInner {
                         circuit_profile
                             .wait_profile
                             .add_event(idle.total().saturating_sub(before), Duration::ZERO);
+
+                        if let Some(before) = self.step_start_idle_by_reason.remove(*circuit_id) {
+                            let now = idle.by_reason();
+                            for (total, (now, before)) in circuit_profile
+                                .wait_by_reason
+                                .iter_mut()
+                                .zip(now.iter().zip(before.iter()))
+                            {
+                                *total += now.saturating_sub(*before);
+                            }
+                        }
                     }
                 };
                 self.step_end_times
@@ -267,5 +409,118 @@ impl CPUProfiler {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{ParkReason, ParkingFor, RuntimeIdle, current_park_reason};
+    use std::time::{Duration, Instant};
+
+    fn parked_under(idle: &RuntimeIdle, reason: ParkReason) -> Duration {
+        idle.by_reason()[reason as usize]
+    }
+
+    /// Burns enough time for the park that brackets it to measure above zero.
+    fn spin() {
+        let until = Instant::now() + Duration::from_micros(50);
+        while Instant::now() < until {
+            std::hint::spin_loop();
+        }
+    }
+
+    #[test]
+    fn no_declaration_leaves_a_park_unattributed() {
+        assert_eq!(current_park_reason(), ParkReason::Unattributed);
+    }
+
+    #[test]
+    fn a_declaration_lasts_only_as_long_as_its_guard() {
+        {
+            let _parked = ParkingFor::new(ParkReason::Peers);
+            assert_eq!(current_park_reason(), ParkReason::Peers);
+        }
+        assert_eq!(current_park_reason(), ParkReason::Unattributed);
+    }
+
+    /// Guards nest rather than overwrite, so leaving the inner one uncovers the
+    /// outer one instead of clearing the declaration.
+    #[test]
+    fn leaving_an_inner_declaration_uncovers_the_outer_one() {
+        let _outer = ParkingFor::new(ParkReason::Scheduler);
+        {
+            let _inner = ParkingFor::new(ParkReason::MergeBackpressure);
+            assert_eq!(current_park_reason(), ParkReason::MergeBackpressure);
+        }
+        assert_eq!(current_park_reason(), ParkReason::Scheduler);
+    }
+
+    /// Two tasks can sit suspended under different declarations at once.  The
+    /// answer must be the more specific of the two whichever order they were
+    /// entered in, which is what rules out reporting whichever task happened to
+    /// be polled last.
+    #[test]
+    fn priority_decides_between_concurrent_declarations() {
+        for reversed in [false, true] {
+            let (first, second) = if reversed {
+                (ParkReason::Peers, ParkReason::OperatorPending)
+            } else {
+                (ParkReason::OperatorPending, ParkReason::Peers)
+            };
+            let _first = ParkingFor::new(first);
+            let _second = ParkingFor::new(second);
+            assert_eq!(current_park_reason(), ParkReason::Peers);
+        }
+    }
+
+    #[test]
+    fn a_park_is_charged_to_the_reason_it_began_under() {
+        let idle = RuntimeIdle::new();
+
+        {
+            let _parked = ParkingFor::new(ParkReason::MergeBackpressure);
+            idle.park();
+            spin();
+        }
+        // The declaration is gone by the time the runtime wakes up, which is
+        // why the reason has to be latched at the park rather than the unpark.
+        idle.unpark();
+
+        assert!(parked_under(&idle, ParkReason::MergeBackpressure) > Duration::ZERO);
+        assert_eq!(
+            parked_under(&idle, ParkReason::Unattributed),
+            Duration::ZERO
+        );
+        assert_eq!(
+            idle.total(),
+            parked_under(&idle, ParkReason::MergeBackpressure)
+        );
+    }
+
+    /// Every reason has a slot of its own, and the slots add up to the total.
+    #[test]
+    fn the_breakdown_accounts_for_the_whole_total() {
+        let idle = RuntimeIdle::new();
+
+        for reason in ParkReason::ALL {
+            let _parked = (reason != ParkReason::Unattributed).then(|| ParkingFor::new(reason));
+            idle.park();
+            spin();
+            idle.unpark();
+        }
+
+        let by_reason = idle.by_reason();
+        assert!(by_reason.iter().all(|parked| *parked > Duration::ZERO));
+        assert_eq!(by_reason.iter().sum::<Duration>(), idle.total());
+    }
+
+    /// An unpark that no park preceded adds nothing, so the runtime's initial
+    /// unpark does not charge the whole process start-up to a reason.
+    #[test]
+    fn an_unmatched_unpark_adds_nothing() {
+        let idle = RuntimeIdle::new();
+        idle.unpark();
+        assert_eq!(idle.total(), Duration::ZERO);
+        assert_eq!(idle.by_reason(), [Duration::ZERO; ParkReason::COUNT]);
     }
 }

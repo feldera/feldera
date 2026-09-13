@@ -167,6 +167,8 @@ pub const RUNTIME_SECONDS: MetricId = MetricId(Cow::Borrowed("runtime_seconds"))
 /// to blocking in the kernel (e.g. because it is waiting for I/O).
 pub const RUNTIME_NONBLOCKING_PERCENT: MetricId = MetricId(Cow::Borrowed("nonblocking_percent"));
 pub const RUNTIME_PERCENT: MetricId = MetricId(Cow::Borrowed("runtime_percent"));
+pub const CIRCUIT_WAIT_BY_REASON_SECONDS: MetricId =
+    MetricId(Cow::Borrowed("circuit_wait_by_reason_seconds"));
 pub const CIRCUIT_WAIT_TIME_SECONDS: MetricId =
     MetricId(Cow::Borrowed("circuit_wait_time_seconds"));
 pub const STEPS_COUNT: MetricId = MetricId(Cow::Borrowed("steps_count"));
@@ -190,7 +192,7 @@ pub const PREFIX_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("prefix_batche
 pub const INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("input_integral_records_count"));
 
-pub const CIRCUIT_METRICS: [CircuitMetric; 80] = [
+pub const CIRCUIT_METRICS: [CircuitMetric; 81] = [
     // State
     CircuitMetric {
         name: USED_MEMORY_BYTES,
@@ -490,6 +492,12 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 80] = [
         description: "Percentage of time spent evaluating the operator as a fraction of the total runtime of all operators in the circuit.",
     },
     CircuitMetric {
+        name: CIRCUIT_WAIT_BY_REASON_SECONDS,
+        category: CircuitMetricCategory::Time,
+        advanced: false,
+        description: "'circuit_wait_time_seconds' split by what the worker's async runtime was parked for: waiting for a spine to merge its batches down ('merge_backpressure'), for the other workers ('peers'), for the scheduler to find a runnable operator ('scheduler'), or for a reason no site declared ('unattributed').",
+    },
+    CircuitMetric {
         name: CIRCUIT_WAIT_TIME_SECONDS,
         category: CircuitMetricCategory::Time,
         advanced: false,
@@ -523,7 +531,7 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 80] = [
         name: CIRCUIT_IDLE_TIME_SECONDS,
         category: CircuitMetricCategory::Time,
         advanced: false,
-        description: "Total time spent between circuit invocations, waiting for new data from input connectors or for output connector queues to clear out.",
+        description: "Time between one step ending and the next beginning, whatever the cause: waiting for the other workers to finish their step, or for the client to ask for another one. In a pipeline that is usually time spent waiting for input connectors to deliver data or for output connector queues to clear.",
     },
     CircuitMetric {
         name: CIRCUIT_RUNTIME_ELAPSED_SECONDS,

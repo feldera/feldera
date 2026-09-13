@@ -20,6 +20,7 @@ use crate::{
         tokio::TOKIO,
     },
     circuit_cache_key,
+    profile::{ParkReason, ParkingFor},
 };
 use binrw::{BinRead, BinResult, BinWrite};
 use crossbeam_utils::CachePadded;
@@ -1417,6 +1418,7 @@ where
 
         // Wait for the receivers to have empty mailboxes first.
         if !ready_to_send(self, sender) {
+            let _parked = ParkingFor::new(ParkReason::Peers);
             loop {
                 let notify = self.sender_notifies[sender].notified();
                 if ready_to_send(self, sender) {
@@ -1539,6 +1541,7 @@ where
                 .is_ok()
         }
         if !may_receive(self, receiver) {
+            let _parked = ParkingFor::new(ParkReason::Peers);
             loop {
                 let notifier = self.receiver_notifies[receiver].notified();
                 if may_receive(self, receiver) {

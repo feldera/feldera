@@ -27,6 +27,7 @@ use crate::{
         runtime::{TOKIO_BUFFER_CACHE, TOKIO_WORKER_INDEX},
     },
     dynamic::{DynVec, Factory},
+    profile::{ParkReason, ParkingFor},
     storage::{
         buffer_cache::{BufferCache, CacheStats},
         file::{FilterKind, FilterStats},
@@ -830,6 +831,7 @@ where
         }
 
         // Wait for the loose batch count to drop below the threshold.
+        let _parked = ParkingFor::new(ParkReason::MergeBackpressure);
         loop {
             let notify = self.no_backpressure.notified();
             {
