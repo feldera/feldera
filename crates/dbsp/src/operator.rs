@@ -78,7 +78,8 @@ pub use generator::{ConstantGenerator, Generator, GeneratorNested, TransactionGe
 pub use group::CmpFunc;
 use input::Mailbox;
 pub use input::{
-    IndexedZSetHandle, Input, InputHandle, MapHandle, StagedBuffers, Update, ZSetHandle,
+    IndexedZSetHandle, Input, InputHandle, LazyMapHandle, MapHandle, StagedBuffers, Update,
+    ZSetHandle,
 };
 pub use inspect::Inspect;
 
