@@ -72,6 +72,7 @@ pub const INPUT_RECORDS_COUNT: MetricId = MetricId(Cow::Borrowed("input_records_
 pub const INPUT_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("input_batches_stats"));
 pub const OUTPUT_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("output_batches_stats"));
 pub const OUTPUT_ADJUSTMENT_STATS: MetricId = MetricId(Cow::Borrowed("output_adjustment_stats"));
+pub const STEP_DURATION_HISTOGRAM: MetricId = MetricId(Cow::Borrowed("step_duration_histogram"));
 pub const CONFLICTING_UPDATES_COUNT: MetricId =
     MetricId(Cow::Borrowed("conflicting_updates_count"));
 pub const EXCHANGE_WAIT_TIME_SECONDS: MetricId =
@@ -196,7 +197,7 @@ pub const PREFIX_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("prefix_batche
 pub const INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("input_integral_records_count"));
 
-pub const CIRCUIT_METRICS: [CircuitMetric; 83] = [
+pub const CIRCUIT_METRICS: [CircuitMetric; 84] = [
     // State
     CircuitMetric {
         name: USED_MEMORY_BYTES,
@@ -568,6 +569,12 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 83] = [
         description: "Time an operator spent inserting a batch into the spine, excluding the eager spill and the backpressure wait that bracket it. This is mostly contention on the lock that the mergers hold while they rearrange the same state.",
     },
     CircuitMetric {
+        name: STEP_DURATION_HISTOGRAM,
+        category: CircuitMetricCategory::Time,
+        advanced: true,
+        description: "How long the operator held each of the steps it ran in, as a distribution rather than a total. Workers meet at a barrier every step, so a step costs every worker what the slowest one spent in it, and only the spread says whether that is happening.",
+    },
+    CircuitMetric {
         name: RUNTIME_NONBLOCKING_PERCENT,
         category: CircuitMetricCategory::Time,
         advanced: true,
@@ -771,6 +778,170 @@ impl BatchSizeStats {
                 MetaItem::Count(self.total),
             ),
         ]))
+    }
+}
+
+/// A log-scale histogram of durations.
+///
+/// A mean says how long something took on average; a histogram says whether
+/// that average describes anything.  Buckets are spaced so that each covers
+/// about a quarter of an octave, which holds the error on any reading to under
+/// 20% while keeping the whole histogram in a fixed array with no allocation
+/// and no locking on the recording path.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DurationHistogram {
+    /// Samples per bucket, in microseconds, indexed by [`Self::bucket`].
+    buckets: [u64; Self::BUCKETS],
+    count: u64,
+    total: Duration,
+    min: Duration,
+    max: Duration,
+}
+
+impl Default for DurationHistogram {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl DurationHistogram {
+    /// Buckets per octave, as a power of two.
+    const SUB_BITS: u32 = 2;
+    const SUB: u64 = 1 << Self::SUB_BITS;
+
+    /// Enough octaves to reach an hour, past which a bucket saturates.
+    const OCTAVES: usize = 32;
+    const BUCKETS: usize = (Self::OCTAVES + 1) * Self::SUB as usize;
+
+    pub const fn new() -> Self {
+        Self {
+            buckets: [0; Self::BUCKETS],
+            count: 0,
+            total: Duration::ZERO,
+            min: Duration::MAX,
+            max: Duration::ZERO,
+        }
+    }
+
+    /// The bucket `micros` falls in.
+    ///
+    /// Below [`Self::SUB`] each microsecond has a bucket of its own; above it,
+    /// the octave picks a group of [`Self::SUB`] and the leading mantissa bits
+    /// pick within the group.  Monotonic in `micros`, which is what lets a
+    /// reader treat the buckets as a sorted distribution.
+    fn bucket(micros: u64) -> usize {
+        if micros < Self::SUB {
+            return micros as usize;
+        }
+        let octave = u64::BITS - 1 - micros.leading_zeros();
+        let index = (octave - Self::SUB_BITS + 1) as usize * Self::SUB as usize
+            + ((micros >> (octave - Self::SUB_BITS)) & (Self::SUB - 1)) as usize;
+        index.min(Self::BUCKETS - 1)
+    }
+
+    /// The smallest duration in microseconds that `bucket` holds.
+    fn bucket_start(bucket: usize) -> u64 {
+        let bucket = bucket as u64;
+        if bucket < Self::SUB {
+            return bucket;
+        }
+        let octave = bucket / Self::SUB + Self::SUB_BITS as u64 - 1;
+        let mantissa = bucket % Self::SUB;
+        (Self::SUB + mantissa) << (octave - Self::SUB_BITS as u64)
+    }
+
+    pub fn add(&mut self, sample: Duration) {
+        self.buckets[Self::bucket(sample.as_micros().min(u64::MAX as u128) as u64)] += 1;
+        self.count += 1;
+        // Saturating because this runs for the life of the operator and a
+        // total that panics is worse than a total that stops being exact.
+        self.total = self.total.saturating_add(sample);
+        self.min = self.min.min(sample);
+        self.max = self.max.max(sample);
+    }
+
+    pub fn count(&self) -> u64 {
+        self.count
+    }
+
+    /// The smallest duration that at least `fraction` of the samples are under.
+    ///
+    /// Reads off the bucket a sample falls in, so the answer is that bucket's
+    /// lower bound rather than the sample itself.
+    pub fn quantile(&self, fraction: f64) -> Duration {
+        if self.count == 0 {
+            return Duration::ZERO;
+        }
+        let want = (fraction * self.count as f64).ceil() as u64;
+        let mut seen = 0;
+        for (bucket, samples) in self.buckets.iter().enumerate() {
+            seen += samples;
+            if seen >= want.max(1) {
+                return Duration::from_micros(Self::bucket_start(bucket)).max(self.min);
+            }
+        }
+        self.max
+    }
+
+    pub fn mean(&self) -> Duration {
+        self.total
+            .checked_div(self.count.try_into().unwrap_or(u32::MAX))
+            .unwrap_or(Duration::ZERO)
+    }
+
+    pub fn metadata(&self) -> MetaItem {
+        if self.count == 0 {
+            return MetaItem::Map(BTreeMap::from([(
+                Cow::Borrowed("samples_count"),
+                MetaItem::Count(0),
+            )]));
+        }
+
+        // Only the buckets that hold something, so a distribution spanning four
+        // octaves reads as four lines rather than a hundred and thirty.
+        let mut items = BTreeMap::from([
+            (
+                Cow::Borrowed("samples_count"),
+                MetaItem::Count(self.count as usize),
+            ),
+            (Cow::Borrowed("min"), MetaItem::Duration(self.min)),
+            (
+                Cow::Borrowed("p50"),
+                MetaItem::Duration(self.quantile(0.50)),
+            ),
+            (
+                Cow::Borrowed("p90"),
+                MetaItem::Duration(self.quantile(0.90)),
+            ),
+            (
+                Cow::Borrowed("p99"),
+                MetaItem::Duration(self.quantile(0.99)),
+            ),
+            (Cow::Borrowed("max"), MetaItem::Duration(self.max)),
+            (Cow::Borrowed("mean"), MetaItem::Duration(self.mean())),
+            (Cow::Borrowed("total"), MetaItem::Duration(self.total)),
+        ]);
+        // An ordered array rather than a map, so the buckets stay in
+        // increasing order and a reader sees the shape of the distribution.
+        // Empty buckets are dropped: a span of four octaves reads as a handful
+        // of lines rather than all hundred and thirty-two.
+        let buckets = self
+            .buckets
+            .iter()
+            .enumerate()
+            .filter(|(_, samples)| **samples > 0)
+            .map(|(bucket, samples)| {
+                MetaItem::Map(BTreeMap::from([
+                    (
+                        Cow::Borrowed("ge"),
+                        MetaItem::Duration(Duration::from_micros(Self::bucket_start(bucket))),
+                    ),
+                    (Cow::Borrowed("samples"), MetaItem::Count(*samples as usize)),
+                ]))
+            })
+            .collect();
+        items.insert(Cow::Borrowed("buckets"), MetaItem::Array(buckets));
+        MetaItem::Map(items)
     }
 }
 
@@ -1161,5 +1332,123 @@ impl From<TotalSize> for MetaItem {
                 Self::bytes(size.shared_bytes()),
             ),
         ]))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::{DurationHistogram, MetaItem};
+    use std::time::Duration;
+
+    /// Buckets have to be ordered for the histogram to read as a
+    /// distribution, and each has to contain what it claims to.
+    #[test]
+    fn buckets_are_ordered_and_hold_what_they_claim() {
+        let mut previous = 0;
+        for micros in 0..100_000u64 {
+            let bucket = DurationHistogram::bucket(micros);
+            assert!(bucket >= previous, "bucket fell at {micros} us");
+            previous = bucket;
+
+            let start = DurationHistogram::bucket_start(bucket);
+            assert!(
+                start <= micros,
+                "{micros} us landed in a bucket starting at {start}"
+            );
+            let next = DurationHistogram::bucket_start(bucket + 1);
+            assert!(
+                micros < next,
+                "{micros} us landed below a bucket ending at {next}"
+            );
+        }
+    }
+
+    /// A bucket reading is worth using only if it is close to the sample that
+    /// produced it.  Four buckets to the octave puts the floor within 20%.
+    #[test]
+    fn a_bucket_is_within_a_fifth_of_its_samples() {
+        for micros in DurationHistogram::SUB..10_000_000 {
+            let start = DurationHistogram::bucket_start(DurationHistogram::bucket(micros));
+            assert!(
+                (micros - start) as f64 / micros as f64 <= 0.2,
+                "{micros} us reads as {start} us"
+            );
+        }
+    }
+
+    /// The largest bucket saturates rather than running off the end of the
+    /// array, so a pathological sample cannot panic the recording path.
+    #[test]
+    fn an_enormous_sample_saturates() {
+        let mut histogram = DurationHistogram::new();
+        histogram.add(Duration::from_secs(u32::MAX as u64));
+        histogram.add(Duration::MAX);
+        assert_eq!(histogram.count(), 2);
+    }
+
+    #[test]
+    fn an_empty_histogram_reads_as_empty() {
+        let histogram = DurationHistogram::new();
+        assert_eq!(histogram.count(), 0);
+        assert_eq!(histogram.quantile(0.5), Duration::ZERO);
+        assert_eq!(histogram.mean(), Duration::ZERO);
+    }
+
+    /// Quantiles are what say whether a mean describes anything, so they have
+    /// to track the distribution rather than its average.
+    #[test]
+    fn quantiles_follow_the_distribution() {
+        let mut histogram = DurationHistogram::new();
+        for _ in 0..99 {
+            histogram.add(Duration::from_millis(1));
+        }
+        histogram.add(Duration::from_secs(10));
+
+        assert_eq!(histogram.count(), 100);
+        for (fraction, expected) in [(0.5, 1), (0.9, 1), (0.99, 1)] {
+            let quantile = histogram.quantile(fraction);
+            assert!(
+                (Duration::from_micros(800)..=Duration::from_millis(expected)).contains(&quantile),
+                "p{} of a millisecond distribution read as {quantile:?}",
+                fraction * 100.0
+            );
+        }
+        assert_eq!(histogram.max, Duration::from_secs(10));
+        // The one outlier is a hundredth of the samples but 99% of the total,
+        // which is exactly the case a mean alone hides.
+        assert!(histogram.mean() > Duration::from_millis(100));
+    }
+
+    #[test]
+    fn the_metadata_lists_only_the_buckets_that_hold_something() {
+        let mut histogram = DurationHistogram::new();
+        histogram.add(Duration::from_millis(1));
+        histogram.add(Duration::from_millis(1));
+        histogram.add(Duration::from_secs(1));
+
+        let MetaItem::Map(items) = histogram.metadata() else {
+            panic!("a histogram reads as a map");
+        };
+        let Some(MetaItem::Array(buckets)) = items.get("buckets") else {
+            panic!("a histogram lists its buckets");
+        };
+        assert_eq!(buckets.len(), 2);
+
+        let mut previous = Duration::ZERO;
+        let mut samples = 0;
+        for bucket in buckets {
+            let MetaItem::Map(bucket) = bucket else {
+                panic!("a bucket reads as a map");
+            };
+            let (Some(MetaItem::Duration(ge)), Some(MetaItem::Count(count))) =
+                (bucket.get("ge"), bucket.get("samples"))
+            else {
+                panic!("a bucket carries a bound and a count");
+            };
+            assert!(*ge > previous, "buckets are listed out of order");
+            previous = *ge;
+            samples += count;
+        }
+        assert_eq!(samples, 3);
     }
 }

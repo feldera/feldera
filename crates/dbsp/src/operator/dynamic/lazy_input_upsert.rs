@@ -24,9 +24,10 @@ use crate::{
         circuit_builder::{CircuitBase, RefStreamValue},
         lazy_input_map_keys_per_step,
         metadata::{
-            ALLOCATED_MEMORY_BYTES, BatchSizeStats, CONFLICTING_UPDATES_COUNT, INPUT_BATCHES_STATS,
-            MEMORY_ALLOCATIONS_COUNT, MetaItem, OUTPUT_ADJUSTMENT_STATS, OperatorMeta,
-            SHARED_MEMORY_BYTES, STATE_RECORDS_COUNT, USED_MEMORY_BYTES,
+            ALLOCATED_MEMORY_BYTES, BatchSizeStats, CONFLICTING_UPDATES_COUNT, DurationHistogram,
+            INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT, MetaItem, OUTPUT_ADJUSTMENT_STATS,
+            OperatorMeta, SHARED_MEMORY_BYTES, STATE_RECORDS_COUNT, STEP_DURATION_HISTOGRAM,
+            USED_MEMORY_BYTES,
         },
         operator_traits::{Operator, OperatorName, UnaryOperator},
         splitter_output_chunk_size, splitter_output_first_chunk_size,
@@ -64,6 +65,7 @@ use std::{
     panic::Location,
     rc::Rc,
     sync::Arc,
+    time::Instant,
 };
 use tracing::warn;
 
@@ -418,6 +420,13 @@ where
 
     output_adjustment_stats: RefCell<BatchSizeStats>,
 
+    /// How long the operator held each step it ran in.
+    ///
+    /// Every worker meets its peers at a barrier at the end of a step, so a
+    /// step costs each of them what the slowest spent in it.  The total says
+    /// nothing about that; the spread does.
+    step_durations: RefCell<DurationHistogram>,
+
     /// Updates that arrived at the same step as another update to their key.
     ///
     /// Each host stamps its own steps from zero and `UpsertHandle` shards only
@@ -444,6 +453,7 @@ where
             adjustments,
             state: RefCell::new(None),
             output_adjustment_stats: RefCell::new(BatchSizeStats::new()),
+            step_durations: RefCell::new(DurationHistogram::new()),
             conflicting_updates: Cell::new(0),
             name: OperatorName::new("LazyUpsert"),
             phantom: PhantomData,
@@ -468,6 +478,7 @@ where
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
             OUTPUT_ADJUSTMENT_STATS => self.output_adjustment_stats.borrow().metadata(),
+            STEP_DURATION_HISTOGRAM => self.step_durations.borrow().metadata(),
             CONFLICTING_UPDATES_COUNT => MetaItem::Count(self.conflicting_updates.get() as usize),
         });
 
@@ -612,6 +623,10 @@ where
             let mut in_chunk = 0usize;
             let mut walked = 0usize;
 
+            // One clock read per step rather than per key: the loop below runs
+            // millions of times and a step ends only at a yield.
+            let mut step_start = Instant::now();
+
             while updates_cursor.key_valid() {
                 updates_cursor.key().clone_to(&mut key);
                 key_adjustments.clear();
@@ -716,7 +731,9 @@ where
                 if in_chunk >= chunk_size || walked >= keys_per_step {
                     let position = updates_cursor.position();
                     self.emit(Arc::new(builder.done())).await;
+                    self.step_durations.borrow_mut().add(step_start.elapsed());
                     yield (None, false, position);
+                    step_start = Instant::now();
                     builder = self.builder(capacity);
                     in_chunk = 0;
                     walked = 0;
@@ -725,6 +742,7 @@ where
 
             let position = updates_cursor.position();
             self.emit(Arc::new(builder.done())).await;
+            self.step_durations.borrow_mut().add(step_start.elapsed());
             let accumulator = self.state.borrow_mut().take();
             yield (accumulator, true, position);
         }

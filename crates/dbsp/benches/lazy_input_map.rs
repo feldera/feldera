@@ -54,7 +54,7 @@ use dbsp::{
     circuit::metadata::{
         CIRCUIT_CPU_TIME_SECONDS, CIRCUIT_IDLE_TIME_SECONDS, CIRCUIT_WAIT_BY_REASON_SECONDS,
         CIRCUIT_WAIT_TIME_SECONDS, MetaItem, MetricId, SPINE_ADD_BATCH_TIME_SECONDS,
-        SPINE_FLUSH_BATCH_TIME_SECONDS,
+        SPINE_FLUSH_BATCH_TIME_SECONDS, STEP_DURATION_HISTOGRAM,
     },
     mimalloc::MiMalloc,
     operator::{LazyMapHandle, MapHandle, Update},
@@ -663,6 +663,80 @@ fn report_where_the_workers_went(stage: &str, profile: &DbspProfile) {
         total(&SPINE_FLUSH_BATCH_TIME_SECONDS),
         total(&SPINE_ADD_BATCH_TIME_SECONDS),
     );
+    report_step_durations(profile);
+}
+
+/// Prints how long each worker held its steps, and the pooled distribution.
+///
+/// Workers meet at a barrier every step, so what a step costs everybody is the
+/// slowest worker's time in it.  The per-worker line says whether one worker is
+/// consistently the slow one; the pooled buckets say how heavy the tail is.
+fn report_step_durations(profile: &DbspProfile) {
+    let mut pooled: BTreeMap<Duration, usize> = BTreeMap::new();
+    let mut lines = Vec::new();
+
+    for (worker, worker_profile) in profile.worker_profiles.iter().enumerate() {
+        for histogram in worker_profile
+            .attribute_profile(&STEP_DURATION_HISTOGRAM)
+            .into_values()
+        {
+            let MetaItem::Map(histogram) = histogram else {
+                continue;
+            };
+            let read = |key: &str| match histogram.get(key) {
+                Some(MetaItem::Duration(value)) => *value,
+                _ => Duration::ZERO,
+            };
+            let samples = match histogram.get("samples_count") {
+                Some(MetaItem::Count(count)) => *count,
+                _ => 0,
+            };
+            if samples == 0 {
+                continue;
+            }
+            lines.push(format!(
+                "      w{worker}: steps={samples} p50={:?} p90={:?} p99={:?} max={:?} mean={:?}",
+                read("p50"),
+                read("p90"),
+                read("p99"),
+                read("max"),
+                read("mean"),
+            ));
+            if let Some(MetaItem::Array(buckets)) = histogram.get("buckets") {
+                for bucket in buckets {
+                    let MetaItem::Map(bucket) = bucket else {
+                        continue;
+                    };
+                    if let (Some(MetaItem::Duration(ge)), Some(MetaItem::Count(count))) =
+                        (bucket.get("ge"), bucket.get("samples"))
+                    {
+                        *pooled.entry(*ge).or_default() += count;
+                    }
+                }
+            }
+        }
+    }
+
+    if lines.is_empty() {
+        return;
+    }
+    println!("    step durations:");
+    for line in lines {
+        println!("{line}");
+    }
+
+    let total = pooled.values().sum::<usize>().max(1);
+    println!("      pooled histogram ({total} steps):");
+    let widest = pooled.values().copied().max().unwrap_or(1).max(1);
+    for (ge, count) in pooled {
+        let bar = "#".repeat((40 * count / widest).max(1));
+        println!(
+            "        >={:>10}  {:>8}  {:>5.1}%  {bar}",
+            format!("{ge:?}"),
+            count,
+            100.0 * count as f64 / total as f64,
+        );
+    }
 }
 
 /// Sums a duration metric over every worker and every operator that reports it.
