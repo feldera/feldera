@@ -1301,13 +1301,12 @@ impl Blocks {
         } else {
             match FREE_BLOCKS.fetch_sub(1, Ordering::Relaxed) {
                 1.. => self.0.push(Block::new(marker)),
-                0
-                    // Record when marker space was exhausted.  The combination
-                    // of `load` and `store` is not an atomic transaction, but
-                    // it's good enough.
-                    if MARKERS_EXHAUSTED.load().is_none() => {
-                        MARKERS_EXHAUSTED.store(Some(Timestamp::now()));
-                    }
+                // Record when marker space was exhausted.  The combination
+                // of `load` and `store` is not an atomic transaction, but
+                // it's good enough.
+                0 if MARKERS_EXHAUSTED.load().is_none() => {
+                    MARKERS_EXHAUSTED.store(Some(Timestamp::now()));
+                }
                 _ => (),
             }
         }

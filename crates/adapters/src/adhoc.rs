@@ -229,8 +229,13 @@ pub async fn adhoc_websocket(
                     ws_close(ws_session, CloseCode::Error).await;
                     break;
                 }
-                Ok(AggregatedMessage::Ping(msg)) if ws_session.pong(&msg).await.is_err() => {
-                    break;
+                // Keep the pong as an explicit statement: folding a side-effecting
+                // `.await` into a match guard ties it to arm order.
+                #[allow(clippy::collapsible_match)]
+                Ok(AggregatedMessage::Ping(msg)) => {
+                    if ws_session.pong(&msg).await.is_err() {
+                        break;
+                    }
                 }
                 _ => {}
             }
