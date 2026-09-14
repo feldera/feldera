@@ -6,7 +6,8 @@ use crate::integrated::delta_table::merge::compact::Compactor;
 use crate::integrated::delta_table::merge::flush::MergeWriter;
 use crate::integrated::delta_table::merge::metrics::MergeMetrics;
 use crate::integrated::delta_table::merge::startup;
-use crate::integrated::delta_table::register_storage_handlers;
+use crate::integrated::delta_table::merge::transient;
+use crate::integrated::delta_table::{WriteError, register_storage_handlers};
 use crate::transport::Step;
 use crate::util::{IndexedOperationType, indexed_operation_type};
 use crate::{
@@ -820,19 +821,6 @@ impl WriterTask {
     }
 }
 
-/// Error classification for Delta table write operations.
-///
-/// Separates deterministic failures (which will recur on every attempt) from
-/// transient I/O failures (which may succeed on retry).
-enum WriteError {
-    /// Data-dependent error that will recur identically on retry.
-    /// Examples: non-unique keys, schema mismatches, serialization failures.
-    Deterministic(anyhow::Error),
-    /// Transient I/O error that may resolve on retry.
-    /// Examples: object store timeouts, network failures.
-    Transient(anyhow::Error),
-}
-
 /// The error an operation reports when a shutdown cuts it short.
 fn shutdown_aborted(operation: &str, retry_count: u32) -> anyhow::Error {
     anyhow!("{operation} aborted after {retry_count} attempts: the pipeline is shutting down")
@@ -1377,16 +1365,27 @@ impl DeltaTableWriter {
             // encode() is called from the dedicated output thread (output_thread_func).
             let started = Instant::now();
             let result = TOKIO.block_on(
-                merge
-                    .flush(
-                        &mut task.delta_table,
-                        object_store.clone(),
-                        &mut *cursor,
-                        retrying,
-                        &mut report_violation,
-                        &inner.records_written,
-                    )
-                    .instrument(span.clone()),
+                async {
+                    // A failed attempt may have committed anyway: a lookup in the old snapshot
+                    // misses its rows and appends them twice, so a failed reload fails the retry.
+                    if retrying {
+                        task.delta_table
+                            .update_incremental(None)
+                            .await
+                            .map_err(|e| transient(format!("reloading the Delta table: {e}")))?;
+                    }
+                    merge
+                        .flush(
+                            &mut task.delta_table,
+                            object_store.clone(),
+                            &mut *cursor,
+                            retrying,
+                            &mut report_violation,
+                            &inner.records_written,
+                        )
+                        .await
+                }
+                .instrument(span.clone()),
             );
             // Recorded whatever the outcome: a flush that fails slowly is the interesting one.
             metrics_sink.record_flush_latency(started.elapsed());
@@ -1433,7 +1432,17 @@ impl DeltaTableWriter {
                     );
                     return Ok(());
                 }
-                Err(e)
+                // Retrying replays the same rows against the same schema, so it can only
+                // burn the pipeline's time.  Without this the default `max_retries: None`
+                // makes one bad batch retry for ever.
+                Err(WriteError::Deterministic(e)) => {
+                    inner.records_written.store(0, Ordering::Relaxed);
+                    return Err(anyhow!(
+                        "merging a batch into the Delta table failed and cannot succeed on \
+                         retry: {e:#}"
+                    ));
+                }
+                Err(WriteError::Transient(e))
                     if inner.config.max_retries.is_none()
                         || retry_count < inner.config.max_retries.unwrap() =>
                 {
@@ -1449,23 +1458,24 @@ impl DeltaTableWriter {
                         );
                     }
                     warn!("delta_table {}: {message}", inner.endpoint_name);
-                    TOKIO.block_on(async {
-                        // Constructed inside the runtime, which `sleep` requires.
-                        sleep(backoff).await;
-
-                        // The retry must run against the table as it now stands: a conflict
-                        // means maintenance replaced the files this attempt addressed, so
-                        // redoing the lookup against the old snapshot would conflict for ever.
-                        if let Err(e) = task.delta_table.update_incremental(None).await {
-                            warn!(
-                                "delta_table {}: unable to reload the table before retrying: {e}",
-                                inner.endpoint_name
-                            );
-                        }
-                    });
+                    let shutdown = inner.shutdown.clone();
+                    // Constructed inside the runtime, which `sleep` requires.
+                    let slept = TOKIO
+                        .block_on(shutdown.run_until_cancelled(async { sleep(backoff).await }));
+                    // The loop is unbounded by default, and it runs on a thread the runtime
+                    // joins on teardown, so it has to stop when the pipeline does.
+                    if slept.is_none() {
+                        inner.records_written.store(0, Ordering::Relaxed);
+                        return Err(shutdown_aborted(
+                            "merging a batch into the Delta table",
+                            retry_count,
+                        ));
+                    }
                     backoff = min(backoff * 2, max_backoff);
                 }
-                Err(e) => {
+                // Named rather than a catch-all, so `{e:#}` reaches anyhow's chain instead
+                // of stopping at `WriteError`'s own `Display`.
+                Err(WriteError::Transient(e)) => {
                     inner.records_written.store(0, Ordering::Relaxed);
                     return Err(anyhow!(
                         "merging a batch into the Delta table failed after {retry_count} \
@@ -2407,6 +2417,184 @@ mod parallel {
             1,
             "the failed commit deleted its deletion vector file"
         );
+    }
+
+    /// A retry must not append rows that a failed attempt already committed.
+    ///
+    /// The commit lands, but reading the log afterwards fails, so the attempt reports an error.
+    /// The reload before the retry fails too. A retry on the old snapshot would miss the
+    /// committed rows and append every one of them again.
+    #[test]
+    fn a_retry_after_a_commit_that_landed_does_not_duplicate() {
+        use dbsp::circuit::tokio::TOKIO;
+
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap();
+        let mut endpoint = make_merge_endpoint_ex(
+            uri,
+            DeltaTableWriteMode::Append,
+            1 << 20,
+            10,
+            key_relation(),
+        );
+        let records = make_records(8);
+        encode_batch(&mut endpoint, &build_insert_batch(&records[0..4]));
+
+        let store = Arc::new(LogOutageStore {
+            inner: Arc::new(deltalake::logstore::object_store::local::LocalFileSystem::new()),
+            armed: AtomicUsize::new(1),
+            failures_left: AtomicUsize::new(0),
+            injected: AtomicUsize::new(0),
+        });
+        let url = deltalake::table::builder::ensure_table_uri(uri).unwrap();
+        endpoint.task.delta_table = TOKIO.block_on(async {
+            deltalake::DeltaTableBuilder::from_url(url.clone())
+                .unwrap()
+                .with_storage_backend(store.clone(), url)
+                .load()
+                .await
+                .unwrap()
+        });
+
+        encode_batch(&mut endpoint, &build_insert_batch(&records[4..8]));
+        assert!(
+            store.injected.load(Ordering::Relaxed) >= OUTAGE_READS,
+            "the store did not fail the reads after the commit"
+        );
+        let model: BTreeMap<i64, DeltaTestStruct> =
+            records.iter().map(|r| (r.bigint, r.clone())).collect();
+        assert_matches_model(uri, &model, "a retry after a commit that landed");
+    }
+
+    /// Log reads the store fails after the armed commit: the read that follows the commit,
+    /// and the reload before the retry.
+    const OUTAGE_READS: usize = 2;
+
+    /// Fails the next [`OUTAGE_READS`] log reads after one commit lands.
+    #[derive(Debug)]
+    struct LogOutageStore {
+        inner: ObjectStoreRef,
+        armed: AtomicUsize,
+        failures_left: AtomicUsize,
+        injected: AtomicUsize,
+    }
+
+    impl LogOutageStore {
+        fn fail(&self, location: Option<&ObjectPath>) -> bool {
+            let in_log = location.is_some_and(|l| l.as_ref().contains("_delta_log"));
+            let claimed = in_log
+                && self
+                    .failures_left
+                    .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1))
+                    .is_ok();
+            if claimed {
+                self.injected.fetch_add(1, Ordering::Relaxed);
+            }
+            claimed
+        }
+
+        fn outage() -> deltalake::logstore::object_store::Error {
+            deltalake::logstore::object_store::Error::Generic {
+                store: "outage",
+                source: "injected outage".into(),
+            }
+        }
+    }
+
+    impl std::fmt::Display for LogOutageStore {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "LogOutageStore({})", self.inner)
+        }
+    }
+
+    #[async_trait]
+    impl ObjectStore for LogOutageStore {
+        async fn put_opts(
+            &self,
+            location: &ObjectPath,
+            payload: PutPayload,
+            opts: PutOptions,
+        ) -> ObjectStoreResult<PutResult> {
+            let result = self.inner.put_opts(location, payload, opts).await;
+            let is_commit =
+                location.as_ref().contains("_delta_log/") && location.as_ref().ends_with(".json");
+            if result.is_ok()
+                && is_commit
+                && self
+                    .armed
+                    .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1))
+                    .is_ok()
+            {
+                self.failures_left.store(OUTAGE_READS, Ordering::Relaxed);
+            }
+            result
+        }
+
+        async fn put_multipart_opts(
+            &self,
+            location: &ObjectPath,
+            opts: PutMultipartOptions,
+        ) -> ObjectStoreResult<Box<dyn MultipartUpload>> {
+            self.inner.put_multipart_opts(location, opts).await
+        }
+
+        async fn get_opts(
+            &self,
+            location: &ObjectPath,
+            options: GetOptions,
+        ) -> ObjectStoreResult<GetResult> {
+            if self.fail(Some(location)) {
+                return Err(Self::outage());
+            }
+            self.inner.get_opts(location, options).await
+        }
+
+        fn delete_stream(
+            &self,
+            locations: BoxStream<'static, ObjectStoreResult<ObjectPath>>,
+        ) -> BoxStream<'static, ObjectStoreResult<ObjectPath>> {
+            self.inner.delete_stream(locations)
+        }
+
+        fn list(
+            &self,
+            prefix: Option<&ObjectPath>,
+        ) -> BoxStream<'static, ObjectStoreResult<ObjectMeta>> {
+            if self.fail(prefix) {
+                return Box::pin(futures::stream::once(async { Err(Self::outage()) }));
+            }
+            self.inner.list(prefix)
+        }
+
+        fn list_with_offset(
+            &self,
+            prefix: Option<&ObjectPath>,
+            offset: &ObjectPath,
+        ) -> BoxStream<'static, ObjectStoreResult<ObjectMeta>> {
+            if self.fail(prefix) {
+                return Box::pin(futures::stream::once(async { Err(Self::outage()) }));
+            }
+            self.inner.list_with_offset(prefix, offset)
+        }
+
+        async fn list_with_delimiter(
+            &self,
+            prefix: Option<&ObjectPath>,
+        ) -> ObjectStoreResult<ListResult> {
+            if self.fail(prefix) {
+                return Err(Self::outage());
+            }
+            self.inner.list_with_delimiter(prefix).await
+        }
+
+        async fn copy_opts(
+            &self,
+            from: &ObjectPath,
+            to: &ObjectPath,
+            options: CopyOptions,
+        ) -> ObjectStoreResult<()> {
+            self.inner.copy_opts(from, to, options).await
+        }
     }
 
     /// OPTIMIZE must drop the rows the connector's vectors mark deleted, not resurrect them.
