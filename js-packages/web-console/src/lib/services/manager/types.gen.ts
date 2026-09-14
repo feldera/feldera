@@ -121,6 +121,13 @@ export type AuthProvider =
       GenericOidc: ProviderGenericOidc
     }
 
+/**
+ * Autoscaling policy for an instance of a pipeline.
+ */
+export type AutoscalingConfig = {
+  storage?: StorageAutoscalingConfig | null
+}
+
 export type BootstrapPolicy = 'allow' | 'reject' | 'await_approval'
 
 /**
@@ -5039,6 +5046,7 @@ export type RenameTenantResponse = {
 export type ReplayPolicy = 'Instant' | 'Original'
 
 export type ResourceConfig = {
+  autoscaling?: AutoscalingConfig | null
   /**
    * The maximum number of CPU cores to reserve
    * for an instance of this pipeline
@@ -5078,10 +5086,20 @@ export type ResourceConfig = {
    */
   storage_class?: string | null
   /**
-   * The total storage in Megabytes to reserve
-   * for an instance of this pipeline
+   * The maximum storage in Megabytes for an instance of this pipeline.
+   *
+   * Without `storage_mb_min`, this much storage is reserved up front.
+   *
+   * With `storage_mb_min`, storage starts there and autoscaling expands it
+   * up to this limit.
    */
   storage_mb_max?: number | null
+  /**
+   * The initial storage in Megabytes to reserve for an instance of this
+   * pipeline. Set together with `storage_mb_max` to enable storage
+   * autoscaling.
+   */
+  storage_mb_min?: number | null
 }
 
 export type ResourcesDesiredStatus = 'Stopped' | 'Provisioned'
@@ -5832,6 +5850,21 @@ export type StartFromCheckpoint = 'latest' | string | null
  */
 export type StartTransactionResponse = {
   transaction_id: number
+}
+
+/**
+ * Storage autoscaling policy: expand storage from `storage_mb_min` toward
+ * `storage_mb_max` as it fills up.
+ */
+export type StorageAutoscalingConfig = {
+  /**
+   * Expansion multiplier. Defaults to 2.0.
+   */
+  scale_factor?: number | null
+  /**
+   * Usage fraction that triggers expansion. Defaults to 0.8.
+   */
+  scale_threshold?: number | null
 }
 
 /**

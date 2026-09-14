@@ -8402,6 +8402,21 @@
           }
         ]
       },
+      "AutoscalingConfig": {
+        "type": "object",
+        "description": "Autoscaling policy for an instance of a pipeline.",
+        "properties": {
+          "storage": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageAutoscalingConfig"
+              }
+            ],
+            "default": null,
+            "nullable": true
+          }
+        }
+      },
       "BootstrapPolicy": {
         "type": "string",
         "enum": [
@@ -14491,6 +14506,15 @@
       "ResourceConfig": {
         "type": "object",
         "properties": {
+          "autoscaling": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AutoscalingConfig"
+              }
+            ],
+            "default": null,
+            "nullable": true
+          },
           "cpu_cores_max": {
             "type": "number",
             "format": "double",
@@ -14542,7 +14566,15 @@
           "storage_mb_max": {
             "type": "integer",
             "format": "int64",
-            "description": "The total storage in Megabytes to reserve\nfor an instance of this pipeline",
+            "description": "The maximum storage in Megabytes for an instance of this pipeline.\n\nWithout `storage_mb_min`, this much storage is reserved up front.\n\nWith `storage_mb_min`, storage starts there and autoscaling expands it\nup to this limit.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "storage_mb_min": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The initial storage in Megabytes to reserve for an instance of this\npipeline. Set together with `storage_mb_max` to enable storage\nautoscaling.",
             "default": null,
             "nullable": true,
             "minimum": 0
@@ -15404,6 +15436,26 @@
           "transaction_id": {
             "type": "integer",
             "format": "int64"
+          }
+        }
+      },
+      "StorageAutoscalingConfig": {
+        "type": "object",
+        "description": "Storage autoscaling policy: expand storage from `storage_mb_min` toward\n`storage_mb_max` as it fills up.",
+        "properties": {
+          "scale_factor": {
+            "type": "number",
+            "format": "double",
+            "description": "Expansion multiplier. Defaults to 2.0.",
+            "default": null,
+            "nullable": true
+          },
+          "scale_threshold": {
+            "type": "number",
+            "format": "double",
+            "description": "Usage fraction that triggers expansion. Defaults to 0.8.",
+            "default": null,
+            "nullable": true
           }
         }
       },
