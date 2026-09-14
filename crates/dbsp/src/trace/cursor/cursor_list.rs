@@ -73,14 +73,6 @@ where
     #[cfg(debug_assertions)]
     val_direction: Direction,
     weight: Box<R>,
-
-    /// Whether `weight` holds the sum for the value the cursor is on.
-    ///
-    /// False when the cursor moved to a value whose weight nothing has needed
-    /// yet.  Summing means reading the block each weight sits beside, so a scan
-    /// that steps keys without asking for a weight should never pay for it.
-    weight_computed: bool,
-
     /// Scratch space for use by `peek_all`.
     scratch: Vec<usize>,
     weight_factory: &'static dyn Factory<R>,
@@ -111,7 +103,6 @@ where
             #[cfg(debug_assertions)]
             val_direction: Direction::Forward,
             weight: weight_factory.default_box(),
-            weight_computed: false,
             weight_factory,
             scratch: Vec::new(),
             __type: PhantomData,
@@ -161,34 +152,15 @@ where
             debug_assert!(self.key_valid());
             debug_assert!(self.val_valid());
             debug_assert!(self.cursors[self.current_val[0]].val_valid());
-
-            // A lone cursor has nothing to cancel against, and a batch never
-            // holds a zero weight on its own: every builder asserts that on
-            // each push.  Summing anyway would mean reading the block the
-            // weight sits in, so a scan that steps keys without ever wanting a
-            // weight would read the whole value column for an answer that
-            // cannot be anything but `false`.  The sum is left for whoever
-            // asks for it.
-            if self.current_val.len() == 1 {
-                self.weight_computed = false;
-                return false;
+            self.weight.as_mut().set_zero();
+            for &index in self.current_val.iter() {
+                // TODO: use weight_checked
+                self.cursors[index].map_times(&mut |_, w| self.weight.add_assign(w));
             }
-
-            self.sum_weights();
             self.weight.is_zero()
         } else {
             false
         }
-    }
-
-    /// Adds up what the cursors on the current value hold, into `weight`.
-    fn sum_weights(&mut self) {
-        self.weight.as_mut().set_zero();
-        for &index in self.current_val.iter() {
-            // TODO: use weight_checked
-            self.cursors[index].map_times(&mut |_, w| self.weight.add_assign(w));
-        }
-        self.weight_computed = true;
     }
 
     fn skip_zero_weight_vals_forward(&mut self) {
@@ -667,12 +639,8 @@ where
             debug_assert!(self.val_valid());
             debug_assert!(self.cursors[self.current_val[0]].val_valid());
 
-            // `is_zero_weight` runs on every move and computes the sum where
-            // several cursors could cancel.  Where only one could not, it left
-            // the sum for here, which is the first point that needs it.
-            if !self.weight_computed {
-                self.sum_weights();
-            }
+            // Weight should already be computed by `is_zero_weight`, which is always
+            // called as part of every operation that moves the cursor.
             debug_assert!(!self.weight.is_zero());
 
             &self.weight
@@ -687,9 +655,6 @@ where
     {
         debug_assert!(self.key_valid());
         while self.val_valid() {
-            if !self.weight_computed {
-                self.sum_weights();
-            }
             let val = self.val();
             logic(val, &self.weight);
             self.step_val();
