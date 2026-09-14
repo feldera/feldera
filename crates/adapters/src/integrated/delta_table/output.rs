@@ -1191,7 +1191,9 @@ impl OutputConsumer for DeltaTableWriter {
 
     fn batch_end(&mut self) {
         // Merge mode applied and committed the batch in `encode`, and reported it there.
+        // Its progress count still ends here, so an idle endpoint does not read as busy.
         if self.merge.is_some() || self.pending_actions.is_empty() {
+            self.inner.records_written.store(0, Ordering::Relaxed);
             return;
         }
 
@@ -1298,6 +1300,8 @@ impl DeltaTableWriter {
         loop {
             let mut cursor = batch.cursor(format.clone())?;
             let retrying = retry_count > 0;
+            // A retry rewrites the same rows, so its progress restarts rather than adds.
+            inner.records_written.store(0, Ordering::Relaxed);
             let mut report_violation = |e: anyhow::Error| {
                 // First attempt only: a retry walks the same batch and would report the
                 // same keys again, once per attempt, for as long as the commit fails.
@@ -1330,6 +1334,7 @@ impl DeltaTableWriter {
                         &mut *cursor,
                         retrying,
                         &mut report_violation,
+                        &inner.records_written,
                     )
                     .instrument(span.clone()),
             );
@@ -1345,7 +1350,6 @@ impl DeltaTableWriter {
                         &inner.endpoint_name,
                         &inner.config.uri,
                     );
-                    inner.records_written.store(0, Ordering::Relaxed);
                     if let Some(controller) = inner.controller.upgrade() {
                         controller.update_output_connector_health(
                             inner.endpoint_id,
@@ -3564,6 +3568,40 @@ mod parallel {
 
     fn records_written(endpoint: &DeltaTableWriter) -> u64 {
         endpoint.inner.records_written.load(Ordering::Relaxed)
+    }
+
+    /// Merge mode must report progress the way cdc does, or a long flush looks idle.
+    ///
+    /// Both sides count: a flush that only supersedes rows appends nothing, and reporting
+    /// just the appends would show no progress at all while it works.
+    #[test]
+    fn merge_reports_the_rows_it_writes() {
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+        let mut endpoint = make_merge_endpoint(&table_uri, DeltaTableWriteMode::Append);
+
+        let records = make_records(10);
+        assert_eq!(records_written(&endpoint), 0);
+        endpoint.consumer().batch_start(0, OutputBatchType::Delta);
+        endpoint
+            .encode(build_insert_batch(&records).arc_as_batch_reader())
+            .unwrap();
+        assert_eq!(records_written(&endpoint), 10, "ten rows appended");
+        endpoint.consumer().batch_end();
+        assert_eq!(records_written(&endpoint), 0);
+
+        // Deleting supersedes the row in the table without appending one.
+        endpoint.consumer().batch_start(1, OutputBatchType::Delta);
+        endpoint
+            .encode(build_delete_batch(&records[..4]).arc_as_batch_reader())
+            .unwrap();
+        assert_eq!(
+            records_written(&endpoint),
+            4,
+            "a delete-only flush must report the rows it tombstoned"
+        );
+        endpoint.consumer().batch_end();
+        assert_eq!(records_written(&endpoint), 0);
     }
 
     #[test]
