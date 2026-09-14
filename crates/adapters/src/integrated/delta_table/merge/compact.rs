@@ -356,6 +356,56 @@ mod test {
         );
     }
 
+    /// `maybe_start` must really reach a compaction.
+    ///
+    /// Everything below it was covered while the entry point production actually calls was
+    /// not, so a broken claim or a spawn that never ran would have gone unnoticed.
+    #[test]
+    fn maybe_start_runs_a_due_compaction() {
+        use super::super::test::{append_ids, fixture_table};
+
+        let dir = TempDir::new().unwrap();
+        let uri = dir.path().to_str().unwrap().to_string();
+        TOKIO.block_on(async {
+            // Two files, so a compaction has a bin to pack and the file count records it.
+            let table = fixture_table(&dir, &[1, 2, 3], true).await;
+            append_ids(table, &[4, 5, 6]).await;
+        });
+        assert_eq!(data_files(&uri), 2);
+
+        // Its first interval has already elapsed, which is the state a flush finds it in.
+        let compactor = Compactor::starting_at(
+            &config_with(&uri, Some(1)),
+            "e",
+            MergeMetrics::new(),
+            Instant::now() - Duration::from_secs(1),
+        )
+        .unwrap();
+        compactor.maybe_start();
+
+        // Waiting on the outcome rather than on the slot flag, which the compaction may
+        // already have given back by the time the assertion reads it.
+        let deadline = Instant::now() + Duration::from_secs(60);
+        while data_files(&uri) != 1 {
+            assert!(
+                Instant::now() < deadline,
+                "the spawned compaction never rewrote the two files into one"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// Data files the table's current snapshot lists.
+    fn data_files(uri: &str) -> usize {
+        TOKIO.block_on(async {
+            let table =
+                open_table_with_storage_options(ensure_table_uri(uri).unwrap(), Default::default())
+                    .await
+                    .unwrap();
+            table.snapshot().unwrap().log_data().into_iter().count()
+        })
+    }
+
     /// OPTIMIZE must apply the deletion vectors it rewrites. Every superseded row is still
     /// in a data file and dead only by its vector, so bin-packing without applying them would
     /// bring them all back.
