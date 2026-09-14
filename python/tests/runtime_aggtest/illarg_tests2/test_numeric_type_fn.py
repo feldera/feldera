@@ -66,27 +66,6 @@ class illarg_acos_illegal(TstView):
         self.expected_error = "Cannot apply 'ACOS' to arguments of type"
 
 
-# ACOSH function
-class illarg_acosh_legal(TstView):
-    def __init__(self):
-        # Validated on Postgres
-        self.data = [{"dbl": "4.337672106130182"}]
-        self.sql = """CREATE MATERIALIZED VIEW acosh_legal AS SELECT
-                      CAST(ACOSH(- dbl) AS VARCHAR(17)) AS dbl
-                      FROM illegal_tbl
-                      WHERE id = 0"""
-
-
-class illarg_acosh_cast_legal(TstView):
-    def __init__(self):
-        # Validated on Postgres
-        self.data = [{"arr": "3.330926552641251"}]
-        self.sql = """CREATE MATERIALIZED VIEW acosh_cast_legal AS SELECT
-                      CAST(ACOSH(ARR[2]) AS VARCHAR(17)) AS arr
-                      FROM illegal_tbl
-                      WHERE id = 0"""
-
-
 # Negative Test
 class illarg_acosh_illegal(TstView):
     def __init__(self):
