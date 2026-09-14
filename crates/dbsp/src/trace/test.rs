@@ -30,7 +30,7 @@ use crate::{
         FallbackIndexedWSetFactories, FileIndexedWSetFactories, FileWSetFactories, GroupFilter,
         ListMerger, Spine, Trace, VecIndexedWSet, VecIndexedWSetFactories, VecKeyBatch,
         VecKeyBatchFactories, VecValBatch, VecValBatchFactories, VecWSet, VecWSetFactories,
-        cursor::{Cursor, CursorPair},
+        cursor::{Cursor, CursorList, CursorPair},
         ord::{
             FileIndexedWSet, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
             FileValBatchFactories, FileWSet, OrdKeyBatch, OrdKeyBatchFactories, OrdValBatch,
@@ -3302,5 +3302,150 @@ fn stepping_keys_does_not_read_values() {
                  which is a descent per key rather than a read per block"
             );
         }
+    });
+}
+
+/// A cursor list over one batch must cost what that batch's own cursor costs.
+///
+/// Stepping a key checks whether the values under it cancel, and summing their
+/// weights means reading the block those weights sit in.  With one cursor there
+/// is nothing to cancel against, so the check is skipped and the sweep stays on
+/// the key column.
+#[test]
+fn a_cursor_list_over_one_batch_does_not_read_values() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+
+        for fanout in [1, 8] {
+            let tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>> = (0..50_000)
+                .flat_map(|key| (0..fanout).map(move |val| Tup2(Tup2(key, val), 1)))
+                .collect();
+            let batch = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+                &factories,
+                (),
+                &mut indexed_zset_tuples(tuples),
+            );
+
+            let base = total_cache_accesses(batch.cache_stats());
+            let mut cursor = CursorList::new(factories.weight_factory(), vec![batch.cursor()]);
+            let mut keys = 0;
+            while cursor.key_valid() {
+                keys += 1;
+                cursor.step_key();
+            }
+            let through_list = total_cache_accesses(batch.cache_stats()) - base;
+
+            let base = total_cache_accesses(batch.cache_stats());
+            let mut cursor = batch.cursor();
+            while cursor.key_valid() {
+                cursor.step_key();
+            }
+            let through_batch = total_cache_accesses(batch.cache_stats()) - base;
+
+            assert_eq!(keys, 50_000);
+            assert_eq!(
+                through_list, through_batch,
+                "with {fanout} values a key, a list of one cursor cost {through_list} \
+                 against the batch cursor's {through_batch}"
+            );
+        }
+    });
+}
+
+/// `map_values` hands out weights, so it has to add them up where stepping the
+/// cursor deliberately did not.
+#[test]
+fn a_cursor_list_reports_weights_it_did_not_sum() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <VecIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let batch = VecIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+            &factories,
+            (),
+            &mut indexed_zset_tuples(vec![
+                Tup2(Tup2(1, 4), 2),
+                Tup2(Tup2(1, 5), 3),
+                Tup2(Tup2(2, 6), -7),
+            ]),
+        );
+
+        // One cursor, so nothing cancels and no weight is summed while stepping.
+        let mut cursor = CursorList::new(factories.weight_factory(), vec![batch.cursor()]);
+
+        let mut seen = Vec::new();
+        while cursor.key_valid() {
+            let key = *unsafe { cursor.key().downcast::<i32>() };
+            cursor.map_values(&mut |val, weight| {
+                seen.push((key, *unsafe { val.downcast::<i32>() }, *unsafe {
+                    weight.downcast::<ZWeight>()
+                }));
+            });
+            cursor.step_key();
+        }
+        assert_eq!(seen, vec![(1, 4, 2), (1, 5, 3), (2, 6, -7)]);
+
+        // And so does `weight`, reached the usual way.
+        let mut cursor = CursorList::new(factories.weight_factory(), vec![batch.cursor()]);
+        let mut seen = Vec::new();
+        while cursor.key_valid() {
+            let key = *unsafe { cursor.key().downcast::<i32>() };
+            while cursor.val_valid() {
+                let val = *unsafe { cursor.val().downcast::<i32>() };
+                seen.push((key, val, *unsafe { cursor.weight().downcast::<ZWeight>() }));
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+        assert_eq!(seen, vec![(1, 4, 2), (1, 5, 3), (2, 6, -7)]);
+    });
+}
+
+/// Skipping the check for a lone cursor must not stop values from cancelling
+/// when there is something to cancel against.
+#[test]
+fn a_cursor_list_still_cancels_across_batches() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <VecIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let build = |tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>>| {
+            VecIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+                &factories,
+                (),
+                &mut indexed_zset_tuples(tuples),
+            )
+        };
+
+        // Key 1 is written and retracted, so it cancels away entirely; key 2
+        // keeps one of its two values and key 3 is only in one batch.
+        let left = build(vec![
+            Tup2(Tup2(1, 7), 1),
+            Tup2(Tup2(2, 4), 1),
+            Tup2(Tup2(2, 5), 1),
+            Tup2(Tup2(3, 9), 1),
+        ]);
+        let right = build(vec![Tup2(Tup2(1, 7), -1), Tup2(Tup2(2, 4), -1)]);
+
+        let mut cursor = CursorList::new(
+            factories.weight_factory(),
+            vec![left.cursor(), right.cursor()],
+        );
+
+        let mut survived = Vec::new();
+        while cursor.key_valid() {
+            let key = *unsafe { cursor.key().downcast::<i32>() };
+            while cursor.val_valid() {
+                let val = *unsafe { cursor.val().downcast::<i32>() };
+                survived.push((key, val));
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+
+        assert_eq!(
+            survived,
+            vec![(2, 5), (3, 9)],
+            "a value whose weights cancel across batches has to stay hidden"
+        );
     });
 }
