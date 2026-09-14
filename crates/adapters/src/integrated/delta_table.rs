@@ -1,5 +1,6 @@
 mod deletion_vector;
 mod input;
+mod merge;
 mod output;
 
 #[cfg(test)]
@@ -12,7 +13,67 @@ use feldera_types::serde_with_context::serde_config::{DecimalFormat, UuidFormat}
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimestampFormat};
 pub use input::DeltaTableInputEndpoint;
 pub use output::DeltaTableWriter;
+use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::sync::{Arc, Once};
+
+/// Error classification for Delta table write operations.
+///
+/// Separates deterministic failures (which will recur on every attempt) from
+/// transient I/O failures (which may succeed on retry).
+pub(crate) enum WriteError {
+    /// Data-dependent error that will recur identically on retry.
+    /// Examples: non-unique keys, schema mismatches, serialization failures.
+    Deterministic(anyhow::Error),
+    /// Transient I/O error that may resolve on retry.
+    /// Examples: object store timeouts, network failures.
+    Transient(anyhow::Error),
+}
+
+/// Names the classification, which is what a failing test needs to see.
+impl Debug for WriteError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        let (label, e) = match self {
+            WriteError::Deterministic(e) => ("deterministic: ", e),
+            WriteError::Transient(e) => ("transient: ", e),
+        };
+        f.write_str(label)?;
+        Debug::fmt(e, f)
+    }
+}
+
+/// Delegates rather than reformatting, so `{:#}` still reaches anyhow and prints the chain.
+impl Display for WriteError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            WriteError::Deterministic(e) | WriteError::Transient(e) => Display::fmt(e, f),
+        }
+    }
+}
+
+#[cfg(test)]
+mod write_error_test {
+    use super::WriteError;
+    use anyhow::{Context, anyhow};
+
+    /// `{:#}` must reach anyhow, or the cause of a failed write never leaves the connector.
+    #[test]
+    fn the_alternate_form_still_prints_the_chain() {
+        let e = WriteError::Transient(
+            Err::<(), _>(anyhow!("the socket closed"))
+                .context("while writing a deletion vector")
+                .unwrap_err(),
+        );
+
+        let rendered = format!("{e:#}");
+        assert!(
+            rendered.contains("while writing a deletion vector"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("the socket closed"), "{rendered}");
+        // Plain `{}` is anyhow's own top-level rendering, not the whole chain.
+        assert_eq!(format!("{e}"), "while writing a deletion vector");
+    }
+}
 
 /// The view counterpart of a string or binary type, or `None` for every other
 /// type.

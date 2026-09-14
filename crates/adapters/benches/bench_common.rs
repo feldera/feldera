@@ -225,6 +225,26 @@ pub fn generate_test_data(num_records: usize) -> Vec<BenchTestStruct> {
         .collect()
 }
 
+/// A batch that replaces each row in `old` with the row at the same index in `new`, as an
+/// indexed view emits an update: the old value at weight -1 and the new one at +1.
+#[allow(dead_code)]
+pub fn build_update_batch(old: &[BenchTestStruct], new: &[BenchTestStruct]) -> Arc<dyn SerBatch> {
+    assert_eq!(old.len(), new.len());
+    let mut tuples = Vec::with_capacity(old.len() * 2);
+    for (old, new) in old.iter().zip(new) {
+        assert_eq!(old.id, new.id, "an update keeps the key");
+        tuples.push(Tup2(
+            Tup2(BenchKeyStruct { id: old.id }, old.clone()),
+            -1i64,
+        ));
+        tuples.push(Tup2(Tup2(BenchKeyStruct { id: new.id }, new.clone()), 1i64));
+    }
+    let zset = OrdIndexedZSet::from_tuples((), tuples);
+    Arc::new(<SerBatchImpl<_, BenchKeyStruct, BenchTestStruct>>::new(
+        zset,
+    ))
+}
+
 pub fn build_indexed_batch(data: &[BenchTestStruct]) -> Arc<dyn SerBatch> {
     let tuples: Vec<_> = data
         .iter()
