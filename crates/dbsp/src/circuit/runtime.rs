@@ -2345,6 +2345,71 @@ mod tests {
         hruntime.kill().unwrap();
     }
 
+    /// The spill decision must work off a DBSP worker thread.
+    ///
+    /// `ShardedAccumulator::deliver` runs on the shared Tokio executor, which
+    /// has no `RUNTIME` thread-local. While the spill threshold was read from
+    /// that thread-local, `min_insert_storage_bytes` returned `None` there,
+    /// its caller mapped that to `BatchLocation::Memory`, and every gathered
+    /// batch stayed in memory no matter how high the pressure -- silently,
+    /// because the call looked correct. Threading the `Runtime` through
+    /// explicitly is what fixes it, so pin that behaviour here.
+    #[test]
+    fn insert_spill_threshold_works_off_worker_thread() {
+        const GIB: u64 = 1024 * 1024 * 1024;
+
+        let _mock_guard = MOCK_RSS_LOCK.lock().unwrap();
+        let _clear_mock_rss = MockRssVarGuard;
+        set_mock_process_rss_bytes(0);
+
+        let storage_dir = tempfile::tempdir().unwrap();
+        let config = CircuitConfig::with_workers(1)
+            .with_temporary_storage(storage_dir.path())
+            .with_max_rss_bytes(Some(10 * GIB));
+        let (circuit, _input_handle) = Runtime::init_circuit(config, move |circuit| {
+            let (stream, input_handle) = circuit.add_input_zset::<u64>();
+            stream.accumulate_integrate_trace();
+            Ok(input_handle)
+        })
+        .unwrap();
+        let runtime = circuit.runtime().clone();
+
+        // Ask from a plain thread, the way the Tokio executor does.
+        fn ask_off_thread(runtime: &Runtime) -> (bool, Option<usize>) {
+            let runtime = runtime.clone();
+            std::thread::spawn(move || {
+                // The precondition that made the original bug possible: this
+                // thread has no runtime of its own, so anything reading the
+                // thread-local sees nothing.
+                let no_thread_local = Runtime::runtime().is_none();
+                (no_thread_local, runtime.min_insert_storage_bytes())
+            })
+            .join()
+            .unwrap()
+        }
+
+        // Low pressure: nothing is forced to storage, and the merger spills later.
+        let (no_thread_local, min_insert) = ask_off_thread(&runtime);
+        assert!(
+            no_thread_local,
+            "test is meaningless unless the thread lacks a RUNTIME thread-local"
+        );
+        assert_eq!(min_insert, Some(usize::MAX));
+
+        // Critical pressure: every batch must go to storage, regardless of size.
+        set_mock_process_rss_bytes(10 * GIB);
+        sleep(Duration::from_secs(5));
+
+        let (no_thread_local, min_insert) = ask_off_thread(&runtime);
+        assert!(no_thread_local);
+        assert_eq!(
+            min_insert,
+            Some(0),
+            "off-thread spill threshold must follow memory pressure"
+        );
+
+    }
+
     /// Test the memory pressure thresholds and how merger threads behave
     /// under different memory pressure levels.
     #[test]
