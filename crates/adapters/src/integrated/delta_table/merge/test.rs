@@ -13,7 +13,7 @@ use std::sync::Arc;
 
 use arrow::array::{ArrayRef, Int64Array, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field as ArrowField, Schema as ArrowSchema};
-use deltalake::datafusion::prelude::SessionContext;
+use deltalake::datafusion::prelude::{SessionConfig, SessionContext};
 use deltalake::kernel::transaction::{CommitBuilder, CommitProperties, PROTOCOL, TableReference};
 use deltalake::kernel::{Action, DataType as DeltaDataType, PrimitiveType, StructField};
 use deltalake::operations::create::CreateBuilder;
@@ -22,6 +22,11 @@ use deltalake::protocol::{DeltaOperation, SaveMode};
 use deltalake::{DeltaTable, TableProperty};
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier, SqlType};
 use tempfile::TempDir;
+
+use deltalake::operations::get_num_idx_cols_and_stats_columns;
+use deltalake::operations::write::writer::{DeltaWriter, WriterConfig};
+use deltalake::parquet::file::properties::WriterProperties;
+use std::collections::{BTreeSet, HashMap};
 
 use super::chunk::LookupChunk;
 use super::key::KeyEncoder;
@@ -164,6 +169,81 @@ pub(super) async fn append_ids(table: DeltaTable, ids: &[i64]) -> DeltaTable {
     table.write(vec![batch]).await.unwrap()
 }
 
+/// A payload that Parquet cannot shrink: `width` hex characters of a hash of `id`.
+///
+/// File size is what decides whether a scan splits a file, and a repetitive payload
+/// compresses away to nothing, so a fixture built from one cannot reach the threshold.
+fn incompressible_payload(id: i64, width: usize) -> String {
+    let mut out = String::with_capacity(width);
+    let mut state = id as u64;
+    while out.len() < width {
+        // splitmix64, which needs no dependency and passes for random here.
+        state = state.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut z = state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        out.push_str(&format!("{:016x}", z ^ (z >> 31)));
+    }
+    out.truncate(width);
+    out
+}
+
+/// Append `ids` as one data file whose row groups hold `rows_per_group` rows each, every
+/// row carrying `payload_bytes` of payload.
+///
+/// A one-row-group file is read as a single scan partition, so a reader can neither split
+/// nor reorder it. Several row groups, in a file large enough for DataFusion to bother
+/// repartitioning, is what lets a scan do either.
+pub(super) async fn append_ids_in_row_groups(
+    mut table: DeltaTable,
+    ids: &[i64],
+    rows_per_group: usize,
+    payload_bytes: usize,
+) -> DeltaTable {
+    let schema = Arc::new(arrow_schema());
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(Int64Array::from(ids.to_vec())),
+            Arc::new(StringArray::from(
+                ids.iter()
+                    .map(|i| incompressible_payload(*i, payload_bytes))
+                    .collect::<Vec<_>>(),
+            )),
+        ],
+    )
+    .unwrap();
+
+    let (num_indexed_cols, stats_columns) =
+        get_num_idx_cols_and_stats_columns(None, HashMap::new());
+    let mut writer = DeltaWriter::new(
+        table.object_store(),
+        WriterConfig::new(
+            schema,
+            vec![],
+            Some(
+                WriterProperties::builder()
+                    .set_max_row_group_row_count(Some(rows_per_group))
+                    .build(),
+            ),
+            None,
+            Some(rows_per_group),
+            num_indexed_cols,
+            stats_columns,
+        ),
+    );
+    writer.write(&batch).await.unwrap();
+    let actions = writer
+        .close()
+        .await
+        .unwrap()
+        .into_iter()
+        .map(Action::Add)
+        .collect();
+    commit(&mut table, actions).await;
+    table
+}
+
 /// Every data file in the current snapshot.
 pub(super) fn candidates(table: &DeltaTable) -> Vec<Candidate> {
     let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
@@ -182,6 +262,11 @@ pub(super) async fn live_ids(table: &DeltaTable) -> Vec<i64> {
     let ctx = SessionContext::new();
     ctx.register_table("t", table.table_provider().await.unwrap())
         .unwrap();
+    collect_ids(&ctx).await
+}
+
+/// The `id` column of table `t` registered in `ctx`, ascending.
+async fn collect_ids(ctx: &SessionContext) -> Vec<i64> {
     let batches = ctx
         .sql("select id from t order by id")
         .await
@@ -202,6 +287,17 @@ pub(super) async fn live_ids(table: &DeltaTable) -> Vec<i64> {
                 .collect::<Vec<_>>()
         })
         .collect()
+}
+
+/// Ids a reader sees when the planner is free to split a file across partitions, which is
+/// what it does to any file past `repartition_file_min_size`.
+pub(super) async fn split_scan_ids(table: &DeltaTable) -> Vec<i64> {
+    let mut config = SessionConfig::new().with_target_partitions(8);
+    config.options_mut().optimizer.repartition_file_scans = true;
+    let ctx = SessionContext::new_with_config(config);
+    ctx.register_table("t", table.table_provider().await.unwrap())
+        .unwrap();
+    collect_ids(&ctx).await
 }
 
 /// Names of the deletion vector files present under the table directory.
@@ -591,4 +687,105 @@ async fn vectors_land_at_the_table_root() {
         "the vector must sit at the table root, not in a subdirectory: {vectors:?}"
     );
     assert_eq!(live_ids(&table).await, vec![1, 3]);
+}
+
+/// How `actual` differs from `expected`, or `None` when they match.
+///
+/// The corruption this guards against keeps the row count right, so a failure needs to name
+/// the rows, and there are too many to print: counts each way plus a few examples.
+fn difference(actual: &[i64], expected: &[i64]) -> Option<String> {
+    let actual: BTreeSet<i64> = actual.iter().copied().collect();
+    let expected: BTreeSet<i64> = expected.iter().copied().collect();
+    let extra: Vec<i64> = actual.difference(&expected).copied().collect();
+    let missing: Vec<i64> = expected.difference(&actual).copied().collect();
+    if extra.is_empty() && missing.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{} tombstoned row(s) came back (e.g. {:?}) and {} live row(s) vanished (e.g. {:?}); \
+         the count is {} against {} expected",
+        extra.len(),
+        &extra[..extra.len().min(5)],
+        missing.len(),
+        &missing[..missing.len().min(5)],
+        actual.len(),
+        expected.len(),
+    ))
+}
+
+/// A scan must honour a deletion vector even when the planner splits the file.
+///
+/// delta-rs consumes a file's keep mask in physical row order, which holds only while the
+/// file arrives whole and in order. Split the file across scan partitions and the pieces are
+/// merged back in completion order, so the mask lands at the wrong offsets: the row *count*
+/// stays right and the *rows* are wrong, tombstoned rows coming back and live ones vanishing.
+/// On a merge-mode table that means two live rows for one key.
+///
+/// Merge mode's own probe reads Parquet directly and never takes this path, but `OPTIMIZE`
+/// does, and so does every reader of the table.
+///
+/// The fixture clears two bars that every other fixture here misses, and both are why the
+/// small ones never caught this:
+///
+/// | Bar | Why |
+/// |---|---|
+/// | The file exceeds 10 MiB | Below `repartition_file_min_size` DataFusion leaves a file in one partition, and one partition cannot misorder anything |
+/// | The tombstoned rows are contiguous | Every Nth row is invariant under a misordered mask: permuting the segments still masks every Nth row |
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn a_split_scan_honours_the_deletion_vector() {
+    const ROWS: i64 = 120_000;
+    const ROWS_PER_GROUP: usize = 5_000;
+    const PAYLOAD_BYTES: usize = 96;
+    const BLOCK: i64 = 2_000;
+    const MIN_SPLIT_SIZE: i64 = 10 << 20;
+
+    let dir = TempDir::new().unwrap();
+    let table = fixture_table(&dir, &[], true).await;
+    let ids: Vec<i64> = (0..ROWS).collect();
+    let mut table = append_ids_in_row_groups(table, &ids, ROWS_PER_GROUP, PAYLOAD_BYTES).await;
+
+    let file_size = table
+        .snapshot()
+        .unwrap()
+        .log_data()
+        .into_iter()
+        .map(|f| f.size())
+        .next()
+        .unwrap();
+    assert!(
+        file_size > MIN_SPLIT_SIZE,
+        "the fixture file is {file_size} bytes, too small for the planner to split"
+    );
+
+    let half = ROWS / 2;
+    let path = candidates(&table).first().unwrap().path.clone();
+    let mut tombstones = Tombstones::new();
+    for ordinal in (0..BLOCK as u64).chain(half as u64..(half + BLOCK) as u64) {
+        tombstones.insert(&path, ordinal);
+    }
+    let dv = write_deletion_vectors(&tombstones, &table).await.unwrap();
+    commit(&mut table, dv.actions).await;
+
+    // A second file holding the new versions, as a merge flush leaves behind. OPTIMIZE
+    // drops a single-file bin, so without it there is nothing for it to rewrite.
+    let new_versions: Vec<i64> = (ROWS..ROWS + 100).collect();
+    let table = append_ids(table, &new_versions).await;
+
+    let tombstoned = |id: &i64| *id < BLOCK || (*id >= half && *id < half + BLOCK);
+    let mut expected: Vec<i64> = ids.into_iter().filter(|id| !tombstoned(id)).collect();
+    expected.extend(new_versions);
+
+    if let Some(diff) = difference(&split_scan_ids(&table).await, &expected) {
+        panic!("a split scan returned the wrong rows: {diff}");
+    }
+
+    // The same mask, now read by OPTIMIZE: what it keeps is what the table becomes.
+    let (table, metrics) = table.optimize().await.unwrap();
+    assert!(
+        metrics.num_files_removed > 0,
+        "the fixture gave OPTIMIZE nothing to rewrite"
+    );
+    if let Some(diff) = difference(&live_ids(&table).await, &expected) {
+        panic!("OPTIMIZE rewrote the file with the wrong rows: {diff}");
+    }
 }
