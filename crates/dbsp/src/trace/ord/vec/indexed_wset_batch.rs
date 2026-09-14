@@ -578,6 +578,13 @@ where
     R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // The layer stores a key's values contiguously, so the value cursor's
+        // bounds are the count.
+        let (start, end) = self.cursor.child.bounds();
+        end - start
+    }
+
     // fn key_factory(&self) -> &'static Factory<K> {
     //     self.cursor.storage.factories.key
     // }

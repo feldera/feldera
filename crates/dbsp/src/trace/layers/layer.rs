@@ -1332,6 +1332,11 @@ where
         self.pos
     }
 
+    /// The range of rows in this layer that the cursor may visit.
+    pub fn bounds(&self) -> (usize, usize) {
+        self.bounds
+    }
+
     pub fn seek_with<P>(&mut self, predicate: P)
     where
         P: Fn(&K) -> bool,

@@ -668,6 +668,11 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // A w-set has no values of its own: a key is one tuple.
+        self.key_valid() as usize
+    }
+
     fn key(&self) -> &K {
         self.cursor.key().unwrap()
     }

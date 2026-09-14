@@ -1087,6 +1087,20 @@ where
     R: WeightTrait + ?Sized,
     T: Timestamp,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        if !self.key_valid() {
+            return 0;
+        }
+        // The reference model holds one entry per key, value and time, so
+        // counting the current key's entries bounds its values from above,
+        // which is what the trait asks for.
+        let current_key = clone_box(self.data[self.index].0.0.as_ref());
+        self.data[self.index..]
+            .iter()
+            .take_while(|((key, _, _), _)| *key == current_key)
+            .count()
+    }
+
     // fn key_factory(&self) -> &'static Factory<K> {
     //     &K::VTABLE
     // }

@@ -527,6 +527,13 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // The row group beside the key says how many value rows it owns,
+        // without reading them.  Each of those values carries its own times,
+        // which are not counted here.
+        self.key_cursor.next_column().unwrap_storage().len() as usize
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.weight_factory
     }

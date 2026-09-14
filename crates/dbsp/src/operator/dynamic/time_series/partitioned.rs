@@ -95,6 +95,13 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // One partition's whole contents bound what any single key inside it
+        // holds, since this cursor splits the inner cursor's values by their
+        // key half rather than by anything the inner cursor tracks.
+        self.cursor.value_count_upper_bound()
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.cursor.weight_factory()
     }

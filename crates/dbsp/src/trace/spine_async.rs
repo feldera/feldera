@@ -1912,6 +1912,10 @@ impl<B: Batch> SpineCursor<B> {
 }
 
 impl<B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for SpineCursor<B> {
+    fn value_count_upper_bound(&self) -> usize {
+        self.with_cursor(|cursor| cursor.value_count_upper_bound())
+    }
+
     // fn key_vtable(&self) -> &'static VTable<B::Key> {
     //     self.cursor.key_vtable()
     // }

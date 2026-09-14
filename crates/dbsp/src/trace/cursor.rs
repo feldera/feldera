@@ -136,6 +136,25 @@ pub trait Cursor<K: ?Sized, V: ?Sized, T, R: ?Sized> {
     /// for this key.
     fn val_valid(&self) -> bool;
 
+    /// An upper bound on the number of values under the current key.
+    ///
+    /// For an indexed Z-set this is the key's tuple count, since each value
+    /// carries one weight.  A batch that also carries times keeps several of
+    /// them under one value; this counts the values, not the times.
+    ///
+    /// A bound rather than a count because a cursor that merges several batches
+    /// cannot tell, without reading them, how many of their values coincide: it
+    /// returns the sum, which is exact only when they are disjoint.  A cursor
+    /// over a single batch returns the exact number.
+    ///
+    /// Must not do I/O.  This exists so that a caller can learn how many values
+    /// a key has without reading any of them: a batch on storage keeps its keys
+    /// in one column and its values in another, and the row group recorded
+    /// beside a key already says how many value rows it owns.
+    ///
+    /// Returns zero when the cursor is not on a key.
+    fn value_count_upper_bound(&self) -> usize;
+
     /// A reference to the current key. Panics if invalid.
     fn key(&self) -> &K;
 
@@ -424,6 +443,10 @@ where
     R: ?Sized,
     C: Cursor<K, V, T, R> + ?Sized,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        (**self).value_count_upper_bound()
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         (**self).weight_factory()
     }
@@ -608,6 +631,10 @@ where
     V: ?Sized,
     R: ?Sized,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        self.0.value_count_upper_bound()
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.0.weight_factory()
     }
