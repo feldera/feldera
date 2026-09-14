@@ -20,7 +20,8 @@ use crate::{
         GlobalNodeId, NodeId, OwnershipPreference, StepSize, WorkerLocation, WorkerLocations,
         circuit_builder::StreamId,
         metadata::{
-            ALLOCATED_MEMORY_BYTES, BatchSizeStats, INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT,
+            ACCUMULATOR_FLUSHES_RECEIVED_COUNT, ACCUMULATOR_UNFLUSHED_SENDERS,
+            ACCUMULATOR_UNFLUSHED_SENDERS_COUNT, ALLOCATED_MEMORY_BYTES, BatchSizeStats, INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT,
             MetaItem, OUTPUT_BATCHES_STATS, OperatorLocation, OperatorMeta, SHARED_MEMORY_BYTES,
             SPINE_COUNT, STATE_RECORDS_COUNT, USED_MEMORY_BYTES,
         },
@@ -870,7 +871,22 @@ where
             bytes += spine.size_of();
         }
 
+        // The front entry is the one the receiver is waiting to release, so its
+        // outstanding senders are what a stalled commit is blocked on. A sender
+        // has flushed it when its flush count has moved past the number of
+        // entries already released.
+        let unflushed: Vec<usize> = rxq
+            .n_flushes
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| **n <= rxq.n_received)
+            .map(|(sender, _)| sender)
+            .collect();
+
         meta.extend(metadata! {
+            ACCUMULATOR_UNFLUSHED_SENDERS_COUNT => MetaItem::Count(unflushed.len()),
+            ACCUMULATOR_UNFLUSHED_SENDERS => MetaItem::String(format!("{unflushed:?}")),
+            ACCUMULATOR_FLUSHES_RECEIVED_COUNT => MetaItem::Count(rxq.n_received),
             SPINE_COUNT =>  MetaItem::Count(n_spines),
             STATE_RECORDS_COUNT => MetaItem::Count(total_size),
             ALLOCATED_MEMORY_BYTES => MetaItem::bytes(bytes.total_bytes()),

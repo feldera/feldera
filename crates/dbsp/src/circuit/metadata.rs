@@ -151,6 +151,24 @@ pub const RANGE_FILTER_MISSES_COUNT: MetricId =
 pub const RANGE_FILTER_HIT_RATE_PERCENT: MetricId =
     MetricId(Cow::Borrowed("range_filter_hit_rate_percent"));
 pub const RANGE_FILTER_SIZE_BYTES: MetricId = MetricId(Cow::Borrowed("range_filter_size_bytes"));
+/// Number of senders whose flush notification a `ShardedAccumulatorReceiver`
+/// is still waiting for before it can complete the current transaction's
+/// flush. A receiver that sits at a nonzero value while the circuit is
+/// otherwise idle is the reason a commit does not finish.
+pub const ACCUMULATOR_UNFLUSHED_SENDERS_COUNT: MetricId =
+    MetricId(Cow::Borrowed("accumulator_unflushed_senders_count"));
+
+/// The worker indices a `ShardedAccumulatorReceiver` is still waiting on,
+/// which says whether the missing flushes come from one host or are spread
+/// across the cluster.
+pub const ACCUMULATOR_UNFLUSHED_SENDERS: MetricId =
+    MetricId(Cow::Borrowed("accumulator_unflushed_senders"));
+
+/// Number of flushes a `ShardedAccumulatorReceiver` has fully received and
+/// handed on, i.e. how many transactions' worth of data it has released.
+pub const ACCUMULATOR_FLUSHES_RECEIVED_COUNT: MetricId =
+    MetricId(Cow::Borrowed("accumulator_flushes_received_count"));
+
 pub const SPINE_COUNT: MetricId = MetricId(Cow::Borrowed("spine_count"));
 pub const SPINE_BATCHES_COUNT: MetricId = MetricId(Cow::Borrowed("spine_batches_count"));
 pub const SPINE_STORAGE_SIZE_BYTES: MetricId = MetricId(Cow::Borrowed("spine_storage_size_bytes"));
