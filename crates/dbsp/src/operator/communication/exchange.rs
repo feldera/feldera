@@ -1023,6 +1023,7 @@ impl ExchangeClients {
                 {
                     let directory = ExchangeDirectory::for_runtime(&runtime);
                     Some(ExchangeListener::new(
+                        self.runtime.clone(),
                         local_address,
                         runtime.take_exchange_listener(),
                         directory,
@@ -1224,6 +1225,7 @@ struct ExchangeListener(DropGuard);
 
 impl ExchangeListener {
     fn new(
+        runtime: WeakRuntime,
         local_address: SocketAddr,
         exchange_listener: Option<std::net::TcpListener>,
         directory: ExchangeDirectory,
@@ -1260,7 +1262,11 @@ impl ExchangeListener {
                         // below.
                         let cancel = CancellationToken::new();
                         let (tx, rx) = tokio::sync::oneshot::channel();
-                        let handle = tokio::spawn(async move {
+                        // Delivering a message can spill a batch, and spilling
+                        // needs the runtime, which this executor's threads do
+                        // not carry.  Task-locals do not cross `tokio::spawn`,
+                        // so scope the connection task itself.
+                        let handle = tokio::spawn(Runtime::scope(runtime.clone(), async move {
                             let self_handle = rx.await.ok();
                             ExchangeServer {
                                 layout,
@@ -1271,7 +1277,7 @@ impl ExchangeListener {
                             }
                             .serve()
                             .await
-                        });
+                        }));
                         let _ = tx.send(handle);
                     }
                     Err(error) => warn!("Error accepting connection: {error}"),

@@ -36,6 +36,7 @@ use indexmap::IndexSet;
 use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::convert::identity;
+use std::future::Future;
 use std::iter::repeat;
 use std::net::TcpListener;
 use std::ops::{Index, Range};
@@ -164,6 +165,21 @@ tokio::task_local! {
     ///
     /// Set for tasks in the tokio merger runtime.
     pub(crate) static TOKIO_BUFFER_CACHE: Arc<BufferCache>;
+}
+
+// Task-local variables set for tasks on executors whose threads the runtime did
+// not spawn.
+tokio::task_local! {
+    /// The [Runtime] that this task belongs to.
+    ///
+    /// The shared Tokio executor in [feldera_storage::tokio::TOKIO] serves
+    /// exchange connections on threads that the runtime did not spawn, so those
+    /// threads have no `RUNTIME` thread-local.  Tasks that need a runtime carry
+    /// it here instead; see [Runtime::scope].
+    ///
+    /// Weak, so that a task living as long as an exchange connection does not
+    /// keep the runtime alive.
+    static TOKIO_RUNTIME: WeakRuntime;
 }
 
 pub(crate) fn current_thread_type() -> Option<ThreadType> {
@@ -907,7 +923,26 @@ impl Runtime {
     /// thread.  When invoked by such a thread, this method returns `None`.
     #[allow(clippy::self_named_constructors)]
     pub fn runtime() -> Option<Runtime> {
-        RUNTIME.with(|rt| rt.borrow().clone())
+        RUNTIME
+            .with(|rt| rt.borrow().clone())
+            .or_else(|| TOKIO_RUNTIME.try_get().ok().and_then(|rt| rt.upgrade()))
+    }
+
+    /// Runs `future` as part of `runtime`, so that code it reaches can find the
+    /// runtime through [Runtime::runtime].
+    ///
+    /// Spawn onto an executor whose threads the runtime did not spawn, such as
+    /// [feldera_storage::tokio::TOKIO], only through this.  Otherwise anything
+    /// the task reaches that expects a runtime, such as
+    /// [Runtime::storage_backend], finds nothing.
+    ///
+    /// Tokio task-locals do not cross [tokio::spawn], so a task that spawns
+    /// another must wrap the child too.
+    pub fn scope<F>(runtime: WeakRuntime, future: F) -> impl Future<Output = F::Output>
+    where
+        F: Future,
+    {
+        TOKIO_RUNTIME.scope(runtime, future)
     }
 
     /// Returns this runtime's storage backend, if storage is configured.
@@ -2358,7 +2393,9 @@ mod tests {
     fn insert_spill_threshold_works_off_worker_thread() {
         const GIB: u64 = 1024 * 1024 * 1024;
 
-        let _mock_guard = MOCK_RSS_LOCK.lock().unwrap();
+        // Tolerate poisoning: these tests share the lock, and one of them
+        // failing must not mask the others behind a `PoisonError`.
+        let _mock_guard = MOCK_RSS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _clear_mock_rss = MockRssVarGuard;
         set_mock_process_rss_bytes(0);
 
@@ -2407,7 +2444,79 @@ mod tests {
             Some(0),
             "off-thread spill threshold must follow memory pressure"
         );
+    }
 
+    /// The spill itself must work off a DBSP worker thread, not just the
+    /// decision to spill.
+    ///
+    /// Deciding correctly is only half of it.  The builders that write the
+    /// batch out reach for the runtime through [Runtime::runtime], and the
+    /// shared Tokio executor that delivers exchange messages runs on threads
+    /// the runtime did not spawn.  Honouring the decision there used to panic
+    /// in [Runtime::storage_backend] and kill the exchange listener task.
+    /// Spill from a task on that executor and insist the batch reaches storage.
+    #[test]
+    fn insert_spill_executes_off_worker_thread() {
+        use crate::dynamic::DynData;
+        use crate::trace::ord::fallback::wset::FallbackWSet;
+        use crate::trace::{BatchLocation, BatchReader, BatchReaderFactories, Spine};
+        use crate::typed_batch::FallbackZSet;
+        use crate::utils::Tup2;
+        use crate::{DynZWeight, ZWeight};
+        use feldera_storage::tokio::TOKIO;
+
+        const GIB: u64 = 1024 * 1024 * 1024;
+
+        let _mock_guard = MOCK_RSS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _clear_mock_rss = MockRssVarGuard;
+
+        // Critical pressure, so every non-empty batch belongs on storage.
+        set_mock_process_rss_bytes(10 * GIB);
+
+        let storage_dir = tempfile::tempdir().unwrap();
+        let config = CircuitConfig::with_workers(1)
+            .with_temporary_storage(storage_dir.path())
+            .with_max_rss_bytes(Some(10 * GIB));
+        let (circuit, _input_handle) = Runtime::init_circuit(config, move |circuit| {
+            let (stream, input_handle) = circuit.add_input_zset::<u64>();
+            stream.accumulate_integrate_trace();
+            Ok(input_handle)
+        })
+        .unwrap();
+        let runtime = circuit.runtime().clone();
+        sleep(Duration::from_secs(5));
+        assert_eq!(runtime.min_insert_storage_bytes(), Some(0));
+
+        // Spill the way `ShardedAccumulator::deliver` does: from a task on the
+        // shared executor, scoped to the runtime.
+        let location = TOKIO.block_on(Runtime::scope(runtime.downgrade(), async move {
+            // The precondition that makes this test meaningful: the
+            // executor's threads carry no runtime of their own, so the
+            // task-local is doing the work.
+            assert!(
+                super::RUNTIME.with(|rt| rt.borrow().is_none()),
+                "test is meaningless unless the thread lacks a RUNTIME thread-local"
+            );
+            let runtime = Runtime::runtime().expect("scoped task must find its runtime");
+
+            let factories: <FallbackWSet<DynData, DynZWeight> as BatchReader>::Factories =
+                BatchReaderFactories::new::<u64, (), ZWeight>();
+            let batch = FallbackZSet::<u64>::from_tuples(
+                (),
+                (0..1024u64).map(|k| Tup2(Tup2(k, ()), 1)).collect(),
+            )
+            .into_inner();
+            assert_eq!(batch.location(), BatchLocation::Memory);
+
+            Spine::maybe_flush_batch(Some(&runtime), batch, &factories, || (None, None)).location()
+        }));
+        assert_eq!(
+            location,
+            BatchLocation::Storage,
+            "a batch spilled from a scoped task must reach storage"
+        );
+
+        circuit.kill().unwrap();
     }
 
     /// Test the memory pressure thresholds and how merger threads behave
@@ -2418,7 +2527,9 @@ mod tests {
         const MIB: u64 = 1024 * 1024;
         const TEN_MIB: usize = 10 * 1024 * 1024;
 
-        let _mock_guard = MOCK_RSS_LOCK.lock().unwrap();
+        // Tolerate poisoning: these tests share the lock, and one of them
+        // failing must not mask the others behind a `PoisonError`.
+        let _mock_guard = MOCK_RSS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let _clear_mock_rss = MockRssVarGuard;
         set_mock_process_rss_bytes(0);
 
