@@ -971,3 +971,155 @@ async fn a_flush_rides_out_a_flaky_object_store() {
         "the store did not actually drop the requests the test injects"
     );
 }
+
+/// Counts every object-store GET, so a test can assert what a flush fetches.
+#[derive(Debug)]
+struct CountingStore {
+    inner: Arc<dyn deltalake::ObjectStore>,
+    gets: std::sync::Mutex<Vec<String>>,
+}
+
+impl CountingStore {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            inner: Arc::new(object_store::local::LocalFileSystem::new()),
+            gets: std::sync::Mutex::new(Vec::new()),
+        })
+    }
+
+    /// `(number of GETs, number of distinct objects)` for paths ending in `suffix`.
+    fn gets_for(&self, suffix: &str) -> (usize, usize) {
+        let gets = self.gets.lock().unwrap();
+        let matching: Vec<&String> = gets.iter().filter(|p| p.ends_with(suffix)).collect();
+        let distinct: BTreeSet<&String> = matching.iter().copied().collect();
+        (matching.len(), distinct.len())
+    }
+
+    fn clear(&self) {
+        self.gets.lock().unwrap().clear();
+    }
+}
+
+impl std::fmt::Display for CountingStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CountingStore({})", self.inner)
+    }
+}
+
+#[async_trait::async_trait]
+impl deltalake::ObjectStore for CountingStore {
+    async fn put_opts(
+        &self,
+        location: &object_store::path::Path,
+        payload: object_store::PutPayload,
+        opts: object_store::PutOptions,
+    ) -> object_store::Result<object_store::PutResult> {
+        self.inner.put_opts(location, payload, opts).await
+    }
+
+    async fn put_multipart_opts(
+        &self,
+        location: &object_store::path::Path,
+        opts: object_store::PutMultipartOptions,
+    ) -> object_store::Result<Box<dyn object_store::MultipartUpload>> {
+        self.inner.put_multipart_opts(location, opts).await
+    }
+
+    async fn get_opts(
+        &self,
+        location: &object_store::path::Path,
+        options: object_store::GetOptions,
+    ) -> object_store::Result<object_store::GetResult> {
+        self.gets
+            .lock()
+            .unwrap()
+            .push(location.as_ref().to_string());
+        self.inner.get_opts(location, options).await
+    }
+
+    fn list(
+        &self,
+        prefix: Option<&object_store::path::Path>,
+    ) -> futures::stream::BoxStream<'static, object_store::Result<object_store::ObjectMeta>> {
+        self.inner.list(prefix)
+    }
+
+    async fn list_with_delimiter(
+        &self,
+        prefix: Option<&object_store::path::Path>,
+    ) -> object_store::Result<object_store::ListResult> {
+        self.inner.list_with_delimiter(prefix).await
+    }
+
+    fn delete_stream(
+        &self,
+        locations: futures::stream::BoxStream<
+            'static,
+            object_store::Result<object_store::path::Path>,
+        >,
+    ) -> futures::stream::BoxStream<'static, object_store::Result<object_store::path::Path>> {
+        self.inner.delete_stream(locations)
+    }
+
+    async fn copy_opts(
+        &self,
+        from: &object_store::path::Path,
+        to: &object_store::path::Path,
+        options: object_store::CopyOptions,
+    ) -> object_store::Result<()> {
+        self.inner.copy_opts(from, to, options).await
+    }
+}
+
+/// A flush fetches each packed vector object once, not once per file it touches.
+///
+/// `delta_kernel` reads a whole sidecar to decode one vector out of it, and a flush packs
+/// every vector it writes into a single object. Reading them one file at a time therefore
+/// cost one full fetch of that object per file: O(files) requests and O(files^2) bytes, which
+/// on a table of a few thousand files is most of a flush.
+#[tokio::test]
+async fn a_flush_reads_each_vector_object_once() {
+    for files in [4i64, 16, 64] {
+        let dir = TempDir::new().unwrap();
+        let mut table = fixture_table(&dir, &[], true).await;
+        // One file per append, so the flush below touches `files` files.
+        for f in 0..files {
+            table = append_ids(table, &(f * 100..f * 100 + 100).collect::<Vec<_>>()).await;
+        }
+
+        let store = CountingStore::new();
+        let url =
+            deltalake::table::builder::ensure_table_uri(dir.path().to_str().unwrap()).unwrap();
+        let table = deltalake::DeltaTableBuilder::from_url(url.clone())
+            .unwrap()
+            .with_storage_backend(store.clone(), url)
+            .load()
+            .await
+            .unwrap();
+
+        // Gives every file its first vector, all packed into one object.
+        let table = tombstone_ids(table, &(0..files).map(|f| f * 100).collect::<Vec<_>>()).await;
+
+        store.clear();
+
+        // Now every file has a vector that must be read and unioned with the new ordinals.
+        let table =
+            tombstone_ids(table, &(0..files).map(|f| f * 100 + 1).collect::<Vec<_>>()).await;
+
+        let (gets, objects) = store.gets_for(".bin");
+        assert_eq!(
+            objects, 1,
+            "{files} files: the fixture did not pack the vectors into one object"
+        );
+        assert_eq!(
+            gets, objects,
+            "{files} files: the packed vector object was fetched {gets} times, once per file"
+        );
+
+        // The rows it read are still the right ones.
+        let expected: Vec<i64> = (0..files)
+            .flat_map(|f| f * 100 + 2..f * 100 + 100)
+            .collect();
+        assert_eq!(live_ids(&table).await, expected, "{files} files");
+    }
+}
