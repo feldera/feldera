@@ -288,11 +288,11 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                     int index = 0;
                     // However, not all fields of the "a" parameter may be monotone, so we only
                     // include the ones that are.
-                    if (tuple.getField(0).mayBeMonotone()) {
+                    if (tuple.getFieldType(0).mayBeMonotone()) {
                         parameterFieldsToKeep.add(applyParameter.asVariable().deref().field(index).borrow());
                         index++;
                     }
-                    if (tuple.getField(1).mayBeMonotone()) {
+                    if (tuple.getFieldType(1).mayBeMonotone()) {
                         parameterFieldsToKeep.add(applyParameter.asVariable().deref().field(index).borrow());
                     }
                     Utilities.enforce(!parameterFieldsToKeep.isEmpty());
@@ -372,7 +372,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         // t.0, where t may have monotone fields.
         MonotoneExpression value = this.get(expression.expression);
         PartiallyMonotoneTuple tuple = value.type.to(PartiallyMonotoneTuple.class);
-        IMaybeMonotoneType fieldType = tuple.getField(expression.fieldNo);
+        IMaybeMonotoneType fieldType = tuple.getFieldExpressionType(expression.fieldNo);
         DBSPExpression reduced = null;
         if (fieldType.mayBeMonotone())
             reduced = value.getReducedExpression().field(tuple.compressedIndex(expression.fieldNo));

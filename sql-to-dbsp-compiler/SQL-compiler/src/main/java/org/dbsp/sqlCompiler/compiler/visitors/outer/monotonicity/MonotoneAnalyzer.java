@@ -10,7 +10,6 @@ import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDotNodesVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.IRTransform;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.MonotoneExpression;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.AppendOnly;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitTransform;
@@ -125,27 +124,18 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
             graph.apply(circuit);
         }
 
-        // Find relations which are append-only
-        AppendOnly appendOnly = new AppendOnly(this.compiler);
-        appendOnly.apply(circuit);
-        // Identify uses of primary and foreign keys
-        KeyPropagation keyPropagation = new KeyPropagation(this.compiler);
-        keyPropagation.apply(circuit);
-
         CircuitGraph outerGraph = graph.getGraphs().getGraph(circuit);
         Set<DBSPOperator> reachableFromError = this.reachableFromError(circuit, outerGraph);
-        // Sort the nodes in the internal array so that the nodes that depend on
-        // the error view come after all other nodes.
+        // Operators downstream of the error table go last, so InsertLimiters has every error
+        // stream when it reaches the error view.  The set is closed under successors and
+        // List.sort is stable, so each group stays in topological order.
         Function<Boolean, Integer> bi = b -> b ? 1 : -1;
         circuit.sortOperators(Comparator.comparing(o -> bi.apply(reachableFromError.contains(o))));
 
         if (debug)
             ToDot.dump(this.compiler, "original.png", details, "png", circuit);
 
-        DeltaExpandOperators expander = new DeltaExpandOperators(
-                this.compiler,
-                appendOnly.appendOnly::contains,
-                keyPropagation.joins::get);
+        DeltaExpandOperators expander = new DeltaExpandOperators(this.compiler);
         DBSPCircuit expanded = expander.apply(circuit);
         // ToDot.dump(this.compiler, "expanded-before.png", details, "png", expanded);
 
@@ -157,8 +147,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
                     stream -> new MonotoneDot(compiler, stream, details, monotonicity.info));
 
         InsertLimiters limiters = new InsertLimiters(
-                this.compiler, expanded, monotonicity.info, expander.expansion,
-                keyPropagation.joins::get, reachableFromError);
+                this.compiler, expanded, monotonicity.info, expander.expansion, reachableFromError);
 
         // Notice that we apply the limiters to the original circuit, not to the expanded circuit!
         DBSPCircuit result = limiters.apply(circuit);

@@ -112,11 +112,17 @@ public class PartiallyMonotoneTuple
                 this.raw, this.mayBeNull);
     }
 
-    public IMaybeMonotoneType getField(int index) {
-        IMaybeMonotoneType result = this.fields.get(index);
+    /** The declared monotone type of field {@code index}. */
+    public IMaybeMonotoneType getFieldType(int index) {
+        return this.fields.get(index);
+    }
+
+    /** The monotone type of an expression of the form t.i, where t has this type:
+     * a field read from a nullable tuple is itself nullable. */
+    public IMaybeMonotoneType getFieldExpressionType(int index) {
+        IMaybeMonotoneType result = this.getFieldType(index);
         if (this.mayBeNull)
-            // Have to adjust nullability if tuple is nullable
-            result = result.withMaybeNull(this.mayBeNull);
+            result = result.withMaybeNull(true);
         return result;
     }
 
@@ -125,7 +131,7 @@ public class PartiallyMonotoneTuple
     public int compressedIndex(int fieldNo) {
         int result = 0;
         for (int i = 0; i < fieldNo; i++) {
-            IMaybeMonotoneType field = this.getField(i);
+            IMaybeMonotoneType field = this.getFieldType(i);
             if (field.mayBeMonotone())
                 result++;
         }

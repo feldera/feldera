@@ -43,7 +43,7 @@ public class SeparateIntegrators extends CircuitCloneWithGraphsVisitor {
         super(compiler, graphs);
     }
 
-    public static boolean hasPostIntegrator(DBSPSimpleOperator operator) {
+    private static boolean hasPostIntegrator(DBSPSimpleOperator operator) {
         return operator.is(DBSPAggregateOperator.class) ||
                 operator.is(DBSPChainAggregateOperator.class) ||
                 operator.is(DBSPAggregateLinearPostprocessOperator.class) ||
@@ -60,21 +60,20 @@ public class SeparateIntegrators extends CircuitCloneWithGraphsVisitor {
                         operator.to(DBSPSourceMapOperator.class).metadata.materialized);
     }
 
-    public static boolean hasPreIntegrator(OutputPort port) {
-        DBSPOperator operator = port.node();
-        int input = port.port();
-        return operator.is(DBSPJoinBaseOperator.class) ||
-                operator.is(DBSPStarJoinBaseOperator.class) ||
-                (operator.is(DBSPWindowOperator.class) && input == 0) ||
-                operator.is(DBSPPartitionedRollingAggregateOperator.class) ||
-                operator.is(DBSPDistinctOperator.class) ||
-                operator.is(DBSPPositiveOperator.class) ||
-                operator.is(DBSPAggregateOperator.class) ||
-                operator.is(DBSPIntegrateOperator.class) ||
-                operator.is(DBSPLagOperator.class) ||
-                operator.is(DBSPIndexedTopKOperator.class) ||
-                (operator.is(DBSPSinkOperator.class) &&
-                        operator.to(DBSPSinkOperator.class).metadata.viewKind ==
+    /** True when {@code consumer} keeps an integral of the stream it reads on input {@code inputIndex}. */
+    private static boolean hasPreIntegrator(DBSPOperator consumer, int inputIndex) {
+        return consumer.is(DBSPJoinBaseOperator.class) ||
+                consumer.is(DBSPStarJoinBaseOperator.class) ||
+                (consumer.is(DBSPWindowOperator.class) && inputIndex == 0) ||
+                consumer.is(DBSPPartitionedRollingAggregateOperator.class) ||
+                consumer.is(DBSPDistinctOperator.class) ||
+                consumer.is(DBSPPositiveOperator.class) ||
+                consumer.is(DBSPAggregateOperator.class) ||
+                consumer.is(DBSPIntegrateOperator.class) ||
+                consumer.is(DBSPLagOperator.class) ||
+                consumer.is(DBSPIndexedTopKOperator.class) ||
+                (consumer.is(DBSPSinkOperator.class) &&
+                        consumer.to(DBSPSinkOperator.class).metadata.viewKind ==
                                 SqlCreateView.ViewKind.MATERIALIZED);
     }
 
@@ -87,19 +86,18 @@ public class SeparateIntegrators extends CircuitCloneWithGraphsVisitor {
     @Override
     public void replace(DBSPSimpleOperator operator) {
         List<OutputPort> sources = new ArrayList<>(operator.inputs.size());
-        int index = 0;
-        for (OutputPort input: operator.inputs) {
-            OutputPort port = new OutputPort(operator, index++);
-            boolean addBuffer = false;
-            if (hasPreIntegrator(port)) {
+        for (int inputIndex = 0; inputIndex < operator.inputs.size(); inputIndex++) {
+            OutputPort input = operator.inputs.get(inputIndex);
+            boolean needsOwnTrace = false;
+            if (hasPreIntegrator(operator, inputIndex)) {
                 if (input.isSimpleNode() && hasPostIntegrator(input.simpleNode())) {
-                    addBuffer = true;
+                    needsOwnTrace = true;
                 } else {
-                    for (Port<DBSPOperator> dest : this.getGraph().getSuccessors(input.node())) {
-                        if (dest.node() == operator)
+                    for (Port<DBSPOperator> otherConsumer : this.getGraph().getSuccessors(input.node())) {
+                        if (otherConsumer.node() == operator)
                             continue;
-                        if (hasPreIntegrator(new OutputPort(dest))) {
-                            addBuffer = true;
+                        if (hasPreIntegrator(otherConsumer.node(), otherConsumer.port())) {
+                            needsOwnTrace = true;
                             break;
                         }
                     }
@@ -107,7 +105,7 @@ public class SeparateIntegrators extends CircuitCloneWithGraphsVisitor {
             }
 
             OutputPort source = this.mapped(input);
-            if (addBuffer) {
+            if (needsOwnTrace) {
                 DBSPNoopOperator noop = new DBSPNoopOperator(operator.getRelNode(), source);
                 this.addOperator(noop);
                 sources.add(noop.outputPort());

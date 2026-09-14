@@ -81,8 +81,10 @@ public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError
         } else if (leftType.is(DBSPTypeRef.class)) {
             return compareRecursive(compare, opcode, left.deref(), right.deref());
         } else {
-            DBSPTypeTupleBase tuple = leftType.to(DBSPTypeTupleBase.class);
-            for (int i = 0; i < tuple.size(); i++) {
+            DBSPTypeTupleBase leftTuple = leftType.to(DBSPTypeTupleBase.class);
+            DBSPTypeTupleBase rightTuple = right.getType().to(DBSPTypeTupleBase.class);
+            Utilities.enforce(leftTuple.size() == rightTuple.size());
+            for (int i = 0; i < leftTuple.size(); i++) {
                 compare = compareRecursive(compare, opcode, left.field(i), right.field(i));
             }
         }

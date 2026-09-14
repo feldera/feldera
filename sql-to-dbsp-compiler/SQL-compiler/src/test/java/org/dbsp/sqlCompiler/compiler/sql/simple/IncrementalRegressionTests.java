@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
@@ -2404,6 +2406,39 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 // If MergeGC didn't work, this would return 2 --
                 // but we wouldn't get to this point anyway.
                 Assert.assertEquals(1, this.gc);
+            }
+        });
+    }
+
+    /** A view with LATENESS computed from error_view and with LATENESS.  Its own late rows
+     * are not reported, as documented in docs/sql/system.md. */
+    @Test
+    public void latenessViewOverErrorView() {
+        var cc = this.getCC("""
+                CREATE TABLE err_source(x INT, ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR);
+                CREATE VIEW err_pass AS SELECT * FROM err_source;
+                CREATE VIEW err_late AS
+                SELECT table_or_view_name, message, metadata, CAST(message AS TIMESTAMP) AS ts FROM error_view;
+                LATENESS err_late.ts INTERVAL 1 HOUR;""");
+        cc.visit(new CircuitVisitor(cc.compiler) {
+            int filters = 0;
+            final Set<OutputPort> errorPortsRead = new HashSet<>();
+
+            @Override
+            public void postorder(DBSPOperator operator) {
+                if (operator.is(DBSPControlledKeyFilterOperator.class))
+                    this.filters++;
+                for (OutputPort input : operator.inputs)
+                    if (input.node().is(DBSPControlledKeyFilterOperator.class) && input.port() == 1)
+                        this.errorPortsRead.add(input);
+            }
+
+            @Override
+            public void endVisit() {
+                // One filter for the table, one for the view over error_view
+                Assert.assertEquals(2, this.filters);
+                // Only the table's late rows reach error_view
+                Assert.assertEquals(1, this.errorPortsRead.size());
             }
         });
     }

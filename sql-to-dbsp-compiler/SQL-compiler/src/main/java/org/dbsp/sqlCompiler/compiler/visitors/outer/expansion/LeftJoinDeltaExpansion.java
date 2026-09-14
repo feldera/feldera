@@ -6,7 +6,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 
-import javax.annotation.Nullable;
 
 public class LeftJoinDeltaExpansion extends OperatorDeltaExpansion implements CommonJoinDeltaExpansion {
     public final DBSPDelayedIntegralOperator leftIntegrator;
@@ -36,13 +35,11 @@ public class LeftJoinDeltaExpansion extends OperatorDeltaExpansion implements Co
         this.map = map;
     }
 
-    @Nullable
     @Override
     public DBSPDelayedIntegralOperator getLeftIntegrator() {
         return this.leftIntegrator;
     }
 
-    @Nullable
     @Override
     public DBSPDelayedIntegralOperator getRightIntegrator() {
         return this.rightIntegrator;

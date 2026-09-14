@@ -35,9 +35,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.OperatorDeltaExpan
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.StarJoinDeltaExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.StarJoinFilterMapDeltaExpansion;
-import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
-import org.dbsp.sqlCompiler.circuit.annotation.NoIntegrator;
 import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -66,8 +64,8 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
-import org.dbsp.util.NullableFunction;
 import org.dbsp.util.Utilities;
+import org.jetbrains.annotations.Contract;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -109,8 +107,6 @@ public class InsertLimiters extends CircuitCloneVisitor {
      * The keys in this map can be both operators from the previous version of this
      * circuit and from the expanded circuit. */
     public final Map<OutputPort, OutputPort> bound;
-    /** Information about joins */
-    final NullableFunction<DBSPBinaryOperator, KeyPropagation.JoinDescription> joinInformation;
     // Debugging aid, normally 'true'
     static final boolean INSERT_RETAIN_VALUES = true;
     // Debugging aid, normally 'true'
@@ -123,16 +119,22 @@ public class InsertLimiters extends CircuitCloneVisitor {
                           DBSPCircuit expandedCircuit,
                           Monotonicity.MonotonicityInformation expansionMonotoneValues,
                           Map<DBSPSimpleOperator, OperatorDeltaExpansion> expandedInto,
-                          NullableFunction<DBSPBinaryOperator, KeyPropagation.JoinDescription> joinInformation,
                           Set<DBSPOperator> reachableFromError) {
         super(compiler, false);
         this.expandedCircuit = expandedCircuit;
         this.expansionMonotoneValues = expansionMonotoneValues;
         this.expandedInto = expandedInto;
-        this.joinInformation = joinInformation;
         this.bound = new HashMap<>();
         this.errorStreams = new ArrayList<>();
         this.reachableFromError = reachableFromError;
+    }
+
+    /** The bound of {@code input}. */
+    OutputPort boundOf(DBSPOperator operator, OutputPort input) {
+        OutputPort bound = this.bound.get(input);
+        Utilities.enforce(bound != null,
+                () -> operator + " has a monotone output but its input " + input + " has no bound");
+        return bound;
     }
 
     void markBound(OutputPort operator, OutputPort bound) {
@@ -163,15 +165,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
      * not the minimum legal value - i.e., the waterline has seen some data.
      *
      * @param source   Input operator.
-     * @param represented  Operator whose waterline is represented.
      * @param function Function to apply to the data.
      */
-    OutputPort createApply(OutputPort source, @Nullable DBSPSimpleOperator represented,
-                           DBSPClosureExpression function) {
-        if (represented != null) {
-            Utilities.enforce(this.circuit != null);
-            Utilities.enforce(this.circuit.contains(represented));
-        }
+    OutputPort createApply(OutputPort source, DBSPClosureExpression function) {
         DBSPVariablePath var = source.outputType().ref().var();
         DBSPExpression v0 = var.deepCopy().deref().field(0);
         DBSPExpression v1 = var.deepCopy().deref().field(1);
@@ -278,10 +274,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
         if (monotone == null)
             return null;
         OutputPort source = operatorFromExpansion.inputs.get(input);  // Even for binary operators
-        OutputPort boundSource = Utilities.getExists(this.bound, source);
+        OutputPort boundSource = this.boundOf(operatorFromExpansion, source);
         DBSPClosureExpression function = monotone.getReducedExpression().to(DBSPClosureExpression.class);
 
-        OutputPort bound = this.createApply(boundSource, represented, function);
+        OutputPort bound = this.createApply(boundSource, function);
         this.markBound(operatorFromExpansion.to(DBSPSimpleOperator.class).outputPort(), bound);
         if (represented != null) {
             Utilities.enforce(this.circuit.contains(represented));
@@ -375,7 +371,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         ReplacementDeltaExpansion expanded = this.getReplacement(operator);
         if (expanded != null) {
             OutputPort bound = this.processFilter(expanded.replacement.to(DBSPFilterOperator.class));
-            if (operator != expanded.replacement && bound != null) {
+            if (bound != null) {
                 this.markBound(operator.outputPort(), bound);
             }
         } else {
@@ -386,14 +382,6 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
     @Nullable
     OutputPort processFilter(@Nullable DBSPFilterOperator expansion) {
-        if (expansion == null)
-            return null;
-        return this.addBounds(null, expansion, 0);
-    }
-
-    @Nullable
-    @SuppressWarnings("UnusedReturnValue")
-    OutputPort processMap(@Nullable DBSPMapOperator expansion) {
         if (expansion == null)
             return null;
         return this.addBounds(null, expansion, 0);
@@ -563,8 +551,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             if (inputMonotoneValue != null) {
                 IMaybeMonotoneType projection = Monotonicity.getBodyType(Objects.requireNonNull(inputMonotoneValue));
                 final var tuple = projection.to(PartiallyMonotoneTuple.class);
-                final var value = tuple.getField(1);
-                final var key = tuple.getField(0);
+                final var value = tuple.getFieldType(1);
+                final var key = tuple.getFieldType(0);
                 if (value.mayBeMonotone()) {
                     PartiallyMonotoneTuple keyPart = PartiallyMonotoneTuple.noMonotoneFields(
                             key.getType().to(DBSPTypeTupleBase.class));
@@ -595,10 +583,11 @@ public class InsertLimiters extends CircuitCloneVisitor {
                         var var = this.getLimiterDataOutputType(limiter).ref().var();
                         List<DBSPExpression> monotoneFields = new ArrayList<>();
                         int outerIndex = key.mayBeMonotone() ? 1 : 0;
-                        // We expect that there is exactly one field in the data
+                        Utilities.enforce(value.to(PartiallyMonotoneTuple.class).size() == 1,
+                                () -> "Aggregate input value is not a single field: " + value);
                         monotoneFields.add(var.deref().field(outerIndex).field(0).applyCloneIfNeeded());
                         DBSPExpression func = new DBSPTupleExpression(monotoneFields, false);
-                        OutputPort extractRight = this.createApply(limiter, aggregator, func.closure(var));
+                        OutputPort extractRight = this.createApply(limiter, func.closure(var));
 
                         DBSPSimpleOperator retainRight = DBSPIntegrateTraceRetainNValuesOperator.create(
                                 aggregator.getRelNode(), source, projection, this.createDelay(extractRight),
@@ -707,7 +696,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         // Preserve the field that the data is indexed on from the source
         IMaybeMonotoneType projection = Monotonicity.getBodyType(inputValue);
         PartiallyMonotoneTuple tuple = projection.to(PartiallyMonotoneTuple.class);
-        IMaybeMonotoneType tuple0 = tuple.getField(0);
+        IMaybeMonotoneType tuple0 = tuple.getFieldType(0);
         // Drop field 1 of the value projection.
         if (!tuple0.mayBeMonotone()) {
             super.postorder(operator);
@@ -730,7 +719,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         Objects.requireNonNull(monotone);
 
         DBSPClosureExpression function = monotone.getReducedExpression().to(DBSPClosureExpression.class);
-        OutputPort waterline = this.createApply(boundSource, null, function);
+        OutputPort waterline = this.createApply(boundSource, function);
         Logger.INSTANCE.belowLevel(this, 2)
                 .append("WATERLINE FUNCTION: ")
                 .appendSupplier(function::toString)
@@ -760,7 +749,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 .appendSupplier(function0::toString)
                 .newline();
 
-        OutputPort bound = this.createApply(boundSource, operator, function0);
+        OutputPort bound = this.createApply(boundSource, function0);
         this.markBound(expanded.replacement.outputPort(), bound);
 
         // Drop the boolean flag from the waterline
@@ -781,12 +770,6 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.map(operator, replacement);
     }
 
-    void addJoinAnnotations(DBSPBinaryOperator operator) {
-        KeyPropagation.JoinDescription info = this.joinInformation.apply(operator);
-        if (info != null)
-            operator.addAnnotation(new NoIntegrator(info.leftIsKey(), !info.leftIsKey()), DBSPBinaryOperator.class);
-    }
-
     @Override
     public void postorder(DBSPStreamJoinIndexOperator operator) {
         ReplacementDeltaExpansion expanded = this.getReplacement(operator);
@@ -794,7 +777,6 @@ public class InsertLimiters extends CircuitCloneVisitor {
             this.processJoin(expanded.replacement.to(DBSPStreamJoinIndexOperator.class));
         else
             this.nonMonotone(operator);
-        this.addJoinAnnotations(operator);
         super.postorder(operator);
     }
 
@@ -805,7 +787,6 @@ public class InsertLimiters extends CircuitCloneVisitor {
             this.processJoin(expanded.replacement.to(DBSPStreamJoinOperator.class));
         else
             this.nonMonotone(operator);
-        this.addJoinAnnotations(operator);
         super.postorder(operator);
     }
 
@@ -852,47 +833,40 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
     }
 
-    /** Represents a join and the two inputs.  onLeft is true if a retainKeys operator was inserted on the left input */
-    record JoinLimiters(DBSPSimpleOperator join, boolean onLeft, boolean onRight) {}
-
     @Nullable
-    JoinLimiters gcJoin(DBSPJoinBaseOperator join, CommonJoinDeltaExpansion expansion) {
+    DBSPSimpleOperator gcJoin(DBSPJoinBaseOperator join, CommonJoinDeltaExpansion expansion) {
         OutputPort leftLimiter = this.bound.get(join.left());
         OutputPort rightLimiter = this.bound.get(join.right());
         if (leftLimiter == null && rightLimiter == null) {
             return null;
         }
 
-        boolean onLeft = false;
-        boolean onRight = false;
         OutputPort left = this.mapped(join.left());
         OutputPort right = this.mapped(join.right());
         DBSPJoinBaseOperator result = join.withInputs(Linq.list(left, right), false)
                 .to(DBSPJoinBaseOperator.class);
-        if (leftLimiter != null && expansion.getLeftIntegrator() != null) {
+        if (leftLimiter != null) {
             MonotoneExpression leftMonotone = this.expansionMonotoneValues.get(
                     expansion.getLeftIntegrator().input());
             // Yes, the limit of the left input is applied to the right one.
             IMaybeMonotoneType leftProjection = Monotonicity.getBodyType(Objects.requireNonNull(leftMonotone));
             // Check if the "key" field is monotone
-            if (leftProjection.to(PartiallyMonotoneTuple.class).getField(0).mayBeMonotone()) {
+            if (leftProjection.to(PartiallyMonotoneTuple.class).getFieldType(0).mayBeMonotone()) {
                 this.createRetainKeys(join.getRelNode(), right, leftProjection, leftLimiter);
-                onRight = true;
             }
         }
 
-        if (rightLimiter != null && expansion.getRightIntegrator() != null) {
+        if (rightLimiter != null) {
             MonotoneExpression rightMonotone = this.expansionMonotoneValues.get(
                     expansion.getRightIntegrator().input());
             // Yes, the limit of the right input is applied to the left one.
             IMaybeMonotoneType rightProjection = Monotonicity.getBodyType(Objects.requireNonNull(rightMonotone));
             // Check if the "key" field is monotone
-            if (rightProjection.to(PartiallyMonotoneTuple.class).getField(0).mayBeMonotone()) {
+            if (rightProjection.to(PartiallyMonotoneTuple.class).getFieldType(0).mayBeMonotone()) {
                 this.createRetainKeys(join.getRelNode(), left, rightProjection, rightLimiter);
-                onLeft = true;
             }
         }
-        return new JoinLimiters(result, onLeft, onRight);
+        return result;
     }
 
     @Override
@@ -904,9 +878,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
 
-        this.addJoinAnnotations(join);
         LeftJoinDeltaExpansion expansion = expanded.to(LeftJoinDeltaExpansion.class);
-        JoinLimiters result = this.gcJoin(join, expansion);
+        DBSPSimpleOperator result = this.gcJoin(join, expansion);
         if (result == null) {
             super.postorder(join);
             this.nonMonotone(join);
@@ -923,7 +896,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         OutputPort limiter = this.processSumOrDiff(expansion.sum);
         if (limiter != null)
             this.markBound(join.outputPort(), limiter);
-        this.map(join, result.join, true);
+        this.map(join, result, true);
     }
 
     @Override
@@ -935,9 +908,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
 
-        this.addJoinAnnotations(join);
         JoinDeltaExpansion expansion = expanded.to(JoinDeltaExpansion.class);
-        JoinLimiters result = this.gcJoin(join, expansion);
+        DBSPSimpleOperator result = this.gcJoin(join, expansion);
         if (result == null) {
             super.postorder(join);
             this.nonMonotone(join);
@@ -952,7 +924,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         OutputPort limiter = this.processSumOrDiff(expansion.sum);
         if (limiter != null)
             this.markBound(join.outputPort(), limiter);
-        this.map(join, result.join, true);
+        this.map(join, result, true);
     }
 
     public boolean processStarJoin(DBSPStarJoinBaseOperator join) {
@@ -1048,9 +1020,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
 
-        this.addJoinAnnotations(join);
         JoinIndexDeltaExpansion expansion = expanded.to(JoinIndexDeltaExpansion.class);
-        JoinLimiters result = this.gcJoin(join, expansion);
+        DBSPSimpleOperator result = this.gcJoin(join, expansion);
         if (result == null) {
             super.postorder(join);
             this.nonMonotone(join);
@@ -1065,7 +1036,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         OutputPort limiter = this.processSumOrDiff(expansion.sum);
         if (limiter != null)
             this.markBound(join.outputPort(), limiter);
-        this.map(join, result.join, true);
+        this.map(join, result, true);
     }
 
     private void processIntegral(@Nullable DBSPDelayedIntegralOperator replacement) {
@@ -1083,12 +1054,12 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
     OutputPort extractTimestamp(PartiallyMonotoneTuple sourceType, int tsIndex, OutputPort source) {
         // First index to apply to the limiter
-        int outerIndex = sourceType.getField(0).mayBeMonotone() ? 1 : 0;
-        PartiallyMonotoneTuple sourceTypeValue = sourceType.getField(1).to(PartiallyMonotoneTuple.class);
+        int outerIndex = sourceType.getFieldType(0).mayBeMonotone() ? 1 : 0;
+        PartiallyMonotoneTuple sourceTypeValue = sourceType.getFieldType(1).to(PartiallyMonotoneTuple.class);
         // Second index to apply to the limiter
         int innerIndex = 0;
         for (int i = 0; i < tsIndex; i++) {
-            if (sourceTypeValue.getField(i).mayBeMonotone())
+            if (sourceTypeValue.getFieldType(i).mayBeMonotone())
                 innerIndex++;
         }
 
@@ -1098,7 +1069,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 .field(outerIndex)
                 .field(innerIndex)
                 .closure(var);
-        return this.createApply(source, null, tsFunction);
+        return this.createApply(source, tsFunction);
     }
 
     @Override
@@ -1139,8 +1110,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
 
         // Extract the value part from the key-value tuple
-        IMaybeMonotoneType leftValue = leftMono.getField(1);
-        IMaybeMonotoneType rightValue = rightMono.getField(1);
+        IMaybeMonotoneType leftValue = leftMono.getFieldType(1);
+        IMaybeMonotoneType rightValue = rightMono.getFieldType(1);
         if (!leftValue.mayBeMonotone() || !rightValue.mayBeMonotone()) {
             super.postorder(join);
             this.nonMonotone(join);
@@ -1149,8 +1120,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         PartiallyMonotoneTuple leftValueTuple = leftValue.to(PartiallyMonotoneTuple.class);
         PartiallyMonotoneTuple rightValueTuple = rightValue.to(PartiallyMonotoneTuple.class);
-        IMaybeMonotoneType leftTS = leftValueTuple.getField(join.leftTimestampIndex);
-        IMaybeMonotoneType rightTS = rightValueTuple.getField(join.rightTimestampIndex);
+        IMaybeMonotoneType leftTS = leftValueTuple.getFieldType(join.leftTimestampIndex);
+        IMaybeMonotoneType rightTS = rightValueTuple.getFieldType(join.rightTimestampIndex);
         if (!leftTS.mayBeMonotone() || !rightTS.mayBeMonotone()) {
             super.postorder(join);
             this.nonMonotone(join);
@@ -1245,7 +1216,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 // Field not used in the join output
                 compareField = new NonMonotoneType(valueType.getFieldType(field));
             } else {
-                compareField = oppositePathTuple.getField(outputField);
+                compareField = oppositePathTuple.getFieldType(outputField);
             }
             // The value part must have one entry per field of the value type
             value.add(compareField);
@@ -1271,26 +1242,22 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
         JoinFilterMapExpansion expansion = expanded.to(JoinFilterMapExpansion.class);
 
-        this.addJoinAnnotations(join);
-        final JoinLimiters result = this.gcJoin(join, expansion);
+        final DBSPSimpleOperator result = this.gcJoin(join, expansion);
         if (result == null) {
             super.postorder(join);
             this.nonMonotone(join);
             return;
         }
 
-        DBSPSimpleOperator resultJoin = result.join;
+        DBSPSimpleOperator resultJoin = result;
         this.processIntegral(expansion.leftIntegrator);
         this.processIntegral(expansion.rightIntegrator);
         this.processJoin(expansion.leftDelta);
         this.processJoin(expansion.rightDelta);
         this.processJoin(expansion.both);
         this.processFilter(expansion.filter);
-        this.processMap(expansion.map);
         this.processFilter(expansion.leftFilter);
-        this.processMap(expansion.leftMap);
         this.processFilter(expansion.rightFilter);
-        this.processMap(expansion.rightMap);
         OutputPort limiter = this.processSumOrDiff(expansion.sum);
         if (limiter != null)
             this.markBound(join.outputPort(), limiter);
@@ -1318,29 +1285,13 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPTypeTuple keyType = join.getKeyType().to(DBSPTypeTuple.class);
         PartiallyMonotoneTuple keyPart = PartiallyMonotoneTuple.noMonotoneFields(keyType);
 
-        OutputPort leftDeltaLimiter = null;
-        DBSPSimpleOperator leftDeltaMonotone = null;
-        if (expansion.leftMap != null) {
-            leftDeltaLimiter = this.bound.get(expansion.leftMap.outputPort());
-            leftDeltaMonotone = expansion.leftMap;
-        } else if (expansion.leftFilter != null) {
-            leftDeltaLimiter = this.bound.get(expansion.leftFilter.outputPort());
-            leftDeltaMonotone = expansion.leftFilter;
-        }
-        OutputPort rightDeltaLimiter = null;
-        DBSPSimpleOperator rightDeltaMonotone = null;
-        if (expansion.rightMap != null) {
-            rightDeltaLimiter = this.bound.get(expansion.rightMap.outputPort());
-            rightDeltaMonotone = expansion.rightMap;
-        } else if (expansion.rightFilter != null) {
-            rightDeltaLimiter = this.bound.get(expansion.rightFilter.outputPort());
-            rightDeltaMonotone = expansion.rightFilter;
-        }
+        OutputPort leftDeltaLimiter = this.bound.get(expansion.leftFilter.outputPort());
+        OutputPort rightDeltaLimiter = this.bound.get(expansion.rightFilter.outputPort());
 
         // GC the left input trace using the right delta path's bound.
+        boolean retainedLeftInput = false;
         if (rightDeltaLimiter != null) {
-            final MonotoneExpression rightPathMonotone = this.expansionMonotoneValues
-                .get(rightDeltaMonotone);
+            final MonotoneExpression rightPathMonotone = this.expansionMonotoneValues.get(expansion.rightFilter);
             final IMaybeMonotoneType rightPathProjection =
                 Monotonicity.getBodyType(Objects.requireNonNull(rightPathMonotone));
             if (rightPathProjection.mayBeMonotone()) {
@@ -1351,33 +1302,35 @@ public class InsertLimiters extends CircuitCloneVisitor {
                         1, rightPathTuple, iomap, leftValueType, keyPart);
                 if (retention != null && INSERT_RETAIN_VALUES) {
                     final OutputPort extractLeft = this.createApply(
-                            rightDeltaLimiter, join, retention.extract());
+                            rightDeltaLimiter, retention.extract());
                     DBSPSimpleOperator l = DBSPIntegrateTraceRetainValuesOperator.create(
                             join.getRelNode(), this.mapped(join.left()), retention.projection(),
                             this.createDelay(extractLeft));
                     this.addOperator(l);
+                    retainedLeftInput = true;
                 }
             }
         }
 
         // GC the right input trace using the left delta path's bound.
         if (leftDeltaLimiter != null) {
-            final MonotoneExpression leftPathMonotone = this.expansionMonotoneValues.get(leftDeltaMonotone);
+            final MonotoneExpression leftPathMonotone = this.expansionMonotoneValues.get(expansion.leftFilter);
             final IMaybeMonotoneType leftPathProjection = Monotonicity.getBodyType(Objects.requireNonNull(leftPathMonotone));
             if (leftPathProjection.mayBeMonotone()) {
                 final PartiallyMonotoneTuple leftPathTuple = leftPathProjection.to(PartiallyMonotoneTuple.class);
                 Utilities.enforce(leftPathTuple.size() == iomap.size());
                 JoinInputRetention retention = this.joinInputRetention(
                         2, leftPathTuple, iomap, rightValueType, keyPart);
-                if (retention != null && INSERT_RETAIN_VALUES && !result.onRight) {
+                if (retention != null && INSERT_RETAIN_VALUES) {
                     final OutputPort extractRight = this.createApply(
-                            leftDeltaLimiter, join, retention.extract());
-                    // If the two join inputs are actually the same operator, separate the inputs by inserting a noop
-                    // and insert limiters on the two inputs
-                    // TODO: it may be possible to actually combine the two retain values operators instead
+                            leftDeltaLimiter, retention.extract());
+                    // If the two join inputs are the same operator and the left one already got a
+                    // retain, separate them with a noop so the two retains apply to different traces.
+                    // TODO: it may be possible to actually combine the two retain values operators instead,
+                    // see issue 7130
                     OutputPort left = this.mapped(join.left());
                     OutputPort right = this.mapped(join.right());
-                    if (left == right) {
+                    if (retainedLeftInput && left.equals(right)) {
                         var noop = new DBSPNoopOperator(right.operator.getRelNode(), right);
                         this.addOperator(noop);
                         right = noop.getOutput(0);
@@ -1425,8 +1378,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             int leftIndex = 0;
             int rightIndex = 0;
             for (int i = 0; i < l.size(); i++) {
-                IMaybeMonotoneType li = l.getField(i);
-                IMaybeMonotoneType ri = r.getField(i);
+                IMaybeMonotoneType li = l.getFieldType(i);
+                IMaybeMonotoneType ri = r.getFieldType(i);
                 DBSPExpression le = null;
                 DBSPExpression re = null;
                 if (li.mayBeMonotone()) {
@@ -1502,20 +1455,20 @@ public class InsertLimiters extends CircuitCloneVisitor {
             int leftIndex = 0;
             int rightIndex = 0;
 
-            if (leftMono.getField(0).mayBeMonotone()) {
+            if (leftMono.getFieldType(0).mayBeMonotone()) {
                 leftIndex++;
-                if (rightMono.getField(0).mayBeMonotone()) {
+                if (rightMono.getFieldType(0).mayBeMonotone()) {
                     rightIndex++;
                     fields[0] = max(
                             l.deref().field(0),
                             r.deref().field(0),
-                            leftMono.getField(0),
-                            rightMono.getField(0));
+                            leftMono.getFieldType(0),
+                            rightMono.getFieldType(0));
                 } else {
                     fields[0] = l.deref().field(0);
                 }
             } else {
-                if (rightMono.getField(0).mayBeMonotone()) {
+                if (rightMono.getFieldType(0).mayBeMonotone()) {
                     rightIndex++;
                     fields[0] = r.deref().field(0);
                 } else {
@@ -1523,11 +1476,11 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 }
             }
 
-            if (leftMono.getField(1).mayBeMonotone())
+            if (leftMono.getFieldType(1).mayBeMonotone())
                 fields[1] = l.deref().field(leftIndex);
             else
                 fields[1] = new DBSPTupleExpression();
-            if (rightMono.getField(1).mayBeMonotone())
+            if (rightMono.getFieldType(1).mayBeMonotone())
                 fields[2] = r.deref().field(rightIndex);
             else
                 fields[2] = new DBSPTupleExpression(rightMayBeNull);
@@ -1542,11 +1495,11 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPVariablePath var = new DBSPVariablePath(this.getLimiterDataOutputType(leftLimiter).ref());
             DBSPExpression k = new DBSPTupleExpression();
             int currentField = 0;
-            if (leftMono.getField(0).mayBeMonotone()) {
+            if (leftMono.getFieldType(0).mayBeMonotone()) {
                 k = var.deref().field(currentField++);
             }
             DBSPExpression l = new DBSPTupleExpression();
-            if (leftMono.getField(1).mayBeMonotone())
+            if (leftMono.getFieldType(1).mayBeMonotone())
                 l = var.deref().field(currentField);
             DBSPClosureExpression closure =
                     new DBSPRawTupleExpression(
@@ -1554,7 +1507,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                             l,
                             new DBSPTupleExpression(rightMayBeNull))
                             .closure(var);
-            merger = this.createApply(leftLimiter, null, closure);
+            merger = this.createApply(leftLimiter, closure);
         } else {
             // (k, r) -> (k, Tup0<>, r)
             Utilities.enforce(rightMono != null);
@@ -1562,10 +1515,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPExpression k = new DBSPTupleExpression();
             DBSPExpression r = new DBSPTupleExpression(rightMayBeNull);
             int currentField = 0;
-            if (rightMono.getField(0).mayBeMonotone()) {
+            if (rightMono.getFieldType(0).mayBeMonotone()) {
                 k = var.deref().field(currentField++);
             }
-            if (rightMono.getField(1).mayBeMonotone())
+            if (rightMono.getFieldType(1).mayBeMonotone())
                 r = var.deref().field(currentField);
             DBSPClosureExpression closure =
                     new DBSPRawTupleExpression(
@@ -1573,11 +1526,11 @@ public class InsertLimiters extends CircuitCloneVisitor {
                             new DBSPTupleExpression(),
                             r)
                             .closure(var);
-            merger = this.createApply(rightLimiter, null, closure);
+            merger = this.createApply(rightLimiter, closure);
         }
 
         DBSPClosureExpression clo = monotoneValue.getReducedExpression().to(DBSPClosureExpression.class);
-        OutputPort limiter = this.createApply(merger, null, clo);
+        OutputPort limiter = this.createApply(merger, clo);
         this.markBound(expanded.outputPort(), limiter);
     }
 
@@ -1659,50 +1612,29 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         boolean replaceIndexedInput = indexedOutputType != null;
 
-        List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
-        DBSPSimpleOperator replacement = operator.withInputs(sources, this.force)
-                .to(DBSPSimpleOperator.class);
-        if (!replaceIndexedInput)
-            this.addOperator(replacement);
-
         // The waterline operator will compute the *minimum legal value* of all the
         // inputs that have a lateness attached.  The output signature contains only
         // the columns that have lateness.
         DBSPTupleExpression timestamp = new DBSPTupleExpression(timestamps, false);
         DBSPExpression minValue = timestamp.getType().minimumValue();
         DBSPClosureExpression max = timestampMax(operator.getRelNode(), minValue.getType().to(DBSPTypeTupleBase.class));
+        LatenessFilter lateness = this.latenessFilter(viewOrTable,
+                operator.getOutputZSetType().elementType, Monotonicity.getBodyType(me), minValue.getType());
 
-        DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
-                operator.getRelNode(), minValue.closure(),
-                // second parameter unused for timestamp
-                timestamp.closure(t, DBSPTypeRawTuple.EMPTY.ref().var()),
-                max, replacement.outputPort());
-        OutputPort waterlineOutputPort = waterline.outputPort();
-        if (!replaceIndexedInput)
-            this.addOperator(waterline);
-
-        // Waterline fed through a delay
-        DBSPDelayOperator delay = new DBSPDelayOperator(operator.getRelNode(), minValue, waterline.outputPort());
-        if (!replaceIndexedInput)
-            this.addOperator(delay);
-
-        DBSPControlledKeyFilterOperator filter = this.createControlledKeyFilter(
-                operator.getRelNode(), viewOrTable, replacement.outputPort(),
-                Monotonicity.getBodyType(me), delay.outputPort());
-        DBSPOperator result = filter;
+        DBSPOperator result;
+        OutputPort waterlineOutputPort;
         DBSPInputMapWithWaterlineOperator newSource = null;
-
         if (replaceIndexedInput) {
             List<Integer> keyFields = ExpandIndexedInputs.getKeyFields(multisetInput);
             // Many of these functions take the key as a parameter, although
             // it is a subset of the value fields...
             DBSPVariablePath k = indexedOutputType.keyType.ref().var();
-            Utilities.enforce(filter.function.parameters.length == 2);
-            DBSPClosureExpression ff = filter.function.body.closure(
-                    filter.function.parameters[0], k.asParameter(), filter.function.parameters[1]);
-            Utilities.enforce(filter.error.parameters.length == 4);
-            DBSPClosureExpression error = filter.error.body.closure(
-                    filter.error.parameters[0], k.asParameter(), filter.error.parameters[1], filter.error.parameters[3]);
+            Utilities.enforce(lateness.function().parameters.length == 2);
+            DBSPClosureExpression ff = lateness.function().body.closure(
+                    lateness.function().parameters[0], k.asParameter(), lateness.function().parameters[1]);
+            Utilities.enforce(lateness.error().parameters.length == 4);
+            DBSPClosureExpression error = lateness.error().body.closure(
+                    lateness.error().parameters[0], k.asParameter(), lateness.error().parameters[1], lateness.error().parameters[3]);
             newSource = new DBSPInputMapWithWaterlineOperator(
                     multisetInput.getRelNode(), multisetInput.sourceName, keyFields,
                     indexedOutputType, multisetInput.originalRowType, multisetInput.metadata, multisetInput.tableName,
@@ -1714,12 +1646,30 @@ public class InsertLimiters extends CircuitCloneVisitor {
             result = new DBSPDeindexOperator(multisetInput.getRelNode(), multisetInput.getNode(),
                     newSource.getOutput(0));
         } else {
-            OutputPort errorPort = result.getOutput(1);
-            if (!this.reachableFromError.contains(result.inputs.get(0).operator)) {
-                // This would create a cycle, so skip.
-                this.errorStreams.add(errorPort);
-                // TODO: connect through a delay.
+            List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
+            DBSPSimpleOperator replacement = operator.withInputs(sources, this.force)
+                    .to(DBSPSimpleOperator.class);
+            this.addOperator(replacement);
+            DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
+                    operator.getRelNode(), minValue.closure(),
+                    // second parameter unused for timestamp
+                    timestamp.closure(t, DBSPTypeRawTuple.EMPTY.ref().var()),
+                    max, replacement.outputPort());
+            this.addOperator(waterline);
+            // Waterline fed through a delay
+            DBSPDelayOperator delay = new DBSPDelayOperator(operator.getRelNode(), minValue, waterline.outputPort());
+            this.addOperator(delay);
+            DBSPControlledKeyFilterOperator filter = new DBSPControlledKeyFilterOperator(
+                    operator.getRelNode(), lateness.function(), lateness.error(),
+                    replacement.outputPort(), delay.outputPort());
+            if (!this.reachableFromError.contains(operator)) {
+                // Feeding the error view from a view computed from it would create a cycle.
+                // We could use a delay to break the cycle, but it's not clear this is useful in practice.
+                // This limitation is documented (ERROR_VIEW in docs/sql/system.md).
+                this.errorStreams.add(filter.getOutput(1));
             }
+            waterlineOutputPort = waterline.outputPort();
+            result = filter;
         }
 
         // An apply operator to add a Boolean bit to the waterline.
@@ -1737,8 +1687,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         extend.addAnnotation(Waterline.INSTANCE, DBSPSimpleOperator.class);
         this.addOperator(extend);
         this.markBound(operator.outputPort(), extend.outputPort());
-        if (operator != expansion)
-            this.markBound(expansion.outputPort(), extend.outputPort());
+        this.markBound(expansion.outputPort(), extend.outputPort());
 
         if (INSERT_RETAIN_KEYS && replaceIndexedInput &&
                 multisetInput != null &&
@@ -1784,7 +1733,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                         new DBSPTupleExpression(
                                 Linq.map(keyWaterlineFields, f -> w.deepCopy().deref().field(f)),
                                 false));
-                OutputPort control = this.createApply(extend.outputPort(), null, keyWaterline.closure(w));
+                OutputPort control = this.createApply(extend.outputPort(), keyWaterline.closure(w));
                 DBSPSimpleOperator retain = DBSPIntegrateTraceRetainKeysOperator.create(
                         operator.getRelNode(), newSource.getOutput(0),
                         // For inputs "accumulate" is 'false'.
@@ -1797,24 +1746,23 @@ public class InsertLimiters extends CircuitCloneVisitor {
         return result;
     }
 
-    DBSPControlledKeyFilterOperator createControlledKeyFilter(
-            CalciteRelNode node, ProgramIdentifier tableOrViewName,
-            OutputPort data, IMaybeMonotoneType monotoneType,
-            OutputPort control) {
-        DBSPType controlType = control.outputType();
+    /** The two closures of a controlled key filter that drops rows below the waterline:
+     * the filter over (waterline, row), and the error reported for a dropped row. */
+    record LatenessFilter(DBSPClosureExpression function, DBSPClosureExpression error) {}
 
+    LatenessFilter latenessFilter(ProgramIdentifier tableOrViewName, DBSPType rowType,
+                                  IMaybeMonotoneType monotoneType, DBSPType controlType) {
         DBSPType leftSliceType = Objects.requireNonNull(monotoneType.getProjectedType());
         Utilities.enforce(leftSliceType.sameType(controlType),
                 () -> "Projection type does not match control type " + leftSliceType + "/" + controlType);
 
-        DBSPType rowType = data.getOutputRowType();
         DBSPVariablePath dataVar = rowType.ref().var();
         DBSPExpression projection = monotoneType.projectExpression(dataVar.deref());
 
         DBSPVariablePath controlArg = controlType.ref().var();
         DBSPExpression compare = DBSPControlledKeyFilterOperator.generateTupleCompare(
                 projection, controlArg.deref(), DBSPOpcode.CONTROLLED_FILTER_GTE);
-        DBSPClosureExpression closure = compare.closure(controlArg, dataVar);
+        DBSPClosureExpression function = compare.closure(controlArg, dataVar);
 
         // The last parameter is not used
         DBSPVariablePath dataVar0 = dataVar.getType().var();
@@ -1828,8 +1776,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                         new DBSPStrLiteral("{:?}"),
                         dataVar0).applyMethod("into", DBSPTypeString.varchar(false)))
                 .closure(controlArg, dataVar0, valArg, weightArg);
-        return new DBSPControlledKeyFilterOperator(
-                node, closure, error, data, control);
+        return new LatenessFilter(function, error);
     }
 
     @Override
@@ -1850,7 +1797,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         ReplacementDeltaExpansion expanded = this.getReplacement(operator);
         if (expanded != null) {
             OutputPort bound = this.processSumOrDiff(expanded.replacement);
-            if (bound != null && expanded.replacement != operator)
+            if (bound != null)
                 this.markBound(operator.outputPort(), bound);
         } else {
             this.nonMonotone(operator);
@@ -1864,7 +1811,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         ReplacementDeltaExpansion expanded = this.getReplacement(operator);
         if (expanded != null) {
             OutputPort bound = this.processSumOrDiff(expanded.replacement);
-            if (bound != null && expanded.replacement != operator)
+            if (bound != null)
                 this.markBound(operator.outputPort(), bound);
         } else {
             this.nonMonotone(operator);
@@ -1878,7 +1825,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         ReplacementDeltaExpansion expanded = this.getReplacement(operator);
         if (expanded != null) {
             OutputPort bound = this.processSumOrDiff(expanded.replacement);
-            if (bound != null && expanded.replacement != operator)
+            if (bound != null)
                 this.markBound(operator.outputPort(), bound);
         } else {
             this.nonMonotone(operator);
@@ -1902,6 +1849,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                            IMaybeMonotoneType destinationProjection) {
         if (destinationProjection.is(ScalarMonotoneType.class)) {
             Utilities.enforce(sourceProjection.is(ScalarMonotoneType.class));
+            Utilities.enforce(sourceProjection.mayBeMonotone() || !destinationProjection.mayBeMonotone());
             return source;
         } else if (destinationProjection.is(PartiallyMonotoneTuple.class)) {
             Utilities.enforce(sourceProjection.is(PartiallyMonotoneTuple.class));
@@ -1911,10 +1859,14 @@ public class InsertLimiters extends CircuitCloneVisitor {
             List<DBSPExpression> fields = new ArrayList<>();
             int currentIndex = 0;
             for (int i = 0; i < dest.size(); i++) {
-                if (dest.getField(i).mayBeMonotone()) {
-                    fields.add(this.project(source.field(currentIndex), src.getField(i), dest.getField(i)));
+                if (dest.getFieldType(i).mayBeMonotone()) {
+                    final int field = i;
+                    Utilities.enforce(src.getFieldType(i).mayBeMonotone(),
+                            () -> "Destination field " + field + " is monotone but source field is not: " +
+                                    sourceProjection + " -> " + destinationProjection);
+                    fields.add(this.project(source.field(currentIndex), src.getFieldType(i), dest.getFieldType(i)));
                 }
-                if (src.getField(i).mayBeMonotone()) {
+                if (src.getFieldType(i).mayBeMonotone()) {
                     currentIndex++;
                 }
             }
@@ -1956,7 +1908,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
     OutputPort project(OutputPort limit, IMaybeMonotoneType source, IMaybeMonotoneType destination) {
         DBSPVariablePath var = this.getLimiterDataOutputType(limit).ref().var();
         DBSPExpression proj = this.project(var.deref(), source, destination);
-        return this.createApply(limit, null, proj.closure(var));
+        return this.createApply(limit, proj.closure(var));
     }
 
     /** Given a list of expressions, combine them by applying this.min() to them pairwise */
@@ -2025,12 +1977,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPViewOperator operator) {
         if (operator.viewName.equals(DBSPCompiler.ERROR_VIEW_NAME)) {
-            // Unhook from the error table and hook input to all the
-            // error streams generated so far.
-            // Since in a prior pass we have reordered the operators
-            // such that this view comes after all other operators,
-            // we know that all possible error streams at this point have
-            // been already computed.
+            // Replace the error table input with the sum of the error streams collected so far.
+            // MonotoneAnalyzer sorted operators downstream of the error table last, so only views
+            // computed from this one come later; a stream added after this point is never summed.
             OutputPort collected;
             if (this.errorStreams.isEmpty()) {
                 DBSPSimpleOperator c = new DBSPConstantOperator(operator.getRelNode(),
@@ -2068,6 +2017,15 @@ public class InsertLimiters extends CircuitCloneVisitor {
         super.postorder(operator);
     }
 
+    @Contract("_, _ -> fail")
+    void failNoWaterline(DBSPSinkOperator operator, int columnIndex) {
+        var col = operator.metadata.columns.get(columnIndex);
+        throw new CompilationError("Could not infer a waterline for column " +
+                operator.viewName.singleQuote() + "." + col.columnName.singleQuote() +
+                " which has an 'emit_final' annotation",
+                col.getPositionRange());
+    }
+
     @Override
     public void postorder(DBSPSinkOperator operator) {
         int monotoneFieldIndex = operator.metadata.emitFinalColumn;
@@ -2078,23 +2036,18 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 MonotoneExpression monotone = this.expansionMonotoneValues.get(operatorFromExpansion);
                 if (monotone != null && monotone.mayBeMonotone()) {
                     OutputPort source = operatorFromExpansion.inputs.get(0);
-                    OutputPort boundSource = Utilities.getExists(this.bound, source);
+                    OutputPort boundSource = this.boundOf(operatorFromExpansion, source);
 
                     MonotoneClosureType monoClosure = monotone.getMonotoneType().to(MonotoneClosureType.class);
                     IMaybeMonotoneType bodyType = monoClosure.getBodyType();
                     Utilities.enforce(bodyType.mayBeMonotone());
                     PartiallyMonotoneTuple tuple = bodyType.to(PartiallyMonotoneTuple.class);
-                    if (!tuple.getField(monotoneFieldIndex).mayBeMonotone()) {
-                        var col = operator.metadata.columns.get(monotoneFieldIndex);
-                        throw new CompilationError("Compiler could not infer a waterline for column " +
-                                operator.viewName.singleQuote() + "." +
-                                col.columnName.singleQuote(),
-                                col.getPositionRange());
-                    }
+                    if (!tuple.getFieldType(monotoneFieldIndex).mayBeMonotone())
+                        this.failNoWaterline(operator, monotoneFieldIndex);
                     int controlFieldIndex = 0;
                     Utilities.enforce(monotoneFieldIndex < tuple.size());
                     for (int i = 0; i < monotoneFieldIndex; i++) {
-                        IMaybeMonotoneType field = tuple.getField(i);
+                        IMaybeMonotoneType field = tuple.getFieldType(i);
                         if (field.mayBeMonotone())
                             controlFieldIndex++;
                     }
@@ -2161,12 +2114,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     return;
                 }
             }
-            var col = operator.metadata.columns.get(monotoneFieldIndex);
-            throw new CompilationError("Could not infer a waterline for column " +
-                    operator.viewName.singleQuote() + "." +
-                    operator.metadata.columns.get(monotoneFieldIndex).columnName.singleQuote() +
-                    " which has an 'emit_final' annotation",
-                    col.getPositionRange());
+            this.failNoWaterline(operator, monotoneFieldIndex);
         }
         super.postorder(operator);
     }
