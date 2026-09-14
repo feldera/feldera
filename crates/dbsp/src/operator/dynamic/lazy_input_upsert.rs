@@ -50,7 +50,7 @@ use crate::{
         },
     },
     trace::{
-        BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Spine, Trace,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Spine, Trace,
         WithSnapshot, merge_batches_by_reference,
     },
     utils::Tup2,
@@ -577,6 +577,21 @@ where
         // the updates as batches for the accumulator and as a snapshot to walk,
         // and the integral as a snapshot to probe.
         let stamped = updates.as_ref().map(|updates| updates.get_batches());
+
+        // Whether every update in the transaction is an insertion.
+        //
+        // A key written once, positively, needs nothing from its update: no
+        // earlier value of its own to retract, and no delete to cancel the
+        // record `project(U)` already contributes.  Establishing that from the
+        // update itself means reading the value column, which on a backfill is
+        // nearly the whole transaction.  A batch that does not track the count
+        // answers `None`, which is not the same as counting none, so anything
+        // but `Some(0)` gives the shortcut up.
+        let all_insertions = stamped.as_ref().is_some_and(|batches| {
+            batches
+                .iter()
+                .all(|batch| batch.negative_weight_count() == Some(0))
+        });
         let updates = updates.as_ref().map(|updates| updates.ro_snapshot());
         let integral = updates.is_some().then(|| integral.ro_snapshot());
 
@@ -653,61 +668,72 @@ where
                     );
                 }
 
-                // Only the largest stamp survives.  The cursor walks values in
-                // value order rather than stamp order, so the running maximum is
-                // retracted whenever a later stamp displaces it.
-                let mut max_stamp: Option<u32> = None;
-                let mut max_weight: ZWeight = 0;
+                // One update, and it inserts.  The walk below would find a
+                // single surviving value with a positive weight, supersede
+                // nothing and cancel nothing, leaving the key's adjustments
+                // exactly what the integral contributed above.  Asking the row
+                // group how many updates a key has costs no I/O, where walking
+                // them reads every value, which on a backfill is the bulk of
+                // the transaction.
+                if all_insertions && updates_cursor.value_count_upper_bound() == 1 {
+                    debug_assert!(updates_cursor.val_valid());
+                } else {
+                    // Only the largest stamp survives.  The cursor walks values
+                    // in value order rather than stamp order, so the running
+                    // maximum is retracted whenever a later stamp displaces it.
+                    let mut max_stamp: Option<u32> = None;
+                    let mut max_weight: ZWeight = 0;
 
-                while updates_cursor.val_valid() {
-                    // The weight is read first: it needs the cursor mutably, and
-                    // the value borrows it for the rest of the iteration.
-                    let weight = **updates_cursor.weight();
-                    let (val, stamp) = updates_cursor.val().split();
-                    let stamp = *unsafe { stamp.downcast::<u32>() };
+                    while updates_cursor.val_valid() {
+                        // The weight is read first: it needs the cursor mutably, and
+                        // the value borrows it for the rest of the iteration.
+                        let weight = **updates_cursor.weight();
+                        let (val, stamp) = updates_cursor.val().split();
+                        let stamp = *unsafe { stamp.downcast::<u32>() };
 
-                    // Two hosts ingesting one key in a transaction give it two
-                    // updates at the same stamp, since each host stamps its own
-                    // steps.  The cursor walks values in value order, so the one
-                    // whose value sorts first wins: arbitrary, but the same on
-                    // every replay of the same input.
-                    if max_stamp.is_some_and(|max| stamp == max) {
-                        self.count_conflict();
-                    }
+                        // Two hosts ingesting one key in a transaction give it two
+                        // updates at the same stamp, since each host stamps its own
+                        // steps.  The cursor walks values in value order, so the one
+                        // whose value sorts first wins: arbitrary, but the same on
+                        // every replay of the same input.
+                        if max_stamp.is_some_and(|max| stamp == max) {
+                            self.count_conflict();
+                        }
 
-                    if max_stamp.is_none_or(|max| stamp > max) {
-                        if max_stamp.is_some() {
-                            // The displaced value is about to be overwritten,
-                            // so it moves out rather than being copied.
+                        if max_stamp.is_none_or(|max| stamp > max) {
+                            if max_stamp.is_some() {
+                                // The displaced value is about to be overwritten,
+                                // so it moves out rather than being copied.
+                                key_adjustments.push_with(&mut |item| {
+                                    let (v, w) = item.split_mut();
+                                    max_val.move_to(v);
+                                    **w = -max_weight;
+                                });
+                            }
+                            max_stamp = Some(stamp);
+                            val.clone_to(&mut max_val);
+                            max_weight = weight;
+                        } else {
                             key_adjustments.push_with(&mut |item| {
                                 let (v, w) = item.split_mut();
-                                max_val.move_to(v);
-                                **w = -max_weight;
+                                val.clone_to(v);
+                                **w = -weight;
                             });
                         }
-                        max_stamp = Some(stamp);
-                        val.clone_to(&mut max_val);
-                        max_weight = weight;
-                    } else {
-                        key_adjustments.push_with(&mut |item| {
-                            let (v, w) = item.split_mut();
-                            val.clone_to(v);
-                            **w = -weight;
-                        });
+
+                        updates_cursor.step_val();
                     }
 
-                    updates_cursor.step_val();
-                }
-
-                // A surviving delete cancels the record `project(U)` contributes
-                // for it, which is what leaves the key with nothing.
-                if max_weight < 0 {
-                    // The key is done, so this value moves out too.
-                    key_adjustments.push_with(&mut |item| {
-                        let (v, w) = item.split_mut();
-                        max_val.move_to(v);
-                        **w = -max_weight;
-                    });
+                    // A surviving delete cancels the record `project(U)` contributes
+                    // for it, which is what leaves the key with nothing.
+                    if max_weight < 0 {
+                        // The key is done, so this value moves out too.
+                        key_adjustments.push_with(&mut |item| {
+                            let (v, w) = item.split_mut();
+                            max_val.move_to(v);
+                            **w = -max_weight;
+                        });
+                    }
                 }
 
                 key_adjustments.consolidate();
