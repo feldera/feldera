@@ -73,6 +73,15 @@ where
     V: DataTrait + ?Sized,
     T: Timestamp,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // A ghost key is not in the underlying cursor but presents one value.
+        if self.on_ghost_key {
+            1
+        } else {
+            self.cursor.value_count_upper_bound()
+        }
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<DynZWeight> {
         self.cursor.weight_factory()
     }
