@@ -989,3 +989,42 @@ where
     let array = array?;
     Some(transform_(array, f))
 }
+
+#[doc(hidden)]
+pub fn array_filter__<T, F>(array: Array<T>, f: F) -> Array<T>
+where
+    T: Clone,
+    F: Fn(&T) -> bool,
+{
+    Arc::new(array.iter().filter(|e| f(e)).cloned().collect())
+}
+
+#[doc(hidden)]
+pub fn array_filterN_<T, F>(array: Option<Array<T>>, f: F) -> Option<Array<T>>
+where
+    T: Clone,
+    F: Fn(&T) -> bool,
+{
+    let array = array?;
+    Some(array_filter__(array, f))
+}
+
+/// A NULL predicate result drops the element, like `false`
+#[doc(hidden)]
+pub fn array_filter_N<T, F>(array: Array<T>, f: F) -> Array<T>
+where
+    T: Clone,
+    F: Fn(&T) -> Option<bool>,
+{
+    array_filter__(array, |e| f(e).unwrap_or(false))
+}
+
+#[doc(hidden)]
+pub fn array_filterNN<T, F>(array: Option<Array<T>>, f: F) -> Option<Array<T>>
+where
+    T: Clone,
+    F: Fn(&T) -> Option<bool>,
+{
+    let array = array?;
+    Some(array_filter_N(array, f))
+}
