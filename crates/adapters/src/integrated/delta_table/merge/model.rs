@@ -11,6 +11,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
 use arrow::array::{Int64Array, StringArray};
 use arrow::compute::kernels::cast::cast;
@@ -195,9 +196,14 @@ async fn apply_attempt(
     let object_store = table.object_store();
 
     writer
-        .flush(table, object_store, &mut *cursor, retrying, &mut |e| {
-            panic!("unexpected uniqueness violation: {e}")
-        })
+        .flush(
+            table,
+            object_store,
+            &mut *cursor,
+            retrying,
+            &mut |e| panic!("unexpected uniqueness violation: {e}"),
+            &AtomicU64::new(0),
+        )
         .await
         .unwrap();
 }
