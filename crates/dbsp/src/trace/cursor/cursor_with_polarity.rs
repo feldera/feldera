@@ -42,6 +42,10 @@ where
     V: DataTrait + ?Sized,
     C: ZCursor<K, V, T>,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        self.cursor.value_count_upper_bound()
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<DynZWeight> {
         self.cursor.weight_factory()
     }

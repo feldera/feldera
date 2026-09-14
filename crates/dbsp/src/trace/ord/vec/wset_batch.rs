@@ -434,6 +434,11 @@ where
 impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Cursor<K, DynUnit, (), R>
     for VecWSetCursor<'_, K, R>
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // A w-set has no values of its own: a key is one tuple.
+        self.key_valid() as usize
+    }
+
     // fn key_factory(&self) -> &'static Factory<K> {
     //     self.cursor.storage.vtables.key
     // }

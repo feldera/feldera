@@ -1332,6 +1332,15 @@ where
         self.pos
     }
 
+    /// The range of rows in this layer that the cursor may visit.
+    ///
+    /// # Returns
+    ///
+    /// The first row and the row past the last, as a half-open range.
+    pub fn bounds(&self) -> (usize, usize) {
+        self.bounds
+    }
+
     pub fn seek_with<P>(&mut self, predicate: P)
     where
         P: Fn(&K) -> bool,

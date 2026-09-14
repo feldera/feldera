@@ -307,6 +307,11 @@ where
     TS: PrimInt + DBData,
     C: Cursor<DynDataTyped<TS>, V, (), R>,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // Ranges select keys, and leave each key's values alone.
+        self.cursor.value_count_upper_bound()
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.cursor.weight_factory()
     }

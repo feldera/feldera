@@ -26,7 +26,7 @@ use crate::{
         metadata::{
             ALLOCATED_MEMORY_BYTES, BatchSizeStats, CONFLICTING_UPDATES_COUNT, INPUT_BATCHES_STATS,
             MEMORY_ALLOCATIONS_COUNT, MetaItem, OUTPUT_ADJUSTMENT_STATS, OperatorMeta,
-            SHARED_MEMORY_BYTES, STATE_RECORDS_COUNT, USED_MEMORY_BYTES,
+            SHARED_MEMORY_BYTES, STATE_RECORDS_COUNT, UNREAD_UPDATES_COUNT, USED_MEMORY_BYTES,
         },
         operator_traits::{Operator, OperatorName, UnaryOperator},
         splitter_output_chunk_size, splitter_output_first_chunk_size,
@@ -49,7 +49,7 @@ use crate::{
         },
     },
     trace::{
-        BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Spine, Trace,
+        Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Spine, Trace,
         TraceRole, WithSnapshot, merge_batches_by_reference,
     },
     utils::Tup2,
@@ -446,6 +446,13 @@ where
     /// two updates at the same stamp.  The resolution still has to pick one.
     conflicting_updates: Cell<u64>,
 
+    /// Keys resolved without reading the update they collected.
+    ///
+    /// The shortcut that avoids the read is invisible from the outside, so
+    /// without a count there is no way to tell a commit that took it from one
+    /// that silently stopped taking it.
+    unread_updates: Cell<u64>,
+
     name: OperatorName,
     phantom: PhantomData<fn(&K, &V)>,
 }
@@ -466,6 +473,7 @@ where
             resolved: RefCell::new(None),
             output_adjustment_stats: RefCell::new(BatchSizeStats::new()),
             conflicting_updates: Cell::new(0),
+            unread_updates: Cell::new(0),
             name: OperatorName::new("LazyUpsert"),
             phantom: PhantomData,
         }
@@ -490,6 +498,7 @@ where
         meta.extend(metadata! {
             OUTPUT_ADJUSTMENT_STATS => self.output_adjustment_stats.borrow().metadata(),
             CONFLICTING_UPDATES_COUNT => MetaItem::Count(self.conflicting_updates.get() as usize),
+            UNREAD_UPDATES_COUNT => MetaItem::Count(self.unread_updates.get() as usize),
         });
 
         // The adjustments exist only while a transaction commits, and is out of
@@ -595,6 +604,22 @@ where
             panic!("LazyUpsert::eval(): the updates must arrive owned");
         };
 
+        // Whether every update in the transaction is an insertion.
+        //
+        // A key written once, positively, needs nothing from its update: no
+        // earlier value of its own to retract, and no delete to cancel the
+        // record `project(U)` already contributes.  Establishing that from the
+        // update itself means reading the value column, which on a backfill is
+        // nearly the whole transaction.  A batch that does not track the count
+        // answers `None`, which is not the same as counting none, so anything
+        // but `Some(0)` gives the shortcut up.
+        let all_insertions = updates.as_ref().is_some_and(|updates| {
+            updates
+                .get_batches()
+                .iter()
+                .all(|batch| batch.negative_weight_count() == Some(0))
+        });
+
         // The stream outlives this call, so what it reads is taken now: the
         // updates as a snapshot to walk and the integral as a snapshot to
         // probe.  The updates themselves go along to become the output.
@@ -669,61 +694,73 @@ where
                     );
                 }
 
-                // Only the largest stamp survives.  The cursor walks values in
-                // value order rather than stamp order, so the running maximum is
-                // retracted whenever a later stamp displaces it.
-                let mut max_stamp: Option<u32> = None;
-                let mut max_weight: ZWeight = 0;
+                // One update, and it inserts.  The walk below would find a
+                // single surviving value with a positive weight, supersede
+                // nothing and cancel nothing, leaving the key's adjustments
+                // exactly what the integral contributed above.  Asking the row
+                // group how many updates a key has costs no I/O, where walking
+                // them reads every value, which on a backfill is the bulk of
+                // the transaction.
+                if all_insertions && updates_cursor.value_count_upper_bound() == 1 {
+                    debug_assert!(updates_cursor.val_valid());
+                    self.unread_updates.set(self.unread_updates.get() + 1);
+                } else {
+                    // Only the largest stamp survives.  The cursor walks values
+                    // in value order rather than stamp order, so the running
+                    // maximum is retracted whenever a later stamp displaces it.
+                    let mut max_stamp: Option<u32> = None;
+                    let mut max_weight: ZWeight = 0;
 
-                while updates_cursor.val_valid() {
-                    // The weight is read first: it needs the cursor mutably, and
-                    // the value borrows it for the rest of the iteration.
-                    let weight = **updates_cursor.weight();
-                    let (val, stamp) = updates_cursor.val().split();
-                    let stamp = *unsafe { stamp.downcast::<u32>() };
+                    while updates_cursor.val_valid() {
+                        // The weight is read first: it needs the cursor mutably, and
+                        // the value borrows it for the rest of the iteration.
+                        let weight = **updates_cursor.weight();
+                        let (val, stamp) = updates_cursor.val().split();
+                        let stamp = *unsafe { stamp.downcast::<u32>() };
 
-                    // Two hosts ingesting one key in a transaction give it two
-                    // updates at the same stamp, since each host stamps its own
-                    // steps.  The cursor walks values in value order, so the one
-                    // whose value sorts first wins: arbitrary, but the same on
-                    // every replay of the same input.
-                    if max_stamp.is_some_and(|max| stamp == max) {
-                        self.count_conflict();
-                    }
+                        // Two hosts ingesting one key in a transaction give it two
+                        // updates at the same stamp, since each host stamps its own
+                        // steps.  The cursor walks values in value order, so the one
+                        // whose value sorts first wins: arbitrary, but the same on
+                        // every replay of the same input.
+                        if max_stamp.is_some_and(|max| stamp == max) {
+                            self.count_conflict();
+                        }
 
-                    if max_stamp.is_none_or(|max| stamp > max) {
-                        if max_stamp.is_some() {
-                            // The displaced value is about to be overwritten,
-                            // so it moves out rather than being copied.
+                        if max_stamp.is_none_or(|max| stamp > max) {
+                            if max_stamp.is_some() {
+                                // The displaced value is about to be overwritten,
+                                // so it moves out rather than being copied.
+                                key_adjustments.push_with(&mut |item| {
+                                    let (v, w) = item.split_mut();
+                                    max_val.move_to(v);
+                                    **w = -max_weight;
+                                });
+                            }
+                            max_stamp = Some(stamp);
+                            val.clone_to(&mut max_val);
+                            max_weight = weight;
+                        } else {
                             key_adjustments.push_with(&mut |item| {
                                 let (v, w) = item.split_mut();
-                                max_val.move_to(v);
-                                **w = -max_weight;
+                                val.clone_to(v);
+                                **w = -weight;
                             });
                         }
-                        max_stamp = Some(stamp);
-                        val.clone_to(&mut max_val);
-                        max_weight = weight;
-                    } else {
-                        key_adjustments.push_with(&mut |item| {
-                            let (v, w) = item.split_mut();
-                            val.clone_to(v);
-                            **w = -weight;
-                        });
+
+                        updates_cursor.step_val();
                     }
 
-                    updates_cursor.step_val();
-                }
-
-                // A surviving delete cancels the record `project(U)` contributes
-                // for it, which is what leaves the key with nothing.
-                if max_weight < 0 {
-                    // The key is done, so this value moves out too.
-                    key_adjustments.push_with(&mut |item| {
-                        let (v, w) = item.split_mut();
-                        max_val.move_to(v);
-                        **w = -max_weight;
-                    });
+                    // A surviving delete cancels the record `project(U)` contributes
+                    // for it, which is what leaves the key with nothing.
+                    if max_weight < 0 {
+                        // The key is done, so this value moves out too.
+                        key_adjustments.push_with(&mut |item| {
+                            let (v, w) = item.split_mut();
+                            max_val.move_to(v);
+                            **w = -max_weight;
+                        });
+                    }
                 }
 
                 key_adjustments.consolidate();

@@ -34,7 +34,7 @@ use crate::{
         FallbackIndexedWSetFactories, FileIndexedWSetFactories, FileWSetFactories, GroupFilter,
         ListMerger, Spine, Trace, TraceRole, VecIndexedWSet, VecIndexedWSetFactories, VecKeyBatch,
         VecKeyBatchFactories, VecValBatch, VecValBatchFactories, VecWSet, VecWSetFactories,
-        cursor::{Cursor, CursorPair},
+        cursor::{Cursor, CursorList, CursorPair},
         ord::{
             FileIndexedWSet, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
             FileValBatchFactories, FileWSet, OrdKeyBatch, OrdKeyBatchFactories, OrdValBatch,
@@ -3743,4 +3743,529 @@ mod non_monotone_retention {
                 expected(&merged_of(&entries), keep_last_n(&spine, threshold, n)));
         }
     }
+}
+
+/// Builds an indexed w-set whose keys carry a known number of values each:
+/// key `i` holds values `0..i`, so key 1 holds one and key 4 holds four.
+///
+/// # Arguments
+///
+/// * `keys` - how many keys to build.
+///
+/// # Returns
+///
+/// The tuples of the batch, ready for a builder.
+fn indexed_wset_tuples_with_fanout(
+    keys: i32,
+) -> Box<DynWeightedPairs<DynPair<DynI32, DynI32>, DynZWeight>> {
+    let mut tuples = Vec::new();
+    for key in 1..=keys {
+        for val in 0..key {
+            tuples.push(Tup2(Tup2(key, val), 1));
+        }
+    }
+    let mut result = indexed_zset_tuples(tuples);
+    result.consolidate();
+    result
+}
+
+/// Walks a cursor and collects `(key, bound, values actually stepped through)`.
+///
+/// # Arguments
+///
+/// * `cursor` - the cursor to walk.
+///
+/// # Returns
+///
+/// Per key, the bound it reported and the values the walk actually found.
+fn fanout_reported_and_walked<C>(cursor: &mut C) -> Vec<(i32, usize, usize)>
+where
+    C: Cursor<DynI32, DynI32, (), DynZWeight>,
+{
+    let mut seen = Vec::new();
+    while cursor.key_valid() {
+        let key = *unsafe { cursor.key().downcast::<i32>() };
+        let bound = cursor.value_count_upper_bound();
+
+        let mut walked = 0;
+        while cursor.val_valid() {
+            walked += 1;
+            cursor.step_val();
+        }
+        seen.push((key, bound, walked));
+        cursor.step_key();
+    }
+    seen
+}
+
+/// A cursor over one batch reports exactly what stepping through the key's
+/// values would find.
+#[test]
+fn value_count_upper_bound_is_exact_for_one_batch() {
+    run_in_circuit_with_storage(|| {
+        let vec_factories =
+            <VecIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let vec = VecIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+            &vec_factories,
+            (),
+            &mut indexed_wset_tuples_with_fanout(4),
+        );
+        assert_eq!(
+            fanout_reported_and_walked(&mut vec.cursor()),
+            vec![(1, 1, 1), (2, 2, 2), (3, 3, 3), (4, 4, 4)]
+        );
+
+        let file_factories =
+            <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let file = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+            &file_factories,
+            (),
+            &mut indexed_wset_tuples_with_fanout(4),
+        );
+        assert_eq!(
+            fanout_reported_and_walked(&mut file.cursor()),
+            vec![(1, 1, 1), (2, 2, 2), (3, 3, 3), (4, 4, 4)]
+        );
+    });
+}
+
+/// The point of the method: asking a file-backed batch how many values a key
+/// has must not read the value column.
+///
+/// The key's own block is already in memory once the cursor is on the key, and
+/// the row group recorded beside it carries the answer.
+#[test]
+fn value_count_upper_bound_reads_nothing() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let batch = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+            &factories,
+            (),
+            &mut indexed_wset_tuples_with_fanout(4),
+        );
+
+        let cursor = batch.cursor();
+        assert!(cursor.key_valid());
+
+        // Settle whatever the first key's position needed, then measure only
+        // the bound.
+        let _ = cursor.value_count_upper_bound();
+        let before = total_cache_accesses(batch.cache_stats());
+        for _ in 0..100 {
+            assert_eq!(cursor.value_count_upper_bound(), 1);
+        }
+        assert_eq!(total_cache_accesses(batch.cache_stats()), before);
+    });
+}
+
+/// A cursor that has run off the end of the keys reports nothing.
+#[test]
+fn value_count_upper_bound_is_zero_off_the_end() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let batch = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+            &factories,
+            (),
+            &mut indexed_wset_tuples_with_fanout(2),
+        );
+
+        let mut cursor = batch.cursor();
+        while cursor.key_valid() {
+            cursor.step_key();
+        }
+        assert_eq!(cursor.value_count_upper_bound(), 0);
+    });
+}
+
+/// A spine merges batches through a cursor list, and that is where undercounting
+/// would do real harm: a caller that trusts a bound of one, on a key two batches
+/// both hold a value for, concludes the key is unambiguous when it is not.
+#[test]
+fn value_count_upper_bound_sums_a_spine_s_batches() {
+    run_in_circuit_with_storage(|| {
+        let factories = <OrdIndexedZSetFactories<DynI32, DynI32>>::new::<i32, i32, ZWeight>();
+        let mut trace: Spine<OrdIndexedZSet<DynI32, DynI32>> = Spine::new(
+            &factories,
+            Arc::new(String::from("Test")),
+            TraceRole::Integral,
+        );
+
+        // Key 1 gets value 7 from one batch and value 7 again from another, so
+        // it really holds one value; key 2 gets two distinct values from one
+        // batch, where the count is exact.
+        for tuples in [
+            vec![
+                Tup2(Tup2(1, 7), 1),
+                Tup2(Tup2(2, 5), 1),
+                Tup2(Tup2(2, 6), 1),
+            ],
+            vec![Tup2(Tup2(1, 7), 1)],
+        ] {
+            let batch = OrdIndexedZSet::<DynI32, DynI32>::dyn_from_tuples(
+                &factories,
+                (),
+                &mut indexed_zset_tuples(tuples),
+            );
+            TOKIO.block_on(trace.insert(batch));
+        }
+
+        let walked = fanout_reported_and_walked(&mut trace.cursor());
+        assert_eq!(walked.len(), 2);
+
+        let (key, bound, values) = walked[0];
+        assert_eq!((key, values), (1, 1), "key 1 really holds one value");
+        assert_eq!(
+            bound, 2,
+            "and both batches hold it, so the bound counts two"
+        );
+
+        let (key, bound, values) = walked[1];
+        assert_eq!((key, bound, values), (2, 2, 2), "one batch, so exact");
+
+        for (key, bound, values) in walked {
+            assert!(bound >= values, "key {key} was undercounted");
+        }
+    });
+}
+
+/// Across several batches the figure is a bound, not a count: two batches
+/// holding the same value for a key contribute it twice, because finding out
+/// otherwise would mean reading the values.
+#[test]
+fn value_count_upper_bound_overestimates_across_batches() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <VecIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let build = |tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>>| {
+            let mut erased = indexed_zset_tuples(tuples);
+            erased.consolidate();
+            VecIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+                &factories,
+                (),
+                &mut erased,
+            )
+        };
+
+        // Both batches hold key 1 at value 7, so the key really has one value.
+        let left = build(vec![Tup2(Tup2(1, 7), 1)]);
+        let right = build(vec![Tup2(Tup2(1, 7), 1)]);
+        let mut first = left.cursor();
+        let mut second = right.cursor();
+        assert_eq!(first.value_count_upper_bound(), 1);
+        assert_eq!(second.value_count_upper_bound(), 1);
+
+        let mut pair = CursorPair::new(&mut first, &mut second);
+        let walked = fanout_reported_and_walked(&mut pair);
+        assert_eq!(walked.len(), 1);
+        let (key, bound, values) = walked[0];
+        assert_eq!((key, values), (1, 1), "the key really holds one value");
+        assert_eq!(bound, 2, "and the bound counts it once per batch");
+        assert!(bound >= values, "a bound that undercounts is unusable");
+    });
+}
+
+#[test]
+fn probe_step_key_value_reads() {
+    run_in_circuit_with_storage(|| {
+        // Same keys in both, but one has eight times the value rows, so any
+        // difference in a key-only sweep is the value column being read.
+        for fanout in [1, 8] {
+            let factories =
+                <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+            let tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>> = (0..50_000)
+                .flat_map(|k| (0..fanout).map(move |v| Tup2(Tup2(k, v), 1)))
+                .collect();
+            let batch = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+                &factories,
+                (),
+                &mut indexed_zset_tuples(tuples),
+            );
+
+            let base = total_cache_accesses(batch.cache_stats());
+            let mut cursor = batch.cursor();
+            let mut keys = 0u64;
+            while cursor.key_valid() {
+                keys += 1;
+                cursor.step_key();
+            }
+            let keys_only = total_cache_accesses(batch.cache_stats()) - base;
+
+            let base = total_cache_accesses(batch.cache_stats());
+            let mut cursor = batch.cursor();
+            let mut vals = 0u64;
+            while cursor.key_valid() {
+                while cursor.val_valid() {
+                    let _ = unsafe { cursor.val().downcast::<i32>() };
+                    vals += 1;
+                    cursor.step_val();
+                }
+                cursor.step_key();
+            }
+            let with_values = total_cache_accesses(batch.cache_stats()) - base;
+
+            println!(
+                "fanout={fanout}: keys={keys} vals={vals}  step_key_only={keys_only}  \
+                 step_key_and_read={with_values}"
+            );
+        }
+    });
+}
+
+/// Walking a file-backed batch's keys must not read its values.
+///
+/// The value cursor is positioned only when something asks for a value, so the
+/// cost of a key-only sweep is set by the key column alone.  Two batches with
+/// the same keys and eight times the values settle it: if the values were being
+/// read, the second would cost about eight times the first.
+#[test]
+fn stepping_keys_does_not_read_values() {
+    run_in_circuit_with_storage(|| {
+        let sweep = |fanout: i32| {
+            let factories =
+                <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+            let tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>> = (0..50_000)
+                .flat_map(|key| (0..fanout).map(move |val| Tup2(Tup2(key, val), 1)))
+                .collect();
+            let batch = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+                &factories,
+                (),
+                &mut indexed_zset_tuples(tuples),
+            );
+
+            let base = total_cache_accesses(batch.cache_stats());
+            let mut cursor = batch.cursor();
+            let mut keys = 0;
+            while cursor.key_valid() {
+                keys += 1;
+                cursor.step_key();
+            }
+            let keys_only = total_cache_accesses(batch.cache_stats()) - base;
+
+            // Asking how many values a key has must be free too, or a caller
+            // that wants the count still pays for the column it is avoiding.
+            let base = total_cache_accesses(batch.cache_stats());
+            let mut cursor = batch.cursor();
+            let mut counted = 0;
+            while cursor.key_valid() {
+                counted += cursor.value_count_upper_bound();
+                cursor.step_key();
+            }
+            let counting = total_cache_accesses(batch.cache_stats()) - base;
+
+            // And so must asking whether a key has any, which is what a scan
+            // calls on every key before deciding whether it wants the value.
+            let base = total_cache_accesses(batch.cache_stats());
+            let mut cursor = batch.cursor();
+            let mut nonempty = 0;
+            while cursor.key_valid() {
+                nonempty += cursor.val_valid() as usize;
+                cursor.step_key();
+            }
+            let checking = total_cache_accesses(batch.cache_stats()) - base;
+            assert_eq!(nonempty, 50_000);
+
+            // Reading the values still has to cost what it always did: the
+            // position handed to `first_with_hint` is what keeps a scan at one
+            // read per value block rather than one descent per key.
+            let base = total_cache_accesses(batch.cache_stats());
+            let mut cursor = batch.cursor();
+            let mut read = 0;
+            while cursor.key_valid() {
+                while cursor.val_valid() {
+                    read += 1;
+                    cursor.step_val();
+                }
+                cursor.step_key();
+            }
+            let reading = total_cache_accesses(batch.cache_stats()) - base;
+
+            assert_eq!(keys, 50_000);
+            assert_eq!(counted, 50_000 * fanout as usize);
+            assert_eq!(read, 50_000 * fanout as usize);
+            (keys_only, counting, checking, reading)
+        };
+
+        let (thin_keys, thin_counting, thin_checking, thin_reading) = sweep(1);
+        let (fat_keys, fat_counting, fat_checking, fat_reading) = sweep(8);
+
+        assert_eq!(
+            thin_counting, thin_keys,
+            "counting a key's values cost more than stepping past it"
+        );
+        assert_eq!(fat_counting, fat_keys);
+        assert_eq!(
+            thin_checking, thin_keys,
+            "asking whether a key has values cost more than stepping past it"
+        );
+        assert_eq!(fat_checking, fat_keys);
+
+        assert!(
+            fat_keys < thin_keys * 2,
+            "eight times the values cost {fat_keys} against {thin_keys}, so they are being read"
+        );
+        assert!(
+            fat_reading > fat_keys * 4,
+            "reading the values cost {fat_reading} against {fat_keys} for the keys alone, \
+             which is too close to be reading anything"
+        );
+        assert!(thin_reading > thin_keys);
+
+        // Reading has to stay at one read per value block.  Losing the hint
+        // handed to `first_with_hint` would put it at one descent per key, so
+        // anything approaching the key count means the fast path is gone.
+        for (reading, label) in [(thin_reading, "one value"), (fat_reading, "eight values")] {
+            assert!(
+                reading < 50_000 / 4,
+                "with {label} a key, reading cost {reading} against 50000 keys, \
+                 which is a descent per key rather than a read per block"
+            );
+        }
+    });
+}
+
+/// A cursor list over one batch must cost what that batch's own cursor costs.
+///
+/// Stepping a key checks whether the values under it cancel, and summing their
+/// weights means reading the block those weights sit in.  With one cursor there
+/// is nothing to cancel against, so the check is skipped and the sweep stays on
+/// the key column.
+#[test]
+fn a_cursor_list_over_one_batch_does_not_read_values() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+
+        for fanout in [1, 8] {
+            let tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>> = (0..50_000)
+                .flat_map(|key| (0..fanout).map(move |val| Tup2(Tup2(key, val), 1)))
+                .collect();
+            let batch = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+                &factories,
+                (),
+                &mut indexed_zset_tuples(tuples),
+            );
+
+            let base = total_cache_accesses(batch.cache_stats());
+            let mut cursor = CursorList::new(factories.weight_factory(), vec![batch.cursor()]);
+            let mut keys = 0;
+            while cursor.key_valid() {
+                keys += 1;
+                cursor.step_key();
+            }
+            let through_list = total_cache_accesses(batch.cache_stats()) - base;
+
+            let base = total_cache_accesses(batch.cache_stats());
+            let mut cursor = batch.cursor();
+            while cursor.key_valid() {
+                cursor.step_key();
+            }
+            let through_batch = total_cache_accesses(batch.cache_stats()) - base;
+
+            assert_eq!(keys, 50_000);
+            assert_eq!(
+                through_list, through_batch,
+                "with {fanout} values a key, a list of one cursor cost {through_list} \
+                 against the batch cursor's {through_batch}"
+            );
+        }
+    });
+}
+
+/// `map_values` hands out weights, so it has to add them up where stepping the
+/// cursor deliberately did not.
+#[test]
+fn a_cursor_list_reports_weights_it_did_not_sum() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <VecIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let batch = VecIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+            &factories,
+            (),
+            &mut indexed_zset_tuples(vec![
+                Tup2(Tup2(1, 4), 2),
+                Tup2(Tup2(1, 5), 3),
+                Tup2(Tup2(2, 6), -7),
+            ]),
+        );
+
+        // One cursor, so nothing cancels and no weight is summed while stepping.
+        let mut cursor = CursorList::new(factories.weight_factory(), vec![batch.cursor()]);
+
+        let mut seen = Vec::new();
+        while cursor.key_valid() {
+            let key = *unsafe { cursor.key().downcast::<i32>() };
+            cursor.map_values(&mut |val, weight| {
+                seen.push((key, *unsafe { val.downcast::<i32>() }, *unsafe {
+                    weight.downcast::<ZWeight>()
+                }));
+            });
+            cursor.step_key();
+        }
+        assert_eq!(seen, vec![(1, 4, 2), (1, 5, 3), (2, 6, -7)]);
+
+        // And so does `weight`, reached the usual way.
+        let mut cursor = CursorList::new(factories.weight_factory(), vec![batch.cursor()]);
+        let mut seen = Vec::new();
+        while cursor.key_valid() {
+            let key = *unsafe { cursor.key().downcast::<i32>() };
+            while cursor.val_valid() {
+                let val = *unsafe { cursor.val().downcast::<i32>() };
+                seen.push((key, val, *unsafe { cursor.weight().downcast::<ZWeight>() }));
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+        assert_eq!(seen, vec![(1, 4, 2), (1, 5, 3), (2, 6, -7)]);
+    });
+}
+
+/// Skipping the check for a lone cursor must not stop values from cancelling
+/// when there is something to cancel against.
+#[test]
+fn a_cursor_list_still_cancels_across_batches() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <VecIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let build = |tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>>| {
+            VecIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+                &factories,
+                (),
+                &mut indexed_zset_tuples(tuples),
+            )
+        };
+
+        // Key 1 is written and retracted, so it cancels away entirely; key 2
+        // keeps one of its two values and key 3 is only in one batch.
+        let left = build(vec![
+            Tup2(Tup2(1, 7), 1),
+            Tup2(Tup2(2, 4), 1),
+            Tup2(Tup2(2, 5), 1),
+            Tup2(Tup2(3, 9), 1),
+        ]);
+        let right = build(vec![Tup2(Tup2(1, 7), -1), Tup2(Tup2(2, 4), -1)]);
+
+        let mut cursor = CursorList::new(
+            factories.weight_factory(),
+            vec![left.cursor(), right.cursor()],
+        );
+
+        let mut survived = Vec::new();
+        while cursor.key_valid() {
+            let key = *unsafe { cursor.key().downcast::<i32>() };
+            while cursor.val_valid() {
+                let val = *unsafe { cursor.val().downcast::<i32>() };
+                survived.push((key, val));
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+
+        assert_eq!(
+            survived,
+            vec![(2, 5), (3, 9)],
+            "a value whose weights cancel across batches has to stay hidden"
+        );
+    });
 }
