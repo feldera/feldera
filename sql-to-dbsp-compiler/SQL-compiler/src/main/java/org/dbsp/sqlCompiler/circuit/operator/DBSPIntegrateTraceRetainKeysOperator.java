@@ -76,7 +76,7 @@ public final class DBSPIntegrateTraceRetainKeysOperator
             param = new DBSPParameter(dataArg.variable, dataArg.getType());
             IMaybeMonotoneType dataField0 = dataProjection
                     .to(PartiallyMonotoneTuple.class)
-                    .getField(0);
+                    .getFieldType(0);
             if (!dataField0.mayBeMonotone())
                 return null;
             DBSPExpression project = dataField0

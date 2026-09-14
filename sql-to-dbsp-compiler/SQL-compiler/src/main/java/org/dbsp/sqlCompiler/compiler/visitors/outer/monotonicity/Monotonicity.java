@@ -316,7 +316,7 @@ public class Monotonicity extends CircuitVisitor {
         for (DBSPTypeStruct.Field field: struct.fields.values()) {
             // Iterate over struct so we can get field names.
             DBSPType type = tuple.getFieldType(index);
-            boolean isMonotone = monotoneInput != null && monotoneInput.getField(index).mayBeMonotone();
+            boolean isMonotone = monotoneInput != null && monotoneInput.getFieldType(index).mayBeMonotone();
             DBSPExpression lateness = null;
             for (ViewColumnMetadata meta: node.metadata) {
                 if (meta.columnName.equalsIgnoreCase(field.name)) {
@@ -425,10 +425,10 @@ public class Monotonicity extends CircuitVisitor {
             rightType = NonMonotoneType.nonMonotone(source).to(PartiallyMonotoneTuple.class);
         }
 
-        IMaybeMonotoneType leftKeyType = leftType.getField(0);
-        IMaybeMonotoneType rightKeyType = rightType.getField(0);
-        IMaybeMonotoneType leftValueType = leftType.getField(1);
-        IMaybeMonotoneType rightValueType = rightType.getField(1);
+        IMaybeMonotoneType leftKeyType = leftType.getFieldType(0);
+        IMaybeMonotoneType rightKeyType = rightType.getFieldType(0);
+        IMaybeMonotoneType leftValueType = leftType.getFieldType(1);
+        IMaybeMonotoneType rightValueType = rightType.getFieldType(1);
 
         IMaybeMonotoneType keyType = leftKeyType.union(rightKeyType);
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
@@ -543,7 +543,7 @@ public class Monotonicity extends CircuitVisitor {
         if (inputFunction == null)
             return;
         PartiallyMonotoneTuple tuple = getBodyType(inputFunction).to(PartiallyMonotoneTuple.class);
-        IMaybeMonotoneType value = tuple.getField(1);
+        IMaybeMonotoneType value = tuple.getFieldType(1);
         if (!value.mayBeMonotone())
             return;
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
@@ -656,10 +656,10 @@ public class Monotonicity extends CircuitVisitor {
             rightType = NonMonotoneType.nonMonotone(source).to(PartiallyMonotoneTuple.class);
         }
 
-        IMaybeMonotoneType leftValueMonoType = leftType.getField(1);
-        IMaybeMonotoneType rightValueMonoType = rightType.getField(1);
-        IMaybeMonotoneType leftKeyMonoType = leftType.getField(0);
-        IMaybeMonotoneType rightKeyMonoType = rightType.getField(0);
+        IMaybeMonotoneType leftValueMonoType = leftType.getFieldType(1);
+        IMaybeMonotoneType rightValueMonoType = rightType.getFieldType(1);
+        IMaybeMonotoneType leftKeyMonoType = leftType.getFieldType(0);
+        IMaybeMonotoneType rightKeyMonoType = rightType.getFieldType(0);
         IMaybeMonotoneType keyMonoType = leftKeyMonoType.union(rightKeyMonoType);
 
         // We expect ASOF joins to look like projections.
@@ -815,7 +815,7 @@ public class Monotonicity extends CircuitVisitor {
             return;
         IMaybeMonotoneType projection = Monotonicity.getBodyType(inputValue);
         PartiallyMonotoneTuple tuple = projection.to(PartiallyMonotoneTuple.class);
-        IMaybeMonotoneType tuple0 = tuple.getField(0);
+        IMaybeMonotoneType tuple0 = tuple.getFieldType(0);
         if (!tuple0.mayBeMonotone())
             return;
 
@@ -885,7 +885,7 @@ public class Monotonicity extends CircuitVisitor {
             return;
         IMaybeMonotoneType inputProjection = Monotonicity.getBodyType(inputValue);
         PartiallyMonotoneTuple tuple = inputProjection.to(PartiallyMonotoneTuple.class);
-        IMaybeMonotoneType timestamp = tuple.getField(0);
+        IMaybeMonotoneType timestamp = tuple.getFieldType(0);
         if (!timestamp.mayBeMonotone())
             return;
 

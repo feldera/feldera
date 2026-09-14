@@ -74,7 +74,7 @@ public final class DBSPIntegrateTraceRetainNValuesOperator
         DBSPParameter param = new DBSPParameter(dataArg.variable, dataArg.getType());
         DBSPExpression project = dataProjection
                 .to(PartiallyMonotoneTuple.class)
-                .getField(1)
+                .getFieldType(1)
                 .projectExpression(dataArg.deref());
         DBSPExpression compare0 = controlArg.deref().field(0).not();
         DBSPExpression compare = DBSPControlledKeyFilterOperator.generateTupleCompare(

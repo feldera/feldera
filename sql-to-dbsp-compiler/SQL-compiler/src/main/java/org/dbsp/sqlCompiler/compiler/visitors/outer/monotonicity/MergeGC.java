@@ -114,8 +114,8 @@ public class MergeGC extends Passes {
         }
     }
 
-    /** Find multiple {@link DBSPIntegrateTraceRetainKeysOperator} that apply to the same
-     * operator (on their LHS input) and place them in a list. */
+    /** Find multiple {@link DBSPIntegrateTraceRetainKeysOperator} that apply the same retention
+     * policy to the same data. */
     static class FindMultipleRetainKeys extends CircuitWithGraphsVisitor {
         final List<List<DBSPIntegrateTraceRetainKeysOperator>> shareLeftInput;
         final Set<DBSPIntegrateTraceRetainKeysOperator> visited;
@@ -126,21 +126,29 @@ public class MergeGC extends Passes {
             this.visited = new HashSet<>();
         }
 
+        /** A single operator driven by the minimum of two bounds can replace two retain-keys
+         * operators only when they retain the same data with the same comparison. */
+        static boolean samePolicy(DBSPIntegrateTraceRetainKeysOperator a, DBSPIntegrateTraceRetainKeysOperator b) {
+            return a.left().equals(b.left()) &&
+                    a.accumulate == b.accumulate &&
+                    a.getFunction().equivalent(b.getFunction());
+        }
+
         @Override
         public void postorder(DBSPIntegrateTraceRetainKeysOperator retain) {
             if (this.visited.contains(retain))
                 return;
-            OutputPort left = retain.inputs.get(0);
             List<DBSPIntegrateTraceRetainKeysOperator> common = new ArrayList<>();
             common.add(retain);
             this.visited.add(retain);
-            var successors = this.getGraph().getSuccessors(left.node());
-            for (var succ: successors) {
-                var ik = succ.node().as(DBSPIntegrateTraceRetainKeysOperator.class);
-                if (ik != null && ik != retain) {
-                    common.add(ik);
-                    this.visited.add(ik);
-                }
+            for (var succ: this.getGraph().getSuccessors(retain.left().node())) {
+                var other = succ.node().as(DBSPIntegrateTraceRetainKeysOperator.class);
+                if (other == null || other == retain || this.visited.contains(other))
+                    continue;
+                if (!samePolicy(retain, other))
+                    continue;
+                common.add(other);
+                this.visited.add(other);
             }
             if (common.size() > 1) {
                 this.shareLeftInput.add(common);
