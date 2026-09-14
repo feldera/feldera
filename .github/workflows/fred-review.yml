@@ -56,7 +56,7 @@ jobs:
     # no build cache on this runner: crate-scoped checks only, see the prompt
     timeout-minutes: 60
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-6694c709e8a150203f56b80c5058286e4378e2ee
+      image: ghcr.io/feldera/feldera-dev:sha-6f8e388fcd3b56c72a9305f108ae43dd07e3897e
     permissions:
       # only needed for the Anthropic WIF token exchange; all GitHub access goes through the app token
       id-token: write

@@ -33,7 +33,7 @@ jobs:
       # Long-lived datasets tests only read.
       CI_OBJECT_STORE_INPUTS_URI: gs://feldera-ci-inputs-feldera-ci
     container:
-      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-6694c709e8a150203f56b80c5058286e4378e2ee
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-6f8e388fcd3b56c72a9305f108ae43dd07e3897e
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6

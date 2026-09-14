@@ -32,7 +32,7 @@ jobs:
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
     container:
-      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-6694c709e8a150203f56b80c5058286e4378e2ee
+      image: us-central1-docker.pkg.dev/feldera-ci/ghcr-remote/feldera/feldera-dev:sha-6f8e388fcd3b56c72a9305f108ae43dd07e3897e
     services:
       postgres:
         image: debezium/postgres:15
@@ -154,7 +154,7 @@ jobs:
     # it. Pulled from ghcr.io directly: this runner lacks the GCP registry
     # identity the gke runners use for the ghcr-remote mirror.
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-6694c709e8a150203f56b80c5058286e4378e2ee
+      image: ghcr.io/feldera/feldera-dev:sha-6f8e388fcd3b56c72a9305f108ae43dd07e3897e
     services:
       pubsub:
         image: ghcr.io/feldera/gcloud-pubsub-emulator:e852273e07
