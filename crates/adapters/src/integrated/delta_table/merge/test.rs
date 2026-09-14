@@ -789,3 +789,25 @@ async fn a_split_scan_honours_the_deletion_vector() {
         panic!("OPTIMIZE rewrote the file with the wrong rows: {diff}");
     }
 }
+
+/// A file OPTIMIZE replaced under the lookup is transient: redoing the flush is the fix.
+///
+/// Classifying it as deterministic would abandon the batch on a routine collision with
+/// table maintenance, which is the one failure merge mode has to survive.
+#[tokio::test]
+async fn a_file_maintenance_replaced_is_transient() {
+    use crate::integrated::delta_table::WriteError;
+
+    let dir = TempDir::new().unwrap();
+    let table = fixture_table(&dir, &[1, 2, 3], true).await;
+
+    let mut tombstones = Tombstones::new();
+    tombstones.insert("part-00000-does-not-exist.parquet", 0);
+
+    let error = match write_deletion_vectors(&tombstones, &table).await {
+        Err(e) => e,
+        Ok(_) => panic!("tombstoning a file the snapshot no longer holds must fail"),
+    };
+    assert!(matches!(error, WriteError::Transient(_)), "{error:?}");
+    assert!(error.to_string().contains("must be redone"), "{error}");
+}

@@ -19,11 +19,68 @@
 //! | [`compact`] | Optional connector-driven OPTIMIZE, for tables nothing else maintains |
 //! | [`metrics`] | What the connector reports, and when it says the table needs compacting |
 
+use super::WriteError;
 use anyhow::{Result as AnyResult, anyhow};
 use deltalake::DeltaTable;
 use deltalake::kernel::Action;
 use deltalake::kernel::transaction::{CommitBuilder, CommitProperties, TableReference};
 use deltalake::protocol::DeltaOperation;
+use feldera_adapterlib::utils::backoff::calculate_backoff_delay;
+use std::fmt::Display;
+use std::future::Future;
+use tokio::time::sleep;
+use tracing::warn;
+
+/// How many times one object-store request is attempted before the flush gives up on it.
+///
+/// Bounded, unlike the connector's `max_retries`: this loop sits inside that one, and two
+/// nested unbounded loops would make a shutdown wait for both.  Four attempts spend about
+/// 3.5s of backoff, enough to ride out a throttled or dropped request.
+const IO_ATTEMPTS: u32 = 4;
+
+/// Run `operation` until it succeeds, fails deterministically, or [`IO_ATTEMPTS`] attempts
+/// have failed.
+///
+/// The flush's own retry is the whole flush, which redoes every lookup; that is far too
+/// much to pay for one flaky request, and delta-rs and `object_store` do not reliably
+/// retry on their own.  A failure that survives this stays [`WriteError::Transient`],
+/// leaving the decision to retry the flush to the caller.
+///
+/// `description` completes the sentence "error ...", and the endpoint it belongs to comes
+/// from the caller's tracing span.
+pub(crate) async fn retry_io<F, Fut, T>(
+    description: &str,
+    mut operation: F,
+) -> Result<T, WriteError>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, WriteError>>,
+{
+    for attempt in 1..=IO_ATTEMPTS {
+        match operation().await {
+            Ok(value) => return Ok(value),
+            // Retrying cannot change a deterministic outcome, and the caller must see it
+            // unchanged or it would retry the whole flush for ever on bad data.
+            Err(e @ WriteError::Deterministic(_)) => return Err(e),
+            Err(e) if attempt == IO_ATTEMPTS => {
+                return Err(WriteError::Transient(anyhow!(
+                    "error {description} after {attempt} attempts: {e}"
+                )));
+            }
+            Err(e) => {
+                let backoff = calculate_backoff_delay(attempt - 1);
+                warn!("error {description} (attempt {attempt}, retrying in {backoff:?}): {e}");
+                sleep(backoff).await;
+            }
+        }
+    }
+    unreachable!("the loop returns on the last attempt")
+}
+
+/// An object-store failure, which is always worth another attempt.
+pub(crate) fn transient(e: impl Display) -> WriteError {
+    WriteError::Transient(anyhow!("{e}"))
+}
 
 pub(crate) mod chunk;
 pub(crate) mod compact;
@@ -71,3 +128,62 @@ mod model;
 
 #[cfg(test)]
 mod test;
+
+#[cfg(test)]
+mod retry_test {
+    use super::*;
+    use std::cell::Cell;
+
+    /// Run `op` through [`retry_io`], returning its outcome and how often it was called.
+    async fn attempts<T>(
+        op: impl Fn(u32) -> Result<T, WriteError>,
+    ) -> (Result<T, WriteError>, u32) {
+        let calls = Cell::new(0);
+        let result = retry_io("in a test", || {
+            calls.set(calls.get() + 1);
+            let outcome = op(calls.get());
+            async move { outcome }
+        })
+        .await;
+        (result, calls.get())
+    }
+
+    #[tokio::test]
+    async fn a_transient_failure_is_retried() {
+        let (result, calls) = attempts(|call| match call {
+            1 => Err(transient("the object store hiccuped")),
+            _ => Ok(()),
+        })
+        .await;
+        assert!(result.is_ok(), "{result:?}");
+        assert_eq!(calls, 2);
+    }
+
+    #[tokio::test]
+    async fn a_deterministic_failure_is_not_retried() {
+        // The point of the classification: bad data must not spin the connector.
+        let (result, calls) = attempts(|_| {
+            Err::<(), _>(WriteError::Deterministic(anyhow!(
+                "the schema does not match"
+            )))
+        })
+        .await;
+        assert!(
+            matches!(result, Err(WriteError::Deterministic(_))),
+            "{result:?}"
+        );
+        assert_eq!(calls, 1);
+    }
+
+    #[tokio::test]
+    async fn a_persistent_failure_gives_up_and_stays_transient() {
+        // Still transient, so the caller may retry the whole flush; only this loop is spent.
+        let (result, calls) =
+            attempts(|_| Err::<(), _>(transient("the object store is down"))).await;
+        assert!(
+            matches!(result, Err(WriteError::Transient(_))),
+            "{result:?}"
+        );
+        assert_eq!(calls, IO_ATTEMPTS);
+    }
+}
