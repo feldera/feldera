@@ -1,0 +1,11 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc db25b04d7a0c04ec49587dab5ea084af264fb35a504594d53db70c00e966e6c0 # shrinks to batches = [VecIndexedWSet:     key 0:         value 0:             ((), -1) ]
+cc c7576558a329ced178b4b0113c6c3cb3fa206839d78b66bf0766ef51fa1c54c9 # shrinks to batches = [VecIndexedWSet:     key 0:         value 0:             ((), -1) ]
+cc fa515703fd44e487c7a8068dca9391aa67f035ae21ddb8d0cb4121266fe78dbc # shrinks to batches = [VecIndexedWSet:     key 0:         value 0:             ((), -1) ]
+cc 1927a325d88b7530743df0e6184a4d64c2ff1943631683b897599f15f6743585 # shrinks to batches = [VecIndexedWSet:     key 0:         value 0:             ((), 1) ]
+cc 74244dc524ee2c8c2701d93a115aa7303e4ef962e53117bff285eddb428048e2 # shrinks to batches = [VecIndexedWSet:     key 0:         value 0:             ((), 1) ]
