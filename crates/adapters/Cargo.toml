@@ -305,3 +305,7 @@ required-features = ["bench-mode"]
 [[bench]]
 name = "delta_encoder"
 harness = false
+
+[[bench]]
+name = "delta_merge"
+harness = false
