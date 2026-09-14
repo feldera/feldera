@@ -30,6 +30,7 @@
 * `ARRAY_DISTINCT`: [array](array.md#distinct)
 * `ARRAY_EXCEPT`: [array](array.md#except)
 * `ARRAY_EXISTS`: [array](array.md#array_exists)
+* `ARRAY_FILTER`: [array](array.md#array_filter)
 * `ARRAY_INSERT`: [array](array.md#insert)
 * `ARRAY_INTERSECT`: [array](array.md#intersect)
 * `ARRAY_JOIN`: [array](array.md#join)

@@ -1373,6 +1373,178 @@ public class ArrayFunctionsTests extends SqlIoTest {
     }
 
     @Test
+    public void testArrayFilter() {
+        this.qst("""
+                SELECT array_filter(array[1, 2, 3], x -> x > 1);
+                result
+                ------
+                 { 2, 3 }
+                (1 row)
+
+                SELECT array_filter(array[3, 1, 2], x -> x <> 1);
+                result
+                ------
+                 { 3, 2 }
+                (1 row)
+
+                SELECT array_filter(array[1, 2, 3], x -> true);
+                result
+                ------
+                 { 1, 2, 3 }
+                (1 row)
+
+                SELECT array_filter(array[1, 2, 3], x -> false);
+                result
+                ------
+                 {}
+                (1 row)
+
+                SELECT array_filter(array['a', 'bb', 'ccc'], s -> char_length(s) > 1);
+                result
+                ------
+                 { bb, ccc }
+                (1 row)
+
+                SELECT array_filter(CAST(array() AS INT ARRAY), x -> true);
+                result
+                ------
+                 {}
+                (1 row)
+
+                SELECT array_filter(array[null, 3, 5], x -> x > 4);
+                result
+                ------
+                 { 5 }
+                (1 row)
+
+                SELECT array_filter(array[null, 3], x -> x is null);
+                result
+                ------
+                 { NULL }
+                (1 row)
+
+                SELECT array_filter(array[1, 2], x -> cast(null as boolean));
+                result
+                ------
+                 {}
+                (1 row)
+
+                SELECT array_filter(cast(null as integer array), x -> x > 2);
+                result
+                ------
+                NULL
+                (1 row)
+
+                SELECT array_filter(cast(null as integer array), x -> true);
+                result
+                ------
+                NULL
+                (1 row)
+
+                SELECT array_filter(null, x -> true);
+                result
+                ------
+                NULL
+                (1 row)
+
+                SELECT array_filter(array[array[1, 2], array[3]], a -> cardinality(a) > 1);
+                result
+                ------
+                 { { 1, 2} }
+                (1 row)
+
+                SELECT array_filter(array[array[1, 2], array[3]], a -> array_exists(a, b -> b > 2));
+                result
+                ------
+                 { { 3} }
+                (1 row)
+
+                SELECT transform(array[array[1, 2], array[3]], a -> array_filter(a, b -> b > 1));
+                result
+                ------
+                 { { 2}, { 3} }
+                (1 row)
+
+                SELECT array_filter(array[array[1, 2], array[3]], a -> array_filter(a, b -> b > 1) = array[2]);
+                result
+                ------
+                 { { 1, 2} }
+                (1 row)""");
+    }
+
+    @Test
+    public void arrayFilterOnNonArrays() {
+        // Every rejection is a validation error naming the actual argument types
+        String supported = "Supported form(s): ARRAY_FILTER(<ARRAY>, <FUNCTION(ARRAY_ELEMENT_TYPE)->BOOLEAN>)";
+        this.queryFailingInCompilation("SELECT array_filter(1, x -> true)",
+                "Cannot apply 'array_filter' to arguments of type " +
+                        "'array_filter(<INTEGER>, <FUNCTION(ANY) -> BOOLEAN>)'. " + supported);
+        this.queryFailingInCompilation("SELECT array_filter('abc', x -> true)",
+                "Cannot apply 'array_filter' to arguments of type " +
+                        "'array_filter(<CHAR(3)>, <FUNCTION(ANY) -> BOOLEAN>)'. " + supported);
+        this.queryFailingInCompilation("SELECT array_filter(MAP['a', 1], x -> true)",
+                "Cannot apply 'array_filter' to arguments of type " +
+                        "'array_filter(<MAP<CHAR(1), INTEGER>>, <FUNCTION(ANY) -> BOOLEAN>)'. " + supported);
+        this.queryFailingInCompilation("SELECT array_filter(ROW(1, 2), x -> true)",
+                "Cannot apply 'array_filter' to arguments of type " +
+                        "'array_filter(<ROW(INTEGER EXPR$0, INTEGER EXPR$1)>, <FUNCTION(ANY) -> BOOLEAN>)'. " + supported);
+        this.queryFailingInCompilation("SELECT array_filter(MULTISET[1, 2], x -> true)",
+                "Cannot apply 'array_filter' to arguments of type " +
+                        "'array_filter(<INTEGER MULTISET>, <FUNCTION(ANY) -> BOOLEAN>)'. " + supported);
+        this.queryFailingInCompilation("SELECT array_filter(CAST(1 AS VARIANT), x -> true)",
+                "Cannot apply 'array_filter' to arguments of type " +
+                        "'array_filter(<VARIANT>, <FUNCTION(ANY) -> BOOLEAN>)'. " + supported);
+        this.queryFailingInCompilation("SELECT array_filter(CAST(NULL AS INTEGER), x -> true)",
+                "Cannot apply 'array_filter' to arguments of type " +
+                        "'array_filter(<INTEGER>, <FUNCTION(ANY) -> BOOLEAN>)'. " + supported);
+        // The predicate must be a lambda
+        this.queryFailingInCompilation("SELECT array_filter(array[1], 2)",
+                "Cannot apply 'array_filter' to arguments of type " +
+                        "'array_filter(<INTEGER ARRAY>, <INTEGER>)'. " + supported);
+        this.queryFailingInCompilation("SELECT array_filter(array[1], NULL)",
+                "Cannot apply 'array_filter' to arguments of type " +
+                        "'array_filter(<INTEGER ARRAY>, <NULL>)'. " + supported);
+        this.queryFailingInCompilation("SELECT array_filter(array[1], x -> NULL)",
+                "Illegal use of 'NULL'");
+        this.queryFailingInCompilation("SELECT array_filter(array[1], x -> true, true)",
+                "Invalid number of arguments to function 'array_filter'. Was expecting 2 arguments");
+        this.queryFailingInCompilation("SELECT array_filter(array[1])",
+                "Invalid number of arguments to function 'array_filter'. Was expecting 2 arguments");
+        // Nested in another lambda
+        this.queryFailingInCompilation(
+                "SELECT transform(array[1], a -> array_filter(a, b -> true))",
+                "Cannot apply 'array_filter' to arguments of type " +
+                        "'array_filter(<INTEGER>, <FUNCTION(ANY) -> BOOLEAN>)'. " + supported);
+        this.queryFailingInCompilation(
+                "SELECT array_filter(array[1], x -> array_filter(x, y -> true))",
+                "Cannot apply 'array_filter' to arguments of type " +
+                        "'array_filter(<INTEGER>, <FUNCTION(ANY) -> BOOLEAN>)'. " + supported);
+        this.queryFailingInCompilation(
+                "SELECT transform(array[array[1]], a -> array_filter(a, 5))",
+                "Cannot apply 'array_filter' to arguments of type " +
+                        "'array_filter(<INTEGER ARRAY>, <INTEGER>)'. " + supported);
+    }
+
+    @Test
+    public void testArrayFilterTable() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT ARRAY);
+                CREATE VIEW V AS SELECT ARRAY_FILTER(x, e -> e % 2 = 0) AS r FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY[1, 2, 3, 4])", """
+                  r
+                 ----------
+                  { 2, 4 }""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY())", """
+                  r
+                 -------
+                  {}""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(NULL)", """
+                  r
+                 -------
+                 NULL""");
+    }
+
+    @Test
     public void testNestedLambdas() {
         this.qs("""
                 SELECT transform(array[array[1, 2], array[3]], a -> transform(a, b -> b + 1));
@@ -1503,5 +1675,12 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 "Cannot apply 'transform' to arguments of type");
         this.queryFailingInCompilation("SELECT transform(array[1], x -> x AND true)",
                 "Cannot apply 'AND' to arguments of type '<INTEGER> AND <BOOLEAN>'");
+        // The ARRAY_FILTER predicate must return a BOOLEAN
+        this.queryFailingInCompilation("SELECT array_filter(array[1], x -> x + 1)",
+                "Cannot apply 'array_filter' to arguments of type");
+        this.queryFailingInCompilation("SELECT array_filter(array[1], (x, y) -> true)",
+                "Cannot apply 'array_filter' to arguments of type");
+        this.queryFailingInCompilation("SELECT array_filter(array(), x -> true)",
+                "Could not infer a type for array elements");
     }
 }

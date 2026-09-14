@@ -337,11 +337,12 @@ These Spark functions exist in Feldera — translate directly:
 |-------|---------|-------|
 | `transform(arr, x -> expr)` | `TRANSFORM(arr, x -> expr)` | |
 | `exists(arr, x -> expr)` | `ARRAY_EXISTS(arr, x -> expr)` | |
+| `filter(arr, x -> expr)` | `ARRAY_FILTER(arr, x -> expr)` | Elements whose predicate is NULL are dropped, as in Spark. The indexed form `filter(arr, (x, i) -> expr)` is not supported |
 
 #### 📝 Notes
 
-- `TRANSFORM(arr, x -> expr)` and `ARRAY_EXISTS(arr, x -> expr)` are **supported** — pass through (with name change for `exists`). Do NOT mark them unsupported.
-- `filter`, `zip_with`, `aggregate`, `forall`, `map_filter`, `transform_keys`, `transform_values` are unsupported — see Unsupported section.
+- `TRANSFORM(arr, x -> expr)`, `ARRAY_EXISTS(arr, x -> expr)` and `ARRAY_FILTER(arr, x -> expr)` are **supported**: pass through, renaming `exists` and `filter`. Do NOT mark them unsupported.
+- `zip_with`, `aggregate`, `forall`, `map_filter`, `transform_keys`, `transform_values` are unsupported; see Unsupported section.
 
 #### Map functions
 
@@ -1138,7 +1139,7 @@ Do NOT:
 
 | Function | Notes |
 |----------|-------|
-| `filter(arr, lambda)` | Compiler rejects — no equivalent |
+| `filter(arr, (x, i) -> lambda)` | Indexed form has no equivalent; only `filter(arr, x -> lambda)` maps to `ARRAY_FILTER` |
 | `aggregate(arr, init, lambda)` | No equivalent |
 | `forall(arr, lambda)` | No equivalent |
 | `zip_with(a, b, lambda)` | No equivalent |
