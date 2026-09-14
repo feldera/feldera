@@ -13,7 +13,6 @@ use crate::{
 };
 use anyhow::Error as AnyError;
 use crossbeam::channel::{Receiver, Select, Sender, TryRecvError, bounded};
-use feldera_buffer_cache::ThreadType;
 use feldera_ir::LirCircuit;
 use feldera_storage::{FileCommitter, StorageBackend, StoragePath};
 use feldera_types::checkpoint::CheckpointMetadata;
@@ -48,7 +47,7 @@ use crate::profile::{DbspProfile, GraphProfile, WorkerProfile};
 
 use super::SchedulerError;
 use super::circuit_builder::BootstrapInfo;
-use super::runtime::WorkerPanicInfo;
+use super::runtime::PanicReport;
 
 /// Default ratio of merger threads to worker threads.
 const DEFAULT_MERGER_THREAD_RATIO: usize = 1;
@@ -1495,7 +1494,7 @@ impl DBSPHandle {
         self.runtime.take().unwrap().kill_async()
     }
 
-    fn collect_panic_info(&self) -> Option<Vec<(usize, ThreadType, WorkerPanicInfo)>> {
+    fn collect_panic_info(&self) -> Option<Vec<PanicReport>> {
         self.runtime
             .as_ref()
             .map(|runtime| runtime.collect_panic_info())
@@ -2997,10 +2996,11 @@ pub(crate) mod tests {
             match err {
                 RuntimeError::WorkerPanic { panic_info } => {
                     assert!(
-                        panic_info
-                            .iter()
-                            .any(|(_worker, thread_type, _info)| *thread_type
-                                == ThreadType::Background),
+                        panic_info.iter().any(|report| {
+                            report.worker.is_some_and(|(_worker, thread_type)| {
+                                thread_type == ThreadType::Background
+                            })
+                        }),
                         "expected WorkerPanic to include background worker panic info"
                     );
                 }

@@ -63,7 +63,7 @@ use tokio::runtime::Builder as TokioBuilder;
 use tokio::runtime::Runtime as TokioRuntime;
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use typedmap::TypedDashMap;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -74,7 +74,7 @@ pub enum Error {
     WorkerPanic {
         // Detailed panic information from all threads that
         // reported panics.
-        panic_info: Vec<(usize, ThreadType, WorkerPanicInfo)>,
+        panic_info: Vec<PanicReport>,
     },
     /// The storage directory supplied does not match the runtime circuit.
     IncompatibleStorage,
@@ -109,9 +109,14 @@ impl Display for Error {
             Self::WorkerPanic { panic_info } => {
                 writeln!(f, "One or more worker threads terminated unexpectedly")?;
 
-                for (worker, thread_type, worker_panic_info) in panic_info.iter() {
-                    writeln!(f, "{thread_type} worker thread {worker} panicked")?;
-                    writeln!(f, "{worker_panic_info}")?;
+                for report in panic_info.iter() {
+                    match report.worker {
+                        Some((worker, thread_type)) => {
+                            writeln!(f, "{thread_type} worker thread {worker} panicked")?
+                        }
+                        None => writeln!(f, "a non-worker runtime thread panicked")?,
+                    }
+                    writeln!(f, "{}", report.info)?;
                 }
                 Ok(())
             }
@@ -217,6 +222,20 @@ impl PanicLocation {
             col: loc.column(),
         }
     }
+}
+
+/// A panic reported by one of a runtime's threads.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PanicReport {
+    /// Which worker thread panicked.
+    ///
+    /// `None` for a thread that belongs to the runtime without being one of
+    /// its worker threads: an auxiliary thread, or a task on the shared Tokio
+    /// executor.  Those own no buffer-cache slot and so have no [ThreadType].
+    pub worker: Option<(usize, ThreadType)>,
+
+    /// What the panic was.
+    pub info: WorkerPanicInfo,
 }
 
 /// Information about a panic in a worker thread.
@@ -325,6 +344,11 @@ struct RuntimeInner {
     worker_sequence_numbers: Vec<AtomicUsize>,
     /// Panic info collected from failed worker threads.
     panic_info: Vec<EnumMap<ThreadType, RwLock<Option<WorkerPanicInfo>>>>,
+
+    /// A panic on a thread of this runtime that owns no slot in `panic_info`:
+    /// an auxiliary thread, or a task on the shared Tokio executor.
+    other_panic_info: RwLock<Option<WorkerPanicInfo>>,
+
     panicked: AtomicBool,
 
     /// Tokio runtime that runs async merger tasks (see `AsyncMerger`).
@@ -596,6 +620,7 @@ impl RuntimeInner {
             panic_info: (0..nworkers)
                 .map(|_| EnumMap::from_fn(|_| RwLock::new(None)))
                 .collect(),
+            other_panic_info: RwLock::new(None),
             panicked: AtomicBool::new(false),
             tokio_merger_runtime: Mutex::new(None),
             exchange_listener: Mutex::new(config.exchange_listener),
@@ -677,13 +702,21 @@ fn panic_hook(panic_info: &PanicHookInfo<'_>, default_panic_hook: &dyn Fn(&Panic
     // Call the default panic hook first.
     default_panic_hook(panic_info);
 
-    RUNTIME.with(|runtime| {
-        if let Ok(runtime) = runtime.try_borrow()
-            && let Some(runtime) = runtime.as_ref()
-        {
-            runtime.panic(panic_info);
-        }
-    })
+    if let Some(runtime) = panicking_runtime() {
+        runtime.panic(panic_info);
+    }
+}
+
+/// Returns the [Runtime] that a panic on this thread belongs to.
+///
+/// Like [Runtime::runtime], except that it tolerates `RUNTIME` already being
+/// borrowed, because a panic can arrive at any point.
+fn panicking_runtime() -> Option<Runtime> {
+    let from_thread = RUNTIME.with(|runtime| match runtime.try_borrow() {
+        Ok(runtime) => runtime.as_ref().cloned(),
+        Err(_) => None,
+    });
+    from_thread.or_else(|| TOKIO_RUNTIME.try_get().ok().and_then(|rt| rt.upgrade()))
 }
 
 /// A multithreaded runtime that hosts `N` circuits running in parallel worker
@@ -1451,20 +1484,41 @@ impl Runtime {
         }
     }
 
-    // Record information about a worker thread panic in `panic_info`
+    // Record information about a panic in `panic_info` or, for a thread that
+    // owns no worker slot, in `other_panic_info`.
     fn panic(&self, panic_info: &PanicHookInfo) {
-        let local_worker_offset = Self::local_worker_offset();
-        let Some(thread_type) = current_thread_type() else {
-            // We only install panic hooks on foreground and background threads,
-            // so this shouldn't happen, but we cannot panic here.
-            error!("panic hook called outside of a runtime or on an aux thread");
-            return;
-        };
         let panic_info = WorkerPanicInfo::new(panic_info);
-        let _ = self.inner().panic_info[local_worker_offset][thread_type]
-            .write()
-            .map(|mut guard| *guard = Some(panic_info));
+        match current_thread_type() {
+            Some(thread_type) => {
+                let local_worker_offset = Self::local_worker_offset();
+                let _ = self.inner().panic_info[local_worker_offset][thread_type]
+                    .write()
+                    .map(|mut guard| *guard = Some(panic_info));
+            }
+            None => {
+                // An auxiliary thread, or a task on the shared Tokio executor
+                // scoped by [Runtime::scope].  It has no worker slot, but the
+                // circuit must still fail rather than wait for a thread that is
+                // gone.  Keep the first panic: a single failure usually
+                // cascades into many, and the first one says why.
+                if let Ok(mut guard) = self.inner().other_panic_info.write() {
+                    guard.get_or_insert(panic_info);
+                }
+            }
+        }
         self.inner().panicked.store(true, Ordering::Release);
+    }
+
+    /// Returns the panic reported by a thread of this runtime that owns no
+    /// worker slot, if there was one.
+    pub fn other_panic_info(&self) -> Option<WorkerPanicInfo> {
+        match self.inner().other_panic_info.read() {
+            Ok(guard) => guard.clone(),
+            Err(_) => {
+                warn!("poisoned other_panic_info lock");
+                None
+            }
+        }
     }
 
     /// Handle to the tokio merger runtime associated with this DBSP runtime.
@@ -1714,16 +1768,22 @@ impl RuntimeHandle {
         self.runtime.worker_panic_info(worker, thread_type)
     }
 
-    /// Retrieve panic info for all workers.
-    pub fn collect_panic_info(&self) -> Vec<(usize, ThreadType, WorkerPanicInfo)> {
+    /// Retrieve panic info for all of the runtime's threads.
+    pub fn collect_panic_info(&self) -> Vec<PanicReport> {
         let mut result = Vec::new();
 
         for worker in 0..self.workers.len() {
             for thread_type in [ThreadType::Foreground, ThreadType::Background] {
-                if let Some(panic_info) = self.worker_panic_info(worker, thread_type) {
-                    result.push((worker, thread_type, panic_info))
+                if let Some(info) = self.worker_panic_info(worker, thread_type) {
+                    result.push(PanicReport {
+                        worker: Some((worker, thread_type)),
+                        info,
+                    })
                 }
             }
+        }
+        if let Some(info) = self.runtime.other_panic_info() {
+            result.push(PanicReport { worker: None, info })
         }
         result
     }
@@ -2517,6 +2577,55 @@ mod tests {
         );
 
         circuit.kill().unwrap();
+    }
+
+    /// A panic on a task of the shared executor must reach the runtime.
+    ///
+    /// The hook reads the panicking thread's runtime, and an executor thread
+    /// has no `RUNTIME` thread-local, so a panic delivering an exchange message
+    /// used to be recorded nowhere: the circuit went on waiting for a task that
+    /// was already dead instead of failing.  `Runtime::panic` then dropped it a
+    /// second time, because such a thread owns no [ThreadType] and so no slot
+    /// in `panic_info`.
+    #[test]
+    fn panic_on_a_scoped_task_reaches_the_runtime() {
+        use feldera_storage::tokio::TOKIO;
+
+        let (circuit, _input_handle) =
+            Runtime::init_circuit(CircuitConfig::with_workers(1), move |circuit| {
+                let (_stream, input_handle) = circuit.add_input_zset::<u64>();
+                Ok(input_handle)
+            })
+            .unwrap();
+        let runtime = circuit.runtime().clone();
+        assert!(!runtime.inner().panicked.load(Ordering::Acquire));
+
+        // Spawn the way `ExchangeListener` spawns a connection task.
+        let task = TOKIO.spawn(Runtime::scope(runtime.downgrade(), async move {
+            assert!(
+                super::RUNTIME.with(|rt| rt.borrow().is_none()),
+                "test is meaningless unless the thread lacks a RUNTIME thread-local"
+            );
+            panic!("scoped task panic");
+        }));
+        assert!(
+            TOKIO.block_on(task).is_err(),
+            "the task was supposed to panic"
+        );
+
+        assert!(
+            runtime.inner().panicked.load(Ordering::Acquire),
+            "a panic on a scoped task must fail the circuit"
+        );
+        let info = runtime
+            .other_panic_info()
+            .expect("the panic must be reported, not just counted");
+        assert!(
+            format!("{info}").contains("scoped task panic"),
+            "the report must say what the panic was, got: {info}"
+        );
+
+        let _ = circuit.kill();
     }
 
     /// Test the memory pressure thresholds and how merger threads behave
