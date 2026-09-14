@@ -33,7 +33,7 @@ use serde_arrow::schema::SerdeArrowSchema;
 use size_of::SizeOf;
 use tempfile::TempDir;
 
-use super::flush::MergeWriter;
+use super::flush::{FlushMetrics, MergeWriter};
 use super::startup::{Regime, prepare};
 use super::test::{arrow_schema, fixture_columns, key_relation};
 use crate::catalog::RecordFormat;
@@ -178,7 +178,7 @@ async fn live_rows(table: &DeltaTable) -> HashMap<i64, String> {
 
 /// Apply one batch through the real writer, failing on a uniqueness violation.
 async fn apply(writer: &MergeWriter, table: &mut DeltaTable, changes: &[Change]) {
-    apply_attempt(writer, table, changes, false).await
+    apply_attempt(writer, table, changes, false).await;
 }
 
 /// The same, choosing whether the writer treats this as a retry of an earlier attempt.
@@ -187,7 +187,7 @@ async fn apply_attempt(
     table: &mut DeltaTable,
     changes: &[Change],
     retrying: bool,
-) {
+) -> FlushMetrics {
     let batch = build_batch(changes);
     let format = RecordFormat::Parquet(delta_output_serde_config(DeltaVariantEncoding::default()));
     let mut cursor = batch.cursor(format).unwrap();
@@ -203,7 +203,7 @@ async fn apply_attempt(
             &AtomicU64::new(0),
         )
         .await
-        .unwrap();
+        .unwrap()
 }
 
 async fn create_table(dir: &TempDir) -> DeltaTable {
@@ -219,6 +219,11 @@ async fn create_table(dir: &TempDir) -> DeltaTable {
 /// Build a writer against `table`, the way a starting pipeline would. The replay test calls
 /// it a second time, since building a fresh writer is what a restart does.
 fn writer_for(table: &DeltaTable) -> (MergeWriter, Regime) {
+    writer_for_with_chunk(table, 1 << 20)
+}
+
+/// The same, with the key-chunk byte budget named, to drive the multi-pass lookup.
+fn writer_for_with_chunk(table: &DeltaTable, lookup_chunk_bytes: usize) -> (MergeWriter, Regime) {
     let setup = prepare(table, &Some(key_relation()), &fixture_columns()).unwrap();
     let regime = setup.regime;
     let schema = Arc::new(arrow_schema());
@@ -227,7 +232,7 @@ fn writer_for(table: &DeltaTable) -> (MergeWriter, Regime) {
         &key_relation(),
         SerdeArrowSchema::try_from(schema.fields().as_ref()).unwrap(),
         schema,
-        1 << 20,
+        lookup_chunk_bytes,
         1,
         SqlIdentifier::new("v", false),
     )
@@ -417,4 +422,109 @@ async fn retrying_a_landed_batch_converges_in_the_owned_regime() {
             "round {round}: retrying {changes:?} did not converge"
         );
     }
+}
+
+/// A key set past the byte budget is looked up in several passes, and the table must not
+/// notice.
+///
+/// The existing chunking test sets the budget to one byte but changes only 20 keys, and keys
+/// reach the chunk in batches of `KEY_BATCH_ROWS`: below that threshold the whole set is
+/// encoded once, in `finish`, and the budget is never consulted. So the multi-pass path went
+/// unexecuted. This crosses the batch threshold, which is what makes the budget bite.
+#[tokio::test]
+async fn a_key_set_past_the_budget_is_looked_up_in_several_passes() {
+    const KEYS: i64 = 9_000;
+
+    let dir = TempDir::new().unwrap();
+    let mut table = create_table(&dir).await;
+    let (writer, _) = writer_for_with_chunk(&table, 1);
+
+    let inserts: Vec<Change> = (0..KEYS)
+        .map(|id| Change::Insert(id, format!("v{id}")))
+        .collect();
+    apply(&writer, &mut table, &inserts).await;
+
+    let updates: Vec<Change> = (0..KEYS)
+        .map(|id| Change::Update(id, format!("v{id}"), format!("w{id}")))
+        .collect();
+    let metrics = apply_attempt(&writer, &mut table, &updates, false).await;
+
+    assert!(
+        metrics.lookup_passes > 1,
+        "the budget did not split the lookup: {} pass(es) for {KEYS} keys",
+        metrics.lookup_passes
+    );
+    assert_eq!(metrics.keys_probed, KEYS as u64);
+
+    let expected: HashMap<i64, String> = (0..KEYS).map(|id| (id, format!("w{id}"))).collect();
+    assert_eq!(live_rows(&table).await, expected);
+}
+
+/// A partitioned table, keyed on a column that is not the partition column.
+async fn create_partitioned_table(dir: &TempDir) -> DeltaTable {
+    CreateBuilder::new()
+        .with_location(dir.path().to_str().unwrap())
+        .with_save_mode(SaveMode::Ignore)
+        .with_columns(fixture_columns())
+        .with_partition_columns(["payload"])
+        .with_configuration_property(TableProperty::EnableDeletionVectors, Some("true"))
+        .await
+        .unwrap()
+}
+
+/// Partition directories holding at least one data file, as `payload=<value>`.
+fn partition_dirs(dir: &TempDir) -> Vec<String> {
+    let mut found: Vec<String> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with("payload="))
+        .collect();
+    found.sort();
+    found
+}
+
+/// An update that changes the partition column moves the row to another partition.
+///
+/// Nothing drove a whole flush against a partitioned table: the append writer's partitioning
+/// and the log-sourced partition values the lookup reads were each covered alone, never
+/// together. Changing the partition column is the case that needs both at once, because the
+/// new row version and the row it supersedes are then in different directories.
+#[tokio::test]
+async fn an_update_across_partitions_supersedes_the_old_row() {
+    let dir = TempDir::new().unwrap();
+    let mut table = create_partitioned_table(&dir).await;
+    let (writer, _) = writer_for(&table);
+
+    apply(
+        &writer,
+        &mut table,
+        &[Change::Insert(1, "a".into()), Change::Insert(2, "b".into())],
+    )
+    .await;
+    assert_eq!(partition_dirs(&dir), vec!["payload=a", "payload=b"]);
+
+    apply(
+        &writer,
+        &mut table,
+        &[Change::Update(1, "a".into(), "c".into())],
+    )
+    .await;
+
+    assert_eq!(
+        partition_dirs(&dir),
+        vec!["payload=a", "payload=b", "payload=c"],
+        "the new row version must land in its own partition"
+    );
+    assert_eq!(
+        live_rows(&table).await,
+        HashMap::from([(1, "c".to_string()), (2, "b".to_string())]),
+    );
+
+    // The row it superseded is gone rather than merely shadowed: deleting it is a no-op.
+    apply(&writer, &mut table, &[Change::Delete(1, "c".into())]).await;
+    assert_eq!(
+        live_rows(&table).await,
+        HashMap::from([(2, "b".to_string())]),
+    );
 }
