@@ -27,6 +27,9 @@ use deltalake::operations::get_num_idx_cols_and_stats_columns;
 use deltalake::operations::write::writer::{DeltaWriter, WriterConfig};
 use deltalake::parquet::file::properties::WriterProperties;
 use std::collections::{BTreeSet, HashMap};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use deltalake::logstore::object_store;
 
 use super::chunk::LookupChunk;
 use super::key::KeyEncoder;
@@ -810,4 +813,161 @@ async fn a_file_maintenance_replaced_is_transient() {
     };
     assert!(matches!(error, WriteError::Transient(_)), "{error:?}");
     assert!(error.to_string().contains("must be redone"), "{error}");
+}
+
+/// An object store that fails the first few requests of a kind, then behaves.
+///
+/// The connector's own retries are what keep a flush alive across an object store having a
+/// bad minute, and nothing exercised them end to end: the unit tests drive the retry helper
+/// directly, and the probe test only shows a failure that never recovers.
+#[derive(Debug)]
+struct FlakyStore {
+    inner: Arc<dyn deltalake::ObjectStore>,
+    /// Remaining reads of a data file to fail.
+    fail_reads: AtomicUsize,
+    /// Remaining writes of a deletion vector object to fail.
+    fail_writes: AtomicUsize,
+    injected: AtomicUsize,
+}
+
+impl FlakyStore {
+    /// Wraps the whole local filesystem: `with_storage_backend` wants a store rooted at "/"
+    /// and resolves the table's own location against it.
+    fn new(fail_reads: usize, fail_writes: usize) -> Arc<Self> {
+        Arc::new(Self {
+            inner: Arc::new(object_store::local::LocalFileSystem::new()),
+            fail_reads: AtomicUsize::new(fail_reads),
+            fail_writes: AtomicUsize::new(fail_writes),
+            injected: AtomicUsize::new(0),
+        })
+    }
+
+    /// Whether this request is one of the remaining ones to fail.
+    fn should_fail(&self, budget: &AtomicUsize) -> bool {
+        let claimed = budget
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |left| {
+                left.checked_sub(1)
+            })
+            .is_ok();
+        if claimed {
+            self.injected.fetch_add(1, Ordering::Relaxed);
+        }
+        claimed
+    }
+
+    fn outage() -> object_store::Error {
+        object_store::Error::Generic {
+            store: "flaky",
+            source: "injected outage".into(),
+        }
+    }
+}
+
+impl std::fmt::Display for FlakyStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FlakyStore({})", self.inner)
+    }
+}
+
+#[async_trait::async_trait]
+impl deltalake::ObjectStore for FlakyStore {
+    async fn put_opts(
+        &self,
+        location: &object_store::path::Path,
+        payload: object_store::PutPayload,
+        opts: object_store::PutOptions,
+    ) -> object_store::Result<object_store::PutResult> {
+        // Only the deletion vector object: failing the log write would fail the commit,
+        // which is a different path with its own retry.
+        if location.as_ref().ends_with(".bin") && self.should_fail(&self.fail_writes) {
+            return Err(Self::outage());
+        }
+        self.inner.put_opts(location, payload, opts).await
+    }
+
+    async fn put_multipart_opts(
+        &self,
+        location: &object_store::path::Path,
+        opts: object_store::PutMultipartOptions,
+    ) -> object_store::Result<Box<dyn object_store::MultipartUpload>> {
+        self.inner.put_multipart_opts(location, opts).await
+    }
+
+    async fn get_opts(
+        &self,
+        location: &object_store::path::Path,
+        options: object_store::GetOptions,
+    ) -> object_store::Result<object_store::GetResult> {
+        if location.as_ref().ends_with(".parquet") && self.should_fail(&self.fail_reads) {
+            return Err(Self::outage());
+        }
+        self.inner.get_opts(location, options).await
+    }
+
+    fn list(
+        &self,
+        prefix: Option<&object_store::path::Path>,
+    ) -> futures::stream::BoxStream<'static, object_store::Result<object_store::ObjectMeta>> {
+        self.inner.list(prefix)
+    }
+
+    async fn list_with_delimiter(
+        &self,
+        prefix: Option<&object_store::path::Path>,
+    ) -> object_store::Result<object_store::ListResult> {
+        self.inner.list_with_delimiter(prefix).await
+    }
+
+    fn delete_stream(
+        &self,
+        locations: futures::stream::BoxStream<
+            'static,
+            object_store::Result<object_store::path::Path>,
+        >,
+    ) -> futures::stream::BoxStream<'static, object_store::Result<object_store::path::Path>> {
+        self.inner.delete_stream(locations)
+    }
+
+    async fn copy_opts(
+        &self,
+        from: &object_store::path::Path,
+        to: &object_store::path::Path,
+        options: object_store::CopyOptions,
+    ) -> object_store::Result<()> {
+        self.inner.copy_opts(from, to, options).await
+    }
+}
+
+/// Open `dir`'s table through `store`, so the merge paths read and write through it.
+async fn table_over(store: Arc<FlakyStore>, dir: &TempDir) -> DeltaTable {
+    let url = deltalake::table::builder::ensure_table_uri(dir.path().to_str().unwrap()).unwrap();
+    deltalake::DeltaTableBuilder::from_url(url.clone())
+        .unwrap()
+        .with_storage_backend(store, url)
+        .load()
+        .await
+        .unwrap()
+}
+
+/// A flush survives an object store that drops requests, and lands the same table.
+///
+/// Both halves are covered: the probe's read of a data file and the write of the packed
+/// deletion vector object. Each is retried where it happens, so a flush pays for one dropped
+/// request with one re-request rather than by redoing the whole lookup.
+#[tokio::test]
+async fn a_flush_rides_out_a_flaky_object_store() {
+    let dir = TempDir::new().unwrap();
+    drop(fixture_table(&dir, &[1, 2, 3, 4], true).await);
+
+    // Within `IO_ATTEMPTS`, so the retries are expected to absorb them.
+    let store = FlakyStore::new(2, 2);
+    let table = table_over(store.clone(), &dir).await;
+    let table = tombstone_ids(table, &[2, 3]).await;
+
+    assert_eq!(live_ids(&table).await, vec![1, 4]);
+    assert_eq!(
+        store.injected.load(Ordering::Relaxed),
+        4,
+        "the store did not actually drop the requests the test injects"
+    );
 }
