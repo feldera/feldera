@@ -1422,7 +1422,9 @@ impl DeltaTableWriter {
                     }
                     backoff = min(backoff * 2, max_backoff);
                 }
-                Err(e) => {
+                // Named rather than a catch-all, so `{e:#}` reaches anyhow's chain instead
+                // of stopping at `WriteError`'s own `Display`.
+                Err(WriteError::Transient(e)) => {
                     inner.records_written.store(0, Ordering::Relaxed);
                     return Err(anyhow!(
                         "merging a batch into the Delta table failed after {retry_count} \

@@ -341,7 +341,8 @@ impl MergeWriter {
             },
         )
         .await
-        .map_err(transient)
+        // Kept whole rather than re-wrapped, so the commit's own context survives.
+        .map_err(WriteError::Transient)
     }
 }
 
@@ -464,6 +465,7 @@ impl<'a> KeyChunk<'a> {
     }
 
     /// Turn the buffered keys into comparable bytes in the chunk.
+    ///
     /// Every failure here is deterministic: it is encoding, not I/O.
     fn encode_buffered(&mut self) -> Result<(), WriteError> {
         if self.buffered == 0 {
