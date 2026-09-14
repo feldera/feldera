@@ -151,6 +151,19 @@ pub const RANGE_FILTER_MISSES_COUNT: MetricId =
 pub const RANGE_FILTER_HIT_RATE_PERCENT: MetricId =
     MetricId(Cow::Borrowed("range_filter_hit_rate_percent"));
 pub const RANGE_FILTER_SIZE_BYTES: MetricId = MetricId(Cow::Borrowed("range_filter_size_bytes"));
+/// Number of flushes a `ShardedAccumulatorSender` has sent. Paired with a
+/// receiver's `accumulator_flushes_received_count`, this says whether a flush
+/// a receiver is waiting for was ever sent or was lost on the way.
+pub const ACCUMULATOR_FLUSHES_SENT_COUNT: MetricId =
+    MetricId(Cow::Borrowed("accumulator_flushes_sent_count"));
+
+/// Whether a `ShardedAccumulatorSender` has been told to flush but has not yet
+/// sent it. True while a commit is waiting on this sender; true once the
+/// circuit is otherwise idle means the flush is stuck here rather than in
+/// transit.
+pub const ACCUMULATOR_FLUSH_PENDING: MetricId =
+    MetricId(Cow::Borrowed("accumulator_flush_pending"));
+
 /// Number of senders whose flush notification a `ShardedAccumulatorReceiver`
 /// is still waiting for before it can complete the current transaction's
 /// flush. A receiver that sits at a nonzero value while the circuit is

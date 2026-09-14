@@ -20,7 +20,8 @@ use crate::{
         GlobalNodeId, NodeId, OwnershipPreference, StepSize, WorkerLocation, WorkerLocations,
         circuit_builder::StreamId,
         metadata::{
-            ACCUMULATOR_FLUSHES_RECEIVED_COUNT, ACCUMULATOR_UNFLUSHED_SENDERS,
+            ACCUMULATOR_FLUSHES_RECEIVED_COUNT, ACCUMULATOR_FLUSHES_SENT_COUNT,
+            ACCUMULATOR_FLUSH_PENDING, ACCUMULATOR_UNFLUSHED_SENDERS,
             ACCUMULATOR_UNFLUSHED_SENDERS_COUNT, ALLOCATED_MEMORY_BYTES, BatchSizeStats, INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT,
             MetaItem, OUTPUT_BATCHES_STATS, OperatorLocation, OperatorMeta, SHARED_MEMORY_BYTES,
             SPINE_COUNT, STATE_RECORDS_COUNT, USED_MEMORY_BYTES,
@@ -598,6 +599,11 @@ where
     input_batch_stats: BatchSizeStats,
 
     flushed: bool,
+
+    /// Number of flushes this sender has put on the wire. Compared against a
+    /// receiver's flushes-received, this distinguishes a flush that was never
+    /// sent from one that was sent and lost.
+    n_flushes_sent: usize,
 }
 
 impl<B> ShardedAccumulatorSender<B>
@@ -612,6 +618,7 @@ where
             enabled_during_current_transaction: None,
             input_batch_stats: BatchSizeStats::new(),
             flushed: false,
+            n_flushes_sent: 0,
         }
     }
 }
@@ -631,6 +638,8 @@ where
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
             INPUT_BATCHES_STATS => self.input_batch_stats.metadata(),
+            ACCUMULATOR_FLUSHES_SENT_COUNT => MetaItem::Count(self.n_flushes_sent),
+            ACCUMULATOR_FLUSH_PENDING => MetaItem::Bool(self.flushed),
         });
     }
 
@@ -680,6 +689,7 @@ where
                 let batch = B::dyn_empty(&self.exchange.factories);
                 self.exchange.send(self.name.get(), batch, true).await;
             }
+            self.n_flushes_sent += 1;
             self.flushed = false;
             self.enabled_during_current_transaction = None;
         }
