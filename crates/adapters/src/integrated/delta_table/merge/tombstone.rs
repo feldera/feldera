@@ -17,7 +17,7 @@
 
 use std::collections::BTreeMap;
 
-use anyhow::{Result as AnyResult, anyhow};
+use anyhow::anyhow;
 use delta_kernel::actions::deletion_vector_writer::{
     KernelDeletionVector, StreamingDeletionVectorWriter,
 };
@@ -27,7 +27,9 @@ use deltalake::{DeltaTable, Path};
 use roaring::RoaringTreemap;
 use uuid::Uuid;
 
+use super::super::WriteError;
 use super::super::deletion_vector::read_deletion_vector;
+use super::{retry_io, transient};
 
 /// Physical row ordinals to tombstone, grouped by data file.
 ///
@@ -112,7 +114,7 @@ pub struct DvWrite {
 pub async fn write_deletion_vectors(
     tombstones: &Tombstones,
     table: &DeltaTable,
-) -> AnyResult<DvWrite> {
+) -> Result<DvWrite, WriteError> {
     if tombstones.is_empty() {
         return Ok(DvWrite {
             actions: Vec::new(),
@@ -136,14 +138,26 @@ pub async fn write_deletion_vectors(
 
     for (path, new_ordinals) in &tombstones.files {
         let (add, remove) = live.get(path).ok_or_else(|| {
-            anyhow!(
+            // Transient: the lookup ran against a snapshot that no longer holds this file,
+            // and redoing it against the current one is exactly what fixes that.
+            WriteError::Transient(anyhow!(
                 "data file '{path}' is no longer in the Delta table snapshot; \
                  a concurrent maintenance job replaced it and the lookup must be redone"
-            )
+            ))
         })?;
 
         let mut bitmap = match &add.deletion_vector {
-            Some(existing) => read_deletion_vector(existing, table).await?,
+            Some(existing) => {
+                retry_io(
+                    &format!("reading the deletion vector of '{path}'"),
+                    || async {
+                        read_deletion_vector(existing, table)
+                            .await
+                            .map_err(transient)
+                    },
+                )
+                .await?
+            }
             None => RoaringTreemap::new(),
         };
         let before = bitmap.len();
@@ -167,9 +181,11 @@ pub async fn write_deletion_vectors(
         dv.add_deleted_row_indexes(&bitmap);
         drop(bitmap);
 
-        let result = writer
-            .write_deletion_vector(dv)
-            .map_err(|e| anyhow!("error serializing deletion vector for '{path}': {e}"))?;
+        let result = writer.write_deletion_vector(dv).map_err(|e| {
+            WriteError::Deterministic(anyhow!(
+                "error serializing deletion vector for '{path}': {e}"
+            ))
+        })?;
 
         actions.push(Action::Remove(remove.clone()));
         actions.push(Action::Add(Add {
@@ -186,9 +202,9 @@ pub async fn write_deletion_vectors(
         metrics.files_touched += 1;
     }
 
-    writer
-        .finalize()
-        .map_err(|e| anyhow!("error finalizing deletion vector file: {e}"))?;
+    writer.finalize().map_err(|e| {
+        WriteError::Deterministic(anyhow!("error finalizing deletion vector file: {e}"))
+    })?;
 
     if metrics.files_touched == 0 {
         // Every touched file was dropped whole, so the packed object holds no vector.
@@ -197,11 +213,17 @@ pub async fn write_deletion_vectors(
 
     metrics.dv_bytes = buffer.len();
     let payload = bytes::Bytes::from(buffer);
-    table
-        .object_store()
-        .put(&dv_path, payload.into())
-        .await
-        .map_err(|e| anyhow!("error writing deletion vector file '{dv_path}': {e}"))?;
+    retry_io(&format!("writing deletion vector file '{dv_path}'"), || {
+        let payload = payload.clone();
+        async {
+            table
+                .object_store()
+                .put(&dv_path, payload.into())
+                .await
+                .map_err(transient)
+        }
+    })
+    .await?;
 
     Ok(DvWrite { actions, metrics })
 }
@@ -216,10 +238,12 @@ pub async fn write_deletion_vectors(
 fn resolve_live_files(
     tombstones: &Tombstones,
     table: &DeltaTable,
-) -> AnyResult<BTreeMap<String, (Add, Remove)>> {
-    let state = table
-        .snapshot()
-        .map_err(|e| anyhow!("Delta table has no snapshot to tombstone rows in: {e}"))?;
+) -> Result<BTreeMap<String, (Add, Remove)>, WriteError> {
+    let state = table.snapshot().map_err(|e| {
+        WriteError::Deterministic(anyhow!(
+            "Delta table has no snapshot to tombstone rows in: {e}"
+        ))
+    })?;
 
     let mut live = BTreeMap::new();
     for view in state.log_data() {

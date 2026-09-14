@@ -203,6 +203,7 @@ export type {
   DeltaTableIngestMode,
   DeltaTableReaderConfig,
   DeltaTableTransactionMode,
+  DeltaTableUpdateMode,
   DeltaTableWriteMode,
   DeltaTableWriterConfig,
   DeltaVariantEncoding,
