@@ -106,6 +106,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
 
         this.builder()
                 .append(RustWriter.COMMON_PREAMBLE)
+                .append(RustWriter.ALLOW_DEPRECATED_PREAMBLE)
                 .append(RustWriter.STANDARD_PREAMBLE);
         if (!useHandles)
             this.builder().append(RustWriter.CATALOG_PREAMBLE);

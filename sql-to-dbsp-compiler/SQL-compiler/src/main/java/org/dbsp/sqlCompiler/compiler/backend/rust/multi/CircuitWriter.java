@@ -226,6 +226,7 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
     @Override
     public void write(DBSPCompiler compiler) {
         this.builder().append(COMMON_PREAMBLE);
+        this.builder().append(ALLOW_DEPRECATED_PREAMBLE);
         this.builder().append(STANDARD_PREAMBLE);
         if (!compiler.options.ioOptions.emitHandles)
             this.builder().append(CATALOG_PREAMBLE);

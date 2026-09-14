@@ -148,6 +148,9 @@
 //!
 //! [`Step`]: crate::transport::Step
 
+// The connector layer still builds record metadata as the enum `Variant`.
+#![allow(deprecated)]
+
 use rustls::crypto::CryptoProvider;
 
 pub(crate) mod adhoc;

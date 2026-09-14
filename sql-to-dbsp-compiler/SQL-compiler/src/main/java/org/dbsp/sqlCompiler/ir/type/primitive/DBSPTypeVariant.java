@@ -13,8 +13,46 @@ import org.dbsp.util.IIndentStream;
 
 /** Represents a SQL VARIANT type: dynamically-typed values. */
 public class DBSPTypeVariant extends DBSPTypeBaseType {
+    /** True when VARIANT values use {@code LegacyVariant} rather than
+     * {@code SqlVariant}.  This will go away. */
+    private static boolean legacyRepresentation = false;
+
+    /** True when VARIANT should be emitted as the enum {@code Variant}. */
+    public static boolean legacyRepresentation() {
+        return legacyRepresentation;
+    }
+
+    /** Selects the representation for the program being compiled. */
+    public static void useLegacyRepresentation(boolean value) {
+        legacyRepresentation = value;
+    }
+
+    /** Runs {@code codeGenerator} generating code with the legacy Variant representation.
+     *
+     * <p>Connector-metadata DEFAULT expressions need this: the adapters build
+     * record metadata using the LegacyVariant type. */
+    public static void withLegacyRepresentation(Runnable codeGenerator) {
+        boolean saved = legacyRepresentation;
+        legacyRepresentation = true;
+        try {
+            codeGenerator.run();
+        } finally {
+            legacyRepresentation = saved;
+        }
+    }
+
     DBSPTypeVariant(CalciteObject node, boolean mayBeNull) {
         super(node, DBSPTypeCode.VARIANT, mayBeNull);
+    }
+
+    @Override
+    public String shortName() {
+        return legacyRepresentation ? this.code.shortName : "FV";
+    }
+
+    @Override
+    public String getRustString() {
+        return legacyRepresentation ? this.code.rustName : "SqlVariant";
     }
 
     public static final DBSPTypeVariant INSTANCE = new DBSPTypeVariant(false);

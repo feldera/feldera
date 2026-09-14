@@ -88,6 +88,20 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
             #![allow(non_upper_case_globals)]
             """;
 
+    /** Emitted only for crates that contain no user-written code.
+     *
+     * <p>Connector metadata is still using the deprecated {@code Variant}, and
+     * every table and view names it in its {@code deserialize_table_record!}
+     * invocation, so without this a pipeline build reports one deprecation
+     * warning per struct even when the program has no VARIANT column.
+     *
+     * <p>Remove this when connector metadata moves to {@code SqlVariant}:
+     * generated code stops naming the enum, so there is nothing left to
+     * silence, and keeping it would hide real deprecations. */
+    public static final String ALLOW_DEPRECATED_PREAMBLE = """
+            #![allow(deprecated)]
+            """;
+
     public static final String ALLOC_PREAMBLE = """
             #[cfg(not(target_env = "msvc"))]
             #[global_allocator]
