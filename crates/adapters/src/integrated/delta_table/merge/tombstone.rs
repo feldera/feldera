@@ -28,7 +28,7 @@ use roaring::RoaringTreemap;
 use uuid::Uuid;
 
 use super::super::WriteError;
-use super::super::deletion_vector::read_deletion_vector;
+use super::super::deletion_vector::{CachedReads, read_deletion_vector_with};
 use super::{retry_io, transient};
 
 /// Physical row ordinals to tombstone, grouped by data file.
@@ -131,6 +131,11 @@ pub async fn write_deletion_vectors(
     // `DeletionVectorPath` has no public constructor, so `to_descriptor` is out of reach.
     let encoded_path = z85::encode(uuid.as_bytes());
 
+    // One handler for the whole loop. Every file this flush touches was tombstoned by the
+    // same earlier flush in the steady state, so their vectors share one packed object and
+    // the loop below would otherwise fetch it once per file.
+    let storage = CachedReads::new(table.log_store().engine(None).storage_handler());
+
     let mut buffer: Vec<u8> = Vec::new();
     let mut writer = StreamingDeletionVectorWriter::new(&mut buffer);
     let mut actions = Vec::with_capacity(tombstones.files.len() * 2);
@@ -151,7 +156,7 @@ pub async fn write_deletion_vectors(
                 retry_io(
                     &format!("reading the deletion vector of '{path}'"),
                     || async {
-                        read_deletion_vector(existing, table)
+                        read_deletion_vector_with(existing, table, storage.clone())
                             .await
                             .map_err(transient)
                     },
