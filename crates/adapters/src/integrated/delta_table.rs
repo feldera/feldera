@@ -13,7 +13,39 @@ use feldera_types::serde_with_context::serde_config::{DecimalFormat, UuidFormat}
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimestampFormat};
 pub use input::DeltaTableInputEndpoint;
 pub use output::DeltaTableWriter;
+use std::fmt::{Debug, Display, Formatter, Result as FmtResult};
 use std::sync::{Arc, Once};
+
+/// Error classification for Delta table write operations.
+///
+/// Separates deterministic failures (which will recur on every attempt) from
+/// transient I/O failures (which may succeed on retry).
+pub(crate) enum WriteError {
+    /// Data-dependent error that will recur identically on retry.
+    /// Examples: non-unique keys, schema mismatches, serialization failures.
+    Deterministic(anyhow::Error),
+    /// Transient I/O error that may resolve on retry.
+    /// Examples: object store timeouts, network failures.
+    Transient(anyhow::Error),
+}
+
+/// Names the classification, which is what a failing test needs to see.
+impl Debug for WriteError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            WriteError::Deterministic(e) => write!(f, "deterministic: {e:?}"),
+            WriteError::Transient(e) => write!(f, "transient: {e:?}"),
+        }
+    }
+}
+
+impl Display for WriteError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            WriteError::Deterministic(e) | WriteError::Transient(e) => write!(f, "{e}"),
+        }
+    }
+}
 
 /// The view counterpart of a string or binary type, or `None` for every other
 /// type.

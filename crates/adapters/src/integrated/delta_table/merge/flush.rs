@@ -40,6 +40,7 @@ use crate::catalog::SerCursor;
 use crate::util::{IndexedOperationType, indexed_operation_type};
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 
+use super::super::WriteError;
 use super::super::output::TARGET_FILE_SIZE;
 use super::chunk::LookupChunk;
 use super::commit_actions;
@@ -49,6 +50,7 @@ use super::probe::{Candidate, ProbeMetrics, locate};
 use super::prune::PartitionFilter;
 use super::startup::{MergeSetup, Regime, StatsConfig};
 use super::tombstone::{DvWriteMetrics, Tombstones, write_deletion_vectors};
+use super::transient;
 
 /// Rows buffered in the append writer before a chunk is written out.
 const APPEND_CHUNK_ROWS: usize = 100_000;
@@ -154,7 +156,7 @@ impl MergeWriter {
         retrying: bool,
         on_uniqueness_violation: &mut dyn FnMut(anyhow::Error),
         progress: &AtomicU64,
-    ) -> AnyResult<FlushMetrics> {
+    ) -> Result<FlushMetrics, WriteError> {
         let mut metrics = FlushMetrics::default();
 
         // The snapshot the lookup runs against. The commit declares it as its read version,
@@ -162,8 +164,9 @@ impl MergeWriter {
         let candidates = self.snapshot_files(table)?;
 
         let mut appends = self.append_writer(object_store);
-        let mut rows = ArrayBuilder::new(self.row_serde_schema.clone())
-            .map_err(|e| anyhow!("error creating the row builder: {e}"))?;
+        let mut rows = ArrayBuilder::new(self.row_serde_schema.clone()).map_err(|e| {
+            WriteError::Deterministic(anyhow!("error creating the row builder: {e}"))
+        })?;
         let mut keys = KeyChunk::new(self, table, &candidates)?;
         let mut buffered_rows = 0;
 
@@ -195,7 +198,9 @@ impl MergeWriter {
                 IndexedOperationType::Insert | IndexedOperationType::Upsert
             ) {
                 position_at_new_value(cursor);
-                cursor.serialize_val_to_arrow(&mut rows)?;
+                cursor
+                    .serialize_val_to_arrow(&mut rows)
+                    .map_err(WriteError::Deterministic)?;
                 buffered_rows += 1;
                 metrics.rows_appended += 1;
 
@@ -215,10 +220,12 @@ impl MergeWriter {
         }
         let tombstones = keys.finish(&mut metrics).await?;
 
+        // Transient: the writer streamed data files to the object store, so a failure here
+        // is I/O.  It cannot be retried in place, only by redoing the flush.
         let added = appends
             .close()
             .await
-            .map_err(|e| anyhow!("error closing the Delta writer: {e:?}"))?;
+            .map_err(|e| transient(format!("error closing the Delta writer: {e:?}")))?;
         metrics.files_appended = added.len();
         metrics.bytes_written = added.iter().map(|a| a.size.max(0) as u64).sum();
 
@@ -244,10 +251,10 @@ impl MergeWriter {
 
     /// Data files in the table's current snapshot, each carrying the log's statistics and the
     /// partition values of any key column the file does not store.
-    fn snapshot_files(&self, table: &DeltaTable) -> AnyResult<Vec<Candidate>> {
-        let snapshot = table
-            .snapshot()
-            .map_err(|e| anyhow!("unable to read the Delta table snapshot: {e}"))?;
+    fn snapshot_files(&self, table: &DeltaTable) -> Result<Vec<Candidate>, WriteError> {
+        let snapshot = table.snapshot().map_err(|e| {
+            WriteError::Deterministic(anyhow!("unable to read the Delta table snapshot: {e}"))
+        })?;
 
         Ok(snapshot
             .log_data()
@@ -309,7 +316,7 @@ impl MergeWriter {
         added: Vec<Add>,
         tombstones: Tombstones,
         metrics: &mut FlushMetrics,
-    ) -> AnyResult<()> {
+    ) -> Result<(), WriteError> {
         let dv = write_deletion_vectors(&tombstones, table).await?;
         metrics.dv = dv.metrics;
         metrics.bytes_written += dv.metrics.dv_bytes as u64;
@@ -321,6 +328,9 @@ impl MergeWriter {
             return Ok(());
         }
 
+        // Transient: a commit fails when it loses a conflict to concurrent maintenance, or
+        // when the log write itself fails.  Both want the flush redone against the table as
+        // it now stands, which is the caller's retry.
         commit_actions(
             table,
             actions,
@@ -331,6 +341,7 @@ impl MergeWriter {
             },
         )
         .await
+        .map_err(transient)
     }
 }
 
@@ -366,14 +377,19 @@ fn position_at_new_value(cursor: &mut dyn SerCursor) {
     debug_assert!(cursor.val_valid());
 }
 
-async fn write_rows(builder: &mut ArrayBuilder, writer: &mut DeltaWriter) -> AnyResult<()> {
-    let batch = builder
-        .to_record_batch()
-        .map_err(|e| anyhow!("error building an arrow batch of new rows: {e}"))?;
-    writer
-        .write(&batch)
-        .await
-        .map_err(|e| anyhow!("error writing {} new rows: {e:?}", batch.num_rows()))?;
+async fn write_rows(
+    builder: &mut ArrayBuilder,
+    writer: &mut DeltaWriter,
+) -> Result<(), WriteError> {
+    let batch = builder.to_record_batch().map_err(|e| {
+        WriteError::Deterministic(anyhow!("error building an arrow batch of new rows: {e}"))
+    })?;
+    writer.write(&batch).await.map_err(|e| {
+        transient(format!(
+            "error writing {} new rows: {e:?}",
+            batch.num_rows()
+        ))
+    })?;
     Ok(())
 }
 
@@ -397,20 +413,22 @@ impl<'a> KeyChunk<'a> {
         writer: &'a MergeWriter,
         table: &'a DeltaTable,
         candidates: &'a [Candidate],
-    ) -> AnyResult<Self> {
+    ) -> Result<Self, WriteError> {
         Ok(Self {
             writer,
             table,
             candidates,
-            builder: ArrayBuilder::new(writer.key_serde_schema.clone())
-                .map_err(|e| anyhow!("error creating the key builder: {e}"))?,
+            builder: ArrayBuilder::new(writer.key_serde_schema.clone()).map_err(|e| {
+                WriteError::Deterministic(anyhow!("error creating the key builder: {e}"))
+            })?,
             buffered: 0,
             chunk: LookupChunk::new(writer.lookup_chunk_bytes),
             partitions: PartitionFilter::new(
                 writer.key_encoder.column_names(),
                 &writer.key_arrow_fields,
                 &writer.partition_key_columns,
-            )?,
+            )
+            .map_err(WriteError::Deterministic)?,
             tombstones: Tombstones::new(),
         })
     }
@@ -420,8 +438,10 @@ impl<'a> KeyChunk<'a> {
         &mut self,
         cursor: &mut dyn SerCursor,
         metrics: &mut FlushMetrics,
-    ) -> AnyResult<()> {
-        cursor.serialize_key_to_arrow(&mut self.builder)?;
+    ) -> Result<(), WriteError> {
+        cursor
+            .serialize_key_to_arrow(&mut self.builder)
+            .map_err(WriteError::Deterministic)?;
         self.buffered += 1;
         metrics.keys_probed += 1;
 
@@ -435,7 +455,7 @@ impl<'a> KeyChunk<'a> {
     }
 
     /// Encode the remaining keys, run the last lookup, and return what to tombstone.
-    async fn finish(mut self, metrics: &mut FlushMetrics) -> AnyResult<Tombstones> {
+    async fn finish(mut self, metrics: &mut FlushMetrics) -> Result<Tombstones, WriteError> {
         self.encode_buffered()?;
         if !self.chunk.is_empty() {
             self.run_lookup(metrics).await?;
@@ -444,28 +464,38 @@ impl<'a> KeyChunk<'a> {
     }
 
     /// Turn the buffered keys into comparable bytes in the chunk.
-    fn encode_buffered(&mut self) -> AnyResult<()> {
+    /// Every failure here is deterministic: it is encoding, not I/O.
+    fn encode_buffered(&mut self) -> Result<(), WriteError> {
         if self.buffered == 0 {
             return Ok(());
         }
-        let batch = self
-            .builder
-            .to_record_batch()
-            .map_err(|e| anyhow!("error building an arrow batch of keys: {e}"))?;
-        let columns = self.writer.key_encoder.columns_of(&batch)?;
+        let batch = self.builder.to_record_batch().map_err(|e| {
+            WriteError::Deterministic(anyhow!("error building an arrow batch of keys: {e}"))
+        })?;
+        let columns = self
+            .writer
+            .key_encoder
+            .columns_of(&batch)
+            .map_err(WriteError::Deterministic)?;
         if let Some(filter) = &mut self.partitions {
-            filter.record(&columns)?;
+            filter.record(&columns).map_err(WriteError::Deterministic)?;
         }
         if key::contains_null(&columns) {
             self.chunk.note_null_key();
         }
-        let rows = self.writer.key_encoder.encode_columns(&columns)?;
-        self.chunk.extend(&rows)?;
+        let rows = self
+            .writer
+            .key_encoder
+            .encode_columns(&columns)
+            .map_err(WriteError::Deterministic)?;
+        self.chunk
+            .extend(&rows)
+            .map_err(WriteError::Deterministic)?;
         self.buffered = 0;
         Ok(())
     }
 
-    async fn run_lookup(&mut self, metrics: &mut FlushMetrics) -> AnyResult<()> {
+    async fn run_lookup(&mut self, metrics: &mut FlushMetrics) -> Result<(), WriteError> {
         self.chunk.sort();
         let probed = locate(
             &self.chunk,

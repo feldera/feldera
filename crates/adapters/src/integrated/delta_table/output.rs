@@ -6,7 +6,7 @@ use crate::integrated::delta_table::merge::compact::Compactor;
 use crate::integrated::delta_table::merge::flush::MergeWriter;
 use crate::integrated::delta_table::merge::metrics::MergeMetrics;
 use crate::integrated::delta_table::merge::startup;
-use crate::integrated::delta_table::register_storage_handlers;
+use crate::integrated::delta_table::{WriteError, register_storage_handlers};
 use crate::transport::Step;
 use crate::util::{IndexedOperationType, indexed_operation_type};
 use crate::{
@@ -768,19 +768,6 @@ impl WriterTask {
     }
 }
 
-/// Error classification for Delta table write operations.
-///
-/// Separates deterministic failures (which will recur on every attempt) from
-/// transient I/O failures (which may succeed on retry).
-enum WriteError {
-    /// Data-dependent error that will recur identically on retry.
-    /// Examples: non-unique keys, schema mismatches, serialization failures.
-    Deterministic(anyhow::Error),
-    /// Transient I/O error that may resolve on retry.
-    /// Examples: object store timeouts, network failures.
-    Transient(anyhow::Error),
-}
-
 /// The error an operation reports when a shutdown cuts it short.
 fn shutdown_aborted(operation: &str, retry_count: u32) -> anyhow::Error {
     anyhow!("{operation} aborted after {retry_count} attempts: the pipeline is shutting down")
@@ -1383,7 +1370,17 @@ impl DeltaTableWriter {
                     );
                     return Ok(());
                 }
-                Err(e)
+                // Retrying replays the same rows against the same schema, so it can only
+                // burn the pipeline's time.  Without this the default `max_retries: None`
+                // makes one bad batch retry for ever.
+                Err(WriteError::Deterministic(e)) => {
+                    inner.records_written.store(0, Ordering::Relaxed);
+                    return Err(anyhow!(
+                        "merging a batch into the Delta table failed and cannot succeed on \
+                         retry: {e:#}"
+                    ));
+                }
+                Err(WriteError::Transient(e))
                     if inner.config.max_retries.is_none()
                         || retry_count < inner.config.max_retries.unwrap() =>
                 {
@@ -1399,7 +1396,8 @@ impl DeltaTableWriter {
                         );
                     }
                     warn!("delta_table {}: {message}", inner.endpoint_name);
-                    TOKIO.block_on(async {
+                    let shutdown = inner.shutdown.clone();
+                    let reloaded = TOKIO.block_on(shutdown.run_until_cancelled(async {
                         // Constructed inside the runtime, which `sleep` requires.
                         sleep(backoff).await;
 
@@ -1412,7 +1410,16 @@ impl DeltaTableWriter {
                                 inner.endpoint_name
                             );
                         }
-                    });
+                    }));
+                    // The loop is unbounded by default, and it runs on a thread the runtime
+                    // joins on teardown, so it has to stop when the pipeline does.
+                    if reloaded.is_none() {
+                        inner.records_written.store(0, Ordering::Relaxed);
+                        return Err(shutdown_aborted(
+                            "merging a batch into the Delta table",
+                            retry_count,
+                        ));
+                    }
                     backoff = min(backoff * 2, max_backoff);
                 }
                 Err(e) => {

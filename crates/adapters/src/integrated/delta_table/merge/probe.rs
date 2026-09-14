@@ -37,10 +37,12 @@ use parquet::arrow::ProjectionMask;
 use parquet::arrow::arrow_reader::statistics::StatisticsConverter;
 use parquet::arrow::async_reader::{ParquetObjectReader, ParquetRecordBatchStreamBuilder};
 
+use super::super::WriteError;
 use super::chunk::LookupChunk;
 use super::key::KeyEncoder;
 use super::prune::{KeyStats, PartitionFilter, may_contain};
 use super::tombstone::Tombstones;
+use super::{retry_io, transient};
 
 /// A data file the lookup may have to read, with everything the log says about it.
 ///
@@ -202,7 +204,7 @@ pub async fn locate(
     max_concurrent: usize,
     pruning: Pruning<'_>,
     tombstones: &mut Tombstones,
-) -> AnyResult<ProbeMetrics> {
+) -> Result<ProbeMetrics, WriteError> {
     let mut metrics = ProbeMetrics::default();
     if chunk.is_empty() || candidates.is_empty() {
         metrics.keys_not_found = chunk.len() as u64;
@@ -215,7 +217,15 @@ pub async fn locate(
     let store = table.object_store();
     let results: Vec<FileHits> = stream::iter(to_read.iter().map(|candidate| {
         let store = store.clone();
-        async move { probe_file(chunk, candidate, store, encoder, pruning.on_stats).await }
+        // Per file, so one flaky request costs a re-read of that file rather than a
+        // re-run of the whole lookup.
+        async move {
+            retry_io(
+                &format!("probing Delta data file '{}'", candidate.path),
+                || probe_file(chunk, candidate, store.clone(), encoder, pruning.on_stats),
+            )
+            .await
+        }
     }))
     .buffer_unordered(max_concurrent.max(1))
     .try_collect()
@@ -319,7 +329,7 @@ async fn probe_file(
     store: Arc<dyn ObjectStore>,
     encoder: &KeyEncoder,
     prune_on_stats: bool,
-) -> AnyResult<FileHits> {
+) -> Result<FileHits, WriteError> {
     // delta-rs already decoded this path, so `Path::from` would encode it twice and name an
     // object that does not exist. Same choice as delta-rs's own `object_store_path`.
     let path = Path::parse(candidate.path.as_str())
@@ -327,7 +337,12 @@ async fn probe_file(
     let reader = ParquetObjectReader::new(store, path.clone());
     let builder = ParquetRecordBatchStreamBuilder::new(reader)
         .await
-        .map_err(|e| anyhow!("failed to open Delta data file '{}': {e}", candidate.path))?;
+        .map_err(|e| {
+            transient(format!(
+                "failed to open Delta data file '{}': {e}",
+                candidate.path
+            ))
+        })?;
 
     let selected = select_row_groups(chunk, candidate, &builder, encoder, prune_on_stats);
     let total_groups = builder.metadata().row_groups().len();
@@ -347,7 +362,12 @@ async fn probe_file(
         .with_projection(mask)
         .with_row_groups(selected.iter().map(|g| g.index).collect())
         .build()
-        .map_err(|e| anyhow!("failed to read Delta data file '{}': {e}", candidate.path))?;
+        .map_err(|e| {
+            transient(format!(
+                "failed to read Delta data file '{}': {e}",
+                candidate.path
+            ))
+        })?;
 
     let mut hits = Vec::new();
     let mut group = selected.iter();
@@ -356,19 +376,19 @@ async fn probe_file(
 
     while let Some(batch) = stream.next().await {
         let batch: RecordBatch = batch.map_err(|e| {
-            anyhow!(
+            transient(format!(
                 "error reading Delta data file '{}' while locating rows: {e}",
                 candidate.path
-            )
+            ))
         })?;
 
         if consumed == current.rows {
             current = group.next().ok_or_else(|| {
-                anyhow!(
+                WriteError::Deterministic(anyhow!(
                     "internal error: '{}' yielded more rows than its selected row groups \
                      declare; physical row ordinals would be wrong",
                     candidate.path
-                )
+                ))
             })?;
             consumed = 0;
         }
@@ -376,14 +396,14 @@ async fn probe_file(
         if consumed + rows_in_batch > current.rows {
             // The ordinal arithmetic assumes the reader never merges row groups into one
             // batch. If that changes, fail loudly rather than tombstone the wrong rows.
-            return Err(anyhow!(
+            return Err(WriteError::Deterministic(anyhow!(
                 "internal error: a batch from '{}' spans a row group boundary; \
                  physical row ordinals would be wrong",
                 candidate.path
-            ));
+            )));
         }
 
-        let keys = encode_keys(&batch, candidate, encoder)?;
+        let keys = encode_keys(&batch, candidate, encoder).map_err(WriteError::Deterministic)?;
         for i in 0..keys.num_rows() {
             if let Some(position) = chunk.position(keys.row(i).as_ref()) {
                 hits.push((current.base + consumed + i as u64, position));
@@ -393,11 +413,11 @@ async fn probe_file(
     }
 
     if consumed != current.rows || group.next().is_some() {
-        return Err(anyhow!(
+        return Err(WriteError::Deterministic(anyhow!(
             "internal error: '{}' yielded fewer rows than its selected row groups declare; \
              physical row ordinals would be wrong",
             candidate.path
-        ));
+        )));
     }
 
     Ok(FileHits {
@@ -551,6 +571,7 @@ fn key_projection_mask(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::integrated::delta_table::merge::IO_ATTEMPTS;
     use crate::integrated::delta_table::merge::key::{KeyEncoder, contains_null};
     use crate::integrated::delta_table::merge::test::{
         arrow_schema, fixture_columns, key_relation,
@@ -726,6 +747,39 @@ mod test {
         assert_eq!(metrics.keys_not_found, 1);
         assert_eq!(tombstones.total_rows(), 2);
         assert_eq!(tombstones.touched_files(), 1);
+    }
+
+    /// A file the object store cannot serve is transient, and is retried before giving up.
+    ///
+    /// Classification decides the connector's behaviour: transient lets the caller retry the
+    /// flush, deterministic stops it. A missing object is the shape an S3 outage takes.
+    #[tokio::test]
+    async fn an_unreadable_file_is_transient_and_retried() {
+        let dir = TempDir::new().unwrap();
+        let (table, candidates) = table_with(&dir, &[10, 20, 30, 40]).await;
+        let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
+        std::fs::remove_file(dir.path().join(&candidates[0].path)).unwrap();
+
+        let error = locate(
+            &chunk_of(&[20]),
+            &candidates,
+            &table,
+            &encoder,
+            4,
+            Pruning::new(true, None),
+            &mut Tombstones::new(),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(matches!(error, WriteError::Transient(_)), "{error:?}");
+        // Names the budget rather than timing the backoff, which would be flaky.
+        assert!(
+            error
+                .to_string()
+                .contains(&format!("after {IO_ATTEMPTS} attempts")),
+            "{error}"
+        );
     }
 
     /// Ordinals must be physical positions in the file, not positions among the rows read.
