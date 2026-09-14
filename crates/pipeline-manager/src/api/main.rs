@@ -409,6 +409,8 @@ It contains the following fields:
         feldera_types::config::TransportConfig,
         feldera_types::config::FormatConfig,
         feldera_types::config::ResourceConfig,
+        feldera_types::config::AutoscalingConfig,
+        feldera_types::config::StorageAutoscalingConfig,
         feldera_types::config::ObjectStorageConfig,
         feldera_types::config::FtModel,
         feldera_types::config::PipelineTemplateConfig,

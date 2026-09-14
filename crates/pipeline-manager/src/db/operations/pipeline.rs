@@ -589,6 +589,16 @@ pub(crate) async fn update_pipeline(
             {
                 not_allowed.push("`runtime_config.resources.storage_mb_max`");
             }
+            if runtime_config
+                .get("resources")
+                .map(|v| v.get("storage_mb_min"))
+                != current
+                    .runtime_config
+                    .get("resources")
+                    .map(|v| v.get("storage_mb_min"))
+            {
+                not_allowed.push("`runtime_config.resources.storage_mb_min`");
+            }
             if runtime_config.get("resources").map(|v| v.get("namespace"))
                 != current
                     .runtime_config

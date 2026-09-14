@@ -789,6 +789,16 @@ def test_runtime_config_edit_restricted(pipeline_name):
         10000,
     )
 
+    # runtime_config.resources.storage_mb_min
+    helper_test_restricted_runtime_config_edit(
+        pipeline_name,
+        pipeline,
+        "`runtime_config.resources.storage_mb_min`",
+        {"resources": {"storage_mb_min": 1000}},
+        lambda r: r["resources"].get("storage_mb_min"),
+        1000,
+    )
+
     # runtime_config.resources.namespace
     helper_test_restricted_runtime_config_edit(
         pipeline_name,

@@ -2215,9 +2215,23 @@ pub struct ResourceConfig {
     /// for an instance of this pipeline
     pub memory_mb_max: Option<u64>,
 
-    /// The total storage in Megabytes to reserve
-    /// for an instance of this pipeline
+    /// The initial storage in Megabytes to reserve for an instance of this
+    /// pipeline. Set together with `storage_mb_max` to enable storage
+    /// autoscaling.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage_mb_min: Option<u64>,
+
+    /// The maximum storage in Megabytes for an instance of this pipeline.
+    ///
+    /// Without `storage_mb_min`, this much storage is reserved up front.
+    ///
+    /// With `storage_mb_min`, storage starts there and autoscaling expands it
+    /// up to this limit.
     pub storage_mb_max: Option<u64>,
+
+    /// Autoscaling policy for an instance of this pipeline.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub autoscaling: Option<AutoscalingConfig>,
 
     /// Storage class to use for an instance of this pipeline.
     /// The class determines storage performance such as IOPS and throughput.
@@ -2235,6 +2249,101 @@ pub struct ResourceConfig {
     // The type of this field should not be backward incompatibly changed, and its location in the
     // runtime configuration JSON (`runtime_config.resources.namespace`) should not be changed.
     pub namespace: Option<String>,
+}
+
+/// Autoscaling policy for an instance of a pipeline.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
+pub struct AutoscalingConfig {
+    /// Storage autoscaling policy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub storage: Option<StorageAutoscalingConfig>,
+}
+
+/// Storage autoscaling policy: expand storage from `storage_mb_min` toward
+/// `storage_mb_max` as it fills up.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, ToSchema)]
+#[serde(default)]
+pub struct StorageAutoscalingConfig {
+    /// Usage fraction that triggers expansion. Defaults to 0.8.
+    #[serde(
+        deserialize_with = "crate::serde_via_value::deserialize",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub scale_threshold: Option<f64>,
+
+    /// Expansion multiplier. Defaults to 2.0.
+    #[serde(
+        deserialize_with = "crate::serde_via_value::deserialize",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub scale_factor: Option<f64>,
+}
+
+#[cfg(test)]
+mod resource_config_tests {
+    use super::{AutoscalingConfig, ResourceConfig, StorageAutoscalingConfig};
+    use serde_json::json;
+
+    #[test]
+    fn storage_autoscaling_round_trips_through_json() {
+        let input = json!({
+            "storage_mb_min": 1000,
+            "storage_mb_max": 8000,
+            "autoscaling": { "storage": { "scale_threshold": 0.8, "scale_factor": 2.0 } }
+        });
+        let config: ResourceConfig = serde_json::from_value(input).unwrap();
+        assert_eq!(config.storage_mb_min, Some(1000));
+        assert_eq!(config.storage_mb_max, Some(8000));
+        assert_eq!(
+            config.autoscaling,
+            Some(AutoscalingConfig {
+                storage: Some(StorageAutoscalingConfig {
+                    scale_threshold: Some(0.8),
+                    scale_factor: Some(2.0),
+                }),
+            })
+        );
+        let output = serde_json::to_value(&config).unwrap();
+        assert_eq!(output["storage_mb_min"], json!(1000));
+        assert_eq!(
+            output["autoscaling"]["storage"]["scale_threshold"],
+            json!(0.8)
+        );
+        assert_eq!(output["autoscaling"]["storage"]["scale_factor"], json!(2.0));
+    }
+
+    #[test]
+    fn autoscaling_fields_default_to_none() {
+        let config: ResourceConfig = serde_json::from_value(json!({})).unwrap();
+        assert_eq!(config.storage_mb_min, None);
+        assert_eq!(config.autoscaling, None);
+
+        // Unset autoscaling fields stay out of the serialized config so they
+        // do not clutter configs of users who never touch them.
+        let output = serde_json::to_value(&config).unwrap();
+        assert!(output.get("storage_mb_min").is_none());
+        assert!(output.get("autoscaling").is_none());
+        assert!(output.get("storage_mb_max").is_some());
+
+        // A partially set policy serializes only the fields the user set.
+        let input = json!({ "autoscaling": { "storage": { "scale_threshold": 0.9 } } });
+        let config: ResourceConfig = serde_json::from_value(input.clone()).unwrap();
+        let output = serde_json::to_value(&config).unwrap();
+        assert_eq!(output["autoscaling"], input["autoscaling"]);
+
+        // A policy object with no storage section is accepted as-is.
+        let config: ResourceConfig = serde_json::from_value(json!({ "autoscaling": {} })).unwrap();
+        assert_eq!(config.autoscaling, Some(AutoscalingConfig::default()));
+    }
+
+    #[test]
+    fn autoscaling_rejects_non_numeric_values() {
+        let input = json!({ "autoscaling": { "storage": { "scale_threshold": "high" } } });
+        assert!(serde_json::from_value::<ResourceConfig>(input).is_err());
+        let input = json!({ "storage_mb_min": -1 });
+        assert!(serde_json::from_value::<ResourceConfig>(input).is_err());
+    }
 }
 
 #[cfg(test)]

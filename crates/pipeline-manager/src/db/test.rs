@@ -49,7 +49,8 @@ use chrono::{DateTime, TimeZone, Utc};
 use deadpool_postgres::GenericClient;
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::config::{
-    DevTweaks, FtConfig, PipelineConfig, ProgramIr, ResourceConfig, RuntimeConfig,
+    AutoscalingConfig, DevTweaks, FtConfig, PipelineConfig, ProgramIr, ResourceConfig,
+    RuntimeConfig, StorageAutoscalingConfig,
 };
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
@@ -305,6 +306,8 @@ struct RuntimeConfigPropVal {
     val19: Option<u64>,
     val20: usize,
     val21: Option<u64>,
+    val22: Option<u64>,
+    val23: bool,
 }
 type ProgramConfigPropVal = (u8, bool, bool, bool, u8);
 type ProgramInfoPropVal = (u8, u8, u8);
@@ -441,7 +444,14 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
                 cpu_cores_max: val.val8,
                 memory_mb_min: val.val9,
                 memory_mb_max: val.val10,
+                storage_mb_min: val.val22,
                 storage_mb_max: val.val11,
+                autoscaling: val.val23.then_some(AutoscalingConfig {
+                    storage: Some(StorageAutoscalingConfig {
+                        scale_threshold: Some(0.8),
+                        scale_factor: Some(2.0),
+                    }),
+                }),
                 storage_class: val.val12,
                 service_account_name: val.val13,
                 namespace: val.val14,
@@ -2468,7 +2478,9 @@ async fn pipeline_versioning() {
             cpu_cores_max: None,
             memory_mb_min: None,
             memory_mb_max: None,
+            storage_mb_min: None,
             storage_mb_max: None,
+            autoscaling: None,
             storage_class: None,
             service_account_name: None,
             namespace: None,
@@ -2510,6 +2522,203 @@ async fn pipeline_versioning() {
     assert_eq!(current.version, Version(7));
     assert_eq!(current.program_version, Version(5));
     assert_eq!(current.refresh_version, Version(7));
+}
+
+/// `storage_mb_min` sizes the volume and cannot change while storage is in
+/// use, like `storage_mb_max`. The autoscaling policy can.
+#[tokio::test]
+async fn storage_mb_min_edit_restricted_to_cleared_storage() {
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+    let pipeline = handle
+        .db
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            "v0",
+            PipelineDescr {
+                name: "autoscaled".to_string(),
+                description: "".to_string(),
+                tags: vec![],
+                runtime_config: json!({
+                    "resources": { "storage_mb_min": 1000, "storage_mb_max": 8000 }
+                }),
+                program_code: "".to_string(),
+                udf_rust: "".to_string(),
+                udf_toml: "".to_string(),
+                program_config: json!({}),
+            },
+        )
+        .await
+        .unwrap();
+
+    // Compile and provision, which marks storage as in use.
+    handle
+        .db
+        .transit_program_status_to_compiling_sql(tenant_id, pipeline.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_sql_compiled(
+            tenant_id,
+            pipeline.id,
+            Version(1),
+            &SqlCompilationInfo {
+                exit_code: 0,
+                messages: vec![],
+            },
+            &serde_json::to_value(ProgramInfo {
+                schema: serde_json::to_value(ProgramSchema {
+                    inputs: vec![],
+                    outputs: vec![],
+                })
+                .unwrap(),
+                main_rust: "".to_string(),
+                udf_stubs: "".to_string(),
+                input_connectors: BTreeMap::new(),
+                output_connectors: BTreeMap::new(),
+                circuit_ir: None,
+                dataflow: None,
+            })
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_compiling_rust(tenant_id, pipeline.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_success(
+            tenant_id,
+            pipeline.id,
+            Version(1),
+            &RustCompilationInfo {
+                exit_code: 0,
+                stdout: "".to_string(),
+                stderr: "".to_string(),
+            },
+            "def",
+            "123",
+            "456",
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .set_deployment_resources_desired_status_provisioned(
+            tenant_id,
+            "autoscaled",
+            RuntimeDesiredStatus::Paused,
+            BootstrapConfig::default(),
+            false,
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_resources_status_to_provisioning(
+            tenant_id,
+            pipeline.id,
+            Version(1),
+            Uuid::nil(),
+            serde_json::to_value(generate_pipeline_config(
+                pipeline.id,
+                &pipeline.name,
+                &serde_json::from_value(pipeline.runtime_config.clone()).unwrap(),
+            ))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    // Stop it: edits need a stopped pipeline, and storage stays in use.
+    handle
+        .db
+        .set_deployment_resources_desired_status_stopped(tenant_id, "autoscaled")
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_resources_status_to_stopping(
+            tenant_id,
+            pipeline.id,
+            Version(1),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_resources_status_to_stopped(tenant_id, pipeline.id, Version(1))
+        .await
+        .unwrap();
+    assert_eq!(
+        handle
+            .db
+            .get_pipeline(tenant_id, "autoscaled")
+            .await
+            .unwrap()
+            .storage_status,
+        StorageStatus::InUse
+    );
+
+    let update = |runtime_config: serde_json::Value| {
+        let db = &handle.db;
+        async move {
+            db.update_pipeline(
+                tenant_id,
+                "autoscaled",
+                &None,
+                &PatchClientMetadata::default(),
+                "v0",
+                false,
+                &Some(runtime_config),
+                &None,
+                &None,
+                &None,
+                &None,
+            )
+            .await
+        }
+    };
+
+    // Changing the initial volume size is refused while storage is in use.
+    let err = update(json!({
+        "resources": { "storage_mb_min": 2000, "storage_mb_max": 8000 }
+    }))
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(
+            &err,
+            DBError::EditRestrictedToClearedStorage { not_allowed }
+                if not_allowed == &["`runtime_config.resources.storage_mb_min`".to_string()]
+        ),
+        "{err:?}"
+    );
+
+    // Changing the autoscaling policy is allowed.
+    let policy = json!({ "storage": { "scale_threshold": 0.9, "scale_factor": 3.0 } });
+    update(json!({
+        "resources": {
+            "storage_mb_min": 1000,
+            "storage_mb_max": 8000,
+            "autoscaling": policy
+        }
+    }))
+    .await
+    .unwrap();
+    let stored = handle
+        .db
+        .get_pipeline(tenant_id, "autoscaled")
+        .await
+        .unwrap();
+    assert_eq!(stored.runtime_config["resources"]["autoscaling"], policy);
 }
 
 /// If the name of a pipeline already exists, it should return an error.
@@ -6613,6 +6822,16 @@ impl ModelHelpers for Mutex<DbModel> {
                         .map(|v| v.get("storage_mb_max"))
                 {
                     not_allowed.push("`runtime_config.resources.storage_mb_max`");
+                }
+                if runtime_config
+                    .get("resources")
+                    .map(|v| v.get("storage_mb_min"))
+                    != pipeline
+                        .runtime_config
+                        .get("resources")
+                        .map(|v| v.get("storage_mb_min"))
+                {
+                    not_allowed.push("`runtime_config.resources.storage_mb_min`");
                 }
                 if runtime_config.get("resources").map(|v| v.get("namespace"))
                     != pipeline
