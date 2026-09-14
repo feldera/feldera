@@ -553,10 +553,10 @@ impl InputGenerator {
                 .iter()
                 .map(|plan| match plan.limit.unwrap_or(usize::MAX) {
                     0 => RowRangeSet::new(),
-                    limit => {
-                        let all_rows = 0..=limit - 1;
-                        RowRangeSet::from_ranges(&[all_rows])
-                    }
+                    // clippy::single_range_in_vec_init assumes a single range in a
+                    // slice literal is a typo for a length; here it is deliberate.
+                    #[allow(clippy::single_range_in_vec_init)]
+                    limit => RowRangeSet::from_ranges(&[0..=limit - 1]),
                 })
                 .collect()
         };
