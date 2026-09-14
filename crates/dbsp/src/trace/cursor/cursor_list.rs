@@ -575,6 +575,16 @@ where
     R: WeightTrait + ?Sized,
     T: 'static,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // Summing is where the bound stops being exact: two cursors sitting on
+        // the same key may hold the same value, and finding out would mean
+        // reading them, which is what a caller of this is trying to avoid.
+        self.current_key
+            .iter()
+            .map(|index| self.cursors[*index].value_count_upper_bound())
+            .sum()
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.weight_factory
     }

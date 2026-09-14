@@ -473,6 +473,13 @@ where
     T: Timestamp,
     O: OrdOffset,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // The layer stores a key's values contiguously, so the value cursor's
+        // bounds are the count.  The times under each value are not counted.
+        let (start, end) = self.cursor.child.bounds();
+        end - start
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.cursor.child.child.storage.factories.diff
     }

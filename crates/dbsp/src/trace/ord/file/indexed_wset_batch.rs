@@ -813,6 +813,14 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // The row group recorded beside the key says how many value rows it
+        // owns.  It lives in the key column's own block, which the cursor has
+        // already read, so `next_column` does no I/O and the value column is
+        // not touched at all.
+        self.key_cursor.next_column().unwrap_storage().len() as usize
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.wset.factories.weight_factory()
     }

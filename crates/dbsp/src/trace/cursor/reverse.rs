@@ -37,6 +37,10 @@ impl<C, K: ?Sized, V: ?Sized, R: WeightTrait + ?Sized> Cursor<K, V, (), R>
 where
     C: Cursor<K, V, (), R> + ?Sized,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        self.cursor.value_count_upper_bound()
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.cursor.weight_factory()
     }

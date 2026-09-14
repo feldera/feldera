@@ -242,6 +242,11 @@ where
     R: WeightTrait + ?Sized,
     C: Cursor<K, DynPair<V, H>, (), R>,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // Projection rewrites each value in place, so the count is unchanged.
+        self.inner.value_count_upper_bound()
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.inner.weight_factory()
     }
@@ -1132,6 +1137,10 @@ mod test {
     where
         C: Cursor<DynData, Pair, (), DynZWeight>,
     {
+        fn value_count_upper_bound(&self) -> usize {
+            self.inner.value_count_upper_bound()
+        }
+
         fn weight_factory(&self) -> &'static dyn Factory<DynZWeight> {
             self.inner.weight_factory()
         }
