@@ -492,6 +492,12 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // Each key has exactly one value, the unit value, which can occur at
+        // more than one time.
+        self.key_valid() as usize
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.batch.factories.weight_factory
     }
