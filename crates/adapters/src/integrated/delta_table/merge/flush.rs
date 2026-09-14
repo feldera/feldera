@@ -22,6 +22,7 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Result as AnyResult, anyhow};
 use arrow::datatypes::{Field as ArrowField, Schema as ArrowSchema};
@@ -141,6 +142,10 @@ impl MergeWriter {
     /// commit landed and only its response was lost, so the rows an earlier attempt appended
     /// may be in the table: [`Regime::Owned`]'s insert shortcut is unsound from then on, and
     /// skipping the lookup would leave two live rows for one key.
+    ///
+    /// `progress` counts the rows written so far, for the controller to report while a large
+    /// flush is still running. The caller owns resetting it.
+    #[allow(clippy::too_many_arguments)]
     pub async fn flush(
         &self,
         table: &mut DeltaTable,
@@ -148,6 +153,7 @@ impl MergeWriter {
         cursor: &mut dyn SerCursor,
         retrying: bool,
         on_uniqueness_violation: &mut dyn FnMut(anyhow::Error),
+        progress: &AtomicU64,
     ) -> AnyResult<FlushMetrics> {
         let mut metrics = FlushMetrics::default();
 
@@ -195,6 +201,7 @@ impl MergeWriter {
 
                 if buffered_rows >= APPEND_CHUNK_ROWS {
                     write_rows(&mut rows, &mut appends).await?;
+                    progress.fetch_add(buffered_rows as u64, Ordering::Relaxed);
                     buffered_rows = 0;
                 }
             }
@@ -204,6 +211,7 @@ impl MergeWriter {
 
         if buffered_rows > 0 {
             write_rows(&mut rows, &mut appends).await?;
+            progress.fetch_add(buffered_rows as u64, Ordering::Relaxed);
         }
         let tombstones = keys.finish(&mut metrics).await?;
 
@@ -215,6 +223,8 @@ impl MergeWriter {
         metrics.bytes_written = added.iter().map(|a| a.size.max(0) as u64).sum();
 
         self.commit(table, added, tombstones, &mut metrics).await?;
+        // Counted too, or a delete-only flush reports no progress while it is working.
+        progress.fetch_add(metrics.dv.rows_tombstoned, Ordering::Relaxed);
         count_table_rows(table, &mut metrics);
         Ok(metrics)
     }
