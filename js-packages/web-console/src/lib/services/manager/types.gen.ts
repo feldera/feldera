@@ -1545,6 +1545,14 @@ export type DeltaTableReaderConfig = {
 export type DeltaTableTransactionMode = 'none' | 'snapshot' | 'always' | 'catchup'
 
 /**
+ * How the Delta table connector applies pipeline updates to the target table.
+ *
+ * This is orthogonal to `mode`, which governs what happens to an existing table
+ * when the connector starts.
+ */
+export type DeltaTableUpdateMode = 'cdc' | 'merge'
+
+/**
  * Delta table write mode.
  *
  * Determines how the Delta table connector handles an existing table at the target location.
@@ -1598,6 +1606,22 @@ export type DeltaTableWriterConfig = {
    */
   log_retention_duration?: string | null
   /**
+   * Ceiling, in bytes, on the encoded keys the connector holds while locating the rows
+   * to supersede.
+   *
+   * Only used when `update_mode` is `merge`. A flush whose key set exceeds this budget
+   * is split into successive lookup passes, which bounds memory at the cost of
+   * re-scanning candidate files. Default: 256 MiB.
+   */
+  lookup_chunk_bytes?: number
+  /**
+   * Number of data files read concurrently while locating the rows to supersede.
+   *
+   * Only used when `update_mode` is `merge`. Each concurrent read holds one decoded
+   * batch, so this bounds memory as well as request concurrency. Default: 4.
+   */
+  max_concurrent_probes?: number
+  /**
    * Maximum number of retries for failed operations.
    *
    * The connector performs retries on several levels: individual S3 operations, Delta Lake transaction commits,
@@ -1611,11 +1635,33 @@ export type DeltaTableWriterConfig = {
   max_retries?: number | null
   mode?: DeltaTableWriteMode
   /**
+   * Compact the target table from the connector, at most once every this many seconds.
+   *
+   * Only used when `update_mode` is `merge`. Merge mode marks an old row version deleted
+   * but leaves it in place. Without compaction the table keeps growing and reads keep
+   * slowing down, however few live rows it holds. Compacting also reclaims storage a
+   * scheduled `OPTIMIZE` leaves behind.
+   *
+   * Maintenance is normally the table administrator's job, which is why this is off by
+   * default. Set it for tables where Feldera is the only writer. Hourly (`3600`) or daily
+   * (`86400`) is typical. A short interval is safe: a run costs what needs doing, not the
+   * size of the table, and two runs cannot overlap. A large backlog is cleared over
+   * several runs.
+   *
+   * A run starts after a flush and works in the background, so it never holds up a flush.
+   * If it commits while a flush is in progress, the connector redoes that flush against
+   * the new files. A run replaces files rather than deleting them, so `VACUUM` is still
+   * what reclaims the space.
+   *
+   * Default: none, meaning the connector never compacts.
+   */
+  optimize_interval_secs?: number | null
+  /**
    * Number of parallel threads used by the connector.
    *
-   * Increasing this value can improve Delta Lake write throughput
-   * by enabling concurrent writes. Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.
+   * Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.
    * Values above 1 require the view to have a unique key, so that the connector can order inserts and deletes correctly.
+   * Must be 1 with `update_mode: merge`, where two threads would write conflicting deletion vectors for one data file.
    * Define the key with `CREATE INDEX` and set the connector's `index` property to that index;
    * see [views with unique keys](https://docs.feldera.com/connectors/sinks/delta/#views-with-unique-keys) and
    * [writing in parallel](https://docs.feldera.com/connectors/sinks/delta/#writing-in-parallel).
@@ -1623,6 +1669,7 @@ export type DeltaTableWriterConfig = {
    * Default: 1.
    */
   threads?: number | null
+  update_mode?: DeltaTableUpdateMode
   /**
    * Table URI.
    */
@@ -1637,10 +1684,15 @@ export type DeltaTableWriterConfig = {
     | string
     | null
     | number
+    | number
+    | number
     | null
     | DeltaTableWriteMode
     | number
     | null
+    | number
+    | null
+    | DeltaTableUpdateMode
     | DeltaVariantEncoding
     | undefined
 }
