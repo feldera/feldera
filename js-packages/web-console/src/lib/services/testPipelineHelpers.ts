@@ -103,6 +103,8 @@ export async function startPipelineAndWaitForRunning(pipelineName: string, timeo
   )
 }
 
+const CLEANUP_STEP_TIMEOUT_MS = 20_000
+
 /**
  * Kill a pipeline and wait until it reaches the Stopped state.
  */
@@ -112,12 +114,12 @@ export async function killPipelineAndWaitForStopped(pipelineName: string) {
   } catch {
     // Ignore if already stopped
   }
-  await waitForPipeline(pipelineName, ({ status }) => status === 'Stopped')
+  await waitForPipeline(pipelineName, ({ status }) => status === 'Stopped', CLEANUP_STEP_TIMEOUT_MS)
 }
 
 export const clearAndDeletePipeline = async (pipelineName: string) => {
   await postPipelineAction(pipelineName, 'clear')
-  await waitForPipeline(pipelineName, (p) => p.storageStatus === 'Cleared', 30_000)
+  await waitForPipeline(pipelineName, (p) => p.storageStatus === 'Cleared', CLEANUP_STEP_TIMEOUT_MS)
   await deletePipeline(pipelineName)
 }
 
@@ -142,7 +144,7 @@ export async function cleanupPipeline(pipelineName: string) {
   }
 }
 
-const WARMUP_PIPELINE = '__test_warmup__'
+const WARMUP_PIPELINE = 'test-warmup'
 
 /**
  * Warm the Rust compilation cache by creating, compiling, and deleting a

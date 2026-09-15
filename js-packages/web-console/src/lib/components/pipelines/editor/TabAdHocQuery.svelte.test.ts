@@ -68,6 +68,7 @@ describe('TabAdHocQuery — runtime error propagation over WebSocket', () => {
       // `t` is non-materialized (no `materialized = 'true'`), so selecting from
       // it directly is a runtime error.
       program_code: 'create table t (x int);',
+      program_config: { profile: 'unoptimized' },
       runtime_config: {}
     })
     await waitForCompilation(PIPELINE_NAME, 120_000)
