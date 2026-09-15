@@ -592,9 +592,10 @@ where
         //
         // Guards, not a call, because the stream outlives this function and
         // the merging has to stay paused for as long as the walk runs.
-        let merge_pause = updates.as_ref().filter(|_| lazy_input_map_pause_merging()).map(
-            |updates| (integral.pause_merging(), updates.pause_merging()),
-        );
+        let merge_pause = updates
+            .as_ref()
+            .filter(|_| lazy_input_map_pause_merging())
+            .map(|updates| (integral.pause_merging(), updates.pause_merging()));
 
         // The stream outlives this call, so everything it reads is taken now:
         // the updates as batches for the accumulator and as a snapshot to walk,
