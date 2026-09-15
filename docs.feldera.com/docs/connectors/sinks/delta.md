@@ -229,8 +229,10 @@ The connector exports these alongside the standard connector metrics.
 | `output_connector_delta_merge_files_appended_total`, `output_connector_delta_merge_files_dropped_total` | Small-file growth, and the files reclaimed because every row in them was superseded |
 | `output_connector_delta_merge_lookup_passes_total` | Above one per flush only when a key set exceeded `lookup_chunk_bytes` |
 | `output_connector_delta_merge_bytes_written_total` | Bytes written: new data files plus deletion vectors |
+| `output_connector_delta_merge_probe_key_bytes_read_total` | Key-column bytes the lookup read. Against `bytes_written_total`, the flush's read amplification |
 | `output_connector_delta_merge_compactions_total`, `output_connector_delta_merge_compaction_failures_total` | Maintenance runs, and how many failed. Only when `optimize_interval_secs` is set |
 | `output_connector_delta_merge_flush_latency_microseconds` | Histogram of whole flushes. Where object-store latency shows up; no combination of the counters above reveals it |
+| `output_connector_delta_merge_probe_microseconds_total`, `..._append_...`, `..._deletion_vector_...`, `..._commit_...`, `..._log_scan_...`, `..._batch_walk_...` | Where flush time goes. These partition a flush, so they sum to what the latency histogram records for it. Only successful flushes report them |
 | `output_connector_delta_merge_reclaimed_rows_total` | Superseded rows that maintenance removed from storage |
 | `output_connector_delta_merge_reclaim_incomplete` | `1` while the last run ran out of time with files still mostly superseded. Sustained, reclamation is falling behind the writes |
 
