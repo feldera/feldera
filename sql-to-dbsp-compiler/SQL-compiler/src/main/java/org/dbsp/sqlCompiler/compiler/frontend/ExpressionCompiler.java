@@ -1805,6 +1805,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                                 node, method, type.withMayBeNull(nullable), ops.get(0), ops.get(1))
                                 .cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
                     }
+                    case "array_slice": {
+                        validateArgCount(node, operationName, ops.size(), 3);
+                        this.ensureInteger(node, ops, 1);
+                        this.ensureInteger(node, ops, 2);
+                        String method = getArrayOrMapCallName(call, ops.get(0), ops.get(1), ops.get(2));
+                        return new DBSPApplyExpression(
+                                node, method, type, ops.get(0), ops.get(1), ops.get(2))
+                                .cast(node, type, DBSPCastExpression.CastType.SqlUnsafe);
+                    }
                     case "array_flatten": {
                         validateArgCount(node, operationName, ops.size(), 1);
                         DBSPExpression array = ops.get(0);

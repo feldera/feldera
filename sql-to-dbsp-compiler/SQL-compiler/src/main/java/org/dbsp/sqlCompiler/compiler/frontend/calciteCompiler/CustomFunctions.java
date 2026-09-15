@@ -64,6 +64,7 @@ public class CustomFunctions {
         this.functions.add(ArrayIntersect.INSTANCE);
         this.functions.add(ArrayPositionFunction.INSTANCE);
         this.functions.add(ArrayRemoveFunction.INSTANCE);
+        this.functions.add(ArraySliceFunction.INSTANCE);
         this.functions.add(ArrayTransformFunction.INSTANCE);
         this.functions.add(ArrayUnion.INSTANCE);
         this.functions.add(ArraysOverlapFunction.INSTANCE);
@@ -346,6 +347,23 @@ public class CustomFunctions {
         private InitcapSpacesFunction() {
             super("INITCAP_SPACES", SqlStdOperatorTable.INITCAP,
                     "string#initcap_spaces", FunctionDocumentation.NO_FILE);
+        }
+    }
+
+    /** ARRAY_SLICE(array, start, length) with Spark semantics: `start` is 1-based and
+     * counts from the end of the array when negative, and the slice stops at the end of
+     * the array.  Calcite's SqlLibraryOperators.ARRAY_SLICE is a different function. */
+    static class ArraySliceFunction extends NonOptimizedFunction {
+        static final ArraySliceFunction INSTANCE = new ArraySliceFunction();
+
+        private ArraySliceFunction() {
+            super("ARRAY_SLICE",
+                    // The result is NULL if any argument is NULL
+                    ReturnTypes.ARG0_NULLABLE,
+                    OperandTypes.sequence("ARRAY_SLICE(<ARRAY>, <INTEGER>, <INTEGER>)",
+                            OperandTypes.ARRAY, OperandTypes.INTEGER, OperandTypes.INTEGER),
+                    SqlFunctionCategory.USER_DEFINED_FUNCTION,
+                    "array#array_slice", FunctionDocumentation.NO_FILE);
         }
     }
 
