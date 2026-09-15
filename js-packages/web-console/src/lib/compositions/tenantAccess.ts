@@ -1,4 +1,4 @@
-import { invalidateAll } from '$app/navigation'
+import { invalidateAll } from '$lib/services/invalidateAll'
 
 /** The `error_code` an SDK rejection carries, either directly or as its cause. */
 export const errorCodeOf = (reason: unknown): string | undefined => {

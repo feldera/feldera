@@ -59,6 +59,7 @@ describe('pipelineManager connector status with special characters', () => {
       name: PIPELINE_NAME,
       description: 'Integration test for special character handling',
       program_code: programCode,
+      program_config: { profile: 'unoptimized' },
       runtime_config: {}
     })
 

@@ -26,6 +26,7 @@ import {
   triggerOidcLogin
 } from '$lib/services/auth'
 import { initConceptualHq } from '$lib/services/conceptualHq'
+import { setInvalidateAll } from '$lib/services/invalidateAll'
 import type { Configuration, SessionInfo } from '$lib/services/manager'
 import { client } from '$lib/services/manager/client.gen'
 import { initPosthog } from '$lib/services/posthog'
@@ -289,11 +290,12 @@ const initAuth = async (): Promise<AuthInitResult> => {
   })
 }
 
-// Register the error interceptor on the shared client up-front, independent of
-// the OIDC handshake. It has to be in place before the first SDK call so that
-// network failures and non-2xx responses both land in `errorResponseMiddleware`
-// regardless of whether auth init has completed (or reached the success branch).
 if ('window' in globalThis) {
+  setInvalidateAll(invalidateAll)
+  // Register the error interceptor on the shared client up-front, independent of
+  // the OIDC handshake. It has to be in place before the first SDK call so that
+  // network failures and non-2xx responses both land in `errorResponseMiddleware`
+  // regardless of whether auth init has completed (or reached the success branch).
   client.interceptors.error.use(errorResponseMiddleware)
 }
 

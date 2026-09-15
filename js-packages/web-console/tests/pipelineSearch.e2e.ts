@@ -35,7 +35,8 @@ test.describe('Pipeline search', () => {
       await putPipeline(name, {
         name,
         description: `E2E search test pipeline: ${name}`,
-        program_code: 'create view test as (select 1)'
+        program_code: 'create view test as (select 1)',
+        program_config: { profile: 'unoptimized' }
       })
     }
     // Wait for all pipelines to finish compiling via API polling,
