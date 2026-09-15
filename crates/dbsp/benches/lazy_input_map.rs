@@ -56,7 +56,6 @@ use dbsp::{
         CIRCUIT_WAIT_TIME_SECONDS, MetaItem, MetricId, SPINE_ADD_BATCH_TIME_SECONDS,
         SPINE_FLUSH_BATCH_TIME_SECONDS, STEP_DURATION_HISTOGRAM,
     },
-    mimalloc::MiMalloc,
     operator::{LazyMapHandle, MapHandle, Update},
     profile::DbspProfile,
     trace::{BatchReader as _, Cursor},
@@ -83,6 +82,10 @@ use std::{
 };
 use tempfile::TempDir;
 
+#[cfg(not(feature = "heap-profile"))]
+use dbsp::mimalloc::MiMalloc;
+
+#[cfg(not(feature = "heap-profile"))]
 #[global_allocator]
 static ALLOC: MiMalloc = MiMalloc;
 
@@ -233,6 +236,20 @@ impl Shuffle {
     }
 }
 
+/// With `--features heap-profile` the run allocates through jemalloc with its
+/// profiler on, the way a pipeline built for heap profiling does, and
+/// `--heap-profile-dir` collects a profile at the end of each stage.
+#[cfg(feature = "heap-profile")]
+#[global_allocator]
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+/// jemalloc reads its configuration from this symbol at start, before any
+/// environment variable could be set from inside the process.
+#[cfg(feature = "heap-profile")]
+#[allow(non_upper_case_globals)]
+#[unsafe(export_name = "malloc_conf")]
+pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
+
 #[derive(Parser, Debug, Clone)]
 #[command(about = "Lazy versus eager input map, under a transaction that writes a whole table")]
 struct Args {
@@ -347,6 +364,12 @@ struct Args {
     /// Where the per-stage circuit profiles are written.
     #[arg(long, default_value = "profile")]
     profile_dir: PathBuf,
+
+    /// Where to write a jemalloc heap profile at the end of each stage, and
+    /// after the first hundred rewriting transactions.  Needs a build with
+    /// `--features heap-profile`.
+    #[arg(long)]
+    heap_profile_dir: Option<PathBuf>,
 
     /// Count the collection each map leaves behind and print it, so a run can
     /// show the two did the same work.  Off by default: the count walks every
@@ -621,6 +644,41 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Writes the heap profile named `stage` into `dir`, when the run collects
+/// them.  The profile is jemalloc's, in pprof form with symbols resolved, so
+/// `pprof -top -sample_index=inuse_space` on the file names what holds memory.
+fn heap_profile(dir: Option<&Path>, stage: &str) -> Result<()> {
+    let Some(dir) = dir else {
+        return Ok(());
+    };
+    #[cfg(feature = "heap-profile")]
+    {
+        let prof_ctl = jemalloc_pprof::PROF_CTL
+            .as_ref()
+            .context("jemalloc heap profiling is not available in this build")?;
+        let mut prof_ctl = prof_ctl.blocking_lock();
+        anyhow::ensure!(
+            prof_ctl.activated(),
+            "jemalloc heap profiling is off; `malloc_conf` did not take effect"
+        );
+        let profile = prof_ctl
+            .dump_pprof()
+            .context("cannot dump the heap profile")?;
+        std::fs::create_dir_all(dir)?;
+        let path = dir.join(format!("heap-{stage}.pb.gz"));
+        std::fs::write(&path, profile)?;
+        println!("    heap[{stage}]: {}", path.display());
+        Ok(())
+    }
+    #[cfg(not(feature = "heap-profile"))]
+    {
+        anyhow::bail!(
+            "heap profiles need a build with `--features heap-profile` (asked to write {stage} into {})",
+            dir.display()
+        )
+    }
 }
 
 /// Dumps the circuit's profile and returns the CPU seconds it has spent.
@@ -1156,6 +1214,10 @@ fn drive<V: Payload, W: Writer<V>>(
         &format!("{stage_name}-ingest"),
         &mut profiles,
     )?;
+    heap_profile(
+        args.heap_profile_dir.as_deref(),
+        &format!("{stage_name}-ingest"),
+    )?;
     println!(
         "  ingest done in {:.3}s, {:.2} GiB on disk, {ingest_cpu:.1} CPU-seconds",
         ingest.as_secs_f64(),
@@ -1194,6 +1256,10 @@ fn drive<V: Payload, W: Writer<V>>(
     )?;
     let commit_cpu = cumulative_cpu - ingest_cpu;
     let loaded_bytes = dir_bytes(storage);
+    heap_profile(
+        args.heap_profile_dir.as_deref(),
+        &format!("{stage_name}-commit"),
+    )?;
     println!(
         "  commit done in {:.3}s, {:.2} GiB on disk, {commit_cpu:.1} CPU-seconds",
         commit.as_secs_f64(),
@@ -1244,6 +1310,12 @@ fn drive<V: Payload, W: Writer<V>>(
         if (index + 1) % 100 == 0 {
             println!("  {} transactions done", index + 1);
         }
+        if index + 1 == 100 {
+            heap_profile(
+                args.heap_profile_dir.as_deref(),
+                &format!("{stage_name}-transactions-100"),
+            )?;
+        }
     }
 
     // The run's last profile: what the whole thing cost, transactions included.
@@ -1254,6 +1326,10 @@ fn drive<V: Payload, W: Writer<V>>(
         &mut profiles,
     )? - cumulative_cpu;
     println!("  transactions done, {transactions_cpu:.1} CPU-seconds");
+    heap_profile(
+        args.heap_profile_dir.as_deref(),
+        &format!("{stage_name}-final"),
+    )?;
 
     let final_bytes = dir_bytes(storage);
     let peak_bytes = disk.peak().max(final_bytes).max(loaded_bytes);
