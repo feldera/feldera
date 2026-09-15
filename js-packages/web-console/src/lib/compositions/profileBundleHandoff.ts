@@ -1,6 +1,12 @@
 /**
  * Cross-tab handoff for uploaded support bundle ArrayBuffers.
  *
+ * This is the fallback path. A bundle in the history opens through
+ * `openStoredBundleTab`, and the viewer reads it from there, so no bytes cross tabs
+ * and the tab survives a reload. Only a bundle the history cannot hold is handed over
+ * as described below: an archive too big to copy, or one the storage quota rejected.
+ * Such a bundle exists only as a `File`, which cannot outlive the page holding it.
+ *
  * Hybrid transport:
  *   - Control plane (READY / ACK): BroadcastChannel keyed by a UUID in the URL,
  *     so the handshake survives any OIDC redirect chain the new tab may go
@@ -48,6 +54,25 @@ export class ProfileBundleUnavailableError extends Error {
 export function openRemoteBundleTab(pipelineName: string, collect: boolean) {
   const url = `/profile-viewer?pipelineName=${encodeURIComponent(pipelineName)}&source=remote&collect=${collect ? '1' : '0'}`
   window.open(url, '_blank')
+}
+
+/**
+ * URL where the viewer reads the bundle itself, from the history entry `bundleId`
+ * names. Nothing is handed over, so the tab survives a reload.
+ */
+export const storedBundleUrl = (bundleId: number) =>
+  `/profile-viewer?source=upload&bundle=${bundleId}`
+
+/**
+ * Opens a bundle from the history in a new tab.
+ *
+ * Throws when the browser blocked the new window, with the same message
+ * `openUploadBundleTab` uses, so a caller can report both the same way.
+ */
+export function openStoredBundleTab(bundleId: number) {
+  if (!window.open(storedBundleUrl(bundleId), '_blank')) {
+    throw new Error('Browser blocked the popup. Allow popups for this site and try again.')
+  }
 }
 
 export type UploadBundleHandoff = {
