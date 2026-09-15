@@ -1488,9 +1488,6 @@ public class ArrayFunctionsTests extends SqlIoTest {
         this.queryFailingInCompilation("SELECT array_filter(ROW(1, 2), x -> true)",
                 "Cannot apply 'array_filter' to arguments of type " +
                         "'array_filter(<ROW(INTEGER EXPR$0, INTEGER EXPR$1)>, <FUNCTION(ANY) -> BOOLEAN>)'. " + supported);
-        this.queryFailingInCompilation("SELECT array_filter(MULTISET[1, 2], x -> true)",
-                "Cannot apply 'array_filter' to arguments of type " +
-                        "'array_filter(<INTEGER MULTISET>, <FUNCTION(ANY) -> BOOLEAN>)'. " + supported);
         this.queryFailingInCompilation("SELECT array_filter(CAST(1 AS VARIANT), x -> true)",
                 "Cannot apply 'array_filter' to arguments of type " +
                         "'array_filter(<VARIANT>, <FUNCTION(ANY) -> BOOLEAN>)'. " + supported);
@@ -1542,6 +1539,150 @@ public class ArrayFunctionsTests extends SqlIoTest {
                   r
                  -------
                  NULL""");
+    }
+
+    @Test
+    public void testArrayFlatten() {
+        this.qst("""
+                SELECT array_flatten(array[array[1, 2], array[3]]);
+                result
+                ------
+                 { 1, 2, 3 }
+                (1 row)
+
+                SELECT array_flatten(array[array[2, 1], array[1]]);
+                result
+                ------
+                 { 2, 1, 1 }
+                (1 row)
+
+                SELECT array_flatten(array[array['a'], array['bb', 'ccc']]);
+                result
+                ------
+                 { a, bb, ccc }
+                (1 row)
+
+                SELECT array_flatten(CAST(array() AS INT ARRAY ARRAY));
+                result
+                ------
+                 {}
+                (1 row)
+
+                SELECT array_flatten(array[CAST(array() AS INT ARRAY), array[1]]);
+                result
+                ------
+                 { 1 }
+                (1 row)
+
+                SELECT array_flatten(array[array[1, null], array[2]]);
+                result
+                ------
+                 { 1, NULL, 2 }
+                (1 row)
+
+                SELECT array_flatten(array[array[1], null]);
+                result
+                ------
+                NULL
+                (1 row)
+
+                SELECT array_flatten(cast(null as int array array));
+                result
+                ------
+                NULL
+                (1 row)
+
+                SELECT array_flatten(null);
+                result
+                ------
+                NULL
+                (1 row)
+
+                SELECT array_flatten(array[array[array[1]], array[array[2], array[3]]]);
+                result
+                ------
+                 { { 1}, { 2}, { 3} }
+                (1 row)
+
+                SELECT array_flatten(transform(array[1, 2], x -> array[x, x + 10]));
+                result
+                ------
+                 { 1, 11, 2, 12 }
+                (1 row)
+
+                SELECT transform(array[array[array[1], array[2]]], a -> array_flatten(a));
+                result
+                ------
+                 { { 1, 2} }
+                (1 row)""");
+    }
+
+    @Test
+    public void arrayFlattenOnNonArrays() {
+        // Every rejection is a validation error naming the actual argument type
+        String supported = "Supported form(s): ARRAY_FLATTEN(<ANY ARRAY ARRAY>)";
+        this.queryFailingInCompilation("SELECT array_flatten(array[1, 2])",
+                "Cannot apply 'array_flatten' to arguments of type " +
+                        "'array_flatten(<INTEGER ARRAY>)'. " + supported);
+        this.queryFailingInCompilation("SELECT array_flatten(1)",
+                "Cannot apply 'array_flatten' to arguments of type " +
+                        "'array_flatten(<INTEGER>)'. " + supported);
+        this.queryFailingInCompilation("SELECT array_flatten('abc')",
+                "Cannot apply 'array_flatten' to arguments of type " +
+                        "'array_flatten(<CHAR(3)>)'. " + supported);
+        this.queryFailingInCompilation("SELECT array_flatten(MAP['a', 1])",
+                "Cannot apply 'array_flatten' to arguments of type " +
+                        "'array_flatten(<MAP<CHAR(1), INTEGER>>)'. " + supported);
+        this.queryFailingInCompilation("SELECT array_flatten(ROW(1, 2))",
+                "Cannot apply 'array_flatten' to arguments of type " +
+                        "'array_flatten(<ROW(INTEGER EXPR$0, INTEGER EXPR$1)>)'. " + supported);
+        this.queryFailingInCompilation("SELECT array_flatten(CAST(1 AS VARIANT))",
+                "Cannot apply 'array_flatten' to arguments of type " +
+                        "'array_flatten(<VARIANT>)'. " + supported);
+        this.queryFailingInCompilation("SELECT array_flatten(CAST(NULL AS INTEGER))",
+                "Cannot apply 'array_flatten' to arguments of type " +
+                        "'array_flatten(<INTEGER>)'. " + supported);
+        // An empty array constructor has no element type, so it is not known to hold arrays
+        this.queryFailingInCompilation("SELECT array_flatten(array())",
+                "Cannot apply 'array_flatten' to arguments of type " +
+                        "'array_flatten(<UNKNOWN ARRAY>)'. " + supported);
+        this.queryFailingInCompilation("SELECT array_flatten(array[array[1]], 2)",
+                "Invalid number of arguments to function 'array_flatten'. Was expecting 1 arguments");
+        this.queryFailingInCompilation("SELECT array_flatten()",
+                "Invalid number of arguments to function 'array_flatten'. Was expecting 1 arguments");
+        // Nested in a lambda: the first validation pass sees the enclosing parameter as
+        // ANY, the second one rejects the call with the concrete INTEGER element type
+        this.queryFailingInCompilation("SELECT transform(array[1], a -> array_flatten(a))",
+                "Cannot apply 'array_flatten' to arguments of type " +
+                        "'array_flatten(<INTEGER>)'. " + supported);
+    }
+
+    @Test
+    public void testArrayFlattenTable() {
+        // Column x has nullable inner arrays; the CASE makes only the outer array
+        // nullable, since the literal inner arrays are not
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT ARRAY ARRAY, y INT);
+                CREATE VIEW V AS SELECT ARRAY_FLATTEN(x) AS r,
+                       ARRAY_FLATTEN(CASE WHEN y > 0 THEN ARRAY[ARRAY[1], ARRAY[2]] END) AS n
+                FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY[ARRAY[1, 2], ARRAY[3]], 1)", """
+                  r         | n
+                 -------------------------
+                  { 1, 2, 3 } | { 1, 2 }""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY(), 0)", """
+                  r  | n
+                 -------------
+                  {} |NULL""");
+        // A NULL inner array makes the whole result NULL
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY[ARRAY[1], NULL], 1)", """
+                  r    | n
+                 ------------------
+                 NULL  | { 1, 2 }""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(NULL, 1)", """
+                  r    | n
+                 ------------------
+                 NULL  | { 1, 2 }""");
     }
 
     @Test

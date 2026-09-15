@@ -321,6 +321,7 @@ These Spark functions exist in Feldera — translate directly:
 | `array_intersect(a, b)` | `ARRAY_INTERSECT(a, b)` | → [GBD-ARRAY-ORDER]: element order may differ from Spark — translate as-is and add NOTE comment per rule |
 | `array_except(a, b)` | `ARRAY_EXCEPT(a, b)` | → [GBD-ARRAY-ORDER]: element order may differ from Spark — translate as-is and add NOTE comment per rule |
 | `array_join(arr, sep)` | `ARRAY_JOIN(arr, sep)` | Alias for ARRAY_TO_STRING |
+| `flatten(nested_arr)` | `ARRAY_FLATTEN(nested_arr)` | Removes one level of nesting; NULL if any inner array is NULL, as in Spark |
 | `size(arr)` | `COALESCE(CARDINALITY(arr), -1)` | → [GBD-SIZE-NULL]. Do NOT mark unsupported. |
 | `array_size(arr)` | `COALESCE(CARDINALITY(arr), -1)` | Alias of `size()` — same rewrite. Add a warning. Do NOT mark unsupported. |
 | `get(arr, index)` | `arr[index + 1]` | Spark `get()` is **0-based**; Feldera array indexing is **1-based** — add 1 to the index. Add a warning. Do NOT mark unsupported. |
@@ -1151,7 +1152,6 @@ Do NOT:
 
 | Function | Notes |
 |----------|-------|
-| `flatten(nested_arr)` | No equivalent |
 | `arrays_zip(a, b)` | No equivalent |
 | `slice(arr, start, len)` | No equivalent |
 
