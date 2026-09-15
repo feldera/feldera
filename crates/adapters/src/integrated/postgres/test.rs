@@ -3654,6 +3654,8 @@ mod cdc_tests {
     col_double      DOUBLE PRECISION,
     col_date        DATE,
     col_time        TIME,
+    col_timetz      TIMETZ,
+    col_timetz_array TIMETZ[],
     col_timestamp   TIMESTAMP,
     col_timestamptz TIMESTAMPTZ,
     col_uuid        UUID,
@@ -3809,6 +3811,19 @@ mod cdc_tests {
         output_path: &Path,
         tls: Option<&PostgresTlsConfig>,
     ) -> (Controller, crossbeam::channel::Receiver<String>) {
+        try_cdc_simple_test_circuit_with_tls(url, publication, source_table, output_path, tls)
+            .unwrap()
+    }
+
+    /// Like `cdc_simple_test_circuit_with_tls`, for tests that expect the
+    /// connector to refuse its configuration while the controller is built.
+    fn try_cdc_simple_test_circuit_with_tls(
+        url: &str,
+        publication: &str,
+        source_table: &str,
+        output_path: &Path,
+        tls: Option<&PostgresTlsConfig>,
+    ) -> Result<(Controller, crossbeam::channel::Receiver<String>), crate::ControllerError> {
         if tls.is_some() {
             crate::ensure_default_crypto_provider();
         }
@@ -3911,10 +3926,9 @@ mod cdc_tests {
                 // send failure rather than panicking on a background thread.
                 let _ = err_sender.send(msg);
             }),
-        )
-        .unwrap();
+        )?;
 
-        (controller, err_receiver)
+        Ok((controller, err_receiver))
     }
 
     /// Helper struct for the all-types test. Uses simple JSON deserialization
@@ -3947,6 +3961,8 @@ mod cdc_tests {
         col_double: Option<feldera_sqllib::F64>,
         col_date: Option<String>,
         col_time: Option<String>,
+        col_timetz: Option<String>,
+        col_timetz_array: Option<Vec<Option<String>>>,
         col_timestamp: Option<String>,
         col_timestamptz: Option<String>,
         col_uuid: Option<String>,
@@ -3957,7 +3973,7 @@ mod cdc_tests {
         col_int_array: Option<Vec<Option<i32>>>,
     }
 
-    feldera_types::deserialize_table_record!(CdcAllTypesStruct["CdcAllTypesStruct", Variant, 17] {
+    feldera_types::deserialize_table_record!(CdcAllTypesStruct["CdcAllTypesStruct", Variant, 19] {
         (id, "id", false, i32, |_| None),
         (col_text, "col_text", true, Option<String>, |_| Some(None)),
         (col_integer, "col_integer", true, Option<i32>, |_| Some(None)),
@@ -3967,6 +3983,8 @@ mod cdc_tests {
         (col_double, "col_double", true, Option<feldera_sqllib::F64>, |_| Some(None)),
         (col_date, "col_date", true, Option<String>, |_| Some(None)),
         (col_time, "col_time", true, Option<String>, |_| Some(None)),
+        (col_timetz, "col_timetz", true, Option<String>, |_| Some(None)),
+        (col_timetz_array, "col_timetz_array", true, Option<Vec<Option<String>>>, |_| Some(None)),
         (col_timestamp, "col_timestamp", true, Option<String>, |_| Some(None)),
         (col_timestamptz, "col_timestamptz", true, Option<String>, |_| Some(None)),
         (col_uuid, "col_uuid", true, Option<String>, |_| Some(None)),
@@ -3977,7 +3995,7 @@ mod cdc_tests {
         (col_int_array, "col_int_array", true, Option<Vec<Option<i32>>>, |_| Some(None))
     });
 
-    feldera_types::serialize_table_record!(CdcAllTypesStruct[17]{
+    feldera_types::serialize_table_record!(CdcAllTypesStruct[19]{
         id["id"]: i32,
         col_text["col_text"]: Option<String>,
         col_integer["col_integer"]: Option<i32>,
@@ -3987,6 +4005,8 @@ mod cdc_tests {
         col_double["col_double"]: Option<feldera_sqllib::F64>,
         col_date["col_date"]: Option<String>,
         col_time["col_time"]: Option<String>,
+        col_timetz["col_timetz"]: Option<String>,
+        col_timetz_array["col_timetz_array"]: Option<Vec<Option<String>>>,
         col_timestamp["col_timestamp"]: Option<String>,
         col_timestamptz["col_timestamptz"]: Option<String>,
         col_uuid["col_uuid"]: Option<String>,
@@ -4009,6 +4029,13 @@ mod cdc_tests {
                 Field::new("col_double".into(), ColumnType::double(true)),
                 Field::new("col_date".into(), ColumnType::varchar(true)),
                 Field::new("col_time".into(), ColumnType::varchar(true)),
+                // Feldera has no TIME WITH TIME ZONE, so TIMETZ arrives as
+                // Postgres text with the offset.
+                Field::new("col_timetz".into(), ColumnType::varchar(true)),
+                Field::new(
+                    "col_timetz_array".into(),
+                    ColumnType::array(true, ColumnType::varchar(true)),
+                ),
                 Field::new("col_timestamp".into(), ColumnType::varchar(true)),
                 Field::new("col_timestamptz".into(), ColumnType::varchar(true)),
                 Field::new("col_uuid".into(), ColumnType::varchar(true)),
@@ -4225,19 +4252,84 @@ mod cdc_tests {
         (controller, err_receiver)
     }
 
-    /// Wait until a table of this connector's etl pipeline reports `state`.
-    /// The publications these callers use hold one table, the source table.
-    pub(super) fn wait_for_etl_state(table: &mut CdcTestTable, state: &str) {
+    /// etl states in which a table's initial sync is complete: etl keeps the
+    /// table's data on a restart and streams changes instead of copying it
+    /// again. `sync_done` is the durable catchup handoff; `ready` follows only
+    /// once a later streamed write advances etl's replication checkpoint past
+    /// the handoff, so a table nobody writes to stays in `sync_done`.
+    pub(super) const ETL_SYNC_COMPLETED_STATES: [&str; 2] = ["sync_done", "ready"];
+
+    /// Wait until etl has completed the initial sync of a table of this
+    /// connector's pipeline, which is when a stop no longer makes the next
+    /// start read the table again. The publications these callers use hold
+    /// one table, the source table.
+    pub(super) fn wait_for_etl_sync_completed(table: &mut CdcTestTable) {
         wait(
-            || etl_table_states(table).iter().any(|s| s == state),
+            || {
+                etl_table_states(table)
+                    .iter()
+                    .any(|s| ETL_SYNC_COMPLETED_STATES.contains(&s.as_str()))
+            },
             60_000,
         )
         .unwrap_or_else(|_| {
             panic!(
-                "timeout waiting for etl state {state:?}; current states: {:?}",
+                "timeout waiting for etl to complete the table sync (one of \
+                 {ETL_SYNC_COMPLETED_STATES:?}); current states: {:?}",
                 etl_table_states(table)
             )
         });
+    }
+
+    /// Block until part of the initial copy of `table` has reached the
+    /// circuit, and report how much of it has if etl is still copying.
+    ///
+    /// `copied_so_far` returns the number of copied records the circuit has
+    /// taken from the connector; `row_count` is the size of the table.
+    ///
+    /// etl writes `init` for every published table at pipeline startup, before
+    /// any table-sync worker runs, so `init` says nothing about a running
+    /// copy. It writes `data_sync` immediately before it creates the copy
+    /// slot, so a `data_sync` state that has already delivered records places
+    /// the caller inside the copy, with the copy slot created.
+    ///
+    /// Returns `None` when the copy outran the measurement: etl had left
+    /// `data_sync`, or every row was already in the circuit. How fast the copy
+    /// runs is a property of the runner, not of the connector, so the caller
+    /// retries with a larger table instead of failing.
+    pub(super) fn wait_for_etl_copy_in_progress(
+        table: &mut CdcTestTable,
+        copied_so_far: impl Fn() -> u64,
+        row_count: u64,
+        what: &str,
+    ) -> Option<u64> {
+        // Stop on any state past `init`, so a copy that etl ran to completion
+        // between two polls reports `None` instead of waiting out the timeout.
+        wait(
+            || etl_table_states(table).iter().any(|s| s != "init"),
+            60_000,
+        )
+        .unwrap_or_else(|_| {
+            panic!(
+                "timeout waiting for etl to start the copy for {what}; etl states: {:?}",
+                etl_table_states(table)
+            )
+        });
+        let started = std::time::Instant::now();
+        wait(|| copied_so_far() > 0, 60_000)
+            .unwrap_or_else(|_| panic!("timeout waiting for the first copied rows of {what}"));
+        // Measure before re-reading the state, so the state decides whether
+        // the measurement describes a copy that was still running.
+        let copied = copied_so_far();
+        let states = etl_table_states(table);
+        // The margin the callers' row counts rest on is visible only here.
+        println!(
+            "{what}: {copied} copied records in the circuit {:?} after etl entered the copy, \
+             etl states: {states:?}",
+            started.elapsed()
+        );
+        let mid_copy = states.iter().any(|s| s == "data_sync") && copied < row_count;
+        mid_copy.then_some(copied)
     }
 
     /// Wait until every replication slot of `table`'s connector is inactive,
@@ -4274,7 +4366,7 @@ mod cdc_tests {
 
     /// Current `state` of every table etl tracks for this connector's pipeline.
     ///
-    /// Reuses the table's client: `wait_for_etl_state` polls this every 10 ms.
+    /// Reuses the table's client: `wait_for_etl_sync_completed` polls this every 10 ms.
     /// A failed query panics rather than reading as "no tables", which would let
     /// the `errored`-state assertions pass vacuously.
     pub(super) fn etl_table_states(table: &mut CdcTestTable) -> Vec<String> {
@@ -4586,12 +4678,13 @@ mod cdc_tests {
         table.execute(&format!(
             r#"INSERT INTO {table_name} (
                 id, col_text, col_integer, col_bigint, col_boolean,
-                col_real, col_double, col_date, col_time,
+                col_real, col_double, col_date, col_time, col_timetz, col_timetz_array,
                 col_timestamp, col_timestamptz, col_uuid, col_jsonb,
                 col_bytea, col_numeric, col_smallint, col_int_array
             ) VALUES (
                 1, 'hello world', 42, 9876543210, true,
-                3.14, 2.718281828, '2024-06-15', '14:30:00',
+                3.5, 2.25, '2024-06-15', '14:30:00',
+                '14:30:00+02', ARRAY['08:30:00-05'::timetz, NULL],
                 '2024-01-01 12:00:00', '2024-01-01 12:00:00+00', '550e8400-e29b-41d4-a716-446655440000',
                 '{{"key": "value", "nested": {{"a": 1}}}}',
                 E'\\xDEADBEEF', 12345.67, 7, ARRAY[1, 2, 3]
@@ -4643,11 +4736,11 @@ mod cdc_tests {
         assert_eq!(row1["col_integer"], json!(42));
         assert_eq!(row1["col_bigint"], json!(9876543210i64));
         assert_eq!(row1["col_boolean"], json!(true));
-        // Float values: compare approximately
-        assert!(row1["col_real"].as_f64().unwrap() > 3.13);
-        assert!(row1["col_real"].as_f64().unwrap() < 3.15);
-        assert!(row1["col_double"].as_f64().unwrap() > 2.71);
-        assert!(row1["col_double"].as_f64().unwrap() < 2.72);
+        // REAL travels as f32, whose spacing at 3.5 is 2^-22 (about 2.4e-7),
+        // so 1e-6 forgives a few rounding steps and nothing more. The same
+        // tolerance guards this column in test_all_types_replayed_after_restart.
+        assert!((row1["col_real"].as_f64().unwrap() - 3.5).abs() < 1e-6);
+        assert!((row1["col_double"].as_f64().unwrap() - 2.25).abs() < 1e-9);
         // Date, time, timestamp are encoded as strings
         assert!(
             row1["col_date"].as_str().unwrap().contains("2024-06-15"),
@@ -4659,6 +4752,10 @@ mod cdc_tests {
             "col_time mismatch: {:?}",
             row1["col_time"]
         );
+        // TIMETZ keeps the offset it was inserted with: Postgres stores the
+        // offset with the time and never normalizes it to the session zone.
+        assert_eq!(row1["col_timetz"], json!("14:30:00+02"));
+        assert_eq!(row1["col_timetz_array"], json!(["08:30:00-05", null]));
         assert!(
             row1["col_timestamp"]
                 .as_str()
@@ -4703,6 +4800,8 @@ mod cdc_tests {
         assert!(row2["col_integer"].is_null());
         assert!(row2["col_bigint"].is_null());
         assert!(row2["col_boolean"].is_null());
+        assert!(row2["col_timetz"].is_null());
+        assert!(row2["col_timetz_array"].is_null());
         assert!(row2["col_uuid"].is_null());
         assert!(row2["col_jsonb"].is_null());
         assert!(row2["col_bytea"].is_null());
@@ -4924,6 +5023,41 @@ mod cdc_tests {
     // Test 3c: Dropping the primary key is rejected
     // -------------------------------------------------------------------
 
+    /// An unqualified `source_table` means `public`, so a pipeline that named
+    /// a table outside `public` by its bare name no longer matches anything.
+    /// Such a pipeline must fail at start with the publication's table list,
+    /// instead of ingesting nothing until the stall monitor speaks.
+    #[test]
+    #[serial]
+    fn test_cdc_source_table_not_in_publication_fails_at_start() {
+        let url = postgres_url();
+        let table_name = unique_pg_name("cdc_test_not_published");
+        let publication = unique_pg_name("cdc_pub_not_published");
+        let _table = CdcTestTable::new_simple(&table_name, &publication, &url);
+        let output_file = NamedTempFile::new().unwrap();
+
+        // The connector checks the publication while it opens, so the refusal
+        // comes out of the controller's constructor.
+        let err = match try_cdc_simple_test_circuit_with_tls(
+            &url,
+            &publication,
+            "no_such_table",
+            output_file.path(),
+            None,
+        ) {
+            Err(err) => err.to_string(),
+            Ok((controller, _)) => {
+                let _ = controller.stop();
+                panic!("a source table outside the publication started a pipeline");
+            }
+        };
+        assert!(
+            err.contains("'no_such_table' is not in publication")
+                && err.contains(&format!("public.{table_name}")),
+            "unexpected error: {err}"
+        );
+    }
+
     /// Tests that dropping the source primary-key column (`id`), which is a
     /// required Feldera column, is surfaced as a fatal connector error.
     ///
@@ -4992,9 +5126,11 @@ mod cdc_tests {
     /// restart, instead of re-snapshotting the entire table.
     ///
     /// Requires: wal_level=logical, user with REPLICATION privilege.
+    // Flaked on the fork revision of etl with `Missing shared table state`;
+    // upstream removed the shared table cache, and the test passed ten runs
+    // in a row against the new pin, so it runs in CI as the regression check.
     #[test]
     #[serial]
-    #[ignore]
     fn test_cdc_restart_resumes_from_slot() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_restart");
@@ -5130,7 +5266,6 @@ mod cdc_tests {
     /// Requires: wal_level=logical, user with REPLICATION privilege.
     #[test]
     #[serial]
-    #[ignore = "red until #6121 is fixed: the snapshot is lost; see PR #6652"]
     fn test_cdc_ft_mode_holds_slot() {
         let url = postgres_url();
         let table_name = unique_pg_name("cdc_test_strict_hold");
@@ -5168,9 +5303,10 @@ mod cdc_tests {
         );
 
         // Stop without a checkpoint, but only once etl has persisted the copy
-        // as complete. Stopping earlier leaves etl in `data_sync`, and it
-        // redoes the copy on restart, which would hide a lost snapshot.
-        wait_for_etl_state(&mut table, "ready");
+        // as complete. Stopping earlier leaves etl in `data_sync` or
+        // `finished_copy`, and it redoes the copy on restart, which would
+        // hide a lost snapshot.
+        wait_for_etl_sync_completed(&mut table);
         ctrl_1.stop().unwrap();
         wait_for_slots_released(&mut table);
 
