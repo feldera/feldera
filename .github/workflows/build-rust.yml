@@ -3,6 +3,13 @@ name: Build Rust Sources
 on:
   workflow_call:
 
+# The build jobs hand GITHUB_TOKEN to every build script in the tree, so keep
+# it read-only. Nothing in them writes through it: artifact upload and the
+# caches use the runner's own credentials. The cancel job below overrides this
+# with the `actions: write` it needs.
+permissions:
+  contents: read
+
 env:
   CARGO_FLAGS: "--release --locked --all-targets"
   CARGO_FEATURES_BASE: "fips,pubsub-emulator-test,iceberg-tests-fs,iceberg-tests-glue,delta-s3-test"
@@ -69,6 +76,14 @@ jobs:
       # core budget so arm64 pods don't OOM. See rust-lang/cargo#10702.
       - name: Run Rust doc tests
         if: matrix.arch == 'x86_64'
+        env:
+          # postgresql_embedded's build script lists the releases of
+          # theseus-rs/postgresql-binaries through the GitHub API. Anonymous
+          # calls share the runners' egress address and its 60-per-hour limit,
+          # which fails the build with "403 rate limit exceeded";
+          # postgresql_archive sends this token when it is set. The token is
+          # scoped to the steps that compile, so no other step or job sees it.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Don't build the webconsole again for rust tests
           export WEBCONSOLE_BUILD_DIR="$(mktemp -d)"
@@ -81,6 +96,10 @@ jobs:
       # than riding the job timeout to its limit.
       - name: Build Rust binaries
         timeout-minutes: 45
+        env:
+          # The release profile runs postgresql_embedded's build script again;
+          # see the doc test step.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           FEATURES="${{ env.CARGO_FEATURES_BASE }}"
           cargo build ${{ env.CARGO_FLAGS }} --features "$FEATURES" --target=${{ matrix.target }}

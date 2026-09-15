@@ -220,6 +220,13 @@ jobs:
 
       - name: Bump cargo versions
         if: ${{ steps.bump-check.outputs.bump == 'true' }}
+        env:
+          # Compiling the manager runs postgresql_embedded's build script,
+          # which lists the releases of theseus-rs/postgresql-binaries through
+          # the GitHub API. Anonymous calls share the runners' egress address
+          # and its 60-per-hour limit, which fails the build with "403 rate
+          # limit exceeded"; postgresql_archive sends this token when it is set.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }}
           cargo run --release --locked --bin pipeline-manager -- --dump-openapi
