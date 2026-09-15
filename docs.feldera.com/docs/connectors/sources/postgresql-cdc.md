@@ -24,19 +24,42 @@ privileges.
 
 Use transport name `postgres_cdc_input`.
 
-| Property          | Type   | Default | Description                                                                                                                                                                                     |
-| ----------------- | ------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `uri`\*           | string |         | PostgreSQL connection URL, e.g. `"postgres://postgres:password@localhost:5432/postgres"`. The URL must include a username, host, and database name. The user must have `REPLICATION` privilege. |
-| `publication`\*   | string |         | Name of an existing PostgreSQL publication. The publication must include `source_table`.                                                                                                        |
-| `source_table`\*  | string |         | PostgreSQL table to replicate, usually schema-qualified, e.g. `"public.orders"`.                                                                                                                |
-| `ssl_ca_pem`      | string |         | CA certificates in PEM format. Setting this enables TLS and takes precedence over `ssl_ca_location`.                                                                                            |
-| `ssl_ca_location` | string |         | Path to a PEM file containing CA certificates. Used when `ssl_ca_pem` is not set.                                                                                                               |
+| Property              | Type   | Default | Description                                                                                                                                                                                     |
+|-----------------------|--------|---------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `uri`\*               | string |         | PostgreSQL connection URL, e.g. `"postgres://postgres:password@localhost:5432/postgres"`. The URL must include a username, host, and database name. The user must have `REPLICATION` privilege. |
+| `publication`\*       | string |         | Name of an existing PostgreSQL publication. The publication must include `source_table`.                                                                                                        |
+| `source_table`\*      | string |         | PostgreSQL table to replicate, usually schema-qualified, e.g. `"public.orders"`.                                                                                                                |
+| `ssl_ca_pem`          | string |         | CA certificates in PEM format. Setting this enables TLS and takes precedence over `ssl_ca_location`.                                                                                            |
+| `ssl_ca_location`     | string |         | Path to a PEM file containing CA certificates. Used when `ssl_ca_pem` is not set.                                                                                                               |
+| `batch`               | object |         | Batch processing configuration. See [Batch configuration](#batch-configuration) below. When omitted, uses the underlying `etl` library's defaults.                                              |
+| `memory_backpressure` | object |         | Memory-based backpressure configuration. See [Memory backpressure configuration](#memory-backpressure-configuration) below. When omitted, uses the underlying `etl` library's defaults.         |
 
 [*]: Required fields
 
 The CDC connector does not support client-certificate TLS options
 (`ssl_client_pem`, `ssl_client_location`, `ssl_client_key`,
 `ssl_client_key_location`, or `ssl_certificate_chain_location`).
+
+### Batch configuration
+
+Controls how replication events are buffered into a batch before being
+flushed to Feldera.
+
+| Property              | Type    | Default | Description                                                                                                                                            |
+|-----------------------|---------|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `max_fill_ms`         | integer | 10000   | Maximum time, in milliseconds, to wait before flushing a partially filled batch.                                                                       |
+| `memory_budget_ratio` | float   | 0.2     | Ratio, in `(0.0, 1.0]`, of process memory reserved for incoming replication batch bytes, divided across active streams.                                |
+| `max_bytes`           | integer | 8388608 | Maximum preferred byte size for one batch per active stream (8 MiB). A ceiling, not a target: the smaller of this and the memory-ratio budget applies. |
+
+### Memory backpressure configuration
+
+Controls when the connector pauses reading further replication events to
+avoid exceeding available memory.
+
+| Property             | Type  | Default | Description                                                                                                         |
+|----------------------|-------|---------|---------------------------------------------------------------------------------------------------------------------|
+| `activate_threshold` | float | 0.85    | Memory usage ratio, in `(0.0, 1.0]`, above which backpressure is activated.                                         |
+| `resume_threshold`   | float | 0.75    | Memory usage ratio, in `[0.0, 1.0)`, below which backpressure is released. Must be lower than `activate_threshold`. |
 
 ## PostgreSQL setup
 
@@ -160,6 +183,42 @@ CREATE TABLE orders (
                 "publication": "feldera_orders",
                 "source_table": "public.orders",
                 "ssl_ca_pem": "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----"
+            }
+        }
+    }]'
+);
+```
+
+## Memory vs. throughput tuning example
+
+For a high-throughput table, you may want larger batches (fewer, bigger
+flushes) and a memory backpressure window tuned for the worker's available
+memory:
+
+```sql
+CREATE TABLE orders (
+    id BIGINT NOT NULL,
+    customer TEXT NOT NULL,
+    amount DECIMAL(10, 2),
+    status TEXT NOT NULL
+) WITH (
+    'materialized' = 'true',
+    'connectors' = '[{
+        "transport": {
+            "name": "postgres_cdc_input",
+            "config": {
+                "uri": "postgres://feldera:password@localhost:5432/postgres",
+                "publication": "feldera_orders",
+                "source_table": "public.orders",
+                "batch": {
+                    "max_fill_ms": 2000,
+                    "memory_budget_ratio": 0.3,
+                    "max_bytes": 16777216
+                },
+                "memory_backpressure": {
+                    "activate_threshold": 0.9,
+                    "resume_threshold": 0.7
+                }
             }
         }
     }]'
