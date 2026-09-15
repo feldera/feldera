@@ -1613,10 +1613,10 @@ where
 
 impl<I, B, T, Z, Clk> StreamingBinaryOperator<Option<I>, T, Z> for JoinTrace<I, B, T, Z, Clk>
 where
-    I: WithSnapshot + 'static,
+    I: WithSnapshot + Clone + 'static,
     I::Batch: ZBatchReader<Time = ()>,
     B: ZBatch<Key = <<I as WithSnapshot>::Batch as BatchReader>::Key>,
-    T: ZBatchReader<Key = B::Key, Val = B::Val, Time = B::Time> + WithSnapshot<Batch = B>,
+    T: ZBatchReader<Key = B::Key, Val = B::Val, Time = B::Time> + WithSnapshot<Batch = B> + Clone,
     Z: IndexedZSet,
     Clk: WithClock<Time = T::Time> + 'static,
 {
@@ -1625,12 +1625,12 @@ where
     #[allow(clippy::await_holding_refcell_ref)]
     fn eval(
         self: Rc<Self>,
-        delta: &Option<I>,
-        trace: &T,
+        delta: Cow<'_, Option<I>>,
+        trace: Cow<'_, T>,
     ) -> impl futures::Stream<Item = (Z, bool, Option<Position>)> + 'static {
         let chunk_size = splitter_output_chunk_size();
 
-        let delta = delta.as_ref().map(|b| b.ro_snapshot());
+        let delta = (*delta).as_ref().map(|b| b.ro_snapshot());
 
         let trace = if self.flush.get() {
             Some(trace.ro_snapshot())

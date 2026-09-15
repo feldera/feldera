@@ -134,16 +134,17 @@ where
     }
 }
 
-/// Presents a spine of stamped batches as a spine of unstamped ones.
+/// Turns a spine of stamped updates into the spine of their values.
 ///
 /// Each batch is rewrapped rather than copied: the stamped and unstamped
 /// spellings describe the same records, and the projection happens in the
-/// cursor.  The resulting spine starts from the batch list alone, so whatever
-/// merges the stamped spine had in flight are discarded; preserving them is a
-/// separate change.
+/// cursor.  The stamped spine is consumed, so the two never hold the
+/// transaction at once.  The new spine starts from the batch list alone, so
+/// whatever merges the stamped spine had in flight are discarded; preserving
+/// them is a separate change.
 pub async fn remove_stamp<K, V>(
     factories: &OrdIndexedZSetFactories<K, V>,
-    stamped: Vec<Arc<Stamped<OrdIndexedZSet<K, V>>>>,
+    stamped: Spine<Stamped<OrdIndexedZSet<K, V>>>,
     name: Arc<String>,
 ) -> Spine<OrdIndexedZSet<K, V>>
 where
@@ -152,7 +153,7 @@ where
 {
     let mut spine =
         <Spine<OrdIndexedZSet<K, V>> as Trace>::new(factories, name, TraceRole::Integral);
-    for batch in stamped {
+    for batch in stamped.get_batches() {
         spine
             .insert(OrdIndexedZSet::project_batch(factories, &batch))
             .await;
@@ -412,12 +413,12 @@ where
     /// The adjustments of the step that just ran, for the delta stream.
     adjustments: RefStreamValue<Arc<OrdIndexedZSet<K, V>>>,
 
-    /// The accumulator under construction.
+    /// The adjustments resolved so far, as a spine of their own.
     ///
-    /// It holds the transaction's updates with their stamps dropped, and grows
-    /// by a chunk of adjustments per step until the commit finishes, so it is
-    /// state the operator carries between steps and worth reporting as such.
-    state: RefCell<Option<Spine<OrdIndexedZSet<K, V>>>>,
+    /// They join the updates only when the commit finishes, so that the
+    /// transaction is not held twice while the walk runs.  This is state the
+    /// operator carries between steps and worth reporting as such.
+    resolved: RefCell<Option<Spine<OrdIndexedZSet<K, V>>>>,
 
     output_adjustment_stats: RefCell<BatchSizeStats>,
 
@@ -459,7 +460,7 @@ where
         Self {
             factories: factories.clone(),
             adjustments,
-            state: RefCell::new(None),
+            resolved: RefCell::new(None),
             output_adjustment_stats: RefCell::new(BatchSizeStats::new()),
             step_durations: RefCell::new(DurationHistogram::new()),
             conflicting_updates: Cell::new(0),
@@ -492,22 +493,22 @@ where
             UNREAD_UPDATES_COUNT => MetaItem::Count(self.unread_updates.get() as usize),
         });
 
-        // The accumulator exists only while a transaction commits, and is out of
+        // The adjustments exist only while a transaction commits, and is out of
         // the cell while a chunk of it is being inserted.
-        let state = self.state.borrow();
-        let Some(state) = state.as_ref() else {
+        let resolved = self.resolved.borrow();
+        let Some(resolved) = resolved.as_ref() else {
             return;
         };
 
-        let bytes = state.size_of();
+        let bytes = resolved.size_of();
         meta.extend(metadata! {
-            STATE_RECORDS_COUNT => MetaItem::Count(state.num_entries_deep()),
+            STATE_RECORDS_COUNT => MetaItem::Count(resolved.num_entries_deep()),
             ALLOCATED_MEMORY_BYTES => MetaItem::bytes(bytes.total_bytes()),
             USED_MEMORY_BYTES => MetaItem::bytes(bytes.used_bytes()),
             MEMORY_ALLOCATIONS_COUNT => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_MEMORY_BYTES => MetaItem::bytes(bytes.shared_bytes()),
         });
-        state.metadata(meta);
+        resolved.metadata(meta);
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -515,7 +516,7 @@ where
     }
 
     fn clear_state(&mut self) -> Result<(), Error> {
-        *self.state.borrow_mut() = None;
+        *self.resolved.borrow_mut() = None;
         Ok(())
     }
 }
@@ -548,8 +549,8 @@ where
         self.conflicting_updates.set(seen + 1);
     }
 
-    /// Hands one chunk of adjustments to the delta stream and to the
-    /// accumulator, which are the two places every adjustment has to reach.
+    /// Hands a step's adjustments to the delta stream and to the resolved
+    /// spine, which are the two places every adjustment has to reach.
     async fn emit(&self, batch: Arc<OrdIndexedZSet<K, V>>) {
         self.output_adjustment_stats
             .borrow_mut()
@@ -557,14 +558,14 @@ where
         self.adjustments.put(Arc::clone(&batch));
 
         // Taken out for the insert rather than borrowed across it, so no borrow
-        // of the accumulator outlives a call that can suspend.
-        let mut accumulator = self
-            .state
+        // of the spine outlives a call that can suspend.
+        let mut resolved = self
+            .resolved
             .borrow_mut()
             .take()
-            .expect("the accumulator outlives the step that fills it");
-        accumulator.insert(batch).await;
-        *self.state.borrow_mut() = Some(accumulator);
+            .expect("the resolved adjustments outlive the step that adds to them");
+        resolved.insert(batch).await;
+        *self.resolved.borrow_mut() = Some(resolved);
     }
 }
 
@@ -580,10 +581,17 @@ where
 {
     fn eval(
         self: Rc<Self>,
-        integral: &Spine<OrdIndexedZSet<K, V>>,
-        updates: &Option<Spine<Stamped<OrdIndexedZSet<K, V>>>>,
+        integral: Cow<'_, Spine<OrdIndexedZSet<K, V>>>,
+        updates: Cow<'_, Option<Spine<Stamped<OrdIndexedZSet<K, V>>>>>,
     ) -> impl AsyncStream<Item = (Option<Spine<OrdIndexedZSet<K, V>>>, bool, Option<Position>)> + 'static
     {
+        // The updates are taken over, not copied: the walk reads this one
+        // spine and hands it on as the output, so nothing else may hold it.
+        // The wrapper asks for it with `OwnershipPreference::STRONGLY_PREFER_OWNED`.
+        let Cow::Owned(updates) = updates else {
+            panic!("LazyUpsert::eval(): the updates must arrive owned");
+        };
+
         // The walk below reads the integral off the same disk the mergers
         // behind these two spines read.  Holding them off for the walk is what
         // separates the walk's own I/O from the merger's; see
@@ -597,11 +605,6 @@ where
             .filter(|_| lazy_input_map_pause_merging())
             .map(|updates| (integral.pause_merging(), updates.pause_merging()));
 
-        // The stream outlives this call, so everything it reads is taken now:
-        // the updates as batches for the accumulator and as a snapshot to walk,
-        // and the integral as a snapshot to probe.
-        let stamped = updates.as_ref().map(|updates| updates.get_batches());
-
         // Whether every update in the transaction is an insertion.
         //
         // A key written once, positively, needs nothing from its update: no
@@ -611,13 +614,18 @@ where
         // nearly the whole transaction.  A batch that does not track the count
         // answers `None`, which is not the same as counting none, so anything
         // but `Some(0)` gives the shortcut up.
-        let all_insertions = stamped.as_ref().is_some_and(|batches| {
-            batches
+        let all_insertions = updates.as_ref().is_some_and(|updates| {
+            updates
+                .get_batches()
                 .iter()
                 .all(|batch| batch.negative_weight_count() == Some(0))
         });
-        let updates = updates.as_ref().map(|updates| updates.ro_snapshot());
-        let integral = updates.is_some().then(|| integral.ro_snapshot());
+
+        // The stream outlives this call, so what it reads is taken now: the
+        // updates as a snapshot to walk and the integral as a snapshot to
+        // probe.  The updates themselves go along to become the output.
+        let snapshot = updates.as_ref().map(|updates| updates.ro_snapshot());
+        let integral = snapshot.is_some().then(|| integral.ro_snapshot());
 
         stream! {
             // Merging stays paused until the stream ends, however it ends.
@@ -630,20 +638,19 @@ where
                 yield (None, true, None);
                 return;
             };
+            let snapshot = snapshot.unwrap();
             let integral = integral.unwrap();
 
             let factories = &self.factories.batch_factories;
 
-            // The accumulator starts as the transaction's updates with their
-            // stamps dropped; the adjustments join it as they are resolved.
-            *self.state.borrow_mut() = Some(
-                remove_stamp(
-                    factories,
-                    stamped.unwrap(),
-                    Arc::new(String::from("lazy_input_upsert.accumulator")),
-                )
-                .await,
-            );
+            // The adjustments collect in a spine of their own and join the
+            // updates only at the end, so the transaction is not held twice
+            // while the walk runs.
+            *self.resolved.borrow_mut() = Some(<Spine<OrdIndexedZSet<K, V>> as Trace>::new(
+                factories,
+                Arc::new(String::from("lazy_input_upsert.adjustments")),
+                TraceRole::Integral,
+            ));
 
             let chunk_size = splitter_output_chunk_size();
             let keys_per_step = lazy_input_map_keys_per_step();
@@ -652,7 +659,7 @@ where
             // The walk below steps through every key of the updates in order,
             // and says so: a file-backed batch then reads its key blocks ahead
             // of the walk instead of one round trip at a time.
-            let mut updates_cursor = updates.cursor_with_hint(AccessHint::Sequential);
+            let mut updates_cursor = snapshot.cursor_with_hint(AccessHint::Sequential);
             let mut integral_cursor = integral.cursor();
 
             // One key's adjustments, consolidated before they reach the builder:
@@ -799,8 +806,27 @@ where
             let position = updates_cursor.position();
             self.emit(Arc::new(builder.done())).await;
             self.step_durations.borrow_mut().add(step_start.elapsed());
-            let accumulator = self.state.borrow_mut().take();
-            yield (accumulator, true, position);
+
+            // The output is the updates with their stamps dropped and the
+            // adjustments added.  The walk's snapshot goes first: it is the
+            // one other holder of the stamped batches.
+            drop(updates_cursor);
+            drop(snapshot);
+            let mut output = remove_stamp(
+                factories,
+                updates,
+                Arc::new(String::from("lazy_input_upsert.accumulator")),
+            )
+            .await;
+            let resolved = self
+                .resolved
+                .borrow_mut()
+                .take()
+                .expect("the resolved adjustments outlive the walk that fills them");
+            for batch in resolved.get_batches() {
+                output.insert(batch).await;
+            }
+            yield (Some(output), true, position);
         }
     }
 }
@@ -920,11 +946,19 @@ impl RootCircuit {
             delayed_integral.mark_sharded();
 
             let adjustments_value = RefStreamValue::empty();
+            // The map takes the accumulated updates over and hands them on as
+            // its output, so it asks for them owned; the integral it only probes.
             let accumulator = self.add_binary_operator(
-                StreamingBinaryWrapper::new(<LazyUpsert<K, V, OrdIndexedZSet<K, V>>>::new(
-                    factories,
-                    adjustments_value.clone(),
-                )),
+                StreamingBinaryWrapper::with_preferences(
+                    <LazyUpsert<K, V, OrdIndexedZSet<K, V>>>::new(
+                        factories,
+                        adjustments_value.clone(),
+                    ),
+                    (
+                        OwnershipPreference::INDIFFERENT,
+                        OwnershipPreference::STRONGLY_PREFER_OWNED,
+                    ),
+                ),
                 &delayed_integral,
                 &accumulated,
             );
@@ -1469,7 +1503,7 @@ mod remove_stamp_tests {
 
             let unstamped = TOKIO.block_on(remove_stamp(
                 &factories.batch_factories,
-                stamped.get_batches(),
+                stamped,
                 Arc::new(String::from("unstamped")),
             ));
 
@@ -1593,7 +1627,7 @@ mod lazy_upsert_tests {
         TOKIO.block_on(async {
             let mut stream: std::pin::Pin<
                 Box<dyn AsyncStream<Item = (Option<Spine<Batched>>, bool, Option<Position>)>>,
-            > = Box::pin(Rc::clone(&operator).eval(&integral, &updates));
+            > = Box::pin(Rc::clone(&operator).eval(Cow::Borrowed(&integral), Cow::Owned(updates)));
             loop {
                 let (output, complete, _position) = stream
                     .next()
@@ -1613,6 +1647,23 @@ mod lazy_upsert_tests {
             accumulator,
             conflicts: operator.conflicting_updates.get(),
         }
+    }
+
+    /// The map takes its updates over: a borrowed spine is refused rather than
+    /// walked, since the walk counts on being the spine's only holder.
+    #[test]
+    #[should_panic(expected = "the updates must arrive owned")]
+    fn borrowed_updates_are_refused() {
+        run_in_circuit_with_storage(|| {
+            let factories = factories();
+            let operator = Rc::new(<LazyUpsert<Key, Val, Batched>>::new(
+                &factories,
+                RefStreamValue::empty(),
+            ));
+            let integral = integral(&factories, &[]);
+            let updates = Some(updates(&factories, &[(1, 10, 0, 1)]));
+            let _stream = operator.eval(Cow::Borrowed(&integral), Cow::Borrowed(&updates));
+        });
     }
 
     /// The accumulator the operator produces: `project(U)` with the adjustments
