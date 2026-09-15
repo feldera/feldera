@@ -280,6 +280,15 @@ struct Args {
     #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
     roaring: bool,
 
+    /// Hold the background mergers off while the lazy map resolves the
+    /// transaction.
+    ///
+    /// Resolving walks the integral, which reads from the same disk the
+    /// mergers do.  Pausing them says how much of the commit phase is the walk
+    /// waiting behind a merger rather than on its own I/O.  Lazy map only.
+    #[arg(long)]
+    pause_merging: bool,
+
     /// Where the circuits keep their storage.  A temporary directory by
     /// default, which lands wherever `TMPDIR` points.
     #[arg(long)]
@@ -537,7 +546,7 @@ fn main() -> Result<()> {
     });
 
     println!(
-        "value_bytes={} records={} load_batch={} transactions={}x{} workers={} merger_threads={} bloom_rate={} roaring={} staging={} keys={} max_rss={}",
+        "value_bytes={} records={} load_batch={} transactions={}x{} workers={} merger_threads={} bloom_rate={} roaring={} pause_merging={} staging={} keys={} max_rss={}",
         args.value_bytes,
         records,
         args.load_batch,
@@ -554,6 +563,7 @@ fn main() -> Result<()> {
             None => "0.0001 (default)".to_string(),
         },
         args.roaring,
+        args.pause_merging,
         if args.no_staging {
             "off (driver partitions)"
         } else {
@@ -890,6 +900,7 @@ where
     ));
     config.dev_tweaks.merger_threads = args.merger_threads;
     config.dev_tweaks.enable_roaring = Some(args.roaring);
+    config.dev_tweaks.lazy_input_map_pause_merging = Some(args.pause_merging);
     config = config.with_max_rss_bytes(args.max_rss_gib.map(|gib| gib << 30));
 
     let weights = Arc::new(AtomicI64::new(0));

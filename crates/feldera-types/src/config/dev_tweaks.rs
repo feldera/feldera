@@ -94,6 +94,18 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lazy_input_map_keys_per_step: Option<u64>,
 
+    /// Pause a spine's background merging while a lazy input map resolves a
+    /// transaction.
+    ///
+    /// Resolving walks the integral, which reads from the same disk the
+    /// mergers do.  Holding the mergers off for the walk separates what the
+    /// walk costs on its own from what it costs behind a merger, at the price
+    /// of leaving the spines unmerged until the transaction commits.
+    ///
+    /// This is a diagnostic, off by default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lazy_input_map_pause_merging: Option<bool>,
+
     /// Enable adaptive joins.
     ///
     /// Adaptive joins dynamically change their partitioning policy to avoid skew.
@@ -311,6 +323,9 @@ impl DevTweaks {
     }
     pub fn lazy_input_map_keys_per_step(&self) -> u64 {
         self.lazy_input_map_keys_per_step.unwrap_or(100_000)
+    }
+    pub fn lazy_input_map_pause_merging(&self) -> bool {
+        self.lazy_input_map_pause_merging.unwrap_or(false)
     }
     pub fn adaptive_joins(&self) -> bool {
         self.adaptive_joins.unwrap_or(false)
