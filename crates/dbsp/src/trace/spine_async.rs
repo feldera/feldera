@@ -6,6 +6,7 @@
 //! The cost of these operations grows with the number of batches in the vector,
 //! so it is beneficial to reduce the number by merging batches.
 
+use crate::trace::AccessHint;
 use crate::{
     Error, NumEntries, Runtime,
     circuit::{
@@ -2006,6 +2007,10 @@ where
         SpineCursor::new_cursor(&self.factories, self.merger.get_batches())
     }
 
+    fn cursor_with_hint(&self, hint: AccessHint) -> Self::Cursor<'_> {
+        SpineCursor::new_cursor_with_hint(&self.factories, self.merger.get_batches(), hint)
+    }
+
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
         RG: Rng,
@@ -2081,12 +2086,25 @@ impl<B: Batch> Clone for SpineCursor<B> {
 
 impl<B: Batch> SpineCursor<B> {
     pub fn new_cursor(factories: &B::Factories, batches: Vec<Arc<B>>) -> Self {
+        Self::new_cursor_with_hint(factories, batches, AccessHint::Unknown)
+    }
+
+    /// A cursor over `batches` whose every batch cursor is told how it will
+    /// be moved; see [`AccessHint`].
+    pub fn new_cursor_with_hint(
+        factories: &B::Factories,
+        batches: Vec<Arc<B>>,
+        hint: AccessHint,
+    ) -> Self {
         SpineCursorBuilder {
             batches,
             cursor_builder: |batches| {
                 CursorList::new(
                     factories.weight_factory(),
-                    batches.iter().map(|batch| batch.cursor()).collect(),
+                    batches
+                        .iter()
+                        .map(|batch| batch.cursor_with_hint(hint))
+                        .collect(),
                 )
             },
         }
@@ -2973,17 +2991,21 @@ mod merge_threshold_test {
 
 #[cfg(test)]
 mod merge_pause_test {
-    use super::{MergePause, MIN_LEVEL0_MERGE_BATCHES};
+    use super::{MIN_LEVEL0_MERGE_BATCHES, MergePause};
     use crate::{
+        ZWeight,
         algebra::{OrdZSet, OrdZSetFactories},
         dynamic::{DynData, Erase, LeanVec},
         trace::{
             Batch, BatchReaderFactories, Spine, Trace, TraceRole, test::run_in_circuit_with_storage,
         },
         utils::Tup2,
-        ZWeight,
     };
-    use std::{sync::Arc, thread::sleep, time::{Duration, Instant}};
+    use std::{
+        sync::Arc,
+        thread::sleep,
+        time::{Duration, Instant},
+    };
 
     /// How long a merger is given to do something observable.  Generous,
     /// because it only bounds the failure case: the assertions that follow a

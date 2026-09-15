@@ -1,5 +1,6 @@
 use super::utils::{copy_to_builder, pick_merge_destination};
 use crate::storage::file::{FilterKind, FilterStats, TouchedWindowCount};
+use crate::trace::AccessHint;
 use crate::{
     DBWeight, NumEntries,
     algebra::{AddAssignByRef, AddByRef, NegByRef, ZRingValue},
@@ -218,6 +219,13 @@ where
         DelegatingCursor(match &self.inner {
             Inner::Vec(vec) => Box::new(vec.cursor()),
             Inner::File(file) => Box::new(file.cursor()),
+        })
+    }
+
+    fn cursor_with_hint(&self, hint: AccessHint) -> Self::Cursor<'_> {
+        DelegatingCursor(match &self.inner {
+            Inner::Vec(vec) => Box::new(vec.cursor()),
+            Inner::File(file) => Box::new(file.cursor_with_hint(hint)),
         })
     }
 

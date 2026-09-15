@@ -1985,6 +1985,59 @@ fn a_fetch_waiting_for_a_block_read_declares_the_read() {
         },
     );
 }
+
+/// The hint reaches the file cursor through everything between: a spine
+/// snapshot, its cursor list, the fallback batch.  A walk declared sequential
+/// reads ahead; the same walk undeclared reads one block at a time.
+#[test]
+fn a_hint_reaches_the_file_cursor_through_a_snapshot() {
+    run_in_circuit_with_storage(|| {
+        const KEYS: i32 = 60_000;
+        let tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>> = (0..KEYS)
+            .map(|key| Tup2(Tup2(key, key), 1 as ZWeight))
+            .collect();
+        let written = build_fallback_indexed_wset_i32_at(tuples, BatchLocation::Storage);
+        let path = written.file_path().expect("built on storage").clone();
+        let factories =
+            <crate::trace::FallbackIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+
+        // Opened by path the file has a new id the cache knows nothing about,
+        // so every block is cold; `written` keeps the file on disk meanwhile.
+        let prefetches_under = |hint: crate::trace::AccessHint| {
+            let batch = Arc::new(
+                crate::trace::FallbackIndexedWSet::<DynI32, DynI32, DynZWeight>::from_path(
+                    &factories, &path,
+                )
+                .unwrap(),
+            );
+            let snapshot =
+                crate::trace::SpineSnapshot::with_batches(&factories, vec![batch.clone()]);
+            let mut cursor = snapshot.cursor_with_hint(hint);
+            let mut keys = 0;
+            while cursor.key_valid() {
+                keys += 1;
+                cursor.step_key();
+            }
+            assert_eq!(keys, KEYS);
+            let stats = batch.cache_stats().0[feldera_buffer_cache::ThreadType::Foreground];
+            let count = |access| stats[access].count;
+            use crate::storage::buffer_cache::CacheAccess::{Hit, Miss, Prefetch, Wait};
+            (count(Prefetch), count(Hit), count(Miss), count(Wait))
+        };
+        let (prefetches, hits, misses, waits) =
+            prefetches_under(crate::trace::AccessHint::Sequential);
+        assert!(
+            prefetches >= 16,
+            "a walk declared sequential read little ahead: prefetches {prefetches}, hits {hits}, misses {misses}, waits {waits}"
+        );
+        assert_eq!(prefetches_under(crate::trace::AccessHint::Unknown).0, 0);
+    });
+}
+
 /// Under a zero step threshold, which is what Critical memory pressure
 /// imposes, a builder that receives nothing must finish in memory.  It has
 /// nothing to spill, and a layer file costs two fsyncs on the way out, which a

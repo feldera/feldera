@@ -16,6 +16,7 @@
 //! key, which is what lets the projection that removes it consolidate a run in
 //! one pass.
 
+use crate::trace::AccessHint;
 use crate::{
     Circuit, DBData, Error, NumEntries, Position, RootCircuit, Runtime, Stream, ZWeight,
     algebra::{IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories},
@@ -647,7 +648,10 @@ where
             let keys_per_step = lazy_input_map_keys_per_step();
             let capacity = splitter_output_first_chunk_size();
 
-            let mut updates_cursor = updates.cursor();
+            // The walk below steps through every key of the updates in order,
+            // and says so: a file-backed batch then reads its key blocks ahead
+            // of the walk instead of one round trip at a time.
+            let mut updates_cursor = updates.cursor_with_hint(AccessHint::Sequential);
             let mut integral_cursor = integral.cursor();
 
             // One key's adjustments, consolidated before they reach the builder:

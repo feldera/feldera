@@ -2,6 +2,7 @@ use crate::storage::file::format::BatchMetadata;
 use crate::storage::file::{
     FilterKind, FilterStats, TouchedWindowCount, TouchedWindowCounter, collect_roaring_metadata,
 };
+use crate::trace::AccessHint;
 use crate::{
     DBData, DBWeight, NumEntries, Runtime,
     algebra::{AddAssignByRef, AddByRef, NegByRef},
@@ -385,6 +386,10 @@ where
         FileWSetCursor::new(self)
     }
 
+    fn cursor_with_hint(&self, hint: AccessHint) -> Self::Cursor<'_> {
+        FileWSetCursor::with_hint(self, hint)
+    }
+
     #[inline]
     fn approx_key_count(&self) -> usize {
         self.file.n_rows(0) as usize
@@ -649,7 +654,12 @@ where
     R: WeightTrait + ?Sized,
 {
     fn new(wset: &'s FileWSet<K, R>) -> Self {
-        let cursor = unsafe { wset.file.rows().first().unwrap_storage() };
+        Self::with_hint(wset, AccessHint::Unknown)
+    }
+
+    /// A cursor told how it will be moved; see [`AccessHint`].
+    fn with_hint(wset: &'s FileWSet<K, R>, hint: AccessHint) -> Self {
+        let cursor = unsafe { wset.file.rows().with_hint(hint).first().unwrap_storage() };
         let diff = wset.factories.weight_factory().default_box();
         let valid = cursor.has_value();
 

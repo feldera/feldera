@@ -14,6 +14,7 @@ use super::SpineCursor;
 use crate::NumEntries;
 use crate::dynamic::{DynVec, Factory};
 use crate::storage::file::FilterStats;
+use crate::trace::AccessHint;
 use crate::trace::cursor::{CursorFactory, CursorList};
 use crate::trace::{
     Batch, BatchReader, BatchReaderFactories, Cursor, Spine, merge_batches,
@@ -217,6 +218,10 @@ where
 
     fn cursor(&self) -> Self::Cursor<'_> {
         SpineCursor::new_cursor(&self.factories, self.batches.clone())
+    }
+
+    fn cursor_with_hint(&self, hint: AccessHint) -> Self::Cursor<'_> {
+        SpineCursor::new_cursor_with_hint(&self.factories, self.batches.clone(), hint)
     }
 
     fn approx_key_count(&self) -> usize {
