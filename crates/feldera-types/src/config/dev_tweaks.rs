@@ -102,6 +102,19 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lazy_input_map_keys_per_step: Option<u64>,
 
+    /// Minimum size of the key blocks in the batches a lazy input map's
+    /// accumulator writes for itself, in bytes.  A power of two, at least
+    /// 4096.
+    ///
+    /// The map resolves a transaction by walking the accumulated updates in
+    /// key order without reading values, one storage request per key block,
+    /// so larger blocks mean fewer requests.  Only the accumulator's own
+    /// batches (merge outputs and spills) take this size; the batches that
+    /// reach the integral keep it until its merger rewrites them at the
+    /// default size.  The default is 32768; 8192 is the file writer's default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lazy_input_map_key_block_bytes: Option<u64>,
+
     /// Pause a spine's background merging while a lazy input map resolves a
     /// transaction.
     ///
@@ -124,16 +137,6 @@ pub struct DevTweaks {
     /// disables it.  The default is 8.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layer_file_read_ahead_blocks: Option<u64>,
-
-    /// Minimum size of a layer file's key-column data blocks, in bytes.  A
-    /// power of two, at least 4096.
-    ///
-    /// A walk over keys alone reads one key block per storage request, and on
-    /// a volume bound by requests rather than bytes, fewer larger blocks are
-    /// fewer round trips.  The other columns keep the writer's default.  The
-    /// default is 8192.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub layer_file_key_block_bytes: Option<u64>,
 
     /// Enable adaptive joins.
     ///
@@ -380,8 +383,8 @@ impl DevTweaks {
     pub fn lazy_input_map_keys_per_step(&self) -> u64 {
         self.lazy_input_map_keys_per_step.unwrap_or(100_000)
     }
-    pub fn layer_file_key_block_bytes(&self) -> u64 {
-        self.layer_file_key_block_bytes.unwrap_or(8192)
+    pub fn lazy_input_map_key_block_bytes(&self) -> u64 {
+        self.lazy_input_map_key_block_bytes.unwrap_or(32 * 1024)
     }
     pub fn layer_file_read_ahead_blocks(&self) -> u64 {
         self.layer_file_read_ahead_blocks.unwrap_or(8)

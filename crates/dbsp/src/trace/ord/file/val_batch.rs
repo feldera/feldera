@@ -2,9 +2,9 @@ use crate::storage::buffer_cache::CacheStats;
 use crate::storage::file::{
     FilterKind, FilterStats, TouchedWindowCount, TouchedWindowCounter, collect_roaring_metadata,
 };
-use crate::trace::BatchLocation;
 use crate::trace::cursor::Position;
 use crate::trace::ord::file::UnwrapStorage;
+use crate::trace::{BatchLayout, BatchLocation};
 use crate::{
     DBData, DBWeight, NumEntries, Runtime, Timestamp,
     dynamic::{
@@ -761,6 +761,7 @@ where
         factories: &FileValBatchFactories<K, V, T, R>,
         batches: I,
         _location: Option<BatchLocation>,
+        layout: BatchLayout,
     ) -> Self
     where
         B: Batch<Key = K, Val = V, Time = T, R = R>,
@@ -787,7 +788,7 @@ where
                 &factories.factories1,
                 Runtime::buffer_cache,
                 &*Runtime::storage_backend().unwrap_storage(),
-                Runtime::file_writer_parameters(),
+                Runtime::file_writer_parameters_for(layout),
                 key_filter,
             )
             .unwrap_storage(),

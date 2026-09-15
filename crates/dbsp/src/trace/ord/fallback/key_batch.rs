@@ -8,9 +8,9 @@ use crate::{
     },
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
     trace::{
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
-        FileKeyBatchFactories, Filter, GroupFilter, MergeCursor, VecKeyBatch, VecKeyBatchFactories,
-        WeightedItem,
+        Batch, BatchFactories, BatchLayout, BatchLocation, BatchReader, BatchReaderFactories,
+        Builder, FileKeyBatchFactories, Filter, GroupFilter, MergeCursor, VecKeyBatch,
+        VecKeyBatchFactories, WeightedItem,
         cursor::{DelegatingCursor, PushCursor},
         ord::{
             FileKeyBatch, file::key_batch::FileKeyBuilder, merge_batcher::MergeBatcher,
@@ -435,6 +435,7 @@ where
         factories: &FallbackKeyBatchFactories<K, T, R>,
         batches: I,
         location: Option<BatchLocation>,
+        layout: BatchLayout,
     ) -> Self
     where
         B: Batch<Key = K, Val = DynUnit, Time = T, R = R>,
@@ -458,6 +459,7 @@ where
                     &factories.file,
                     batches,
                     location,
+                    layout,
                 )),
             },
         }

@@ -30,10 +30,11 @@ use crate::{
         file::reader::{CorruptionError, Error as ReaderError},
     },
     trace::{
-        Batch, BatchLocation, BatchReader, BatchReaderFactories, Builder, FallbackIndexedWSet,
-        FallbackIndexedWSetFactories, FileIndexedWSetFactories, FileWSetFactories, GroupFilter,
-        ListMerger, Spine, Trace, TraceRole, VecIndexedWSet, VecIndexedWSetFactories, VecKeyBatch,
-        VecKeyBatchFactories, VecValBatch, VecValBatchFactories, VecWSet, VecWSetFactories,
+        Batch, BatchLayout, BatchLocation, BatchReader, BatchReaderFactories, Builder,
+        FallbackIndexedWSet, FallbackIndexedWSetFactories, FileIndexedWSetFactories,
+        FileWSetFactories, GroupFilter, ListMerger, Spine, Trace, TraceRole, VecIndexedWSet,
+        VecIndexedWSetFactories, VecKeyBatch, VecKeyBatchFactories, VecValBatch,
+        VecValBatchFactories, VecWSet, VecWSetFactories,
         cursor::{Cursor, CursorList, CursorPair},
         ord::{
             FileIndexedWSet, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
@@ -1662,6 +1663,7 @@ fn test_fallback_wset_roaring_filter_rebuilt_after_storage_merge() {
                 &factories,
                 [&lhs, &rhs],
                 Some(BatchLocation::Storage),
+                BatchLayout::default(),
             ),
             vec![lhs.merge_cursor(None, None), rhs.merge_cursor(None, None)],
         );
@@ -1711,7 +1713,12 @@ fn build_fallback_indexed_wset_i32_at(
         DynI32,
         DynI32,
         DynZWeight,
-    > as Batch>::Builder::for_merge(&factories, [&initial], Some(location));
+    > as Batch>::Builder::for_merge(
+        &factories,
+        [&initial],
+        Some(location),
+        BatchLayout::default(),
+    );
     ListMerger::merge(&factories, builder, vec![initial.merge_cursor(None, None)])
 }
 
@@ -2455,6 +2462,7 @@ fn a_merge_splices_values_it_does_not_have_to_decode() {
             &factories,
             input_refs,
             Some(BatchLocation::Storage),
+            BatchLayout::default(),
         );
         let cursors: Vec<_> = inputs.iter().map(|b| b.merge_cursor(None, None)).collect();
 
@@ -2509,6 +2517,7 @@ fn a_merge_splices_keys_it_does_not_have_to_decode() {
                 &factories,
                 [&initial],
                 Some(BatchLocation::Storage),
+                BatchLayout::default(),
             );
             ListMerger::merge(&factories, builder, vec![initial.merge_cursor(None, None)])
         };
@@ -2530,6 +2539,7 @@ fn a_merge_splices_keys_it_does_not_have_to_decode() {
             &factories,
             input_refs,
             Some(BatchLocation::Storage),
+            BatchLayout::default(),
         );
         let cursors: Vec<_> = inputs.iter().map(|b| b.merge_cursor(None, None)).collect();
 
@@ -2617,6 +2627,7 @@ proptest! {
                     &factories,
                     [&initial],
                     Some(BatchLocation::Storage),
+                    BatchLayout::default(),
                 );
                 ListMerger::merge(&factories, builder, vec![initial.merge_cursor(None, None)])
             };
@@ -2627,6 +2638,7 @@ proptest! {
                 &factories,
                 input_refs,
                 Some(BatchLocation::Storage),
+                BatchLayout::default(),
             );
             let cursors: Vec<_> = inputs.iter().map(|b| b.merge_cursor(None, None)).collect();
             let merged: Keys = ListMerger::merge(&factories, builder, cursors);
@@ -2709,6 +2721,7 @@ fn run_indexed_wset_storage_merges(
             &factories,
             input_refs,
             Some(BatchLocation::Storage),
+            BatchLayout::default(),
         );
         let cursors: Vec<_> = inputs
             .iter()
@@ -2779,6 +2792,7 @@ fn run_indexed_wset_storage_merges_dense(batches: MergeInputBatches, fc: FilterC
             &factories,
             input_refs,
             Some(BatchLocation::Storage),
+            BatchLayout::default(),
         );
         let cursors: Vec<_> = inputs.iter().map(|b| b.merge_cursor(None, None)).collect();
         let merged: crate::trace::FallbackIndexedWSet<DynI32, DynI32, DynZWeight> =
@@ -3152,8 +3166,8 @@ mod non_monotone_retention {
     use crate::algebra::{OrdIndexedZSet, OrdIndexedZSetFactories};
     use crate::dynamic::{DowncastTrait, DynData, WithFactory};
     use crate::trace::{
-        Batch, BatchLocation, BatchReader, BatchReaderFactories, Builder, GroupFilter, ListMerger,
-        cursor::Cursor,
+        Batch, BatchLayout, BatchLocation, BatchReader, BatchReaderFactories, Builder, GroupFilter,
+        ListMerger, cursor::Cursor,
     };
     use crate::utils::Tup2;
     use crate::{Runtime, ZWeight};
@@ -3242,6 +3256,7 @@ mod non_monotone_retention {
                 &factories,
                 inputs.iter(),
                 Some(BatchLocation::Memory),
+                BatchLayout::default(),
             );
             let cursors = inputs
                 .iter()

@@ -394,6 +394,12 @@ pub fn lazy_input_map_keys_per_step() -> usize {
     Runtime::with_dev_tweaks(|d| d.lazy_input_map_keys_per_step() as usize)
 }
 
+/// Returns the minimum size of a key block in the batches a lazy input map's
+/// accumulator writes for itself, in bytes.
+pub fn lazy_input_map_key_block_bytes() -> usize {
+    Runtime::with_dev_tweaks(|d| d.lazy_input_map_key_block_bytes() as usize)
+}
+
 /// Returns whether a lazy input map pauses background merging while it resolves
 /// a transaction.
 pub fn lazy_input_map_pause_merging() -> bool {

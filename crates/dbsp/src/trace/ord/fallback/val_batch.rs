@@ -7,7 +7,7 @@ use crate::storage::file::{FilterKind, FilterStats, TouchedWindowCount};
 use crate::trace::cursor::{DelegatingCursor, PushCursor};
 use crate::trace::ord::file::val_batch::FileValBuilder;
 use crate::trace::ord::vec::val_batch::VecValBuilder;
-use crate::trace::{BatchLocation, GroupFilter, MergeCursor};
+use crate::trace::{BatchLayout, BatchLocation, GroupFilter, MergeCursor};
 use crate::{
     DBData, DBWeight, NumEntries, Timestamp,
     dynamic::{
@@ -449,6 +449,7 @@ where
         factories: &FallbackValBatchFactories<K, V, T, R>,
         batches: I,
         location: Option<BatchLocation>,
+        layout: BatchLayout,
     ) -> Self
     where
         B: Batch<Key = K, Val = V, Time = T, R = R>,
@@ -472,6 +473,7 @@ where
                     &factories.file,
                     batches,
                     location,
+                    layout,
                 )),
             },
         }

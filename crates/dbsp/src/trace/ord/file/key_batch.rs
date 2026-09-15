@@ -18,8 +18,8 @@ use crate::{
         },
     },
     trace::{
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        WeightedItem,
+        Batch, BatchFactories, BatchLayout, BatchLocation, BatchReader, BatchReaderFactories,
+        Builder, Cursor, WeightedItem,
         filter::BatchFilters,
         ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
     },
@@ -718,6 +718,7 @@ where
         factories: &FileKeyBatchFactories<K, T, R>,
         batches: I,
         _location: Option<BatchLocation>,
+        layout: BatchLayout,
     ) -> Self
     where
         B: Batch<Key = K, Val = DynUnit, Time = T, R = R>,
@@ -744,7 +745,7 @@ where
                 &factories.factories1,
                 Runtime::buffer_cache,
                 &*Runtime::storage_backend().unwrap_storage(),
-                Runtime::file_writer_parameters(),
+                Runtime::file_writer_parameters_for(layout),
                 key_filter,
             )
             .unwrap_storage(),

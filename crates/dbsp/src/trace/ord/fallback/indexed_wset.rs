@@ -16,8 +16,8 @@ use crate::{
         file::reader::{Error as ReaderError, read_metadata},
     },
     trace::{
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
-        FallbackValBatch, FileIndexedWSet, FileIndexedWSetFactories, Filter, GroupFilter,
+        Batch, BatchFactories, BatchLayout, BatchLocation, BatchReader, BatchReaderFactories,
+        Builder, FallbackValBatch, FileIndexedWSet, FileIndexedWSetFactories, Filter, GroupFilter,
         MergeCursor, WeightedItem,
         cursor::{
             Cursor, CursorFactory, DefaultPushCursor, DelegatingCursor, ProjectedValCursor,
@@ -881,6 +881,7 @@ where
         factories: &FallbackIndexedWSetFactories<K, V, R>,
         batches: I,
         location: Option<BatchLocation>,
+        layout: BatchLayout,
     ) -> Self
     where
         B: Batch<Key = K, Val = V, Time = (), R = R>,
@@ -904,6 +905,7 @@ where
                     &factories.plain,
                     batches,
                     location,
+                    layout,
                 )),
             },
         }

@@ -36,7 +36,10 @@
 use dbsp::circuit::{CircuitConfig, CircuitStorageConfig};
 use dbsp::{
     OrdIndexedZSet, Runtime, ZWeight,
-    trace::{Batch as DynBatch, BatchLocation, BatchReader as DynBatchReader, Builder, ListMerger},
+    trace::{
+        Batch as DynBatch, BatchLayout, BatchLocation, BatchReader as DynBatchReader, Builder,
+        ListMerger,
+    },
     typed_batch::BatchReader as TypedBatchReader,
     utils::{Tup2, Tup10},
 };
@@ -293,8 +296,12 @@ fn merge_with_list_merger<K: BenchKey, V: BenchValue>(
         .map(|batch| batch.into_inner())
         .collect();
     let factories = inner_batches[0].factories();
-    let builder =
-        <InnerBatch<K, V> as DynBatch>::Builder::for_merge(&factories, inner_batches.iter(), None);
+    let builder = <InnerBatch<K, V> as DynBatch>::Builder::for_merge(
+        &factories,
+        inner_batches.iter(),
+        None,
+        BatchLayout::default(),
+    );
 
     let output: InnerBatch<K, V> = ListMerger::merge(
         &factories,

@@ -8,8 +8,8 @@ use crate::{
     dynamic::{DataTrait, DynUnit, DynVec, Erase, WeightTrait, WeightTraitTyped},
     storage::{buffer_cache::CacheStats, file::reader::Error as ReaderError},
     trace::{
-        Batch, BatchLocation, BatchReader, Builder, FallbackKeyBatch, FileWSet, FileWSetFactories,
-        Filter, GroupFilter, MergeCursor,
+        Batch, BatchLayout, BatchLocation, BatchReader, Builder, FallbackKeyBatch, FileWSet,
+        FileWSetFactories, Filter, GroupFilter, MergeCursor,
         cursor::{CursorFactory, DelegatingCursor, PushCursor},
         deserialize_wset, merge_batches_by_reference,
         ord::{
@@ -529,6 +529,7 @@ where
         factories: &FallbackWSetFactories<K, R>,
         batches: I,
         location: Option<BatchLocation>,
+        layout: BatchLayout,
     ) -> Self
     where
         B: Batch<Key = K, Val = DynUnit, Time = (), R = R>,
@@ -547,9 +548,9 @@ where
                     key_capacity,
                     key_capacity,
                 )),
-                BatchLocation::Storage => {
-                    BuilderInner::File(FileWSetBuilder::for_merge(factories, batches, location))
-                }
+                BatchLocation::Storage => BuilderInner::File(FileWSetBuilder::for_merge(
+                    factories, batches, location, layout,
+                )),
             },
         }
     }

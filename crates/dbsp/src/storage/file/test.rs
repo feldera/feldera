@@ -3101,13 +3101,26 @@ mod key_block_size {
     use super::read_ahead::{config, foreground, reopen, walk, write_keys_with};
     use super::{BatchMetadata, Parameters, Reader, Writer2};
     use crate::{
-        Runtime,
-        dynamic::{DynData, Erase},
+        DynZWeight, Runtime, ZWeight,
+        circuit::runtime::tests::with_mock_process_rss,
+        dynamic::{DynData, DynUnit, Erase},
         storage::{
             buffer_cache::CacheAccess,
             file::{Factories, FilterPlan},
         },
-        trace::{cursor::AccessHint, test::run_in_circuit_with_storage_config},
+        trace::{
+            Batch, BatchLayout, BatchReader, BatchReaderFactories, Builder, FallbackIndexedWSet,
+            FallbackIndexedWSetFactories, Spine, Trace, TraceRole, cursor::AccessHint,
+            spine_async::MIN_LEVEL0_MERGE_BATCHES, test::run_in_circuit_with_storage_config,
+        },
+    };
+    use feldera_storage::StoragePath;
+    use feldera_types::memory_pressure::MemoryPressure;
+    use futures::executor::block_on;
+    use std::{
+        sync::Arc,
+        thread::sleep,
+        time::{Duration, Instant},
     };
     use tempfile::tempdir;
 
@@ -3192,17 +3205,161 @@ mod key_block_size {
         });
     }
 
-    /// The knob reaches every writer the runtime hands out, and only its
-    /// column 0.
+    type IndexedWSet = FallbackIndexedWSet<DynData, DynData, DynZWeight>;
+    type IndexedWSetFactories = FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>;
+    type KeyValueColumns = (
+        &'static DynData,
+        &'static DynUnit,
+        (&'static DynData, &'static DynZWeight, ()),
+    );
+
+    fn indexed_wset_factories() -> IndexedWSetFactories {
+        <IndexedWSetFactories>::new::<i64, i64, ZWeight>()
+    }
+
+    /// An in-memory batch of `keys` keys starting at `first`, each with one value.
+    fn memory_batch(factories: &IndexedWSetFactories, first: i64, keys: i64) -> IndexedWSet {
+        let mut builder =
+            <IndexedWSet as Batch>::Builder::with_capacity(factories, keys as usize, keys as usize);
+        for key in first..first + keys {
+            builder.push_val_diff(0i64.erase(), 1i64.erase());
+            builder.push_key(key.erase());
+        }
+        builder.done()
+    }
+
+    /// Key blocks per 100k keys of the file at `path`, from a cold walk over
+    /// its key column: every block such a walk reads is a miss, less the
+    /// trailer and the index blocks, which are a handful.
+    fn key_blocks_per_100k(path: &StoragePath) -> u64 {
+        let column0 = Factories::<DynData, DynUnit>::new::<i64, ()>();
+        let column1 = Factories::<DynData, DynZWeight>::new::<i64, ZWeight>();
+        let reader: Reader<KeyValueColumns> = Reader::open(
+            &[&column0.any_factories(), &column1.any_factories()],
+            Runtime::buffer_cache,
+            &*Runtime::storage_backend().unwrap(),
+            path,
+        )
+        .unwrap();
+        let mut cursor = unsafe { reader.rows().first() }.unwrap();
+        let mut rows = 0u64;
+        while cursor.has_value() {
+            rows += 1;
+            unsafe { cursor.move_next() }.unwrap();
+        }
+        assert!(rows > 0, "an empty file at {path}");
+        foreground(&reader.cache_stats(), CacheAccess::Miss) * 100_000 / rows
+    }
+
+    /// The batches a spine's merger writes take the spine's layout: 32 KiB
+    /// key blocks hold about four times the keys of the default 8 KiB.
     #[test]
-    fn the_key_block_size_reaches_the_writer_from_the_dev_tweak() {
+    fn a_spine_merges_in_its_layout() {
         let dir = tempdir().unwrap();
-        let mut config = config(dir.path(), None, None);
-        config.dev_tweaks.layer_file_key_block_bytes = Some(32 * 1024);
-        run_in_circuit_with_storage_config(config, || {
-            let parameters = Runtime::file_writer_parameters();
-            assert_eq!(parameters.min_data_block_for(0), 32 * 1024);
-            assert_eq!(parameters.min_data_block_for(1), 8192);
+        run_in_circuit_with_storage_config(config(dir.path(), Some(0), None), || {
+            let small = merged_key_blocks_per_100k(BatchLayout::default());
+            let large = merged_key_blocks_per_100k(BatchLayout {
+                key_block_bytes: Some(32 * 1024),
+            });
+            assert!(
+                small >= 80,
+                "{small} key blocks per 100k keys in the default layout"
+            );
+            assert!(
+                large * 3 <= small,
+                "32 KiB key blocks gave {large} key blocks per 100k keys against {small}"
+            );
         });
+    }
+
+    /// Fills a spine laid out as `layout` with more in-memory batches than a
+    /// level-0 merge waits for, and measures the file the merger wrote.
+    fn merged_key_blocks_per_100k(layout: BatchLayout) -> u64 {
+        let factories = indexed_wset_factories();
+        let mut spine = Spine::<IndexedWSet>::new(
+            &factories,
+            Arc::new("merged".to_string()),
+            TraceRole::Integral,
+        )
+        .with_layout(layout);
+        const KEYS: i64 = 30_000;
+        for batch in 0..(MIN_LEVEL0_MERGE_BATCHES + 2) as i64 {
+            block_on(spine.insert(memory_batch(&factories, batch * KEYS, KEYS)));
+        }
+        let deadline = Instant::now() + Duration::from_secs(60);
+        loop {
+            // A merge under a zero storage threshold writes a file; the inputs
+            // stay in memory, so the largest file is the merge that landed.
+            let merged = spine
+                .get_batches()
+                .into_iter()
+                .filter(|batch| batch.file_path().is_some())
+                .max_by_key(|batch| batch.approx_len());
+            if let Some(merged) = merged {
+                return key_blocks_per_100k(merged.file_path().unwrap());
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the merger wrote no file in a minute"
+            );
+            sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// A batch a spine spills as it is inserted, which it does from High
+    /// memory pressure up, takes the spine's layout too.
+    #[test]
+    fn a_spine_spills_in_its_layout_under_pressure() {
+        const GIB: u64 = 1 << 30;
+        // 9.2 GiB against a 10 GiB ceiling reads as High: a spine spills what
+        // it is handed, while a builder still builds in memory (that takes
+        // Critical), so the file measured below is the spine's.
+        with_mock_process_rss(GIB * 92 / 10, || {
+            let dir = tempdir().unwrap();
+            let config = config(dir.path(), Some(0), None).with_max_rss_bytes(Some(10 * GIB));
+            run_in_circuit_with_storage_config(config, || {
+                let deadline = Instant::now() + Duration::from_secs(30);
+                while Runtime::memory_pressure().unwrap() < MemoryPressure::High {
+                    assert!(
+                        Instant::now() < deadline,
+                        "the runtime never saw the pinned RSS"
+                    );
+                    sleep(Duration::from_millis(50));
+                }
+                let small = spilled_key_blocks_per_100k(BatchLayout::default());
+                let large = spilled_key_blocks_per_100k(BatchLayout {
+                    key_block_bytes: Some(32 * 1024),
+                });
+                assert!(
+                    small >= 80,
+                    "{small} key blocks per 100k keys in the default layout"
+                );
+                assert!(
+                    large * 3 <= small,
+                    "32 KiB key blocks gave {large} key blocks per 100k keys against {small}"
+                );
+            });
+        });
+    }
+
+    /// Inserts one in-memory batch into a spine laid out as `layout` and
+    /// measures the file the insert spilled it to.
+    fn spilled_key_blocks_per_100k(layout: BatchLayout) -> u64 {
+        let factories = indexed_wset_factories();
+        let mut spine = Spine::<IndexedWSet>::new(
+            &factories,
+            Arc::new("spilled".to_string()),
+            TraceRole::Integral,
+        )
+        .with_layout(layout);
+        block_on(spine.insert(memory_batch(&factories, 0, 300_000)));
+        let batches = spine.get_batches();
+        let [batch] = batches.as_slice() else {
+            panic!("{} batches after one insert", batches.len());
+        };
+        let path = batch
+            .file_path()
+            .expect("a batch inserted under High memory pressure is spilled to storage");
+        key_blocks_per_100k(path)
     }
 }

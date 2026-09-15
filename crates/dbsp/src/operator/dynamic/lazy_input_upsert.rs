@@ -16,14 +16,14 @@
 //! key, which is what lets the projection that removes it consolidate a run in
 //! one pass.
 
-use crate::trace::AccessHint;
+use crate::trace::{AccessHint, BatchLayout};
 use crate::{
     Circuit, DBData, Error, NumEntries, Position, RootCircuit, Runtime, Stream, ZWeight,
     algebra::{IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories},
     circuit::{
         GlobalNodeId, OwnershipPreference, Scope,
         circuit_builder::{CircuitBase, RefStreamValue},
-        lazy_input_map_keys_per_step, lazy_input_map_pause_merging,
+        lazy_input_map_key_block_bytes, lazy_input_map_keys_per_step, lazy_input_map_pause_merging,
         metadata::{
             ALLOCATED_MEMORY_BYTES, BatchSizeStats, CONFLICTING_UPDATES_COUNT, DurationHistogram,
             INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT, MetaItem, OUTPUT_ADJUSTMENT_STATS,
@@ -885,8 +885,17 @@ impl RootCircuit {
                 stamped.mark_sharded();
             }
 
+            // The commit walks the accumulated updates by key without reading
+            // values, one storage request per key block, so the accumulator
+            // writes its batches with large key blocks.  The integral keeps
+            // the default layout: its merger rewrites these batches in time.
             let accumulated = stamped
-                .dyn_shard_accumulate(&factories.stamped_factories)
+                .dyn_shard_accumulate_with_layout(
+                    &factories.stamped_factories,
+                    BatchLayout {
+                        key_block_bytes: Some(lazy_input_map_key_block_bytes()),
+                    },
+                )
                 .into_enabled_stream();
 
             let bounds = <TraceBounds<K, V>>::unbounded();

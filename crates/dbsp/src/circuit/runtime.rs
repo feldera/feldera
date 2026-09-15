@@ -11,6 +11,7 @@ use crate::operator::communication::{Exchange, ExchangeActivity};
 use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
 use crate::storage::file::writer::Parameters;
+use crate::trace::BatchLayout;
 use crate::utils::process_rss_bytes;
 use crate::{
     DetailedError,
@@ -1328,9 +1329,16 @@ impl Runtime {
         Parameters::default()
             .with_compression(compression)
             .with_compression_level(options.compression_level)
-            .with_min_key_data_block(Runtime::with_dev_tweaks(|tweaks| {
-                tweaks.layer_file_key_block_bytes()
-            }) as usize)
+    }
+
+    /// The parameters a layer file writer takes for a batch laid out as
+    /// `layout` asks.
+    pub fn file_writer_parameters_for(layout: BatchLayout) -> Parameters {
+        let parameters = Self::file_writer_parameters();
+        match layout.key_block_bytes {
+            Some(bytes) => parameters.with_min_key_data_block(bytes),
+            None => parameters,
+        }
     }
 
     fn inner(&self) -> &RuntimeInner {
