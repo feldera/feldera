@@ -44,6 +44,7 @@
 * `ARRAY_REPEAT`: [array](array.md#repeat)
 * `ARRAY_REVERSE`: [array](array.md#reverse)
 * `ARRAY_SIZE`: [array](array.md#size)
+* `ARRAY_SLICE`: [array](array.md#array_slice)
 * `ARRAY_TO_STRING`: [array](array.md#to_string)
 * `ARRAY_UNION`: [array](array.md#union)
 * `ARRAYS_OVERLAP`: [array](array.md#overlap)

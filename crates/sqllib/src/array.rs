@@ -1,7 +1,7 @@
 // Array operations
 
 use crate::error::{SqlResult, SqlRuntimeError};
-use crate::{ConcatSemigroup, Semigroup, Weight, some_function1, some_function2};
+use crate::{ConcatSemigroup, Semigroup, Weight, some_function1, some_function2, some_function3};
 use dbsp::CmpFunc;
 use itertools::Itertools;
 use std::{collections::HashSet, fmt::Debug, hash::Hash, sync::Arc};
@@ -1032,6 +1032,33 @@ where
     Some(array_filter_N(array, f))
 }
 
+/// `start` is 1-based, and counts from the end of the array when negative
+#[doc(hidden)]
+pub fn array_slice___<T>(array: Array<T>, start: i32, length: i32) -> Array<T>
+where
+    T: Clone,
+{
+    if start == 0 {
+        panic!("'ARRAY_SLICE' called with start 0, but SQL array positions start at 1");
+    }
+    if length < 0 {
+        panic!("'ARRAY_SLICE' called with negative length {length}");
+    }
+    let size = array.len() as i64;
+    let first = if start < 0 {
+        start as i64 + size
+    } else {
+        start as i64 - 1
+    };
+    if first < 0 || first >= size {
+        return Arc::new(Vec::new());
+    }
+    let last = (first + length as i64).min(size);
+    Arc::new(array[first as usize..last as usize].to_vec())
+}
+
+some_function3!(array_slice [T: Clone], Array<T>, i32, i32, Array<T>);
+
 #[doc(hidden)]
 pub fn array_flatten__<T>(array: Array<Array<T>>) -> Array<T>
 where
@@ -1072,4 +1099,23 @@ where
     T: Clone,
 {
     array_flatten_N(array?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `first + length` is computed in `i64`.  In `i32` it overflows when the
+    /// slice starts near the end of the array and `length` is large.
+    #[test]
+    fn slice_does_not_overflow_at_i32_extremes() {
+        let array: Array<i32> = Arc::new(vec![1, 2, 3]);
+        assert!(array_slice___(array.clone(), i32::MIN, 1).is_empty());
+        assert!(array_slice___(array.clone(), i32::MAX, 1).is_empty());
+        assert_eq!(*array_slice___(array.clone(), 1, i32::MAX), vec![1, 2, 3]);
+        assert_eq!(*array_slice___(array, -1, i32::MAX), vec![3]);
+
+        let empty: Array<i32> = Arc::new(vec![]);
+        assert!(array_slice___(empty, i32::MIN, i32::MAX).is_empty());
+    }
 }

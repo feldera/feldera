@@ -1694,6 +1694,147 @@ public class ArrayFunctionsTests extends SqlIoTest {
     }
 
     @Test
+    public void testArraySlice() {
+        this.qst("""
+                SELECT array_slice(array[1, 2, 3, 4], 2, 2);
+                result
+                ------
+                 { 2, 3 }
+                (1 row)
+
+                SELECT array_slice(array[1, 2, 3, 4], 1, 3);
+                result
+                ------
+                 { 1, 2, 3 }
+                (1 row)
+
+                SELECT array_slice(array[1, 2, 3, 4], -2, 2);
+                result
+                ------
+                 { 3, 4 }
+                (1 row)
+
+                SELECT array_slice(array[1, 2, 3, 4], -4, 1);
+                result
+                ------
+                 { 1 }
+                (1 row)
+
+                SELECT array_slice(array[1, 2, 3], 2, 10);
+                result
+                ------
+                 { 2, 3 }
+                (1 row)
+
+                SELECT array_slice(array[1, 2, 3], -1, 10);
+                result
+                ------
+                 { 3 }
+                (1 row)
+
+                SELECT array_slice(array[1, 2, 3], 4, 2);
+                result
+                ------
+                 {}
+                (1 row)
+
+                SELECT array_slice(array[1, 2, 3], -5, 2);
+                result
+                ------
+                 {}
+                (1 row)
+
+                SELECT array_slice(array[1, 2, 3], 2, 0);
+                result
+                ------
+                 {}
+                (1 row)
+
+                SELECT array_slice(array['a', 'bb', 'ccc'], 2, 2);
+                result
+                ------
+                 { bb, ccc }
+                (1 row)
+
+                SELECT array_slice(array[1, null, 3], 1, 2);
+                result
+                ------
+                 { 1, NULL }
+                (1 row)
+
+                SELECT array_slice(CAST(array() AS INT ARRAY), 1, 2);
+                result
+                ------
+                 {}
+                (1 row)
+
+                SELECT array_slice(cast(null as int array), 1, 2);
+                result
+                ------
+                NULL
+                (1 row)
+
+                SELECT array_slice(array[1, 2, 3], null, 2);
+                result
+                ------
+                NULL
+                (1 row)
+
+                SELECT array_slice(array[1, 2, 3], 1, null);
+                result
+                ------
+                NULL
+                (1 row)""");
+    }
+
+    @Test
+    public void arraySliceOnWrongArguments() {
+        String supported = "Supported form(s): ARRAY_SLICE(<ARRAY>, <INTEGER>, <INTEGER>)";
+        this.queryFailingInCompilation("SELECT array_slice(1, 1, 1)",
+                "Cannot apply 'array_slice' to arguments of type " +
+                        "'array_slice(<INTEGER>, <INTEGER>, <INTEGER>)'. " + supported);
+        this.queryFailingInCompilation("SELECT array_slice(MAP['a', 1], 1, 2)",
+                "Cannot apply 'array_slice' to arguments of type " +
+                        "'array_slice(<MAP<CHAR(1), INTEGER>>, <INTEGER>, <INTEGER>)'. " + supported);
+        this.queryFailingInCompilation("SELECT array_slice(array[1], 1)",
+                "Invalid number of arguments to function 'array_slice'. Was expecting 3 arguments");
+        this.queryFailingInCompilation("SELECT array_slice(array[1], 1, 2, 3)",
+                "Invalid number of arguments to function 'array_slice'. Was expecting 3 arguments");
+    }
+
+    @Test
+    public void testArraySliceRuntimeErrors() {
+        // Position 0 is rejected like ARRAY_INSERT's, since positions start at 1
+        this.qf("SELECT array_slice(array[1, 2, 3], 0, 2)",
+                "'ARRAY_SLICE' called with start 0");
+        this.qf("SELECT array_slice(array[1, 2, 3], 1, -1)",
+                "'ARRAY_SLICE' called with negative length -1");
+    }
+
+    @Test
+    public void testArraySliceTable() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT ARRAY, start INT, len INT);
+                CREATE VIEW V AS SELECT ARRAY_SLICE(x, start, len) AS r FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY[1, 2, 3, 4], 2, 2)", """
+                  r
+                 ----------
+                  { 2, 3 }""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY[1, 2, 3, 4], -2, 9)", """
+                  r
+                 ----------
+                  { 3, 4 }""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(NULL, 1, 2)", """
+                  r
+                 -------
+                 NULL""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY[1, 2], 1, NULL)", """
+                  r
+                 -------
+                 NULL""");
+    }
+
+    @Test
     public void testNestedLambdas() {
         this.qs("""
                 SELECT transform(array[array[1, 2], array[3]], a -> transform(a, b -> b + 1));
