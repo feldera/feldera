@@ -96,7 +96,7 @@ mod push_merger;
 mod snapshot;
 pub use snapshot::{BatchReaderWithSnapshot, SpineSnapshot, WithSnapshot};
 
-use super::{BatchLocation, cursor::CursorFactory};
+use super::{BatchLayout, BatchLocation, cursor::CursorFactory};
 
 pub use list_merger::ListMerger;
 
@@ -432,6 +432,9 @@ where
     /// weights above which the level merges its batches.
     #[size_of(skip)]
     top_level_negative_weight_fraction: f64,
+    /// How this spine's merges and spills lay out what they write.
+    #[size_of(skip)]
+    layout: BatchLayout,
     slots: [Slot<B>; MAX_LEVELS],
     #[size_of(skip)]
     request_exit: bool,
@@ -462,6 +465,7 @@ where
                 TraceRole::Integral => integral_merge_threshold_batches(),
             },
             top_level_negative_weight_fraction: top_level_negative_weight_fraction(),
+            layout: BatchLayout::default(),
             slots: std::array::from_fn(|_| Slot::default()),
             request_exit: false,
             spine_stats: SpineStats::default(),
@@ -1578,6 +1582,7 @@ where
             let key_filter = state.key_filter.clone();
             let value_filter = state.value_filter.clone();
             let frontier = state.frontier.clone();
+            let layout = state.layout;
             let snapshot = value_filter
                 .as_ref()
                 .is_some_and(|value_filter| value_filter.requires_snapshot())
@@ -1595,6 +1600,7 @@ where
                 &value_filter,
                 snapshot,
                 frontier,
+                layout,
             ))
         };
 
@@ -1711,10 +1717,11 @@ where
         value_filter: &Option<GroupFilter<B::Val>>,
         snapshot: Option<Arc<SpineSnapshot<B>>>,
         frontier: B::Time,
+        layout: BatchLayout,
     ) -> Self {
         let factories = batches[0].factories();
         let batch_refs: Vec<&B> = batches.iter().map(|b| b.as_ref()).collect();
-        let builder = B::Builder::for_merge(&factories, batch_refs, None);
+        let builder = B::Builder::for_merge(&factories, batch_refs, None, layout);
         Self {
             builder,
             fuel: 0,
@@ -1820,6 +1827,9 @@ where
     dirty: bool,
     key_filter: Option<Filter<B::Key>>,
     value_filter: Option<GroupFilter<B::Val>>,
+
+    /// A copy of the merger state's layout, for the spills `insert` makes.
+    layout: BatchLayout,
 
     /// The asynchronous merger.
     merger: AsyncMerger<B>,
@@ -2280,7 +2290,8 @@ where
             &self.factories,
             name,
             role,
-        );
+        )
+        .with_layout(self.layout);
 
         if let Some(filter) = key_filter {
             fork.retain_keys(filter);
@@ -2330,10 +2341,13 @@ where
     }
 
     async fn insert(&mut self, batch: impl Into<Arc<Self::Batch>>) {
-        let batch =
-            Self::maybe_flush_batch(Runtime::runtime().as_ref(), batch, &self.factories, || {
-                self.merger.state.lock().unwrap().get_filters()
-            });
+        let batch = Self::maybe_flush_batch(
+            Runtime::runtime().as_ref(),
+            batch,
+            &self.factories,
+            self.layout,
+            || self.merger.state.lock().unwrap().get_filters(),
+        );
         if !batch.is_empty() {
             self.dirty = true;
             if self
@@ -2600,6 +2614,7 @@ where
             dirty: false,
             key_filter: None,
             value_filter: None,
+            layout: BatchLayout::default(),
             merger: AsyncMerger::new(runtime, worker_index, factories, name, role),
         }
     }
@@ -2607,6 +2622,27 @@ where
     /// The role this spine was built with.
     pub fn role(&self) -> TraceRole {
         self.merger.state.lock().unwrap().role
+    }
+
+    /// Returns this spine with `layout` for the batches its merges and spills
+    /// write from now on.
+    ///
+    /// # Arguments
+    ///
+    /// * `layout` - how to lay out the batches written from now on.
+    pub fn with_layout(mut self, layout: BatchLayout) -> Self {
+        self.layout = layout;
+        self.merger.state.lock().unwrap().layout = layout;
+        self
+    }
+
+    /// How this spine's merges and spills lay out what they write.
+    ///
+    /// # Returns
+    ///
+    /// The layout, which is the default unless [`Self::with_layout`] set one.
+    pub fn layout(&self) -> BatchLayout {
+        self.layout
     }
 
     pub fn complete_merges(&mut self) {
@@ -2622,11 +2658,26 @@ where
 
     /// Returns `batch`, first pushing it to storage if it exceeds the
     /// user-configured `min_storage_bytes` or if we're under high memory
-    /// pressure.
+    /// pressure.  A batch pushed to storage is laid out as `layout` asks.
+    ///
+    /// # Arguments
+    ///
+    /// * `runtime` - the runtime whose storage settings and memory pressure
+    ///   decide whether to spill, or `None` to keep the batch in memory.
+    /// * `batch` - the batch to keep or spill.
+    /// * `factories` - factories for the batch.
+    /// * `layout` - how a spilled batch lays out its file.
+    /// * `filters` - the key and value filters to apply while spilling, asked for only
+    ///   if the batch is spilled.
+    ///
+    /// # Returns
+    ///
+    /// The batch on storage if it was spilled, and the batch as it arrived otherwise.
     pub fn maybe_flush_batch<F>(
         runtime: Option<&Runtime>,
         batch: impl Into<Arc<B>>,
         factories: &B::Factories,
+        layout: BatchLayout,
         filters: F,
     ) -> Arc<B>
     where
@@ -2648,8 +2699,12 @@ where
                 });
             match Arc::try_unwrap(batch) {
                 Ok(mut batch) => {
-                    let builder =
-                        B::Builder::for_merge(factories, [&batch], Some(BatchLocation::Storage));
+                    let builder = B::Builder::for_merge(
+                        factories,
+                        [&batch],
+                        Some(BatchLocation::Storage),
+                        layout,
+                    );
                     let (key_filter, value_filter) = filters();
                     Arc::new(ListMerger::merge(
                         factories,
@@ -2659,8 +2714,12 @@ where
                 }
                 Err(batch) => {
                     let batch_ref: &B = &batch;
-                    let builder =
-                        B::Builder::for_merge(factories, [batch_ref], Some(BatchLocation::Storage));
+                    let builder = B::Builder::for_merge(
+                        factories,
+                        [batch_ref],
+                        Some(BatchLocation::Storage),
+                        layout,
+                    );
                     let (key_filter, value_filter) = filters();
                     Arc::new(ListMerger::merge(
                         factories,
@@ -2766,7 +2825,8 @@ mod merge_rule_test {
     use crate::algebra::{OrdZSet, OrdZSetFactories};
     use crate::dynamic::{DynData, DynUnit};
     use crate::trace::{
-        BatchLocation, BatchReader, BatchReaderFactories, Builder, Filter, GroupFilter, TraceRole,
+        BatchLayout, BatchLocation, BatchReader, BatchReaderFactories, Builder, Filter,
+        GroupFilter, TraceRole,
     };
     use crate::typed_batch::OrdZSet as TypedOrdZSet;
     use crate::utils::Tup2;
@@ -2849,6 +2909,7 @@ mod merge_rule_test {
             &None,
             None,
             (),
+            BatchLayout::default(),
         );
         for _ in 0..1_000 {
             if merge.done {
