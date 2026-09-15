@@ -53,11 +53,18 @@ impl BuildTo {
                 Self::Memory
             }
 
+            // A threshold of zero means memory pressure is critical, and the
+            // point of that is to keep a step's records out of memory.  An
+            // empty batch holds none, and a batch that turns out to hold some
+            // spills at its first item through `Threshold` below.  Going to
+            // storage on the capacity guess alone creates a layer file, and
+            // an fsync of it, for every step that produces nothing.
             min_step_storage_bytes
-                if key_capacity
-                    .saturating_add(value_capacity)
-                    .saturating_mul(32)
-                    >= min_step_storage_bytes =>
+                if min_step_storage_bytes > 0
+                    && key_capacity
+                        .saturating_add(value_capacity)
+                        .saturating_mul(32)
+                        >= min_step_storage_bytes =>
             {
                 // Just guess that this will need to go to storage.
                 //

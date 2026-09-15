@@ -1288,12 +1288,12 @@ impl Runtime {
     ///
     /// The output is determined by the current memory pressure level and the user-configured `min_step_storage_bytes` option.
     /// When memory pressure is below critical, the output is `min_step_storage_bytes`, when memory pressure is critical,
-    /// the output is `0`, meaning all batches are spilled to storage.
+    /// the output is `0`, meaning every batch that holds anything is spilled to storage.
     ///
     /// # Returns
     ///
     /// - `None` - if this thread doesn't have a Runtime or if it doesn't have storage configured.
-    /// - `Some(0)` - spill all batches to storage.
+    /// - `Some(0)` - spill every batch with content to storage; an empty batch has nothing to spill and stays in memory.
     /// - `Some(N)` - spill batches with size >= N to storage.
     pub fn min_step_storage_bytes() -> Option<usize> {
         RUNTIME.with(|rt| {

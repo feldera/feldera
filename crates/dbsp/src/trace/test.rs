@@ -1404,6 +1404,81 @@ fn build_fallback_indexed_wset_i32_at(
     ListMerger::merge(&factories, builder, vec![initial.merge_cursor(None, None)])
 }
 
+/// Under a zero step threshold, which is what Critical memory pressure
+/// imposes, a builder that receives nothing must finish in memory.  It has
+/// nothing to spill, and a layer file costs two fsyncs on the way out, which a
+/// backfill's empty per-step output paid ten thousand times per commit.  A
+/// builder that receives anything still spills, at its first item.
+#[test]
+fn an_empty_builder_stays_in_memory_under_a_zero_threshold() {
+    let dir = tempdir().expect("temp dir");
+    let config = CircuitConfig::with_workers(1).with_storage(Some(
+        crate::circuit::CircuitStorageConfig::for_config(
+            crate::circuit::StorageConfig {
+                path: dir.path().to_string_lossy().into_owned(),
+                cache: crate::circuit::StorageCacheConfig::default(),
+            },
+            crate::circuit::StorageOptions {
+                min_storage_bytes: Some(0),
+                min_step_storage_bytes: Some(0),
+                ..Default::default()
+            },
+        )
+        .unwrap(),
+    ));
+    run_in_circuit_with_storage_config(config, || {
+        // The capacity is what the lazy input map's per-step builder asks for,
+        // and at 32 estimated bytes per slot it clears any positive threshold.
+        const CAPACITY: usize = 10_000;
+
+        let factories =
+            <crate::trace::FallbackIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+        type Indexed =
+            <crate::trace::FallbackIndexedWSet<DynI32, DynI32, DynZWeight> as Batch>::Builder;
+        let empty = Indexed::with_capacity(&factories, CAPACITY, CAPACITY).done();
+        assert_eq!(
+            empty.location(),
+            BatchLocation::Memory,
+            "an empty indexed batch went to storage"
+        );
+
+        let (key, val, weight): (i32, i32, ZWeight) = (1, 7, 1);
+        let mut one = Indexed::with_capacity(&factories, CAPACITY, CAPACITY);
+        one.push_time_diff(&(), weight.erase());
+        one.push_val(val.erase());
+        one.push_key(key.erase());
+        assert_eq!(
+            one.done().location(),
+            BatchLocation::Storage,
+            "an indexed batch with content stayed in memory under a zero threshold"
+        );
+
+        let factories =
+            <crate::trace::FallbackWSetFactories<DynI32, DynZWeight>>::new::<i32, (), ZWeight>();
+        type Plain = <crate::trace::FallbackWSet<DynI32, DynZWeight> as Batch>::Builder;
+        let empty = Plain::with_capacity(&factories, CAPACITY, CAPACITY).done();
+        assert_eq!(
+            empty.location(),
+            BatchLocation::Memory,
+            "an empty batch went to storage"
+        );
+
+        let mut one = Plain::with_capacity(&factories, CAPACITY, CAPACITY);
+        one.push_time_diff(&(), weight.erase());
+        one.push_val(().erase());
+        one.push_key(key.erase());
+        assert_eq!(
+            one.done().location(),
+            BatchLocation::Storage,
+            "a batch with content stayed in memory under a zero threshold"
+        );
+    });
+}
+
 /// Strategy for the storage tier of a single proptest input batch.
 ///
 /// Each batch independently picks `Memory` or `Storage` so a single test
