@@ -36,6 +36,7 @@ use futures::stream::{self, TryStreamExt};
 use parquet::arrow::ProjectionMask;
 use parquet::arrow::arrow_reader::statistics::StatisticsConverter;
 use parquet::arrow::async_reader::{ParquetObjectReader, ParquetRecordBatchStreamBuilder};
+use parquet::file::metadata::ParquetMetaData;
 
 use super::super::WriteError;
 use super::chunk::LookupChunk;
@@ -139,6 +140,9 @@ pub struct ProbeMetrics {
     pub row_groups_scanned: usize,
     /// Row groups skipped on their footer statistics.
     pub row_groups_pruned: usize,
+    /// Compressed bytes of the key columns the probe read. A lookup that cannot prune reads
+    /// the key column of the whole table, so this is the flush's read amplification.
+    pub key_bytes_read: u64,
     /// Rows to tombstone. Exceeds the number of keys found when the table holds one key in
     /// several files, which resolves once every copy is tombstoned.
     pub rows_located: u64,
@@ -154,6 +158,7 @@ impl ProbeMetrics {
         self.files_pruned += other.files_pruned;
         self.row_groups_scanned += other.row_groups_scanned;
         self.row_groups_pruned += other.row_groups_pruned;
+        self.key_bytes_read += other.key_bytes_read;
         self.rows_located += other.rows_located;
         self.keys_not_found += other.keys_not_found;
     }
@@ -237,6 +242,7 @@ pub async fn locate(
     for file in results {
         metrics.row_groups_scanned += file.row_groups_scanned;
         metrics.row_groups_pruned += file.row_groups_pruned;
+        metrics.key_bytes_read += file.key_bytes_read;
         for (ordinal, position) in file.hits {
             tombstones.insert(&file.path, ordinal);
             metrics.rows_located += 1;
@@ -312,6 +318,7 @@ struct FileHits {
     hits: Vec<(u64, usize)>,
     row_groups_scanned: usize,
     row_groups_pruned: usize,
+    key_bytes_read: u64,
 }
 
 /// One row group the probe intends to read.
@@ -354,10 +361,12 @@ async fn probe_file(
             hits: Vec::new(),
             row_groups_scanned: 0,
             row_groups_pruned: pruned,
+            key_bytes_read: 0,
         });
     }
 
     let mask = key_projection_mask(&builder, encoder);
+    let key_bytes_read = selected_key_bytes(builder.metadata(), &selected, &mask);
     let mut stream = builder
         .with_projection(mask)
         .with_row_groups(selected.iter().map(|g| g.index).collect())
@@ -425,6 +434,7 @@ async fn probe_file(
         hits,
         row_groups_scanned: selected.len(),
         row_groups_pruned: pruned,
+        key_bytes_read,
     })
 }
 
@@ -452,6 +462,23 @@ fn encode_keys(
         }
     }
     encoder.encode_columns(&columns)
+}
+
+/// Compressed bytes of the key columns in the row groups the probe will read.
+///
+/// A row group's column chunks are in leaf-column order, which is the order the projection
+/// mask indexes.
+fn selected_key_bytes(
+    metadata: &ParquetMetaData,
+    selected: &[RowGroup],
+    mask: &ProjectionMask,
+) -> u64 {
+    selected
+        .iter()
+        .flat_map(|group| metadata.row_group(group.index).columns().iter().enumerate())
+        .filter(|(leaf, _)| mask.leaf_included(*leaf))
+        .map(|(_, column)| column.compressed_size().max(0) as u64)
+        .sum()
 }
 
 /// Row groups whose key range can meet the chunk, with their base ordinals.
@@ -942,6 +969,66 @@ mod test {
             tombstone_summary(&pruned_tombstones, &candidates),
             tombstone_summary(&full_tombstones, &candidates),
             "pruning changed which rows were located"
+        );
+    }
+
+    /// The probe reports the key bytes it read, and pruning is what moves that number.
+    ///
+    /// It is the flush's read amplification: a lookup that cannot prune reads the key column
+    /// of the whole table on every flush, which is the cost that dominates a large table. A
+    /// count that ignored the row group selection, or that included the value columns, would
+    /// misreport exactly the quantity an operator would act on.
+    #[tokio::test]
+    async fn the_probe_reports_the_key_bytes_it_read() {
+        let dir = TempDir::new().unwrap();
+        let ids: Vec<i64> = (0..1000).collect();
+        let (table, candidates) = table_with_row_groups(&dir, &ids, 100).await;
+        let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
+        // Keys in two of the ten groups, so pruning leaves a fifth of the file to read.
+        let chunk = chunk_of(&[850, 999]);
+
+        let read = |on_stats| {
+            let (table, candidates, encoder, chunk) = (&table, &candidates, &encoder, &chunk);
+            async move {
+                let mut tombstones = Tombstones::new();
+                locate(
+                    chunk,
+                    candidates,
+                    table,
+                    encoder,
+                    1,
+                    Pruning::new(on_stats, None),
+                    &mut tombstones,
+                )
+                .await
+                .unwrap()
+            }
+        };
+
+        let whole = read(false).await;
+        let pruned = read(true).await;
+
+        assert_eq!(whole.row_groups_scanned, 10);
+        assert_eq!(pruned.row_groups_scanned, 2);
+        assert!(pruned.key_bytes_read > 0, "{pruned:?}");
+        assert!(
+            pruned.key_bytes_read * 3 < whole.key_bytes_read,
+            "reading two of ten row groups must cost well under a third of the whole              key column: {} against {}",
+            pruned.key_bytes_read,
+            whole.key_bytes_read
+        );
+
+        // Only the key columns: the file also stores `payload`, which the probe never reads.
+        let file_bytes: u64 = std::fs::read_dir(dir.path())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".parquet"))
+            .map(|e| e.metadata().unwrap().len())
+            .sum();
+        assert!(
+            whole.key_bytes_read * 2 < file_bytes,
+            "the whole-file read counted more than the key column: {} of {file_bytes} bytes",
+            whole.key_bytes_read
         );
     }
 
