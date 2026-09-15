@@ -554,16 +554,16 @@ public class Regression3Tests extends SqlIoTest {
         String expected = """
                  customer_id | previous
                 ------------------------
-                 1               | 10
-                 1               | 30
-                 1               | 25
-                 2               | 0
-                 2               | 7
-                 2               | 10
-                 3               | 100
-                 4               | 3
-                 4               | 3
-                 4               | 6""";
+                 1           | 10
+                 1           | 30
+                 1           | 25
+                 2           | 0
+                 2           | 7
+                 2           | 10
+                 3           | 100
+                 4           | 3
+                 4           | 3
+                 4           | 6""";
 
         var ccs = this.getCCS(program);
         ccs.stepWeightOne(data, expected);
@@ -577,16 +577,16 @@ public class Regression3Tests extends SqlIoTest {
         String expected2 = """
                  customer_id | previous
                 ------------------------
-                 1               | 10
-                 1               | 30
-                 1               | 25
-                 2               | 0
-                 2               | 7
-                 2               | 10
-                 3               | 100
-                 4               | 3
-                 4               | 3
-                 4               | 6""";
+                 1            | 10
+                 1            | 30
+                 1            | 25
+                 2            | 0
+                 2            | 7
+                 2            | 10
+                 3            | 100
+                 4            | 3
+                 4            | 3
+                 4            | 6""";
         ccs.stepWeightOne(data, expected2);
     }
 
@@ -901,5 +901,46 @@ public class Regression3Tests extends SqlIoTest {
                 CREATE TABLE T(X BIGINT);
                 CREATE VIEW V AS SELECT * FROM T WHERE T.X < YR(CRT_DATE(NOW()));""");
         ccs.visit(visitor);
+    }
+
+    /** Test case for <a href="https://issues.apache.org/jira/browse/CALCITE-7784">
+     * [CALCITE-7784] Parse fails for ROW(CASE ...)</a> */
+    @Test
+    public void calcite7784() {
+        // A CASE expression as a named ROW field
+        var ccs = this.getCCS("""
+                CREATE TABLE T(given VARCHAR, family VARCHAR, formatted VARCHAR);
+                CREATE LOCAL VIEW V AS SELECT ROW(
+                    CASE WHEN given IS NULL AND family IS NULL THEN formatted
+                         ELSE NULLIF(CONCAT_WS(' ', given, family), '') END AS fullName,
+                    given AS givenName) AS r
+                FROM T;
+                CREATE VIEW W AS SELECT (r).fullName AS fullName, (r).givenName AS givenName FROM V;""")
+                .withStringTrim();
+        ccs.stepWeightOne("INSERT INTO T VALUES('Ann', 'Lee', 'unused')", """
+                 fullName       | givenName
+                ----------------------------
+                 Ann Lee        | Ann""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(NULL, NULL, 'Only Formatted')", """
+                 fullName       | givenName
+                ----------------------------
+                 Only Formatted |NULL""");
+
+        // A CASE without ELSE as the first field of an aggregated ROW, the shape
+        // that failed to parse
+        ccs = this.getCCS("""
+                CREATE TABLE S(id INT, a INT, b INT);
+                CREATE LOCAL VIEW V2 AS
+                SELECT id, ARRAY_AGG(ROW(CASE WHEN a > 0 THEN a END, b)) AS arr
+                FROM S GROUP BY id;
+                CREATE VIEW W2 AS SELECT id, TRANSFORM(arr, x -> x[1]) AS first FROM V2;""");
+        ccs.stepWeightOne("INSERT INTO S VALUES(1, 2, 3)", """
+                 id | first
+                ------------
+                 1  | { 2 }""");
+        ccs.stepWeightOne("INSERT INTO S VALUES(2, -1, 3)", """
+                 id | first
+                -------------
+                 2  | { NULL }""");
     }
 }
