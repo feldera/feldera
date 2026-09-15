@@ -182,7 +182,12 @@ const guides = {
                 'tutorials/rest_api/cluster-monitoring'
             ]
         },
-        'tutorials/monitoring/index'
+        'tutorials/monitoring/index',
+        {
+            type: 'doc',
+            id: 'tutorials/best_practices/best_practices',
+            label: 'Feldera Best Practices',
+        }
     ]
 };
 
