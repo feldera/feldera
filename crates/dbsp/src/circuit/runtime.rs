@@ -1328,6 +1328,9 @@ impl Runtime {
         Parameters::default()
             .with_compression(compression)
             .with_compression_level(options.compression_level)
+            .with_min_key_data_block(Runtime::with_dev_tweaks(|tweaks| {
+                tweaks.layer_file_key_block_bytes()
+            }) as usize)
     }
 
     fn inner(&self) -> &RuntimeInner {

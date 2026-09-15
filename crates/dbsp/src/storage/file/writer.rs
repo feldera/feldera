@@ -90,8 +90,18 @@ impl VarintWriter {
 /// The default parameters should usually be good enough.
 #[derive(Clone, Debug)]
 pub struct Parameters {
-    /// Minimum size of a data block, in bytes.  Must be a power of 2 and at
-    /// least 4096.
+    /// Minimum size of a data block in column 0, in bytes.  Must be a power of
+    /// 2 and at least 4096.
+    ///
+    /// Column 0 holds the keys, and a cursor that walks keys without touching
+    /// values reads this column alone, one block per request, with the other
+    /// columns' blocks interleaved between them on disk.  A larger block here
+    /// means fewer requests for the same keys, at the price of more to
+    /// decompress per point lookup and coarser cache entries.
+    pub min_key_data_block: usize,
+
+    /// Minimum size of a data block in every column but the first, in bytes.
+    /// Must be a power of 2 and at least 4096.
     ///
     /// Larger data blocks reduce the size of the indexes (by allowing an
     /// individual index entry to span a wider range of data, reducing the
@@ -163,6 +173,25 @@ impl Parameters {
         Self { max_branch, ..self }
     }
 
+    /// Returns these parameters with the minimum data block size of column 0
+    /// set to `bytes`; see [`min_key_data_block`](Self::min_key_data_block).
+    pub fn with_min_key_data_block(self, bytes: usize) -> Self {
+        debug_assert!(bytes.is_power_of_two() && bytes >= 4096, "{bytes}");
+        Self {
+            min_key_data_block: bytes,
+            ..self
+        }
+    }
+
+    /// The minimum data block size for `column`.
+    pub(crate) fn min_data_block_for(&self, column: usize) -> usize {
+        if column == 0 {
+            self.min_key_data_block
+        } else {
+            self.min_data_block
+        }
+    }
+
     /// Returns these parameters with `compression` updated.
     pub fn with_compression(self, compression: Option<Compression>) -> Self {
         Self {
@@ -183,6 +212,7 @@ impl Parameters {
 impl Default for Parameters {
     fn default() -> Self {
         Self {
+            min_key_data_block: 8192,
             min_data_block: 8192,
             min_index_block: 8192,
             min_branch: 32,
@@ -230,11 +260,11 @@ struct ColumnWriter {
 }
 
 impl ColumnWriter {
-    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>) -> Self {
+    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>, column: usize) -> Self {
         ColumnWriter {
             parameters: parameters.clone(),
             rows: 0..0,
-            data_block: DataBlockBuilder::new(factories, parameters),
+            data_block: DataBlockBuilder::new(factories, parameters, column),
             index_blocks: Vec::new(),
             factories: factories.clone(),
         }
@@ -494,6 +524,8 @@ impl StrideBuilder {
 
 struct DataBlockBuilder {
     parameters: Arc<Parameters>,
+    /// The column's minimum, resolved once from `parameters`.
+    min_data_block: usize,
     raw: FBuf,
     value_offsets: Vec<usize>,
     value_offset_stride: StrideBuilder,
@@ -526,11 +558,13 @@ where
 }
 
 impl DataBlockBuilder {
-    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>) -> Self {
-        let mut raw = FBuf::with_capacity(parameters.min_data_block);
+    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>, column: usize) -> Self {
+        let min_data_block = parameters.min_data_block_for(column);
+        let mut raw = FBuf::with_capacity(min_data_block);
         raw.resize(DataBlockHeader::LEN, 0);
         Self {
             parameters: parameters.clone(),
+            min_data_block,
             raw,
             row_groups: ContiguousRanges::with_capacity(parameters.min_branch),
             value_offsets: Vec::with_capacity(parameters.min_branch),
@@ -602,7 +636,7 @@ impl DataBlockBuilder {
                 self.specs()
                     .len
                     .next_multiple_of(512)
-                    .max(self.parameters.min_data_block),
+                    .max(self.min_data_block),
             );
         }
 
@@ -1387,7 +1421,8 @@ impl Writer {
         let parameters = Arc::new(parameters);
         let cws = factories
             .iter()
-            .map(|factories| ColumnWriter::new(factories, &parameters))
+            .enumerate()
+            .map(|(column, factories)| ColumnWriter::new(factories, &parameters, column))
             .collect();
         let finished_columns = Vec::with_capacity(n_columns);
         let worker = format!("w{}-", Runtime::worker_index());
@@ -2172,7 +2207,7 @@ mod splice_test {
     /// Builds one data block holding items `0..n`.
     fn build_raw(n: usize, parameters: &Arc<Parameters>) -> FBuf {
         let factories = factories();
-        let mut builder = DataBlockBuilder::new(&factories.any_factories(), parameters);
+        let mut builder = DataBlockBuilder::new(&factories.any_factories(), parameters, 0);
         let mut serializer = SerializerInner::new();
         for i in 0..n {
             let (mut k, mut a) = (key(i), aux(i));
@@ -2223,7 +2258,7 @@ mod splice_test {
         parameters: &Arc<Parameters>,
     ) -> (ReadBlock<DynData, DynData>, usize) {
         let factories = factories();
-        let mut builder = DataBlockBuilder::new(&factories.any_factories(), parameters);
+        let mut builder = DataBlockBuilder::new(&factories.any_factories(), parameters, 0);
         let mut taken = 0;
         while taken <= last - first {
             let rest = source
@@ -2239,8 +2274,11 @@ mod splice_test {
     }
 
     fn parameters() -> Arc<Parameters> {
+        // Both minimums, so that one block holds everything these tests put in
+        // it whichever column the block stands for.
         Arc::new(Parameters {
             min_data_block: 1 << 20,
+            min_key_data_block: 1 << 20,
             ..Parameters::default()
         })
     }
@@ -2275,7 +2313,7 @@ mod splice_test {
         let factories = factories();
         for prefix in 0..16 {
             let items = source.raw_items(&factories, 8, 23).unwrap();
-            let mut builder = DataBlockBuilder::new(&factories.any_factories(), &parameters);
+            let mut builder = DataBlockBuilder::new(&factories.any_factories(), &parameters, 0);
             let mut serializer = SerializerInner::new();
             for i in 0..prefix {
                 let (mut k, mut a) = (format!("pre{i}"), -(i as i64));

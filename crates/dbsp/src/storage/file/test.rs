@@ -2860,7 +2860,11 @@ mod read_ahead {
     type Column = (&'static DynData, &'static DynData, ());
     type TwoColumns = (&'static DynData, &'static DynData, Column);
 
-    fn config(dir: &Path, read_ahead: Option<u64>, ioop_delay_ms: Option<u64>) -> CircuitConfig {
+    pub(super) fn config(
+        dir: &Path,
+        read_ahead: Option<u64>,
+        ioop_delay_ms: Option<u64>,
+    ) -> CircuitConfig {
         let mut config = CircuitConfig::with_workers(1).with_storage(Some(
             CircuitStorageConfig::for_config(
                 StorageConfig {
@@ -2884,7 +2888,7 @@ mod read_ahead {
         config
     }
 
-    fn foreground(stats: &CacheStats, access: CacheAccess) -> u64 {
+    pub(super) fn foreground(stats: &CacheStats, access: CacheAccess) -> u64 {
         stats.0[ThreadType::Foreground][access].count
     }
 
@@ -2897,13 +2901,24 @@ mod read_ahead {
         StoragePath,
         Factories<DynData, DynData>,
     ) {
+        write_keys_with(keys, Parameters::default())
+    }
+
+    pub(super) fn write_keys_with(
+        keys: u64,
+        parameters: Parameters,
+    ) -> (
+        Arc<dyn FileReader>,
+        StoragePath,
+        Factories<DynData, DynData>,
+    ) {
         let factories = Factories::<DynData, DynData>::new::<i64, ()>();
         let backend = Runtime::storage_backend().unwrap();
         let mut writer = Writer1::new(
             &factories,
             Runtime::buffer_cache,
             &*backend,
-            Parameters::default(),
+            parameters,
             FilterPlan::<DynData>::decide_filter(None, keys as usize),
         )
         .unwrap();
@@ -2915,7 +2930,10 @@ mod read_ahead {
         (handle, path, factories)
     }
 
-    fn reopen(path: &StoragePath, factories: &Factories<DynData, DynData>) -> Reader<Column> {
+    pub(super) fn reopen(
+        path: &StoragePath,
+        factories: &Factories<DynData, DynData>,
+    ) -> Reader<Column> {
         Reader::open(
             &[&factories.any_factories()],
             Runtime::buffer_cache,
@@ -2927,7 +2945,7 @@ mod read_ahead {
 
     /// Walks every key with a cursor made under `hint` and returns how many it
     /// saw together with the file's cache statistics.
-    fn walk(reader: &Reader<Column>, hint: AccessHint) -> (u64, CacheStats) {
+    pub(super) fn walk(reader: &Reader<Column>, hint: AccessHint) -> (u64, CacheStats) {
         let rows = reader.rows().with_hint(hint);
         let mut cursor = unsafe { rows.first() }.unwrap();
         let mut seen = 0;
@@ -3074,6 +3092,117 @@ mod read_ahead {
                 "the value column was not read ahead: {stats:?}"
             );
             assert!(foreground(&stats, CacheAccess::Miss) <= 4);
+        });
+    }
+}
+
+/// A data block size of its own for the key column.
+mod key_block_size {
+    use super::read_ahead::{config, foreground, reopen, walk, write_keys_with};
+    use super::{BatchMetadata, Parameters, Reader, Writer2};
+    use crate::{
+        Runtime,
+        dynamic::{DynData, Erase},
+        storage::{
+            buffer_cache::CacheAccess,
+            file::{Factories, FilterPlan},
+        },
+        trace::{cursor::AccessHint, test::run_in_circuit_with_storage_config},
+    };
+    use tempfile::tempdir;
+
+    type TwoColumns = (
+        &'static DynData,
+        &'static DynData,
+        (&'static DynData, &'static DynData, ()),
+    );
+
+    /// Every block a cold, undeclared walk reads is a miss, so the misses
+    /// count the key blocks: four times the block, about a quarter of them.
+    #[test]
+    fn a_larger_key_block_means_fewer_key_blocks() {
+        let dir = tempdir().unwrap();
+        run_in_circuit_with_storage_config(config(dir.path(), Some(0), None), || {
+            let key_blocks = |parameters: Parameters| {
+                let (_handle, path, factories) = write_keys_with(300_000, parameters);
+                let (seen, stats) = walk(&reopen(&path, &factories), AccessHint::Unknown);
+                assert_eq!(seen, 300_000);
+                foreground(&stats, CacheAccess::Miss)
+            };
+            let small = key_blocks(Parameters::default());
+            let large = key_blocks(Parameters::default().with_min_key_data_block(32 * 1024));
+            assert!(small >= 100, "{small} key blocks at 8 KiB");
+            assert!(
+                large * 3 <= small,
+                "32 KiB key blocks gave {large} misses against {small} at 8 KiB"
+            );
+        });
+    }
+
+    /// The value column keeps its own size: a two-column file with one key
+    /// and many values has as many value blocks whatever the key block.
+    #[test]
+    fn value_blocks_keep_their_size_when_key_blocks_grow() {
+        let dir = tempdir().unwrap();
+        run_in_circuit_with_storage_config(config(dir.path(), Some(0), None), || {
+            let value_blocks = |parameters: Parameters| {
+                const VALUES: i64 = 100_000;
+                let factories0 = Factories::<DynData, DynData>::new::<i64, ()>();
+                let factories1 = Factories::<DynData, DynData>::new::<i64, ()>();
+                let backend = Runtime::storage_backend().unwrap();
+                let mut writer = Writer2::new(
+                    &factories0,
+                    &factories1,
+                    Runtime::buffer_cache,
+                    &*backend,
+                    parameters,
+                    FilterPlan::<DynData>::decide_filter(None, 1),
+                )
+                .unwrap();
+                for value in 0..VALUES {
+                    writer.write1((value.erase(), ().erase())).unwrap();
+                }
+                writer.write0((1i64.erase(), ().erase())).unwrap();
+                let path = writer.path().clone();
+                let (_handle, _filter, _bounds) = writer.close(BatchMetadata::default()).unwrap();
+                let reader: Reader<TwoColumns> = Reader::open(
+                    &[&factories0.any_factories(), &factories1.any_factories()],
+                    Runtime::buffer_cache,
+                    &*backend,
+                    &path,
+                )
+                .unwrap();
+                let key = unsafe { reader.rows().first() }.unwrap();
+                let mut cursor = unsafe { key.next_column().unwrap().first() }.unwrap();
+                let mut seen = 0;
+                while cursor.has_value() {
+                    seen += 1;
+                    unsafe { cursor.move_next() }.unwrap();
+                }
+                assert_eq!(seen, VALUES);
+                foreground(&reader.cache_stats(), CacheAccess::Miss)
+            };
+            let small = value_blocks(Parameters::default());
+            let large = value_blocks(Parameters::default().with_min_key_data_block(32 * 1024));
+            assert!(small >= 50, "{small} value blocks");
+            assert!(
+                small.abs_diff(large) <= 2,
+                "value blocks changed with the key block: {small} against {large}"
+            );
+        });
+    }
+
+    /// The knob reaches every writer the runtime hands out, and only its
+    /// column 0.
+    #[test]
+    fn the_key_block_size_reaches_the_writer_from_the_dev_tweak() {
+        let dir = tempdir().unwrap();
+        let mut config = config(dir.path(), None, None);
+        config.dev_tweaks.layer_file_key_block_bytes = Some(32 * 1024);
+        run_in_circuit_with_storage_config(config, || {
+            let parameters = Runtime::file_writer_parameters();
+            assert_eq!(parameters.min_data_block_for(0), 32 * 1024);
+            assert_eq!(parameters.min_data_block_for(1), 8192);
         });
     }
 }

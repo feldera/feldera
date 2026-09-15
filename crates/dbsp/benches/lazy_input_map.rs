@@ -297,6 +297,11 @@ struct Args {
     #[arg(long)]
     read_ahead_blocks: Option<u64>,
 
+    /// Minimum size of a layer file's key blocks, in KiB.  A power of two.
+    /// Unset takes the runtime's default of 8.
+    #[arg(long)]
+    key_block_kib: Option<u64>,
+
     /// Where the circuits keep their storage.  A temporary directory by
     /// default, which lands wherever `TMPDIR` points.
     #[arg(long)]
@@ -554,7 +559,7 @@ fn main() -> Result<()> {
     });
 
     println!(
-        "value_bytes={} records={} load_batch={} transactions={}x{} workers={} merger_threads={} bloom_rate={} roaring={} pause_merging={} read_ahead={} staging={} keys={} max_rss={}",
+        "value_bytes={} records={} load_batch={} transactions={}x{} workers={} merger_threads={} bloom_rate={} roaring={} pause_merging={} read_ahead={} key_block={} staging={} keys={} max_rss={}",
         args.value_bytes,
         records,
         args.load_batch,
@@ -575,6 +580,10 @@ fn main() -> Result<()> {
         match args.read_ahead_blocks {
             Some(blocks) => blocks.to_string(),
             None => "8 (default)".to_string(),
+        },
+        match args.key_block_kib {
+            Some(kib) => format!("{kib} KiB"),
+            None => "8 KiB (default)".to_string(),
         },
         if args.no_staging {
             "off (driver partitions)"
@@ -914,6 +923,7 @@ where
     config.dev_tweaks.enable_roaring = Some(args.roaring);
     config.dev_tweaks.lazy_input_map_pause_merging = Some(args.pause_merging);
     config.dev_tweaks.layer_file_read_ahead_blocks = args.read_ahead_blocks;
+    config.dev_tweaks.layer_file_key_block_bytes = args.key_block_kib.map(|kib| kib << 10);
     config = config.with_max_rss_bytes(args.max_rss_gib.map(|gib| gib << 30));
 
     let weights = Arc::new(AtomicI64::new(0));

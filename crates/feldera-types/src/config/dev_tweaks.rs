@@ -125,6 +125,16 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub layer_file_read_ahead_blocks: Option<u64>,
 
+    /// Minimum size of a layer file's key-column data blocks, in bytes.  A
+    /// power of two, at least 4096.
+    ///
+    /// A walk over keys alone reads one key block per storage request, and on
+    /// a volume bound by requests rather than bytes, fewer larger blocks are
+    /// fewer round trips.  The other columns keep the writer's default.  The
+    /// default is 8192.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layer_file_key_block_bytes: Option<u64>,
+
     /// Enable adaptive joins.
     ///
     /// Adaptive joins dynamically change their partitioning policy to avoid skew.
@@ -369,6 +379,9 @@ impl DevTweaks {
     }
     pub fn lazy_input_map_keys_per_step(&self) -> u64 {
         self.lazy_input_map_keys_per_step.unwrap_or(100_000)
+    }
+    pub fn layer_file_key_block_bytes(&self) -> u64 {
+        self.layer_file_key_block_bytes.unwrap_or(8192)
     }
     pub fn layer_file_read_ahead_blocks(&self) -> u64 {
         self.layer_file_read_ahead_blocks.unwrap_or(8)
