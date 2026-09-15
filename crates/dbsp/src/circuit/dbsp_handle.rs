@@ -394,6 +394,12 @@ pub fn lazy_input_map_keys_per_step() -> usize {
     Runtime::with_dev_tweaks(|d| d.lazy_input_map_keys_per_step() as usize)
 }
 
+/// Returns whether a lazy input map pauses background merging while it resolves
+/// a transaction.
+pub fn lazy_input_map_pause_merging() -> bool {
+    Runtime::with_dev_tweaks(|d| d.lazy_input_map_pause_merging())
+}
+
 /// Returns the number of records to preallocate in the first iteration of loops
 /// that break records into groups by the chunk size.
 ///
@@ -630,6 +636,11 @@ impl CircuitConfig {
 
     pub fn with_lazy_input_map_keys_per_step(mut self, keys: u64) -> Self {
         self.dev_tweaks.lazy_input_map_keys_per_step = Some(keys);
+        self
+    }
+
+    pub fn with_lazy_input_map_pause_merging(mut self, pause: bool) -> Self {
+        self.dev_tweaks.lazy_input_map_pause_merging = Some(pause);
         self
     }
 

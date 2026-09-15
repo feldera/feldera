@@ -22,7 +22,7 @@ use crate::{
     circuit::{
         GlobalNodeId, OwnershipPreference, Scope,
         circuit_builder::{CircuitBase, RefStreamValue},
-        lazy_input_map_keys_per_step,
+        lazy_input_map_keys_per_step, lazy_input_map_pause_merging,
         metadata::{
             ALLOCATED_MEMORY_BYTES, BatchSizeStats, CONFLICTING_UPDATES_COUNT, DurationHistogram,
             INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT, MetaItem, OUTPUT_ADJUSTMENT_STATS,
@@ -583,6 +583,18 @@ where
         updates: &Option<Spine<Stamped<OrdIndexedZSet<K, V>>>>,
     ) -> impl AsyncStream<Item = (Option<Spine<OrdIndexedZSet<K, V>>>, bool, Option<Position>)> + 'static
     {
+        // The walk below reads the integral off the same disk the mergers
+        // behind these two spines read.  Holding them off for the walk is what
+        // separates the walk's own I/O from the merger's; see
+        // `lazy_input_map_pause_merging`.  Taken before anything else, so that
+        // the pause covers the accumulator's batches as well.
+        //
+        // Guards, not a call, because the stream outlives this function and
+        // the merging has to stay paused for as long as the walk runs.
+        let merge_pause = updates.as_ref().filter(|_| lazy_input_map_pause_merging()).map(
+            |updates| (integral.pause_merging(), updates.pause_merging()),
+        );
+
         // The stream outlives this call, so everything it reads is taken now:
         // the updates as batches for the accumulator and as a snapshot to walk,
         // and the integral as a snapshot to probe.
@@ -606,6 +618,9 @@ where
         let integral = updates.is_some().then(|| integral.ro_snapshot());
 
         stream! {
+            // Merging stays paused until the stream ends, however it ends.
+            let _merge_pause = merge_pause;
+
             // The accumulator delivers its spine when the transaction commits
             // and nothing in between, so this is the only step with work to do.
             let Some(updates) = updates else {
@@ -1803,6 +1818,55 @@ mod lazy_upsert_tests {
                 ])
             );
             assert_eq!(resolved.steps, 4, "a step per key, then one to finish");
+        });
+    }
+
+    /// Pausing the mergers changes what the resolution costs, never what it
+    /// says.
+    ///
+    /// The scenarios cover both branches of the walk: a key written once, which
+    /// takes the shortcut past the update, and keys carrying a delete or several
+    /// updates, which do not.  A pause that deadlocked would hang here rather
+    /// than return a wrong answer, so the test stands for termination too.
+    #[test]
+    fn pausing_the_mergers_does_not_change_what_is_resolved() {
+        let dir = tempdir().expect("temp dir");
+        let config: CircuitConfig = mkconfig(dir.path()).with_lazy_input_map_pause_merging(true);
+        run_in_circuit_with_storage_config(config, || {
+            let factories = factories();
+
+            // One update, inserting: the branch that never reads the update.
+            assert_eq!(
+                resolve(&factories, &[(1, 7, 1)], &[(1, 10, 0, 1)]),
+                vec![(1, 7, -1), (1, 10, 1)]
+            );
+
+            // Several updates to one key: only the last stamp survives.
+            assert_eq!(
+                resolve(
+                    &factories,
+                    &[(1, 7, 1)],
+                    &[(1, 10, 0, 1), (1, 20, 1, 1), (1, 30, 2, 1)]
+                ),
+                vec![(1, 7, -1), (1, 30, 1)]
+            );
+
+            // A delete, which is what takes the transaction off the shortcut.
+            assert_eq!(
+                resolve(&factories, &[(1, 7, 1)], &[(1, 10, 0, 1), (1, 99, 1, -1)]),
+                vec![(1, 7, -1)]
+            );
+
+            // Keys the transaction never mentions stay put, and the ones it
+            // does are resolved independently.
+            assert_eq!(
+                resolve(
+                    &factories,
+                    &[(1, 7, 1), (2, 8, 1), (3, 9, 1)],
+                    &[(1, 10, 0, 1), (3, 0, 0, -1)]
+                ),
+                vec![(1, 7, -1), (1, 10, 1), (3, 9, -1)]
+            );
         });
     }
 
