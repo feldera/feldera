@@ -58,7 +58,9 @@ pub mod ord;
 mod sampling;
 pub mod spine_async;
 pub(crate) use sampling::sample_keys_from_batches;
-pub use spine_async::{BatchReaderWithSnapshot, ListMerger, Spine, SpineSnapshot, WithSnapshot};
+pub use spine_async::{
+    BatchReaderWithSnapshot, ListMerger, MergePauseGuard, Spine, SpineSnapshot, WithSnapshot,
+};
 
 #[cfg(test)]
 pub mod test;
