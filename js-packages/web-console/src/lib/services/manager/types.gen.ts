@@ -1887,6 +1887,19 @@ export type DevTweaks = {
    */
   layer_file_read_ahead_blocks?: number | null
   /**
+   * Minimum size of the key blocks in the batches a lazy input map's
+   * accumulator writes for itself, in bytes.  A power of two, at least
+   * 4096.
+   *
+   * The map resolves a transaction by walking the accumulated updates in
+   * key order without reading values, one storage request per key block,
+   * so larger blocks mean fewer requests.  Only the accumulator's own
+   * batches (merge outputs and spills) take this size; the batches that
+   * reach the integral keep it until its merger rewrites them at the
+   * default size.  The default is 32768; 8192 is the file writer's default.
+   */
+  lazy_input_map_key_block_bytes?: number | null
+  /**
    * How many keys a lazy input map resolves against its integral in one step.
    *
    * The lazy upsert operator may scan a large number of keys without

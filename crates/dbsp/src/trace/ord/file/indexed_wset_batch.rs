@@ -21,8 +21,8 @@ use crate::{
         },
     },
     trace::{
-        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        FileValBatch, VecIndexedWSetFactories, WeightedItem,
+        Batch, BatchFactories, BatchLayout, BatchLocation, BatchReader, BatchReaderFactories,
+        Builder, Cursor, FileValBatch, VecIndexedWSetFactories, WeightedItem,
         cursor::{CursorFactory, CursorFactoryWrapper, Pending, Position, PushCursor},
         filter::BatchFilters,
         merge_batches_by_reference,
@@ -1095,6 +1095,7 @@ where
         factories: &FileIndexedWSetFactories<K, V, R>,
         batches: I,
         _location: Option<BatchLocation>,
+        layout: BatchLayout,
     ) -> Self
     where
         B: Batch<Key = K, Val = V, Time = (), R = R>,
@@ -1121,7 +1122,7 @@ where
                 &factories.factories1,
                 Runtime::buffer_cache,
                 &*Runtime::storage_backend().unwrap_storage(),
-                Runtime::file_writer_parameters(),
+                Runtime::file_writer_parameters_for(layout),
                 key_filter,
             )
             .unwrap_storage(),

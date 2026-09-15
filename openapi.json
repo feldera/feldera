@@ -10539,6 +10539,14 @@
             "nullable": true,
             "minimum": 0
           },
+          "lazy_input_map_key_block_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Minimum size of the key blocks in the batches a lazy input map's\naccumulator writes for itself, in bytes.  A power of two, at least\n4096.\n\nThe map resolves a transaction by walking the accumulated updates in\nkey order without reading values, one storage request per key block,\nso larger blocks mean fewer requests.  Only the accumulator's own\nbatches (merge outputs and spills) take this size; the batches that\nreach the integral keep it until its merger rewrites them at the\ndefault size.  The default is 32768; 8192 is the file writer's default.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
           "lazy_input_map_keys_per_step": {
             "type": "integer",
             "format": "int64",
