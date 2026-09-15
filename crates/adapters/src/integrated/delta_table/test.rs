@@ -8150,6 +8150,62 @@ async fn delta_table_follow_id_mapped_change_data_logical_names_test() {
     run_id_mapped_change_data_test(false).await;
 }
 
+/// A NULL or empty nested value survives a `mode = 'id'` read.
+///
+/// `realign_container` rebuilds a list or a map by hand, carrying the
+/// container's own null buffer and offsets across; dropping either shows up
+/// only on a row whose nested columns are NULL or empty.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_follow_id_mapped_nulls_test() {
+    let table_dir = TempDir::new().unwrap();
+    let null_nested = UniformNested {
+        merchant: None,
+        status: None,
+    };
+    let rows = [
+        UniformTestStruct::new(1, "alpha", "Coffee Shop", "settled"),
+        // Every nested column NULL.
+        UniformTestStruct {
+            id: Some(2),
+            label: None,
+            after: None,
+            history: None,
+            tags: None,
+        },
+        // Present but empty, and a struct whose own children are NULL.
+        UniformTestStruct {
+            id: Some(3),
+            label: Some("gamma".to_string()),
+            after: Some(null_nested.clone()),
+            history: Some(Vec::new()),
+            tags: Some(BTreeMap::new()),
+        },
+        // A NULL-valued element inside each container.
+        UniformTestStruct {
+            id: Some(4),
+            label: Some("delta".to_string()),
+            after: None,
+            history: Some(vec![null_nested.clone()]),
+            tags: Some(BTreeMap::from([("k".to_string(), null_nested)])),
+        },
+    ];
+    write_id_mapped_table(table_dir.path(), &UniformTestStruct::schema(), &[&rows]);
+    let table_uri = table_dir.path().display().to_string();
+
+    let read = tokio::task::spawn_blocking(move || {
+        read_uniform_table(&table_uri, 1, &[("mode", json!("follow"))])
+    })
+    .await
+    .unwrap();
+
+    let mut expected = rows.to_vec();
+    expected.sort();
+    assert_eq!(
+        read, expected,
+        "a NULL or empty nested value must survive the field-id projection"
+    );
+}
+
 /// `filter` still selects rows on the direct path, including on a column the
 /// SQL table does not declare, which the connector reads for the filter alone.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
