@@ -114,6 +114,17 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub lazy_input_map_pause_merging: Option<bool>,
 
+    /// How many data blocks a layer-file cursor that declared a sequential
+    /// walk reads ahead of its position.
+    ///
+    /// Each block a cursor steps into that the buffer cache does not hold is a
+    /// device round trip the worker waits out, and a key column is a strided
+    /// subset of its file that the kernel's readahead never serves.  Reading
+    /// ahead this many blocks keeps that many round trips in flight.  Zero
+    /// disables it.  The default is 8.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layer_file_read_ahead_blocks: Option<u64>,
+
     /// Enable adaptive joins.
     ///
     /// Adaptive joins dynamically change their partitioning policy to avoid skew.
@@ -358,6 +369,9 @@ impl DevTweaks {
     }
     pub fn lazy_input_map_keys_per_step(&self) -> u64 {
         self.lazy_input_map_keys_per_step.unwrap_or(100_000)
+    }
+    pub fn layer_file_read_ahead_blocks(&self) -> u64 {
+        self.layer_file_read_ahead_blocks.unwrap_or(8)
     }
     pub fn lazy_input_map_pause_merging(&self) -> bool {
         self.lazy_input_map_pause_merging.unwrap_or(false)

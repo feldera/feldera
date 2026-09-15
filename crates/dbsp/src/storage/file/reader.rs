@@ -8,6 +8,7 @@ use super::format::{
     BloomFilterBlock, Compression, FileTrailer, ModularBloomFilterHeader, RoaringBitmapFilterBlock,
 };
 use super::{AnyFactories, BatchKeyFilter, Deserializer, Factories};
+use crate::Runtime;
 use crate::dynamic::{DynVec, WeightTrait};
 use crate::storage::buffer_cache::CacheAccess;
 use crate::storage::{
@@ -20,6 +21,7 @@ use crate::storage::{
     },
     file::item::ArchivedItem,
 };
+use crate::trace::cursor::AccessHint;
 use crate::{
     dynamic::{DataTrait, DeserializeDyn, DynData, Factory},
     storage::{
@@ -43,17 +45,18 @@ use snap::raw::{Decoder, decompress_len};
 use std::cell::{Cell, UnsafeCell};
 use std::mem::replace;
 use std::ops::Index;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::{
     cmp::{
         Ordering::{self, *},
         max, min,
     },
+    collections::HashSet,
     fmt::{Debug, Formatter, Result as FmtResult},
     marker::PhantomData,
     mem::size_of,
     ops::{Bound, Range, RangeBounds},
-    sync::Arc,
+    sync::{Arc, Condvar, Mutex},
 };
 use thiserror::Error as ThisError;
 use tracing::info;
@@ -655,25 +658,54 @@ where
 
     fn new(file: &ImmutableFileRef, node: &TreeNode) -> Result<Arc<Self>, Error> {
         let cache = file.cache();
-        #[allow(clippy::borrow_deref_ref)]
-        let entry = match cache.get(&*file.file_handle, node.location) {
-            Some(entry) => {
-                file.stats.record_hit(node.location);
-                Self::from_cache_entry(entry, node.location)?
+        let offset = node.location.offset;
+        // When the first look missed, if it did.  A hit is much the commonest
+        // case and records no duration, so it should not pay for reading the
+        // clock; what follows a miss -- a read, or a wait for one already in
+        // flight -- is what the duration is there to measure.
+        let mut first_miss: Option<Instant> = None;
+        let entry = loop {
+            #[allow(clippy::borrow_deref_ref)]
+            if let Some(entry) = cache.get(&*file.file_handle, node.location) {
+                let entry = Self::from_cache_entry(entry, node.location)?;
+                match first_miss {
+                    None => file.stats.record_hit(node.location),
+                    // The block was in flight when this thread wanted it, and
+                    // the wait for that read is what has been timed.
+                    Some(since) => {
+                        file.stats
+                            .record(CacheAccess::Wait, since.elapsed(), node.location)
+                    }
+                }
+                break entry;
             }
-            None => {
-                let start = Instant::now();
-                let block = file.read_block(node.location)?;
-                let entry = Self::from_raw_with_cache(
-                    block,
-                    node,
-                    &cache,
-                    file.file_handle.file_id(),
-                    file.version,
-                )?;
-                file.stats.record_miss(start.elapsed(), node.location);
-                entry
+            let since = *first_miss.get_or_insert_with(Instant::now);
+
+            let claim = file.in_flight.claim(offset).then(|| Claim {
+                in_flight: file.in_flight.clone(),
+                offset,
+            });
+            // Unclaimed means a read-ahead has it.  Wait for that read, then
+            // look again; only a wait that runs out of patience reads the
+            // block itself, unclaimed, so nothing can wait on it in turn.
+            if claim.is_none() {
+                match file.in_flight.wait_for(offset) {
+                    Waited::Nothing | Waited::Landed => continue,
+                    Waited::TimedOut => {}
+                }
             }
+            let block = file.read_block(node.location)?;
+            let entry = Self::from_raw_with_cache(
+                block,
+                node,
+                &cache,
+                file.file_handle.file_id(),
+                file.version,
+            )?;
+            drop(claim);
+            file.stats
+                .record(CacheAccess::Miss, since.elapsed(), node.location);
+            break entry;
         };
 
         if entry.rows() != node.rows {
@@ -1539,6 +1571,73 @@ impl Column {
 }
 
 /// Encapsulates storage and a file handle.
+/// Blocks asked for ahead of need that have not yet reached the cache.
+///
+/// A cursor that catches up with its own read-ahead waits here for the block
+/// rather than reading it a second time, and a synchronous read claims its
+/// block here first, so that a read-ahead issued a moment later skips it.
+/// Either way a block crosses the device once.
+#[derive(Default)]
+struct InFlight {
+    offsets: Mutex<HashSet<u64>>,
+    landed: Condvar,
+}
+
+/// What [`InFlight::wait_for`] found.
+enum Waited {
+    /// No read of the block was under way.
+    Nothing,
+    /// The read under way finished.
+    Landed,
+    /// The read under way did not finish in time.  The caller reads the block
+    /// itself, so a read-ahead that never completes costs a duplicate read
+    /// rather than a hang.
+    TimedOut,
+}
+
+impl InFlight {
+    /// Claims `offset` for the caller to read.  `false` means another read of
+    /// it is already under way.
+    fn claim(&self, offset: u64) -> bool {
+        self.offsets.lock().unwrap().insert(offset)
+    }
+
+    fn release(&self, offset: u64) {
+        self.offsets.lock().unwrap().remove(&offset);
+        self.landed.notify_all();
+    }
+
+    fn wait_for(&self, offset: u64) -> Waited {
+        const PATIENCE: Duration = Duration::from_secs(5);
+
+        let mut offsets = self.offsets.lock().unwrap();
+        if !offsets.contains(&offset) {
+            return Waited::Nothing;
+        }
+        let deadline = Instant::now() + PATIENCE;
+        while offsets.contains(&offset) {
+            let Some(left) = deadline.checked_duration_since(Instant::now()) else {
+                return Waited::TimedOut;
+            };
+            offsets = self.landed.wait_timeout(offsets, left).unwrap().0;
+        }
+        Waited::Landed
+    }
+}
+
+/// A claim on a block being read, released when dropped, so that an error or a
+/// panic on the reading path cannot leave the block claimed forever.
+struct Claim {
+    in_flight: Arc<InFlight>,
+    offset: u64,
+}
+
+impl Drop for Claim {
+    fn drop(&mut self) {
+        self.in_flight.release(self.offset);
+    }
+}
+
 #[derive(SizeOf)]
 struct ImmutableFileRef {
     cache: fn() -> Option<Arc<BufferCache>>,
@@ -1547,6 +1646,8 @@ struct ImmutableFileRef {
     compression: Option<Compression>,
     stats: AtomicCacheStats,
     version: u32,
+    #[size_of(skip)]
+    in_flight: Arc<InFlight>,
 }
 
 impl Debug for ImmutableFileRef {
@@ -1578,6 +1679,7 @@ impl ImmutableFileRef {
             compression,
             stats,
             version,
+            in_flight: Arc::default(),
         }
     }
 
@@ -2370,7 +2472,30 @@ where
     factories: Factories<K, A>,
     column: usize,
     rows: Range<u64>,
+    read_ahead: ReadAhead,
     _phantom: PhantomData<fn(&K, &A, N)>,
+}
+
+/// How far a cursor reads ahead of its position, in data blocks.
+///
+/// Zero unless the cursor declared a sequential walk; see [`AccessHint`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+struct ReadAhead {
+    blocks: usize,
+}
+
+impl ReadAhead {
+    const OFF: Self = Self { blocks: 0 };
+
+    fn for_hint(hint: AccessHint) -> Self {
+        match hint {
+            AccessHint::Unknown => Self::OFF,
+            AccessHint::Sequential => Self {
+                blocks: Runtime::with_dev_tweaks(|tweaks| tweaks.layer_file_read_ahead_blocks())
+                    as usize,
+            },
+        }
+    }
 }
 
 impl<K, A, N, T> Clone for RowGroup<'_, K, A, N, T>
@@ -2384,6 +2509,7 @@ where
             factories: self.factories.clone(),
             column: self.column,
             rows: self.rows.clone(),
+            read_ahead: self.read_ahead,
             _phantom: PhantomData,
         }
     }
@@ -2411,6 +2537,7 @@ where
             factories: reader.columns[column].factories.factories(),
             column,
             rows,
+            read_ahead: ReadAhead::OFF,
             _phantom: PhantomData,
         }
     }
@@ -2428,8 +2555,22 @@ where
             factories: self.factories.clone(),
             column: self.column,
             rows,
+            read_ahead: self.read_ahead,
             _phantom: PhantomData,
         }
+    }
+
+    /// Tells the cursors made from this row group how they will be moved, so
+    /// that a sequential walk reads its blocks ahead of itself.  Cursors made
+    /// from this row group's later columns inherit it.
+    pub fn with_hint(mut self, hint: AccessHint) -> Self {
+        self.read_ahead = ReadAhead::for_hint(hint);
+        self
+    }
+
+    fn with_read_ahead(mut self, read_ahead: ReadAhead) -> Self {
+        self.read_ahead = read_ahead;
+        self
     }
 
     /// # Safety
@@ -3180,7 +3321,8 @@ where
             self.row_group.reader,
             self.row_group.column + 1,
             self.position.row_group()?,
-        ))
+        )
+        .with_read_ahead(self.row_group.read_ahead))
     }
 
     /// The same as [`next_column`](Self::next_column), taking the column's
@@ -3190,12 +3332,18 @@ where
     /// cursor already reading that column carries.  This is the form a merge
     /// wants: it crosses to the next column once a key, and the factories it
     /// needs are the ones it used for the key before.
+    ///
+    /// Only the factories come from `like`.  How the new row group will be
+    /// walked is this cursor's to say, as in
+    /// [`next_column`](Self::next_column).
     pub fn next_column_like<'b>(
         &'b self,
         like: &RowGroup<'a, NK, NA, NN, T>,
     ) -> Result<RowGroup<'a, NK, NA, NN, T>, Error> {
         debug_assert_eq!(like.column, self.row_group.column + 1);
-        Ok(like.with_rows(self.position.row_group()?))
+        Ok(like
+            .with_rows(self.position.row_group()?)
+            .with_read_ahead(self.row_group.read_ahead))
     }
 }
 
@@ -3233,6 +3381,62 @@ impl<K: DataTrait + ?Sized, A: DataTrait + ?Sized> Clone for Path<K, A> {
             indexes: self.indexes.clone(),
             data: self.data.clone(),
         }
+    }
+}
+
+/// Asks storage for the data blocks after `child` in `index`, as many as the
+/// row group's read-ahead depth, so that a cursor walking forward finds them in
+/// the cache when it gets there.  Blocks the cache already holds, or that
+/// another read already has in flight, are skipped.
+///
+/// Each block is its own request rather than one request for all of them:
+/// the backend serves the blocks of one request one after another on a single
+/// thread, and the point is to have the round trips overlap.
+///
+/// The completion builds the same cache entry the synchronous path builds,
+/// on the thread that did the read, so decompression moves off the worker.
+/// An error there is dropped; the synchronous path surfaces it if it is real.
+fn read_ahead<K, A, N, T>(row_group: &RowGroup<'_, K, A, N, T>, index: &IndexBlock<K>, child: usize)
+where
+    K: DataTrait + ?Sized,
+    A: DataTrait + ?Sized,
+{
+    let file = &row_group.reader.file;
+    let cache = file.cache();
+    let last = (child + row_group.read_ahead.blocks).min(index.n_children().saturating_sub(1));
+    for next in child + 1..=last {
+        let Ok(node) = index.get_child(next) else {
+            return;
+        };
+        #[allow(clippy::borrow_deref_ref)]
+        if cache.get(&*file.file_handle, node.location).is_some()
+            || !file.in_flight.claim(node.location.offset)
+        {
+            continue;
+        }
+        file.stats
+            .record(CacheAccess::Prefetch, Duration::ZERO, node.location);
+        let claim = Claim {
+            in_flight: file.in_flight.clone(),
+            offset: node.location.offset,
+        };
+        let cache = cache.clone();
+        let (file_id, version, compression) =
+            (file.file_handle.file_id(), file.version, file.compression);
+        file.file_handle.read_async(
+            vec![node.location],
+            Box::new(move |mut results| {
+                let _claim = claim;
+                let Some(Ok(raw)) = results.pop() else {
+                    return;
+                };
+                let Ok(block) = decompress(compression, node.location, raw) else {
+                    return;
+                };
+                let _ =
+                    DataBlock::<K, A>::from_raw_with_cache(block, &node, &cache, file_id, version);
+            }),
+        );
     }
 }
 
@@ -3295,6 +3499,10 @@ where
                     return Ok(Self { row, indexes, data });
                 }
                 TreeBlock::Index(index) => {
+                    if row_group.read_ahead.blocks > 0 && matches!(index.child_type, NodeType::Data)
+                    {
+                        read_ahead(row_group, &index, index.find_row(row)?);
+                    }
                     push_index_block(&mut indexes, index)?;
                 }
             };
@@ -3320,7 +3528,14 @@ where
         }
         for (idx, index_block) in hint.indexes.iter().enumerate().rev() {
             if index_block.rows().contains(&row) {
-                let node = index_block.get_child_by_row(row)?;
+                let child = index_block.find_row(row)?;
+                let node = index_block.get_child(child)?;
+                // The next data block of a walk is found right here, in the
+                // parent the hint already holds, so this is where a
+                // sequential cursor learns what it will want after it.
+                if row_group.read_ahead.blocks > 0 && matches!(node.node_type, NodeType::Data) {
+                    read_ahead(row_group, index_block, child);
+                }
                 return Self::for_row_from_ancestor(
                     row_group,
                     hint.indexes[0..=idx].to_vec(),

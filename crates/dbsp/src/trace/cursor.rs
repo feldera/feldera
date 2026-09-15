@@ -13,6 +13,22 @@ pub mod saturating_cursor;
 use std::{fmt::Debug, marker::PhantomData, ops::Range};
 
 pub use cursor_empty::CursorEmpty;
+
+/// How the code that asked for a cursor expects to move it.
+///
+/// A file-backed cursor reads a block from storage the moment it steps into
+/// it, and a block the buffer cache does not hold costs a device round trip
+/// while the worker waits.  A cursor told it will walk keys in order reads the
+/// blocks ahead of itself instead; one that will probe reads nothing it was
+/// not asked for.  The hint changes what a cursor costs, never what it says.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum AccessHint {
+    /// Nothing is known.  Blocks are read as they are reached.
+    #[default]
+    Unknown,
+    /// The cursor will step forward through most of its keys in order.
+    Sequential,
+}
 pub use cursor_group::CursorGroup;
 pub use cursor_list::CursorList;
 pub use cursor_pair::CursorPair;

@@ -2830,3 +2830,250 @@ fn old_reader_refuses_stamped_file() {
         "a reader predating the stamp must see the bit as unknown and refuse the file"
     );
 }
+
+/// Read-ahead on a cursor that declared a sequential walk.
+///
+/// The counters these tests read are recorded per thread type, and a thread
+/// outside a circuit has none, so each test runs on a worker.  A file is
+/// written, then opened again under a new file id, which is what makes every
+/// block a cache miss on the first visit.
+mod read_ahead {
+    use super::{BatchMetadata, Parameters, Reader, Writer1, Writer2};
+    use crate::{
+        Runtime,
+        circuit::{
+            CircuitConfig, CircuitStorageConfig, StorageCacheConfig, StorageConfig, StorageOptions,
+        },
+        dynamic::{DynData, Erase},
+        storage::{
+            buffer_cache::{CacheAccess, CacheStats},
+            file::{Factories, FilterPlan},
+        },
+        trace::{cursor::AccessHint, test::run_in_circuit_with_storage_config},
+    };
+    use feldera_buffer_cache::ThreadType;
+    use feldera_storage::{FileReader, StoragePath};
+    use feldera_types::config::{FileBackendConfig, StorageBackendConfig};
+    use std::{path::Path, sync::Arc};
+    use tempfile::tempdir;
+
+    type Column = (&'static DynData, &'static DynData, ());
+    type TwoColumns = (&'static DynData, &'static DynData, Column);
+
+    fn config(dir: &Path, read_ahead: Option<u64>, ioop_delay_ms: Option<u64>) -> CircuitConfig {
+        let mut config = CircuitConfig::with_workers(1).with_storage(Some(
+            CircuitStorageConfig::for_config(
+                StorageConfig {
+                    path: dir.to_string_lossy().into_owned(),
+                    cache: StorageCacheConfig::default(),
+                },
+                StorageOptions {
+                    min_storage_bytes: Some(0),
+                    backend: StorageBackendConfig::File(Box::new(FileBackendConfig {
+                        async_threads: Some(true),
+                        ioop_delay: ioop_delay_ms,
+                        sync: None,
+                        sync_mode: None,
+                    })),
+                    ..Default::default()
+                },
+            )
+            .unwrap(),
+        ));
+        config.dev_tweaks.layer_file_read_ahead_blocks = read_ahead;
+        config
+    }
+
+    fn foreground(stats: &CacheStats, access: CacheAccess) -> u64 {
+        stats.0[ThreadType::Foreground][access].count
+    }
+
+    /// A one-column file of `keys` ascending keys.  The handle keeps the file
+    /// alive: the writer's file is deleted when its last handle drops.
+    fn write_keys(
+        keys: u64,
+    ) -> (
+        Arc<dyn FileReader>,
+        StoragePath,
+        Factories<DynData, DynData>,
+    ) {
+        let factories = Factories::<DynData, DynData>::new::<i64, ()>();
+        let backend = Runtime::storage_backend().unwrap();
+        let mut writer = Writer1::new(
+            &factories,
+            Runtime::buffer_cache,
+            &*backend,
+            Parameters::default(),
+            FilterPlan::<DynData>::decide_filter(None, keys as usize),
+        )
+        .unwrap();
+        for key in 0..keys as i64 {
+            writer.write0((key.erase(), ().erase())).unwrap();
+        }
+        let path = writer.path().clone();
+        let (handle, _filter, _bounds) = writer.close(BatchMetadata::default()).unwrap();
+        (handle, path, factories)
+    }
+
+    fn reopen(path: &StoragePath, factories: &Factories<DynData, DynData>) -> Reader<Column> {
+        Reader::open(
+            &[&factories.any_factories()],
+            Runtime::buffer_cache,
+            &*Runtime::storage_backend().unwrap(),
+            path,
+        )
+        .unwrap()
+    }
+
+    /// Walks every key with a cursor made under `hint` and returns how many it
+    /// saw together with the file's cache statistics.
+    fn walk(reader: &Reader<Column>, hint: AccessHint) -> (u64, CacheStats) {
+        let rows = reader.rows().with_hint(hint);
+        let mut cursor = unsafe { rows.first() }.unwrap();
+        let mut seen = 0;
+        while cursor.has_value() {
+            seen += 1;
+            unsafe { cursor.move_next() }.unwrap();
+        }
+        (seen, reader.cache_stats())
+    }
+
+    /// About a thousand keys fit a data block, so this is a few hundred
+    /// blocks: enough for the read-ahead to matter and to outrun.
+    const KEYS: u64 = 300_000;
+
+    /// With the walk declared, all but the first data block (and the trailer
+    /// and index block read to reach it) arrive through read-ahead.  Without
+    /// the declaration every block is a synchronous miss and nothing is asked
+    /// for ahead.
+    #[test]
+    fn a_declared_walk_reads_ahead_and_an_undeclared_one_does_not() {
+        let dir = tempdir().unwrap();
+        run_in_circuit_with_storage_config(config(dir.path(), None, None), || {
+            let (_handle, path, factories) = write_keys(KEYS);
+
+            let hinted = reopen(&path, &factories);
+            let (seen, stats) = walk(&hinted, AccessHint::Sequential);
+            assert_eq!(seen, KEYS);
+            let misses = foreground(&stats, CacheAccess::Miss);
+            let prefetches = foreground(&stats, CacheAccess::Prefetch);
+            let served =
+                foreground(&stats, CacheAccess::Hit) + foreground(&stats, CacheAccess::Wait);
+            // The trailer on open, the root index block, and the first data
+            // block: everything after that arrives through read-ahead.
+            assert!(
+                misses <= 3,
+                "a declared walk read {misses} blocks synchronously"
+            );
+            assert!(
+                prefetches >= 100,
+                "a declared walk asked for only {prefetches} blocks ahead"
+            );
+            assert!(
+                served <= prefetches,
+                "{served} blocks were served from the cache but only {prefetches} were read ahead"
+            );
+
+            let plain = reopen(&path, &factories);
+            let (seen, stats) = walk(&plain, AccessHint::Unknown);
+            assert_eq!(seen, KEYS);
+            assert_eq!(foreground(&stats, CacheAccess::Prefetch), 0);
+            assert_eq!(foreground(&stats, CacheAccess::Wait), 0);
+            assert!(foreground(&stats, CacheAccess::Miss) >= 100);
+        });
+    }
+
+    /// A depth of zero switches the read-ahead off, whatever the hint.
+    #[test]
+    fn a_zero_depth_disables_read_ahead() {
+        let dir = tempdir().unwrap();
+        run_in_circuit_with_storage_config(config(dir.path(), Some(0), None), || {
+            let (_handle, path, factories) = write_keys(KEYS);
+            let reader = reopen(&path, &factories);
+            let (seen, stats) = walk(&reader, AccessHint::Sequential);
+            assert_eq!(seen, KEYS);
+            assert_eq!(foreground(&stats, CacheAccess::Prefetch), 0);
+            assert!(foreground(&stats, CacheAccess::Miss) >= 100);
+        });
+    }
+
+    /// With every read taking 20 ms, the walk reaches the next block long
+    /// before its read-ahead lands.  It must wait for that read rather than
+    /// issue its own: each block crosses the device once, so the blocks read
+    /// ahead account for every block the cache served.
+    #[test]
+    fn a_walk_that_overtakes_its_read_ahead_waits_rather_than_reading_twice() {
+        let dir = tempdir().unwrap();
+        run_in_circuit_with_storage_config(config(dir.path(), None, Some(20)), || {
+            let (_handle, path, factories) = write_keys(40_000);
+            let reader = reopen(&path, &factories);
+            let (seen, stats) = walk(&reader, AccessHint::Sequential);
+            assert_eq!(seen, 40_000);
+            let misses = foreground(&stats, CacheAccess::Miss);
+            let prefetches = foreground(&stats, CacheAccess::Prefetch);
+            let waits = foreground(&stats, CacheAccess::Wait);
+            let served = foreground(&stats, CacheAccess::Hit) + waits;
+            assert!(waits > 0, "the walk never caught up with its read-ahead");
+            assert!(
+                misses <= 3,
+                "the walk read {misses} blocks itself instead of waiting"
+            );
+            assert_eq!(
+                prefetches, served,
+                "{prefetches} blocks read ahead but {served} served: a block crossed the device twice"
+            );
+        });
+    }
+
+    /// A cursor made from a declared row group's next column walks its values
+    /// with the same read-ahead.
+    #[test]
+    fn the_value_column_inherits_the_declaration() {
+        let dir = tempdir().unwrap();
+        run_in_circuit_with_storage_config(config(dir.path(), None, None), || {
+            const VALUES: i64 = 100_000;
+            let factories0 = Factories::<DynData, DynData>::new::<i64, ()>();
+            let factories1 = Factories::<DynData, DynData>::new::<i64, ()>();
+            let backend = Runtime::storage_backend().unwrap();
+            let mut writer = Writer2::new(
+                &factories0,
+                &factories1,
+                Runtime::buffer_cache,
+                &*backend,
+                Parameters::default(),
+                FilterPlan::<DynData>::decide_filter(None, 1),
+            )
+            .unwrap();
+            for value in 0..VALUES {
+                writer.write1((value.erase(), ().erase())).unwrap();
+            }
+            writer.write0((1i64.erase(), ().erase())).unwrap();
+            let path = writer.path().clone();
+            let (_handle, _filter, _bounds) = writer.close(BatchMetadata::default()).unwrap();
+
+            let reader: Reader<TwoColumns> = Reader::open(
+                &[&factories0.any_factories(), &factories1.any_factories()],
+                Runtime::buffer_cache,
+                &*backend,
+                &path,
+            )
+            .unwrap();
+            let keys = reader.rows().with_hint(AccessHint::Sequential);
+            let key = unsafe { keys.first() }.unwrap();
+            let values = key.next_column().unwrap();
+            let mut cursor = unsafe { values.first() }.unwrap();
+            let mut seen = 0;
+            while cursor.has_value() {
+                seen += 1;
+                unsafe { cursor.move_next() }.unwrap();
+            }
+            assert_eq!(seen, VALUES);
+            let stats = reader.cache_stats();
+            assert!(
+                foreground(&stats, CacheAccess::Prefetch) >= 50,
+                "the value column was not read ahead: {stats:?}"
+            );
+            assert!(foreground(&stats, CacheAccess::Miss) <= 4);
+        });
+    }
+}

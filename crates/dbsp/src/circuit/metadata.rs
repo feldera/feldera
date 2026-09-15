@@ -117,6 +117,12 @@ pub const CACHE_FOREGROUND_HITS: MetricId = MetricId(Cow::Borrowed("foreground_c
 pub const CACHE_FOREGROUND_MISSES: MetricId = MetricId(Cow::Borrowed("foreground_cache_misses"));
 pub const CACHE_BACKGROUND_HITS: MetricId = MetricId(Cow::Borrowed("background_cache_hits"));
 pub const CACHE_BACKGROUND_MISSES: MetricId = MetricId(Cow::Borrowed("background_cache_misses"));
+pub const CACHE_FOREGROUND_PREFETCHES: MetricId =
+    MetricId(Cow::Borrowed("foreground_cache_prefetches"));
+pub const CACHE_FOREGROUND_WAITS: MetricId = MetricId(Cow::Borrowed("foreground_cache_waits"));
+pub const CACHE_BACKGROUND_PREFETCHES: MetricId =
+    MetricId(Cow::Borrowed("background_cache_prefetches"));
+pub const CACHE_BACKGROUND_WAITS: MetricId = MetricId(Cow::Borrowed("background_cache_waits"));
 pub const CACHE_FOREGROUND_HIT_RATE_PERCENT: MetricId =
     MetricId(Cow::Borrowed("foreground_cache_hit_rate_percent"));
 pub const CACHE_BACKGROUND_HIT_RATE_PERCENT: MetricId =
@@ -198,7 +204,7 @@ pub const PREFIX_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("prefix_batche
 pub const INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("input_integral_records_count"));
 
-pub const CIRCUIT_METRICS: [CircuitMetric; 85] = [
+pub const CIRCUIT_METRICS: [CircuitMetric; 89] = [
     // State
     CircuitMetric {
         name: USED_MEMORY_BYTES,
@@ -666,6 +672,30 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 85] = [
         category: CircuitMetricCategory::Cache,
         advanced: false,
         description: "Statistics about cache misses in the background thread.",
+    },
+    CircuitMetric {
+        name: CACHE_FOREGROUND_PREFETCHES,
+        category: CircuitMetricCategory::Cache,
+        advanced: true,
+        description: "Blocks the foreground thread asked storage for ahead of need, so that a cursor walking forward finds them in the cache. Bytes are the blocks' sizes; the time is zero, since the reads run in the background.",
+    },
+    CircuitMetric {
+        name: CACHE_FOREGROUND_WAITS,
+        category: CircuitMetricCategory::Cache,
+        advanced: true,
+        description: "Blocks the foreground thread wanted while a read issued ahead of need was still in flight. The time is how long it waited; each is a round trip the read-ahead did not fully hide.",
+    },
+    CircuitMetric {
+        name: CACHE_BACKGROUND_PREFETCHES,
+        category: CircuitMetricCategory::Cache,
+        advanced: true,
+        description: "Blocks a background thread asked storage for ahead of need.",
+    },
+    CircuitMetric {
+        name: CACHE_BACKGROUND_WAITS,
+        category: CircuitMetricCategory::Cache,
+        advanced: true,
+        description: "Blocks a background thread wanted while a read issued ahead of need was still in flight, and the time it waited for them.",
     },
     CircuitMetric {
         name: CACHE_FOREGROUND_HIT_RATE_PERCENT,
