@@ -6,7 +6,6 @@
 //! both an admin in its own tenant and an owner in any tenant.
 
 use crate::api::main::ServerState;
-use crate::api::util::parse_url_parameter;
 use crate::auth::AuthenticatedPrincipal;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
@@ -111,20 +110,21 @@ pub(crate) struct RenameTenantResponse {
 /// Parse the `tenant_id` path parameter. A value that is not a UUID names no
 /// tenant, so it is reported as an unknown tenant (404) rather than as a
 /// separate parse error.
-fn parse_tenant_id(req: &HttpRequest) -> Result<TenantId, ManagerError> {
-    let raw = parse_url_parameter(req, "tenant_id")?;
-    let uuid = Uuid::parse_str(&raw)
-        .map_err(|_| ManagerError::from(DBError::UnknownTenantName { name: raw.clone() }))?;
+fn parse_tenant_id(raw: &str) -> Result<TenantId, ManagerError> {
+    let uuid = Uuid::parse_str(raw).map_err(|_| {
+        ManagerError::from(DBError::UnknownTenantName {
+            name: raw.to_string(),
+        })
+    })?;
     Ok(TenantId(uuid))
 }
 
 /// Parse the `user_id` path parameter. As with [`parse_tenant_id`], a value
 /// that is not a UUID names no user and is reported as an unknown user.
-fn parse_user_id(req: &HttpRequest) -> Result<UserId, ManagerError> {
-    let raw = parse_url_parameter(req, "user_id")?;
-    let uuid = Uuid::parse_str(&raw).map_err(|_| {
+fn parse_user_id(raw: &str) -> Result<UserId, ManagerError> {
+    let uuid = Uuid::parse_str(raw).map_err(|_| {
         ManagerError::from(DBError::UnknownUser {
-            user_id: raw.clone(),
+            user_id: raw.to_string(),
         })
     })?;
     Ok(UserId(uuid))
@@ -181,10 +181,10 @@ pub(crate) async fn put_tenant_user(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     principal: ReqData<AuthenticatedPrincipal>,
-    req: HttpRequest,
+    path: web::Path<String>,
     body: web::Json<SetMemberRoleRequest>,
 ) -> Result<HttpResponse, ManagerError> {
-    let user_id = parse_user_id(&req)?;
+    let user_id = parse_user_id(&path)?;
     let requested = body.role;
     check_grantable_role(requested, principal.role)?;
 
@@ -223,9 +223,9 @@ pub(crate) async fn put_tenant_user(
 pub(crate) async fn delete_tenant_user(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    req: HttpRequest,
+    path: web::Path<String>,
 ) -> Result<HttpResponse, ManagerError> {
-    let user_id = parse_user_id(&req)?;
+    let user_id = parse_user_id(&path)?;
     state
         .db
         .lock()
@@ -322,10 +322,10 @@ pub(crate) async fn add_tenant_user(
 #[patch("/tenants/{tenant_id}")]
 pub(crate) async fn patch_tenant(
     state: WebData<ServerState>,
-    req: HttpRequest,
+    path: web::Path<String>,
     body: web::Json<RenameTenantRequest>,
 ) -> Result<HttpResponse, ManagerError> {
-    let tenant_id = parse_tenant_id(&req)?;
+    let tenant_id = parse_tenant_id(&path)?;
     let body = body.into_inner();
     let displaced = state
         .db
@@ -371,9 +371,9 @@ pub(crate) async fn patch_tenant(
 #[delete("/tenants/{tenant_id}")]
 pub(crate) async fn delete_tenant(
     state: WebData<ServerState>,
-    req: HttpRequest,
+    path: web::Path<String>,
 ) -> Result<HttpResponse, ManagerError> {
-    let tenant_id = parse_tenant_id(&req)?;
+    let tenant_id = parse_tenant_id(&path)?;
     state.db.lock().await.delete_tenant(tenant_id).await?;
     info!("Deleted tenant {tenant_id}");
     Ok(HttpResponse::Ok().finish())
@@ -421,9 +421,9 @@ pub(crate) async fn list_tenants(
 #[get("/tenants/{tenant_id}")]
 pub(crate) async fn get_tenant(
     state: WebData<ServerState>,
-    req: HttpRequest,
+    path: web::Path<String>,
 ) -> Result<HttpResponse, ManagerError> {
-    let selector = parse_url_parameter(&req, "tenant_id")?;
+    let selector = path.into_inner();
     let tenant = state.db.lock().await.get_tenant(&selector).await?;
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))

@@ -1,5 +1,4 @@
 use crate::api::error::ApiError;
-use crate::api::util::parse_url_parameter;
 use crate::config::CommonConfig;
 use crate::db::listen_table::{Operation, PIPELINE_NOTIFY_CHANNEL_CAPACITY};
 use crate::db::probe::DbProbe;
@@ -13,7 +12,7 @@ use crate::runner::pipeline_executor::PipelineExecutor;
 use crate::runner::pipeline_logs::{LogMessage, LogsSender};
 use actix_web::HttpResponse;
 use actix_web::Responder;
-use actix_web::{HttpRequest, HttpServer, get, web};
+use actix_web::{HttpServer, get, web};
 use async_stream::try_stream;
 use std::collections::BTreeMap;
 use std::net::TcpListener;
@@ -80,10 +79,10 @@ async fn logs_stream(
 #[get("/logs/{pipeline_id}")]
 async fn get_logs(
     data: web::Data<Arc<Mutex<PipelinesState>>>,
-    req: HttpRequest,
+    path: web::Path<String>,
 ) -> Result<impl Responder, ManagerError> {
     // Parse pipeline identifier
-    let pipeline_id = parse_url_parameter(&req, "pipeline_id")?;
+    let pipeline_id = path.into_inner();
     let pipeline_id = PipelineId(Uuid::from_str(&pipeline_id).map_err(|e| {
         ManagerError::from(ApiError::InvalidUuidParam {
             value: pipeline_id.clone(),
