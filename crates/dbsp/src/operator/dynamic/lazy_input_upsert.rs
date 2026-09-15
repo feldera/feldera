@@ -27,7 +27,7 @@ use crate::{
             ALLOCATED_MEMORY_BYTES, BatchSizeStats, CONFLICTING_UPDATES_COUNT, DurationHistogram,
             INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT, MetaItem, OUTPUT_ADJUSTMENT_STATS,
             OperatorMeta, SHARED_MEMORY_BYTES, STATE_RECORDS_COUNT, STEP_DURATION_HISTOGRAM,
-            USED_MEMORY_BYTES,
+            UNREAD_UPDATES_COUNT, USED_MEMORY_BYTES,
         },
         operator_traits::{Operator, OperatorName, UnaryOperator},
         splitter_output_chunk_size, splitter_output_first_chunk_size,
@@ -433,6 +433,13 @@ where
     /// two updates at the same stamp.  The resolution still has to pick one.
     conflicting_updates: Cell<u64>,
 
+    /// Keys resolved without reading the update they collected.
+    ///
+    /// The shortcut that avoids the read is invisible from the outside, so
+    /// without a count there is no way to tell a commit that took it from one
+    /// that silently stopped taking it.
+    unread_updates: Cell<u64>,
+
     name: OperatorName,
     phantom: PhantomData<fn(&K, &V)>,
 }
@@ -454,6 +461,7 @@ where
             output_adjustment_stats: RefCell::new(BatchSizeStats::new()),
             step_durations: RefCell::new(DurationHistogram::new()),
             conflicting_updates: Cell::new(0),
+            unread_updates: Cell::new(0),
             name: OperatorName::new("LazyUpsert"),
             phantom: PhantomData,
         }
@@ -479,6 +487,7 @@ where
             OUTPUT_ADJUSTMENT_STATS => self.output_adjustment_stats.borrow().metadata(),
             STEP_DURATION_HISTOGRAM => self.step_durations.borrow().metadata(),
             CONFLICTING_UPDATES_COUNT => MetaItem::Count(self.conflicting_updates.get() as usize),
+            UNREAD_UPDATES_COUNT => MetaItem::Count(self.unread_updates.get() as usize),
         });
 
         // The accumulator exists only while a transaction commits, and is out of
@@ -677,6 +686,7 @@ where
                 // the transaction.
                 if all_insertions && updates_cursor.value_count_upper_bound() == 1 {
                     debug_assert!(updates_cursor.val_valid());
+                    self.unread_updates.set(self.unread_updates.get() + 1);
                 } else {
                     // Only the largest stamp survives.  The cursor walks values
                     // in value order rather than stamp order, so the running
