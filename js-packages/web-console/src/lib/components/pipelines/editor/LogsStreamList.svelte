@@ -15,7 +15,12 @@
     onStickToBottomChange,
     onMatchCountChange
   }: {
-    logs: { rows: string[]; totalSkippedBytes: number; firstRowIndex: number }
+    logs: {
+      rows: string[]
+      totalSkippedBytes: number
+      totalDiscardedLines: number
+      firstRowIndex: number
+    }
     /** Current search state (see {@link SearchState}), advanced by the host. */
     search?: SearchState
     /** Forwarded to {@link LogList}; fires when stick-to-bottom toggles. */
@@ -40,6 +45,12 @@
   class="bg-white-dark rounded pl-2"
 >
   {#snippet header()}
+    {#if logs.totalDiscardedLines}
+      <WarningBanner>
+        {logs.totalDiscardedLines.toLocaleString()} earlier log lines are no longer available. The pipeline
+        produced more logs than the server keeps.
+      </WarningBanner>
+    {/if}
     {#if logs.totalSkippedBytes}
       <WarningBanner>
         Receiving logs faster than can be displayed. Skipping some logs to keep up, {humanSize(

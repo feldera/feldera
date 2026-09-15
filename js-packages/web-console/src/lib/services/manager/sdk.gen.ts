@@ -1393,6 +1393,40 @@ export const httpInput = <ThrowOnError extends boolean = true>(
  *
  * The logs stream will end when the pipeline is deleted, or if the runner restarts. Note that in
  * both cases the logs will be cleared.
+ *
+ * ## Resuming a stream
+ *
+ * Supplying the `cursor` parameter asks for only the lines the caller is missing, rather
+ * than the whole retained buffer. This matters on an unstable connection, where replaying
+ * the buffer on every reconnect can consume the entire link and leave the caller unable to
+ * reach the live tail.
+ *
+ * A caller that supplies `cursor` is answered with three response headers:
+ *
+ * ```text
+ * feldera-logs-epoch: 0199c3f1-2d0a-7e84-b711-6f2c9a1d4e08
+ * feldera-logs-seq: 41272
+ * feldera-logs-gap: 0
+ * ```
+ *
+ * - `feldera-logs-epoch` identifies this lifetime of the logs buffer. Pass it back unchanged.
+ * - `feldera-logs-seq` is the sequence number of the line preceding the response's first
+ * log line.
+ * - `feldera-logs-gap` counts lines that were discarded between the requested cursor and
+ * the sequence number above, and which the caller will therefore never receive. Zero
+ * means the resume is exact.
+ *
+ * The body is log lines and nothing else, one per sequence number, so the caller's current
+ * position is `feldera-logs-seq` plus the number of lines it has received. To reconnect,
+ * pass `cursor=<epoch>:<position>`.
+ *
+ * The epoch changes whenever the logs buffer is recreated, which clears the logs. A cursor
+ * carrying a stale epoch is not an error: it is answered with a full catch-up and a gap
+ * naming what was lost, so a caller can never be locked out of its logs by an old cursor.
+ *
+ * Callers that supply `cursor` receive no informational lines in the body, which is what
+ * makes the one-line-per-sequence-number correspondence exact. Callers that omit it get
+ * the body they have always received, and no position headers.
  */
 export const getPipelineLogs = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineLogsData, ThrowOnError>

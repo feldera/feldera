@@ -1300,6 +1300,16 @@ impl ApiServerConfig {
                     header::CONTENT_TYPE,
                     header::HeaderName::from_static(crate::auth::TENANT_HEADER),
                 ])
+                // The logs stream reports a resuming caller's position in these. A browser
+                // cannot read a response header that is not exposed, and the console is
+                // cross-origin whenever it is served from somewhere other than the API.
+                .expose_headers(vec![
+                    header::HeaderName::from_static(
+                        crate::runner::pipeline_logs::LOGS_EPOCH_HEADER,
+                    ),
+                    header::HeaderName::from_static(crate::runner::pipeline_logs::LOGS_SEQ_HEADER),
+                    header::HeaderName::from_static(crate::runner::pipeline_logs::LOGS_GAP_HEADER),
+                ])
                 .supports_credentials()
         }
     }

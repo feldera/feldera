@@ -164,7 +164,8 @@ async fn collect_pipeline_logs(
 
     let response = state
         .runner
-        .get_logs_from_pipeline(client, tenant_id, pipeline_name)
+        // No cursor: the bundle wants the whole retained buffer every time.
+        .get_logs_from_pipeline(client, tenant_id, pipeline_name, "")
         .await?;
 
     let mut response = response;

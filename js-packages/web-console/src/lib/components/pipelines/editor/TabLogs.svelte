@@ -1,11 +1,26 @@
 <script lang="ts" module>
+  import {
+    formatLogCursor,
+    isExactResume,
+    type LogCursor,
+    type LogResume,
+    parseLogResume
+  } from '$lib/functions/pipelines/logCursor'
+
   const streams: Record<
     string,
     {
       firstRowIndex: number
       rows: string[]
-      rowBoundaries: number[]
       totalSkippedBytes: number
+      /** Lines the server threw away before we got to them, as of the last catch-up. */
+      totalDiscardedLines: number
+      /**
+       * How far we have read. Sent back on the next connection so the server can carry
+       * on from there. Null if the server does not support resuming, or if we can no
+       * longer trust our line count; either way the next connection starts over.
+       */
+      cursor: LogCursor | null
       stream:
         | { cancelFetch: () => void }
         | { open: ReadableStream<Uint8Array>; stop: () => void }
@@ -13,6 +28,31 @@
         | { closed: {}; cancelRetry: () => void; retryAtTimestamp: number }
     }
   > = {}
+
+  /**
+   * Handles the first batch of a new connection: now that we know where the server picked
+   * us up, decides whether to keep the lines already on screen or clear them out.
+   *
+   * Held back until the first batch rather than done the moment the position arrives, so a
+   * reconnect does not blank the view while it waits for the first byte.
+   */
+  const openConnection = (
+    pipelineName: string,
+    requested: LogCursor | null,
+    resumed: LogResume | null
+  ) => {
+    const stream = streams[pipelineName]
+    if (!isExactResume(requested, resumed)) {
+      stream.rows = []
+      stream.firstRowIndex = 0
+      stream.totalSkippedBytes = 0
+      // When starting over, the gap is everything the server has discarded so far. That
+      // is the same number it used to print as a log line, before cursors existed.
+      stream.totalDiscardedLines = resumed?.gap ?? 0
+    }
+    stream.cursor = resumed ? { epoch: resumed.epoch, seq: resumed.seq } : null
+  }
+
   let getStreams = new Ref(streams)
   const pipelineActionCallbacks = usePipelineActionCallbacks()
   const dropLogHistory = async (pipelineName: string) => {
@@ -67,8 +107,9 @@
         firstRowIndex: 0,
         stream: { closed: {} },
         rows: [],
-        rowBoundaries: [],
-        totalSkippedBytes: 0
+        totalSkippedBytes: 0,
+        totalDiscardedLines: 0,
+        cursor: null
       }
     }
     return getStreams.current[pipelineName]
@@ -134,71 +175,97 @@
         streams[pipelineName].stream = { closed: {} }
       }
     }
-    api.pipelineLogsStream(pipelineName, { signal: abortController.signal }).then((result) => {
-      if (!streams[pipelineName]) {
-        return
-      }
-      if (streams[pipelineName].stream && 'closed' in streams[pipelineName].stream) {
-        // The stream was cancelled, so we shouldn't re-try it
-        return
-      }
-      if (result instanceof Error) {
-        streams[pipelineName].stream = { closed: {} }
-        streams[pipelineName].rows.push(result.message)
-        const isServerOverloaded = (result.cause as { response: Response }).response.status === 503
-        tryRestartStream(pipelineName, isServerOverloaded ? attempts + 1 : 0)
-        return
-      }
-      // Replace the previous connection's buffer only once fresh data is actually in hand,
-      // not the moment the fetch resolves. Otherwise a reconnect (scroll-resume, retry) blanks
-      // the view between connecting and the first byte. Until then the prior rows stay visible.
-      let freshConnection = true
-      const { cancel } = parseStream<string>(
-        result,
-        newlineTextDecoder({
-          bufferSize: 16 * 1024 * 1024,
-          onBytesSkipped: (bytes) => {
-            streams[pipelineName].totalSkippedBytes += bytes
-          }
-        }),
-        {
-          pushChanges: (changes: string[]) => {
-            if (freshConnection) {
-              freshConnection = false
-              streams[pipelineName].rows = []
-              streams[pipelineName].firstRowIndex = 0
-              streams[pipelineName].rowBoundaries = []
-              streams[pipelineName].totalSkippedBytes = 0
-            }
-            const droppedNum = pushAsCircularBuffer(
-              () => streams[pipelineName].rows,
-              bufferSize,
-              (v: string) => v
-            )(changes)
-            streams[pipelineName].firstRowIndex += droppedNum
-          },
-          onParseEnded: (reason) => {
-            const current = streams[pipelineName]?.stream
-            // Ignore a callback from a stream we've already replaced: scroll-pause can stop
-            // this stream and scroll-resume can open a new one before this 'cancelled' callback
-            // lands. Acting on it would clobber the live stream's handle. Identify "still mine"
-            // by the open ReadableStream reference.
-            if (!current || !('open' in current) || current.open !== result.stream) {
-              return
-            }
-            streams[pipelineName].stream = { closed: {} }
-            if (reason === 'cancelled' || !areLogsExpected(pipelineStatusName)) {
-              return
-            }
-            tryRestartStream(pipelineName, 0)
-          }
+    // Ask the server to carry on from where we stopped, so reconnecting only costs us the
+    // lines we missed rather than the whole log again. An empty cursor still asks to be
+    // told our position; leaving the parameter out altogether selects the old behaviour.
+    const requestedCursor = streams[pipelineName].cursor
+    api
+      .pipelineLogsStream(pipelineName, formatLogCursor(requestedCursor), {
+        signal: abortController.signal
+      })
+      .then((result) => {
+        if (!streams[pipelineName]) {
+          return
         }
-      )
-      // Keep the existing rows in place — only swap in the live stream handle. The buffer is
-      // cleared on the first `pushChanges` above, so the view stays populated until then.
-      streams[pipelineName].stream = { open: result.stream, stop: cancel }
-      getStreams.current = streams
-    })
+        if (streams[pipelineName].stream && 'closed' in streams[pipelineName].stream) {
+          // The stream was cancelled, so we shouldn't re-try it
+          return
+        }
+        if (result instanceof Error) {
+          streams[pipelineName].stream = { closed: {} }
+          streams[pipelineName].rows.push(result.message)
+          const status = (result.cause as { response?: Response } | undefined)?.response?.status
+          // A cursor the server rejects will not become acceptable by being sent again, so
+          // keeping it would leave the viewer looping over the same error and never showing
+          // another log line. Drop it and let the next attempt start the log over.
+          if (status === 400) {
+            streams[pipelineName].cursor = null
+          }
+          tryRestartStream(pipelineName, status === 503 ? attempts + 1 : 0)
+          return
+        }
+        // Where the server picked us up. It arrives with the response headers, so we hold
+        // it until the first batch: touching the rows already on screen the moment the
+        // fetch resolves would leave a reconnect (scroll-resume, retry) blank between
+        // connecting and the first byte. Until then the old rows stay put.
+        const resumed = parseLogResume(result.response.headers)
+        let freshConnection = true
+        // Lines the decoder dropped since the last batch. We hold the count and add it
+        // when that batch arrives, rather than counting it straight away. If the connection
+        // dies in between, none of those lines reached us, and a cursor that had already
+        // counted them would skip past real lines on the next connection.
+        let pendingSkippedLines = 0
+        const { cancel } = parseStream<string>(
+          result,
+          newlineTextDecoder({
+            bufferSize: 16 * 1024 * 1024,
+            onSkipped: ({ bytes, lines }) => {
+              streams[pipelineName].totalSkippedBytes += bytes
+              pendingSkippedLines += lines
+            }
+          }),
+          {
+            pushChanges: (changes: string[]) => {
+              if (freshConnection) {
+                freshConnection = false
+                openConnection(pipelineName, requestedCursor, resumed)
+              }
+              const droppedNum = pushAsCircularBuffer(
+                () => streams[pipelineName].rows,
+                bufferSize,
+                (v: string) => v
+              )(changes)
+              streams[pipelineName].firstRowIndex += droppedNum
+              // Count every line the server sent, including the ones we dropped to keep
+              // up. Otherwise reconnecting would fetch that stretch all over again, when
+              // we had already chosen not to display it.
+              if (streams[pipelineName].cursor) {
+                streams[pipelineName].cursor.seq += changes.length + pendingSkippedLines
+              }
+              pendingSkippedLines = 0
+            },
+            onParseEnded: (reason) => {
+              const current = streams[pipelineName]?.stream
+              // Ignore a callback from a stream we've already replaced: scroll-pause can stop
+              // this stream and scroll-resume can open a new one before this 'cancelled' callback
+              // lands. Acting on it would clobber the live stream's handle. Identify "still mine"
+              // by the open ReadableStream reference.
+              if (!current || !('open' in current) || current.open !== result.stream) {
+                return
+              }
+              streams[pipelineName].stream = { closed: {} }
+              if (reason === 'cancelled' || !areLogsExpected(pipelineStatusName)) {
+                return
+              }
+              tryRestartStream(pipelineName, 0)
+            }
+          }
+        )
+        // Keep the existing rows in place — only swap in the live stream handle. The buffer is
+        // cleared on the first `pushChanges` above, so the view stays populated until then.
+        streams[pipelineName].stream = { open: result.stream, stop: cancel }
+        getStreams.current = streams
+      })
   }
   const backoffDelaysMs = [5, 5, 15, 30, 60].map((s) => s * 1000)
   const getDelayMs = (attempts: number) => backoffDelaysMs.at(attempts) ?? backoffDelaysMs.at(-1)!

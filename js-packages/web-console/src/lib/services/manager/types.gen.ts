@@ -8070,11 +8070,20 @@ export type GetPipelineLogsData = {
      */
     pipeline_name: string
   }
-  query?: never
+  query?: {
+    /**
+     * Resume the stream after this position, formatted as `<epoch>:<sequence>` and derived from a previous response's `feldera-logs-epoch` and `feldera-logs-seq` headers. Omit for the whole retained buffer with no position headers. Pass empty to start from the beginning of the buffer and be told the position.
+     */
+    cursor?: string | null
+  }
   url: '/v0/pipelines/{pipeline_name}/logs'
 }
 
 export type GetPipelineLogsErrors = {
+  /**
+   * Cursor is malformed
+   */
+  400: ErrorResponse
   /**
    * Pipeline with that name does not exist
    */
