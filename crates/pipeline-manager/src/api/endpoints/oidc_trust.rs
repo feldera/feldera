@@ -10,7 +10,6 @@
 //! platform-wide `owner` role is configuration only (`--owner-trusts`), so no
 //! request can mint an owner.
 use crate::api::main::ServerState;
-use crate::api::util::parse_url_parameter;
 use crate::auth::AuthenticatedPrincipal;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
@@ -19,7 +18,7 @@ use crate::db::types::role::{MemberRole, Role};
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use actix_web::{
-    HttpRequest, HttpResponse, delete, get,
+    HttpResponse, delete, get,
     http::header::{CacheControl, CacheDirective},
     post,
     web::{self, Data as WebData, ReqData},
@@ -113,9 +112,9 @@ pub(crate) async fn list_oidc_trust(
 pub(crate) async fn get_oidc_trust(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    req: HttpRequest,
+    path: web::Path<String>,
 ) -> Result<HttpResponse, ManagerError> {
-    let name = parse_url_parameter(&req, "name")?;
+    let name = path.into_inner();
     let item = state
         .db
         .lock()
@@ -209,9 +208,9 @@ pub(crate) async fn post_oidc_trust(
 pub(crate) async fn delete_oidc_trust(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    req: HttpRequest,
+    path: web::Path<String>,
 ) -> Result<HttpResponse, ManagerError> {
-    let name = parse_url_parameter(&req, "name")?;
+    let name = path.into_inner();
     state
         .db
         .lock()
