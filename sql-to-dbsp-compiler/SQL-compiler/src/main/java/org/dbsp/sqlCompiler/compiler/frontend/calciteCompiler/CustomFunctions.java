@@ -59,6 +59,7 @@ public class CustomFunctions {
         this.functions.add(ArrayExcept.INSTANCE);
         this.functions.add(ArrayExistsFunction.INSTANCE);
         this.functions.add(ArrayFilterFunction.INSTANCE);
+        this.functions.add(ArrayFlattenFunction.INSTANCE);
         this.functions.add(ArrayInsertFunction.INSTANCE);
         this.functions.add(ArrayIntersect.INSTANCE);
         this.functions.add(ArrayPositionFunction.INSTANCE);

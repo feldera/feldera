@@ -1028,3 +1028,45 @@ where
     let array = array?;
     Some(array_filter_N(array, f))
 }
+
+#[doc(hidden)]
+pub fn array_flatten__<T>(array: Array<Array<T>>) -> Array<T>
+where
+    T: Clone,
+{
+    Arc::new(
+        array
+            .iter()
+            .flat_map(|inner| inner.iter().cloned())
+            .collect(),
+    )
+}
+
+#[doc(hidden)]
+pub fn array_flattenN_<T>(array: Option<Array<Array<T>>>) -> Option<Array<T>>
+where
+    T: Clone,
+{
+    Some(array_flatten__(array?))
+}
+
+/// A NULL inner array makes the result NULL
+#[doc(hidden)]
+pub fn array_flatten_N<T>(array: Array<Option<Array<T>>>) -> Option<Array<T>>
+where
+    T: Clone,
+{
+    let mut result = Vec::new();
+    for inner in array.iter() {
+        result.extend(inner.as_ref()?.iter().cloned());
+    }
+    Some(Arc::new(result))
+}
+
+#[doc(hidden)]
+pub fn array_flattenNN<T>(array: Option<Array<Option<Array<T>>>>) -> Option<Array<T>>
+where
+    T: Clone,
+{
+    array_flatten_N(array?)
+}
