@@ -23,9 +23,13 @@ The table mirrors the customer's ``cdc_raw`` shape:
                This is the column that fails an unpatched read with
                ``Non-nullable column 'col-102' is missing from the physical schema``.
 
-A correct snapshot read resolves every column -- top level and the struct's
-children -- by Parquet ``field_id``, so the diverging columns come back with their
-real values rather than NULL (or a hard error for ``op`` / the struct cast).
+A correct read resolves every column -- top level and the struct's children -- by
+Parquet ``field_id``, so the diverging columns come back with their real values
+rather than NULL (or a hard error for ``op`` / the struct cast).
+
+The table has two commits, one data file each, so a follow or CDC read that
+starts at v0 has a later commit to apply: those modes plan their reads
+differently from ``snapshot`` and were the ones the customer hit.
 
 Bump ``FIXTURE_VERSION`` in ``test_delta_input_uniform_iceberg.py`` on any change
 here, since a cached fixture is reused based on its path alone.
@@ -50,9 +54,9 @@ AFTER_CHILDREN = [
 ]
 
 
-# Final logical rows expected from a snapshot read. Shared with the test via import
-# so the two never drift. ``after`` is a nested row.
-EXPECTED_ROWS = [
+# The rows of the first commit (v0). Shared with the test via import so the two
+# never drift. ``after`` is a nested row.
+V0_ROWS = [
     {
         "id": "txn-001",
         "after": {
@@ -77,6 +81,12 @@ EXPECTED_ROWS = [
         },
         "op": "c",
     },
+]
+
+# The rows of the second commit (v1). A follow or CDC read starting from v0 sees
+# only these, which is what tells a working follow path from one that read the
+# whole table at once.
+V1_ROWS = [
     {
         "id": "txn-003",
         "after": {
@@ -90,6 +100,9 @@ EXPECTED_ROWS = [
         "op": "u",
     },
 ]
+
+# What a snapshot read of the final version returns.
+EXPECTED_ROWS = V0_ROWS + V1_ROWS
 
 
 def _field_id(value: int) -> dict:
@@ -114,24 +127,29 @@ def build(table_path: str) -> None:
             pa.field("op", pa.string(), nullable=False, metadata=_field_id(102)),
         ]
     )
-    table = pa.table(
-        {
-            "id": [r["id"] for r in EXPECTED_ROWS],
-            "after": [r["after"] for r in EXPECTED_ROWS],
-            "op": [r["op"] for r in EXPECTED_ROWS],
-        },
-        schema=schema,
-    )
-
-    parquet_rel = "part-00000-uniform-iceberg.parquet"
     log_dir = os.path.join(table_path, "_delta_log")
     os.makedirs(log_dir, exist_ok=True)
-    # store_schema=False keeps the file Iceberg-shaped (no embedded Arrow schema);
-    # the field_ids are written into the Parquet schema regardless.
-    pq.write_table(table, os.path.join(table_path, parquet_rel), store_schema=False)
-    size = os.path.getsize(os.path.join(table_path, parquet_rel))
 
-    _write_log(log_dir, parquet_rel, size)
+    # One commit per file, so a follow or CDC read that starts at v0 has a later
+    # commit to apply and is not just a snapshot under another name.
+    files = []
+    for version, rows in enumerate((V0_ROWS, V1_ROWS)):
+        table = pa.table(
+            {
+                "id": [r["id"] for r in rows],
+                "after": [r["after"] for r in rows],
+                "op": [r["op"] for r in rows],
+            },
+            schema=schema,
+        )
+        parquet_rel = f"part-{version:05d}-uniform-iceberg.parquet"
+        path = os.path.join(table_path, parquet_rel)
+        # store_schema=False keeps the file Iceberg-shaped (no embedded Arrow
+        # schema); the field_ids are written into the Parquet schema regardless.
+        pq.write_table(table, path, store_schema=False)
+        files.append((parquet_rel, os.path.getsize(path)))
+
+    _write_log(log_dir, files)
 
 
 def _column_metadata(field_id: int, physical_name: str) -> dict:
@@ -180,7 +198,9 @@ def _schema_string() -> str:
     return json.dumps({"type": "struct", "fields": fields})
 
 
-def _write_log(log_dir: str, parquet_rel: str, size: int) -> None:
+def _write_log(log_dir: str, files: list[tuple[str, int]]) -> None:
+    """Write one commit per entry of ``files``, the first carrying the table's
+    protocol and metadata."""
     # Legacy column-mapping protocol (reader 2 / writer 5): no feature lists,
     # which the delta kernel rejects below reader version 3.
     protocol = {"protocol": {"minReaderVersion": 2, "minWriterVersion": 5}}
@@ -197,18 +217,20 @@ def _write_log(log_dir: str, parquet_rel: str, size: int) -> None:
             "createdTime": 1700000000000,
         }
     }
-    add = {
-        "add": {
-            "path": parquet_rel,
-            "partitionValues": {},
-            "size": size,
-            "modificationTime": 1700000000000,
-            "dataChange": True,
+    for version, (parquet_rel, size) in enumerate(files):
+        add = {
+            "add": {
+                "path": parquet_rel,
+                "partitionValues": {},
+                "size": size,
+                "modificationTime": 1700000000000,
+                "dataChange": True,
+            }
         }
-    }
-    with open(os.path.join(log_dir, "00000000000000000000.json"), "w") as f:
-        for entry in (protocol, metadata, add):
-            f.write(json.dumps(entry) + "\n")
+        entries = (protocol, metadata, add) if version == 0 else (add,)
+        with open(os.path.join(log_dir, f"{version:020d}.json"), "w") as f:
+            for entry in entries:
+                f.write(json.dumps(entry) + "\n")
 
 
 if __name__ == "__main__":

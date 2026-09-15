@@ -3,6 +3,7 @@ use crate::format::InputBuffer;
 use crate::integrated::delta_table::deletion_vector::{
     MaskedFile, ReadMode, filtered_parquet_table, read_deletion_vector,
 };
+use crate::integrated::delta_table::field_id_adapter::FieldIdAdapterFactory;
 use crate::integrated::delta_table::{
     ReadSchema, delta_input_serde_config, register_storage_handlers,
 };
@@ -31,6 +32,7 @@ use datafusion::physical_plan::{
 use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
 use dbsp::circuit::tokio::TOKIO;
 use delta_kernel::schema::{ColumnMetadataKey, MetadataValue};
+use delta_kernel::table_features::ColumnMappingMode;
 use deltalake::datafusion::dataframe::DataFrame;
 use deltalake::datafusion::execution::context::SQLOptions;
 use deltalake::datafusion::logical_expr::{ExprSchemable, SortExpr};
@@ -334,9 +336,10 @@ fn is_active_dv(dv: &DeletionVectorDescriptor) -> bool {
     dv.cardinality > 0
 }
 
-/// A `uc://` location is path-less, so a `ListingTable` built from `root_url() +
-/// Add.path` reads empty. Such tables must read through the object store directly.
-fn requires_direct_object_store_read(table: &DeltaTable) -> bool {
+/// Must this table's files be read through the object store instead of a
+/// [`ListingTable`]? A `uc://` location carries no path, so a listing built from
+/// `root_url() + Add.path` resolves to nothing and reads empty.
+fn location_is_unlistable(table: &DeltaTable) -> bool {
     table.log_store().root_url().scheme() == "uc"
 }
 
@@ -1293,8 +1296,10 @@ struct CatchupFollowState {
     transaction: Option<Option<String>>,
 }
 
-/// A CDC file whose active deletion vector must be applied as it is read.
-type MaskedCdcFile<'a> = (&'a CdcFile<'a>, &'a DeletionVectorDescriptor);
+/// A CDC file read straight from the object store rather than through a
+/// listing: one carrying an active deletion vector, or any file of a location
+/// with no directory to list.
+type DirectCdcFile<'a> = (&'a CdcFile<'a>, Option<&'a DeletionVectorDescriptor>);
 
 /// A file's partition values in `partition_value_keys` order, as the key that
 /// groups files reading together.
@@ -3650,19 +3655,15 @@ impl DeltaTableInputEndpointInner {
 
     /// One frame over the change data files of a single partition.
     ///
-    /// A `uc://` table's location has no path for a [`ListingTable`] to resolve,
-    /// so its files are read through the object store instead; this is the same
-    /// split [`add_with_polarity`](Self::add_with_polarity) makes, and the
-    /// reason it exists is the same: a listing needs a directory, and a Unity
-    /// Catalog location is not one.
+    /// A `uc://` location has no directory to list, so its files are read
+    /// through the object store; every other location reads them through one
+    /// [`ListingTable`], spread over at most `target_partitions` readers.
     ///
-    /// Both routes read the whole group through a single provider, and both
-    /// spread its files over at most `target_partitions` readers. The object
-    /// store route used to build one provider per file and union them, which
-    /// read nothing one at a time: a plan's partitions all run at once, so a
-    /// commit of a few hundred change data files held a few hundred Parquet
-    /// readers open, one per file, each with its own per-column state that no
-    /// batch size reaches.
+    /// Either way one provider covers the whole group. Reading each file
+    /// through its own provider and unioning them gave the plan one partition
+    /// per file, all of which DataFusion then drove at once, so a commit of a
+    /// few hundred change data files held a few hundred Parquet readers open,
+    /// each with per-column state that no batch size reaches.
     async fn change_data_group_dataframe(
         &self,
         table: &DeltaTable,
@@ -3670,32 +3671,11 @@ impl DeltaTableInputEndpointInner {
         read_schema: &ReadSchema,
         description: &str,
     ) -> AnyResult<DataFrame> {
-        let read = |provider: Arc<dyn TableProvider>| {
-            self.datafusion.read_table(provider).map_err(|e| {
-                anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading change data files: {e}")
-            })
-        };
-
-        if !requires_direct_object_store_read(table) {
-            let urls = group
-                .iter()
-                .map(|file| file_listing_url(table, &file.path))
-                .collect::<AnyResult<Vec<_>>>()?;
-            return read(Arc::new(
-                self.create_parquet_table(urls, read_schema.clone(), description)
-                    .await?,
-            ));
-        }
-
-        // An empty bitmap reads every row: a change data file never carries a
-        // deletion vector, and the protocol gives it no field to carry one in.
-        //
-        // One provider covers the whole group. Reading each file through its own
-        // provider and unioning them gave the plan one partition per file, all
-        // of which DataFusion then drove at once, so a commit of a few hundred
-        // change data files held a few hundred Parquet readers open.
-        let provider = self
-            .file_provider(
+        let provider: Arc<dyn TableProvider> = if location_is_unlistable(table) {
+            // An empty bitmap reads every row: a change data file never carries
+            // a deletion vector, and the protocol gives it no field to carry one
+            // in.
+            self.file_provider(
                 table,
                 group
                     .iter()
@@ -3703,14 +3683,27 @@ impl DeltaTableInputEndpointInner {
                 ReadMode::NotInBitmap,
                 read_schema.clone(),
             )
-            .await?;
-        read(provider)
+            .await?
+        } else {
+            let urls = group
+                .iter()
+                .map(|file| file_listing_url(table, &file.path))
+                .collect::<AnyResult<Vec<_>>>()?;
+            Arc::new(
+                self.create_parquet_table(urls, read_schema.clone(), description)
+                    .await?,
+            )
+        };
+
+        self.datafusion.read_table(provider).map_err(|e| {
+            anyhow!("internal error processing {description}; {REPORT_ERROR}; error reading change data files: {e}")
+        })
     }
 
     /// Arrow schema for reading a change data file: the columns the connector
     /// needs, plus the [`CHANGE_TYPE_COLUMN`] that only these files carry.
     ///
-    /// A `uc://` file is read through a [`StreamingTable`], which has no
+    /// A file read through a [`StreamingTable`] rather than a listing has no
     /// projection pushdown, so this schema is the only bound on what it decodes.
     fn change_data_read_schema(&self) -> AnyResult<ReadSchema> {
         let table_schema = self.physical_read_schema(|name| self.needs_column(name))?;
@@ -3968,6 +3961,20 @@ impl DeltaTableInputEndpointInner {
         self.pin_schema_to_version(new_version as u64).await
     }
 
+    /// Is the table's column mapping `mode = 'id'`? Its files may name columns
+    /// logically, which only `project_to_logical` pairs with the `col-<id>` read
+    /// schema.
+    fn column_mapping_mode_is_id(&self) -> AnyResult<bool> {
+        Ok(self
+            .schema_snapshot()
+            .snapshot()
+            .map_err(|e| anyhow!("error accessing Delta table snapshot: {e}"))?
+            .snapshot()
+            .table_properties()
+            .column_mapping_mode
+            == Some(ColumnMappingMode::Id))
+    }
+
     /// Logical-to-physical column-name pairs under Delta column mapping.
     ///
     /// With `delta.columnMapping.mode = 'name'` or `'id'` each column lives on
@@ -4196,6 +4203,10 @@ impl DeltaTableInputEndpointInner {
     /// `project_physical_to_logical` renames them back afterwards. Change data
     /// files carry one column the table schema does not
     /// ([`Self::change_data_read_schema`]).
+    ///
+    /// Under `mode = 'id'` a file may name its columns logically instead, which
+    /// no name matches, so those columns are resolved by field id
+    /// ([`FieldIdAdapterFactory`]).
     async fn create_parquet_table(
         &self,
         urls: Vec<ListingTableUrl>,
@@ -4205,9 +4216,14 @@ impl DeltaTableInputEndpointInner {
         let listing_options = ListingOptions::new(Arc::new(ParquetFormat::default()))
             .with_file_extension_opt(Some(".parquet"));
 
-        let table_config = ListingTableConfig::new_with_multi_paths(urls)
+        let mut table_config = ListingTableConfig::new_with_multi_paths(urls)
             .with_listing_options(listing_options)
             .with_schema(Arc::clone(schema.schema()));
+        if self.column_mapping_mode_is_id()? {
+            table_config = table_config.with_expr_adapter_factory(Arc::new(
+                FieldIdAdapterFactory::new(&self.column_mapping()?),
+            ));
+        }
 
         ListingTable::try_new(table_config).map_err(|e| {
             anyhow!("internal error processing {description}; {REPORT_ERROR}; error creating Parquet table: {e}")
@@ -4288,9 +4304,10 @@ impl DeltaTableInputEndpointInner {
     /// Build the [`DataFrame`] for one side (adds or removes) of a CDC
     /// transaction, or `None` when the side has no files.
     ///
-    /// Each file is `(path, deletion_vector)`. Files with an active DV stream
-    /// through a [`filtered_parquet_table`] that drops their deleted rows; the
-    /// rest are read together through one [`ListingTable`]. The pieces combine
+    /// Each file is `(path, deletion_vector)`. A file with an active DV streams
+    /// through a [`filtered_parquet_table`] that drops its deleted rows, and so
+    /// does every file of an unlistable `uc://` location; the rest are read
+    /// together through one [`ListingTable`]. The pieces combine
     /// with `UNION ALL`, each restricted to the same CDC read set (the columns
     /// [`Self::project_cdc_columns`] keeps), so they line up by position for the
     /// `EXCEPT ALL` in `build_cdc_dataframe` and never decode unused columns.
@@ -4306,13 +4323,20 @@ impl DeltaTableInputEndpointInner {
         files: &[CdcFile<'_>],
         description: &str,
     ) -> AnyResult<Option<DataFrame>> {
-        // Split by read strategy: files with an active DV are masked, the rest
+        // One schema for both sides, so the `EXCEPT ALL` below compares frames
+        // that were read the same way.
+        let read_schema = self.physical_read_schema(|name| self.needs_column(name))?;
+
+        // Split by read strategy: a file with an active DV, and every file when
+        // the location cannot be listed, goes through the object store; the rest
         // are read through a listing. Both sides group by partition values, so
         // each group's constant partition columns apply to all its files.
+        let unlistable = location_is_unlistable(table);
         let mut plain: BTreeMap<PartitionKey, Vec<&CdcFile<'_>>> = BTreeMap::new();
-        let mut masked: BTreeMap<PartitionKey, Vec<MaskedCdcFile<'_>>> = BTreeMap::new();
+        let mut direct: BTreeMap<PartitionKey, Vec<DirectCdcFile<'_>>> = BTreeMap::new();
         let partition_keys = self.partition_value_keys()?;
         for file in files {
+            let dv = file.deletion_vector.filter(|d| is_active_dv(d));
             let key: PartitionKey = partition_keys
                 .iter()
                 .map(|key| {
@@ -4321,15 +4345,13 @@ impl DeltaTableInputEndpointInner {
                         .cloned()
                 })
                 .collect();
-            match file.deletion_vector.filter(|d| is_active_dv(d)) {
-                Some(dv) => masked.entry(key).or_default().push((file, dv)),
-                None => plain.entry(key).or_default().push(file),
+            if unlistable || dv.is_some() {
+                direct.entry(key).or_default().push((file, dv));
+            } else {
+                plain.entry(key).or_default().push(file);
             }
         }
 
-        // One schema for both sides, so the `EXCEPT ALL` below compares frames
-        // that were read the same way.
-        let read_schema = self.physical_read_schema(|name| self.needs_column(name))?;
         let mut dfs: Vec<DataFrame> = Vec::new();
 
         for group in plain.values() {
@@ -4352,24 +4374,22 @@ impl DeltaTableInputEndpointInner {
             })?);
         }
 
-        // Each masked group reads through one provider rather than one per
+        // Each direct group reads through one provider rather than one per
         // file, which is what bounds how many of their Parquet readers are open
         // at once: the plan drives every partition it has concurrently, so one
-        // provider per file left the count unbounded.
-        for group in masked.values() {
+        // provider per file left the count unbounded. A file with no DV gets an
+        // empty bitmap, which reads every row.
+        for group in direct.values() {
             let mut files = Vec::with_capacity(group.len());
             for (file, dv) in group {
-                files.push((
-                    file.path,
-                    self.decode_dv(table, Some(*dv), description).await?,
-                ));
+                files.push((file.path, self.decode_dv(table, *dv, description).await?));
             }
             let provider = self
                 .file_provider(table, files, ReadMode::NotInBitmap, read_schema.clone())
                 .await?;
             let df = self.datafusion.read_table(provider).map_err(|e| {
                 anyhow!(
-                    "internal error processing {description}; {REPORT_ERROR}; error reading masked files {}: {e}",
+                    "internal error processing {description}; {REPORT_ERROR}; error reading files {}: {e}",
                     describe_paths(group.iter().map(|(file, _)| file.path))
                 )
             })?;
@@ -4449,7 +4469,7 @@ impl DeltaTableInputEndpointInner {
     }
 
     // NOTE: Column projection (follow here, CDC in `process_cdc_transaction`) runs against the
-    // schema in `schema_table`, which `create_parquet_table` applies to every Parquet file we read.
+    // schema in `schema_table`, which every read path applies to the Parquet files it opens.
     // While following, that schema is the one active when the commit being read was written (see the
     // field's docs and `advance_schema`). Column-mapped physical names are stable across a rename, so
     // the reader handles each version's files against its own schema: DataFusion's schema adapter
@@ -4473,28 +4493,23 @@ impl DeltaTableInputEndpointInner {
         let description = format!("file '{path}'");
         let read_schema = self.physical_read_schema(|name| self.needs_column(name))?;
 
-        // DV files, and uc:// tables (whose path-less location a ListingTable
-        // can't resolve), read through the object store directly. An empty bitmap
-        // reads every row. Other schemes use the ListingTable path.
-        let provider: Arc<dyn TableProvider> = if requires_direct_object_store_read(table)
-            || deletion_vector.is_some_and(is_active_dv)
-        {
-            let bitmap = match deletion_vector.filter(|d| is_active_dv(d)) {
-                Some(dv) => self.decode_dv(table, Some(dv), &description).await?,
-                None => RoaringTreemap::new(),
-            };
-            self.file_provider(table, [(path, bitmap)], ReadMode::NotInBitmap, read_schema)
-                .await?
-        } else {
-            Arc::new(
-                self.create_parquet_table(
-                    vec![file_listing_url(table, path)?],
-                    read_schema,
-                    &description,
+        // A DV file, or any file of an unlistable location, goes through the
+        // object store; an empty bitmap reads every row.
+        let provider: Arc<dyn TableProvider> =
+            if deletion_vector.is_some_and(is_active_dv) || location_is_unlistable(table) {
+                let bitmap = self.decode_dv(table, deletion_vector, &description).await?;
+                self.file_provider(table, [(path, bitmap)], ReadMode::NotInBitmap, read_schema)
+                    .await?
+            } else {
+                Arc::new(
+                    self.create_parquet_table(
+                        vec![file_listing_url(table, path)?],
+                        read_schema,
+                        &description,
+                    )
+                    .await?,
                 )
-                .await?,
-            )
-        };
+            };
 
         self.emit_provider(
             provider,
