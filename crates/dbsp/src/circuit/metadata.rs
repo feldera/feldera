@@ -73,6 +73,7 @@ pub const INPUT_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("input_batches_
 pub const OUTPUT_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("output_batches_stats"));
 pub const OUTPUT_ADJUSTMENT_STATS: MetricId = MetricId(Cow::Borrowed("output_adjustment_stats"));
 pub const STEP_DURATION_HISTOGRAM: MetricId = MetricId(Cow::Borrowed("step_duration_histogram"));
+pub const UNREAD_UPDATES_COUNT: MetricId = MetricId(Cow::Borrowed("unread_updates_count"));
 pub const CONFLICTING_UPDATES_COUNT: MetricId =
     MetricId(Cow::Borrowed("conflicting_updates_count"));
 pub const EXCHANGE_WAIT_TIME_SECONDS: MetricId =
@@ -197,7 +198,7 @@ pub const PREFIX_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("prefix_batche
 pub const INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("input_integral_records_count"));
 
-pub const CIRCUIT_METRICS: [CircuitMetric; 84] = [
+pub const CIRCUIT_METRICS: [CircuitMetric; 85] = [
     // State
     CircuitMetric {
         name: USED_MEMORY_BYTES,
@@ -458,6 +459,12 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 84] = [
         category: CircuitMetricCategory::Outputs,
         advanced: false,
         description: "Distribution of the sizes of the adjustments an input map resolves a transaction's updates into.",
+    },
+    CircuitMetric {
+        name: UNREAD_UPDATES_COUNT,
+        category: CircuitMetricCategory::Inputs,
+        advanced: true,
+        description: "Keys a lazy input map resolved without reading the update it collected, because the key was written once and the transaction held no deletes. Against 'input_batches_stats' it says how often the shortcut applied.",
     },
     CircuitMetric {
         name: CONFLICTING_UPDATES_COUNT,
