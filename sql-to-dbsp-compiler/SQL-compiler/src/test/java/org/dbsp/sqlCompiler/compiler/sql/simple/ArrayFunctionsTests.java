@@ -1143,6 +1143,14 @@ public class ArrayFunctionsTests extends SqlIoTest {
     }
 
     @Test
+    public void testArrayInsertRuntimeErrors() {
+        this.qf("SELECT array_insert(array[1, 2, 3], 0, 4)",
+                "'ARRAY_INSERT' called with position 0");
+        this.qf("SELECT array_insert(array[1, 2, 3], 2147483647, 4)",
+                "'ARRAY_INSERT' called with position 2147483647");
+    }
+
+    @Test
     public void testExists() {
         this.qst("""
                 SELECT array_EXISTS(array[1, 2, 3], x -> x > 2);
