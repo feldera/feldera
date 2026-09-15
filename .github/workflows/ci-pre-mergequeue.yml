@@ -4,6 +4,12 @@ on:
   pull_request:
     types: [opened, synchronize]
 
+# The pre-commit hooks below hand GITHUB_TOKEN to every build script in the
+# tree, so keep it read-only. Nothing here writes through it: the auto-fix
+# commit pushes with the App token that the checkout configured.
+permissions:
+  contents: read
+
 env:
   RUSTC_WRAPPER: sccache
   # sccache: native GCS backend, credentials come from the runner pod via
@@ -91,6 +97,14 @@ jobs:
           pre-commit run --show-diff-on-failure --color=always --all-files
         shell: bash
         if: ${{ vars.CI_DRY_RUN != 'true' }}
+        env:
+          # The cargo hooks compile the workspace, and postgresql_embedded's
+          # build script lists the releases of theseus-rs/postgresql-binaries
+          # through the GitHub API. Anonymous calls share the runners' egress
+          # address and its 60-per-hour limit, which fails the build with
+          # "403 rate limit exceeded"; postgresql_archive sends this token when
+          # it is set. Only this step compiles, so only this step gets it.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate OpenAPI codegen
         if: ${{ vars.CI_DRY_RUN != 'true' }}
