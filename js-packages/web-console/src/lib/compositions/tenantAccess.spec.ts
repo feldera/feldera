@@ -5,18 +5,20 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const invalidateAll = vi.hoisted(() => vi.fn())
 vi.mock('@axa-fr/oidc-client', () => ({ OidcClient: { get: vi.fn() } }))
-vi.mock('$app/navigation', () => ({ invalidateAll: () => invalidateAll() }))
 
 import { errorResponseMiddleware } from '$lib/services/auth'
+import { setInvalidateAll } from '$lib/services/invalidateAll'
 import { errorCodeOf, isTenantRecheckPending, resetTenantRecheck } from './tenantAccess'
 
 const rejection = (code: string) => new Error(code, { cause: { error_code: code } })
 
+const invalidateAll = vi.fn(async () => {})
+
 beforeEach(() => {
   resetTenantRecheck()
   invalidateAll.mockReset()
+  setInvalidateAll(invalidateAll)
 })
 
 describe('errorCodeOf', () => {
