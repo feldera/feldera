@@ -40,7 +40,17 @@ pub struct MergeMetrics {
     probe_files_pruned: AtomicU64,
     probe_row_groups_scanned: AtomicU64,
     probe_row_groups_pruned: AtomicU64,
+    probe_key_bytes_read: AtomicU64,
     bytes_written: AtomicU64,
+    /// Where flush time went, in microseconds. These partition one flush, so they sum to
+    /// what `flush_latency` records for it -- over a successful flush only, since a failed
+    /// one reports its latency but no metrics.
+    log_scan_micros: AtomicU64,
+    probe_micros: AtomicU64,
+    append_micros: AtomicU64,
+    deletion_vector_micros: AtomicU64,
+    commit_micros: AtomicU64,
+    batch_walk_micros: AtomicU64,
     /// Live rows and superseded rows in the table as of the last flush, scaled by 1000 so
     /// the ratio survives an integer counter.
     tombstone_ratio_permille: AtomicU64,
@@ -113,6 +123,16 @@ impl MergeMetrics {
             flush.probe.row_groups_pruned as u64,
         );
         add(&self.bytes_written, flush.bytes_written);
+        add(&self.probe_key_bytes_read, flush.probe.key_bytes_read);
+
+        let t = &flush.timings;
+        let micros = |d: Duration| d.as_micros() as u64;
+        add(&self.log_scan_micros, micros(t.log_scan));
+        add(&self.probe_micros, micros(t.probe));
+        add(&self.append_micros, micros(t.append));
+        add(&self.deletion_vector_micros, micros(t.deletion_vectors));
+        add(&self.commit_micros, micros(t.commit));
+        add(&self.batch_walk_micros, micros(t.other()));
     }
 
     /// Record the table's superseded-row ratio, warning when it crosses the threshold.
@@ -234,10 +254,58 @@ impl ConnectorMetrics for MergeMetrics {
                 get(&self.probe_row_groups_pruned),
             ),
             (
+                "output_connector_delta_merge_probe_key_bytes_read_total",
+                "Compressed bytes of key columns the lookup read out of the data files. A \
+                 lookup that cannot prune reads the key column of the whole table on every \
+                 flush, so this against 'bytes_written' is the read amplification.",
+                ValueType::Counter,
+                get(&self.probe_key_bytes_read),
+            ),
+            (
                 "output_connector_delta_merge_bytes_written_total",
                 "Bytes written to object storage: new data files plus deletion vectors.",
                 ValueType::Counter,
                 get(&self.bytes_written),
+            ),
+            (
+                "output_connector_delta_merge_log_scan_microseconds_total",
+                "Time spent walking the Delta log: building the lookup's candidate file \
+                 list, and counting the table's rows after the commit. Follows the table's \
+                 file count rather than the batch size.",
+                ValueType::Counter,
+                get(&self.log_scan_micros),
+            ),
+            (
+                "output_connector_delta_merge_probe_microseconds_total",
+                "Time spent locating the rows a flush supersedes. Usually the largest \
+                 share, and the one 'max_concurrent_probes' moves.",
+                ValueType::Counter,
+                get(&self.probe_micros),
+            ),
+            (
+                "output_connector_delta_merge_append_microseconds_total",
+                "Time spent encoding new rows to parquet and streaming them out.",
+                ValueType::Counter,
+                get(&self.append_micros),
+            ),
+            (
+                "output_connector_delta_merge_deletion_vector_microseconds_total",
+                "Time spent reading, merging and writing deletion vectors.",
+                ValueType::Counter,
+                get(&self.deletion_vector_micros),
+            ),
+            (
+                "output_connector_delta_merge_commit_microseconds_total",
+                "Time spent writing the commit to the Delta log.",
+                ValueType::Counter,
+                get(&self.commit_micros),
+            ),
+            (
+                "output_connector_delta_merge_batch_walk_microseconds_total",
+                "Time spent walking the batch: serializing each row and encoding each key. \
+                 The one phase that follows the batch size rather than the table size.",
+                ValueType::Counter,
+                get(&self.batch_walk_micros),
             ),
             (
                 "output_connector_delta_merge_compactions_total",
