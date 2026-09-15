@@ -5963,11 +5963,12 @@ export type StorageOptions = {
    * the minimum estimated number of bytes to write it to storage.
    *
    * This is provided for debugging and fine-tuning and should ordinarily be
-   * left unset.  A value of 0 will write even empty batches to storage, and
-   * nonzero values provide a threshold.  `usize::MAX`, the default,
-   * effectively disables storage for such batches.  If it is set to another
-   * value, it should ordinarily be greater than or equal to
-   * `min_storage_bytes`.
+   * left unset.  A value of 0 writes every batch that holds anything to
+   * storage; an empty batch stays in memory, since it has nothing to spill
+   * and a layer file is not free.  Nonzero values provide a threshold.
+   * `usize::MAX`, the default, effectively disables storage for such
+   * batches.  If it is set to another value, it should ordinarily be
+   * greater than or equal to `min_storage_bytes`.
    */
   min_step_storage_bytes?: number | null
   /**
@@ -5978,9 +5979,9 @@ export type StorageOptions = {
    * This is provided for debugging and fine-tuning and should ordinarily be
    * left unset.
    *
-   * A value of 0 will write even empty batches to storage, and nonzero
-   * values provide a threshold.  `usize::MAX` would effectively disable
-   * storage for such batches.  The default is 10,048,576 (10 MiB).
+   * A value of 0 writes every batch that holds anything to storage, and
+   * nonzero values provide a threshold.  `usize::MAX` would effectively
+   * disable storage for such batches.  The default is 10,048,576 (10 MiB).
    */
   min_storage_bytes?: number | null
 }
