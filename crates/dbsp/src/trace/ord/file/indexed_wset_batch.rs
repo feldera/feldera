@@ -2,6 +2,7 @@ use crate::storage::file::format::{BatchMetadata, ValueStampFlag};
 use crate::storage::file::{
     FilterKind, FilterStats, TouchedWindowCount, TouchedWindowCounter, collect_roaring_metadata,
 };
+use crate::trace::AccessHint;
 use crate::{
     DBData, DBWeight, NumEntries, Runtime,
     algebra::{AddAssignByRef, AddByRef, NegByRef},
@@ -434,6 +435,10 @@ where
         FileIndexedWSetCursor::new(self)
     }
 
+    fn cursor_with_hint(&self, hint: AccessHint) -> Self::Cursor<'_> {
+        FileIndexedWSetCursor::with_hint(self, hint)
+    }
+
     #[inline]
     fn key_count_upper_bound(&self) -> usize {
         self.file.n_rows(0) as usize
@@ -778,9 +783,20 @@ where
     R: WeightTrait + ?Sized,
 {
     pub fn new(wset: &'s FileIndexedWSet<K, V, R>) -> Self {
+        Self::with_hint(wset, AccessHint::Unknown)
+    }
+
+    /// A cursor told how it will be moved; see [`AccessHint`].  The value
+    /// cursors it opens later inherit the hint.
+    ///
+    /// # Arguments
+    ///
+    /// * `wset` - the batch to walk.
+    /// * `hint` - how the cursor will be moved; see [`AccessHint`].
+    pub fn with_hint(wset: &'s FileIndexedWSet<K, V, R>, hint: AccessHint) -> Self {
         Self {
             wset,
-            key_cursor: unsafe { wset.file.rows().first().unwrap_storage() },
+            key_cursor: unsafe { wset.file.rows().with_hint(hint).first().unwrap_storage() },
             val_cursor: OnceCell::new(),
             val_hint: None,
             diff: wset.factories.weight_factory().default_box(),
@@ -1200,5 +1216,22 @@ where
 {
     fn deserialize(&self, _deserializer: &mut D) -> Result<FileIndexedWSet<K, V, R>, D::Error> {
         unimplemented!();
+    }
+}
+
+#[cfg(test)]
+impl<K, V, R> FileIndexedWSet<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    /// Where the file lives.
+    ///
+    /// # Returns
+    ///
+    /// The batch file's path on storage.
+    pub(crate) fn path(&self) -> &feldera_storage::StoragePath {
+        self.file.path()
     }
 }
