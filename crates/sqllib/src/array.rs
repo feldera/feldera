@@ -817,10 +817,13 @@ where
     let mut abs = num::abs(pos) as usize;
 
     if pos == 0 {
-        panic!("Index of 0 for 'array_insert");
+        panic!("'ARRAY_INSERT' called with position 0, but SQL array positions start at 1");
     }
     if abs > MAX_ARRAY_LENGTH {
-        panic!("Index {} too large for 'array_index'", pos);
+        panic!(
+            "'ARRAY_INSERT' called with position {pos}, which exceeds the maximum array length of {}",
+            MAX_ARRAY_LENGTH
+        );
     }
 
     let len = array.len();
