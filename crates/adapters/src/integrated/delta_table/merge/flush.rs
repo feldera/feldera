@@ -21,8 +21,10 @@
 //! removal keys are held as encoded bytes, one chunk at a time.
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use anyhow::{Result as AnyResult, anyhow};
 use arrow::datatypes::{Field as ArrowField, Schema as ArrowSchema};
@@ -59,6 +61,46 @@ const APPEND_CHUNK_ROWS: usize = 100_000;
 /// batch, so keys are gathered into one first.
 const KEY_BATCH_ROWS: usize = 8192;
 
+/// Where one flush's wall time went.
+///
+/// The fields below are disjoint spans of the same sequential flush, so they sum to at most
+/// `total`; [`Self::other`] is the remainder.  A flush reports minutes against a large table
+/// and the counters alone cannot say which phase spent them.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct FlushTimings {
+    /// The whole flush, including every phase below.
+    pub total: Duration,
+    /// Walking the Delta log: once to build the probe's candidate list, once after the
+    /// commit to count the table's rows.  Grows with the table's file count, not the batch.
+    pub log_scan: Duration,
+    /// Locating the rows to supersede, summed over every lookup pass.
+    pub probe: Duration,
+    /// Encoding appended rows to parquet and streaming them to the object store.
+    pub append: Duration,
+    /// Reading, merging and writing the deletion vectors.
+    pub deletion_vectors: Duration,
+    /// Writing the commit to the Delta log.
+    pub commit: Duration,
+}
+
+impl FlushTimings {
+    /// What the phases above do not account for: the walk over the batch, which serializes
+    /// each row and encodes each key.
+    pub fn other(&self) -> Duration {
+        self.total.saturating_sub(
+            self.log_scan + self.probe + self.append + self.deletion_vectors + self.commit,
+        )
+    }
+}
+
+/// Runs `f`, adding its wall time to `slot`.
+async fn timed<T, F: Future<Output = T>>(slot: &mut Duration, f: F) -> T {
+    let start = Instant::now();
+    let value = f.await;
+    *slot += start.elapsed();
+    value
+}
+
 /// What one flush did. Reported to the controller and asserted on by the tests.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct FlushMetrics {
@@ -79,6 +121,7 @@ pub struct FlushMetrics {
     pub table_live_rows: u64,
     /// Rows in the table that a deletion vector covers, after this flush.
     pub table_superseded_rows: u64,
+    pub timings: FlushTimings,
 }
 
 /// Everything a flush needs that outlives it.
@@ -158,10 +201,40 @@ impl MergeWriter {
         progress: &AtomicU64,
     ) -> Result<FlushMetrics, WriteError> {
         let mut metrics = FlushMetrics::default();
+        let started = Instant::now();
+        let result = self
+            .flush_phases(
+                table,
+                object_store,
+                cursor,
+                retrying,
+                on_uniqueness_violation,
+                progress,
+                &mut metrics,
+            )
+            .await;
+        metrics.timings.total = started.elapsed();
+        result.map(|()| metrics)
+    }
 
+    /// The flush itself. Split out so [`Self::flush`] times the whole of it in one place,
+    /// including whatever a failure ran before it gave up.
+    #[allow(clippy::too_many_arguments)]
+    async fn flush_phases(
+        &self,
+        table: &mut DeltaTable,
+        object_store: ObjectStoreRef,
+        cursor: &mut dyn SerCursor,
+        retrying: bool,
+        on_uniqueness_violation: &mut dyn FnMut(anyhow::Error),
+        progress: &AtomicU64,
+        metrics: &mut FlushMetrics,
+    ) -> Result<(), WriteError> {
         // The snapshot the lookup runs against. The commit declares it as its read version,
         // so a conflicting change to these files is caught rather than overwritten.
+        let scan_started = Instant::now();
         let candidates = self.snapshot_files(table)?;
+        metrics.timings.log_scan += scan_started.elapsed();
 
         let mut appends = self.append_writer(object_store);
         let mut rows = ArrayBuilder::new(self.row_serde_schema.clone()).map_err(|e| {
@@ -190,7 +263,7 @@ impl MergeWriter {
             if self.needs_lookup(&op, retrying) {
                 // A flattened cursor reads its key out of the current value.
                 cursor.rewind_vals();
-                keys.push(cursor, &mut metrics).await?;
+                keys.push(cursor, metrics).await?;
             }
 
             if matches!(
@@ -205,7 +278,11 @@ impl MergeWriter {
                 metrics.rows_appended += 1;
 
                 if buffered_rows >= APPEND_CHUNK_ROWS {
-                    write_rows(&mut rows, &mut appends).await?;
+                    timed(
+                        &mut metrics.timings.append,
+                        write_rows(&mut rows, &mut appends),
+                    )
+                    .await?;
                     progress.fetch_add(buffered_rows as u64, Ordering::Relaxed);
                     buffered_rows = 0;
                 }
@@ -215,25 +292,30 @@ impl MergeWriter {
         }
 
         if buffered_rows > 0 {
-            write_rows(&mut rows, &mut appends).await?;
+            timed(
+                &mut metrics.timings.append,
+                write_rows(&mut rows, &mut appends),
+            )
+            .await?;
             progress.fetch_add(buffered_rows as u64, Ordering::Relaxed);
         }
-        let tombstones = keys.finish(&mut metrics).await?;
+        let tombstones = keys.finish(metrics).await?;
 
         // Transient: the writer streamed data files to the object store, so a failure here
         // is I/O.  It cannot be retried in place, only by redoing the flush.
-        let added = appends
-            .close()
+        let added = timed(&mut metrics.timings.append, appends.close())
             .await
             .map_err(|e| transient(format!("error closing the Delta writer: {e:?}")))?;
         metrics.files_appended = added.len();
         metrics.bytes_written = added.iter().map(|a| a.size.max(0) as u64).sum();
 
-        self.commit(table, added, tombstones, &mut metrics).await?;
+        self.commit(table, added, tombstones, metrics).await?;
         // Counted too, or a delete-only flush reports no progress while it is working.
         progress.fetch_add(metrics.dv.rows_tombstoned, Ordering::Relaxed);
-        count_table_rows(table, &mut metrics);
-        Ok(metrics)
+        let scan_started = Instant::now();
+        count_table_rows(table, metrics);
+        metrics.timings.log_scan += scan_started.elapsed();
+        Ok(())
     }
 
     /// Whether the row this operation supersedes has to be located in the table.
@@ -317,7 +399,11 @@ impl MergeWriter {
         tombstones: Tombstones,
         metrics: &mut FlushMetrics,
     ) -> Result<(), WriteError> {
-        let dv = write_deletion_vectors(&tombstones, table).await?;
+        let dv = timed(
+            &mut metrics.timings.deletion_vectors,
+            write_deletion_vectors(&tombstones, table),
+        )
+        .await?;
         metrics.dv = dv.metrics;
         metrics.bytes_written += dv.metrics.dv_bytes as u64;
 
@@ -331,14 +417,17 @@ impl MergeWriter {
         // Transient: a commit fails when it loses a conflict to concurrent maintenance, or
         // when the log write itself fails.  Both want the flush redone against the table as
         // it now stands, which is the caller's retry.
-        commit_actions(
-            table,
-            actions,
-            DeltaOperation::Write {
-                mode: SaveMode::Append,
-                partition_by: None,
-                predicate: None,
-            },
+        timed(
+            &mut metrics.timings.commit,
+            commit_actions(
+                table,
+                actions,
+                DeltaOperation::Write {
+                    mode: SaveMode::Append,
+                    partition_by: None,
+                    predicate: None,
+                },
+            ),
         )
         .await
         // Kept whole rather than re-wrapped, so the commit's own context survives.
@@ -499,14 +588,17 @@ impl<'a> KeyChunk<'a> {
 
     async fn run_lookup(&mut self, metrics: &mut FlushMetrics) -> Result<(), WriteError> {
         self.chunk.sort();
-        let probed = locate(
-            &self.chunk,
-            self.candidates,
-            self.table,
-            &self.writer.key_encoder,
-            self.writer.max_concurrent_probes,
-            Pruning::new(self.writer.prune_on_stats, self.partitions.as_ref()),
-            &mut self.tombstones,
+        let probed = timed(
+            &mut metrics.timings.probe,
+            locate(
+                &self.chunk,
+                self.candidates,
+                self.table,
+                &self.writer.key_encoder,
+                self.writer.max_concurrent_probes,
+                Pruning::new(self.writer.prune_on_stats, self.partitions.as_ref()),
+                &mut self.tombstones,
+            ),
         )
         .await?;
 

@@ -12,6 +12,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use std::time::Duration;
 
 use arrow::array::{Int64Array, StringArray};
 use arrow::compute::kernels::cast::cast;
@@ -527,4 +528,49 @@ async fn an_update_across_partitions_supersedes_the_old_row() {
         live_rows(&table).await,
         HashMap::from([(2, "b".to_string())]),
     );
+}
+
+/// Every phase of a flush is timed, and the phases add up to the whole.
+///
+/// The timings drive the connector's phase metrics, which is how an operator tells a slow
+/// probe from a slow commit. A timer left unwired reports that phase as free, and no other
+/// test would notice: `other()` would silently absorb it.
+#[tokio::test]
+async fn a_flush_times_every_phase_it_runs() {
+    let dir = TempDir::new().unwrap();
+    let mut table = create_table(&dir).await;
+    let (writer, _) = writer_for(&table);
+
+    apply(&writer, &mut table, &[Change::Insert(1, "a".into())]).await;
+    // An update runs every phase: it probes for the old row, appends the new one, writes a
+    // deletion vector, and commits.
+    let t = apply_attempt(
+        &writer,
+        &mut table,
+        &[Change::Update(1, "a".into(), "b".into())],
+        false,
+    )
+    .await
+    .timings;
+
+    for (name, phase) in [
+        ("log_scan", t.log_scan),
+        ("probe", t.probe),
+        ("append", t.append),
+        ("deletion_vectors", t.deletion_vectors),
+        ("commit", t.commit),
+    ] {
+        assert!(
+            phase > Duration::ZERO,
+            "phase '{name}' was not timed, out of {t:?}"
+        );
+    }
+
+    let phases = t.log_scan + t.probe + t.append + t.deletion_vectors + t.commit;
+    assert!(
+        phases <= t.total,
+        "the phases overlap or exceed the flush: {phases:?} of {:?}",
+        t.total
+    );
+    assert_eq!(t.other(), t.total - phases);
 }
