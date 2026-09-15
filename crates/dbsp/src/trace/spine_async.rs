@@ -66,14 +66,14 @@ use std::{
     future::Future,
     sync::{
         Arc,
-        atomic::{AtomicIsize, AtomicU32},
+        atomic::{AtomicIsize, AtomicU32, AtomicUsize},
     },
 };
 use std::{
     collections::BTreeMap,
     time::{Duration, Instant},
 };
-use std::{collections::VecDeque, sync::atomic::Ordering};
+use std::{collections::VecDeque, pin::pin, sync::atomic::Ordering};
 use std::{
     fmt::{self, Debug, Display, Formatter},
     sync::Condvar,
@@ -793,6 +793,9 @@ where
 
     /// The background mergers.
     merge_workers: Arc<MergeWorkers<B>>,
+
+    /// Pauses those mergers; see [`Spine::pause_merging`].
+    merge_pause: Arc<MergePause>,
 }
 
 impl<B> AsyncMerger<B>
@@ -825,6 +828,8 @@ where
             "max_level0_batch_size_records must be less than or equal to 99_999"
         );
 
+        let merge_pause = Arc::new(MergePause::default());
+
         Self {
             merge_workers: Arc::new(MergeWorkers::new(
                 state.clone(),
@@ -833,11 +838,13 @@ where
                 runtime,
                 max_level0_batch_size_records,
                 worker_index,
+                merge_pause.clone(),
             )),
             state,
             idle,
             no_backpressure,
             max_level0_batch_size_records,
+            merge_pause,
         }
     }
 
@@ -999,6 +1006,14 @@ where
         let not_merging = state.take_loose_batches();
         let merging = state.get_batches();
         (not_merging, merging)
+    }
+
+    /// Pauses merging until the returned guard is dropped, leaving the batches
+    /// where they are.  Unlike [Self::pause], this does not wait for in-flight
+    /// merges: they stop at their next yield and resume where they left off.
+    fn pause_merging(&self) -> MergePauseGuard {
+        self.merge_pause.pause();
+        MergePauseGuard(self.merge_pause.clone())
     }
 
     /// Starts merging again with `batches`, which are presumably what
@@ -1298,9 +1313,88 @@ where
         self.no_backpressure.notify_waiters();
         self.state.lock().unwrap().request_exit = true;
 
+        // A merger parked on the pause switch is listening to neither the slot
+        // notifications below nor `request_exit`, so lift the pause first.
+        self.merge_pause.force_resume();
+
         for level in 0..MAX_LEVELS {
             self.state.lock().unwrap().slots[level].notify.notify_one();
         }
+    }
+}
+
+/// A pause switch for one spine's background mergers.
+///
+/// Merger tasks read it where they yield, so a pause takes hold within one fuel
+/// quantum instead of waiting for an in-flight merge to run to completion.
+///
+/// The count is what makes overlapping pauses safe: merging resumes when the
+/// last [`MergePauseGuard`] goes away, not the first.
+#[derive(Debug, Default)]
+struct MergePause {
+    /// Outstanding [`MergePauseGuard`]s.
+    depth: AtomicUsize,
+
+    /// Notified when `depth` reaches zero.
+    resumed: Notify,
+}
+
+impl MergePause {
+    fn is_paused(&self) -> bool {
+        self.depth.load(Ordering::Acquire) > 0
+    }
+
+    fn pause(&self) {
+        self.depth.fetch_add(1, Ordering::AcqRel);
+    }
+
+    fn resume(&self) {
+        // Saturating, because `force_resume` zeroes the count with guards still
+        // outstanding and each of those still decrements on its way out.
+        let previous = self
+            .depth
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |depth| {
+                Some(depth.saturating_sub(1))
+            });
+        if previous == Ok(1) {
+            self.resumed.notify_waiters();
+        }
+    }
+
+    /// Lifts every outstanding pause, so that a merger parked in
+    /// [`Self::wait_while_paused`] wakes up and can see `request_exit`.
+    fn force_resume(&self) {
+        if self.depth.swap(0, Ordering::AcqRel) > 0 {
+            self.resumed.notify_waiters();
+        }
+    }
+
+    /// Parks the calling merger task for as long as merging is paused.
+    async fn wait_while_paused(&self) {
+        while self.is_paused() {
+            // Registering interest before the final check is what keeps a
+            // resume landing in between from being missed: `notify_waiters`
+            // wakes only the waiters already enqueued, and `Notified` enqueues
+            // on `enable` rather than on creation.
+            let mut resumed = pin!(self.resumed.notified());
+            resumed.as_mut().enable();
+            if !self.is_paused() {
+                break;
+            }
+            resumed.await;
+        }
+    }
+}
+
+/// Holds a spine's background merging paused; see [`Spine::pause_merging`].
+///
+/// Merging resumes when this is dropped.
+#[derive(Debug)]
+pub struct MergePauseGuard(Arc<MergePause>);
+
+impl Drop for MergePauseGuard {
+    fn drop(&mut self) {
+        self.0.resume();
     }
 }
 
@@ -1327,6 +1421,7 @@ where
     runtime: Runtime,
     max_level0_batch_size_records: usize,
     worker_index: usize,
+    merge_pause: Arc<MergePause>,
 }
 
 impl<B> MergeWorkers<B>
@@ -1340,6 +1435,7 @@ where
         runtime: Runtime,
         max_level0_batch_size_records: usize,
         worker_index: usize,
+        merge_pause: Arc<MergePause>,
     ) -> Self {
         Self {
             workers_started: AtomicU32::new(0),
@@ -1350,6 +1446,7 @@ where
             runtime,
             max_level0_batch_size_records,
             worker_index,
+            merge_pause,
         }
     }
 
@@ -1390,6 +1487,13 @@ where
                     let notify = self.state.lock().unwrap().slots[level].notify.clone();
 
                     loop {
+                        // At the top of the cycle, which is both after every
+                        // yield below and before this task's first quantum: a
+                        // level's task is spawned when a batch arrives, so a
+                        // pause already in force has to stop it before it
+                        // merges anything at all.
+                        self.merge_pause.wait_while_paused().await;
+
                         let work = self.merge_step(&mut merger, merger_type, level);
 
                         {
@@ -1722,6 +1826,25 @@ where
 {
     pub fn get_batches(&self) -> Vec<Arc<B>> {
         self.merger.get_batches()
+    }
+
+    /// Pauses this spine's background merging until the returned guard is
+    /// dropped.
+    ///
+    /// Merger tasks check the pause where they yield, so it takes hold within
+    /// one fuel quantum rather than at the end of an in-flight merge.  A paused
+    /// merge resumes from where it stopped.  Nothing else about the spine
+    /// changes: it still answers cursors and still accepts batches, which
+    /// simply accumulate unmerged.
+    ///
+    /// Two things must not happen to a spine while it is paused, because both
+    /// wait on merging progress that will not come:
+    ///
+    /// - [`Trace::consolidate`], which waits for in-flight merges to finish.
+    /// - Inserting enough batches to trigger backpressure, which waits for the
+    ///   loose-batch count to fall.
+    pub fn pause_merging(&self) -> MergePauseGuard {
+        self.merger.pause_merging()
     }
 }
 
@@ -2845,5 +2968,255 @@ mod merge_threshold_test {
                 "level {level}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod merge_pause_test {
+    use super::{MergePause, MIN_LEVEL0_MERGE_BATCHES};
+    use crate::{
+        algebra::{OrdZSet, OrdZSetFactories},
+        dynamic::{DynData, Erase, LeanVec},
+        trace::{
+            Batch, BatchReaderFactories, Spine, Trace, TraceRole, test::run_in_circuit_with_storage,
+        },
+        utils::Tup2,
+        ZWeight,
+    };
+    use std::{sync::Arc, thread::sleep, time::{Duration, Instant}};
+
+    /// How long a merger is given to do something observable.  Generous,
+    /// because it only bounds the failure case: the assertions that follow a
+    /// wait either pass early or the test is genuinely wrong.
+    const MERGE_WINDOW: Duration = Duration::from_secs(5);
+
+    #[test]
+    fn pause_counts_rather_than_toggles() {
+        let pause = MergePause::default();
+        assert!(!pause.is_paused());
+
+        pause.pause();
+        pause.pause();
+        assert!(pause.is_paused());
+
+        // One guard going away must not speak for the other.
+        pause.resume();
+        assert!(pause.is_paused());
+
+        pause.resume();
+        assert!(!pause.is_paused());
+    }
+
+    #[test]
+    fn force_resume_lifts_every_pause() {
+        let pause = MergePause::default();
+        pause.pause();
+        pause.pause();
+
+        pause.force_resume();
+        assert!(!pause.is_paused());
+
+        // The guards still outstanding each decrement on their way out, and
+        // must not wrap the count back around into "paused".
+        pause.resume();
+        pause.resume();
+        assert!(!pause.is_paused());
+    }
+
+    #[tokio::test]
+    async fn waiting_on_an_unpaused_switch_returns_at_once() {
+        let pause = MergePause::default();
+        pause.wait_while_paused().await;
+    }
+
+    #[tokio::test]
+    async fn a_resume_wakes_the_waiter() {
+        let pause = Arc::new(MergePause::default());
+        pause.pause();
+
+        let waiter = tokio::spawn({
+            let pause = pause.clone();
+            async move { pause.wait_while_paused().await }
+        });
+
+        // Let the waiter reach the park before resuming, so this exercises the
+        // notification rather than the early-exit check above.
+        tokio::task::yield_now().await;
+        pause.resume();
+
+        tokio::time::timeout(MERGE_WINDOW, waiter)
+            .await
+            .expect("a resume must wake a parked waiter")
+            .unwrap();
+    }
+
+    fn zset_factories() -> OrdZSetFactories<DynData> {
+        OrdZSetFactories::new::<i32, (), ZWeight>()
+    }
+
+    /// A single-record batch, small enough to stay in level 0.
+    fn batch(factories: &OrdZSetFactories<DynData>, key: i32) -> OrdZSet<DynData> {
+        let mut tuples =
+            Box::new(LeanVec::from(vec![Tup2(Tup2(key, ()), 1 as ZWeight)])).erase_box();
+        OrdZSet::dyn_from_tuples(factories, (), &mut tuples)
+    }
+
+    /// Fills a spine with enough batches that its merger has work to do.
+    fn fill(spine: &mut Spine<OrdZSet<DynData>>) -> usize {
+        let factories = zset_factories();
+        let batches = MIN_LEVEL0_MERGE_BATCHES * 2;
+        for key in 0..batches {
+            spine.insert_without_blocking(batch(&factories, key as i32));
+        }
+        batches
+    }
+
+    /// Waits until the spine holds fewer than `batches` batches, returning
+    /// whether it got there inside [`MERGE_WINDOW`].
+    ///
+    /// Polls tightly, so that a caller that pauses on the way out catches
+    /// merging early rather than most of the way through.
+    fn merged_within_window(spine: &Spine<OrdZSet<DynData>>, batches: usize) -> bool {
+        let deadline = Instant::now() + MERGE_WINDOW;
+        while Instant::now() < deadline {
+            if spine.get_batches().len() < batches {
+                return true;
+            }
+            sleep(Duration::from_millis(1));
+        }
+        false
+    }
+
+    /// Waits for the spine's batch count to stop moving, and returns it.
+    ///
+    /// A pause lands between fuel quanta, and the quantum in flight when it
+    /// landed still runs to its end.  Finishing a merge means building its
+    /// output batch, which is not fuel-limited, so the count can keep moving
+    /// for a while after a pause: wait that out rather than assume a settling
+    /// time.
+    fn settled_batch_count(spine: &Spine<OrdZSet<DynData>>) -> usize {
+        const QUIET: Duration = Duration::from_secs(1);
+
+        let deadline = Instant::now() + MERGE_WINDOW * 3;
+        let mut count = spine.get_batches().len();
+        let mut unchanged_since = Instant::now();
+        while Instant::now() < deadline {
+            sleep(Duration::from_millis(20));
+            let now = spine.get_batches().len();
+            if now != count {
+                count = now;
+                unchanged_since = Instant::now();
+            } else if unchanged_since.elapsed() >= QUIET {
+                return count;
+            }
+        }
+        panic!("the spine's batch count never settled");
+    }
+
+    /// Unlike [`super::AsyncMerger::pause`], this pause does not wait for an
+    /// in-flight merge to finish: the mergers stop at their next yield.
+    ///
+    /// Pausing mergers that are already running is the case that separates the
+    /// two, so this fills the spine first and only then pauses.  The batches
+    /// added afterwards are what makes the assertion mean something: an
+    /// unpaused spine merges any level-0 slot holding
+    /// [`MIN_LEVEL0_MERGE_BATCHES`], which the control test confirms.
+    #[test]
+    fn pause_merging_stops_mergers_already_running() {
+        run_in_circuit_with_storage(|| {
+            let mut spine = Spine::new(
+                &zset_factories(),
+                Arc::new(String::from("merge_pause_test")),
+                TraceRole::Integral,
+            );
+            let batches = fill(&mut spine);
+            assert!(
+                merged_within_window(&spine, batches),
+                "merging never started, so there were no running mergers to stop"
+            );
+
+            let guard = spine.pause_merging();
+            let settled = settled_batch_count(&spine);
+
+            // Plenty of fresh work, all of it loose and all of it at level 0.
+            let added = fill(&mut spine);
+            let expected = settled + added;
+            sleep(MERGE_WINDOW);
+            assert_eq!(
+                spine.get_batches().len(),
+                expected,
+                "a paused spine merged the {added} batches added after the pause"
+            );
+
+            drop(guard);
+            assert!(
+                merged_within_window(&spine, expected),
+                "merging did not restart when the pause was lifted"
+            );
+        });
+    }
+
+    /// The control for [`pause_merging_stops_the_mergers`]: the same spine,
+    /// filled the same way, must merge when nothing holds it back.  Without
+    /// this, a pause that "worked" because merging never started at all would
+    /// pass unnoticed.
+    #[test]
+    fn an_unpaused_spine_merges() {
+        run_in_circuit_with_storage(|| {
+            let mut spine = Spine::new(
+                &zset_factories(),
+                Arc::new(String::from("merge_pause_test")),
+                TraceRole::Integral,
+            );
+            let batches = fill(&mut spine);
+            assert!(
+                merged_within_window(&spine, batches),
+                "a spine with {batches} loose batches merged none of them in {MERGE_WINDOW:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn pause_merging_stops_the_mergers() {
+        run_in_circuit_with_storage(|| {
+            let mut spine = Spine::new(
+                &zset_factories(),
+                Arc::new(String::from("merge_pause_test")),
+                TraceRole::Integral,
+            );
+            let guard = spine.pause_merging();
+            let batches = fill(&mut spine);
+
+            assert!(
+                !merged_within_window(&spine, batches),
+                "a paused spine merged: {} batches left of {batches}",
+                spine.get_batches().len()
+            );
+
+            drop(guard);
+            assert!(
+                merged_within_window(&spine, batches),
+                "merging did not restart when the pause was lifted"
+            );
+        });
+    }
+
+    /// Dropping a spine whose mergers are parked on the pause switch must not
+    /// hang: they are listening to neither `request_exit` nor the slot
+    /// notifications while parked.
+    #[test]
+    fn dropping_a_paused_spine_does_not_hang() {
+        run_in_circuit_with_storage(|| {
+            let mut spine = Spine::new(
+                &zset_factories(),
+                Arc::new(String::from("merge_pause_test")),
+                TraceRole::Integral,
+            );
+            let guard = spine.pause_merging();
+            fill(&mut spine);
+
+            drop(spine);
+            drop(guard);
+        });
     }
 }
