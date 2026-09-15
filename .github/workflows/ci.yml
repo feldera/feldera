@@ -3,6 +3,11 @@ name: Merge Queue Tasks
 on:
   merge_group:
   workflow_dispatch:
+  # Nightly full run of main. The `changes` job below can skip jobs in the
+  # merge queue; this run ignores it, so a wrong path rule surfaces within a
+  # day rather than staying hidden.
+  schedule:
+    - cron: "0 6 * * *"
 
 jobs:
   # HOW JOBS ARE STRUCTURED IN THIS FILE
@@ -27,65 +32,127 @@ jobs:
   # jobs, so invoke-build-docker lists it in `needs:` and checks its result in
   # `if:`. Without that explicit gate, the Docker build can start before the
   # cancel propagates and waste expensive runner time.
+  #
+  # SKIPPING JOBS BY CHANGED PATHS
+  #
+  # The `changes` job classifies the merge-group diff into buckets (see
+  # .github/scripts/classify-changes.sh). Each invoke-* job runs when
+  # `all` is true or when one of its buckets is. Every job's `needs` are
+  # themselves in its buckets, so a job never waits on a skipped upstream and
+  # the implicit success() check on `needs` keeps working. The `main` gate
+  # already treats `skipped` as success.
+  #
+  # Skipping is enforced only when the repository variable
+  # CI_PATH_FILTER_ENFORCE is 'true'. Otherwise `all` is forced to true and the
+  # job summary reports what would have been skipped, so the rules can be
+  # checked against real runs first. Scheduled and dispatched runs, and any
+  # PR in the group labelled `ci:full`, always run everything.
+  changes:
+    name: Classify Changes
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      all: ${{ steps.classify.outputs.all }}
+      docs: ${{ steps.classify.outputs.docs }}
+      web_console: ${{ steps.classify.outputs.web_console }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          # The diff base is on main; the merge-group checkout alone has no
+          # history back to it.
+          fetch-depth: 0
+      - name: Test the classifier
+        run: .github/scripts/classify-changes.test.sh
+      - name: Classify the diff
+        id: classify
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          .github/scripts/classify-changes.sh \
+            --enforce "${{ vars.CI_PATH_FILTER_ENFORCE || 'false' }}" \
+            --base "${{ github.event.merge_group.base_sha }}" \
+            --head "${{ github.event.merge_group.head_sha }}"
+
   invoke-build-rust:
     name: Build Rust
+    needs: [changes]
+    # The web console is embedded into pipeline-manager, so frontend changes
+    # rebuild Rust.
+    if: needs.changes.outputs.all == 'true' || needs.changes.outputs.web_console == 'true'
     uses: ./.github/workflows/build-rust.yml
     secrets: inherit
 
   invoke-build-java:
     name: Build Java
+    needs: [changes]
+    # Build Docker copies the compiler jar, and the frontend bucket builds
+    # the image.
+    if: needs.changes.outputs.all == 'true' || needs.changes.outputs.web_console == 'true'
     uses: ./.github/workflows/build-java.yml
     secrets: inherit
 
   invoke-build-docs:
     name: Build Docs
+    needs: [changes]
+    if: needs.changes.outputs.all == 'true' || needs.changes.outputs.docs == 'true'
     uses: ./.github/workflows/build-docs.yml
     secrets: inherit
 
   invoke-tests-web-console-unit:
     name: Web Console Unit Tests
+    needs: [changes]
+    if: needs.changes.outputs.all == 'true' || needs.changes.outputs.web_console == 'true'
     uses: ./.github/workflows/test-web-console-unit.yml
     secrets: inherit
 
   invoke-tests-unit:
     name: Unit Tests
-    needs: [invoke-build-rust, invoke-build-java]
+    needs: [changes, invoke-build-rust, invoke-build-java]
+    if: needs.changes.outputs.all == 'true'
     uses: ./.github/workflows/test-unit.yml
     secrets: inherit
 
   invoke-tests-adapter:
     name: Adapter Tests
-    needs: [invoke-build-rust]
+    needs: [changes, invoke-build-rust]
+    if: needs.changes.outputs.all == 'true'
     uses: ./.github/workflows/test-adapters.yml
     secrets: inherit
 
   invoke-build-docker:
     name: Build Docker
-    needs: [invoke-build-rust, invoke-build-java, invoke-tests-web-console-unit]
+    needs: [changes, invoke-build-rust, invoke-build-java, invoke-tests-web-console-unit]
+    if: needs.changes.outputs.all == 'true' || needs.changes.outputs.web_console == 'true'
     uses: ./.github/workflows/build-docker.yml
     secrets: inherit
 
   invoke-generate-sbom:
     name: Generate SBOMs
-    needs: [invoke-build-docker]
+    needs: [changes, invoke-build-docker]
+    if: needs.changes.outputs.all == 'true'
     uses: ./.github/workflows/generate-sbom.yml
     secrets: inherit
 
   invoke-tests-web-console-e2e:
     name: Web Console End-to-End Tests
-    needs: [invoke-build-docker]
+    needs: [changes, invoke-build-docker]
+    if: needs.changes.outputs.all == 'true' || needs.changes.outputs.web_console == 'true'
     uses: ./.github/workflows/test-web-console-e2e.yml
     secrets: inherit
 
   invoke-tests-integration-platform:
     name: Integration Tests
-    needs: [invoke-build-docker]
+    needs: [changes, invoke-build-docker]
+    if: needs.changes.outputs.all == 'true'
     uses: ./.github/workflows/test-integration-platform.yml
     secrets: inherit
 
   invoke-tests-integration-runtime:
     name: Integration Tests
-    needs: [invoke-build-java]
+    needs: [changes, invoke-build-java]
+    if: needs.changes.outputs.all == 'true'
     uses: ./.github/workflows/test-integration-runtime.yml
     # A called workflow gets no more than the calling job grants, and the
     # runtime tests authenticate to the CI instances with an OIDC token.
@@ -96,13 +163,15 @@ jobs:
 
   invoke-tests-java:
     name: Java Tests
-    needs: [invoke-build-java]
+    needs: [changes, invoke-build-java]
+    if: needs.changes.outputs.all == 'true'
     uses: ./.github/workflows/test-java.yml
     secrets: inherit
 
   invoke-publish-crates-dry-run:
     name: Publish Crates (Dry Run)
-    needs: [invoke-build-rust]
+    needs: [changes, invoke-build-rust]
+    if: needs.changes.outputs.all == 'true'
     uses: ./.github/workflows/publish-crates.yml
     with:
       environment: ci
@@ -295,6 +364,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest-amd64
     needs:
+      - changes
       - invoke-build-rust
       - invoke-build-java
       - invoke-build-docs
