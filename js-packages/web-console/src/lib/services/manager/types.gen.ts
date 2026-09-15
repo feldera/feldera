@@ -1887,6 +1887,17 @@ export type DevTweaks = {
    */
   integral_merge_threshold_batches?: number | null
   /**
+   * How many data blocks a layer-file cursor that declared a sequential
+   * walk reads ahead of its position.
+   *
+   * Each block a cursor steps into that the buffer cache does not hold is a
+   * device round trip the worker waits out, and a key column is a strided
+   * subset of its file that the kernel's readahead never serves.  Reading
+   * ahead this many blocks keeps that many round trips in flight.  Zero
+   * disables it.  The default is 8.
+   */
+  layer_file_read_ahead_blocks?: number | null
+  /**
    * How many keys a lazy input map resolves against its integral in one step.
    *
    * The lazy upsert operator may scan a large number of keys without
