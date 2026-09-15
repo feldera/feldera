@@ -106,6 +106,9 @@ Controls which Kubernetes secrets can be mounted in connectors via [secret refer
 |-----|---------|-------------|
 | `compilerPvcStorageSize` | `20Gi` | Size of the persistent volume used by the compiler server for build artifacts. |
 | `compilationProfile` | `"optimized"` | Default compilation profile. `"optimized"` produces faster pipelines at the cost of longer compile times. See [pipeline configuration](/pipelines/configuration) for available profiles. |
+| `compilerServer.cargo.config` | `null` | **Experimental.** Cargo configuration for pipeline builds, in `config.toml` format. See the [private cargo registry guide](./private-cargo-registry.md). The values may change incompatibly across Feldera upgrades. |
+| `compilerServer.serviceAccountAnnotations` | `[]` | **Experimental.** Annotations on the ServiceAccount the chart creates, as `key`/`value` pairs. Gives the compiler pods a cloud identity, such as an IRSA role. |
+| `compilerServer.serviceAccountName` | `null` | **Experimental.** An existing ServiceAccount to run the compiler under. Mutually exclusive with `compilerServer.serviceAccountAnnotations`. |
 
 ---
 

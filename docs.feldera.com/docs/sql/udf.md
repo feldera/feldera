@@ -122,6 +122,8 @@ datatypes.  The next section explains what these types are.
 If your UDF uses external crates, list these external dependencies in `udf.toml`.
 The contents of this file are appended to the `[dependencies]` section in the generated
 `Cargo.toml` file.
+A crate from a private registry takes a `registry` key naming a registry the
+deployment defines; see [private cargo registry](/get-started/enterprise/private-cargo-registry).
 
 ```toml
 base64 = "0.22.1"
