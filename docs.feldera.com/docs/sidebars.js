@@ -73,6 +73,7 @@ const installation = {
                 },
                 'get-started/enterprise/https',
                 'get-started/enterprise/parallel-compilation',
+                'get-started/enterprise/private-cargo-registry',
             ]
         }
     ]
