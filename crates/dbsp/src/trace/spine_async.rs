@@ -6,6 +6,7 @@
 //! The cost of these operations grows with the number of batches in the vector,
 //! so it is beneficial to reduce the number by merging batches.
 
+use crate::trace::AccessHint;
 use crate::{
     Error, NumEntries, Runtime,
     circuit::{
@@ -1991,6 +1992,10 @@ where
         SpineCursor::new_cursor(&self.factories, self.merger.get_batches())
     }
 
+    fn cursor_with_hint(&self, hint: AccessHint) -> Self::Cursor<'_> {
+        SpineCursor::new_cursor_with_hint(&self.factories, self.merger.get_batches(), hint)
+    }
+
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
         RG: Rng,
@@ -2066,12 +2071,31 @@ impl<B: Batch> Clone for SpineCursor<B> {
 
 impl<B: Batch> SpineCursor<B> {
     pub fn new_cursor(factories: &B::Factories, batches: Vec<Arc<B>>) -> Self {
+        Self::new_cursor_with_hint(factories, batches, AccessHint::Unknown)
+    }
+
+    /// A cursor over `batches` whose every batch cursor is told how it will
+    /// be moved; see [`AccessHint`].
+    ///
+    /// # Arguments
+    ///
+    /// * `factories` - factories for the batches.
+    /// * `batches` - the batches to read, newest last.
+    /// * `hint` - how the cursors will be moved; see [`AccessHint`].
+    pub fn new_cursor_with_hint(
+        factories: &B::Factories,
+        batches: Vec<Arc<B>>,
+        hint: AccessHint,
+    ) -> Self {
         SpineCursorBuilder {
             batches,
             cursor_builder: |batches| {
                 CursorList::new(
                     factories.weight_factory(),
-                    batches.iter().map(|batch| batch.cursor()).collect(),
+                    batches
+                        .iter()
+                        .map(|batch| batch.cursor_with_hint(hint))
+                        .collect(),
                 )
             },
         }

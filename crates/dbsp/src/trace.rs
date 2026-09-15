@@ -85,7 +85,7 @@ use crate::{
     dynamic::{DataTrait, DynPair, DynVec, DynWeightedPairs, Erase, Factory, WeightTrait},
     storage::file::reader::Error as ReaderError,
 };
-pub use cursor::{Cursor, MergeCursor};
+pub use cursor::{AccessHint, Cursor, MergeCursor};
 pub use filter::{BatchFilterStats, BatchFilters, Filter, GroupFilter};
 pub use layers::Trie;
 
@@ -490,6 +490,24 @@ where
     /// Acquires a cursor to the batch's contents.
     fn cursor(&self) -> Self::Cursor<'_>;
 
+    /// Acquires a cursor to the batch's contents, with an access hint.
+    ///
+    /// A file-backed batch reads ahead for a cursor that declared a
+    /// sequential walk; a batch that doesn't support the hint ignores it.
+    /// See [`AccessHint`].
+    ///
+    /// # Arguments
+    ///
+    /// * `hint` - how the cursor will be moved; see [`AccessHint`].
+    ///
+    /// # Returns
+    ///
+    /// A cursor over the batch, which may read ahead for the walk the hint declared.
+    fn cursor_with_hint(&self, hint: AccessHint) -> Self::Cursor<'_> {
+        let _ = hint;
+        self.cursor()
+    }
+
     /// Acquires a [PushCursor] for the batch's contents.
     fn push_cursor(
         &self,
@@ -774,6 +792,10 @@ where
     }
     fn cursor(&self) -> Self::Cursor<'_> {
         (**self).cursor()
+    }
+
+    fn cursor_with_hint(&self, hint: AccessHint) -> Self::Cursor<'_> {
+        (**self).cursor_with_hint(hint)
     }
     fn merge_cursor(
         &self,
