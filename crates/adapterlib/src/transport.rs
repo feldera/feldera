@@ -382,23 +382,25 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
         self.push_entry(entry, errors);
     }
 
-    /// Discards every queued entry and returns the auxiliary data of each.
+    /// Runs `release` on the auxiliary data of every queued entry, leaving the
+    /// entries themselves queued.
     ///
     /// A reader that is shutting down calls this to release whatever the
-    /// auxiliary data owns. The entries are not reaching the circuit any more,
-    /// so anything waiting on them has to be told rather than left waiting.
+    /// auxiliary data owns, so that a producer waiting on a queued entry is
+    /// told rather than left waiting.
     ///
-    /// The discarded records stay charged to the endpoint: they were reported
-    /// to the consumer when they were queued, and only a flush credits them
-    /// back. A caller therefore uses this when the endpoint is finished, never
-    /// to shed load from one that keeps running.
-    pub fn abandon(&self) -> Vec<A> {
-        self.queue
-            .lock()
-            .unwrap()
-            .drain(..)
-            .map(|entry| entry.aux)
-            .collect()
+    /// The entries stay queued because their records were reported to the
+    /// consumer by [`Self::push_entry`] and only a flush credits them back
+    /// through [`InputConsumer::extended`]. Discarding them would leave the
+    /// endpoint charged with records no step can consume, and the controller
+    /// keeps stepping for as long as an endpoint it polls reports records
+    /// buffered.
+    ///
+    /// `release` runs under the queue lock, so it must not queue anything.
+    pub fn release_aux(&self, mut release: impl FnMut(&mut A)) {
+        for entry in self.queue.lock().unwrap().iter_mut() {
+            release(&mut entry.aux);
+        }
     }
 
     /// Flushes a batch of records to the circuit and returns the auxiliary data

@@ -766,11 +766,18 @@ impl PostgresCdcInputInner {
             self.watcher_rx.lock().unwrap().take(),
             self.completion_task_rx.lock().unwrap().take(),
         ) {
-            (Some(watcher), Some(rx)) => Some(tokio::spawn(completion_watcher_task(
-                watcher,
-                rx,
-                self.endpoint_name.clone(),
-            ))),
+            (Some(watcher), Some(rx)) => {
+                let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+                Some(CompletionWatcher {
+                    shutdown_tx,
+                    handle: tokio::spawn(completion_watcher_task(
+                        watcher,
+                        rx,
+                        shutdown_rx,
+                        self.endpoint_name.clone(),
+                    )),
+                })
+            }
             _ => None,
         };
 
@@ -797,12 +804,12 @@ impl PostgresCdcInputInner {
                     &self.endpoint_name
                 );
                 self.shutdown_etl_pipeline();
-                abort_completion_watcher(&mut completion_handle).await;
+                stop_completion_watcher(&mut completion_handle).await;
                 (pipeline_wait.as_mut().await, false)
             }
             _ = table_error_monitor.run() => {
                 self.shutdown_etl_pipeline();
-                abort_completion_watcher(&mut completion_handle).await;
+                stop_completion_watcher(&mut completion_handle).await;
                 (pipeline_wait.as_mut().await, false)
             }
         };
@@ -822,7 +829,7 @@ impl PostgresCdcInputInner {
             }
         }
 
-        abort_completion_watcher(&mut completion_handle).await;
+        stop_completion_watcher(&mut completion_handle).await;
 
         self.consumer.eoi();
     }
@@ -838,14 +845,24 @@ impl PostgresCdcInputInner {
         if let Some(shutdown_tx) = self.etl_shutdown_tx.lock().unwrap().take() {
             let _ = shutdown_tx.shutdown();
         }
-        // A write whose rows are still queued waits on a step that will not
-        // come, and etl does not finish shutting down while it waits, which
-        // holds the replication slot open. Dropping the answers fails those
-        // writes instead. They were never acknowledged, so etl reads their
-        // rows again on the next start, and the error it records is the one
-        // `is_shutdown_error` rolls back.
-        drop(self.queue.abandon());
+        release_pending_answers(&self.queue);
     }
+}
+
+/// Fail every queued write by releasing the answer it waits on.
+///
+/// A write whose rows are still queued waits on a step that may not come, and
+/// etl does not finish shutting down while it waits, which holds the
+/// replication slot open. Releasing the answer fails the write instead: it was
+/// never acknowledged, so etl reads its rows again on the next start, and the
+/// error it records is the one `is_shutdown_error` rolls back.
+///
+/// The entries stay queued. Their records were charged to the endpoint when
+/// they were queued and only a flush credits them back, and a queued snapshot
+/// buffer is likewise still counted by the copy barrier until a flush reports
+/// it; see [`InputQueue::release_aux`].
+fn release_pending_answers(queue: &InputQueue<QueueAux>) {
+    queue.release_aux(|aux| drop(aux.ack.take()));
 }
 
 impl Drop for PostgresCdcInputInner {
@@ -1211,6 +1228,59 @@ struct FelderaDestination {
     stopping: Arc<AtomicBool>,
 }
 
+/// How a streamed write ends, once its rows are in the queue.
+///
+/// The choice is what ties etl's answer to the flush that carries the write's
+/// rows into the circuit (#7122); see [`write_ending`].
+#[derive(Debug, PartialEq, Eq)]
+enum WriteEnding {
+    /// Answer etl at once and queue nothing more.
+    ///
+    /// Either the write queued nothing at all, because it was an empty
+    /// durability barrier or carried only another table's events, or the
+    /// consumer reports no step to wait for. Deferring an empty write would
+    /// risk wedging etl, which pauses its intake while a streaming write is in
+    /// flight: with nothing in the queue, no step has to follow that would
+    /// answer it.
+    AnswerUnqueued,
+
+    /// Queue the write's last rows, then answer etl at once.
+    ///
+    /// The consumer reports no step to wait for, so the write is as durable as
+    /// it will ever be.
+    QueueTailAndAnswer,
+
+    /// Close the write with an entry carrying its acknowledgment.
+    ///
+    /// The entry holds the write's last rows, or none at all when the 2 MiB
+    /// push emptied the stream; either way it sits behind every other entry of
+    /// the write, which is what ties the answer to the flush that completes the
+    /// write rather than to whichever flush happens to run next. An entry
+    /// without rows still reaches the circuit: the queue asks the controller
+    /// for a step when it takes one, and drains it with the flush that popped
+    /// the entry before it.
+    QueueClosingAck,
+}
+
+/// Decide how a streamed write ends.
+///
+/// `queued` counts the buffers the write already pushed at the 2 MiB mark,
+/// `tail_rows` says whether rows or parse errors are still held back, and
+/// `defer_acks` says whether the consumer reports a step an answer can wait on.
+fn write_ending(queued: usize, tail_rows: bool, defer_acks: bool) -> WriteEnding {
+    if queued == 0 && !tail_rows {
+        return WriteEnding::AnswerUnqueued;
+    }
+    if !defer_acks {
+        return if tail_rows {
+            WriteEnding::QueueTailAndAnswer
+        } else {
+            WriteEnding::AnswerUnqueued
+        };
+    }
+    WriteEnding::QueueClosingAck
+}
+
 /// Per-entry auxiliary data on the input queue.
 #[derive(Default)]
 struct QueueAux {
@@ -1505,41 +1575,22 @@ impl Destination for FelderaDestination {
 
         let tail_rows = bytes > 0 || !errors.is_empty();
 
-        // A write that queued nothing, because it was an empty durability
-        // barrier or carried only another table's events, has nothing to wait
-        // for. Deferring it would also risk wedging etl, which pauses its
-        // intake while a streaming write is in flight: with nothing in the
-        // queue, no step has to follow that would answer it.
-        if queued == 0 && !tail_rows {
-            async_result.send(Ok(DestinationWriteStatus::Durable));
-            return Ok(());
-        }
-
-        if !self.defer_acks {
-            // The consumer reports no step to wait for, so the write is as
-            // durable as it will ever be.
-            if tail_rows {
-                self.push_event_buffer((stream.take_all(), errors), timestamp, None);
+        match write_ending(queued, tail_rows, self.defer_acks) {
+            WriteEnding::AnswerUnqueued => {
+                async_result.send(Ok(DestinationWriteStatus::Durable));
             }
-            async_result.send(Ok(DestinationWriteStatus::Durable));
-            return Ok(());
+            WriteEnding::QueueTailAndAnswer => {
+                self.push_event_buffer((stream.take_all(), errors), timestamp, None);
+                async_result.send(Ok(DestinationWriteStatus::Durable));
+            }
+            WriteEnding::QueueClosingAck => self.push_event_buffer(
+                (stream.take_all(), errors),
+                timestamp,
+                Some(Box::new(move || {
+                    async_result.send(Ok(DestinationWriteStatus::Durable))
+                })),
+            ),
         }
-
-        // Close the write with an entry carrying its acknowledgment. The entry
-        // holds the write's last rows, or none at all when the 2 MiB push above
-        // emptied the stream; either way it sits behind every other entry of
-        // the write, which is what ties the answer to the flush that completes
-        // the write rather than to whichever flush happens to run next (#7122).
-        // An entry without rows still reaches the circuit: `InputQueue` asks
-        // the controller for a step when it queues one, and drains it with the
-        // flush that popped the entry before it.
-        self.push_event_buffer(
-            (stream.take_all(), errors),
-            timestamp,
-            Some(Box::new(move || {
-                async_result.send(Ok(DestinationWriteStatus::Durable))
-            })),
-        );
 
         Ok(())
     }
@@ -1601,12 +1652,12 @@ impl FelderaDestination {
             },
         );
         // etl runs alongside the shutdown, so this push may land after the
-        // shutdown drained the queue, leaving an answer nothing will flush and
-        // etl waiting on it for good. A drain that missed this entry ran after
-        // the flag was raised, so this read sees the flag and drains the entry
-        // here instead.
+        // shutdown released the queued answers, leaving an answer nothing will
+        // flush and etl waiting on it for good. A release that missed this
+        // entry ran after the flag was raised, so this read sees the flag and
+        // releases the entry's answer here instead.
         if self.stopping.load(Ordering::SeqCst) {
-            drop(self.queue.abandon());
+            release_pending_answers(&self.queue);
         }
     }
 
@@ -2313,9 +2364,14 @@ impl WatcherReceiver {
 /// flush that earned those acknowledgments fed. The rows are in that step
 /// itself, and a frontier of `n` means the steps below `n` are durable, so the
 /// frontier has to pass `flush_step` strictly.
+///
+/// `shutdown_rx` stops the task, which then answers the writes the frontier
+/// has already passed and drops the rest, so a stop costs etl only the writes
+/// that are not durable.
 async fn completion_watcher_task(
     mut watcher: WatcherReceiver,
     mut pending_rx: mpsc::UnboundedReceiver<(u64, DeferredAcks)>,
+    mut shutdown_rx: tokio::sync::oneshot::Receiver<()>,
     endpoint_name: String,
 ) {
     let mut waiting: Vec<(u64, DeferredAcks)> = Vec::new();
@@ -2345,12 +2401,21 @@ async fn completion_watcher_task(
                     None => break, // Channel closed
                 }
             }
+            _ = &mut shutdown_rx => break,
         }
     }
 
-    // On shutdown, unanswered acknowledgments drop, and with them etl's result
-    // senders. AsyncResult's Drop impl reports the error that `is_shutdown_error`
-    // recognizes, so the next start rolls the table state back.
+    // Answer the writes the frontier has already passed, by the same rule the
+    // loop uses, and judge what the channel still holds by that rule too.
+    // Dropping the answer of a durable write makes etl record a manual retry,
+    // which rolls the table back to a state that is not a completed sync, and
+    // the next start reads the whole source table again.
+    answer_durable_on_stop(&mut waiting, &mut pending_rx, watcher.frontier());
+
+    // What is left is not durable. Those answers drop, and with them etl's
+    // result senders. AsyncResult's Drop impl reports the error that
+    // `is_shutdown_error` recognizes, so the next start rolls those writes
+    // back.
     debug!(
         "postgres_cdc {endpoint_name}: completion watcher exiting with {} pending entries",
         waiting.len()
@@ -2367,6 +2432,23 @@ fn flush_step(current_step: Option<u64>, completed_steps: Option<u64>) -> u64 {
     current_step.or(completed_steps).unwrap_or(0)
 }
 
+/// Answer the writes a stop finds durable, and leave the rest waiting.
+///
+/// An answer sent but not yet received is as durable as one already waiting,
+/// so a stop judges it by the same frontier rather than drop it. Closing the
+/// channel first bounds the drain: no send can enter it afterwards.
+fn answer_durable_on_stop(
+    waiting: &mut Vec<(u64, DeferredAcks)>,
+    pending_rx: &mut mpsc::UnboundedReceiver<(u64, DeferredAcks)>,
+    frontier: u64,
+) {
+    pending_rx.close();
+    while let Ok(entry) = pending_rx.try_recv() {
+        waiting.push(entry);
+    }
+    fire_completed(waiting, frontier);
+}
+
 /// Answers the writes whose rows the frontier has passed.
 fn fire_completed(waiting: &mut Vec<(u64, DeferredAcks)>, frontier: u64) {
     waiting.retain_mut(|(flush_step, acks)| {
@@ -2381,8 +2463,34 @@ fn fire_completed(waiting: &mut Vec<(u64, DeferredAcks)>, frontier: u64) {
     });
 }
 
-async fn abort_completion_watcher(handle: &mut Option<tokio::task::JoinHandle<()>>) {
-    if let Some(handle) = handle.take() {
+/// The completion watcher task and the signal that stops it.
+struct CompletionWatcher {
+    shutdown_tx: tokio::sync::oneshot::Sender<()>,
+    handle: tokio::task::JoinHandle<()>,
+}
+
+/// How long a stop waits for the watcher to answer its durable writes.
+const WATCHER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Stop the completion watcher, letting it answer the writes the frontier has
+/// already passed. Calling it again finds nothing to stop.
+async fn stop_completion_watcher(watcher: &mut Option<CompletionWatcher>) {
+    let Some(CompletionWatcher {
+        shutdown_tx,
+        mut handle,
+    }) = watcher.take()
+    else {
+        return;
+    };
+    // An error means the task has already returned on its own.
+    let _ = shutdown_tx.send(());
+    // The task answers without awaiting, so the timeout is a backstop that
+    // keeps a stop bounded should an answer ever block.
+    if tokio::time::timeout(WATCHER_SHUTDOWN_TIMEOUT, &mut handle)
+        .await
+        .is_err()
+    {
+        warn!("postgres_cdc: completion watcher did not stop in time; aborting it");
         handle.abort();
         let _ = handle.await;
     }
@@ -3454,13 +3562,104 @@ mod tests {
         destination.push_event_buffer(buffer, Utc::now(), Some(terminal(&flag)));
 
         assert!(
-            destination.queue.is_empty(),
-            "the push drained the queue it had just landed in"
-        );
-        assert!(
             !answered(&flag),
             "the write was never in a step, so it must fail rather than be answered"
         );
+
+        // The rows stay queued. They were charged to the endpoint when they
+        // were queued and only a flush credits them back, so discarding them
+        // would leave the endpoint owing records no step can consume.
+        let (size, _, flushed) = destination.queue.flush_with_aux();
+        assert_eq!(size.records, 1, "the flush credits the queued record back");
+        assert!(
+            take_acks(flushed).is_empty(),
+            "the stop already failed the write, so the flush answers nothing"
+        );
+    }
+
+    #[test]
+    fn a_stop_leaves_no_snapshot_buffer_charged_to_the_copy_barrier() {
+        let copy = Arc::new(CopyBarrier::new());
+        let destination = destination_stopping(
+            &copy,
+            MockInputConsumer::new(),
+            true,
+            &Arc::new(AtomicBool::new(false)),
+        );
+
+        let buffer = event_buffer(&destination, 0);
+        destination.push_snapshot_buffer(buffer, Utc::now());
+        release_pending_answers(&destination.queue);
+
+        // The reader still flushes the buffer, and the barrier still counts it,
+        // which is what lets a terminal barrier be answered afterwards.
+        let (_, _, flushed) = destination.queue.flush_with_aux();
+        assert_eq!(count_snapshot_buffers(&flushed), 1);
+        copy.note_buffers_flushed(count_snapshot_buffers(&flushed));
+
+        let flag = Arc::new(AtomicBool::new(false));
+        assert!(
+            copy.hold_terminal(terminal(&flag)),
+            "no snapshot buffer is left pending, so a terminal barrier answers at once"
+        );
+        assert!(answered(&flag));
+    }
+
+    #[test]
+    fn a_stop_answers_the_writes_the_frontier_has_already_passed() {
+        let (durable, waiting_still, in_channel) = (
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+        );
+        let mut pending: Vec<(u64, DeferredAcks)> = vec![
+            (3, vec![terminal(&durable)]),
+            (9, vec![terminal(&waiting_still)]),
+        ];
+        // An answer the reader sent but the watcher had not yet received is as
+        // durable as one already waiting.
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        tx.send((4, vec![terminal(&in_channel)])).unwrap();
+
+        answer_durable_on_stop(&mut pending, &mut rx, 5);
+
+        assert!(answered(&durable), "step 3 is durable at frontier 5");
+        assert!(answered(&in_channel), "step 4 is durable at frontier 5");
+        assert!(
+            !answered(&waiting_still),
+            "step 9 is not durable, so this write must fail rather than be answered"
+        );
+        assert_eq!(
+            pending.len(),
+            1,
+            "only the write that is not durable is left"
+        );
+    }
+
+    #[test]
+    fn every_way_a_streamed_write_can_end_is_accounted_for() {
+        // (buffers already queued, rows still held back, a step to wait on).
+        let expected = [
+            ((0, false, false), WriteEnding::AnswerUnqueued),
+            ((0, false, true), WriteEnding::AnswerUnqueued),
+            ((0, true, false), WriteEnding::QueueTailAndAnswer),
+            ((0, true, true), WriteEnding::QueueClosingAck),
+            ((2, false, false), WriteEnding::AnswerUnqueued),
+            // The write's rows landed exactly on the 2 MiB mark, so the closing
+            // entry carries none. It must still be queued, or the answer would
+            // ride whichever flush ran next instead of the one holding its
+            // rows, which is #7122.
+            ((2, false, true), WriteEnding::QueueClosingAck),
+            ((2, true, false), WriteEnding::QueueTailAndAnswer),
+            ((2, true, true), WriteEnding::QueueClosingAck),
+        ];
+        for ((queued, tail_rows, defer_acks), ending) in expected {
+            assert_eq!(
+                write_ending(queued, tail_rows, defer_acks),
+                ending,
+                "queued={queued} tail_rows={tail_rows} defer_acks={defer_acks}"
+            );
+        }
     }
 
     #[test]
