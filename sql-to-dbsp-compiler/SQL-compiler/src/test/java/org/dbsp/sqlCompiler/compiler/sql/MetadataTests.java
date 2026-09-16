@@ -2375,4 +2375,20 @@ public class MetadataTests extends BaseSQLTests {
         JsonNode parsed = mapper.readTree(json);
         Assert.assertNotNull(parsed);
     }
+    
+    /** LATENESS on a view inside a recursive component is rejected, both on the declared
+     * recursive view and on a view of the component that needs no declaration. */
+    @Test
+    public void latenessOnRecursiveViewRejected() {
+        String program = """
+                CREATE TABLE t(x INT NOT NULL);
+                DECLARE RECURSIVE VIEW a(x INT NOT NULL);
+                CREATE LOCAL VIEW b AS SELECT x + 1 AS x FROM a WHERE x < 10;
+                CREATE VIEW a AS SELECT x FROM t UNION SELECT x FROM b;
+                """;
+        this.statementsFailingInCompilation(program + "LATENESS a.x 2;",
+                "LATENESS on views inside recursive components is not supported: view 'a'");
+        this.statementsFailingInCompilation(program + "LATENESS b.x 2;",
+                "LATENESS on views inside recursive components is not supported: view 'b'");
+    }
 }

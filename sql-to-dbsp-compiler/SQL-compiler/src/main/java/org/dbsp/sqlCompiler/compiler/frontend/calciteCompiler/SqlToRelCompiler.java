@@ -245,6 +245,12 @@ public class SqlToRelCompiler implements IWritesLogs {
     /** User-defined types */
     private final HashMap<ProgramIdentifier, RelDataType> udt;
     private final HashMap<ProgramIdentifier, DeclareViewStatement> declaredViews;
+    /** Names of the relations in the SQL that the compiler synthesizes to validate an
+     * expression.  The clone that compiles that SQL shares the program's catalog and view
+     * declarations, so these names carry the FELDERA_ prefix of the other compiler-defined
+     * relations, such as FELDERA_ERROR_TABLE. */
+    static final String SYNTHESIZED_TABLE = "FELDERA_SYNTHESIZED_TABLE";
+    static final String SYNTHESIZED_VIEW = "FELDERA_SYNTHESIZED_VIEW";
     /** Recursive views which have been referred */
     private final Set<ProgramIdentifier> usedViewDeclarations;
     private final RelBuilder relBuilder;
@@ -1164,16 +1170,16 @@ public class SqlToRelCompiler implements IWritesLogs {
                              SqlNode value, SourceFileContents sources) {
         try {
             /* We generate the following SQL:
-              CREATE TABLE T(... column LATENESS expression ...);
-              SELECT column - value FROM tmp;
+              CREATE TABLE FELDERA_SYNTHESIZED_TABLE(column type);
+              CREATE VIEW FELDERA_SYNTHESIZED_VIEW AS SELECT column - value FROM FELDERA_SYNTHESIZED_TABLE;
               and validate it. */
-            String sql = "CREATE TABLE TMP(\"" +
+            String sql = "CREATE TABLE " + SYNTHESIZED_TABLE + "(\"" +
                     columnName + "\" " +
                     columnType + ");\n" +
-                    "CREATE VIEW V AS SELECT \"" +
+                    "CREATE VIEW " + SYNTHESIZED_VIEW + " AS SELECT \"" +
                     columnName +
                     "\" - " + value +
-                    " FROM TMP;\n";
+                    " FROM " + SYNTHESIZED_TABLE + ";\n";
             Logger.INSTANCE.belowLevel(this, 4)
                     .newline()
                     .append(sql)
@@ -1230,9 +1236,10 @@ public class SqlToRelCompiler implements IWritesLogs {
                                        SqlNode value, SourceFileContents sources) {
         try {
             /* We generate the following SQL:
-              CREATE VIEW V AS SELECT expression;
+              CREATE VIEW FELDERA_SYNTHESIZED_VIEW AS SELECT expression;
               and validate it. */
-            String sql = "CREATE VIEW V AS SELECT " + value.toSqlString(OracleSqlDialect.DEFAULT) + ";";
+            String sql = "CREATE VIEW " + SYNTHESIZED_VIEW + " AS SELECT " +
+                    value.toSqlString(OracleSqlDialect.DEFAULT) + ";";
             Logger.INSTANCE.belowLevel(this, 4)
                     .newline()
                     .append(sql)
@@ -1582,27 +1589,27 @@ public class SqlToRelCompiler implements IWritesLogs {
             /* To compile a function like
               CREATE FUNCTION fun(a type0, b type1) returning type2 as expression;
               we generate the following SQL:
-              CREATE TABLE tmp(a type0, b type1);
-              SELECT expression FROM tmp;
+              CREATE TABLE FELDERA_SYNTHESIZED_TABLE(a type0, b type1);
+              CREATE VIEW FELDERA_SYNTHESIZED_VIEW AS SELECT expression FROM FELDERA_SYNTHESIZED_TABLE;
               The generated code for the query select expression
               is used to obtain the body of the function.
             */
             StringBuilder builder = new StringBuilder();
             SqlWriter writer = new SqlPrettyWriter(SqlPrettyWriter.config(), builder);
-            builder.append("CREATE TABLE TMP(");
+            builder.append("CREATE TABLE ").append(SYNTHESIZED_TABLE).append("(");
             if (decl.getParameters().isEmpty())
                 // Tables need to have at least one column, so create an unused one if needed
                 builder.append("__unused__ INT");
             else
                 decl.getParameters().unparse(writer, 0, 0);
             builder.append(");\n");
-            builder.append("CREATE VIEW TMP0 AS SELECT\n");
+            builder.append("CREATE VIEW ").append(SYNTHESIZED_VIEW).append(" AS SELECT\n");
             newLineNumber = builder.toString().split("\n").length + 1;
 
             SourcePositionRange range = new SourcePositionRange(body.getParserPosition(), false);
             String bodyExpression = sources.getFragment(range, false);
             builder.append(bodyExpression);
-            builder.append("\nFROM TMP;");
+            builder.append("\nFROM ").append(SYNTHESIZED_TABLE).append(";");
 
             String sql = builder.toString();
             Logger.INSTANCE.belowLevel(this, 4)
