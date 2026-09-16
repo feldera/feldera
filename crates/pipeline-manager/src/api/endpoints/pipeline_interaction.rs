@@ -1071,8 +1071,6 @@ pub(crate) async fn get_pipeline_dataflow_graph(
 /// Initiate immediate rebalancing of the pipeline. Normally rebalancing is initiated automatically
 /// when the drift in the size of joined relations exceeds a threshold. This endpoint forces the balancer
 /// to reevaluate and apply an optimal partitioning policy regardless of the threshold.
-///
-/// This operation is a no-op unless the `adaptive_joins` feature is enabled in `dev_tweaks`.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),

@@ -358,6 +358,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 .increase();
         if (!this.useHandles)
             this.builder.append("let mut catalog = Catalog::new();").newline();
+        emitCircuitSettings(this.builder, this.metadata);
 
         // Collect all source positions
         CircuitVisitor collector = new CollectSourcePositions(this.compiler, this.sourcePositionResource)
@@ -1901,8 +1902,20 @@ public class ToRustVisitor extends CircuitVisitor {
                 (more ? (operator.comment != null ? "\n" + operator.comment : "") : ""));
     }
 
-    /** Generate hints for the dynamic join balancer based on user-supplied annotations */
-    void emitBalancerHints(DBSPBinaryOperator operator) {
+    /** Set the circuit settings before any operator is created. */
+    public static void emitCircuitSettings(IIndentStream builder, ProgramMetadata metadata) {
+        builder.append("circuit.set_adaptive_joins(")
+                .append(metadata.adaptiveJoins() ? "true" : "false")
+                .append(");").newline();
+    }
+
+    /** Generate hints for the dynamic join balancer based on user-supplied annotations.
+     * A join that DBSP cannot balance never registers its inputs with the balancer, and
+     * setting a hint on such an input fails, so those hints are dropped here; the runtime
+     * ignores the rest while the circuit has adaptive joins off. */
+    void emitBalancerHints(DBSPJoinBaseOperator operator) {
+        if (!operator.balanced)
+            return;
         var strategies = operator.annotations.get(JoinStrategy.class);
         for (var strategy: strategies) {
             switch (strategy.strategy) {

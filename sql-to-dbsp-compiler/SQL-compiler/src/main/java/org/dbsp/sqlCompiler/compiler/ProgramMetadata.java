@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
@@ -47,6 +48,7 @@ public class ProgramMetadata implements IJson {
 
     static final Set<String> reserved = Set.of(
             DBSPCompiler.WARNINGS_ARE_ERRORS.toLowerCase(Locale.ENGLISH),
+            ProgramMetadata.ADAPTIVE_JOINS.toLowerCase(Locale.ENGLISH),
             ProgramMetadata.AVOID_STAR_JOINS.toLowerCase(Locale.ENGLISH),
             ProgramMetadata.ENFORCE_POSITIVE_INPUTS.toLowerCase(Locale.ENGLISH),
             ProgramMetadata.USE_FLAT_VARIANT.toLowerCase(Locale.ENGLISH),
@@ -165,6 +167,9 @@ public class ProgramMetadata implements IJson {
         return this.isFalsy(variable);
     }
 
+    /** When set to {@code true}, every possible join will be implemented as
+     * an adaptive join, which changes its partitioning policy dynamically. */
+    public static final String ADAPTIVE_JOINS = "FELDERA_ADAPTIVE_JOINS";
     public static final String AVOID_STAR_JOINS = "FELDERA_AVOID_STAR_JOINS";
     /** When set to {@code true}, inserts a weight-validation check after every
      * input table that has no primary key. */
@@ -192,6 +197,11 @@ public class ProgramMetadata implements IJson {
 
     public boolean noStarJoins() {
         return this.isExplicitlyOn(AVOID_STAR_JOINS);
+    }
+
+    /** Returns {@code true} if every balanceable join should be adaptive. */
+    public boolean adaptiveJoins() {
+        return this.isExplicitlyOn(ADAPTIVE_JOINS);
     }
 
     /** Returns {@code true} if VARIANT columns should use the flat-buffer
@@ -230,10 +240,59 @@ public class ProgramMetadata implements IJson {
         ArrayNode outputs = mapper.createArrayNode();
         for (IHasSchema output: this.outputViews.values())
             outputs.add(output.asJson(false));
+        ObjectNode settings = mapper.createObjectNode();
+        for (var variable: this.variables.entrySet())
+            addSetting(settings, variable.getKey(), variable.getValue());
         ObjectNode ios = mapper.createObjectNode();
         ios.set("inputs", inputs);
         ios.set("outputs", outputs);
+        ios.set(SQL_SETTINGS, settings);
         return ios;
+    }
+
+    /** Name of the JSON object that holds the values of all SET variables. */
+    public static final String SQL_SETTINGS = "sql_settings";
+
+    /** Write one SET variable.  The SQL grammar accepts {@code ON}, {@code OFF},
+     * and literals; a value of any other kind is written as its printed form. */
+    static void addSetting(ObjectNode settings, String variable, DBSPExpression value) {
+        if (value.is(DBSPBoolLiteral.class)) {
+            Boolean bool = value.to(DBSPBoolLiteral.class).value;
+            if (bool == null)
+                settings.putNull(variable);
+            else
+                settings.put(variable, bool);
+        } else if (value.is(DBSPIntLiteral.class)) {
+            BigInteger integer = value.to(DBSPIntLiteral.class).getValue();
+            if (integer == null)
+                settings.putNull(variable);
+            else if (integer.bitLength() < Long.SIZE)
+                settings.put(variable, integer.longValue());
+            else
+                // No SET variable takes a value this large; keep the digits as text.
+                settings.put(variable, integer.toString());
+        } else if (value.is(DBSPStringLiteral.class)) {
+            String string = value.to(DBSPStringLiteral.class).value;
+            if (string == null)
+                settings.putNull(variable);
+            else
+                settings.put(variable, string);
+        } else if (value.is(DBSPNullLiteral.class)) {
+            settings.putNull(variable);
+        } else {
+            settings.put(variable, value.toString());
+        }
+    }
+
+    /** Read one SET variable written by {@link #addSetting}. */
+    static DBSPExpression settingFromJson(JsonNode value) {
+        if (value.isBoolean())
+            return new DBSPBoolLiteral(value.booleanValue());
+        if (value.isIntegralNumber())
+            return new DBSPI64Literal(value.longValue());
+        if (value.isNull())
+            return new DBSPNullLiteral();
+        return new DBSPStringLiteral(value.asText());
     }
 
     public IHasSchema getTableDescription(ProgramIdentifier name) {
@@ -279,6 +338,9 @@ public class ProgramMetadata implements IJson {
             IHasSchema sch = IHasSchema.AbstractIHasSchema.fromJson(tbl, typeFactory);
             result.addView(sch);
         }
+        JsonNode settings = Utilities.getProperty(node, SQL_SETTINGS);
+        for (var setting: settings.properties())
+            result.variables.put(setting.getKey(), settingFromJson(setting.getValue()));
         return result;
     }
 

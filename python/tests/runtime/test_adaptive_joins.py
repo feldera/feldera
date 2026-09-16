@@ -2,7 +2,8 @@
 Integration tests for adaptive joins: balancer policies in the circuit JSON profile.
 
 Expects a running Feldera instance (see other tests under python/tests/runtime).
-Adaptive join rebalancing is only compiled in when ``num_workers > 1``.
+The SQL program enables adaptive joins with ``SET FELDERA_ADAPTIVE_JOINS = ON``;
+the runtime only builds the rebalancing operators when ``num_workers > 1``.
 """
 
 from __future__ import annotations
@@ -23,6 +24,8 @@ from tests.platform.helper import (
 
 
 SQL_JOIN_AB = """
+SET FELDERA_ADAPTIVE_JOINS = ON;
+
 CREATE TABLE tab_a (
   k BIGINT NOT NULL,
   v BIGINT NOT NULL
@@ -39,6 +42,8 @@ FROM tab_a JOIN tab_b ON tab_a.k = tab_b.k;
 """
 
 SQL_JOIN_ABC = """
+SET FELDERA_ADAPTIVE_JOINS = ON;
+
 CREATE TABLE tab_a (
   k BIGINT NOT NULL,
   v BIGINT NOT NULL
@@ -62,11 +67,6 @@ CREATE MATERIALIZED VIEW join_ac AS
 SELECT tab_a.k, tab_a.v, tab_c.u
 FROM tab_a JOIN tab_c ON tab_a.k = tab_c.k;
 """
-
-# Lower balancer thresholds so modest skew triggers a policy change in CI.
-_ADAPTIVE_DEV_TWEAKS = {
-    "adaptive_joins": True,
-}
 
 
 def _fetch_circuit_json_profile(pipeline_name: str) -> dict:
@@ -123,7 +123,6 @@ class TestAdaptiveJoins(unittest.TestCase):
             runtime_config=RuntimeConfig(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
-                dev_tweaks=_ADAPTIVE_DEV_TWEAKS,
             ),
         ).create_or_replace()
 

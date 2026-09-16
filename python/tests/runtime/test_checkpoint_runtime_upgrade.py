@@ -363,10 +363,9 @@ def _connector_json_for(source: DeltaTestLocation) -> str:
 def _build_sql(connector_json: str) -> str:
     """Build the SQL program for both phases.
 
-    Verified against a phase-1 support bundle (with
-    ``dev_tweaks={'adaptive_joins': True}`` enabled), the compiled
-    circuit contains every operator that owns a custom
-    ``Checkpoint`` impl in DBSP today:
+    Verified against a phase-1 support bundle (with adaptive joins
+    enabled), the compiled circuit contains every operator that owns a
+    custom ``Checkpoint`` impl in DBSP today:
 
     * ``Output`` and ``AccumulateOutput`` -- output sinks behind every
       materialized view.
@@ -381,8 +380,8 @@ def _build_sql(connector_json: str) -> str:
       ``Match`` operator (``operator/dynamic/multijoin/match_keys.rs``);
       synthesized by the SQL star-join pass for the multi-aggregation
       ``v_emit_final`` view.
-    * ``RebalancingExchangeSender`` -- gated on the ``adaptive_joins``
-      dev tweak (set by the test); emitted by the balanced trace path.
+    * ``RebalancingExchangeSender`` -- emitted by the balanced trace path
+      because the program sets ``FELDERA_ADAPTIVE_JOINS``.
     * ``Z^-1`` and ``Z^-1 (nested)`` -- delays inside the recursive
       ``closure`` view.
     * ``Transaction Z^-1`` -- transactional delay.
@@ -398,6 +397,10 @@ def _build_sql(connector_json: str) -> str:
     escaped = connector_json.replace("'", "''")
 
     return f"""\
+-- Adaptive joins route the join traces through a
+-- ``RebalancingExchangeSender``, which has its own Checkpoint impl.
+SET FELDERA_ADAPTIVE_JOINS = ON;
+
 CREATE TABLE input_table (
     id           INT NOT NULL PRIMARY KEY,
     flag         BOOLEAN NOT NULL,
@@ -529,11 +532,10 @@ def test_runtime_upgrade_round_trip(pipeline_name: str) -> None:
     sql = _build_sql(_connector_json_for(source))
     legacy_version = _legacy_runtime_version()
 
-    # Enable adaptive joins so the balanced trace path emits a
-    # ``RebalancingExchangeSender`` (which has its own Checkpoint impl).
-    # Older runtimes that do not recognize the option fall back to
-    # ignoring it via ``other_options`` in ``DevTweaks``.
-    dev_tweaks = {"adaptive_joins": True}
+    # The SQL program enables adaptive joins with ``SET FELDERA_ADAPTIVE_JOINS``.
+    # A legacy runtime from before that setting existed needs the deprecated
+    # ``adaptive_joins`` dev tweak instead, so phase 1 passes both.
+    legacy_dev_tweaks = {"adaptive_joins": True}
 
     # The MinIO bucket subpath stays stable across runs so a previously
     # synced checkpoint can be reused. The test pipeline name itself
@@ -565,7 +567,7 @@ def test_runtime_upgrade_round_trip(pipeline_name: str) -> None:
                 hosts=FELDERA_TEST_NUM_HOSTS,
                 fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
                 storage=Storage(config=storage_cfg(cache_name)),
-                dev_tweaks=dev_tweaks,
+                dev_tweaks=legacy_dev_tweaks,
             ),
             runtime_version=legacy_version,
         )
@@ -611,7 +613,6 @@ def test_runtime_upgrade_round_trip(pipeline_name: str) -> None:
             storage=Storage(
                 config=storage_cfg(cache_name, start_from_checkpoint="latest")
             ),
-            dev_tweaks=dev_tweaks,
         ),
         # ``runtime_version=None`` means "use the manager default"; in
         # CI ``FELDERA_RUNTIME_VERSION=$GITHUB_SHA`` is set in the
@@ -712,10 +713,10 @@ CREATE MATERIALIZED VIEW closure AS
   (SELECT a, b FROM pair_seed) UNION (SELECT a, b FROM closure_step);
 """
 
-    # Enable adaptive joins so the balanced trace path emits a
-    # ``RebalancingExchangeSender`` (which has its own Checkpoint impl),
-    # matching the coverage of the companion test.
-    dev_tweaks = {"adaptive_joins": True}
+    # The SQL program enables adaptive joins with ``SET FELDERA_ADAPTIVE_JOINS``.
+    # A legacy runtime from before that setting existed needs the deprecated
+    # ``adaptive_joins`` dev tweak instead, so phase 1 passes both.
+    legacy_dev_tweaks = {"adaptive_joins": True}
 
     legacy_version = _legacy_runtime_version()
 
@@ -736,7 +737,7 @@ CREATE MATERIALIZED VIEW closure AS
             workers=FELDERA_TEST_NUM_WORKERS,
             hosts=FELDERA_TEST_NUM_HOSTS,
             fault_tolerance_model=None,  # Manual checkpoint below.
-            dev_tweaks=dev_tweaks,
+            dev_tweaks=legacy_dev_tweaks,
         ),
         runtime_version=legacy_version,
     )
