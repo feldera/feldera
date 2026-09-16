@@ -13,8 +13,15 @@
       firstRowIndex: number
       rows: string[]
       totalSkippedBytes: number
-      /** Lines the server threw away before we got to them, as of the last catch-up. */
+      /** Lines the server discarded before the oldest one on screen, as of the last catch-up. */
       totalDiscardedLines: number
+      /**
+       * Why the last attempt to connect failed, or null once one succeeds. Held beside the
+       * rows rather than pushed into them: a connection error is not a log line, and an
+       * exact resume keeps the rows, so pushing would strand one notice per failed attempt
+       * in the middle of the log.
+       */
+      connectionError: string | null
       /**
        * How far we have read. Sent back on the next connection so the server can carry
        * on from there. Null if the server does not support resuming, or if we can no
@@ -46,9 +53,11 @@
       stream.rows = []
       stream.firstRowIndex = 0
       stream.totalSkippedBytes = 0
-      // When starting over, the gap is everything the server has discarded so far. That
-      // is the same number it used to print as a log line, before cursors existed.
-      stream.totalDiscardedLines = resumed?.gap ?? 0
+      // Every line before the first one about to arrive is a line we cannot show. `gap`
+      // counts only from the cursor we asked for, which leaves out what the server had
+      // already discarded before that. A server that reports nothing leaves us guessing,
+      // and it prints its own notice as a log line.
+      stream.totalDiscardedLines = resumed?.seq ?? 0
     }
     stream.cursor = resumed ? { epoch: resumed.epoch, seq: resumed.seq } : null
   }
@@ -109,6 +118,7 @@
         rows: [],
         totalSkippedBytes: 0,
         totalDiscardedLines: 0,
+        connectionError: null,
         cursor: null
       }
     }
@@ -169,12 +179,14 @@
       return
     }
     const abortController = new AbortController()
-    streams[pipelineName].stream = {
+    // Identifies this connection before there is an open stream to identify it by.
+    const connection = {
       cancelFetch: () => {
         abortController.abort()
         streams[pipelineName].stream = { closed: {} }
       }
     }
+    streams[pipelineName].stream = connection
     // Ask the server to carry on from where we stopped, so reconnecting only costs us the
     // lines we missed rather than the whole log again. An empty cursor still asks to be
     // told our position; leaving the parameter out altogether selects the old behaviour.
@@ -184,24 +196,25 @@
         signal: abortController.signal
       })
       .then((result) => {
-        if (!streams[pipelineName]) {
-          return
-        }
-        if (streams[pipelineName].stream && 'closed' in streams[pipelineName].stream) {
-          // The stream was cancelled, so we shouldn't re-try it
+        // Ignore the response if this is no longer the current connection. It may have been
+        // cancelled, or replaced by a newer one, or the log history may have been dropped.
+        // Without this check two connections would write to the same rows and cursor.
+        if (streams[pipelineName]?.stream !== connection) {
           return
         }
         if (result instanceof Error) {
           streams[pipelineName].stream = { closed: {} }
-          streams[pipelineName].rows.push(result.message)
-          const status = (result.cause as { response?: Response } | undefined)?.response?.status
+          streams[pipelineName].connectionError = result.message
+          // `cause` is the API's error body, with the status added by `streamingFetch`.
+          const cause = result.cause as { error_code?: string; status?: number } | undefined
           // A cursor the server rejects will not become acceptable by being sent again, so
           // keeping it would leave the viewer looping over the same error and never showing
           // another log line. Drop it and let the next attempt start the log over.
-          if (status === 400) {
+          if (cause?.error_code === 'InvalidLogCursorParam') {
             streams[pipelineName].cursor = null
           }
-          tryRestartStream(pipelineName, status === 503 ? attempts + 1 : 0)
+          // 503 is the server asking for a slower retry, so each one widens the backoff.
+          tryRestartStream(pipelineName, cause?.status === 503 ? attempts + 1 : 0)
           return
         }
         // Where the server picked us up. It arrives with the response headers, so we hold
@@ -263,6 +276,9 @@
         )
         // Keep the existing rows in place — only swap in the live stream handle. The buffer is
         // cleared on the first `pushChanges` above, so the view stays populated until then.
+        // Clearing the error here rather than on the first batch keeps it from outliving the
+        // failure on a stream that is caught up and so has no line to send.
+        streams[pipelineName].connectionError = null
         streams[pipelineName].stream = { open: result.stream, stop: cancel }
         getStreams.current = streams
       })
@@ -372,6 +388,9 @@
           {seconds}s...
         {:else}
           Retrying in 1s...
+        {/if}
+        {#if pipelineLogs.connectionError}
+          <span class="block whitespace-pre-line">{pipelineLogs.connectionError}</span>
         {/if}
       </WarningBanner>
     {:else if !areLogsExpected(pipelineStatusName)}
