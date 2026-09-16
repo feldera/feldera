@@ -1,7 +1,7 @@
 use crate::catalog::{ArrowStream, InputCollectionHandle};
 use crate::format::InputBuffer;
 use crate::integrated::delta_table::deletion_vector::{
-    MaskedFile, ReadMode, filtered_parquet_table, read_deletion_vector,
+    MaskedFile, ReadMode, field_id, filtered_parquet_table, read_deletion_vector,
 };
 use crate::integrated::delta_table::field_id_adapter::FieldIdAdapterFactory;
 use crate::integrated::delta_table::{
@@ -12,7 +12,8 @@ use crate::{ControllerError, InputConsumer, InputReader, PipelineState};
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use arrow::array::{Array, ArrayData, ArrayRef, AsArray, BooleanArray, make_array};
 use arrow::datatypes::{
-    DataType as ArrowDataType, Field as ArrowField, FieldRef, Schema as ArrowSchema, SchemaRef,
+    DataType as ArrowDataType, Field as ArrowField, FieldRef, Fields as ArrowFields,
+    Schema as ArrowSchema, SchemaRef,
 };
 use chrono::{DateTime, Utc};
 use datafusion::catalog::TableProvider;
@@ -430,6 +431,51 @@ fn nested_physical_to_logical(schema: &ArrowSchema) -> HashMap<String, String> {
         collect(field.data_type(), &mut map);
     }
     map
+}
+
+/// Does a struct inside an array or a map here list its fields out of column
+/// mapping id order?
+///
+/// Delta hands a field its id when the field is added, so fields out of id
+/// order are fields that moved. Such a struct is the one shape `snapshot` mode
+/// pairs with the data file by position, and a move is what makes that pairing
+/// wrong; see
+/// [`DeltaTableInputEndpointInner::warn_if_snapshot_reads_reordered_nested_fields`].
+///
+/// `in_container` marks the types reached through an array or a map.
+pub(super) fn holds_reordered_nested_struct(data_type: &ArrowDataType, in_container: bool) -> bool {
+    match data_type {
+        ArrowDataType::Struct(fields) => {
+            (in_container && !ids_are_ascending(fields))
+                || fields
+                    .iter()
+                    .any(|f| holds_reordered_nested_struct(f.data_type(), in_container))
+        }
+        _ => container_contents(data_type)
+            .iter()
+            .any(|f| holds_reordered_nested_struct(f.data_type(), true)),
+    }
+}
+
+/// Are these fields in the order their ids were handed out in? Fields without
+/// one predate column mapping and cannot have moved under it.
+fn ids_are_ascending(fields: &ArrowFields) -> bool {
+    let ids: Vec<u64> = fields
+        .iter()
+        .filter_map(|f| field_id(f)?.parse().ok())
+        .collect();
+    ids.is_sorted()
+}
+
+/// What a container holds: an array's element, or a map's key and value. A map's
+/// entries struct is Arrow's own framing rather than a field of the table, so
+/// look through it. A struct is no container, and a scalar holds nothing.
+fn container_contents(data_type: &ArrowDataType) -> Vec<&FieldRef> {
+    match data_type {
+        ArrowDataType::Struct(_) => vec![],
+        ArrowDataType::Map(entries, _) => child_fields(entries.data_type()),
+        _ => child_fields(data_type),
+    }
 }
 
 /// The fields a container type holds directly: a struct's children, or the sole
@@ -2215,6 +2261,8 @@ impl DeltaTableInputEndpointInner {
         // latest version; this makes it available to the snapshot reads below.
         *self.schema_table.lock().unwrap() = Some(Arc::clone(&table));
 
+        self.warn_if_snapshot_reads_reordered_nested_fields();
+
         if let Err(e) = self.validate_change_data_feed(&table) {
             let _ = init_status_sender.send(Err(e)).await;
             return;
@@ -3982,6 +4030,52 @@ impl DeltaTableInputEndpointInner {
             .column_mapping_mode)
     }
 
+    /// Warn that `snapshot` mode reads a reordered nested struct's fields under
+    /// the wrong names.
+    ///
+    /// A struct inside an `ARRAY` or a `MAP` of a column-mapped table is the one
+    /// shape the snapshot read pairs by position rather than by field id, so
+    /// reordering that struct's fields leaves every file written before the
+    /// reorder read wrongly. The read reports nothing, so leave a line to grep
+    /// for. `follow` and `cdc` mode pair those fields by field id.
+    fn warn_if_snapshot_reads_reordered_nested_fields(&self) {
+        if !self.config.snapshot() {
+            return;
+        }
+        // A snapshot the connector cannot read the schema of fails in
+        // `prepare_snapshot_query` below, which says so properly; a warning has
+        // nothing to add.
+        let (Ok(Some(mode)), Ok(schema)) = (self.column_mapping_mode(), self.logical_schema())
+        else {
+            return;
+        };
+        if !matches!(mode, ColumnMappingMode::Id | ColumnMappingMode::Name) {
+            return;
+        }
+        // Only the columns the pipeline reads: the rest are never decoded.
+        let reordered: Vec<&str> = schema
+            .fields()
+            .iter()
+            .filter(|field| {
+                self.needs_column(field.name())
+                    && holds_reordered_nested_struct(field.data_type(), false)
+            })
+            .map(|field| field.name().as_str())
+            .collect();
+        if reordered.is_empty() {
+            return;
+        }
+        warn!(
+            "delta_table {}: column(s) {} hold a struct inside an array or a map \
+             whose fields this column-mapped table has reordered. Reading the table \
+             snapshot pairs those fields with the data file's by position, so a file \
+             written before the reorder is read under the wrong names, without an \
+             error. Reading the log ('follow' and 'cdc' mode) pairs them by field id.",
+            &self.endpoint_name,
+            reordered.join(", ")
+        );
+    }
+
     /// Logical-to-physical column-name pairs under Delta column mapping.
     ///
     /// With `delta.columnMapping.mode = 'name'` or `'id'` each column lives on
@@ -4655,6 +4749,73 @@ async fn wait_running(receiver: &mut Receiver<PipelineState>) {
     let _ = receiver
         .wait_for(|state| state == &PipelineState::Running)
         .await;
+}
+
+#[cfg(test)]
+mod nested_container_tests {
+    use super::holds_reordered_nested_struct;
+    use arrow::datatypes::{DataType, Field, Fields};
+    use std::sync::Arc;
+
+    fn list(element: DataType) -> DataType {
+        DataType::List(Arc::new(Field::new("element", element, true)))
+    }
+
+    fn map(value: DataType) -> DataType {
+        DataType::Map(
+            Arc::new(Field::new(
+                "entries",
+                DataType::Struct(Fields::from(vec![
+                    Field::new("key", DataType::Utf8, false),
+                    Field::new("value", value, true),
+                ])),
+                false,
+            )),
+            false,
+        )
+    }
+
+    fn mapped(name: &str, id: &str) -> Field {
+        Field::new(name, DataType::Utf8, true)
+            .with_metadata([("delta.columnMapping.id".into(), id.into())].into())
+    }
+
+    /// Two fields in the order their ids were handed out in.
+    fn in_order() -> DataType {
+        DataType::Struct(Fields::from(vec![mapped("a", "5"), mapped("b", "6")]))
+    }
+
+    /// The same two, reordered since.
+    fn reordered() -> DataType {
+        DataType::Struct(Fields::from(vec![mapped("b", "6"), mapped("a", "5")]))
+    }
+
+    fn holds(data_type: &DataType) -> bool {
+        holds_reordered_nested_struct(data_type, false)
+    }
+
+    #[test]
+    fn a_reordered_struct_inside_a_container_is_reported() {
+        assert!(holds(&list(reordered())));
+        assert!(holds(&map(reordered())));
+        assert!(holds(&list(list(reordered()))));
+        assert!(holds(&DataType::Struct(Fields::from(vec![Field::new(
+            "history",
+            list(reordered()),
+            true,
+        )]))));
+    }
+
+    /// The warning is about a move, so a struct still in id order is silent, and
+    /// so is one the table never nested in a container: those pair by name.
+    #[test]
+    fn anything_else_is_not() {
+        assert!(!holds(&list(in_order())));
+        assert!(!holds(&map(in_order())));
+        assert!(!holds(&reordered()));
+        assert!(!holds(&map(DataType::Utf8)));
+        assert!(!holds(&DataType::Utf8));
+    }
 }
 
 #[cfg(test)]

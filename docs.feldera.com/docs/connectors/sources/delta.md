@@ -300,7 +300,8 @@ reads both mapping modes, `name` and `id`.
 In `snapshot` mode a struct nested inside an `ARRAY` or a `MAP` is read by field
 order rather than by field id. If such a table's nested fields were reordered
 after its existing files were written, their values are read under the wrong
-names; `follow` and `cdc` mode read them correctly.
+names; `follow` and `cdc` mode read them correctly. The connector logs a warning
+naming the columns whose nested fields the table has reordered.
 
 ## Transactions
 

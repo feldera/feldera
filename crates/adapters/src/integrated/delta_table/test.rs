@@ -8358,6 +8358,49 @@ async fn delta_table_follow_id_mapped_filter_test() {
     );
 }
 
+/// The snapshot warning's detector must see what a real Delta table carries:
+/// nested fields keep their column mapping ids through the load, and the
+/// fixture's reversed log is what a field reorder leaves behind.
+///
+/// `after` is a plain struct, which a snapshot pairs by name; only a struct
+/// inside an array or a map is read by position.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_id_mapped_reordered_nested_fields_are_detected() {
+    use crate::integrated::delta_table::input::holds_reordered_nested_struct;
+
+    async fn reordered_columns(table_dir: &Path) -> Vec<String> {
+        let table = deltalake::open_table(ensure_table_uri(table_dir.to_str().unwrap()).unwrap())
+            .await
+            .unwrap();
+        table
+            .snapshot()
+            .unwrap()
+            .snapshot()
+            .arrow_schema()
+            .fields()
+            .iter()
+            .filter(|field| holds_reordered_nested_struct(field.data_type(), false))
+            .map(|field| field.name().clone())
+            .collect()
+    }
+
+    let rows = [UniformTestStruct::new(1, "alpha", "Coffee Shop", "settled")];
+    let schema = UniformTestStruct::schema();
+
+    let reordered = TempDir::new().unwrap();
+    write_id_mapped_table(reordered.path(), &schema, &[&rows]);
+    assert_eq!(
+        reordered_columns(reordered.path()).await,
+        ["history", "tags"]
+    );
+
+    // The same table written without the reorder must say nothing, or the
+    // warning fires for every column-mapped table that nests a struct.
+    let in_order = TempDir::new().unwrap();
+    write_id_mapped_table_in_file_order(in_order.path(), &schema, &[&rows]);
+    assert!(reordered_columns(in_order.path()).await.is_empty());
+}
+
 /// Every SQL type the connector supports survives a `mode = 'id'` follow read.
 ///
 /// `mode = 'id'` routes every file through `project_to_logical` instead of
