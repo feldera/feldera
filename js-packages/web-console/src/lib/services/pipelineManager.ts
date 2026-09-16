@@ -1023,7 +1023,10 @@ const streamingFetch = (
         }
         // For other non-2XX status codes, try to parse JSON error
         return response.json().then((body) => {
-          return new Error(apiErrorText(body), { cause: body })
+          // The status travels with the body. A caller that has to tell a transient 503
+          // from a request not worth repeating cannot recover it from the message, and
+          // `error_code` names the error rather than how to react to it.
+          return new Error(apiErrorText(body), { cause: { ...body, status: response.status } })
         })
       },
       (e) => {

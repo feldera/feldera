@@ -23,20 +23,28 @@ const gapHeader = 'feldera-logs-gap'
 export type LogCursor = {
   /**
    * Which run of the server's log buffer `seq` counts within. That buffer only lives in
-   * memory, so when the server restarts it starts numbering from one again. We compare
+   * memory, so when the runner restarts it starts numbering from one again. We compare
    * the epoch so an old count is never applied to a fresh buffer, where it would point at
    * completely different lines.
+   *
+   * The buffer outlives a pipeline run: stopping and starting a pipeline keeps the epoch
+   * and carries on numbering, so only a runner restart or a deleted pipeline changes it.
    */
   epoch: string
-  /** How many lines we have received from this epoch. Zero if none yet. */
+  /**
+   * How many lines we have received from this epoch. Zero if none yet. On a response, the
+   * number of the line before the first one it sends, so on a full catch-up it also counts
+   * the lines the server discarded.
+   */
   seq: number
 }
 
 /** Where the server started us from, as reported by a response. */
 export type LogResume = LogCursor & {
   /**
-   * How many lines the server had already thrown away before the point we asked for.
-   * They are gone for good. Zero means we carry on exactly where we left off.
+   * How many lines the server threw away between the point we asked for and `seq`. They
+   * are gone for good. Zero means we carry on exactly where we left off. Lines discarded
+   * before the point we asked for are not counted here; `seq` covers those.
    */
   gap: number
 }
