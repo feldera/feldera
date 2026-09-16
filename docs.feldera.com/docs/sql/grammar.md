@@ -566,6 +566,11 @@ These hints are considered experimental, and they may change
 - `balance(`*table*`)`: Indicates that the following `JOIN` should be implemented using
   a balanced strategy by hashing on all fields of the input with alias *table*
 
+These hints steer the balancer of an adaptive join, so they take
+effect only when [`FELDERA_ADAPTIVE_JOINS`](#experimental-options) is
+`ON`.  The compiler warns about, and ignores, a hint on a `JOIN` that
+will not run adaptively.
+
 Note: specifying hints may inhibit some compiler optimizations.
 
 ## Creating indexes
@@ -800,6 +805,18 @@ still considered experimental.  Possible example: `SET
 FELDERA_USE_MULTI_JOINS = OFF`.
 
 Currently the following options are available:
+
+`FELDERA_ADAPTIVE_JOINS` if set to `ON`, every `JOIN` that can be
+adaptive is compiled as an adaptive join.  An adaptive join changes
+its partitioning policy at runtime to counter skew in the join keys.
+A `JOIN` inside a recursive view, or a `JOIN` whose input is
+garbage-collected because of `LATENESS`, cannot be adaptive and stays
+a hash join.  A
+[strategy hint](#supported-hints-and-their-impact-on-query-implementation)
+steers the balancer of an adaptive join and has no effect while this
+option is off.  A pipeline with a single worker runs adaptive joins as
+hash joins.  After this option changes, the pipeline may rebuild the
+state of the joins when it next starts.  The default is `OFF`.
 
 `ENFORCE_POSITIVE_INPUTS` if set to `TRUE`, the compiler inserts a
 runtime check after every input table that has no primary key.  At

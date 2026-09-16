@@ -5205,7 +5205,7 @@
           "Pipeline Lifecycle"
         ],
         "summary": "Initiate rebalancing.",
-        "description": "Required role: `write` or higher.\n\nInitiate immediate rebalancing of the pipeline. Normally rebalancing is initiated automatically\nwhen the drift in the size of joined relations exceeds a threshold. This endpoint forces the balancer\nto reevaluate and apply an optimal partitioning policy regardless of the threshold.\n\nThis operation is a no-op unless the `adaptive_joins` feature is enabled in `dev_tweaks`.",
+        "description": "Required role: `write` or higher.\n\nInitiate immediate rebalancing of the pipeline. Normally rebalancing is initiated automatically\nwhen the drift in the size of joined relations exceeds a threshold. This endpoint forces the balancer\nto reevaluate and apply an optimal partitioning policy regardless of the threshold.",
         "operationId": "post_pipeline_rebalance",
         "parameters": [
           {
@@ -10249,7 +10249,7 @@
         "properties": {
           "adaptive_joins": {
             "type": "boolean",
-            "description": "Enable adaptive joins.\n\nAdaptive joins dynamically change their partitioning policy to avoid skew.\n\nAdaptive joins are disabled by default.",
+            "description": "Enable adaptive joins.\n\nAdaptive joins dynamically change their partitioning policy to avoid skew.\n\nDeprecated: set `FELDERA_ADAPTIVE_JOINS` in the SQL program instead.\nWhile this option is set, it overrides the SQL setting.\nThis option will be removed in a future release.",
             "default": null,
             "nullable": true
           },

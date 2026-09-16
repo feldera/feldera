@@ -1487,8 +1487,6 @@ export const pipelineAdhocSql = <ThrowOnError extends boolean = true>(
  * Initiate immediate rebalancing of the pipeline. Normally rebalancing is initiated automatically
  * when the drift in the size of joined relations exceeds a threshold. This endpoint forces the balancer
  * to reevaluate and apply an optimal partitioning policy regardless of the threshold.
- *
- * This operation is a no-op unless the `adaptive_joins` feature is enabled in `dev_tweaks`.
  */
 export const postPipelineRebalance = <ThrowOnError extends boolean = true>(
   options: Options<PostPipelineRebalanceData, ThrowOnError>

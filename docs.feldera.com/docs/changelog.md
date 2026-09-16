@@ -10,6 +10,10 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Adaptive joins can be enabled per program with `SET FELDERA_ADAPTIVE_JOINS = ON`.
+  An adaptive join changes its partitioning policy while the pipeline runs, to
+  counter skew in the join keys.  The default is `OFF`.
+
 - Bug fix (Delta Lake input connector, `cdc` mode): a CDC read no longer
   decodes columns the pipeline does not need. A column the SQL table
   never declares, and that no connector expression names, is left out of

@@ -420,8 +420,11 @@ def build_pipeline(
     resources: Optional[Resources] = None,
     dev_tweaks: Optional[dict] = None,
     datafusion_memory_mb: Optional[int] = None,
+    adaptive_joins: bool = False,
 ) -> Pipeline:
     sql = generate_program(tables, views)
+    if adaptive_joins:
+        sql = "SET FELDERA_ADAPTIVE_JOINS = ON;\n" + sql
 
     pipeline = PipelineBuilder(
         TEST_CLIENT,

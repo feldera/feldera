@@ -1984,6 +1984,14 @@ pub trait CircuitBase: 'static {
     /// Return the balancer object associated with the circuit.
     fn balancer(&self) -> &Balancer;
 
+    /// Whether adaptive joins are enabled for this circuit.
+    fn use_adaptive_joins(&self) -> bool;
+
+    /// Enable or disable adaptive joins for this circuit; the default is
+    /// disabled.  The setting applies to the joins added after the call, and the
+    /// deprecated `dev_tweaks.adaptive_joins` overrides it.
+    fn set_adaptive_joins(&self, enabled: bool);
+
     /// Set the auto-rebalancing flag for the circuit.
     fn set_auto_rebalance(&self, enable: bool) -> Result<(), DbspError>;
 
@@ -2948,6 +2956,8 @@ where
     last_stream_id: Rc<RefCell<StreamId>>,
     metadata_exchange: MetadataExchange,
     balancer: Rc<Balancer>,
+    /// Whether adaptive joins are enabled for this circuit.
+    use_adaptive_joins: Cell<bool>,
 }
 
 impl<P> CircuitInner<P>
@@ -2982,6 +2992,7 @@ where
             last_stream_id,
             metadata_exchange: metadata_exchange.clone(),
             balancer: Rc::new(Balancer::new(&metadata_exchange)),
+            use_adaptive_joins: Cell::new(false),
         }
     }
 
@@ -3701,6 +3712,17 @@ where
         &self.inner().balancer
     }
 
+    fn use_adaptive_joins(&self) -> bool {
+        self.inner().use_adaptive_joins.get()
+    }
+
+    fn set_adaptive_joins(&self, enabled: bool) {
+        // The deprecated dev tweak wins so that a pipeline created before
+        // `FELDERA_ADAPTIVE_JOINS` existed keeps the behavior it was running with.
+        let enabled = Runtime::with_dev_tweaks(|d| d.adaptive_joins).unwrap_or(enabled);
+        self.inner().use_adaptive_joins.set(enabled);
+    }
+
     fn set_auto_rebalance(&self, enable: bool) -> Result<(), DbspError> {
         self.inner().balancer.set_auto_rebalance(enable)
     }
@@ -3714,6 +3736,12 @@ where
             return Err(DbspError::Balancer(BalancerError::NonTopLevelNode(
                 global_node_id.clone(),
             )));
+        }
+
+        // With one worker, or with adaptive joins off, balanced joins skip the
+        // balancer, so no registered stream exists for the hint to steer.
+        if Runtime::num_workers() == 1 || !self.use_adaptive_joins() {
+            return Ok(());
         }
 
         self.inner()
@@ -8997,6 +9025,45 @@ mod tests {
     use std::{
         cell::RefCell, collections::HashMap, ops::Deref, rc::Rc, thread, time::Duration, vec::Vec,
     };
+
+    /// The deprecated `dev_tweaks.adaptive_joins` overrides what the circuit asks for,
+    /// which is what keeps a pipeline created before `FELDERA_ADAPTIVE_JOINS` running the
+    /// way it did.  Without the tweak the circuit's own setting stands.
+    #[test]
+    fn dev_tweak_overrides_adaptive_joins() {
+        use crate::circuit::{CircuitConfig, Runtime};
+        use feldera_types::config::dev_tweaks::DevTweaks;
+
+        // A circuit that never asks for adaptive joins does not get them.
+        let (mut circuit, enabled) = Runtime::init_circuit(CircuitConfig::from(1), |circuit| {
+            Ok(circuit.use_adaptive_joins())
+        })
+        .unwrap();
+        assert!(
+            !enabled,
+            "adaptive joins must be off until a circuit asks for them"
+        );
+        circuit.kill().unwrap();
+
+        for (tweak, requested, expected) in [
+            (None, false, false),
+            (None, true, true),
+            (Some(true), false, true),
+            (Some(false), true, false),
+        ] {
+            let config = CircuitConfig::from(1).with_dev_tweaks(DevTweaks {
+                adaptive_joins: tweak,
+                ..Default::default()
+            });
+            let (mut circuit, actual) = Runtime::init_circuit(config, move |circuit| {
+                circuit.set_adaptive_joins(requested);
+                Ok(circuit.use_adaptive_joins())
+            })
+            .unwrap();
+            assert_eq!(actual, expected, "tweak {tweak:?}, requested {requested}");
+            circuit.kill().unwrap();
+        }
+    }
 
     #[test]
     fn elapsed_time_record_returns_closure_result() {

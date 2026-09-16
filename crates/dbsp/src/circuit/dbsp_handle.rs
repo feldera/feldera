@@ -39,7 +39,7 @@ use std::{
     thread::Result as ThreadResult,
     time::Instant,
 };
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 use uuid::Uuid;
 
 #[cfg(doc)]
@@ -425,10 +425,6 @@ pub fn balancer_balance_tax() -> f64 {
 
 pub fn balancer_key_distribution_refresh_threshold() -> f64 {
     Runtime::with_dev_tweaks(|d| d.balancer_key_distribution_refresh_threshold())
-}
-
-pub fn adaptive_joins_enabled() -> bool {
-    Runtime::with_dev_tweaks(|d| d.adaptive_joins())
 }
 
 pub fn max_level0_batch_size_records() -> usize {
@@ -2390,26 +2386,6 @@ impl DBSPHandle {
             };
         })?;
         Ok(())
-    }
-
-    /// Whether adaptive joins are enabled for this circuit
-    /// (`dev_tweaks.adaptive_joins`). When disabled, the circuit uses plain hash
-    /// joins that never register with the balancer, so balancer hints have no effect.
-    ///
-    /// Compiler-generated circuit code gates its `set_balancer_hint` calls on this;
-    /// when disabled it logs a warning that the hints are being skipped (the generated
-    /// crate cannot log directly).
-    pub fn adaptive_joins_enabled(&self) -> bool {
-        let enabled = self
-            .runtime
-            .as_ref()
-            .is_some_and(|runtime| runtime.runtime().adaptive_joins());
-        if !enabled {
-            warn!(
-                "ignoring balancer hints: adaptive joins are disabled (dev_tweaks.adaptive_joins)"
-            );
-        }
-        enabled
     }
 
     pub fn set_balancer_hint_by_global_id(

@@ -170,6 +170,7 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
                 .increase();
         if (!useHandles)
             this.builder().append("let mut catalog = Catalog::new();").newline();
+        ToRustVisitor.emitCircuitSettings(this.builder(), compiler.metadata);
 
         ToRustVisitor.registerPreAndPostprocessors(compiler, this.builder());
 

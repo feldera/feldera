@@ -28,7 +28,7 @@ use crate::{
     DBData, DBWeight, DynZWeight, NestedCircuit, OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
     TypedBox, ZWeight,
     algebra::MulByRef,
-    circuit::{WithClock, adaptive_joins_enabled},
+    circuit::{CircuitBase as _, WithClock},
     dynamic::{DowncastTrait, DynData, DynUnit, DynWeight, Erase},
     operator::{
         Aggregator,
@@ -178,7 +178,7 @@ where
             .typed()
     }
 
-    /// Behaves as `join_balanced_inner` when adaptive joins are enabled in dev tweaks and as `join` otherwise.
+    /// Behaves as `join_balanced_inner` when the circuit has adaptive joins enabled and as `join` otherwise.
     #[track_caller]
     pub fn join_balanced<F, V2, OV>(
         &self,
@@ -190,7 +190,7 @@ where
         OV: DBData,
         F: Fn(&K, &V, &V2) -> OV + Clone + 'static,
     {
-        if adaptive_joins_enabled() {
+        if self.circuit().use_adaptive_joins() {
             self.join_balanced_inner(other, join)
         } else {
             self.join(other, join)
@@ -255,7 +255,7 @@ where
             .typed()
     }
 
-    /// Behaves as `left_join_balanced_inner` when adaptive joins are enabled in dev tweaks and as `left_join` otherwise.
+    /// Behaves as `left_join_balanced_inner` when the circuit has adaptive joins enabled and as `left_join` otherwise.
     #[track_caller]
     pub fn left_join_balanced<F, V2, OV>(
         &self,
@@ -267,7 +267,7 @@ where
         OV: DBData,
         F: Fn(&K, &V, &Option<V2>) -> OV + Clone + 'static,
     {
-        if adaptive_joins_enabled() {
+        if self.circuit().use_adaptive_joins() {
             self.left_join_balanced_inner(other, join)
         } else {
             self.left_join(other, join)
@@ -329,7 +329,7 @@ where
             .typed()
     }
 
-    /// Behaves as `join_flatmap_balanced_inner` when adaptive joins are enabled in dev tweaks and as `join_flatmap` otherwise.
+    /// Behaves as `join_flatmap_balanced_inner` when the circuit has adaptive joins enabled and as `join_flatmap` otherwise.
     #[track_caller]
     pub fn join_flatmap_balanced<F, V2, OV, It>(
         &self,
@@ -342,7 +342,7 @@ where
         F: Fn(&K, &V, &V2) -> It + Clone + 'static,
         It: IntoIterator<Item = OV> + 'static,
     {
-        if adaptive_joins_enabled() {
+        if self.circuit().use_adaptive_joins() {
             self.join_flatmap_balanced_inner(other, join)
         } else {
             self.join_flatmap(other, join)
@@ -405,7 +405,7 @@ where
             .typed()
     }
 
-    /// Behaves as `left_join_flatmap_balanced_inner` when adaptive joins are enabled in dev tweaks and as `left_join_flatmap` otherwise.
+    /// Behaves as `left_join_flatmap_balanced_inner` when the circuit has adaptive joins enabled and as `left_join_flatmap` otherwise.
     #[track_caller]
     pub fn left_join_flatmap_balanced<F, V2, OV, It>(
         &self,
@@ -418,7 +418,7 @@ where
         F: Fn(&K, &V, &Option<V2>) -> It + Clone + 'static,
         It: IntoIterator<Item = OV> + 'static,
     {
-        if adaptive_joins_enabled() {
+        if self.circuit().use_adaptive_joins() {
             self.left_join_flatmap_balanced_inner(other, join)
         } else {
             self.left_join_flatmap(other, join)
@@ -482,7 +482,7 @@ where
             .typed()
     }
 
-    /// Behaves as `join_index_balanced_inner` when adaptive joins are enabled in dev tweaks and as `join_index` otherwise.
+    /// Behaves as `join_index_balanced_inner` when the circuit has adaptive joins enabled and as `join_index` otherwise.
     #[track_caller]
     pub fn join_index_balanced<F, V2, OK, OV, It>(
         &self,
@@ -496,7 +496,7 @@ where
         F: Fn(&K, &V, &V2) -> It + Clone + 'static,
         It: IntoIterator<Item = (OK, OV)> + 'static,
     {
-        if adaptive_joins_enabled() {
+        if self.circuit().use_adaptive_joins() {
             self.join_index_balanced_inner(other, join)
         } else {
             self.join_index(other, join)
@@ -561,7 +561,7 @@ where
             .typed()
     }
 
-    /// Behaves as `left_join_index_balanced_inner` when adaptive joins are enabled in dev tweaks and as `left_join_index` otherwise.
+    /// Behaves as `left_join_index_balanced_inner` when the circuit has adaptive joins enabled and as `left_join_index` otherwise.
     #[track_caller]
     pub fn left_join_index_balanced<F, V2, OK, OV, It>(
         &self,
@@ -575,7 +575,7 @@ where
         F: Fn(&K, &V, &Option<V2>) -> It + Clone + 'static,
         It: IntoIterator<Item = (OK, OV)> + 'static,
     {
-        if adaptive_joins_enabled() {
+        if self.circuit().use_adaptive_joins() {
             self.left_join_index_balanced_inner(other, join)
         } else {
             self.left_join_index(other, join)

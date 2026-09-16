@@ -1549,7 +1549,8 @@ public class MetadataTests extends BaseSQLTests {
                       "unused" : false
                     } ],
                     "materialized" : false
-                  } ]
+                  } ],
+                  "sql_settings" : { }
                 }""", jsonContents);
     }
 

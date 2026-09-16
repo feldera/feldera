@@ -544,6 +544,12 @@ impl RuntimeInner {
 
         let (pin_cpus_fg, pin_cpus_bg) = map_pin_cpus(&config);
 
+        if config.dev_tweaks.adaptive_joins.is_some() {
+            warn!(
+                "dev_tweaks.adaptive_joins is deprecated and overrides the SQL program; \
+                 use `SET FELDERA_ADAPTIVE_JOINS = ON` instead"
+            );
+        }
         if !config.dev_tweaks.other_options.is_empty() {
             warn!(
                 "Circuit dev_tweaks includes unknown options: {:?}",
@@ -1169,14 +1175,6 @@ impl Runtime {
 
     pub fn allow_input_during_commit(&self) -> bool {
         self.inner().allow_input_during_commit
-    }
-
-    /// Whether adaptive (dynamically balanced) joins are enabled, per
-    /// `dev_tweaks.adaptive_joins`. Unlike [`Self::with_dev_tweaks`], this reads the
-    /// runtime's configured tweaks, so it is valid off the worker threads (e.g. on
-    /// the thread that owns the `DBSPHandle`).
-    pub fn adaptive_joins(&self) -> bool {
-        self.inner().dev_tweaks.adaptive_joins()
     }
 
     /// Returns the worker index as a string.

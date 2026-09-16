@@ -2079,7 +2079,8 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         when the drift in the size of joined relations exceeds a threshold. This method forces the balancer
         to reevaluate and apply an optimal partitioning policy regardless of the threshold.
 
-        This operation is a no-op unless the `adaptive_joins` feature is enabled in `dev_tweaks`.
+        This operation is a no-op unless the SQL program enables adaptive joins with
+        ``SET FELDERA_ADAPTIVE_JOINS = ON``.
         """
 
         self.client.rebalance_pipeline(self.name)

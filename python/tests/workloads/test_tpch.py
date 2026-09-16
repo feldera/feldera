@@ -1492,7 +1492,7 @@ def tpch_test(config: TPCHTestConfig):
             tables,
             [],
             config.resources,
-            dev_tweaks={"adaptive_joins": True},
+            adaptive_joins=True,
         )
         if config.segment_size is not None:
             segment_size = config.segment_size

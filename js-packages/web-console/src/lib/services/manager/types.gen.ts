@@ -1696,7 +1696,9 @@ export type DevTweaks = {
    *
    * Adaptive joins dynamically change their partitioning policy to avoid skew.
    *
-   * Adaptive joins are disabled by default.
+   * Deprecated: set `FELDERA_ADAPTIVE_JOINS` in the SQL program instead.
+   * While this option is set, it overrides the SQL setting.
+   * This option will be removed in a future release.
    */
   adaptive_joins?: boolean | null
   /**
