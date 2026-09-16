@@ -1158,6 +1158,19 @@ export class Measurement {
                 if (metric.value === undefined) {
                     return []
                 }
+                if ((metric.value as any).type !== "duration") {
+                    // A breakdown such as `circuit_wait_by_reason_seconds` maps each reason to
+                    // its own duration; each becomes a measurement that adds up over a region.
+                    const result: Array<Measurement> = [];
+                    const reasons = metric.value as unknown as Record<string, DurationMetricValue>;
+                    for (const [reason, item] of Object.entries(reasons)) {
+                        if (item?.type === "duration") {
+                            result.push(new Measurement(metric_id + "." + reason,
+                                Option.some(TimeValue.fromDurationMetric(item)), AggregationMode.Sum));
+                        }
+                    }
+                    return result;
+                }
                 let s = metric.value as DurationMetricValue;
                 let duration = TimeValue.fromDurationMetric(s);
                 // Durations measure a node's own work on a worker's thread and add up, except

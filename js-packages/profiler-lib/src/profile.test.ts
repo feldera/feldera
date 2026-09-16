@@ -685,6 +685,22 @@ describe('Measurement.parseValues tags the new-format metrics', () => {
         return new Map(parsed.map((m: Measurement) => [m.property, m]))
     }
 
+    // The worker's wait breakdown is a map from the reason to a duration, not a duration
+    // itself, and reading it as one crashed the visualizer on `s.value.secs`.
+    it('splits a wait breakdown into one summed duration per reason', () => {
+        const parsed = parse({
+            metric_id: 'circuit_wait_by_reason_seconds',
+            value: { peers: duration(3), storage_sync: duration(5) },
+        })
+        expect([...parsed.keys()].sort()).toEqual([
+            'circuit_wait_by_reason_seconds.peers',
+            'circuit_wait_by_reason_seconds.storage_sync',
+        ])
+        const sync = parsed.get('circuit_wait_by_reason_seconds.storage_sync')!
+        expect(sync.value.unwrap().getNumericValue().unwrap()).toBe(5)
+        expect(sync.aggregation).toBe(AggregationMode.Sum)
+    })
+
     it('tags a batch-size summary by what each field reports', () => {
         const parsed = parse({
             metric_id: 'input_batches_stats',
