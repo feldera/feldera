@@ -37,7 +37,6 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
-import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.CircuitWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.ProjectDeclarations;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -742,20 +741,6 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
-    /** Whether a table is fed through the lazy input map, which resolves a
-     * transaction's updates against the table when the transaction commits,
-     * rather than the eager map, which resolves each one as it arrives.
-     *
-     * <p>A table with a primary key and no LATENESS takes the lazy map.  A
-     * table with LATENESS keeps the eager map, whose waterline the lazy map
-     * has no counterpart for.  Later a table property will let the user
-     * choose. */
-    static boolean useLazyInputMap(IInputMapOperator operator) {
-        TableMetadata metadata = operator.getMetadata();
-        return operator.asOperator().is(DBSPSourceMapOperator.class)
-                && !metadata.getPrimaryKeys().isEmpty()
-                && !Linq.any(metadata.getColumns(), column -> column.lateness != null);
-    }
 
     @Override
     public VisitDecision preorder(DBSPSourceMapOperator operator) {
@@ -765,7 +750,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 new ProgramIdentifier(operator.getOriginalRowType().hashName + "_key", false));
         DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
                 new ProgramIdentifier(operator.getOriginalRowType().hashName + "_upsert", false));
-        if (useLazyInputMap(operator)) {
+        if (operator.usesLazyInputMap()) {
             // The lazy map takes writes and deletes only, so it has no patch
             // function and no upsert type.
             DBSPTypeIndexedZSet lazyIx = ((IInputMapOperator) operator).getOutputIndexedZSetType();
@@ -935,7 +920,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 }
             }
 
-            if (useLazyInputMap(operator)) {
+            if (operator.usesLazyInputMap()) {
                 // A lazy table is always materialized: the map keeps the
                 // integral it resolves against, and the catalog reads that one.
                 // The map takes writes and deletes only, so there is no update

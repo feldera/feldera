@@ -23,6 +23,10 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.sql.SQLException;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MultiCrateTests extends BaseSQLTests {
     public static void setupCargoLock() throws IOException {
@@ -110,6 +114,51 @@ public class MultiCrateTests extends BaseSQLTests {
                 );
                 CREATE VIEW V AS SELECT * FROM test_events;""";
         compileProgramToMultiCrate(sql, true);
+    }
+
+    /** A primary-key table without LATENESS is fed through the lazy input
+     * map, so the crate of its source operator must name the lazy handle
+     * type in its signature, and the whole program must still compile. */
+    @Test
+    public void lazyInputMapHandle() throws IOException, SQLException, InterruptedException {
+        String sql = """
+                CREATE TABLE lazy_tbl (id INT NOT NULL PRIMARY KEY, s VARCHAR);
+                CREATE TABLE late_tbl (
+                    id INT NOT NULL PRIMARY KEY,
+                    t TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE
+                );
+                CREATE MATERIALIZED VIEW V AS
+                SELECT lazy_tbl.id, late_tbl.t FROM lazy_tbl JOIN late_tbl ON lazy_tbl.id = late_tbl.id;""";
+        compileProgramToMultiCrate(sql, true);
+        Assert.assertEquals(Set.of("LazyMapHandle"),
+                handleTypesOfCratesCalling("add_lazy_input_map_persistent"));
+        // The LATENESS table keeps the eager map with its waterline. Its
+        // crate registers the handle with the catalog instead of returning
+        // it, so it names no handle type at all.
+        Assert.assertEquals(Set.of(),
+                handleTypesOfCratesCalling("add_input_map_with_waterline_persistent"));
+    }
+
+    /** The handle types named by the generated operator crates whose bodies
+     * call {@code call}; at least one crate must call it. */
+    static Set<String> handleTypesOfCratesCalling(String call) throws IOException {
+        File[] crates = new File(BaseSQLTests.RUST_MULTI_DIRECTORY + "/crates")
+                .listFiles((dir, name) -> name.startsWith(MultiCrates.FILE_PREFIX + "operator_"));
+        Assert.assertNotNull(crates);
+        Pattern handle = Pattern.compile("\\b(LazyMapHandle|MapHandle)<");
+        Set<String> result = new HashSet<>();
+        int callers = 0;
+        for (File crate: crates) {
+            String code = Utilities.readFile(crate.toPath().resolve("src").resolve("lib.rs"));
+            if (!code.contains(call))
+                continue;
+            callers++;
+            Matcher matcher = handle.matcher(code);
+            while (matcher.find())
+                result.add(matcher.group(1));
+        }
+        Assert.assertTrue("no generated operator crate calls " + call, callers > 0);
+        return result;
     }
 
     @Test
