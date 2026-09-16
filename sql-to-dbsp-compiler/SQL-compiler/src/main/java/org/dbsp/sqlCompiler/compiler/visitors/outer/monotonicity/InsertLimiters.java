@@ -1594,16 +1594,23 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     operator.getRelNode());
         }
 
+        // The columns with a LATENESS declaration, as a projection of the row
+        List<IMaybeMonotoneType> declaredFields = new ArrayList<>();
         List<DBSPExpression> timestamps = new ArrayList<>();
         int index = 0;
-        DBSPVariablePath t = operator.getOutputZSetType().elementType.ref().var();
+        DBSPTypeTupleBase rowType = operator.getOutputZSetType().elementType.to(DBSPTypeTupleBase.class);
+        DBSPVariablePath t = rowType.ref().var();
         for (IColumnMetadata column: operator.to(IHasColumnsMetadata.class).getColumnsMetadata()) {
+            DBSPType columnType = rowType.getFieldType(index);
             DBSPExpression lateness = column.getLateness();
             if (lateness != null) {
                 DBSPExpression field = t.deref().field(index);
-                field = ExpressionCompiler.makeBinaryExpression(operator.getRelNode(), field.getType(),
+                field = ExpressionCompiler.makeBinaryExpression(operator.getRelNode(), columnType,
                         DBSPOpcode.SUB, field, lateness);
                 timestamps.add(field);
+                declaredFields.add(new MonotoneType(columnType));
+            } else {
+                declaredFields.add(NonMonotoneType.nonMonotone(columnType));
             }
             index++;
         }
@@ -1621,8 +1628,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPTupleExpression timestamp = new DBSPTupleExpression(timestamps, false);
         DBSPExpression minValue = timestamp.getType().minimumValue();
         DBSPClosureExpression max = timestampMax(operator.getRelNode(), minValue.getType().to(DBSPTypeTupleBase.class));
-        LatenessFilter lateness = this.latenessFilter(viewOrTable,
-                operator.getOutputZSetType().elementType, Monotonicity.getBodyType(me), minValue.getType());
+        PartiallyMonotoneTuple declared = new PartiallyMonotoneTuple(declaredFields, false, false);
+        LatenessFilter lateness = this.latenessFilter(viewOrTable, rowType, declared, minValue.getType());
 
         DBSPOperator result;
         OutputPort waterlineOutputPort;
@@ -1689,8 +1696,11 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 waterlineOutputPort, null);
         extend.addAnnotation(Waterline.INSTANCE, DBSPSimpleOperator.class);
         this.addOperator(extend);
-        this.markBound(operator.outputPort(), extend.outputPort());
-        this.markBound(expansion.outputPort(), extend.outputPort());
+        OutputPort merged = extend.outputPort();
+        if (operator.is(DBSPViewOperator.class))
+            merged = this.mergeViewWaterline(expansion, declared, Monotonicity.getBodyType(me), merged);
+        this.markBound(operator.outputPort(), merged);
+        this.markBound(expansion.outputPort(), merged);
 
         if (INSERT_RETAIN_KEYS && replaceIndexedInput &&
                 multisetInput != null &&
@@ -1772,6 +1782,32 @@ public class InsertLimiters extends CircuitCloneVisitor {
             result = integral.outputPort();
         }
         return new WindowStreams(data, result);
+    }
+
+    /** The bound of a view with LATENESS declarations: the pointwise MAX of the bound inherited
+     * from the view's input and the bound computed from the declarations, each a sound lower
+     * bound on the columns it covers.
+     * @param expansion      Operator the view expands to.
+     * @param declared       Projection to the columns with a LATENESS declaration.
+     * @param combinedType   Monotone type of the view's output, from {@link Monotonicity}.
+     * @param declaredBound  Bound computed from the LATENESS declarations.
+     * @return declaredBound when the view's input has no monotone column, else the merged bound. */
+    OutputPort mergeViewWaterline(DBSPSimpleOperator expansion, PartiallyMonotoneTuple declared,
+                                  IMaybeMonotoneType combinedType, OutputPort declaredBound) {
+        OutputPort input = expansion.inputs.get(0);
+        MonotoneExpression inputMonotone = this.expansionMonotoneValues.get(input);
+        if (inputMonotone == null)
+            return declaredBound;
+        IMaybeMonotoneType inherited = Monotonicity.getBodyType(inputMonotone);
+        OutputPort inheritedBound = this.boundOf(expansion, input);
+
+        DBSPVariablePath inh = this.getLimiterDataOutputType(inheritedBound).ref().var();
+        DBSPVariablePath dec = this.getLimiterDataOutputType(declaredBound).ref().var();
+        DBSPExpression merged = this.max(inh.deref(), dec.deref(), inherited, declared);
+        DBSPType combined = Objects.requireNonNull(combinedType.getProjectedType());
+        Utilities.enforce(merged.getType().sameType(combined),
+                () -> "Merged waterline type " + merged.getType() + " differs from " + combined);
+        return this.createApply2(inheritedBound, declaredBound, merged.closure(inh, dec));
     }
 
     /** The two closures of a controlled key filter that drops rows below the waterline:

@@ -128,6 +128,10 @@ LATENESS v.col1 INTERVAL 1 HOUR;
 is illegal: `LATENESS v.str.col INTERVAL 1 HOUR`.  `LATENESS` cannot be specified
 for a [recursive view](/sql/recursion).
 
+When the compiler infers [waterlines](#the-data-retention-algorithm)
+for the input collection that feeds a VIEW, it combines them with the
+specified `LATENESS`, taking the larger waterline for each column.
+
 ### Guidelines for writing lateness annotations
 
 Keep in mind the following guidelines when choosing lateness annotations for
