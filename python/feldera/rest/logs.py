@@ -26,8 +26,11 @@ class LogPosition:
     epoch: str
     """
     Identifies the lifetime of the pipeline's logs buffer, which is what gives the
-    sequence number meaning: the buffer lives in memory, so a restart resets numbering to
-    zero while a reader still holds a cursor issued before it.
+    sequence number meaning: the buffer lives in memory, so a runner restart resets
+    numbering to zero while a reader still holds a cursor issued before it.
+
+    The buffer outlives a pipeline run: stopping and starting a pipeline keeps the epoch
+    and continues the numbering, so only a runner restart or a deleted pipeline ends it.
     """
 
     seq: int
@@ -87,9 +90,25 @@ class LogStream:
         self.position = position
 
     def __iter__(self) -> Generator[str, None, None]:
-        for chunk in self._response.iter_lines(chunk_size=_CHUNK_SIZE):
-            if chunk:
-                yield chunk.decode("utf-8")
+        """
+        Yields one line per newline in the body, which is one line per sequence number.
+
+        The count has to match the server's exactly, so the split is on `\n` alone and
+        empty lines count. `requests.iter_lines` suits neither: it drops empty lines and
+        splits on `\r`, `\v` and other separators a log line is free to contain.
+
+        A trailing fragment with no newline is a line the connection cut short. Dropping it
+        leaves the cursor pointing at the line before, which the next connection redelivers
+        whole.
+        """
+        pending = b""
+        for chunk in self._response.iter_content(chunk_size=_CHUNK_SIZE):
+            pending += chunk
+            start = 0
+            while (end := pending.find(b"\n", start)) != -1:
+                yield pending[start:end].decode("utf-8")
+                start = end + 1
+            pending = pending[start:]
 
     def close(self) -> None:
         self._response.close()

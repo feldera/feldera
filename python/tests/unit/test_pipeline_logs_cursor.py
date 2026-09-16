@@ -173,6 +173,32 @@ class TestResumePipelineLogs:
         assert m.call_args.args[0].endswith("/pipelines/p/logs")
         assert stream.position.epoch == EPOCH
 
+    def test_every_newline_yields_a_line(self):
+        # The cursor is derived by counting, so the count has to match the server's line
+        # for line. Blank lines carry a sequence number, and a `\r` inside a line does not.
+        body = b"a\n\nb\rc\n\n\n"
+        with _make_client([_logs_response(body)]):
+            stream = _client().resume_pipeline_logs("p")
+        lines = list(stream)
+        assert lines == ["a", "", "b\rc", "", ""]
+        assert len(lines) == body.count(b"\n")
+
+    def test_a_line_cut_short_is_not_counted(self):
+        # The connection dropped mid-line. Counting the fragment would advance the cursor
+        # past a line that was never delivered whole.
+        with _make_client([_logs_response(b"a\nb")]):
+            stream = _client().resume_pipeline_logs("p")
+        assert list(stream) == ["a"]
+
+    def test_lines_split_across_chunks_are_rejoined(self):
+        response = _logs_response(b"")
+        with _make_client([response]):
+            stream = _client().resume_pipeline_logs("p")
+        with mock.patch.object(
+            response, "iter_content", return_value=iter([b"ab", b"c\nde", b"f\n"])
+        ):
+            assert list(stream) == ["abc", "def"]
+
     def test_legacy_stream_sends_no_cursor(self):
         # A caller that omits the cursor keeps the stream it has always received, which
         # carries no position and is free to open with a notice rather than a log line.
