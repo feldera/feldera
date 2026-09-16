@@ -433,8 +433,8 @@ async fn reconcile<E: PipelineExecutor + 'static>(
 mod test {
     use super::{
         FollowMode, FollowRequest, FollowerMessage, LOGS_EPOCH_HEADER, LOGS_GAP_HEADER,
-        LOGS_SEQ_HEADER, LogMessage, PipelineId, PipelinesState, RESUME_POSITION_TIMEOUT,
-        get_logs, logs_stream, resume_position,
+        LOGS_SEQ_HEADER, LogMessage, PipelineId, PipelinesState, RESUME_POSITION_TIMEOUT, get_logs,
+        logs_stream, resume_position,
     };
     use crate::runner::pipeline_logs::start_thread_pipeline_logs;
     use actix_web::http::StatusCode;

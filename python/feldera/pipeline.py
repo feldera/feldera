@@ -137,9 +137,10 @@ class Pipeline:
         Where :meth:`logs` replays the whole retained buffer on every connection, this
         delivers only the lines following `cursor`.
 
-        A cursor issued during an earlier lifetime of the logs buffer, such as before a
-        pipeline restart, is not an error: the stream starts at the beginning of the
-        retained buffer, and `LogPosition.gap` names the lines that were lost.
+        The logs buffer is discarded when the runner restarts or the pipeline is deleted,
+        and survives a pipeline being stopped and started. A cursor issued during an
+        earlier lifetime of the buffer is not an error: the stream starts at the beginning
+        of the retained buffer, and `LogPosition.gap` names the lines that were lost.
 
         For example, to read the logs across a dropped connection::
 
