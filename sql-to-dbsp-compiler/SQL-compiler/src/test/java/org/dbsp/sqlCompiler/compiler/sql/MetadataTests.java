@@ -6,11 +6,13 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.IInputMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.backend.MerkleOuter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.frontend.SqlComment;
 import org.dbsp.sqlCompiler.compiler.frontend.SqlCommentParser;
@@ -18,15 +20,18 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.TestSerialize;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.HashString;
 import org.dbsp.util.NullPrintStream;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.junit.Test;
 
+import javax.annotation.Nullable;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
@@ -40,8 +45,11 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.sql.SQLException;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /** Tests about table and view metadata */
@@ -554,6 +562,198 @@ public class MetadataTests extends BaseSQLTests {
     public void testValidateSkip() {
         this.statementsFailingInCompilation("CREATE TABLE T(x INT) with ('skip_unused_columns' = '{}')",
                 "Expected a boolean value for property 'skip_unused_columns'");
+    }
+
+    /** A table without a primary key has no row for a partial update to patch, so it
+     * cannot name the property, whichever value it gives. */
+    @Test
+    public void partialUpdatesNeedAPrimaryKey() {
+        for (String value : List.of("true", "false"))
+            this.statementsFailingInCompilation(
+                    "CREATE TABLE T(x INT) WITH ('partial_updates' = '" + value + "')",
+                    "Property 'partial_updates' is only allowed on a table with a PRIMARY KEY");
+    }
+
+    @Test
+    public void partialUpdatesTakeABoolean() {
+        this.statementsFailingInCompilation(
+                "CREATE TABLE T(x INT NOT NULL PRIMARY KEY) WITH ('partial_updates' = 'yes')",
+                "Expected a boolean value for property 'partial_updates'");
+    }
+
+    /** The input map that feeds each table of a circuit.
+     *
+     * @param circuit A compiled circuit.
+     * @return For each table fed through an input map, whether the map is lazy. */
+    static Map<String, Boolean> lazyInputMaps(DBSPCircuit circuit) {
+        Map<String, Boolean> result = new HashMap<>();
+        for (IInputOperator input : circuit.sourceOperators.values()) {
+            IInputMapOperator map = input.asOperator().as(IInputMapOperator.class);
+            if (map != null)
+                result.put(input.getTableName().name(), map.usesLazyInputMap());
+        }
+        return result;
+    }
+
+    /** A table that accepts partial updates keeps the eager input map, which applies
+     * them; a table that does not takes the lazy map, whether it says so or leaves the
+     * property out.  The choice survives the compiler passes that rebuild a table's
+     * metadata, here to expand the cast in each DEFAULT, and the circuit's round trip
+     * through JSON. */
+    @Test
+    public void partialUpdatesKeepTheEagerInputMap() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE eager_t(id INT NOT NULL PRIMARY KEY, d DATE DEFAULT '2024-01-01')
+                    WITH ('partial_updates' = 'true');
+                CREATE TABLE lazy_t(id INT NOT NULL PRIMARY KEY, d DATE DEFAULT '2024-01-01');
+                CREATE TABLE off_t(id INT NOT NULL PRIMARY KEY, d DATE DEFAULT '2024-01-01')
+                    WITH ('partial_updates' = 'false');""");
+        DBSPCircuit circuit = getCircuit(compiler);
+        Map<String, Boolean> expected = Map.of("eager_t", false, "lazy_t", true, "off_t", true);
+        Assert.assertEquals(expected, lazyInputMaps(circuit));
+        DBSPCircuit decoded = new TestSerialize(compiler).apply(circuit);
+        Assert.assertEquals(expected, lazyInputMaps(decoded));
+    }
+
+    /** Inserts and deletes do the same to a table whether it accepts partial updates or
+     * not, although the two tables take different input maps: an insert replaces the row
+     * with the same key, and a delete removes it. */
+    @Test
+    public void partialUpdatesKeepInsertsAndDeletes() {
+        var ccs = this.getCCS("""
+                CREATE TABLE eager_t(id INT NOT NULL PRIMARY KEY, v INT)
+                    WITH ('partial_updates' = 'true');
+                CREATE TABLE lazy_t(id INT NOT NULL PRIMARY KEY, v INT);
+                CREATE VIEW v AS
+                SELECT 0 AS kind, id, v FROM eager_t
+                UNION ALL
+                SELECT 1 AS kind, id, v FROM lazy_t;""");
+        ccs.step("""
+                INSERT INTO eager_t VALUES (1, 10), (2, 20);
+                INSERT INTO lazy_t VALUES (1, 10), (2, 20);""", """
+                 kind | id | v  | weight
+                -------------------------
+                 0    | 1  | 10 | 1
+                 0    | 2  | 20 | 1
+                 1    | 1  | 10 | 1
+                 1    | 2  | 20 | 1""");
+        ccs.step("""
+                INSERT INTO eager_t VALUES (1, 11);
+                INSERT INTO lazy_t VALUES (1, 11);
+                REMOVE FROM eager_t VALUES (2, 20);
+                REMOVE FROM lazy_t VALUES (2, 20);""", """
+                 kind | id | v  | weight
+                -------------------------
+                 0    | 1  | 10 | -1
+                 0    | 1  | 11 | 1
+                 0    | 2  | 20 | -1
+                 1    | 1  | 10 | -1
+                 1    | 1  | 11 | 1
+                 1    | 2  | 20 | -1""");
+    }
+
+    /** The persistent id of each table of {@code sql}, computed as if the runtime stored
+     * the state of a lazy input map in format {@code lazyInputMapVersion}.
+     *
+     * @param sql                 A program.
+     * @param lazyInputMapVersion See {@link MerkleOuter#LAZY_INPUT_MAP_VERSION}.
+     * @return The persistent id of the input operator of each table, by table name. */
+    Map<String, HashString> tablePersistentIds(String sql, String lazyInputMapVersion) {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.submitStatementsForCompilation(sql);
+        DBSPCircuit circuit = getCircuit(compiler);
+        MerkleOuter merkle = new MerkleOuter(
+                compiler, true, MerkleOuter.RECURSIVE_STATE_VERSION, lazyInputMapVersion);
+        merkle.apply(circuit);
+        Map<String, HashString> result = new HashMap<>();
+        for (IInputOperator input : circuit.sourceOperators.values())
+            result.put(input.getTableName().name(),
+                    Utilities.getExists(merkle.operatorHash, input.asOperator().id));
+        return result;
+    }
+
+    /** The persistent id of table {@code t}, created by {@code table} with the
+     * {@code partial_updates} property set to {@code partialUpdates}.
+     *
+     * @param table          A CREATE TABLE statement without a WITH clause or semicolon.
+     * @param partialUpdates The value of the property, or null to leave it out.
+     * @return The persistent id of the table's input operator. */
+    HashString tableId(String table, @Nullable String partialUpdates) {
+        String sql = partialUpdates == null
+                ? table + ";"
+                : table + " WITH ('partial_updates' = '" + partialUpdates + "');";
+        return this.tablePersistentIds(sql, MerkleOuter.LAZY_INPUT_MAP_VERSION).get("t");
+    }
+
+    /** The property changes a table's persistent id only by moving the table between the
+     * input maps, so that the pipeline treats the table as changed rather than resuming
+     * one map from the other's checkpoint.  On a table with LATENESS, which keeps the
+     * eager map either way, the property changes nothing, and neither does 'false'. */
+    @Test
+    public void partialUpdatesChangeTheIdOnlyWithTheMap() {
+        String keyed = "CREATE TABLE t(id INT NOT NULL PRIMARY KEY, s VARCHAR)";
+        Assert.assertEquals(this.tableId(keyed, null), this.tableId(keyed, "false"));
+        Assert.assertNotEquals(this.tableId(keyed, null), this.tableId(keyed, "true"));
+        String late = "CREATE TABLE t(id INT NOT NULL PRIMARY KEY, " +
+                "ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE)";
+        Assert.assertEquals(this.tableId(late, null), this.tableId(late, "true"));
+    }
+
+    /** The persistent id of table {@code t} in the dataflow graph of {@code sql}, compiled
+     * with the options with which the pipeline manager compiles a program.
+     *
+     * @param sql A program that creates table {@code t}.
+     * @return The persistent id of the table's input operator. */
+    String dataflowTableId(String sql) throws IOException, SQLException {
+        File file = createInputScript(sql);
+        File json = this.createTempJsonFile();
+        CompilerMessages messages = CompilerMain.execute("-i", "--alltables", "--ignoreOrder",
+                "--noRust", "--dataflow", json.getPath(), file.getPath());
+        Assert.assertEquals(0, messages.exitCode);
+        JsonNode mir = Utilities.deterministicObjectMapper().readTree(json).get("mir");
+        Utilities.deleteFile(json, true);
+        String id = null;
+        for (JsonNode node : mir)
+            if (node.path("table").asText().equals("t"))
+                id = node.get("persistent_id").asText();
+        Assert.assertNotNull(id);
+        return id;
+    }
+
+    /** A table that sets the property keeps the persistent id that the compiler gave it
+     * before the lazy input map existed, so that a pipeline upgraded from an older version
+     * resumes the table from its checkpoint instead of re-ingesting it; without the
+     * property, the table takes the lazy map and a new id.  A change of the pinned id
+     * makes every such pipeline re-ingest the table, so update it only deliberately. */
+    @Test
+    public void partialUpdatesKeepTheIdOfOlderVersions() throws IOException, SQLException {
+        String table = "CREATE TABLE t(id INT NOT NULL PRIMARY KEY, s VARCHAR)";
+        String olderId = "576512a6e7fdfc2c49389c46920ddca6bd6c7caf401c8543269cdb2827cd1fba";
+        Assert.assertEquals(olderId,
+                this.dataflowTableId(table + " WITH ('partial_updates' = 'true');"));
+        Assert.assertNotEquals(olderId, this.dataflowTableId(table + ";"));
+    }
+
+    /** The version of the lazy input map's state format changes the persistent id of the
+     * tables fed through the lazy map, and of no other table.  This is also what gives a
+     * table that the lazy map feeds after an upgrade a new id: the eager map that fed it
+     * before carried no version.  See {@link MerkleOuter#LAZY_INPUT_MAP_VERSION}. */
+    @Test
+    public void lazyInputMapVersionChangesOnlyLazyIds() {
+        String sql = """
+                CREATE TABLE lazy_t(id INT NOT NULL PRIMARY KEY, s VARCHAR);
+                CREATE TABLE eager_t(id INT NOT NULL PRIMARY KEY, s VARCHAR)
+                    WITH ('partial_updates' = 'true');
+                CREATE TABLE late_t(id INT NOT NULL PRIMARY KEY,
+                    ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE);
+                CREATE TABLE keyless_t(id INT, s VARCHAR);""";
+        Map<String, HashString> before = this.tablePersistentIds(sql, "lazy-input-map-v0");
+        Map<String, HashString> after = this.tablePersistentIds(sql, "lazy-input-map-v1");
+        Assert.assertEquals(Set.of("lazy_t", "eager_t", "late_t", "keyless_t"), before.keySet());
+        Assert.assertNotEquals(before.get("lazy_t"), after.get("lazy_t"));
+        for (String table : List.of("eager_t", "late_t", "keyless_t"))
+            Assert.assertEquals(table, before.get(table), after.get(table));
     }
 
     @Test

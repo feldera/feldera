@@ -29,6 +29,9 @@ public class TableMetadata implements IJson {
     /** null if not defined */
     @Nullable
     public final Boolean skipUnusedColumns;
+    /** True if the table accepts partial updates, which only the eager input map
+     * can apply; see {@link CreateTableStatement#PARTIAL_UPDATES}. */
+    public final boolean partialUpdates;
     final TableChanges changes;
 
     /** Describes the kind of changes that can be applied to the table */
@@ -41,7 +44,8 @@ public class TableMetadata implements IJson {
 
     public TableMetadata(ProgramIdentifier tableName,
                          List<InputColumnMetadata> columns, List<ForeignKey> foreignKeys, @Nullable Long expectedSize,
-                         boolean materialized, boolean streaming, @Nullable Boolean skipUnusedColumns) {
+                         boolean materialized, boolean streaming, @Nullable Boolean skipUnusedColumns,
+                         boolean partialUpdates) {
         this.tableName = tableName;
         this.columnMetadata = new LinkedHashMap<>();
         this.expectedSize = expectedSize;
@@ -49,6 +53,7 @@ public class TableMetadata implements IJson {
         this.foreignKeys = foreignKeys;
         this.changes = streaming ? TableChanges.AppendOnly : TableChanges.Unrestricted;
         this.skipUnusedColumns = skipUnusedColumns;
+        this.partialUpdates = partialUpdates;
         this.columnNames = new ArrayList<>();
         for (InputColumnMetadata meta: columns) {
             Utilities.putNew(this.columnMetadata, meta.name, meta);
@@ -99,6 +104,16 @@ public class TableMetadata implements IJson {
 
     @Override
     public void asJson(ToJsonInnerVisitor visitor) {
+        this.asJson(visitor, false);
+    }
+
+    /** Writes the metadata as JSON.
+     *
+     * @param visitor         The visitor that writes the JSON.
+     * @param forPersistentId True if the JSON is hashed into a persistent id.  It then
+     *                        leaves out the {@code partial_updates} property, which
+     *                        changes the id only through the input map it selects. */
+    public void asJson(ToJsonInnerVisitor visitor, boolean forPersistentId) {
         JsonStream stream = visitor.stream;
         stream.beginObject();
         stream.label("tableName");
@@ -108,6 +123,9 @@ public class TableMetadata implements IJson {
         // Do not emit if not defined
         if (this.skipUnusedColumns != null)
             stream.label(CreateTableStatement.SKIP_UNUSED_COLUMNS).append(this.skipUnusedColumns);
+        // Do not emit if not set
+        if (this.partialUpdates && !forPersistentId)
+            stream.label(CreateTableStatement.PARTIAL_UPDATES).append(true);
         // Do not emit if not defined
         if (this.expectedSize != null)
             stream.label(CreateTableStatement.EXPECTED_SIZE).append(this.expectedSize);
@@ -132,6 +150,8 @@ public class TableMetadata implements IJson {
         if (node.has(CreateTableStatement.SKIP_UNUSED_COLUMNS)) {
             skipUnusedColumns = Utilities.getBooleanProperty(node, CreateTableStatement.SKIP_UNUSED_COLUMNS);
         }
+        boolean partialUpdates = node.has(CreateTableStatement.PARTIAL_UPDATES)
+                && Utilities.getBooleanProperty(node, CreateTableStatement.PARTIAL_UPDATES);
         String changesS = Utilities.getStringProperty(node, "changes");
         TableChanges changes = TableChanges.valueOf(changesS);
         JsonNode fk = Utilities.getProperty(node, "foreignKeys");
@@ -144,6 +164,6 @@ public class TableMetadata implements IJson {
             expectedSize = Utilities.getLongProperty(node, CreateTableStatement.EXPECTED_SIZE);
         return new TableMetadata(
                 tableName, columnMetadata, foreignKeys, expectedSize, materialized,
-                changes == TableChanges.AppendOnly, skipUnusedColumns);
+                changes == TableChanges.AppendOnly, skipUnusedColumns, partialUpdates);
     }
 }

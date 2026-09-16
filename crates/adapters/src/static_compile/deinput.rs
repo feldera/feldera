@@ -1455,9 +1455,7 @@ where
 
     fn update(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
         if !H::TAKES_UPDATES {
-            bail!(
-                "this table does not take update records: it keeps a key's last write, which a partial update cannot express; send the whole record as an insert"
-            );
+            bail!("update records require the table property 'partial_updates' = 'true'");
         }
         let upd = U::from(self.deserializer.deserialize::<UD>(data, metadata)?);
         let key = (self.update_key_func)(&upd);
@@ -2008,7 +2006,7 @@ mod test {
             .update(br#"{"id": 2, "s": "changed"}"#, &None)
             .unwrap_err();
         assert!(
-            refused.to_string().contains("does not take update records"),
+            refused.to_string().contains("'partial_updates' = 'true'"),
             "{refused}"
         );
         dbsp.kill().unwrap();

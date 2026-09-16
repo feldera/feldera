@@ -54,7 +54,7 @@ public class TestTagRegions {
 
         var source = new DBSPSourceMultisetOperator(
                 CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY, z, str,
-                new TableMetadata(table, Linq.list(inputMeta), new ArrayList<>(), null, false, false, null),
+                new TableMetadata(table, Linq.list(inputMeta), new ArrayList<>(), null, false, false, null, false),
                 table, StreamKind.COLLECTION, null);
         if (addAnnotation.test(source))
             source.addAnnotation(new GlobalAggregate(0), DBSPSimpleOperator.class);

@@ -3229,7 +3229,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
 
         TableMetadata tableMeta = new TableMetadata(
-                tableName, metadata, create.foreignKeys, expectedSize, materialized, appendOnly, skipUnusedColumns);
+                tableName, metadata, create.foreignKeys, expectedSize, materialized, appendOnly, skipUnusedColumns,
+                create.acceptsPartialUpdates());
         DBSPSourceMultisetOperator result = new DBSPSourceMultisetOperator(
                 new RelAnd(), identifier, TypeCompiler.makeZSet(rowType), originalRowType,
                 tableMeta, tableName, StreamKind.COLLECTION, def.getStatement());
@@ -3247,7 +3248,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         CalciteObject identifier = CalciteObject.EMPTY;
         List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);
         TableMetadata tableMeta = new TableMetadata(
-                tableName, metadata, new ArrayList<>(), null, false, false, null);
+                tableName, metadata, new ArrayList<>(), null, false, false, null, false);
         DBSPViewDeclarationOperator result = new DBSPViewDeclarationOperator(
                 create.getCalciteObject(), identifier, TypeCompiler.makeZSet(rowType), originalRowType,
                 tableMeta, tableName, StreamKind.COLLECTION);

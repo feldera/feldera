@@ -95,8 +95,9 @@ and performs the following actions:
    will be populated with data received from input connectors.
 
    * A table is considered modified if types, names or the order of its columns have changed in any way,
-     its primary key constraint has changed, or its `materialized` or `append_only` properties were added
-     or removed.
+     its primary key constraint has changed, its `materialized` or `append_only` properties were added
+     or removed, or its `partial_updates` property was turned on or off (unless the table has a
+     `LATENESS` column).
 
    * A table is NOT considered modified if only its connector definitions have changed.
 

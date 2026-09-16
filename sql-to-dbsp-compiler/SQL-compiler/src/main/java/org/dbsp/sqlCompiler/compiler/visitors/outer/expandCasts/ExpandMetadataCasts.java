@@ -47,7 +47,8 @@ public class ExpandMetadataCasts extends CircuitCloneVisitor {
         }
         if (changes)
             return new TableMetadata(metadata.tableName, metas, metadata.getForeignKeys(), metadata.expectedSize,
-                    metadata.materialized, metadata.isStreaming(), metadata.skipUnusedColumns);
+                    metadata.materialized, metadata.isStreaming(), metadata.skipUnusedColumns,
+                    metadata.partialUpdates);
         return null;
     }
 

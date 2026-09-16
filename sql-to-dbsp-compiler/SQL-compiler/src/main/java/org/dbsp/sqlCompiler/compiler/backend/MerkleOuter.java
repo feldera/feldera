@@ -5,10 +5,12 @@ import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -44,11 +46,28 @@ public class MerkleOuter extends CircuitVisitor {
      * <p>Bump this string whenever the runtime changes the way it stores that state. */
     public static final String RECURSIVE_STATE_VERSION = "recursive-state-v2";
 
+    /** Version of the format in which the runtime stores the state of a lazy input map.
+     *
+     * <p>Mixed into the persistent id of every table fed through the lazy input map, and of
+     * no other table.  The eager map keeps different state, so a table that moves between
+     * the two maps gets a new id, as does every table fed through the lazy map when this
+     * version changes.  The pipeline manager then reports the table as modified, and a
+     * pipeline that resumes from a checkpoint truncates the table instead of restoring
+     * state that it cannot interpret.  The {@code partial_updates} property, which picks
+     * the map, stays out of the id: a table that sets it keeps the eager map, and with it
+     * the id that it had before the lazy map existed.
+     *
+     * <p>Bump this string whenever the runtime changes the way it stores that state. */
+    public static final String LAZY_INPUT_MAP_VERSION = "lazy-input-map-v1";
+
     public final Map<Long, HashString> operatorHash;
     public final boolean includeInputs;
     /** Value mixed into the hash of the streams that leave a recursive circuit;
      * {@link #RECURSIVE_STATE_VERSION} in production, other values in tests. */
     final String recursiveStateVersion;
+    /** Value mixed into the hash of the tables fed through the lazy input map;
+     * {@link #LAZY_INPUT_MAP_VERSION} in production, other values in tests. */
+    final String lazyInputMapVersion;
     /** Ids of the operators that produce the outputs of a recursive circuit. */
     final Set<Long> recursiveOutputs;
 
@@ -57,9 +76,15 @@ public class MerkleOuter extends CircuitVisitor {
     }
 
     public MerkleOuter(DBSPCompiler compiler, boolean includeInputs, String recursiveStateVersion) {
+        this(compiler, includeInputs, recursiveStateVersion, LAZY_INPUT_MAP_VERSION);
+    }
+
+    public MerkleOuter(DBSPCompiler compiler, boolean includeInputs,
+                       String recursiveStateVersion, String lazyInputMapVersion) {
         super(compiler);
         this.includeInputs = includeInputs;
         this.recursiveStateVersion = recursiveStateVersion;
+        this.lazyInputMapVersion = lazyInputMapVersion;
         this.operatorHash = new HashMap<>();
         this.recursiveOutputs = new HashSet<>();
     }
@@ -170,6 +195,29 @@ public class MerkleOuter extends CircuitVisitor {
             // For gen2 we don't care about preserving compatibility.
             boolean legacyHash = !this.compiler.options.ioOptions.gen2;
             operator.metadata.asJson(this.innerVisitor, legacyHash);
+            return VisitDecision.CONTINUE;
+        }
+
+        /** Hashes a table's metadata without the {@code partial_updates} property, which
+         * changes the table's state only by picking its input map; see
+         * {@link MerkleOuter#LAZY_INPUT_MAP_VERSION}. */
+        @Override
+        void tableMetadataAsJson(TableMetadata metadata) {
+            metadata.asJson(this.innerVisitor, true);
+        }
+
+        /** Mixes the version of the lazy input map's state format, see
+         * {@link MerkleOuter#LAZY_INPUT_MAP_VERSION}, into the hash of a table fed through
+         * the lazy map.  The generated code differs too, so the local hash gets it as well
+         * as the global one. */
+        @Override
+        public VisitDecision preorder(DBSPSourceMapOperator operator) {
+            if (super.preorder(operator).stop())
+                return VisitDecision.STOP;
+            if (operator.usesLazyInputMap()) {
+                this.label("lazyInputMapVersion");
+                this.stream.append(MerkleOuter.this.lazyInputMapVersion);
+            }
             return VisitDecision.CONTINUE;
         }
 

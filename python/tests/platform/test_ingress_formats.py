@@ -508,11 +508,15 @@ def test_quoted_columns(pipeline_name):
 @gen_pipeline_name
 def test_primary_keys(pipeline_name):
     """
-    Port of primary_keys: test insert/update/delete semantics with primary key.
+    Port of primary_keys: test insert/update/delete semantics with primary key,
+    on a table that accepts partial updates.
     """
 
     # Tables with primary keys are automatically materialized, no need to specify 'materialized'='true'.
-    sql = "CREATE TABLE t1(id bigint not null, s varchar not null, primary key(id)) "
+    sql = (
+        "CREATE TABLE t1(id bigint not null, s varchar not null, primary key(id)) "
+        "WITH ('partial_updates' = 'true')"
+    )
     create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
     wait_for_pipeline_reachable(pipeline_name)
@@ -664,6 +668,7 @@ def test_duplicate_outputs(pipeline_name):
 @gen_pipeline_name
 def test_upsert(pipeline_name):
     """
+    On a table that accepts partial updates:
     - Insert several rows with composite PK.
     - Perform updates/inserts overwriting existing rows.
     - Perform no-op updates and deletes of non-existing keys.
@@ -677,7 +682,7 @@ def test_upsert(pipeline_name):
         "int1 bigint not null,"
         "int2 bigint,"
         "primary key(id1,id2)) "
-        "WITH ('materialized'='true');"
+        "WITH ('materialized'='true', 'partial_updates'='true');"
     )
     create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
@@ -852,6 +857,83 @@ def test_upsert(pipeline_name):
                 "int2": None,
             }
         },
+    ]
+
+
+@gen_pipeline_name
+def test_upsert_without_partial_updates(pipeline_name):
+    """
+    On a table with a primary key that does not accept partial updates:
+    - Insert several rows with composite PK.
+    - Overwrite rows by inserting whole records, one of them unchanged.
+    - Delete an existing key and a non-existing one.
+    - Send an update record, which the table rejects, keeping its contents.
+    """
+    sql = (
+        "CREATE TABLE t1("
+        "id1 bigint not null,"
+        "id2 bigint not null,"
+        "str1 varchar not null,"
+        "str2 varchar,"
+        "primary key(id1,id2));"
+    )
+    create_pipeline(pipeline_name, sql)
+    start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
+
+    stream = _change_stream_start(pipeline_name, "T1", True)
+    reader = JsonLineReader(stream)
+
+    _ingress_and_wait_token(
+        pipeline_name,
+        "T1",
+        '[{"insert":{"id1":1,"id2":1,"str1":"1"}},'
+        '{"insert":{"id1":2,"id2":1,"str1":"1"}},'
+        '{"insert":{"id1":3,"id2":1,"str1":"1"}}]',
+        format="json",
+        update_format="insert_delete",
+        array=True,
+    )
+    evs = reader.read_events(3)
+    assert evs == [
+        {"insert": {"id1": 1, "id2": 1, "str1": "1", "str2": None}},
+        {"insert": {"id1": 2, "id2": 1, "str1": "1", "str2": None}},
+        {"insert": {"id1": 3, "id2": 1, "str1": "1", "str2": None}},
+    ]
+
+    # Rewriting id1=2 with the row it holds changes nothing, and neither does
+    # deleting the missing id1=4.
+    _ingress_and_wait_token(
+        pipeline_name,
+        "T1",
+        '[{"insert":{"id1":1,"id2":1,"str1":"2","str2":"foo"}},'
+        '{"insert":{"id1":2,"id2":1,"str1":"1"}},'
+        '{"delete":{"id1":3,"id2":1}},'
+        '{"delete":{"id1":4,"id2":1}}]',
+        format="json",
+        update_format="insert_delete",
+        array=True,
+    )
+    evs = reader.read_events(3)
+    assert evs == [
+        {"delete": {"id1": 1, "id2": 1, "str1": "1", "str2": None}},
+        {"delete": {"id1": 3, "id2": 1, "str1": "1", "str2": None}},
+        {"insert": {"id1": 1, "id2": 1, "str1": "2", "str2": "foo"}},
+    ]
+
+    r = _ingress(
+        pipeline_name,
+        "T1",
+        '{"update":{"id1":1,"id2":1,"str1":"3"}}',
+        format="json",
+        update_format="insert_delete",
+    )
+    assert r.status_code == HTTPStatus.BAD_REQUEST, r.text
+    assert "'partial_updates' = 'true'" in r.text, r.text
+    got = adhoc_query_json(pipeline_name, "select * from t1 order by id1, id2")
+    assert got == [
+        {"id1": 1, "id2": 1, "str1": "2", "str2": "foo"},
+        {"id1": 2, "id2": 1, "str1": "1", "str2": None},
     ]
 
 

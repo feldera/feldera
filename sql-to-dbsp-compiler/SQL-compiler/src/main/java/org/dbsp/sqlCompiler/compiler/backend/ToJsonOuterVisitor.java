@@ -26,6 +26,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWeightValidatorOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -207,6 +208,13 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         value.asJson(this.innerVisitor);
     }
 
+    /** Writes the metadata of a table.
+     *
+     * @param metadata The metadata to write. */
+    void tableMetadataAsJson(TableMetadata metadata) {
+        metadata.asJson(this.innerVisitor);
+    }
+
     @Override
     public VisitDecision preorder(DBSPViewBaseOperator operator) {
         if (this.preorder(operator.to(DBSPUnaryOperator.class)).stop())
@@ -239,7 +247,7 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         this.label("tableName");
         this.asJsonInner(operator.tableName);
         this.label("metadata");
-        this.asJsonInner(operator.metadata);
+        this.tableMetadataAsJson(operator.metadata);
         this.label("keyFields");
         this.stream.beginArray();
         int index = 0;
@@ -257,7 +265,7 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         if (this.preorder(operator.to(DBSPSourceBaseOperator.class)).stop())
             return VisitDecision.STOP;
         this.label("metadata");
-        this.asJsonInner(operator.metadata);
+        this.tableMetadataAsJson(operator.metadata);
         return VisitDecision.CONTINUE;
     }
 

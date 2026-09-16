@@ -263,6 +263,33 @@ CREATE TABLE t(x INT, unused INT DEFAULT 0)
 WITH ('skip_unused_columns' = 'true');
 ```
 
+#### Partial updates
+
+`partial_updates` is an optional Boolean property allowed only on tables with a primary key.
+When set to `true`, the table accepts partial row updates:
+JSON [`update` events](/formats/json#the-insertdelete-format) that contain the primary key
+and a subset of the other columns. Each event replaces only the specified columns in the
+row with the matching key.
+
+Tables that omit this property or set it to `false` reject `update` events. Tables with
+a `LATENESS` column are an exception: they always accept partial updates.
+
+Enabling `partial_updates` can slow data ingestion, especially during backfill, when the table
+ingests a large number of records in a single [transaction](/pipelines/transactions).
+
+Turning this property on or off changes the table definition and causes the entire table to
+be re-ingested from scratch. See [Bootstrapping](/pipelines/modifying#bootstrapping).
+
+Example:
+
+```sql
+CREATE TABLE vendor (
+    vendor_id BIGINT NOT NULL PRIMARY KEY,
+    vendor_name VARCHAR,
+    vendor_address VARCHAR
+) WITH ('partial_updates' = 'true');
+```
+
 
 ### LATENESS
 

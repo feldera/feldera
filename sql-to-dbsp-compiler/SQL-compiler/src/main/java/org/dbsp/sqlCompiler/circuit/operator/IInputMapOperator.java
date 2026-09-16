@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
+import org.dbsp.util.Linq;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -93,10 +94,32 @@ public interface IInputMapOperator extends IInputOperator, IStateful {
         return new DBSPTypeStruct(this.getOriginalRowType().getNode(), name, fields, false);
     }
 
+    /** Whether the table is fed through the lazy input map, which resolves a
+     * transaction's writes against the table when the transaction commits,
+     * rather than the eager map, which resolves each one as it arrives.
+     *
+     * <p>A table with a primary key takes the lazy map, unless it has LATENESS
+     * or sets the {@code partial_updates} property.  The eager map has a
+     * waterline, which the lazy map has no counterpart for, and applies
+     * partial updates, which the lazy map cannot: it keeps only a key's last
+     * write, without the row that write would patch.
+     *
+     * @return true if the table takes the lazy map. */
+    default boolean usesLazyInputMap() {
+        return this.asOperator().is(DBSPSourceMapOperator.class)
+                && !this.getMetadata().partialUpdates
+                && !Linq.any(this.getMetadata().getColumns(), column -> column.lateness != null);
+    }
+
     default DBSPTypeUser getHandleType() {
+        DBSPTypeIndexedZSet ix = this.getDataOutputType().to(DBSPTypeIndexedZSet.class);
+        if (this.usesLazyInputMap())
+            // The lazy map takes whole records and deletes only, so its handle has no update type.
+            return new DBSPTypeUser(
+                    ix.getNode(), DBSPTypeCode.USER, "LazyMapHandle", false,
+                    ix.keyType, ix.elementType);
         DBSPTypeStruct upsertStruct = this.getStructUpsertType(
                         new ProgramIdentifier(this.getOriginalRowType().hashName + "_upsert", false));
-        DBSPTypeIndexedZSet ix = this.getDataOutputType().to(DBSPTypeIndexedZSet.class);
         return new DBSPTypeUser(
                 ix.getNode(), DBSPTypeCode.USER, "MapHandle", false,
                 ix.keyType, ix.elementType, upsertStruct.toTupleDeep());
