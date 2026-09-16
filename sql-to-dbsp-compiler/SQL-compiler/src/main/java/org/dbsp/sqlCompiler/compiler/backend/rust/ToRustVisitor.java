@@ -273,8 +273,8 @@ public class ToRustVisitor extends CircuitVisitor {
         Set<String> preprocessors = compiler.metadata.getPreprocessors();
         Set<String> postprocessors = compiler.metadata.getPostprocessors();
         if (!preprocessors.isEmpty() || !postprocessors.isEmpty()) {
-            builder.append("if Runtime::worker_index() == 0 {").increase();
-            // This code is executed on all worker threads, but only register the preprocessor factory in worker 0
+            // Register the factory in one thread on each host of a multi-host setup.
+            builder.append("if Runtime::local_worker_offset() == 0 {").increase();
             for (String pre : preprocessors) {
                 String normalized = pre.substring(0, 1).toUpperCase(Locale.ENGLISH) + pre.substring(1);
                 builder.append("catalog.preprocessor_registry()").newline()
