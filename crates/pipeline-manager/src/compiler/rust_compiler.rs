@@ -1703,6 +1703,16 @@ async fn call_compiler(
         command.env("CARGO_INCREMENTAL", cargo_incremental);
     }
 
+    // Preserve CARGO_BUILD_JOBS if set. Without a limit, cargo defaults to
+    // one codegen job per available core, so peak build memory scales with
+    // however many CPUs the host happens to have rather than with any
+    // resource budget this process was actually given. Deployments that set
+    // a memory limit on this process want a bounded, predictable job count
+    // to go with it.
+    if let Some(cargo_build_jobs) = std::env::var_os("CARGO_BUILD_JOBS") {
+        command.env("CARGO_BUILD_JOBS", cargo_build_jobs);
+    }
+
     // Preserve AWS_PROFILE if set, to allow sccache to use
     // credentials from there.
     // we avoid passing all AWS_* env vars to prevent leaking
