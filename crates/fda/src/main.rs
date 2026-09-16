@@ -43,7 +43,7 @@ pub(crate) const UPGRADE_NOTICE: &str = "Try upgrading to the latest CLI version
 use crate::adhoc::handle_adhoc_query;
 use crate::cli::*;
 use crate::shell::shell;
-use crate::util::terminal_safe;
+use crate::util::{is_sensitive_header, parse_header, terminal_safe};
 
 /// Creates a unique filename by appending a number to the base name if it already exists.
 fn unique_file(base: &str, extension: &str) -> Result<(PathBuf, File), std::io::Error> {
@@ -90,6 +90,8 @@ pub(crate) struct ClientOpts {
     pub auth: Option<String>,
     /// File holding a bearer token; overrides `auth`.
     pub oidc_token_file: Option<std::path::PathBuf>,
+    /// Extra headers, each spelled `Name: Value`, sent on every request.
+    pub headers: Vec<String>,
     pub timeout_secs: Option<u64>,
     /// Sent as the `Feldera-Tenant` header on every request.
     pub tenant: Option<String>,
@@ -105,6 +107,7 @@ impl ClientOpts {
             tls_cert: cli.tls_cert.clone(),
             auth: cli.auth.clone(),
             oidc_token_file: cli.oidc_token_file.clone(),
+            headers: cli.headers.clone(),
             timeout_secs: cli.timeout,
             tenant: cli.tenant.clone(),
             retries: cli.retries,
@@ -120,6 +123,7 @@ pub(crate) fn make_client(opts: ClientOpts) -> Result<Client, Box<dyn std::error
         tls_cert,
         auth,
         oidc_token_file,
+        headers: extra_headers,
         timeout_secs,
         tenant,
         retries,
@@ -181,6 +185,17 @@ pub(crate) fn make_client(opts: ClientOpts) -> Result<Client, Box<dyn std::error
         warn!(
             "The provided credentials are not added to the request because {host} does not use `https`."
         );
+    }
+
+    // Applied last, so that `--header` overrides what fda would otherwise send
+    // under that name. Each name carries one value: `default_headers` keeps a
+    // single value per name, so a repeated name is the later value.
+    for spec in &extra_headers {
+        let (name, value) = parse_header(spec)?;
+        if host.starts_with("http://") && is_sensitive_header(&name) {
+            warn!("Header `{name}` is sent in the clear because {host} does not use `https`.");
+        }
+        headers.insert(name, value);
     }
     client_builder = client_builder.default_headers(headers);
 
@@ -3994,8 +4009,8 @@ fn init_logging(default_level: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        ClientOpts, format_program_errors, install_crypto_provider, make_client,
-        read_oidc_token_file,
+        Client, ClientInfo, ClientOpts, format_program_errors, install_crypto_provider,
+        make_client, read_oidc_token_file,
     };
     use feldera_rest_api::types::{
         ProgramError, RustCompilationInfo, SqlCompilationInfo, SqlCompilerMessage,
@@ -4026,6 +4041,7 @@ aC3Oy4iVrYGOq9v6uP9iblE=\n\
             tls_cert: Some(tls_cert),
             auth: None,
             oidc_token_file: None,
+            headers: Vec::new(),
             timeout_secs: None,
             tenant: None,
             retries: 0,
@@ -4133,6 +4149,7 @@ aC3Oy4iVrYGOq9v6uP9iblE=\n\
             tls_cert: None,
             auth: None,
             oidc_token_file: Some(oidc_token_file),
+            headers: Vec::new(),
             timeout_secs: None,
             tenant: None,
             retries: 0,
@@ -4242,5 +4259,181 @@ error: failed to compile\n"
         });
 
         assert_eq!(output, "System error:\ncompiler service unavailable\n");
+    }
+
+    /// A local HTTP server that records the head of every request it receives
+    /// and answers each with an empty pipeline list.
+    fn spawn_recording_server() -> (u16, std::sync::mpsc::Receiver<String>) {
+        use std::io::BufRead;
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind test server");
+        let port = listener.local_addr().expect("test server address").port();
+        let (record, recorded) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut reader =
+                    std::io::BufReader::new(stream.try_clone().expect("clone test connection"));
+                let mut head = String::new();
+                let mut line = String::new();
+                while matches!(reader.read_line(&mut line), Ok(bytes) if bytes > 2) {
+                    head.push_str(&line);
+                    line.clear();
+                }
+                if record.send(head).is_err() {
+                    break;
+                }
+                let _ = stream.write_all(
+                    b"HTTP/1.1 200 OK\r\n\
+                      Content-Type: application/json\r\n\
+                      Content-Length: 2\r\n\
+                      Connection: close\r\n\r\n[]",
+                );
+                let _ = stream.flush();
+            }
+        });
+        (port, recorded)
+    }
+
+    /// Options for a client that talks to a local test server over http.
+    fn local_test_opts(port: u16, headers: &[&str]) -> ClientOpts {
+        ClientOpts {
+            host: format!("http://127.0.0.1:{port}"),
+            insecure: false,
+            tls_cert: None,
+            auth: None,
+            oidc_token_file: None,
+            headers: headers.iter().map(|header| header.to_string()).collect(),
+            timeout_secs: Some(10),
+            tenant: None,
+            retries: 0,
+        }
+    }
+
+    /// `main` installs the process-wide rustls provider before building a
+    /// client; a test that builds one has to do the same.
+    fn build_test_client(opts: ClientOpts) -> Client {
+        install_crypto_provider();
+        make_client(opts).expect("build client")
+    }
+
+    /// The head of the one request the server received, lowercased so that
+    /// header names can be matched whatever case the client chose.
+    async fn request_head(client: &Client, recorded: &std::sync::mpsc::Receiver<String>) -> String {
+        client
+            .list_pipelines()
+            .send()
+            .await
+            .expect("the test server answers with an empty list");
+        recorded
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the server recorded the request")
+            .to_lowercase()
+    }
+
+    /// Every `--header` reaches the server: this is how a deployment behind an
+    /// authenticating proxy is reached, with the proxy's own session cookie.
+    #[tokio::test]
+    async fn custom_headers_are_sent_with_every_request() {
+        let (port, recorded) = spawn_recording_server();
+        let client = build_test_client(local_test_opts(
+            port,
+            &["Cookie: AWSELBAuthSessionCookie-0=abc", "X-Trace-Id: 42"],
+        ));
+        let head = request_head(&client, &recorded).await;
+        assert!(
+            head.contains("cookie: awselbauthsessioncookie-0=abc"),
+            "{head}"
+        );
+        assert!(head.contains("x-trace-id: 42"), "{head}");
+    }
+
+    /// A header named on the command line replaces the one the client would
+    /// otherwise send under that name, rather than arriving beside it.
+    #[tokio::test]
+    async fn custom_header_replaces_the_clients_own() {
+        let (port, recorded) = spawn_recording_server();
+        let mut opts = local_test_opts(port, &["Feldera-Tenant: chosen-by-header"]);
+        opts.tenant = Some("chosen-by-flag".to_string());
+        let client = build_test_client(opts);
+        let head = request_head(&client, &recorded).await;
+        assert_eq!(
+            head.matches("feldera-tenant:").count(),
+            1,
+            "the tenant must be named once: {head}"
+        );
+        assert!(head.contains("feldera-tenant: chosen-by-header"), "{head}");
+    }
+
+    /// A name carries one value: repeating it sends the later value alone,
+    /// rather than two headers the server would have to reconcile.
+    #[tokio::test]
+    async fn repeating_a_header_name_keeps_the_later_value() {
+        let (port, recorded) = spawn_recording_server();
+        let client = build_test_client(local_test_opts(
+            port,
+            &["X-Forwarded-For: 10.0.0.1", "X-Forwarded-For: 10.0.0.2"],
+        ));
+        let head = request_head(&client, &recorded).await;
+        assert_eq!(
+            head.matches("x-forwarded-for:").count(),
+            1,
+            "the header must be sent once: {head}"
+        );
+        assert!(head.contains("x-forwarded-for: 10.0.0.2"), "{head}");
+    }
+
+    /// The websocket path (`fda shell` and ad hoc queries) builds its request
+    /// by hand from the same client, so it has to carry `--header` too: a
+    /// session cookie that reaches every other request but not this one leaves
+    /// the shell unusable behind a proxy.
+    #[tokio::test]
+    async fn custom_headers_reach_the_websocket_upgrade() {
+        use reqwest_websocket::RequestBuilderExt;
+
+        let (port, recorded) = spawn_recording_server();
+        let client = build_test_client(local_test_opts(port, &["Cookie: session=abc"]));
+        // The test server answers 200 rather than completing the handshake, so
+        // the upgrade fails; the request it received is the point.
+        let _ = client
+            .client()
+            .get(format!("http://127.0.0.1:{port}/v0/pipelines/p/query"))
+            .upgrade()
+            .send()
+            .await;
+        let head = recorded
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the server recorded the upgrade request")
+            .to_lowercase();
+        assert!(head.contains("upgrade: websocket"), "{head}");
+        assert!(head.contains("cookie: session=abc"), "{head}");
+    }
+
+    /// A credential from `--auth` is withheld from an `http://` host, but one
+    /// written as `--header` is the user's own decision and still travels:
+    /// that is the escape hatch for a proxy that speaks only plain http.
+    #[tokio::test]
+    async fn credential_header_travels_where_auth_is_withheld() {
+        let (port, recorded) = spawn_recording_server();
+        let mut opts = local_test_opts(port, &["Authorization: Bearer from-header"]);
+        opts.auth = Some("apikey:withheld".to_string());
+        let client = build_test_client(opts);
+        let head = request_head(&client, &recorded).await;
+        assert!(head.contains("authorization: bearer from-header"), "{head}");
+        assert!(
+            !head.contains("apikey:withheld"),
+            "`--auth` must stay off an unencrypted connection: {head}"
+        );
+    }
+
+    /// An argument that is not a header is reported when the client is built,
+    /// naming the argument, rather than dropped or sent malformed.
+    #[test]
+    fn unparsable_header_argument_fails_the_client() {
+        let err = make_client(local_test_opts(0, &["not-a-header"]))
+            .expect_err("a header without a colon must be rejected");
+        let msg = err.to_string();
+        assert!(msg.contains("not-a-header"), "{msg}");
+        assert!(msg.contains("Name: Value"), "{msg}");
     }
 }

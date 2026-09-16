@@ -1,5 +1,6 @@
-//! Credential selection at the command line: one credential at a time, and a
-//! note for shells that still export the variable read before 0.339.0.
+//! Credential selection at the command line: one credential at a time, a
+//! header the user writes out in full, and a note for shells that still export
+//! the variable read before 0.339.0.
 
 use std::process::{Command, Output};
 
@@ -84,4 +85,32 @@ fn removed_token_command_variable_is_silent_next_to_a_credential() {
         "{}",
         stderr(&output)
     );
+}
+
+/// `--header` is global, so it parses after the subcommand as well, which is
+/// where a long cookie tends to land on the command line.
+#[test]
+fn header_parses_after_the_subcommand() {
+    let output = fda()
+        .args(["-H", "Cookie: session=abc"])
+        .output()
+        .expect("run fda");
+    // The request then fails to connect, which is exit 1; a parse error is 2.
+    assert_eq!(output.status.code(), Some(1), "{}", stderr(&output));
+    assert!(
+        !stderr(&output).contains("unexpected argument"),
+        "{}",
+        stderr(&output)
+    );
+}
+
+/// An argument that is not `Name: Value` is reported with the argument quoted,
+/// rather than sent as a malformed header.
+#[test]
+fn unparsable_header_names_the_argument() {
+    let output = fda().args(["-H", "bogus"]).output().expect("run fda");
+    let stderr = stderr(&output);
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("bogus"), "{stderr}");
+    assert!(stderr.contains("Name: Value"), "{stderr}");
 }

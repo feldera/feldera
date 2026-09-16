@@ -26,6 +26,7 @@ fn pipeline_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
         tls_cert: cli.tls_cert,
         auth: cli.auth,
         oidc_token_file: cli.oidc_token_file,
+        headers: cli.headers,
         timeout_secs: cli.timeout,
         tenant: cli.tenant,
         retries: cli.retries,
@@ -148,6 +149,26 @@ pub struct Cli {
         conflicts_with = "auth"
     )]
     pub oidc_token_file: Option<PathBuf>,
+    /// Extra HTTP header to send with every request, spelled `Name: Value`.
+    ///
+    /// Repeat the flag to send several headers. A header given here replaces
+    /// the one fda would otherwise send under that name, so
+    /// `--header 'Authorization: Bearer ...'` overrides `--auth`. Each name
+    /// carries one value: naming it twice sends the later value.
+    ///
+    /// Use it to reach a deployment behind an authenticating proxy, which
+    /// admits a request by its own session cookie rather than by a Feldera API
+    /// key:
+    ///
+    /// `--header "Cookie: $ALB_COOKIE"`
+    #[arg(
+        short = 'H',
+        long = "header",
+        value_name = "NAME: VALUE",
+        global = true,
+        help_heading = "Global Options"
+    )]
+    pub headers: Vec<String>,
     /// The client timeout for requests in seconds.
     ///
     /// In almost all cases you should not need to set this value, but it can
