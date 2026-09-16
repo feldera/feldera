@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.annotation.CompactName;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceLazyMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
@@ -43,6 +44,11 @@ public class MerkleOuter extends CircuitVisitor {
      *
      * <p>Bump this string whenever the runtime changes the way it stores that state. */
     public static final String RECURSIVE_STATE_VERSION = "recursive-state-v2";
+
+    /** Version of the format in which the runtime stores the state of a lazy input map.
+     *
+     * <p>Bump this string whenever the runtime changes the way it stores that state. */
+    public static final String LAZY_INPUT_MAP_VERSION = "lazy-input-map-v1";
 
     public final Map<Long, HashString> operatorHash;
     public final boolean includeInputs;
@@ -170,6 +176,16 @@ public class MerkleOuter extends CircuitVisitor {
             // For gen2 we don't care about preserving compatibility.
             boolean legacyHash = !this.compiler.options.ioOptions.gen2;
             operator.metadata.asJson(this.innerVisitor, legacyHash);
+            return VisitDecision.CONTINUE;
+        }
+
+        @Override
+        public VisitDecision preorder(DBSPSourceLazyMapOperator operator) {
+            if (super.preorder(operator).stop())
+                return VisitDecision.STOP;
+            // A new format of the lazy map's state gives the table a new persistent id
+            this.label("lazyInputMapVersion");
+            this.stream.append(LAZY_INPUT_MAP_VERSION);
             return VisitDecision.CONTINUE;
         }
 

@@ -1453,7 +1453,9 @@ where
 
     fn update(&mut self, data: &[u8], metadata: &Option<Variant>) -> AnyResult<()> {
         if !H::TAKES_UPDATES {
-            bail!("update records require the table property 'partial_updates' = 'true'");
+            bail!(
+                "this table does not take update records, because the program sets FELDERA_LAZY_UPSERT to ON; insert the whole row instead"
+            );
         }
         let upd = U::from(self.deserializer.deserialize::<UD>(data, metadata)?);
         let key = (self.update_key_func)(&upd);
@@ -2004,7 +2006,7 @@ mod test {
             .update(br#"{"id": 2, "s": "changed"}"#, &None)
             .unwrap_err();
         assert!(
-            refused.to_string().contains("'partial_updates' = 'true'"),
+            refused.to_string().contains("FELDERA_LAZY_UPSERT"),
             "{refused}"
         );
         dbsp.kill().unwrap();
