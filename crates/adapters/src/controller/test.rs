@@ -5662,12 +5662,10 @@ fn test_checkpoint_activity_async_checkpoint() {
 
     // Poll until we see either InProgress or Done.  The checkpoint may
     // complete very quickly, so we accept either.
-    let mut saw_in_progress = false;
     wait(
         || {
             let coord = controller.checkpoint_watcher().borrow().clone();
             if matches!(coord, Some(CheckpointCoordination::InProgress)) {
-                saw_in_progress = true;
                 // Also verify the timestamp.
                 if let Some(started) = controller.checkpoint_started() {
                     assert!(
