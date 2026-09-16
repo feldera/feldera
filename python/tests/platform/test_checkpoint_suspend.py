@@ -306,7 +306,7 @@ def test_suspend_failure_enterprise(pipeline_name):
 
     This is the failure counterpart to `test_suspend_enterprise` (which covers
     the happy path). It needs its own pipeline because the trigger is a
-    storage-disabled config: with storage off, `can_suspend` fails permanently
+    storage-disabled config: with storage off, `can_checkpoint` fails permanently
     with `StorageRequired`, so the suspend checkpoint cannot succeed. The
     manager forwards `/suspend` to the pipeline without pre-checking
     suspendability, the checkpoint fails, and the pipeline must be forcefully

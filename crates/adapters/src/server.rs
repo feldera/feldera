@@ -1835,7 +1835,7 @@ fn get_status(
 /// Retrieve whether a pipeline is suspendable or not.
 #[get("/suspendable")]
 async fn suspendable(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    let reasons = match state.controller()?.can_suspend() {
+    let reasons = match state.controller()?.can_checkpoint() {
         Err(SuspendError::Permanent(errors)) => Some(errors),
         _ => None,
     };
