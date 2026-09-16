@@ -63,7 +63,7 @@ const runParseStream = <T>(
       { stream: makeMockStream(chunks), cancel: () => {} },
       newlineJsonDecoder<T>(parser, {
         bufferSize: options?.bufferSize,
-        onBytesSkipped: (n) => skipped.push(n)
+        onSkipped: ({ bytes }) => skipped.push(bytes)
       }),
       {
         pushChanges: (vs) => {
