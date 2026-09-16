@@ -473,8 +473,8 @@ mod test {
     };
     use crate::runner::pipeline_logs::start_thread_pipeline_logs;
     use actix_web::http::StatusCode;
-    use actix_web::{HttpResponse, HttpResponseBuilder, ResponseError};
     use actix_web::{App, test as actix_test, web};
+    use actix_web::{HttpResponse, HttpResponseBuilder, ResponseError};
     use futures_util::StreamExt;
     use std::collections::BTreeMap;
     use std::sync::Arc;

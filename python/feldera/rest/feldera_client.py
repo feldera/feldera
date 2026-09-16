@@ -538,8 +538,8 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         :param pipeline_name: The name of the pipeline.
         :param cursor: The position to resume after, as returned by
-            :meth:`feldera.rest.logs.LogPosition.cursor`. `None` starts at the beginning
-            of the retained buffer.
+            :meth:`feldera.rest.logs.LogStream.cursor`. `None` starts at the beginning of
+            the retained buffer.
         :return: The open stream. Close it when done reading.
         """
         resp = self.http.get(
