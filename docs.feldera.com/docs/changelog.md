@@ -22,6 +22,14 @@ Source edition can be found on github.
   and the limit, instead of reaching the server. See
   [NATS output connector](/connectors/sinks/nats).
 
+- New experimental option (SQL): `FELDERA_LAZY_UPSERT = ON` makes the
+  pipeline use an optimized implementation for tables with a primary
+  key.  This implementation does not support partial updates (JSON
+  `update` events).  The option is off by default.  A change of the
+  option can make the pipeline re-ingest its input data.  See
+  [`FELDERA_LAZY_UPSERT`](/sql/grammar#experimental-options) and
+  [Bootstrapping](/pipelines/modifying#bootstrapping).
+
 ## v0.362.0
 
 - Incompatible change (SQL): the `emit_final` property of a view must

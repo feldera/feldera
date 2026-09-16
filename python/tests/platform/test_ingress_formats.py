@@ -856,6 +856,142 @@ def test_upsert(pipeline_name):
 
 
 @gen_pipeline_name
+def test_upsert_with_lazy_upsert_on(pipeline_name):
+    """
+    In a program that turns FELDERA_LAZY_UPSERT on, for a table with a primary
+    key, which then does not accept partial updates:
+    - Insert several rows with composite PK.
+    - Overwrite rows by inserting whole records, one of them unchanged.
+    - Delete an existing key and a non-existing one.
+    - Send an update record, which the table rejects, keeping its contents.
+    """
+    sql = (
+        "SET FELDERA_LAZY_UPSERT = ON;"
+        "CREATE TABLE t1("
+        "id1 bigint not null,"
+        "id2 bigint not null,"
+        "str1 varchar not null,"
+        "str2 varchar,"
+        "primary key(id1,id2));"
+    )
+    create_pipeline(pipeline_name, sql)
+    start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
+
+    stream = _change_stream_start(pipeline_name, "T1", True)
+    reader = JsonLineReader(stream)
+
+    _ingress_and_wait_token(
+        pipeline_name,
+        "T1",
+        '[{"insert":{"id1":1,"id2":1,"str1":"1"}},'
+        '{"insert":{"id1":2,"id2":1,"str1":"1"}},'
+        '{"insert":{"id1":3,"id2":1,"str1":"1"}}]',
+        format="json",
+        update_format="insert_delete",
+        array=True,
+    )
+    evs = reader.read_events(3)
+    assert evs == [
+        {"insert": {"id1": 1, "id2": 1, "str1": "1", "str2": None}},
+        {"insert": {"id1": 2, "id2": 1, "str1": "1", "str2": None}},
+        {"insert": {"id1": 3, "id2": 1, "str1": "1", "str2": None}},
+    ]
+
+    # Rewriting id1=2 with the row it holds changes nothing, and neither does
+    # deleting the missing id1=4.
+    _ingress_and_wait_token(
+        pipeline_name,
+        "T1",
+        '[{"insert":{"id1":1,"id2":1,"str1":"2","str2":"foo"}},'
+        '{"insert":{"id1":2,"id2":1,"str1":"1"}},'
+        '{"delete":{"id1":3,"id2":1}},'
+        '{"delete":{"id1":4,"id2":1}}]',
+        format="json",
+        update_format="insert_delete",
+        array=True,
+    )
+    evs = reader.read_events(3)
+    assert evs == [
+        {"delete": {"id1": 1, "id2": 1, "str1": "1", "str2": None}},
+        {"delete": {"id1": 3, "id2": 1, "str1": "1", "str2": None}},
+        {"insert": {"id1": 1, "id2": 1, "str1": "2", "str2": "foo"}},
+    ]
+
+    r = _ingress(
+        pipeline_name,
+        "T1",
+        '{"update":{"id1":1,"id2":1,"str1":"3"}}',
+        format="json",
+        update_format="insert_delete",
+    )
+    assert r.status_code == HTTPStatus.BAD_REQUEST, r.text
+    assert "FELDERA_LAZY_UPSERT" in r.text, r.text
+    got = adhoc_query_json(pipeline_name, "select * from t1 order by id1, id2")
+    assert got == [
+        {"id1": 1, "id2": 1, "str1": "2", "str2": "foo"},
+        {"id1": 2, "id2": 1, "str1": "1", "str2": None},
+    ]
+
+
+@gen_pipeline_name
+def test_upsert_with_lazy_upsert_off(pipeline_name):
+    """
+    In a program that sets FELDERA_LAZY_UPSERT to OFF, a table with a primary
+    key accepts partial updates:
+    - Insert two rows with composite PK.
+    - Update one column of each row, which keeps the other columns.
+    """
+    sql = (
+        "SET FELDERA_LAZY_UPSERT = OFF;"
+        "CREATE TABLE t1("
+        "id1 bigint not null,"
+        "id2 bigint not null,"
+        "str1 varchar not null,"
+        "str2 varchar,"
+        "primary key(id1,id2));"
+    )
+    create_pipeline(pipeline_name, sql)
+    start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
+
+    stream = _change_stream_start(pipeline_name, "T1", True)
+    reader = JsonLineReader(stream)
+
+    _ingress_and_wait_token(
+        pipeline_name,
+        "T1",
+        '[{"insert":{"id1":1,"id2":1,"str1":"1"}},'
+        '{"insert":{"id1":2,"id2":1,"str1":"1","str2":"bar"}}]',
+        format="json",
+        update_format="insert_delete",
+        array=True,
+    )
+    evs = reader.read_events(2)
+    assert evs == [
+        {"insert": {"id1": 1, "id2": 1, "str1": "1", "str2": None}},
+        {"insert": {"id1": 2, "id2": 1, "str1": "1", "str2": "bar"}},
+    ]
+
+    _ingress_and_wait_token(
+        pipeline_name,
+        "T1",
+        '[{"update":{"id1":1,"id2":1,"str2":"foo"}},'
+        '{"update":{"id1":2,"id2":1,"str1":"2"}}]',
+        format="json",
+        update_format="insert_delete",
+        array=True,
+    )
+    evs = reader.read_events(4)
+    assert evs == [
+        {"delete": {"id1": 1, "id2": 1, "str1": "1", "str2": None}},
+        {"delete": {"id1": 2, "id2": 1, "str1": "1", "str2": "bar"}},
+        {"insert": {"id1": 1, "id2": 1, "str1": "1", "str2": "foo"}},
+        {"insert": {"id1": 2, "id2": 1, "str1": "2", "str2": "bar"}},
+    ]
+
+
+@gen_pipeline_name
 def test_avro_ingress(pipeline_name):
     """
     Avro over `/ingress`: the schema travels in the query string, and each

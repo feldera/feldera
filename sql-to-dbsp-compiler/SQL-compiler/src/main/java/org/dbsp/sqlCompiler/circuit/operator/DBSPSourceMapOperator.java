@@ -23,7 +23,7 @@ import java.util.List;
 import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 /** This operator produces an IndexedZSet as a result, indexed on the table keys. */
-public final class DBSPSourceMapOperator
+public class DBSPSourceMapOperator
         extends DBSPSourceTableOperator
         implements IInputMapOperator, IHasPostIntegrator {
     public final List<Integer> keyFields;
@@ -51,7 +51,14 @@ public final class DBSPSourceMapOperator
             CalciteRelNode node, CalciteObject sourceName, List<Integer> keyFields,
             DBSPTypeIndexedZSet outputType, DBSPTypeStruct originalRowType,
             TableMetadata metadata, ProgramIdentifier name, StreamKind kind, @Nullable String comment) {
-        super(node, "source_map", sourceName, outputType, originalRowType, false,
+        this(node, "source_map", sourceName, keyFields, outputType, originalRowType, metadata, name, kind, comment);
+    }
+
+    protected DBSPSourceMapOperator(
+            CalciteRelNode node, String operation, CalciteObject sourceName, List<Integer> keyFields,
+            DBSPTypeIndexedZSet outputType, DBSPTypeStruct originalRowType,
+            TableMetadata metadata, ProgramIdentifier name, StreamKind kind, @Nullable String comment) {
+        super(node, operation, sourceName, outputType, originalRowType, false,
                 metadata, name, kind, comment);
         this.keyFields = keyFields;
     }

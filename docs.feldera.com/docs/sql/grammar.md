@@ -840,6 +840,14 @@ representations are not compatible: changing the option modifies the
 circuit and therefore forces the pipeline to rebuild its state from
 scratch, so switching back and forth is not recommended.
 
+`FELDERA_LAZY_UPSERT` if set to `ON`, the pipeline uses an optimized
+implementation for tables with a primary key.  This implementation
+does not support partial updates (JSON
+[`update` events](/formats/json#the-insertdelete-format)).  Do not
+enable this option if you need partial updates.  The default is `OFF`.
+A change of this option can make the pipeline re-ingest its input data
+(see [Bootstrapping](/pipelines/modifying#bootstrapping)).
+
 `FELDERA_WINDOW_SHARING_THRESHOLD` how windows formed by temporal
 filters share inputs.  Two temporal filters that share an input keep
 a single copy of the data.  This settings is the number of temporal
