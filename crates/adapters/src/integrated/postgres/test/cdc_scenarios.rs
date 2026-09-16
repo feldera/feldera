@@ -440,9 +440,9 @@ fn test_checkpoint_mid_snapshot_waits_for_the_whole_copy_multiworker() {
     checkpoint_mid_snapshot_waits_for_the_whole_copy(4);
 }
 
-/// Attempts a mid-copy scenario makes before it gives up on catching etl
-/// inside the copy.
-const MID_COPY_ATTEMPTS: u32 = 3;
+/// Attempts a scenario makes at catching rows still on their way to the
+/// circuit before it gives up.
+const CATCH_MIDWAY_ATTEMPTS: u32 = 3;
 
 /// Run a scenario that must catch rows still on their way to the circuit, on
 /// tables of `base_rows`, then twice and four times as many rows, until
@@ -457,18 +457,18 @@ const MID_COPY_ATTEMPTS: u32 = 3;
 /// A runner that outruns every attempt leaves the scenario unexercised, which
 /// the test says instead of going red: red must mean the connector is wrong.
 /// Every assertion about the connector stays inside `attempt`.
-fn retry_until_mid_copy(
+fn retry_until_caught_midway(
     what: &str,
     caught: &str,
     base_rows: i64,
     mut attempt: impl FnMut(i64) -> bool,
 ) {
     let mut rows = base_rows;
-    for i in 1..=MID_COPY_ATTEMPTS {
+    for i in 1..=CATCH_MIDWAY_ATTEMPTS {
         if attempt(rows) {
             return;
         }
-        if i < MID_COPY_ATTEMPTS {
+        if i < CATCH_MIDWAY_ATTEMPTS {
             println!(
                 "{what}: {caught} of {rows} rows outran the poll; retrying with {} rows",
                 rows * 2
@@ -477,7 +477,7 @@ fn retry_until_mid_copy(
         }
     }
     eprintln!(
-        "{what}: scenario not exercised: in {MID_COPY_ATTEMPTS} attempts, on tables of up to \
+        "{what}: scenario not exercised: in {CATCH_MIDWAY_ATTEMPTS} attempts, on tables of up to \
          {rows} rows, the poll never caught {caught}. The connector passed every check that \
          ran; this runner is too fast for the window this scenario needs"
     );
@@ -497,10 +497,10 @@ fn checkpoint_mid_snapshot_waits_for_the_whole_copy(workers: usize) {
     // runs; 25_024 rows, 330 to 385 ms, in three four-worker runs. A runner
     // that flushes the whole copy between two polls gets the scenario again
     // on a table four times as large, up to three attempts, through
-    // retry_until_mid_copy. A first attempt takes about 15 s with one worker
+    // retry_until_caught_midway. A first attempt takes about 15 s with one worker
     // and 19 s with four.
     let base_rows: i64 = 100_000 * workers as i64;
-    retry_until_mid_copy("scenario 2", "the copy in progress", base_rows, |n| {
+    retry_until_caught_midway("scenario 2", "the copy in progress", base_rows, |n| {
         let mut table = scenario_table("cdc_sc_mid_snap");
         insert_range(&mut table, 1, n);
         let storage = TempDir::new().unwrap();
@@ -585,9 +585,9 @@ fn test_suspend_mid_copy_is_refused() {
     // circuit 180 to 265 ms after etl entered data_sync. A runner that
     // flushes the whole copy between two polls gets the scenario again on a
     // table four times as large, up to three attempts, through
-    // retry_until_mid_copy.
+    // retry_until_caught_midway.
     const BASE_ROWS: i64 = 100_000;
-    retry_until_mid_copy("scenario 2b", "the copy in progress", BASE_ROWS, |n| {
+    retry_until_caught_midway("scenario 2b", "the copy in progress", BASE_ROWS, |n| {
         let mut table = scenario_table("cdc_sc_partial");
         insert_range(&mut table, 1, n);
         let storage = TempDir::new().unwrap();
@@ -1261,12 +1261,15 @@ fn etl_schema_objects(table: &mut CdcTestTable) -> Vec<String> {
 #[test]
 #[serial]
 fn test_a_checkpoint_inside_one_write_does_not_acknowledge_it() {
-    // Rows are padded so the write spans many buffers without inserting many
-    // of them: `write_events` cuts a buffer every 2 MiB of serialized JSON and
-    // each buffer costs the reader one step. At 128 KiB per row, 160 rows are
-    // about 20 MiB, which is roughly ten steps for the checkpoint to land in.
+    // Rows are padded so that a few of them carry megabytes: `write_events`
+    // cuts a buffer every 2 MiB of serialized JSON, so 160 rows of 128 KiB are
+    // about ten buffers. The window the checkpoint has to land in comes from
+    // etl handing those rows over in pieces while the circuit takes whatever is
+    // queued each step, not from the reader's batch size, which at 16 rows per
+    // buffer never binds. Measured here: the checkpoint held 17 of 161
+    // records.
     const PAD_BYTES: usize = 128 * 1024;
-    retry_until_mid_copy(
+    retry_until_caught_midway(
         "scenario 11",
         "a write still reaching the circuit",
         160,
@@ -1334,14 +1337,16 @@ fn test_a_checkpoint_inside_one_write_does_not_acknowledge_it() {
 
             let run2 = Run::start(&table, storage.path());
             let first_missing = in_checkpoint as i64 + 1;
-            wait(
+            // A runner slow enough to need longer than the window buys more of
+            // it by making progress. Only a run 2 that has stopped delivering
+            // without the rows lets the assertion below speak.
+            wait_while_delivering(
                 || {
                     let h = insert_histogram(run2.inserted_ids());
                     (first_missing..=n + 1).all(|id| h.contains_key(&id))
                 },
-                WAIT_MS,
-            )
-            .ok();
+                || run2.insert_count(),
+            );
             run2.assert_no_errors("run 2");
             let ids = run2.stop().inserted;
 
@@ -1363,22 +1368,51 @@ fn test_a_checkpoint_inside_one_write_does_not_acknowledge_it() {
     );
 }
 
-/// Assert that `ids` is the gap-free prefix `1..=ids.len()`, which is what
-/// makes a record count comparable with an id.
+/// Assert that the distinct ids in `ids` are the gap-free prefix `1..=k`, which
+/// is what makes a record count comparable with an id. Counting distinct ids
+/// rather than deliveries keeps a redelivered row, which at-least-once allows,
+/// from demanding ids that were never inserted.
 fn assert_prefix_of_ids(ids: &[i64], what: &str) {
     let h = insert_histogram(ids.iter().copied());
-    let missing: Vec<i64> = (1..=ids.len() as i64)
-        .filter(|id| !h.contains_key(id))
-        .collect();
+    let distinct = h.len() as i64;
+    let missing: Vec<i64> = (1..=distinct).filter(|id| !h.contains_key(id)).collect();
     assert!(
         missing.is_empty(),
-        "{what}: expected the ids delivered so far to be the gap-free prefix 1..={}, but {} are \
-         missing, e.g. {}. The circuit did not take the rows in source order, so a record count \
-         no longer names an id",
-        ids.len(),
+        "{what}: expected the {distinct} distinct ids delivered so far to be the gap-free prefix \
+         1..={distinct}, but {} are missing, e.g. {}. The circuit did not take the rows in source \
+         order, so a record count no longer names an id",
         missing.len(),
         preview(&missing)
     );
+}
+
+/// Extra windows `wait_while_delivering` grants a runner that is still
+/// delivering rows. The cap is what keeps a pipeline that delivers for ever,
+/// without ever delivering the rows the caller waits for, from hanging the
+/// whole serial module instead of failing one assertion.
+const EXTRA_DELIVERY_WINDOWS: u32 = 3;
+
+/// Wait for `done`, giving up once `delivered` stops moving or after
+/// [`EXTRA_DELIVERY_WINDOWS`] further windows, whichever comes first.
+///
+/// A row count that is still rising means the pipeline is working and the
+/// runner is merely slow, which is a reason to keep waiting rather than to
+/// fail. A count that stands still through a whole window means waiting longer
+/// would not change the answer. Returning either way leaves the caller's
+/// assertion to speak, so the worst case is a red test rather than a job that
+/// hangs with nothing to read.
+fn wait_while_delivering(done: impl Fn() -> bool, delivered: impl Fn() -> usize) {
+    let mut last = delivered();
+    for _ in 0..=EXTRA_DELIVERY_WINDOWS {
+        if wait(&done, WAIT_MS).is_ok() {
+            return;
+        }
+        let now = delivered();
+        if now == last {
+            return;
+        }
+        last = now;
+    }
 }
 
 /// Insert ids `from..=to`, one transaction per row, padding each row to about
