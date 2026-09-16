@@ -625,6 +625,7 @@ fn main() -> Result<()> {
         }
     );
 
+    let _peak_watch = PeakWatch::start(args.heap_profile_dir.as_deref());
     for map in args.maps.clone() {
         println!("\n=== {map:?} ===");
         let timing = match args.value_bytes {
@@ -873,6 +874,53 @@ fn dir_bytes(path: &Path) -> u64 {
             Err(_) => 0,
         })
         .sum()
+}
+
+/// Writes a heap profile each time the process's resident size reaches a new
+/// high by at least a tenth, so the last one written is the profile at the
+/// peak.  Runs only when the run collects heap profiles.
+struct PeakWatch {
+    stop: Arc<AtomicBool>,
+    thread: Option<JoinHandle<()>>,
+}
+
+impl PeakWatch {
+    fn start(dir: Option<&Path>) -> Option<Self> {
+        let dir = dir?.to_path_buf();
+        let stop = Arc::new(AtomicBool::new(false));
+        let thread = thread::spawn({
+            let stop = stop.clone();
+            move || {
+                let mut high = 0u64;
+                while !stop.load(Ordering::Relaxed) {
+                    let rss =
+                        memory_stats::memory_stats().map_or(0, |stats| stats.physical_mem as u64);
+                    if rss > high + high / 10 {
+                        high = rss;
+                        if let Err(error) =
+                            heap_profile(Some(&dir), &format!("peak-{}mib", rss >> 20))
+                        {
+                            eprintln!("  heap profile at {} MiB failed: {error}", rss >> 20);
+                        }
+                    }
+                    thread::sleep(Duration::from_millis(250));
+                }
+            }
+        });
+        Some(Self {
+            stop,
+            thread: Some(thread),
+        })
+    }
+}
+
+impl Drop for PeakWatch {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
 }
 
 /// Samples the storage directory while a run goes on, keeping the largest it
