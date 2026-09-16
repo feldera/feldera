@@ -41,7 +41,10 @@ Source edition can be found on github.
   write after the first of those steps, so a checkpoint taken between two of
   them could release the acknowledgment while the rest of the write was still
   queued, and etl could then advance the replication slot past rows no
-  checkpoint held. A crash before the next checkpoint lost them (#7122). See
+  checkpoint held. A crash before the next checkpoint lost them. The connector
+  also now waits on the step it is feeding rather than on the count of steps
+  every output connector has finished, which a lagging output made an
+  underestimate (#7122). See
   [PostgreSQL CDC input connector](/connectors/sources/postgresql-cdc).
 
 - The PostgreSQL CDC input connector moves to a newer etl. It no longer fails

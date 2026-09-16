@@ -318,7 +318,7 @@ pub struct Completion {
     /// steps have been processed to completion.  If `total_completed_steps >
     /// 0`, then the last step whose input records have been processed to
     /// completion is `total_completed_steps - 1`. A record that was ingested
-    /// in step `n` is fully processed when `total_completed_steps >= n`.
+    /// in step `n` is fully processed when `total_completed_steps > n`.
     #[serde(rename = "c")]
     pub total_completed_steps: Step,
 }

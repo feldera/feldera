@@ -810,6 +810,20 @@ pub trait InputConsumer: Send + Sync + DynClone {
         None
     }
 
+    /// The step the controller is building, which is the step that data
+    /// flushed in answer to the current [`InputReaderCommand::Queue`] lands in.
+    ///
+    /// An adapter that defers acknowledgment needs this rather than
+    /// `total_completed_steps`, which is a minimum over the output connectors
+    /// and so only a lower bound on the step being fed: a lagging output makes
+    /// it name a step whose checkpoint predates the rows.
+    ///
+    /// The value is meaningful only while handling a `Queue` command. Returns
+    /// `None` if the consumer does not track steps.
+    fn current_step(&self) -> Option<Step> {
+        None
+    }
+
     /// Endpoint failed.
     ///
     /// Reports that the endpoint failed and that it will not queue any more
