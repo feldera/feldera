@@ -1420,9 +1420,14 @@ export const httpInput = <ThrowOnError extends boolean = true>(
  * position is `feldera-logs-seq` plus the number of lines it has received. To reconnect,
  * pass `cursor=<epoch>:<position>`.
  *
- * The epoch changes whenever the logs buffer is recreated, which clears the logs. A cursor
- * carrying a stale epoch is not an error: it is answered with a full catch-up and a gap
- * naming what was lost, so a caller can never be locked out of its logs by an old cursor.
+ * A pipeline's logs buffer is created when the runner first sees the pipeline and
+ * discarded when the runner restarts or the pipeline is deleted, which is also when the
+ * logs are cleared. Stopping and starting a pipeline leaves the buffer alone: the epoch
+ * stays the same and the numbering continues across runs.
+ *
+ * A cursor carrying an epoch from a buffer that no longer exists is not an error: it is
+ * answered with a full catch-up and a gap naming what was lost, so a caller can never be
+ * locked out of its logs by an old cursor.
  *
  * Callers that supply `cursor` receive no informational lines in the body, which is what
  * makes the one-line-per-sequence-number correspondence exact. Callers that omit it get

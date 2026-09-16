@@ -1,5 +1,6 @@
 use chrono::{SecondsFormat, Utc};
 use feldera_observability::json_logging::use_json_log_format;
+use serde::Deserialize;
 use serde_json::json;
 use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
@@ -33,6 +34,9 @@ pub const LOGS_EPOCH_HEADER: &str = "feldera-logs-epoch";
 pub const LOGS_SEQ_HEADER: &str = "feldera-logs-seq";
 pub const LOGS_GAP_HEADER: &str = "feldera-logs-gap";
 
+/// Name of the query parameter carrying a resuming follower's position.
+pub const LOGS_CURSOR_PARAM: &str = "cursor";
+
 /// Position in a pipeline's log stream, presented by a follower that wants to resume
 /// where a previous connection left off.
 ///
@@ -41,6 +45,10 @@ pub const LOGS_GAP_HEADER: &str = "feldera-logs-gap";
 /// only in memory, so a runner restart resets numbering to zero while followers still
 /// hold cursors issued by the previous instance. Comparing identity rather than counter
 /// values is what stops such a cursor from being accepted against unrelated lines.
+///
+/// A buffer lives as long as the pipeline's automaton, so the epoch spans every run of
+/// the pipeline: stopping and starting it continues the numbering, and only a runner
+/// restart or a pipeline deletion ends the epoch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct LogCursor {
     /// Identifies the buffer instance that issued the sequence number.
@@ -73,6 +81,7 @@ impl FromStr for LogCursor {
 }
 
 /// What a follower asks to receive when it connects.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FollowMode {
     /// The entire retained buffer, preceded in-band by a notice naming how many lines
     /// were discarded. Selected by followers that do not speak the cursor protocol.
@@ -81,6 +90,48 @@ pub enum FollowMode {
     /// naming the epoch, the position the catch-up starts at, and any lines lost along the
     /// way. `None` is a first connection, which has no position yet.
     Resume(Option<LogCursor>),
+}
+
+impl FollowMode {
+    /// Renders the mode as the logs endpoint's query string, which the API server forwards
+    /// to the runner.
+    ///
+    /// Rendering from the parsed mode rather than forwarding the caller's query string
+    /// keeps the runner's URL well-formed whatever the caller sent. A cursor is hex
+    /// digits, dashes and a colon, none of which require escaping.
+    pub fn to_query_string(self) -> String {
+        match self {
+            FollowMode::Full => String::new(),
+            FollowMode::Resume(None) => format!("{LOGS_CURSOR_PARAM}="),
+            FollowMode::Resume(Some(cursor)) => format!("{LOGS_CURSOR_PARAM}={cursor}"),
+        }
+    }
+}
+
+/// Query parameters accepted by the logs endpoint, on both the API server and the runner.
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct LogsQuery {
+    /// Position to resume the stream from, as reported by a previous response's headers.
+    ///
+    /// Absent asks for the whole retained buffer, with the discard notice in-band and no
+    /// position headers. Present but empty is a cursor-aware follower's first connection,
+    /// which has no position yet.
+    pub cursor: Option<String>,
+}
+
+impl LogsQuery {
+    /// Resolves what the follower asks to receive.
+    ///
+    /// Malformed syntax is an error rather than something to ignore: it can only come from
+    /// a broken client, whereas a cursor that is merely stale is resolved by the logs
+    /// thread and degrades to a full catch-up.
+    pub fn follow_mode(&self) -> Result<FollowMode, String> {
+        match &self.cursor {
+            None => Ok(FollowMode::Full),
+            Some(cursor) if cursor.is_empty() => Ok(FollowMode::Resume(None)),
+            Some(cursor) => Ok(FollowMode::Resume(Some(LogCursor::from_str(cursor)?))),
+        }
+    }
 }
 
 /// A message delivered to a single follower.
@@ -196,6 +247,9 @@ pub fn start_thread_pipeline_logs(
         // runner restart resets line numbering to zero while followers still hold cursors
         // from the previous instance. Comparing identity rather than counter values is what
         // stops such a cursor from being accepted against unrelated lines.
+        //
+        // Minted once per automaton, so it spans every run of the pipeline rather than
+        // one deployment of it.
         let epoch = Uuid::now_v7();
 
         // Buffer with the latest lines
@@ -698,7 +752,7 @@ impl LogsBuffer {
 mod test {
     use super::{
         FollowMode, FollowRequest, FollowerMessage, LOGS_BUFFER_LIMIT_BYTE, LogCursor, LogMessage,
-        LogsBuffer, Resume, start_thread_pipeline_logs,
+        LogsBuffer, LogsQuery, Resume, start_thread_pipeline_logs,
     };
     use std::collections::VecDeque;
     use std::str::FromStr;
@@ -734,6 +788,40 @@ mod test {
                 "cursor '{malformed}' should not parse"
             );
         }
+    }
+
+    /// The API server renders the query string it forwards to the runner from the mode it
+    /// parsed, so whatever a caller sent, the runner receives a cursor it can parse back.
+    #[test]
+    fn follow_mode_survives_the_query_string() {
+        let cursor = LogCursor {
+            epoch: Uuid::from_u128(0x0199c3f12d0a7e84b7116f2c9a1d4e08),
+            seq: 41272,
+        };
+        for (mode, expected) in [
+            (FollowMode::Full, ""),
+            (FollowMode::Resume(None), "cursor="),
+            (
+                FollowMode::Resume(Some(cursor)),
+                "cursor=0199c3f1-2d0a-7e84-b711-6f2c9a1d4e08:41272",
+            ),
+        ] {
+            let query = mode.to_query_string();
+            assert_eq!(query, expected);
+            let parsed = actix_web::web::Query::<LogsQuery>::from_query(&query)
+                .expect("query string does not parse")
+                .into_inner();
+            assert_eq!(parsed.follow_mode(), Ok(mode));
+        }
+    }
+
+    /// A cursor that cannot be parsed is an error rather than a position to guess at.
+    #[test]
+    fn follow_mode_rejects_a_malformed_cursor() {
+        let query = LogsQuery {
+            cursor: Some("nonsense".to_string()),
+        };
+        assert!(query.follow_mode().is_err());
     }
 
     #[test]

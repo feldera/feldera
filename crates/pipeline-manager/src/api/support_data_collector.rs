@@ -12,6 +12,7 @@ use crate::db::types::combined_status::CombinedStatus;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
+use crate::runner::pipeline_logs::FollowMode;
 use actix_web::HttpResponse;
 use actix_web::http::Method;
 use actix_web::rt::time::timeout;
@@ -164,8 +165,8 @@ async fn collect_pipeline_logs(
 
     let response = state
         .runner
-        // No cursor: the bundle wants the whole retained buffer every time.
-        .get_logs_from_pipeline(client, tenant_id, pipeline_name, "")
+        // The bundle wants the whole retained buffer every time.
+        .get_logs_from_pipeline(client, tenant_id, pipeline_name, FollowMode::Full)
         .await?;
 
     let mut response = response;
