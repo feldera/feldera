@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from itertools import islice
 from typing import Iterable, Optional
 from unittest import mock
 
@@ -133,7 +134,8 @@ class TestResumePipelineLogs:
             stream = _client().resume_pipeline_logs("p", f"{EPOCH}:5")
         assert (stream.position.seq, stream.position.gap) == (9, 4)
         # The next cursor follows the lines delivered, not the lines asked for.
-        assert stream.position.cursor(1) == f"{EPOCH}:10"
+        assert list(stream) == ["c"]
+        assert stream.cursor() == f"{EPOCH}:10"
 
     def test_transient_failure_is_retried(self):
         with _make_client([_make_response(503), _logs_response(b"a\n")]) as m:
@@ -189,6 +191,25 @@ class TestResumePipelineLogs:
         with _make_client([_logs_response(b"a\nb")]):
             stream = _client().resume_pipeline_logs("p")
         assert list(stream) == ["a"]
+        assert stream.cursor() == f"{EPOCH}:41273"
+
+    def test_the_stream_counts_the_lines_it_delivers(self):
+        # The cursor is the reader's whole position, so the stream keeps the count rather
+        # than asking every reader to keep one.
+        with _make_client([_logs_response(b"a\nb\nc\n")]):
+            stream = _client().resume_pipeline_logs("p")
+        assert stream.cursor() == f"{EPOCH}:41272"
+        assert list(stream) == ["a", "b", "c"]
+        assert stream.lines_read == 3
+        assert stream.cursor() == f"{EPOCH}:41275"
+
+    def test_a_reader_that_stops_early_counts_what_it_took(self):
+        # Iteration leaves the generator suspended at the line just handed over. That line
+        # reached the reader, so the cursor has to be past it, not at it.
+        with _make_client([_logs_response(b"a\nb\nc\n")]):
+            stream = _client().resume_pipeline_logs("p")
+        assert list(islice(stream, 2)) == ["a", "b"]
+        assert stream.cursor() == f"{EPOCH}:41274"
 
     def test_lines_split_across_chunks_are_rejoined(self):
         response = _logs_response(b"")

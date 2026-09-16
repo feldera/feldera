@@ -78,16 +78,33 @@ class LogPosition:
 
 class LogStream:
     """
-    An open logs stream: where it starts, and the lines that follow.
+    An open logs stream: where it starts, the lines that follow, and how far they reach.
 
     Iterating yields one log line at a time, blocking for the next one until the pipeline
     is deleted or the connection drops. Close the stream when done reading, or use it as a
     context manager, which closes it on the way out.
+
+    Pass :meth:`cursor` to the next connection to carry on from the line this one reached.
     """
 
     def __init__(self, response: requests.Response, position: LogPosition) -> None:
         self._response = response
         self.position = position
+        self._lines_read = 0
+
+    @property
+    def lines_read(self) -> int:
+        """Log lines this stream has yielded."""
+        return self._lines_read
+
+    def cursor(self) -> str:
+        """
+        The cursor that resumes the log after the last line this stream yielded.
+
+        The stream counts the lines it delivers, so a reader resumes by handing this back
+        rather than by keeping a count of its own.
+        """
+        return self.position.cursor(self._lines_read)
 
     def __iter__(self) -> Generator[str, None, None]:
         """
@@ -106,8 +123,12 @@ class LogStream:
             pending += chunk
             start = 0
             while (end := pending.find(b"\n", start)) != -1:
-                yield pending[start:end].decode("utf-8")
+                line = pending[start:end].decode("utf-8")
                 start = end + 1
+                # Counted before the yield, which is where a reader that stops early leaves
+                # the generator suspended for good.
+                self._lines_read += 1
+                yield line
             pending = pending[start:]
 
     def close(self) -> None:

@@ -142,18 +142,18 @@ class Pipeline:
         earlier lifetime of the buffer is not an error: the stream starts at the beginning
         of the retained buffer, and `LogPosition.gap` names the lines that were lost.
 
-        For example, to read the logs across a dropped connection::
+        For example, to keep reading the logs across dropped connections::
 
-            read = 0
-            with pipeline.resume_logs() as stream:
-                for line in stream:
-                    read += 1
-                    print(line)
-            stream = pipeline.resume_logs(stream.position.cursor(read))
+            cursor = None
+            while True:
+                with pipeline.resume_logs(cursor) as stream:
+                    for line in stream:
+                        print(line)
+                    cursor = stream.cursor()
 
         :param cursor: The position to resume after, as returned by
-            :meth:`feldera.rest.logs.LogPosition.cursor`. `None` starts at the beginning
-            of the retained buffer.
+            :meth:`feldera.rest.logs.LogStream.cursor`. `None` starts at the beginning of
+            the retained buffer.
         :return: The open stream. Close it when done reading.
         """
 

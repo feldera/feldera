@@ -305,16 +305,18 @@ _SEQ_BEYOND_END = 2**64 - 1
 
 def _read_logs(
     pipeline_name: str, cursor: str | None, count: int
-) -> tuple[LogPosition, list[str]]:
+) -> tuple[LogPosition, list[str], str]:
     """
-    Opens the logs stream at `cursor` and reads its first `count` log lines.
+    Opens the logs stream at `cursor`, reads its first `count` log lines, and reports the
+    position it started at, those lines, and the cursor that carries on after them.
 
     A `count` of zero reads the position alone, which is all a caller already at the end
     of the stream can expect to receive. The position arrives with the response head, so
     such a read completes without waiting for a line that may never come.
     """
     with TEST_CLIENT.resume_pipeline_logs(pipeline_name, cursor) as stream:
-        return stream.position, list(islice(stream, count))
+        lines = list(islice(stream, count))
+        return stream.position, lines, stream.cursor()
 
 
 def _lines_retained(pipeline_name: str) -> int:
@@ -326,8 +328,8 @@ def _lines_retained(pipeline_name: str) -> int:
     the buffer instead: a first connection starts after whatever was already evicted, and
     a cursor past the end is answered with the end of the stream.
     """
-    start, _ = _read_logs(pipeline_name, None, 0)
-    end, _ = _read_logs(pipeline_name, f"{start.epoch}:{_SEQ_BEYOND_END}", 0)
+    start, _, _ = _read_logs(pipeline_name, None, 0)
+    end, _, _ = _read_logs(pipeline_name, f"{start.epoch}:{_SEQ_BEYOND_END}", 0)
     return end.seq - start.seq
 
 
@@ -352,24 +354,27 @@ def test_pipeline_logs_cursor(pipeline_name):
     # A full catch-up, read first, is the authority on what the stream holds. Every read
     # below asserts a zero gap, so an eviction crossing the test fails on the position
     # that reports it rather than on a line comparison that cannot explain itself.
-    whole_position, whole = _read_logs(pipeline_name, None, prefix + suffix)
+    whole_position, whole, _ = _read_logs(pipeline_name, None, prefix + suffix)
     assert (whole_position.seq, whole_position.gap) == (0, 0), whole_position
     epoch = whole_position.epoch
 
     # Read the head of the stream, then reconnect where that read left off. The two
     # partial reads must reconstruct the prefix of the full read exactly: a cursor that
     # replayed would duplicate lines here, one that skipped would drop them.
-    first, head = _read_logs(pipeline_name, None, prefix)
+    first, head, after_head = _read_logs(pipeline_name, None, prefix)
     assert (first.epoch, first.seq, first.gap) == (epoch, 0, 0), first
+    # The stream counts the lines it delivered, so the reader hands the cursor back
+    # instead of keeping a count of its own.
+    assert after_head == f"{epoch}:{prefix}"
 
-    resumed, tail = _read_logs(pipeline_name, first.cursor(len(head)), suffix)
+    resumed, tail, _ = _read_logs(pipeline_name, after_head, suffix)
     assert resumed.epoch == epoch, resumed
     assert (resumed.seq, resumed.gap) == (prefix, 0), resumed
     assert head + tail == whole
 
     # A cursor from another instance of the buffer refers to lines this instance never
     # held, so it is answered with a full catch-up instead of being trusted.
-    stale, replayed = _read_logs(pipeline_name, f"{uuid.uuid4()}:{prefix}", prefix)
+    stale, replayed, _ = _read_logs(pipeline_name, f"{uuid.uuid4()}:{prefix}", prefix)
     assert stale.epoch == epoch, stale
     assert (stale.seq, stale.gap) == (0, 0), stale
     assert replayed == head
@@ -377,7 +382,7 @@ def test_pipeline_logs_cursor(pipeline_name):
     # A cursor past the end of the stream names a position the buffer can never reach.
     # Answering with the end of the stream is what lets the next connection resume, where
     # echoing the position back would deliver nothing for the life of the epoch.
-    beyond_end, _ = _read_logs(pipeline_name, f"{epoch}:{_SEQ_BEYOND_END}", 0)
+    beyond_end, _, _ = _read_logs(pipeline_name, f"{epoch}:{_SEQ_BEYOND_END}", 0)
     assert beyond_end.gap == 0, beyond_end
     assert prefix + suffix <= beyond_end.seq < _SEQ_BEYOND_END, beyond_end
 
