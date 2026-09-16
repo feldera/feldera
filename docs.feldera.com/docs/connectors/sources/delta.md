@@ -291,6 +291,18 @@ is set: check that `changeDataFeed` is among the table's `writerFeatures`.
   whose polarity comes from `cdc_delete_filter`, and Delta's `_change_type` is a
   second, incompatible answer to the same question.
 
+## Column mapping
+
+[Column mapping](https://docs.delta.io/latest/delta-column-mapping.html) lets a
+Delta table rename or reorder columns without rewriting its data files. Feldera
+reads both mapping modes, `name` and `id`.
+
+In `snapshot` mode a struct nested inside an `ARRAY` or a `MAP` is read by field
+order rather than by field id. If such a table's nested fields were reordered
+after its existing files were written, their values are read under the wrong
+names; `follow` and `cdc` mode read them correctly. The connector logs a warning
+naming the columns whose nested fields the table has reordered.
+
 ## Transactions
 
 The Delta Lake connector can be configured to automatically initiate [transactions](/pipelines/transactions)

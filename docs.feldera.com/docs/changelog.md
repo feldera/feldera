@@ -18,6 +18,26 @@ Source edition can be found on github.
   `remove` actions did not cancel, and the connector re-emitted the
   rewritten rows as inserts (#7116).
 
+- Bug fix (Delta Lake input connector): a Unity Catalog Uniform table read
+  every column as NULL in `follow` and `cdc` mode and in the follow half of
+  `snapshot_and_follow`.  Its columns are now matched by field id.
+
+- Bug fix (Delta Lake input connector, `cdc` mode): a `uc://` table read no
+  rows from a commit's files unless they carried a deletion vector.  Such a
+  table's location is path-less, so the listing the read planned resolved to
+  nothing (#7112).
+
+- Bug fix (Delta Lake input connector): a struct nested in an array or a map
+  of a column-mapped table read its neighbor's values in `follow` and `cdc`
+  mode, because its fields were paired by name and such a file shares no field
+  name with the table's schema.
+
+- Incompatible change (Delta Lake input connector): in `follow` and `cdc` mode
+  a data file holding a null element of an array or a map the Delta table
+  declares `NOT NULL` is now rejected.  Such a file used to read through, so a
+  pipeline ingesting one now fails where it did not before.  Declare the element
+  nullable to keep reading it.
+
 - Incompatible change (SQL compiler): the `WATERMARK` column annotation is
   removed, and a table that declares one no longer compiles.  There is no
   replacement. The annotation was experimental and undocumented, and a table that
