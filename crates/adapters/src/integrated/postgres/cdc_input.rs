@@ -544,11 +544,12 @@ impl PostgresCdcInputInner {
             }
             return;
         };
-        let flush_step = self
-            .step_completion_rx
-            .as_ref()
-            .map(|rx| rx.borrow().total_completed_steps)
-            .unwrap_or(0);
+        let flush_step = flush_step(
+            self.consumer.current_step(),
+            self.step_completion_rx
+                .as_ref()
+                .map(|rx| rx.borrow().total_completed_steps),
+        );
         let _ = tx.send((flush_step, acks));
     }
 
@@ -2333,6 +2334,16 @@ async fn completion_watcher_task(
     );
 }
 
+/// The step a flush fed, which is what an acknowledgment waits on.
+///
+/// `total_completed_steps` is the fallback for a consumer that reports no
+/// current step. It is a minimum over the output connectors, so a lagging
+/// output makes it name an earlier step than the one the rows landed in, and
+/// the answer would go out against a checkpoint that predates them.
+fn flush_step(current_step: Option<u64>, completed_steps: Option<u64>) -> u64 {
+    current_step.or(completed_steps).unwrap_or(0)
+}
+
 /// Answers the writes whose rows the frontier has passed.
 fn fire_completed(waiting: &mut Vec<(u64, DeferredAcks)>, frontier: u64) {
     waiting.retain_mut(|(flush_step, acks)| {
@@ -3386,6 +3397,15 @@ mod tests {
         assert_eq!(acks.len(), 1, "the flush that takes its rows answers it");
         acks.pop().unwrap()();
         assert!(answered(&flag));
+    }
+
+    #[test]
+    fn the_stamp_is_the_step_being_fed_not_the_one_the_outputs_have_finished() {
+        // An output connector lagging two steps behind the circuit reports
+        // three completed steps while the controller feeds step five.
+        assert_eq!(flush_step(Some(5), Some(3)), 5);
+        assert_eq!(flush_step(None, Some(3)), 3);
+        assert_eq!(flush_step(None, None), 0);
     }
 
     #[test]

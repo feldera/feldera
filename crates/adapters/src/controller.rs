@@ -9421,6 +9421,18 @@ impl InputConsumer for InputProbe {
         }
     }
 
+    fn current_step(&self) -> Option<Step> {
+        // `CircuitThread::step` stores `step + 1` before it collects input, so
+        // the step this Queue command feeds is one less.
+        Some(
+            self.controller
+                .status
+                .global_metrics
+                .total_initiated_steps()
+                .saturating_sub(1),
+        )
+    }
+
     fn error(&self, fatal: bool, error: AnyError, tag: Option<&str>) {
         self.controller.input_transport_error(
             self.endpoint_id,
