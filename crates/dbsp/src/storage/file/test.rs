@@ -266,7 +266,12 @@ fn for_each_compression_type<F>(parameters: Parameters, f: F)
 where
     F: Fn(Parameters),
 {
-    for compression in [None, Some(Compression::Snappy)] {
+    for compression in [
+        None,
+        Some(Compression::Snappy),
+        Some(Compression::Lz4),
+        Some(Compression::Zstd),
+    ] {
         print!("\n# testing with compression={compression:?}\n\n");
         f(parameters.clone().with_compression(compression));
     }
@@ -987,6 +992,50 @@ fn two_columns_uncompressed() {
 fn two_columns_snappy() {
     init_test_logger();
     test_2_columns_helper(Parameters::default().with_compression(Some(Compression::Snappy)));
+}
+
+#[test]
+fn two_columns_lz4() {
+    init_test_logger();
+    test_2_columns_helper(Parameters::default().with_compression(Some(Compression::Lz4)));
+}
+
+#[test]
+fn two_columns_zstd() {
+    init_test_logger();
+    test_2_columns_helper(Parameters::default().with_compression(Some(Compression::Zstd)));
+}
+
+/// Zstd levels are a writer-side choice that must not change what reads back.
+#[test]
+fn two_columns_zstd_levels() {
+    init_test_logger();
+    for level in [1, 3, 9] {
+        test_2_columns_helper(
+            Parameters::default()
+                .with_compression(Some(Compression::Zstd))
+                .with_compression_level(Some(level)),
+        );
+    }
+}
+
+/// The level reaches us from user configuration, so an absurd one must still
+/// produce a readable file.
+///
+/// Note this passes with or without the explicit clamp in `BlockWriter::new`,
+/// because zstd also clamps the level itself. The clamp is kept so the
+/// behaviour does not depend on that, but this test does not prove it is
+/// there; it pins the observable property that any configured level works.
+#[test]
+fn two_columns_zstd_level_out_of_range() {
+    init_test_logger();
+    for level in [i32::MIN, -1000000, 1000000, i32::MAX] {
+        test_2_columns_helper(
+            Parameters::default()
+                .with_compression(Some(Compression::Zstd))
+                .with_compression_level(Some(level)),
+        );
+    }
 }
 
 #[test]

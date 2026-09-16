@@ -358,6 +358,18 @@ pub struct StorageOptions {
     /// performance.
     pub compression: StorageCompression,
 
+    /// Compression level, for compression algorithms that have one.
+    ///
+    /// Only `StorageCompression::Zstd` uses this. Higher levels compress
+    /// harder and more slowly; decompression speed is largely unaffected, so
+    /// the tradeoff is write throughput against stored size. Zstd accepts
+    /// roughly 1 to 22, and a value outside the range its build supports is
+    /// clamped into it.
+    ///
+    /// This is provided for fine-tuning and should ordinarily be left unset,
+    /// which selects the algorithm's own default.
+    pub compression_level: Option<i32>,
+
     /// The maximum size of the in-memory storage cache, in MiB.
     ///
     /// If set, the specified cache size is spread across all the foreground and
@@ -433,6 +445,19 @@ pub enum StorageCompression {
 
     /// Use [Snappy](https://en.wikipedia.org/wiki/Snappy_(compression)) compression.
     Snappy,
+
+    /// Use [LZ4](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) compression.
+    ///
+    /// Compresses better than Snappy and decompresses several times faster, at
+    /// a similar compression rate.
+    Lz4,
+
+    /// Use [Zstandard](https://en.wikipedia.org/wiki/Zstd) compression.
+    ///
+    /// Roughly halves LZ4's output at a comparable decompression rate, for
+    /// slower compression. `StorageOptions::compression_level` selects the
+    /// speed/size tradeoff.
+    Zstd,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq)]

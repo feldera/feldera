@@ -1310,19 +1310,24 @@ impl Runtime {
     }
 
     pub fn file_writer_parameters() -> Parameters {
-        let compression = Runtime::runtime()
+        let options = Runtime::runtime()
             .unwrap()
             .inner()
             .storage
             .as_ref()
             .unwrap()
             .options
-            .compression;
+            .clone();
+        let compression = options.compression;
         let compression = match compression {
             StorageCompression::Default | StorageCompression::Snappy => Some(Compression::Snappy),
             StorageCompression::None => None,
+            StorageCompression::Lz4 => Some(Compression::Lz4),
+            StorageCompression::Zstd => Some(Compression::Zstd),
         };
-        Parameters::default().with_compression(compression)
+        Parameters::default()
+            .with_compression(compression)
+            .with_compression_level(options.compression_level)
     }
 
     fn inner(&self) -> &RuntimeInner {
