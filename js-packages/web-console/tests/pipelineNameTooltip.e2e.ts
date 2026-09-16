@@ -6,11 +6,16 @@ import {
   configureTestClient,
   killPipelineAndWaitForStopped,
   startPipelineAndWaitForRunning,
+  TEST_COMPILATION_PROFILE,
   waitForCompilation,
   waitForPipeline
 } from '$lib/services/testPipelineHelpers'
 
 configureTestClient()
+
+// The status chip follows `usePipelineList`, which polls every 2 s, so the DOM
+// trails the API by up to one poll plus request latency.
+const STATUS_CHIP_TIMEOUT_MS = 6_000
 
 const PREFIX = `test-name-tooltip-${Date.now()}`
 const PIPELINE_NAME = `${PREFIX}`
@@ -24,7 +29,7 @@ test.describe('Pipeline name edit tooltip', () => {
       name: PIPELINE_NAME,
       description: 'E2E test pipeline for name-edit tooltip',
       program_code: 'create view v as (select 1)',
-      program_config: { profile: 'unoptimized' }
+      program_config: { profile: TEST_COMPILATION_PROFILE }
     })
     await waitForPipeline(PIPELINE_NAME, (p) => p.status === 'Stopped', 60_000)
   })
@@ -62,7 +67,7 @@ test.describe('Pipeline name edit tooltip', () => {
     // Start the pipeline and wait for Running.
     await waitForCompilation(PIPELINE_NAME, 60_000)
     await startPipelineAndWaitForRunning(PIPELINE_NAME, 60_000)
-    await expect(statusChip).toHaveText(/running/i, { timeout: 4_000 })
+    await expect(statusChip).toHaveText(/running/i, { timeout: STATUS_CHIP_TIMEOUT_MS })
 
     // Running: edit is disabled, "running" tooltip appears on hover.
     await expect(editButton).toBeDisabled()
@@ -73,7 +78,7 @@ test.describe('Pipeline name edit tooltip', () => {
 
     // Kill the pipeline and wait for Stopped.
     await killPipelineAndWaitForStopped(PIPELINE_NAME)
-    await expect(statusChip).not.toHaveText(/running/i, { timeout: 15_000 })
+    await expect(statusChip).not.toHaveText(/running/i, { timeout: STATUS_CHIP_TIMEOUT_MS })
 
     // Delete the pipeline out-of-band (simulates another tab / API client).
     // The server refuses a delete until storage is cleared, so clear it first.

@@ -5,6 +5,7 @@
  * duplicating pipeline create/compile/start/stop/delete boilerplate.
  */
 
+import type { CompilationProfile } from '$lib/services/manager'
 import { client } from '$lib/services/manager/client.gen'
 import {
   deletePipeline,
@@ -17,6 +18,12 @@ import {
 } from '$lib/services/pipelineManager'
 
 export { type ExtendedPipeline }
+
+/**
+ * Compilation profile for every test pipeline: the cheapest Rust build, so a
+ * test waits on compilation for as little time as possible.
+ */
+export const TEST_COMPILATION_PROFILE: CompilationProfile = 'unoptimized'
 
 /**
  * Configure the API client base URL for tests.
@@ -164,7 +171,7 @@ export async function warmCompilationCache() {
     await putPipeline(WARMUP_PIPELINE, {
       name: WARMUP_PIPELINE,
       program_code: 'CREATE TABLE _warmup (id INT);',
-      program_config: { profile: 'unoptimized' }
+      program_config: { profile: TEST_COMPILATION_PROFILE }
     })
   } catch (e) {
     console.error('warmCompilationCache: putPipeline failed:', e)

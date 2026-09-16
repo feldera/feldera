@@ -51,6 +51,7 @@ import {
   configureTestClient,
   type ExtendedPipeline,
   startPipelineAndWaitForRunning,
+  TEST_COMPILATION_PROFILE,
   waitForCompilation
 } from '$lib/services/testPipelineHelpers'
 import TabAdHocQuery from './TabAdHocQuery.svelte'
@@ -68,7 +69,7 @@ describe('TabAdHocQuery — runtime error propagation over WebSocket', () => {
       // `t` is non-materialized (no `materialized = 'true'`), so selecting from
       // it directly is a runtime error.
       program_code: 'create table t (x int);',
-      program_config: { profile: 'unoptimized' },
+      program_config: { profile: TEST_COMPILATION_PROFILE },
       runtime_config: {}
     })
     await waitForCompilation(PIPELINE_NAME, 120_000)
