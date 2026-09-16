@@ -327,6 +327,37 @@ pub enum CorruptionError {
         error: snap::Error,
     },
 
+    /// LZ4 decompression failed.
+    #[error("Compressed block ({location}) failed LZ4 decompression: {error}.")]
+    Lz4 {
+        /// Block location.
+        location: BlockLocation,
+        /// LZ4 error, rendered because `DecompressError` is not `Clone`.
+        error: String,
+    },
+
+    /// Zstd decompression failed.
+    #[error("Compressed block ({location}) failed Zstd decompression: {error}.")]
+    Zstd {
+        /// Block location.
+        location: BlockLocation,
+        /// Zstd error.
+        error: String,
+    },
+
+    /// A block's framed decompressed length is missing or implausible.
+    #[error(
+        "Compressed block ({location}) declares decompressed length {length}, which exceeds the {max_length}-byte limit."
+    )]
+    BadDecompressedLen {
+        /// Block location.
+        location: BlockLocation,
+        /// Declared decompressed length.
+        length: usize,
+        /// Largest length that could be valid.
+        max_length: usize,
+    },
+
     /// Multiple paths to block.
     #[error("Multiple paths to block ({0}).")]
     MultiplePaths(BlockLocation),
@@ -1469,6 +1500,10 @@ impl ImmutableFileRef {
     }
 }
 
+/// Upper bound on a block's decompressed size, used to reject a corrupt length
+/// prefix before it is turned into an allocation.
+const MAX_DECOMPRESSED_LEN: usize = 1 << 30;
+
 fn decompress(
     compression: Option<Compression>,
     location: BlockLocation,
@@ -1484,6 +1519,27 @@ fn decompress(
             }
             .into());
         };
+        let framed = |location| -> Result<(usize, &[u8]), Error> {
+            let Some(len_bytes) = compressed.get(..4) else {
+                return Err(CorruptionError::BadDecompressedLen {
+                    location,
+                    length: 0,
+                    max_length: MAX_DECOMPRESSED_LEN,
+                }
+                .into());
+            };
+            let length = u32::from_le_bytes(len_bytes.try_into().unwrap()) as usize;
+            if length > MAX_DECOMPRESSED_LEN {
+                return Err(CorruptionError::BadDecompressedLen {
+                    location,
+                    length,
+                    max_length: MAX_DECOMPRESSED_LEN,
+                }
+                .into());
+            }
+            Ok((length, &compressed[4..]))
+        };
+
         match compression {
             Compression::Snappy => {
                 let decompressed_len = decompress_len(compressed).map_err(|error| {
@@ -1502,6 +1558,54 @@ fn decompress(
                         .into());
                     }
                     Err(error) => return Err(CorruptionError::Snappy { location, error }.into()),
+                }
+                Arc::new(decompressed)
+            }
+            Compression::Lz4 => {
+                let (decompressed_len, payload) = framed(location)?;
+                let mut decompressed = FBuf::with_capacity(decompressed_len);
+                decompressed.resize(decompressed_len, 0);
+                match lz4_flex::block::decompress_into(payload, decompressed.as_mut_slice()) {
+                    Ok(n) if n == decompressed_len => {}
+                    Ok(n) => {
+                        return Err(CorruptionError::UnexpectedDecompressionLength {
+                            location,
+                            length: n,
+                            expected_length: decompressed_len,
+                        }
+                        .into());
+                    }
+                    Err(error) => {
+                        return Err(CorruptionError::Lz4 {
+                            location,
+                            error: error.to_string(),
+                        }
+                        .into());
+                    }
+                }
+                Arc::new(decompressed)
+            }
+            Compression::Zstd => {
+                let (decompressed_len, payload) = framed(location)?;
+                let mut decompressed = FBuf::with_capacity(decompressed_len);
+                decompressed.resize(decompressed_len, 0);
+                match zstd::bulk::decompress_to_buffer(payload, decompressed.as_mut_slice()) {
+                    Ok(n) if n == decompressed_len => {}
+                    Ok(n) => {
+                        return Err(CorruptionError::UnexpectedDecompressionLength {
+                            location,
+                            length: n,
+                            expected_length: decompressed_len,
+                        }
+                        .into());
+                    }
+                    Err(error) => {
+                        return Err(CorruptionError::Zstd {
+                            location,
+                            error: error.to_string(),
+                        }
+                        .into());
+                    }
                 }
                 Arc::new(decompressed)
             }

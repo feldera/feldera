@@ -605,7 +605,23 @@ fn next_multiple_of_pow2(offset: usize, alignment: usize) -> usize {
 #[brw(repr(u8))]
 pub enum Compression {
     /// [Snappy](https://en.wikipedia.org/wiki/Snappy_(compression)).
+    ///
+    /// The payload is a Snappy raw block, which carries its own decompressed
+    /// length.
     Snappy = 1,
+
+    /// [LZ4](https://en.wikipedia.org/wiki/LZ4_(compression_algorithm)) raw
+    /// block.
+    ///
+    /// The payload is the decompressed length as a 32-bit little-endian
+    /// integer, followed by the LZ4 block.
+    Lz4 = 2,
+
+    /// [Zstandard](https://en.wikipedia.org/wiki/Zstd).
+    ///
+    /// The compression level is not recorded, since decompression does not need
+    /// it.  The payload is framed the same way as [`Compression::Lz4`].
+    Zstd = 3,
 }
 
 impl Compression {

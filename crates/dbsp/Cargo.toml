@@ -77,6 +77,8 @@ zip = { workspace = true }
 ouroboros = { workspace = true }
 tracing = { workspace = true }
 snap = { workspace = true }
+lz4_flex = { workspace = true }
+zstd = { workspace = true }
 enum-map = { workspace = true }
 feldera-modular-bloom = { workspace = true }
 roaring = { workspace = true }

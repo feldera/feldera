@@ -896,6 +896,7 @@
                         "min_storage_bytes": null,
                         "min_step_storage_bytes": null,
                         "compression": "default",
+                        "compression_level": null,
                         "cache_mib": null
                       },
                       "fault_tolerance": {
@@ -990,6 +991,7 @@
                         "min_storage_bytes": null,
                         "min_step_storage_bytes": null,
                         "compression": "default",
+                        "compression_level": null,
                         "cache_mib": null
                       },
                       "fault_tolerance": {
@@ -1114,6 +1116,7 @@
                     "min_storage_bytes": null,
                     "min_step_storage_bytes": null,
                     "compression": "default",
+                    "compression_level": null,
                     "cache_mib": null
                   },
                   "fault_tolerance": {
@@ -1191,6 +1194,7 @@
                       "min_storage_bytes": null,
                       "min_step_storage_bytes": null,
                       "compression": "default",
+                      "compression_level": null,
                       "cache_mib": null
                     },
                     "fault_tolerance": {
@@ -1380,6 +1384,7 @@
                       "min_storage_bytes": null,
                       "min_step_storage_bytes": null,
                       "compression": "default",
+                      "compression_level": null,
                       "cache_mib": null
                     },
                     "fault_tolerance": {
@@ -1531,6 +1536,7 @@
                     "min_storage_bytes": null,
                     "min_step_storage_bytes": null,
                     "compression": "default",
+                    "compression_level": null,
                     "cache_mib": null
                   },
                   "fault_tolerance": {
@@ -1608,6 +1614,7 @@
                       "min_storage_bytes": null,
                       "min_step_storage_bytes": null,
                       "compression": "default",
+                      "compression_level": null,
                       "cache_mib": null
                     },
                     "fault_tolerance": {
@@ -1712,6 +1719,7 @@
                       "min_storage_bytes": null,
                       "min_step_storage_bytes": null,
                       "compression": "default",
+                      "compression_level": null,
                       "cache_mib": null
                     },
                     "fault_tolerance": {
@@ -1987,6 +1995,7 @@
                       "min_storage_bytes": null,
                       "min_step_storage_bytes": null,
                       "compression": "default",
+                      "compression_level": null,
                       "cache_mib": null
                     },
                     "fault_tolerance": {
@@ -7176,6 +7185,7 @@
                       "min_storage_bytes": null,
                       "min_step_storage_bytes": null,
                       "compression": "default",
+                      "compression_level": null,
                       "cache_mib": null
                     },
                     "fault_tolerance": {
@@ -12918,6 +12928,7 @@
                   "min_storage_bytes": null,
                   "min_step_storage_bytes": null,
                   "compression": "default",
+                  "compression_level": null,
                   "cache_mib": null
                 },
                 "nullable": true
@@ -14962,6 +14973,7 @@
               "min_storage_bytes": null,
               "min_step_storage_bytes": null,
               "compression": "default",
+              "compression_level": null,
               "cache_mib": null
             },
             "nullable": true
@@ -15561,7 +15573,9 @@
         "enum": [
           "default",
           "none",
-          "snappy"
+          "snappy",
+          "lz4",
+          "zstd"
         ]
       },
       "StorageConfig": {
@@ -15615,6 +15629,13 @@
               }
             ],
             "default": "default"
+          },
+          "compression_level": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Compression level, for compression algorithms that have one.\n\nOnly `StorageCompression::Zstd` uses this. Higher levels compress\nharder and more slowly; decompression speed is largely unaffected, so\nthe tradeoff is write throughput against stored size. Zstd accepts\nroughly 1 to 22, and a value outside the range its build supports is\nclamped into it.\n\nThis is provided for fine-tuning and should ordinarily be left unset,\nwhich selects the algorithm's own default.",
+            "default": null,
+            "nullable": true
           },
           "min_step_storage_bytes": {
             "type": "integer",

@@ -38,6 +38,7 @@ use crc32c::crc32c;
 use dyn_clone::clone_box;
 use feldera_buffer_cache::CacheEntry;
 use feldera_storage::StoragePath;
+use lz4_flex::block::{compress_into, get_maximum_output_size};
 use snap::raw::{Encoder, max_compress_len};
 use std::{cell::RefCell, sync::Arc};
 use std::{
@@ -45,6 +46,7 @@ use std::{
     mem::{replace, take},
     ops::Range,
 };
+use zstd::bulk::Compressor as ZstdCompressor;
 
 struct VarintWriter {
     varint: Varint,
@@ -136,6 +138,9 @@ pub struct Parameters {
 
     /// How to compress input and data blocks in the output file.
     pub compression: Option<Compression>,
+
+    /// Compression level, for codecs that have one.
+    pub compression_level: Option<i32>,
 }
 
 impl Parameters {
@@ -165,6 +170,14 @@ impl Parameters {
             ..self
         }
     }
+
+    /// Returns these parameters with `compression_level` updated.
+    pub fn with_compression_level(self, compression_level: Option<i32>) -> Self {
+        Self {
+            compression_level,
+            ..self
+        }
+    }
 }
 
 impl Default for Parameters {
@@ -176,6 +189,7 @@ impl Default for Parameters {
             #[cfg(test)]
             max_branch: usize::MAX,
             compression: Some(Compression::Snappy),
+            compression_level: None,
         }
     }
 }
@@ -1034,15 +1048,33 @@ struct BlockWriter {
     cache: Arc<BufferCache>,
     file_handle: Box<dyn FileWriter>,
     encoder: Encoder,
+    /// Created on the first Zstd block, so that files using another codec
+    /// never allocate a zstd context. Reused afterwards, which is the whole
+    /// reason to hold it rather than call the free function per block.
+    zstd: Option<ZstdCompressor<'static>>,
+    zstd_level: i32,
     offset: u64,
 }
 
 impl BlockWriter {
-    fn new(cache: Arc<BufferCache>, file_handle: Box<dyn FileWriter>) -> Self {
+    fn new(
+        cache: Arc<BufferCache>,
+        file_handle: Box<dyn FileWriter>,
+        compression_level: Option<i32>,
+    ) -> Self {
         Self {
             cache,
             file_handle,
             encoder: Encoder::new(),
+            zstd: None,
+            // zstd treats 0 as "use the default level". A level outside what
+            // this zstd build accepts would make `Compressor::new` fail, and
+            // this one comes from user configuration, so clamp rather than
+            // panic on it later.
+            zstd_level: compression_level.map_or(0, |level| {
+                let range = zstd::compression_level_range();
+                level.clamp(*range.start(), *range.end())
+            }),
             offset: 0,
         }
     }
@@ -1082,6 +1114,28 @@ impl BlockWriter {
                         }
                         self.encoder
                             .compress(block.as_slice(), bounce.as_mut_slice())
+                            .unwrap()
+                    }
+                    Compression::Lz4 => {
+                        let max_len = 4 + get_maximum_output_size(block.len());
+                        if max_len > bounce.len() {
+                            bounce.resize(max_len, 0);
+                        }
+                        bounce[..4].copy_from_slice(&(block.len() as u32).to_le_bytes());
+                        4 + compress_into(block.as_slice(), &mut bounce[4..]).unwrap()
+                    }
+                    Compression::Zstd => {
+                        let max_len = 4 + zstd::zstd_safe::compress_bound(block.len());
+                        if max_len > bounce.len() {
+                            bounce.resize(max_len, 0);
+                        }
+                        bounce[..4].copy_from_slice(&(block.len() as u32).to_le_bytes());
+                        let level = self.zstd_level;
+                        let zstd = self.zstd.get_or_insert_with(|| {
+                            ZstdCompressor::new(level).expect("failed to create zstd compressor")
+                        });
+                        4 + zstd
+                            .compress_to_buffer(block.as_slice(), &mut bounce[4..])
                             .unwrap()
                     }
                 };
@@ -1165,6 +1219,7 @@ impl Writer {
             writer: BlockWriter::new(
                 cache().expect("Should have a buffer cache"),
                 storage_backend.create_with_prefix(&worker.into())?,
+                parameters.compression_level,
             ),
             key_filter,
             cws,

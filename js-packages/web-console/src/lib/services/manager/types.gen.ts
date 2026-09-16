@@ -5908,7 +5908,7 @@ export type StorageCacheConfig = 'page_cache' | 'feldera_cache'
 /**
  * Storage compression algorithm.
  */
-export type StorageCompression = 'default' | 'none' | 'snappy'
+export type StorageCompression = 'default' | 'none' | 'snappy' | 'lz4' | 'zstd'
 
 /**
  * Configuration for persistent storage in a [`PipelineConfig`].
@@ -5959,6 +5959,19 @@ export type StorageOptions = {
    */
   cache_mib?: number | null
   compression?: StorageCompression
+  /**
+   * Compression level, for compression algorithms that have one.
+   *
+   * Only `StorageCompression::Zstd` uses this. Higher levels compress
+   * harder and more slowly; decompression speed is largely unaffected, so
+   * the tradeoff is write throughput against stored size. Zstd accepts
+   * roughly 1 to 22, and a value outside the range its build supports is
+   * clamped into it.
+   *
+   * This is provided for fine-tuning and should ordinarily be left unset,
+   * which selects the algorithm's own default.
+   */
+  compression_level?: number | null
   /**
    * For a batch of data passed through the pipeline during a single step,
    * the minimum estimated number of bytes to write it to storage.
