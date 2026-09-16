@@ -21,10 +21,11 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use crate::has_unstable_feature;
+use crate::runner::pipeline_logs::LogsQuery;
 #[cfg(feature = "feldera-enterprise")]
 use actix_web::http::Method;
 use actix_web::{
-    HttpRequest, HttpResponse, delete, get,
+    HttpResponse, delete, get,
     http::header::{CacheControl, CacheDirective},
     patch, post, put,
     web::{self, Data as WebData, ReqData},
@@ -2112,9 +2113,14 @@ pub(crate) async fn post_pipeline_clear(
 /// position is `feldera-logs-seq` plus the number of lines it has received. To reconnect,
 /// pass `cursor=<epoch>:<position>`.
 ///
-/// The epoch changes whenever the logs buffer is recreated, which clears the logs. A cursor
-/// carrying a stale epoch is not an error: it is answered with a full catch-up and a gap
-/// naming what was lost, so a caller can never be locked out of its logs by an old cursor.
+/// A pipeline's logs buffer is created when the runner first sees the pipeline and
+/// discarded when the runner restarts or the pipeline is deleted, which is also when the
+/// logs are cleared. Stopping and starting a pipeline leaves the buffer alone: the epoch
+/// stays the same and the numbering continues across runs.
+///
+/// A cursor carrying an epoch from a buffer that no longer exists is not an error: it is
+/// answered with a full catch-up and a gap naming what was lost, so a caller can never be
+/// locked out of its logs by an old cursor.
 ///
 /// Callers that supply `cursor` receive no informational lines in the body, which is what
 /// makes the one-line-per-sequence-number correspondence exact. Callers that omit it get
@@ -2158,18 +2164,20 @@ pub(crate) async fn get_pipeline_logs(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
-    request: HttpRequest,
+    query: web::Query<LogsQuery>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
+    // Validated here rather than forwarded verbatim, so a malformed cursor is answered
+    // without a runner round-trip and the runner's URL is built from a parsed value.
+    let mode = query.follow_mode().map_err(|error| {
+        ManagerError::from(ApiError::InvalidLogCursorParam {
+            value: query.cursor.clone().unwrap_or_default(),
+            error,
+        })
+    })?;
     state
         .runner
-        .http_streaming_logs_from_pipeline_by_name(
-            &client,
-            *tenant_id,
-            &pipeline_name,
-            // The runner owns cursor validation, and its status and body are proxied back.
-            request.query_string(),
-        )
+        .http_streaming_logs_from_pipeline_by_name(&client, *tenant_id, &pipeline_name, mode)
         .await
 }
 

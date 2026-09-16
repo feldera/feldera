@@ -12,13 +12,12 @@ use crate::runner::pipeline_automata::PipelineAutomaton;
 use crate::runner::pipeline_executor::PipelineExecutor;
 use crate::runner::pipeline_logs::{
     FollowMode, FollowRequest, FollowerMessage, LOGS_EPOCH_HEADER, LOGS_GAP_HEADER,
-    LOGS_SEQ_HEADER, LogCursor, LogMessage, LogsSender,
+    LOGS_SEQ_HEADER, LogMessage, LogsQuery, LogsSender,
 };
 use actix_web::HttpResponse;
 use actix_web::Responder;
 use actix_web::{HttpRequest, HttpServer, get, web};
 use async_stream::try_stream;
-use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::net::TcpListener;
 use std::str::FromStr;
@@ -52,16 +51,10 @@ const PIPELINE_DISCOVERY_INTERVAL: Duration = Duration::from_secs(2);
 /// Type alias shorthand for the pipelines state the runner manager maintains and interacts with.
 type PipelinesState = BTreeMap<PipelineId, (JoinHandle<()>, Arc<Notify>, Sender<FollowRequest>)>;
 
-/// Query parameters accepted by the logs endpoint.
-#[derive(Debug, Deserialize)]
-struct LogsQuery {
-    /// Position to resume the stream from, as reported by a previous response's headers.
-    ///
-    /// Absent selects the legacy behavior: the whole retained buffer, with the discard
-    /// notice in-band and no position headers. Present but empty is a cursor-aware
-    /// follower's first connection, which has no position yet.
-    cursor: Option<String>,
-}
+/// How long the logs endpoint gives the logs thread to report a resuming follower's
+/// position. Set below `RunnerInteraction::RUNNER_HTTP_REQUEST_TIMEOUT` so the API server
+/// receives a response head rather than a timeout.
+const RESUME_POSITION_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Returns whether the runner is healthy.
 /// The health check consults the continuous probe of database reachability.
@@ -103,6 +96,36 @@ async fn logs_stream(
     }
 }
 
+/// Reads a resuming follower's position, as the epoch, sequence number and gap the logs
+/// thread reports. Returns `None` if the thread sends no position within `within`.
+///
+/// The wait is bounded so a wedged logs thread costs the caller its position rather than
+/// its response. A caller that receives no position starts its log over.
+async fn resume_position(
+    receiver: &mut Receiver<FollowerMessage>,
+    within: Duration,
+) -> Option<(Uuid, u64, u64)> {
+    // Resolves as soon as the logs thread services the request, which is the same instant
+    // the first line would have been produced.
+    match timeout(within, receiver.recv()).await {
+        Ok(Some(FollowerMessage::Resume { epoch, seq, gap })) => Some((epoch, seq, gap)),
+        // The logs thread dropped the follower, closing the channel.
+        Ok(None) => None,
+        Ok(Some(FollowerMessage::Line(line))) => {
+            error!(
+                "Logs thread sent a line ahead of a resuming follower's position, and it is dropped: {line}"
+            );
+            None
+        }
+        Err(_) => {
+            error!(
+                "Logs thread did not report a resuming follower's position within {within:?}: the response carries no position headers, so the follower starts over"
+            );
+            None
+        }
+    }
+}
+
 /// Retrieves as a stream the logs of a particular pipeline identified by its identifier.
 #[get("/logs/{pipeline_id}")]
 async fn get_logs(
@@ -119,19 +142,15 @@ async fn get_logs(
         })
     })?);
 
-    // Parse what the follower asks to receive. Malformed syntax is rejected rather than
-    // ignored: it can only come from a broken client, whereas a cursor that is merely
-    // stale is resolved by the logs thread and degrades to a full catch-up.
-    let mode = match &query.cursor {
-        None => FollowMode::Full,
-        Some(cursor) if cursor.is_empty() => FollowMode::Resume(None),
-        Some(cursor) => FollowMode::Resume(Some(LogCursor::from_str(cursor).map_err(|e| {
-            ManagerError::from(ApiError::InvalidLogCursorParam {
-                value: cursor.clone(),
-                error: e,
-            })
-        })?)),
-    };
+    // Parse what the follower asks to receive. The API server validates the cursor too;
+    // the runner repeats it because it also serves callers that do not pass through the
+    // API server.
+    let mode = query.follow_mode().map_err(|e| {
+        ManagerError::from(ApiError::InvalidLogCursorParam {
+            value: query.cursor.clone().unwrap_or_default(),
+            error: e,
+        })
+    })?;
     let emit_end_notice = matches!(mode, FollowMode::Full);
     // A resuming follower is answered with its position, which the logs thread sends ahead
     // of every line and which has to be in hand before the response head goes out.
@@ -157,17 +176,14 @@ async fn get_logs(
             builder
                 .content_type("text/plain; charset=utf-8")
                 .append_header(("X-Content-Type-Options", "nosniff"));
-            if resolves_position {
-                // Resolves as soon as the logs thread services the request, which is
-                // the same instant the first line would have been produced. A thread
-                // that drops the follower closes the channel instead, leaving the
-                // headers off and the body empty, as such a follower has always seen.
-                if let Some(FollowerMessage::Resume { epoch, seq, gap }) = receiver.recv().await {
-                    builder
-                        .append_header((LOGS_EPOCH_HEADER, epoch.to_string()))
-                        .append_header((LOGS_SEQ_HEADER, seq.to_string()))
-                        .append_header((LOGS_GAP_HEADER, gap.to_string()));
-                }
+            if resolves_position
+                && let Some((epoch, seq, gap)) =
+                    resume_position(&mut receiver, RESUME_POSITION_TIMEOUT).await
+            {
+                builder
+                    .append_header((LOGS_EPOCH_HEADER, epoch.to_string()))
+                    .append_header((LOGS_SEQ_HEADER, seq.to_string()))
+                    .append_header((LOGS_GAP_HEADER, gap.to_string()));
             }
             Ok(builder.streaming(logs_stream(receiver, emit_end_notice).await))
         }
@@ -417,7 +433,8 @@ async fn reconcile<E: PipelineExecutor + 'static>(
 mod test {
     use super::{
         FollowMode, FollowRequest, FollowerMessage, LOGS_EPOCH_HEADER, LOGS_GAP_HEADER,
-        LOGS_SEQ_HEADER, LogMessage, PipelineId, PipelinesState, get_logs, logs_stream,
+        LOGS_SEQ_HEADER, LogMessage, PipelineId, PipelinesState, RESUME_POSITION_TIMEOUT,
+        get_logs, logs_stream, resume_position,
     };
     use crate::runner::pipeline_logs::start_thread_pipeline_logs;
     use actix_web::http::StatusCode;
@@ -425,6 +442,7 @@ mod test {
     use futures_util::StreamExt;
     use std::collections::BTreeMap;
     use std::sync::Arc;
+    use std::time::Duration;
     use tokio::spawn;
     use tokio::sync::mpsc::{Receiver, Sender, channel};
     use tokio::sync::{Mutex, Notify, oneshot};
@@ -707,5 +725,92 @@ mod test {
         let uri = format!("/logs/{}?cursor=nonsense", fixture.pipeline_id);
         let (status, _, _) = response_at(fixture, uri).await;
         assert_eq!(status, StatusCode::BAD_REQUEST);
+    }
+
+    /// A logs thread that never reports a position costs the caller its position, not its
+    /// response. An unbounded wait would hold the request until the API server's proxy
+    /// timeout reported the runner as unreachable.
+    #[tokio::test]
+    async fn resume_position_gives_up_on_a_silent_thread() {
+        // The sender is held, so the channel stays open and nothing is ever sent on it.
+        let (_sender, mut receiver) = channel::<FollowerMessage>(1);
+        assert_eq!(
+            resume_position(&mut receiver, Duration::from_millis(10)).await,
+            None
+        );
+    }
+
+    /// The position is the first message a resuming follower receives.
+    #[tokio::test]
+    async fn resume_position_reads_the_position() {
+        let (sender, mut receiver) = channel::<FollowerMessage>(1);
+        let epoch = Uuid::now_v7();
+        sender
+            .send(FollowerMessage::Resume {
+                epoch,
+                seq: 7,
+                gap: 2,
+            })
+            .await
+            .expect("follower is gone");
+        assert_eq!(
+            resume_position(&mut receiver, RESUME_POSITION_TIMEOUT).await,
+            Some((epoch, 7, 2))
+        );
+    }
+
+    /// A line ahead of the position means the logs thread is broken, and it is not read as
+    /// a position.
+    #[tokio::test]
+    async fn resume_position_rejects_a_line_sent_ahead_of_it() {
+        let (sender, mut receiver) = channel::<FollowerMessage>(1);
+        sender
+            .send(FollowerMessage::Line("one".to_string()))
+            .await
+            .expect("follower is gone");
+        assert_eq!(
+            resume_position(&mut receiver, RESUME_POSITION_TIMEOUT).await,
+            None
+        );
+    }
+
+    /// A follower the logs thread drops is answered without a position, and a caller that
+    /// receives none starts its log over.
+    #[tokio::test]
+    async fn get_logs_answers_without_a_position_when_the_follower_is_dropped() {
+        let pipeline_id = PipelineId(Uuid::now_v7());
+        let (follow_sender, mut follow_receiver) = channel::<FollowRequest>(10);
+        // Takes the request and drops it, which closes the follower's channel.
+        let drop_follower = spawn(async move {
+            follow_receiver.recv().await;
+        });
+        let mut pipelines = BTreeMap::new();
+        pipelines.insert(
+            pipeline_id,
+            (spawn(async {}), Arc::new(Notify::new()), follow_sender),
+        );
+        let pipelines = Arc::new(Mutex::new(pipelines));
+
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(web::Data::new(pipelines))
+                .service(get_logs),
+        )
+        .await;
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::get()
+                .uri(&format!("/logs/{pipeline_id}?cursor="))
+                .to_request(),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        for name in [LOGS_EPOCH_HEADER, LOGS_SEQ_HEADER, LOGS_GAP_HEADER] {
+            assert!(response.headers().get(name).is_none(), "{name} is reported");
+        }
+        let body = actix_test::read_body(response).await;
+        assert_eq!(std::str::from_utf8(&body).expect("body is not UTF-8"), "");
+        drop_follower.await.expect("follower was never taken");
     }
 }

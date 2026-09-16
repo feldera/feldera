@@ -6,6 +6,7 @@ use crate::db::types::pipeline::ExtendedPipelineDescrMonitoring;
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
+use crate::runner::pipeline_logs::FollowMode;
 use actix_web::http::header::{self, HeaderValue};
 use actix_web::{HttpRequest, HttpResponse, HttpResponseBuilder, http::Method, web::Payload};
 use actix_ws::{CloseCode, CloseReason};
@@ -603,7 +604,7 @@ impl RunnerInteraction {
         client: &awc::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
-        query_string: &str,
+        mode: FollowMode,
     ) -> Result<ClientResponse<Decoder<actix_http::Payload>>, ManagerError> {
         // Retrieve pipeline
         let pipeline = self
@@ -613,10 +614,13 @@ impl RunnerInteraction {
             .get_pipeline_for_monitoring(tenant_id, pipeline_name)
             .await?;
 
-        // Build request to the runner. The query string is forwarded verbatim so the
-        // runner sees the caller's resume cursor.
+        // Build request to the runner. The query string is rendered from the parsed mode
+        // rather than forwarded verbatim, so the URL is well-formed whatever the caller
+        // sent. `Full` renders empty, leaving the URL as it is without a cursor.
+        let query = mode.to_query_string();
+        let separator = if query.is_empty() { "" } else { "?" };
         let url = format!(
-            "{}://{}:{}/logs/{}?{}",
+            "{}://{}:{}/logs/{}{separator}{query}",
             if self.common_config.enable_https {
                 "https"
             } else {
@@ -625,7 +629,6 @@ impl RunnerInteraction {
             self.common_config.runner_host,
             self.common_config.runner_port,
             pipeline.id,
-            query_string
         );
 
         // Perform request to the runner
@@ -658,11 +661,11 @@ impl RunnerInteraction {
         client: &awc::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
-        query_string: &str,
+        mode: FollowMode,
     ) -> Result<HttpResponse, ManagerError> {
         // Perform request to the runner
         let response = self
-            .get_logs_from_pipeline(client, tenant_id, pipeline_name, query_string)
+            .get_logs_from_pipeline(client, tenant_id, pipeline_name, mode)
             .await?;
 
         // Build the HTTP response with the same status, headers and streaming body
