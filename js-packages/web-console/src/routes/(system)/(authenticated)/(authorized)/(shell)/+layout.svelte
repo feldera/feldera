@@ -31,7 +31,9 @@
   // The app shell: pollers that keep the pipeline list, cluster health and backend version
   // current, the navigation drawers, and the banners. Every page that works on a live Feldera
   // instance lives in this group; a page that reads uploaded data, like the profile viewer,
-  // sits beside it under `(authorized)` and never mounts these pollers.
+  // sits beside it under `(authorized)` and never mounts these pollers. The health poller
+  // forgets its verdict on the way out, since the profile menu shows that one on every page;
+  // the pipeline list needs no such reset, as it is read inside this group only.
   //
   // This layout only ever mounts with an acting tenant resolved: the enclosing `(authorized)`
   // group's `+layout.ts` redirects to /select-tenant otherwise. So the pollers need no guard,
@@ -131,6 +133,12 @@
       dismissMain()
     }
   })
+
+  // The toast renders in the root layout, which outlives this layout, and it never
+  // expires on its own. Leaving the shell has to take it down: a page outside the shell, such
+  // as the profile viewer, must not keep warning about an instance it does not read.
+  // The effect runs on unmount only.
+  $effect(() => dismissMain)
 
   let isFelderaReachable = $derived(api.isNetworkHealthy && api.isAuthHealthy)
 </script>
