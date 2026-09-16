@@ -812,7 +812,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.decrease().append(");").newline();
         this.tagStream(operator.asOperator());
         this.builder.newline();
-        this.sourceMapPostfix(operator);
+        this.emitSourceMapPostfix(operator);
         return VisitDecision.STOP;
     }
 
@@ -878,15 +878,67 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.getOutput(0).getName(this.preferHash))
                 .append(".set_persistent_id(hash);");
         this.builder.newline();
-        return this.sourceMapPostfix(operator);
+        return this.emitSourceMapPostfix(operator);
     }
 
-    public VisitDecision sourceMapPostfix(IInputMapOperator operator) {
-        DBSPTypeStruct type = operator.getOriginalRowType();
+    @Override
+    public VisitDecision preorder(DBSPSourceLazyMapOperator operator) {
+        this.computeHash(operator);
+        DBSPTypeIndexedZSet ix = operator.getOutputIndexedZSetType();
+        this.writeComments(operator)
+                .append("let (")
+                .append(operator.getNodeName(this.preferHash))
+                .append(", ")
+                .append(this.handleName(operator))
+                .append(") = circuit.add_lazy_input_map_persistent::<");
+        this.innerVisitor.setOperatorContext(operator);
+        ix.keyType.accept(this.innerVisitor);
+        this.builder.append(", ");
+        ix.elementType.accept(this.innerVisitor);
+        this.builder.append(">(hash);").newline();
+        this.tagStream(operator);
+        this.builder.newline();
+
         DBSPTypeStruct keyStructType = operator.getKeyStructType(
                 new ProgramIdentifier(operator.getOriginalRowType().hashName + "_key", false));
         DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
                 new ProgramIdentifier(operator.getOriginalRowType().hashName + "_upsert", false));
+        DBSPStrLiteral json = this.emitSourceMapPrologue(operator, keyStructType, upsertStruct);
+        if (json != null) {
+            // A lazy table is always materialized: the map keeps the integral that it
+            // resolves against, and the catalog reads that one.
+            this.builder.append("catalog.register_lazy_materialized_input_map::<");
+            keyStructType.toTuple().accept(this.innerVisitor);
+            this.builder.append(", ");
+            keyStructType.accept(this.innerVisitor);
+            this.builder.append(", ");
+            ix.elementType.accept(this.innerVisitor);
+            this.builder.append(", ");
+            operator.getOriginalRowType().accept(this.innerVisitor);
+            this.builder.append(", _>(").increase()
+                    .append(operator.getOutput(operator.getDataOutputIndex()).getName(this.preferHash))
+                    .append(".clone(),").newline()
+                    .append(this.handleName(operator))
+                    .append(".clone(),").newline();
+            CanonicalForm cf = new CanonicalForm(this.compiler);
+            DBSPExpression key = cf.apply(operator.getKeyFunc()).to(DBSPExpression.class);
+            key.accept(this.innerVisitor);
+            this.builder.append(",").newline();
+            json.accept(this.innerVisitor);
+            this.builder.newline().decrease().append(");")
+                    .newline();
+        }
+        this.innerVisitor.setOperatorContext(null);
+        return VisitDecision.STOP;
+    }
+
+    /** Emit what an input map needs before the catalog registers it: the binding of the
+     * table's SQL name and, unless the circuit uses handles, the structs of the table's
+     * rows, keys, and updates.  Return the table's description for the catalog, or null
+     * if the circuit uses handles and registers nothing. */
+    @Nullable
+    private DBSPStrLiteral emitSourceMapPrologue(
+            IInputMapOperator operator, DBSPTypeStruct keyStructType, DBSPTypeStruct upsertStruct) {
         if (this.options.ioOptions.sqlNames) {
             this.builder.append("let ")
                     .append(operator.getTableName().name())
@@ -895,18 +947,27 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(";")
                     .newline();
         }
+        if (this.useHandles)
+            return null;
 
-        if (!this.useHandles) {
-            this.generateNestedStructs(new DBSPStructItem(type, operator.getMetadata()), false);
-            this.generateNestedStructs(new DBSPStructItem(keyStructType, null), false);
-            this.generateNestedStructs(new DBSPStructItem(upsertStruct, operator.getMetadata()), false);
+        this.generateNestedStructs(new DBSPStructItem(operator.getOriginalRowType(), operator.getMetadata()), false);
+        this.generateNestedStructs(new DBSPStructItem(keyStructType, null), false);
+        this.generateNestedStructs(new DBSPStructItem(upsertStruct, operator.getMetadata()), false);
 
-            IHasSchema tableDescription = this.metadata.getTableDescription(operator.getTableName());
-            JsonNode j = tableDescription.asJson(true);
-            j = this.stripConnectors(j);
-            j = this.stripPositions(j);
-            DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
+        IHasSchema tableDescription = this.metadata.getTableDescription(operator.getTableName());
+        JsonNode j = tableDescription.asJson(true);
+        j = this.stripConnectors(j);
+        j = this.stripPositions(j);
+        return new DBSPStrLiteral(j.toString(), true);
+    }
 
+    private VisitDecision emitSourceMapPostfix(IInputMapOperator operator) {
+        DBSPTypeStruct keyStructType = operator.getKeyStructType(
+                new ProgramIdentifier(operator.getOriginalRowType().hashName + "_key", false));
+        DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
+                new ProgramIdentifier(operator.getOriginalRowType().hashName + "_upsert", false));
+        DBSPStrLiteral json = this.emitSourceMapPrologue(operator, keyStructType, upsertStruct);
+        if (json != null) {
             // Check if any of the primary keys columns has a LATENESS annotation
             boolean keyWithLateness = false;
             boolean hasPrimaryKeys = !operator.getMetadata().getPrimaryKeys().isEmpty();

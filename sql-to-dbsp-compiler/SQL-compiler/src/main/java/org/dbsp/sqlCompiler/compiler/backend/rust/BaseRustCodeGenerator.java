@@ -146,7 +146,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
                 Error,
                 Runtime,
                 NumEntries,
-                MapHandle, ZSetHandle, OutputHandle,
+                MapHandle, LazyMapHandle, ZSetHandle, OutputHandle,
                 dynamic::{DynData,DynDataTyped},
                 typed_batch::SpineSnapshot,
             };
