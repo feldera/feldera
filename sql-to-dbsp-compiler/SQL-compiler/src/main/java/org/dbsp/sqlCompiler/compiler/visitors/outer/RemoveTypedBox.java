@@ -32,8 +32,8 @@ public class RemoveTypedBox extends CircuitRewriter {
         throw new InternalCompilerError("Cannot unbox the waterline output of " + operator, operator);
     }
 
-    static class Unbox extends InnerRewriteVisitor {
-        Unbox(DBSPCompiler compiler) {
+    public static class Unbox extends InnerRewriteVisitor {
+        public Unbox(DBSPCompiler compiler) {
             super(compiler, false);
         }
 

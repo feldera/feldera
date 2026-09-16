@@ -12,6 +12,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.RemoveClones;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveTypedBox;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
@@ -744,8 +746,12 @@ public final class ExpressionOracleHarvest {
 
     private static String innerJson(DBSPCompiler compiler, IDBSPInnerNode node) {
         JsonStream stream = new JsonStream(new IndentStreamBuilder());
+        // The corpus is graded by the Gen-2 evaluator, so it takes the Gen-2 form; the circuit
+        // keeps clone() and TypedBox because the harvest also renders it as Rust.
+        IDBSPInnerNode unboxed = new RemoveTypedBox.Unbox(compiler).apply(node);
+        IDBSPInnerNode gen2Node = new RemoveClones(compiler).apply(unboxed);
         ToJsonInnerVisitor visitor = new ToJsonInnerVisitor(compiler, stream, 1);
-        node.accept(visitor);
+        gen2Node.accept(visitor);
         return visitor.getJsonString();
     }
 
