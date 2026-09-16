@@ -1973,6 +1973,107 @@ public class StreamingTests extends StreamingTestBase {
         ccs.visit(visitor);
     }
 
+    /** A view's LATENESS declarations combine with the waterlines inferred for its other
+     * columns (issue 1906): 'x' is filtered by its declaration, while 'ts' keeps the waterline
+     * of table 't', so emit_final on 'ts' compiles and fires. */
+    @Test
+    public void viewLatenessKeepsInheritedWaterline() {
+        String sql = """
+                CREATE TABLE t(ts INT NOT NULL LATENESS 2, x INT NOT NULL);
+                LATENESS v.x 1;
+                CREATE LOCAL VIEW v AS SELECT ts, x FROM t;
+                CREATE VIEW w WITH ('emit_final' = 'ts') AS
+                SELECT ts, COUNT(*) FROM v GROUP BY ts;""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        // waterline of ts is -1, of x is 9
+        ccs.step("INSERT INTO t VALUES (0, 10), (1, 10);", """
+                 ts | count | weight
+                ---------------------""");
+        // (2, 5) is late on x and dropped; waterline of ts becomes 3
+        ccs.step("INSERT INTO t VALUES (2, 5), (5, 10);", """
+                 ts | count | weight
+                ---------------------
+                  0 |     1 | 1
+                  1 |     1 | 1""");
+        // waterline of ts becomes 7; the dropped row never contributes a count
+        ccs.step("INSERT INTO t VALUES (9, 20);", """
+                 ts | count | weight
+                ---------------------
+                  5 |     1 | 1""");
+    }
+
+    /** A column with both a declared and an inherited waterline uses the larger one:
+     * 'ts' inherits ts - 1 from 't', and the declaration alone would give ts - 10. */
+    @Test
+    public void viewLatenessMergesWithInherited() {
+        String sql = """
+                CREATE TABLE t(ts INT NOT NULL LATENESS 1);
+                LATENESS v.ts 10;
+                CREATE LOCAL VIEW v AS SELECT ts FROM t;
+                CREATE VIEW w WITH ('emit_final' = 'ts') AS
+                SELECT ts, COUNT(*) FROM v GROUP BY ts;""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        // waterline of ts is 14: rows 0 and 8 are final; with ts - 10 only row 0 would be
+        ccs.step("INSERT INTO t VALUES (0), (8), (15);", """
+                 ts | count | weight
+                ---------------------
+                  0 |     1 | 1
+                  8 |     1 | 1""");
+    }
+
+    /** The mirror of viewLatenessMergesWithInherited: the declared waterline ts - 1 is the larger
+     * one, so it wins the MAX; the inherited ts - 10 alone would make only row 0 final. */
+    @Test
+    public void viewLatenessTighterThanInherited() {
+        String sql = """
+                CREATE TABLE t(ts INT NOT NULL LATENESS 10);
+                LATENESS v.ts 1;
+                CREATE LOCAL VIEW v AS SELECT ts FROM t;
+                CREATE VIEW w WITH ('emit_final' = 'ts') AS
+                SELECT ts, COUNT(*) FROM v GROUP BY ts;""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        // waterline of ts is 14
+        ccs.step("INSERT INTO t VALUES (0), (8), (15);", """
+                 ts | count | weight
+                ---------------------
+                  0 |     1 | 1
+                  8 |     1 | 1""");
+    }
+
+    /** 'ts' has an INTERVAL lateness both on table 't' (the inherited waterline) and on view 'v'
+     * (the declared one), so the MAX combines two TIMESTAMP values; the nullable 'x' gets its
+     * waterline from the declaration on 'v' alone. */
+    @Test
+    public void viewLatenessTimestampMerge() {
+        String sql = """
+                CREATE TABLE t(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR, x INT);
+                LATENESS v.ts INTERVAL 1 DAY;
+                LATENESS v.x 1;
+                CREATE LOCAL VIEW v AS SELECT ts, x FROM t;
+                CREATE VIEW w WITH ('emit_final' = 'ts') AS
+                SELECT ts, COUNT(*) FROM v GROUP BY ts;""";
+        CompilerCircuitStream ccs = this.getCCS(sql);
+        // waterline of ts is 11:00 (inherited, ts - 1 hour), of x is 9
+        ccs.step("""
+                INSERT INTO t VALUES
+                ('2024-01-01 00:00:00', 10),
+                ('2024-01-01 08:00:00', 10),
+                ('2024-01-01 12:00:00', 10);""", """
+                 ts                  | count | weight
+                --------------------------------------
+                 2024-01-01 00:00:00 |     1 | 1
+                 2024-01-01 08:00:00 |     1 | 1""");
+        // x = 5 is late: the row is dropped by v, but t accepts it, so waterline of ts is 19:00
+        ccs.step("INSERT INTO t VALUES ('2024-01-01 20:00:00', 5);", """
+                 ts                  | count | weight
+                --------------------------------------
+                 2024-01-01 12:00:00 |     1 | 1""");
+        // waterline of ts is 23:00; the 20:00 row was dropped, so nothing new is final
+        ccs.step("INSERT INTO t VALUES ('2024-01-02 00:00:00', 10);", """
+                 ts                  | count | weight
+                --------------------------------------""");
+    }
+
     @Test
     public void issue1973() {
         String sql = """
