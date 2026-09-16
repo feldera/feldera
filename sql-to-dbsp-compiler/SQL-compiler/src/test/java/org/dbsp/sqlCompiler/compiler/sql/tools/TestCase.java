@@ -2,6 +2,8 @@ package org.dbsp.sqlCompiler.compiler.sql.tools;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IInputMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.TableData;
@@ -158,7 +160,13 @@ public class TestCase {
                         function = "append_to_collection_handle";
                         args = new DBSPExpression[2];
                     } else {
-                        function = "append_to_map_handle";
+                        // A table fed through the lazy input map carries a
+                        // `LazyMapHandle`, which takes whole records and
+                        // deletes, so it needs the matching helper.
+                        IInputOperator source = this.ccs.circuit.getInput(td.name());
+                        boolean lazy = source instanceof IInputMapOperator map
+                                && map.usesLazyInputMap();
+                        function = lazy ? "append_to_lazy_map_handle" : "append_to_map_handle";
                         args = new DBSPExpression[3];
                         args[2] = td.keyFunction();
                     }

@@ -76,7 +76,7 @@ pub use string_interner::{build_string_interner, intern_string, unintern_string}
 // Perhaps they should be defined in sqllib in the first place?
 pub use dbsp::algebra::{F32, F64};
 use dbsp::{
-    DBData, MapHandle, OrdIndexedZSet, OrdZSet, OutputHandle, ZSetHandle, ZWeight,
+    DBData, LazyMapHandle, MapHandle, OrdIndexedZSet, OrdZSet, OutputHandle, ZSetHandle, ZWeight,
     algebra::{
         AddByRef, HasOne, HasZero, NegByRef, OrdIndexedZSetFactories, OrdZSetFactories, Semigroup,
         SemigroupValue, ZRingValue,
@@ -1196,6 +1196,30 @@ pub fn append_to_map_handle<K, V, U>(
         } else {
             let key = unsafe { cursor.key().downcast::<V>() };
             handle.push(key_f(&key.clone()), Update::Insert(key.clone()));
+        }
+        cursor.step_key();
+    }
+}
+
+#[doc(hidden)]
+pub fn append_to_lazy_map_handle<K, V>(
+    data: &WSet<V>,
+    handle: &LazyMapHandle<K, V>,
+    key_f: fn(&V) -> K,
+) where
+    K: DBData,
+    V: DBData,
+{
+    let mut cursor = data.cursor();
+    while cursor.key_valid() {
+        let w = *cursor.weight().deref();
+        if !w.is_zero() {
+            // The lazy map takes whole records and deletes rather than
+            // upserts: a delete names its key alone, and a write carries the
+            // record that replaces whatever the key held.
+            let record = unsafe { cursor.key().downcast::<V>() };
+            let value = if w.ge0() { Some(record.clone()) } else { None };
+            handle.push(key_f(record), value);
         }
         cursor.step_key();
     }

@@ -37,6 +37,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
+import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.CircuitWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.ProjectDeclarations;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -741,6 +742,21 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
+    /** Whether a table is fed through the lazy input map, which resolves a
+     * transaction's updates against the table when the transaction commits,
+     * rather than the eager map, which resolves each one as it arrives.
+     *
+     * <p>A table with a primary key and no LATENESS takes the lazy map.  A
+     * table with LATENESS keeps the eager map, whose waterline the lazy map
+     * has no counterpart for.  Later a table property will let the user
+     * choose. */
+    static boolean useLazyInputMap(IInputMapOperator operator) {
+        TableMetadata metadata = operator.getMetadata();
+        return operator.asOperator().is(DBSPSourceMapOperator.class)
+                && !metadata.getPrimaryKeys().isEmpty()
+                && !Linq.any(metadata.getColumns(), column -> column.lateness != null);
+    }
+
     @Override
     public VisitDecision preorder(DBSPSourceMapOperator operator) {
         this.computeHash(operator.asOperator());
@@ -749,6 +765,26 @@ public class ToRustVisitor extends CircuitVisitor {
                 new ProgramIdentifier(operator.getOriginalRowType().hashName + "_key", false));
         DBSPTypeStruct upsertStruct = operator.getStructUpsertType(
                 new ProgramIdentifier(operator.getOriginalRowType().hashName + "_upsert", false));
+        if (useLazyInputMap(operator)) {
+            // The lazy map takes writes and deletes only, so it has no patch
+            // function and no upsert type.
+            DBSPTypeIndexedZSet lazyIx = ((IInputMapOperator) operator).getOutputIndexedZSetType();
+            this.writeComments(operator.asOperator())
+                    .append("let (")
+                    .append(operator.asOperator().getNodeName(this.preferHash))
+                    .append(", ")
+                    .append(this.handleName(operator.asOperator()))
+                    .append(") = circuit.add_lazy_input_map_persistent::<");
+            this.innerVisitor.setOperatorContext(operator.asOperator());
+            lazyIx.keyType.accept(this.innerVisitor);
+            this.builder.append(", ");
+            lazyIx.elementType.accept(this.innerVisitor);
+            this.builder.append(">(hash);").newline();
+            this.tagStream(operator.asOperator());
+            this.builder.newline();
+            this.sourceMapPostfix(operator);
+            return VisitDecision.STOP;
+        }
         this.writeComments(operator.asOperator())
                 .append("let (")
                 .append(operator.asOperator().getNodeName(this.preferHash))
@@ -899,6 +935,34 @@ public class ToRustVisitor extends CircuitVisitor {
                 }
             }
 
+            if (useLazyInputMap(operator)) {
+                // A lazy table is always materialized: the map keeps the
+                // integral it resolves against, and the catalog reads that one.
+                // The map takes writes and deletes only, so there is no update
+                // type and no update key function.
+                this.builder.append("catalog.register_lazy_materialized_input_map::<");
+                keyStructType.toTuple().accept(this.innerVisitor);
+                this.builder.append(", ");
+                keyStructType.accept(this.innerVisitor);
+                this.builder.append(", ");
+                operator.getOutputIndexedZSetType().elementType.accept(this.innerVisitor);
+                this.builder.append(", ");
+                operator.getOriginalRowType().accept(this.innerVisitor);
+                this.builder.append(", _>(").increase()
+                        .append(operator.asOperator().getOutput(operator.getDataOutputIndex()).getName(this.preferHash))
+                        .append(".clone(),").newline()
+                        .append(this.handleName(operator.asOperator()))
+                        .append(".clone(),").newline();
+                CanonicalForm lazyCf = new CanonicalForm(this.compiler);
+                DBSPExpression lazyKey = lazyCf.apply(operator.getKeyFunc()).to(DBSPExpression.class);
+                lazyKey.accept(this.innerVisitor);
+                this.builder.append(",").newline();
+                json.accept(this.innerVisitor);
+                this.builder.newline().decrease().append(");")
+                        .newline();
+                this.innerVisitor.setOperatorContext(null);
+                return VisitDecision.STOP;
+            }
             // If a table has a PK, always register it using register_materialized_input_map
             // (instead of register_input_map) even if it doesn't have a materialized  attribute,
             // EXCEPT if it has a PK column with LATENESS, in which case still use register_input_map.
