@@ -12,6 +12,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.ViewColumnMetadata;
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -78,6 +80,15 @@ class BuildNestedOperators extends CircuitCloneWithGraphsVisitor {
             }
             super.replace(operator);
             return;
+        }
+
+        DBSPViewOperator lateView = operator.as(DBSPViewOperator.class);
+        if (lateView != null && lateView.hasLateness()) {
+            for (ViewColumnMetadata column : lateView.metadata.columns)
+                if (column.lateness != null)
+                    throw new CompilationError(
+                            "LATENESS on views inside recursive components is not supported: view " +
+                            lateView.viewName.singleQuote(), column.getPositionRange());
         }
 
         DBSPNestedOperator block;

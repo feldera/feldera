@@ -125,7 +125,8 @@ LATENESS v.col1 INTERVAL 1 HOUR;
 ```
 
 `LATENESS` can only be specified for toplevel view columns; i.e., the following
-is illegal: `LATENESS v.str.col INTERVAL 1 HOUR`.
+is illegal: `LATENESS v.str.col INTERVAL 1 HOUR`.  `LATENESS` cannot be specified
+for a [recursive view](/sql/recursion).
 
 ### Guidelines for writing lateness annotations
 
