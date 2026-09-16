@@ -64,6 +64,7 @@ class FelderaClient:
         requests_verify: Optional[bool | str] = None,
         retry_config: Optional[RetryConfig] = None,
         tenant: Optional[str] = None,
+        headers: Optional[Mapping[str, str]] = None,
     ) -> None:
         """
         Constructs a Feldera client.
@@ -104,6 +105,19 @@ class FelderaClient:
             UUID); a regular user, to disambiguate among the tenants their token
             authorizes. The default is read from `FELDERA_TENANT`; if unset, the
             server uses the token's own tenant.
+        :param headers: (Optional) Extra HTTP headers sent with every request,
+            as a mapping of name to value. A header given here replaces the one
+            the client would otherwise send under that name, whatever case
+            either spells it in. `Content-Type` is the exception: each request
+            sets its own, because it describes the body the client serialized.
+
+            Use it to reach a deployment behind an authenticating proxy, which
+            admits a request by its own session cookie rather than by a Feldera
+            API key::
+
+                FelderaClient(url, headers={"Cookie": alb_session_cookie})
+
+            The default is no extra headers.
         """
 
         self.config = Config(
@@ -114,6 +128,7 @@ class FelderaClient:
             requests_verify=requests_verify,
             retry_config=retry_config,
             tenant=tenant,
+            headers=headers,
         )
         self.http = HttpRequests(self.config)
 

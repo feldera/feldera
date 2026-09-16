@@ -106,6 +106,18 @@ class HttpRequests:
             headers["Authorization"] = f"Bearer {token}"
         if self.config.tenant:
             headers["Feldera-Tenant"] = self.config.tenant
+        if self.config.headers:
+            # A header the caller supplied replaces the client's own, whatever
+            # case either spells it in. `requests` compares header names
+            # case-insensitively and keeps the value inserted last, so leaving
+            # both spellings in would decide the winner by insertion order.
+            supplied = {name.lower() for name in self.config.headers}
+            headers = {
+                name: value
+                for name, value in headers.items()
+                if name.lower() not in supplied
+            }
+            headers.update(self.config.headers)
         return headers
 
     def _check_cluster_health(self) -> bool:
@@ -191,13 +203,13 @@ class HttpRequests:
         data: Any,
         params: Optional[Mapping[str, Any]],
         stream: bool,
-        headers: Optional[dict] = None,
+        headers: dict,
     ) -> Any:
         response = http_method(
             request_path,
             data=data,
             timeout=(self.config.connection_timeout, self.config.timeout),
-            headers=headers if headers is not None else self.headers,
+            headers=headers,
             params=params,
             stream=stream,
             verify=self.requests_verify,
