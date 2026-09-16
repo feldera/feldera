@@ -382,6 +382,20 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
         self.push_entry(entry, errors);
     }
 
+    /// Discards every queued entry and returns the auxiliary data of each.
+    ///
+    /// A reader that is shutting down calls this to release whatever the
+    /// auxiliary data owns. The entries are not reaching the circuit any more,
+    /// so anything waiting on them has to be told rather than left waiting.
+    pub fn abandon(&self) -> Vec<A> {
+        self.queue
+            .lock()
+            .unwrap()
+            .drain(..)
+            .map(|entry| entry.aux)
+            .collect()
+    }
+
     /// Flushes a batch of records to the circuit and returns the auxiliary data
     /// that was associated with those records.
     ///

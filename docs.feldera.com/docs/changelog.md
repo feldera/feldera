@@ -34,6 +34,16 @@ Source edition can be found on github.
   of the read. See
   [PostgreSQL CDC input connector](/connectors/sources/postgresql-cdc).
 
+- Bug fix (PostgreSQL CDC input connector): a change is acknowledged to
+  PostgreSQL only once every change of the same write has reached the circuit.
+  etl hands over a write whose rows the connector may queue as several buffers
+  and deliver over as many steps. The connector used to acknowledge such a
+  write after the first of those steps, so a checkpoint taken between two of
+  them could release the acknowledgment while the rest of the write was still
+  queued, and etl could then advance the replication slot past rows no
+  checkpoint held. A crash before the next checkpoint lost them (#7122). See
+  [PostgreSQL CDC input connector](/connectors/sources/postgresql-cdc).
+
 - The PostgreSQL CDC input connector moves to a newer etl. It no longer fails
   intermittently with `Missing shared table state` when a table hands off from
   its initial read to streaming. etl runs more migrations on the source
