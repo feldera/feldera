@@ -20,7 +20,8 @@ import {
 import {
   cleanupPipeline,
   configureTestClient,
-  type ExtendedPipeline
+  type ExtendedPipeline,
+  TEST_COMPILATION_PROFILE
 } from '$lib/services/testPipelineHelpers'
 
 // Mock SvelteKit's $app/state for components that read `page.data.feldera`
@@ -87,7 +88,7 @@ describe('Deleted pipeline state', () => {
     await putPipeline(PIPELINE_NAME, {
       name: PIPELINE_NAME,
       program_code: 'CREATE TABLE t1 (id INT);',
-      program_config: { profile: 'unoptimized' },
+      program_config: { profile: TEST_COMPILATION_PROFILE },
       runtime_config: {}
     })
     pipeline = await getExtendedPipeline(PIPELINE_NAME)
@@ -321,7 +322,7 @@ describe('Deleted pipeline state', () => {
       await putPipeline(tempName, {
         name: tempName,
         program_code: 'CREATE TABLE t2 (id INT);',
-        program_config: { profile: 'unoptimized' },
+        program_config: { profile: TEST_COMPILATION_PROFILE },
         runtime_config: {}
       })
 

@@ -4,6 +4,7 @@ import {
   cleanupPipeline,
   configureTestClient,
   startPipelineAndWaitForRunning,
+  TEST_COMPILATION_PROFILE,
   waitForCompilation
 } from '$lib/services/testPipelineHelpers'
 
@@ -38,7 +39,7 @@ test.describe('Profile viewer', () => {
       name: PIPELINE_NAME,
       description: 'E2E test pipeline for the profile viewer',
       program_code: 'create view v as (select 1)',
-      program_config: { profile: 'unoptimized' }
+      program_config: { profile: TEST_COMPILATION_PROFILE }
     })
     await waitForCompilation(PIPELINE_NAME, 240_000)
     await startPipelineAndWaitForRunning(PIPELINE_NAME, 60_000)

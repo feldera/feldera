@@ -3,6 +3,7 @@ import { postPipelineAction, putPipeline } from '$lib/services/pipelineManager'
 import {
   cleanupPipeline,
   configureTestClient,
+  TEST_COMPILATION_PROFILE,
   waitForPipeline
 } from '$lib/services/testPipelineHelpers'
 
@@ -19,7 +20,7 @@ async function createPipelineWithStorage() {
       workers: 1,
       storage: { min_storage_bytes: 1048576 }
     },
-    program_config: { profile: 'unoptimized' }
+    program_config: { profile: TEST_COMPILATION_PROFILE }
   })
   await waitForPipeline(PIPELINE_NAME, (p) => p.status === 'Stopped', 180_000)
 }

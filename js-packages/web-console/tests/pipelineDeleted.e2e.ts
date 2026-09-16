@@ -3,6 +3,7 @@ import { deletePipeline, putPipeline } from '$lib/services/pipelineManager'
 import {
   cleanupPipeline,
   configureTestClient,
+  TEST_COMPILATION_PROFILE,
   waitForPipeline
 } from '$lib/services/testPipelineHelpers'
 
@@ -22,7 +23,7 @@ test.describe('Pipeline deleted state', () => {
         name,
         description: 'E2E test pipeline for deleted-state chip',
         program_code: 'create view v as (select 1)',
-        program_config: { profile: 'unoptimized' }
+        program_config: { profile: TEST_COMPILATION_PROFILE }
       })
       await waitForPipeline(name, (p) => p.status === 'Stopped', 240_000)
     }

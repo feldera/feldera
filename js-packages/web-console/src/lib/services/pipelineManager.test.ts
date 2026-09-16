@@ -14,6 +14,7 @@ import {
   cleanupPipeline,
   configureTestClient,
   startPipelineAndWaitForRunning,
+  TEST_COMPILATION_PROFILE,
   waitForCompilation
 } from '$lib/services/testPipelineHelpers'
 
@@ -59,7 +60,7 @@ describe('pipelineManager connector status with special characters', () => {
       name: PIPELINE_NAME,
       description: 'Integration test for special character handling',
       program_code: programCode,
-      program_config: { profile: 'unoptimized' },
+      program_config: { profile: TEST_COMPILATION_PROFILE },
       runtime_config: {}
     })
 

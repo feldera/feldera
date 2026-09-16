@@ -3,6 +3,7 @@ import { putPipeline } from '$lib/services/pipelineManager'
 import {
   cleanupPipeline,
   configureTestClient,
+  TEST_COMPILATION_PROFILE,
   waitForPipeline
 } from '$lib/services/testPipelineHelpers'
 
@@ -36,7 +37,7 @@ test.describe('Pipeline search', () => {
         name,
         description: `E2E search test pipeline: ${name}`,
         program_code: 'create view test as (select 1)',
-        program_config: { profile: 'unoptimized' }
+        program_config: { profile: TEST_COMPILATION_PROFILE }
       })
     }
     // Wait for all pipelines to finish compiling via API polling,

@@ -10,11 +10,22 @@
  * Import it from here, not from `$app/navigation`, in anything the API layer
  * reaches.
  */
-let registered: () => Promise<void> = async () => {}
+let registered: (() => Promise<void>) | undefined
 
 export const setInvalidateAll = (invalidateAll: () => Promise<void>) => {
   registered = invalidateAll
 }
 
 /** Resolves once every `load()` has re-run, as SvelteKit's `invalidateAll` does. */
-export const invalidateAll = () => registered()
+export const invalidateAll = () => {
+  if (!registered) {
+    // Losing the registration is silent otherwise: a revoked tenant membership
+    // would never re-run `load()` and the app would stay up with every request
+    // failing.
+    console.warn(
+      'invalidateAll called before the root layout registered it; loaders will not re-run'
+    )
+    return Promise.resolve()
+  }
+  return registered()
+}

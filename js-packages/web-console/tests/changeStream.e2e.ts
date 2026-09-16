@@ -4,6 +4,7 @@ import {
   cleanupPipeline,
   configureTestClient,
   startPipelineAndWaitForRunning,
+  TEST_COMPILATION_PROFILE,
   waitForCompilation
 } from '$lib/services/testPipelineHelpers'
 
@@ -61,7 +62,7 @@ test.describe('Change Stream', () => {
       name: PIPELINE,
       description: 'E2E smoke test for the Change Stream tab',
       program_code: PROGRAM_CODE,
-      program_config: { profile: 'unoptimized' }
+      program_config: { profile: TEST_COMPILATION_PROFILE }
     })
     await waitForCompilation(PIPELINE)
   })
