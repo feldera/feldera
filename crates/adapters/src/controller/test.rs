@@ -5571,9 +5571,9 @@ fn test_checkpoint_activity_state_transitions() {
     controller.stop().unwrap();
 }
 
-/// Tests that `checkpoint_activity()` transitions through InProgress state
-/// during a `start_checkpoint()` call, and that the `checkpoint_started`
-/// timestamp is set during the write.
+/// Tests that `checkpoint_activity()` transitions correctly during a
+/// `start_checkpoint()` call, and that the `checkpoint_started` timestamp is
+/// set during the write.
 #[test]
 fn test_checkpoint_activity_async_checkpoint() {
     use chrono::Utc;
@@ -5703,10 +5703,10 @@ fn test_checkpoint_activity_async_checkpoint() {
     controller.stop().unwrap();
 }
 
-/// Tests that `permanent_suspend_errors()` returns errors when storage
+/// Tests that `permanent_checkpoint_errors()` returns errors when storage
 /// is explicitly disabled (the pipeline cannot checkpoint).
 #[test]
-fn test_permanent_suspend_errors_without_storage() {
+fn test_permanent_checkpoint_errors_without_storage() {
     use feldera_types::suspend::PermanentSuspendError;
 
     init_test_logger();
@@ -5756,8 +5756,9 @@ fn test_permanent_suspend_errors_without_storage() {
     controller.start();
     wait(|| controller.pipeline_complete(), DEFAULT_TIMEOUT_MS).unwrap();
 
-    // With storage disabled, permanent_suspend_errors should report StorageRequired.
-    let errors = controller.permanent_suspend_errors();
+    // With storage disabled, permanent_checkpoint_errors should report
+    // StorageRequired.
+    let errors = controller.permanent_checkpoint_errors();
     assert!(
         errors.is_some(),
         "expected permanent errors with storage disabled"

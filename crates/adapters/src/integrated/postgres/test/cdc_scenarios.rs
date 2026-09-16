@@ -613,10 +613,10 @@ fn test_suspend_mid_copy_is_refused() {
             )
         };
         let refused = wait(
-            || blocked(&run.controller.can_suspend()) || !run.errors.is_empty(),
+            || blocked(&run.controller.can_checkpoint()) || !run.errors.is_empty(),
             WAIT_MS,
         );
-        let status = run.controller.can_suspend();
+        let status = run.controller.can_checkpoint();
         // A connector that died mid-copy also refuses to suspend, so report
         // the error rather than reading it as the barrier this test is about.
         run.assert_no_errors("suspend refused mid-copy");

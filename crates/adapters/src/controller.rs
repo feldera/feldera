@@ -1061,7 +1061,7 @@ impl Controller {
             .unwrap_or_default();
 
         let checkpoint_activity = self.checkpoint_activity();
-        let permanent_checkpoint_errors = self.permanent_suspend_errors();
+        let permanent_checkpoint_errors = self.permanent_checkpoint_errors();
         let disk_usage = self
             .inner
             .storage_path
@@ -1069,7 +1069,7 @@ impl Controller {
             .and_then(DiskUsage::from_path);
 
         self.status().to_api_type(ControllerStatusContext {
-            suspend_error: self.can_suspend(),
+            suspend_error: self.can_checkpoint(),
             checkpoint_activity,
             permanent_checkpoint_errors,
             pipeline_complete: self.pipeline_complete(),
@@ -1163,11 +1163,11 @@ impl Controller {
         *self.inner.checkpoint_started.lock().unwrap()
     }
 
-    /// Returns permanent suspend errors if the pipeline fundamentally cannot
-    /// checkpoint (e.g. storage not configured, unsupported input endpoint),
-    /// or `None` if checkpointing is possible.
-    pub fn permanent_suspend_errors(&self) -> Option<Vec<PermanentSuspendError>> {
-        match self.can_suspend() {
+    /// Returns the reasons why the pipeline fundamentally cannot checkpoint
+    /// (e.g. storage not configured, unsupported input endpoint), or `None` if
+    /// checkpointing is possible.
+    pub fn permanent_checkpoint_errors(&self) -> Option<Vec<PermanentSuspendError>> {
+        match self.can_checkpoint() {
             Err(SuspendError::Permanent(reasons)) => Some(reasons),
             _ => None,
         }
@@ -1478,10 +1478,10 @@ impl Controller {
         reply_or_controller_exit(receiver.await)
     }
 
-    /// Returns whether this pipeline supports suspend-and-resume.  The result
-    /// can change over time; see [SuspendError] for details.
-    pub fn can_suspend(&self) -> Result<(), SuspendError> {
-        self.inner.can_suspend()
+    /// Returns whether this pipeline supports checkpointing.  The result can
+    /// change over time; see [SuspendError] for details.
+    pub fn can_checkpoint(&self) -> Result<(), SuspendError> {
+        self.inner.can_checkpoint()
     }
 
     /// Initiate controller termination, but don't block waiting for it to finish.
@@ -8890,9 +8890,9 @@ impl ControllerInner {
         Ok(())
     }
 
-    /// Returns whether this pipeline supports suspend-and-resume.
-    pub fn can_suspend(&self) -> Result<(), SuspendError> {
-        // First, check for reasons we can't suspend.
+    /// Returns whether this pipeline supports checkpointing.
+    pub fn can_checkpoint(&self) -> Result<(), SuspendError> {
+        // First, check for reasons we can't checkpoint.
         let mut permanent = Vec::new();
         #[cfg(not(feature = "feldera-enterprise"))]
         #[cfg(not(test))]
@@ -8911,7 +8911,7 @@ impl ControllerInner {
             return Err(SuspendError::Permanent(permanent));
         }
 
-        // Second, check for reasons for suspend to be delayed.
+        // Second, check for reasons for the checkpoint to be delayed.
         let mut temporary = Vec::new();
         if self.restoring.load(Ordering::Acquire) {
             temporary.push(TemporarySuspendError::Replaying);
@@ -9592,7 +9592,7 @@ impl RunningCheckpoint {
     fn start(circuit: &mut CircuitThread) -> Result<Self, ControllerError> {
         circuit
             .controller
-            .can_suspend()
+            .can_checkpoint()
             .map_err(ControllerError::SuspendError)?;
 
         // Build both connector maps before the pipeline configuration, so that
