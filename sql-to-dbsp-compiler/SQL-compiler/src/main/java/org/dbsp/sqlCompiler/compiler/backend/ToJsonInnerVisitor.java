@@ -53,6 +53,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeShortInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeLongInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.JsonStream;
 
@@ -67,12 +68,41 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     public final JsonStream stream;
     final int verbosity;
     final Set<Long> serialized;
+    /** Serialize for the Gen-2 engine, which evaluates expressions over columns and has no
+     * type-erased values: a {@code TYPEDBOX} (the Rust backend's {@code TypedBox::new}, an
+     * identity that boxes a window bound or waterline for the dynamically typed operators) is
+     * written as the expression it boxes, and a {@code TypedBox<T, _>} type as {@code T}. */
+    final boolean gen2;
 
+    /** Serialize as the compiler options ask: the Gen-2 form under {@code --gen2}. */
     public ToJsonInnerVisitor(DBSPCompiler compiler, JsonStream stream, int verbosity) {
+        this(compiler, stream, verbosity, compiler.options.ioOptions.gen2);
+    }
+
+    public ToJsonInnerVisitor(DBSPCompiler compiler, JsonStream stream, int verbosity, boolean gen2) {
         super(compiler);
         this.stream = stream;
         this.verbosity = verbosity;
         this.serialized = new HashSet<>();
+        this.gen2 = gen2;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPUnaryExpression node) {
+        if (this.gen2 && node.opcode == DBSPOpcode.TYPEDBOX) {
+            node.source.accept(this);
+            return VisitDecision.STOP;
+        }
+        return super.preorder(node);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPTypeTypedBox node) {
+        if (this.gen2) {
+            node.typeArgs[0].accept(this);
+            return VisitDecision.STOP;
+        }
+        return super.preorder(node);
     }
 
     boolean checkDone(IDBSPInnerNode node, boolean silent) {

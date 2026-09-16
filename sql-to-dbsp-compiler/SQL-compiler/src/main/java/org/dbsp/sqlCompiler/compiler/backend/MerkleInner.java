@@ -15,7 +15,8 @@ public class MerkleInner extends ToJsonInnerVisitor {
     // MerkleOuter, which extends ToJsonOuterVisitor, so this
     // has to extend ToJsonInnerVisitor.
     public MerkleInner(DBSPCompiler compiler, JsonStream stream) {
-        super(compiler, stream, 0);
+        // Hashes the Rust rendering, which keeps its TypedBox wrappers under every option.
+        super(compiler, stream, 0, false);
     }
 
     public static HashString hash(String data) {
