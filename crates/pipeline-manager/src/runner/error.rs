@@ -85,6 +85,7 @@ pub enum RunnerError {
     },
     RunnerInteractionLogFollowRequestChannelFull,
     RunnerInteractionLogFollowRequestChannelClosed,
+    RunnerInteractionLogPositionTimeout,
 
     // Interaction with the pipeline
     PipelineInteractionNotDeployed {
@@ -185,6 +186,9 @@ impl DetailedError for RunnerError {
             }
             RunnerError::RunnerInteractionLogFollowRequestChannelClosed => {
                 Cow::from("RunnerInteractionLogFollowRequestChannelClosed")
+            }
+            RunnerError::RunnerInteractionLogPositionTimeout => {
+                Cow::from("RunnerInteractionLogPositionTimeout")
             }
             RunnerError::PipelineInteractionNotDeployed { .. } => {
                 Cow::from("PipelineInteractionNotDeployed")
@@ -383,6 +387,12 @@ impl Display for RunnerError {
                     "Log follow request channel is closed -- this indicates that the runner crashed unexpectedly"
                 )
             }
+            Self::RunnerInteractionLogPositionTimeout => {
+                write!(
+                    f,
+                    "Logs thread did not report the position to resume from in time -- retry the request"
+                )
+            }
             Self::PipelineInteractionNotDeployed {
                 pipeline_name,
                 status,
@@ -494,6 +504,7 @@ impl ResponseError for RunnerError {
             Self::RunnerInteractionLogFollowRequestChannelClosed { .. } => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
+            Self::RunnerInteractionLogPositionTimeout => StatusCode::SERVICE_UNAVAILABLE,
             Self::PipelineInteractionNotDeployed { .. } => StatusCode::SERVICE_UNAVAILABLE,
             Self::PipelineUnavailable { .. } => StatusCode::SERVICE_UNAVAILABLE,
             Self::PipelineMissingDeploymentLocation { .. } => StatusCode::INTERNAL_SERVER_ERROR,

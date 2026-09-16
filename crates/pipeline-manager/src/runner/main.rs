@@ -15,6 +15,7 @@ use crate::runner::pipeline_logs::{
     LOGS_SEQ_HEADER, LogMessage, LogsQuery, LogsSender,
 };
 use actix_web::HttpResponse;
+use actix_web::HttpResponseBuilder;
 use actix_web::Responder;
 use actix_web::{HttpRequest, HttpServer, get, web};
 use async_stream::try_stream;
@@ -96,33 +97,70 @@ async fn logs_stream(
     }
 }
 
-/// Reads a resuming follower's position, as the epoch, sequence number and gap the logs
-/// thread reports. Returns `None` if the thread sends no position within `within`.
+/// Outcome of waiting for a resuming follower's position.
+#[derive(Debug, PartialEq)]
+enum ResumePosition {
+    /// Where the follower's catch-up starts, as the epoch, sequence number and gap.
+    Reported(Uuid, u64, u64),
+    /// The logs thread dropped the follower, so no line follows either.
+    NoFollower,
+    /// The logs thread did not answer within the allotted time.
+    TimedOut,
+}
+
+/// Reads a resuming follower's position.
 ///
-/// The wait is bounded so a wedged logs thread costs the caller its position rather than
-/// its response. A caller that receives no position starts its log over.
+/// The wait is bounded so a wedged logs thread costs the caller a retry rather than the
+/// whole request.
 async fn resume_position(
     receiver: &mut Receiver<FollowerMessage>,
     within: Duration,
-) -> Option<(Uuid, u64, u64)> {
+) -> ResumePosition {
     // Resolves as soon as the logs thread services the request, which is the same instant
     // the first line would have been produced.
     match timeout(within, receiver.recv()).await {
-        Ok(Some(FollowerMessage::Resume { epoch, seq, gap })) => Some((epoch, seq, gap)),
+        Ok(Some(FollowerMessage::Resume { epoch, seq, gap })) => {
+            ResumePosition::Reported(epoch, seq, gap)
+        }
         // The logs thread dropped the follower, closing the channel.
-        Ok(None) => None,
+        Ok(None) => ResumePosition::NoFollower,
         Ok(Some(FollowerMessage::Line(line))) => {
             error!(
                 "Logs thread sent a line ahead of a resuming follower's position, and it is dropped: {line}"
             );
-            None
+            ResumePosition::NoFollower
         }
         Err(_) => {
             error!(
-                "Logs thread did not report a resuming follower's position within {within:?}: the response carries no position headers, so the follower starts over"
+                "Logs thread did not report a resuming follower's position within {within:?}: the request is answered with an error"
             );
-            None
+            ResumePosition::TimedOut
         }
+    }
+}
+
+/// Adds a resolved position to the response head.
+///
+/// The logs thread skips the lines the cursor names whether or not the position reaches the
+/// caller, so a body sent without the position headers reads as a full catch-up that is
+/// missing its beginning. A caller whose position did not arrive is sent back to retry.
+fn apply_resume_position(
+    builder: &mut HttpResponseBuilder,
+    position: ResumePosition,
+) -> Result<(), ManagerError> {
+    match position {
+        ResumePosition::Reported(epoch, seq, gap) => {
+            builder
+                .append_header((LOGS_EPOCH_HEADER, epoch.to_string()))
+                .append_header((LOGS_SEQ_HEADER, seq.to_string()))
+                .append_header((LOGS_GAP_HEADER, gap.to_string()));
+            Ok(())
+        }
+        // No position, and no lines either. The caller keeps its cursor and retries.
+        ResumePosition::NoFollower => Ok(()),
+        ResumePosition::TimedOut => Err(ManagerError::from(
+            RunnerError::RunnerInteractionLogPositionTimeout,
+        )),
     }
 }
 
@@ -176,14 +214,11 @@ async fn get_logs(
             builder
                 .content_type("text/plain; charset=utf-8")
                 .append_header(("X-Content-Type-Options", "nosniff"));
-            if resolves_position
-                && let Some((epoch, seq, gap)) =
-                    resume_position(&mut receiver, RESUME_POSITION_TIMEOUT).await
-            {
-                builder
-                    .append_header((LOGS_EPOCH_HEADER, epoch.to_string()))
-                    .append_header((LOGS_SEQ_HEADER, seq.to_string()))
-                    .append_header((LOGS_GAP_HEADER, gap.to_string()));
+            if resolves_position {
+                apply_resume_position(
+                    &mut builder,
+                    resume_position(&mut receiver, RESUME_POSITION_TIMEOUT).await,
+                )?;
             }
             Ok(builder.streaming(logs_stream(receiver, emit_end_notice).await))
         }
@@ -433,11 +468,12 @@ async fn reconcile<E: PipelineExecutor + 'static>(
 mod test {
     use super::{
         FollowMode, FollowRequest, FollowerMessage, LOGS_EPOCH_HEADER, LOGS_GAP_HEADER,
-        LOGS_SEQ_HEADER, LogMessage, PipelineId, PipelinesState, RESUME_POSITION_TIMEOUT, get_logs,
-        logs_stream, resume_position,
+        LOGS_SEQ_HEADER, LogMessage, PipelineId, PipelinesState, RESUME_POSITION_TIMEOUT,
+        ResumePosition, apply_resume_position, get_logs, logs_stream, resume_position,
     };
     use crate::runner::pipeline_logs::start_thread_pipeline_logs;
     use actix_web::http::StatusCode;
+    use actix_web::{HttpResponse, HttpResponseBuilder, ResponseError};
     use actix_web::{App, test as actix_test, web};
     use futures_util::StreamExt;
     use std::collections::BTreeMap;
@@ -727,17 +763,62 @@ mod test {
         assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 
-    /// A logs thread that never reports a position costs the caller its position, not its
-    /// response. An unbounded wait would hold the request until the API server's proxy
-    /// timeout reported the runner as unreachable.
+    /// A logs thread that never reports a position costs the caller a retry. An unbounded
+    /// wait would hold the request until the API server's proxy timeout reported the runner
+    /// as unreachable.
     #[tokio::test]
     async fn resume_position_gives_up_on_a_silent_thread() {
         // The sender is held, so the channel stays open and nothing is ever sent on it.
         let (_sender, mut receiver) = channel::<FollowerMessage>(1);
         assert_eq!(
             resume_position(&mut receiver, Duration::from_millis(10)).await,
-            None
+            ResumePosition::TimedOut
         );
+    }
+
+    /// The names of the position headers, as they appear on a response.
+    fn position_headers(builder: &mut HttpResponseBuilder) -> Vec<String> {
+        builder
+            .finish()
+            .headers()
+            .keys()
+            .map(|name| name.as_str().to_string())
+            .filter(|name| name.starts_with("feldera-logs-"))
+            .collect()
+    }
+
+    /// A caller whose position did not arrive is sent back to retry. Handing it the body
+    /// would hand it a catch-up missing its beginning, since the lines its cursor named
+    /// have already been skipped.
+    #[test]
+    fn a_position_that_timed_out_is_a_retryable_error() {
+        let error = apply_resume_position(&mut HttpResponse::Ok(), ResumePosition::TimedOut)
+            .expect_err("a timed-out position is answered with the body");
+        assert_eq!(error.status_code(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    /// A dropped follower receives no lines, so a response head without a position tells
+    /// the caller nothing it does not already learn from the empty body.
+    #[test]
+    fn a_dropped_follower_carries_no_position() {
+        let mut builder = HttpResponse::Ok();
+        apply_resume_position(&mut builder, ResumePosition::NoFollower)
+            .expect("a dropped follower is answered with an error");
+        assert_eq!(position_headers(&mut builder), Vec::<String>::new());
+    }
+
+    /// A reported position reaches the caller as the three headers it reads it from.
+    #[test]
+    fn a_reported_position_becomes_headers() {
+        let epoch = Uuid::now_v7();
+        let mut builder = HttpResponse::Ok();
+        apply_resume_position(&mut builder, ResumePosition::Reported(epoch, 7, 2))
+            .expect("a reported position is answered with an error");
+        let response = builder.finish();
+        let header = |name: &str| response.headers().get(name).unwrap().to_str().unwrap();
+        assert_eq!(header(LOGS_EPOCH_HEADER), epoch.to_string());
+        assert_eq!(header(LOGS_SEQ_HEADER), "7");
+        assert_eq!(header(LOGS_GAP_HEADER), "2");
     }
 
     /// The position is the first message a resuming follower receives.
@@ -755,7 +836,7 @@ mod test {
             .expect("follower is gone");
         assert_eq!(
             resume_position(&mut receiver, RESUME_POSITION_TIMEOUT).await,
-            Some((epoch, 7, 2))
+            ResumePosition::Reported(epoch, 7, 2)
         );
     }
 
@@ -770,7 +851,7 @@ mod test {
             .expect("follower is gone");
         assert_eq!(
             resume_position(&mut receiver, RESUME_POSITION_TIMEOUT).await,
-            None
+            ResumePosition::NoFollower
         );
     }
 
