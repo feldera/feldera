@@ -4070,19 +4070,50 @@ impl CircuitThread {
     }
 
     fn checkpoint(&mut self) {
-        // Take the currently running checkpoint, or start a new one if there
-        // isn't any yet.
-        let mut running_checkpoint = self
-            .running_checkpoint
-            .take()
-            .unwrap_or_else(|| RunningCheckpoint::new(self));
-
-        // Poll the running checkpoint.  If it's not finished, return;
-        // otherwise, `result` is its success or failure.
-        let Some(result) = running_checkpoint.poll(self) else {
+        // Take the currently running checkpoint or try to start a new one.
+        let running_checkpoint = if let Some(running_checkpoint) = self.running_checkpoint.take() {
+            Ok(running_checkpoint)
+        } else if let Err(error) = self.controller.can_checkpoint() {
+            Err(error)
+        } else {
+            // Let the coordinator (and anyone else) know that a checkpoint is
+            // in progress.
+            //
+            // We should do this as early as we can, because the first phase of
+            // checkpoint can take a while, but only after `can_checkpoint()`
+            // succeeds, because otherwise we'd immediately flip back to some
+            // other status below if the checkpoint is delayed e.g. due to a
+            // barrier.
             self.set_checkpoint_coordination(Some(CheckpointCoordination::InProgress));
-            self.running_checkpoint = Some(running_checkpoint);
-            return;
+
+            // Start the checkpoint.
+            //
+            // This function can take a long time to run.  It calls into all the
+            // operators to checkpoint their state.
+            Ok(RunningCheckpoint::start(self))
+        };
+
+        let result = match running_checkpoint {
+            Ok(mut running_checkpoint) => match running_checkpoint.poll(self) {
+                None => {
+                    self.running_checkpoint = Some(running_checkpoint);
+                    return;
+                }
+                Some(result) => {
+                    // Temporary reasons are only allowed to delay the start of
+                    // a checkpoint, not fail one that actually started.
+                    // (Otherwise, we could have a single requested checkpoint
+                    // start and fail and go back and forth to the InProgress
+                    // state multiple times, which would be confusing.)
+                    debug_assert!(!matches!(
+                        result,
+                        Err(ControllerError::SuspendError(SuspendError::Temporary(_)))
+                    ));
+
+                    result
+                }
+            },
+            Err(error) => Err(ControllerError::from(error)),
         };
 
         // If the checkpoint failed for some temporary reason, then just defer
@@ -9556,11 +9587,9 @@ impl OutputConsumer for OutputProbe {
 ///
 /// Checkpoints proceed in three phases:
 ///
-/// 1. Initial phase, in [RunningCheckpoint::start].  This does everything
-///    that needs to block the pipeline execution.  It also makes sure that the
-///    pipeline is in a state that can start a checkpoint.  It writes the
-///    checkpoint data to storage but it does not wait for it to become stable
-///    on storage.
+/// 1. Initial phase, in [RunningCheckpoint::start].  This does everything that
+///    needs to block the pipeline execution.  It writes the checkpoint data to
+///    storage but it does not wait for it to become stable on storage.
 ///
 /// 2. Background phase.  This runs in a separate [CheckpointThread].
 ///    [RunningCheckpoint::Waiting] waits to receive the result.
@@ -9580,20 +9609,24 @@ enum RunningCheckpoint {
 impl RunningCheckpoint {
     /// Starts checkpointing `circuit`, and returns a [RunningCheckpoint].  The
     /// caller should use [RunningCheckpoint::poll] to find out the result,
-    /// which can be available immediately (e.g. if we know right away that we
-    /// can't checkpoint) or after a long time (e.g. if it takes a long time to
+    /// which can be available immediately (e.g. if the checkpoint fails as soon
+    /// as it starts) or after a long time (e.g. if it takes a long time to
     /// write out the checkpoint).
-    fn new(circuit: &mut CircuitThread) -> Self {
+    ///
+    /// This function can take a long time to run.  It calls into all the
+    /// operators to checkpoint their state.
+    fn start(circuit: &mut CircuitThread) -> Self {
         Span::new("fg-checkpoint")
-            .in_scope(|| Self::start(circuit))
+            .in_scope(|| Self::start_inner(circuit))
             .unwrap_or_else(Self::Error)
     }
 
-    fn start(circuit: &mut CircuitThread) -> Result<Self, ControllerError> {
-        circuit
-            .controller
-            .can_checkpoint()
-            .map_err(ControllerError::SuspendError)?;
+    fn start_inner(circuit: &mut CircuitThread) -> Result<Self, ControllerError> {
+        // Check that we already said that the checkpoint is in progress.
+        debug_assert_eq!(
+            *circuit.checkpoint_sender.borrow(),
+            Some(CheckpointCoordination::InProgress)
+        );
 
         // Build both connector maps before the pipeline configuration, so that
         // neither status lock is held while the other is taken.
