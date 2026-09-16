@@ -231,10 +231,11 @@ identity.
 
 With [fault tolerance](/pipelines/fault-tolerance) enabled, the connector
 delivers every change at least once: the replication slot advances only past
-changes that a Feldera checkpoint contains. PostgreSQL hands changes over in
-batches, and a batch large enough to reach Feldera over several steps counts as
-contained only once the last of its changes is in the checkpoint, so a
-checkpoint taken while such a batch is on its way holds the slot where it is.
+changes that a Feldera checkpoint contains. The connector reads changes in
+batches, and a batch big enough to reach the pipeline in more than one piece
+counts as contained only once its last change is in the checkpoint, so a
+checkpoint taken while such a batch is still arriving leaves the slot where it
+is.
 
 The initial read of a table is all or nothing. A checkpoint holding only part
 of it would be unusable, because PostgreSQL streams changes from the

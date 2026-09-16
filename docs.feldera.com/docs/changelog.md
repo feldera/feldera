@@ -48,17 +48,15 @@ Source edition can be found on github.
   of the read. See
   [PostgreSQL CDC input connector](/connectors/sources/postgresql-cdc).
 
-- Bug fix (PostgreSQL CDC input connector): a change is acknowledged to
-  PostgreSQL only once every change of the same write has reached the circuit.
-  etl hands over a write whose rows the connector may queue as several buffers
-  and deliver over as many steps. The connector used to acknowledge such a
-  write after the first of those steps, so a checkpoint taken between two of
-  them could release the acknowledgment while the rest of the write was still
-  queued, and etl could then advance the replication slot past rows no
-  checkpoint held. A crash before the next checkpoint lost them. The connector
-  also now waits on the step it is feeding rather than on the count of steps
-  every output connector has finished, which a lagging output made an
-  underestimate (#7122). See
+- Bug fix (PostgreSQL CDC input connector): a fault-tolerant pipeline no longer
+  loses changes when it crashes. The connector reads changes in batches, and it
+  could tell PostgreSQL that a batch was safely held while part of that batch
+  was still on its way into the pipeline. A checkpoint taken at that moment
+  held only the part that had arrived, while PostgreSQL, told it could move on,
+  stopped offering the rest, so a crash before the next checkpoint lost those
+  changes. The connector now reports a batch only once all of it has arrived,
+  and waits for the checkpoint that holds it rather than for one that may
+  predate it when an output connector runs behind (#7122). See
   [PostgreSQL CDC input connector](/connectors/sources/postgresql-cdc).
 
 - The PostgreSQL CDC input connector moves to a newer etl. It no longer fails

@@ -444,18 +444,25 @@ fn test_checkpoint_mid_snapshot_waits_for_the_whole_copy_multiworker() {
 /// inside the copy.
 const MID_COPY_ATTEMPTS: u32 = 3;
 
-/// Run a scenario that must observe etl mid-copy, on tables of `base_rows`,
-/// then twice and four times as many rows, until `attempt` reports that it
-/// caught the copy in progress. `attempt` receives the row count, builds its
-/// own table and run, and returns `false` after stopping its run when the
-/// copy reached the circuit before the poll could measure it.
+/// Run a scenario that must catch rows still on their way to the circuit, on
+/// tables of `base_rows`, then twice and four times as many rows, until
+/// `attempt` reports that it caught them. `attempt` receives the row count,
+/// builds its own table and run, and returns `false` after stopping its run
+/// when the rows reached the circuit before the poll could measure them.
+/// `caught` names what the scenario had to catch, for the message it prints
+/// when it never does.
 ///
-/// How fast a copy reaches the circuit is a property of the runner, not of
-/// the connector, so an outrun poll is a reason to widen the window, not to
-/// fail. A runner that outruns every attempt leaves the scenario unexercised,
-/// which the test says so instead of going red: red must mean the connector
-/// is wrong. Every assertion about the connector stays inside `attempt`.
-fn retry_until_mid_copy(what: &str, base_rows: i64, mut attempt: impl FnMut(i64) -> bool) {
+/// How fast rows reach the circuit is a property of the runner, not of the
+/// connector, so an outrun poll is a reason to widen the window, not to fail.
+/// A runner that outruns every attempt leaves the scenario unexercised, which
+/// the test says instead of going red: red must mean the connector is wrong.
+/// Every assertion about the connector stays inside `attempt`.
+fn retry_until_mid_copy(
+    what: &str,
+    caught: &str,
+    base_rows: i64,
+    mut attempt: impl FnMut(i64) -> bool,
+) {
     let mut rows = base_rows;
     for i in 1..=MID_COPY_ATTEMPTS {
         if attempt(rows) {
@@ -463,17 +470,16 @@ fn retry_until_mid_copy(what: &str, base_rows: i64, mut attempt: impl FnMut(i64)
         }
         if i < MID_COPY_ATTEMPTS {
             println!(
-                "{what}: the copy of {rows} rows outran the poll; retrying with {} rows",
+                "{what}: {caught} of {rows} rows outran the poll; retrying with {} rows",
                 rows * 2
             );
             rows *= 2;
         }
     }
     eprintln!(
-        "{what}: scenario not exercised: in {MID_COPY_ATTEMPTS} attempts, etl copied every \
-         table of up to {rows} rows into the circuit before the poll caught it mid-copy. The \
-         connector passed every check that ran; this runner copies too fast for the mid-copy \
-         window"
+        "{what}: scenario not exercised: in {MID_COPY_ATTEMPTS} attempts, on tables of up to \
+         {rows} rows, the poll never caught {caught}. The connector passed every check that \
+         ran; this runner is too fast for the window this scenario needs"
     );
 }
 
@@ -494,7 +500,7 @@ fn checkpoint_mid_snapshot_waits_for_the_whole_copy(workers: usize) {
     // retry_until_mid_copy. A first attempt takes about 15 s with one worker
     // and 19 s with four.
     let base_rows: i64 = 100_000 * workers as i64;
-    retry_until_mid_copy("scenario 2", base_rows, |n| {
+    retry_until_mid_copy("scenario 2", "the copy in progress", base_rows, |n| {
         let mut table = scenario_table("cdc_sc_mid_snap");
         insert_range(&mut table, 1, n);
         let storage = TempDir::new().unwrap();
@@ -581,7 +587,7 @@ fn test_suspend_mid_copy_is_refused() {
     // table four times as large, up to three attempts, through
     // retry_until_mid_copy.
     const BASE_ROWS: i64 = 100_000;
-    retry_until_mid_copy("scenario 2b", BASE_ROWS, |n| {
+    retry_until_mid_copy("scenario 2b", "the copy in progress", BASE_ROWS, |n| {
         let mut table = scenario_table("cdc_sc_partial");
         insert_range(&mut table, 1, n);
         let storage = TempDir::new().unwrap();
@@ -1260,96 +1266,101 @@ fn test_a_checkpoint_inside_one_write_does_not_acknowledge_it() {
     // each buffer costs the reader one step. At 128 KiB per row, 160 rows are
     // about 20 MiB, which is roughly ten steps for the checkpoint to land in.
     const PAD_BYTES: usize = 128 * 1024;
-    retry_until_mid_copy("scenario 11", 160, |n| {
-        let mut table = scenario_table("cdc_sc_mid_write");
-        insert_range(&mut table, 1, 1);
-        let storage = TempDir::new().unwrap();
+    retry_until_mid_copy(
+        "scenario 11",
+        "a write still reaching the circuit",
+        160,
+        |n| {
+            let mut table = scenario_table("cdc_sc_mid_write");
+            insert_range(&mut table, 1, 1);
+            let storage = TempDir::new().unwrap();
 
-        let run1 = Run::start(&table, storage.path());
-        run1.wait_for_inserts(1, "run 1 snapshot");
-        checkpoint_after_snapshot(&run1, &mut table);
+            let run1 = Run::start(&table, storage.path());
+            run1.wait_for_inserts(1, "run 1 snapshot");
+            checkpoint_after_snapshot(&run1, &mut table);
 
-        // One transaction per row, so etl's flush position crosses a commit
-        // between one queued buffer and the next: answering a write whose rows
-        // are still queued then moves etl past rows no checkpoint holds.
-        insert_padded_rows(&mut table, 2, n + 1, PAD_BYTES);
+            // One transaction per row, so etl's flush position crosses a commit
+            // between one queued buffer and the next: answering a write whose rows
+            // are still queued then moves etl past rows no checkpoint holds.
+            insert_padded_rows(&mut table, 2, n + 1, PAD_BYTES);
 
-        // Catch the circuit holding a strict, non-empty part of the write.
-        let total = (n + 1) as u64;
-        let caught = wait(
-            || {
-                let taken = run1.circuit_input_records();
-                taken > 1 && taken < total
-            },
-            WAIT_MS,
-        )
-        .is_ok();
-        if !caught {
-            // The write reached the circuit whole between two polls, so no
-            // checkpoint of this run can fall inside it. How fast the runner
-            // is says nothing about the connector.
-            run1.stop();
-            return false;
-        }
+            // Catch the circuit holding a strict, non-empty part of the write.
+            let total = (n + 1) as u64;
+            let caught = wait(
+                || {
+                    let taken = run1.circuit_input_records();
+                    taken > 1 && taken < total
+                },
+                WAIT_MS,
+            )
+            .is_ok();
+            if !caught {
+                // The write reached the circuit whole between two polls, so no
+                // checkpoint of this run can fall inside it. How fast the runner
+                // is says nothing about the connector.
+                run1.stop();
+                return false;
+            }
 
-        let checkpoint = run1.controller.checkpoint().unwrap();
-        let in_checkpoint = checkpoint
-            .input_statistics
-            .get("cdc_in")
-            .expect("checkpoint has no statistics for cdc_in")
-            .circuit_input_records;
-        if in_checkpoint >= total {
-            // The rest of the write arrived while the checkpoint was being
-            // written, so it holds the whole write and leaves run 2 nothing
-            // to recover.
-            run1.stop();
-            return false;
-        }
-        run1.assert_no_errors("run 1 mid-write checkpoint");
-        println!(
-            "scenario 11: {n} padded rows, checkpoint holds {in_checkpoint} of {total} records"
-        );
+            let checkpoint = run1.controller.checkpoint().unwrap();
+            let in_checkpoint = checkpoint
+                .input_statistics
+                .get("cdc_in")
+                .expect("checkpoint has no statistics for cdc_in")
+                .circuit_input_records;
+            if in_checkpoint >= total {
+                // The rest of the write arrived while the checkpoint was being
+                // written, so it holds the whole write and leaves run 2 nothing
+                // to recover.
+                run1.stop();
+                return false;
+            }
+            run1.assert_no_errors("run 1 mid-write checkpoint");
+            println!(
+                "scenario 11: {n} padded rows, checkpoint holds {in_checkpoint} of {total} records"
+            );
 
-        // Let the rest of the write reach the circuit before stopping, so the
-        // stop finds no write still on its way from etl. The answer to the
-        // write is what this test is about, and it cannot go out before
-        // another checkpoint, which this run never takes.
-        wait(|| run1.circuit_input_records() >= total, WAIT_MS)
-            .expect("timeout: the rest of the write never reached the circuit");
-        run1.assert_no_errors("run 1 after the write landed");
+            // Let the rest of the write reach the circuit before stopping, so the
+            // stop finds no write still on its way from etl. The answer to the
+            // write is what this test is about, and it cannot go out before
+            // another checkpoint, which this run never takes.
+            wait(|| run1.circuit_input_records() >= total, WAIT_MS)
+                .expect("timeout: the rest of the write never reached the circuit");
+            run1.assert_no_errors("run 1 after the write landed");
 
-        // Stop without a second checkpoint, as a crash would.
-        let seen_in_run1 = run1.stop().inserted;
-        assert_prefix_of_ids(&seen_in_run1, "run 1 output");
+            // Stop without a second checkpoint, as a crash would.
+            let seen_in_run1 = run1.stop().inserted;
+            assert_prefix_of_ids(&seen_in_run1, "run 1 output");
 
-        let run2 = Run::start(&table, storage.path());
-        let first_missing = in_checkpoint as i64 + 1;
-        wait(
-            || {
-                let h = insert_histogram(run2.inserted_ids());
-                (first_missing..=n + 1).all(|id| h.contains_key(&id))
-            },
-            WAIT_MS,
-        )
-        .ok();
-        run2.assert_no_errors("run 2");
-        let ids = run2.stop().inserted;
+            let run2 = Run::start(&table, storage.path());
+            let first_missing = in_checkpoint as i64 + 1;
+            wait(
+                || {
+                    let h = insert_histogram(run2.inserted_ids());
+                    (first_missing..=n + 1).all(|id| h.contains_key(&id))
+                },
+                WAIT_MS,
+            )
+            .ok();
+            run2.assert_no_errors("run 2");
+            let ids = run2.stop().inserted;
 
-        let h = insert_histogram(ids.iter().copied());
-        let missing: Vec<i64> = (first_missing..=n + 1)
-            .filter(|id| !h.contains_key(id))
-            .collect();
-        assert!(
-            missing.is_empty(),
-            "the checkpoint holds ids 1..={in_checkpoint} of {total}, so run 2 must redeliver \
+            let h = insert_histogram(ids.iter().copied());
+            let missing: Vec<i64> = (first_missing..=n + 1)
+                .filter(|id| !h.contains_key(id))
+                .collect();
+            assert!(
+                missing.is_empty(),
+                "the checkpoint holds ids 1..={in_checkpoint} of {total}, so run 2 must redeliver \
              every id from {first_missing} on; {} are missing, e.g. {}. The connector answered \
              etl for a write the checkpoint does not hold in full, and etl moved its flush \
              position past the rest",
-            missing.len(),
-            preview(&missing)
-        );
-        true
-    });
+                missing.len(),
+                preview(&missing)
+            );
+            true
+        },
+    );
 }
 
 /// Assert that `ids` is the gap-free prefix `1..=ids.len()`, which is what
