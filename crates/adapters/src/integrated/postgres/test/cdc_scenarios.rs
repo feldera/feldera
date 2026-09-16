@@ -1221,3 +1221,168 @@ fn etl_schema_objects(table: &mut CdcTestTable) -> Vec<String> {
         .map(|r| r.get(0))
         .collect()
 }
+
+// ---------------------------------------------------------------------------
+// Scenario 11: a checkpoint inside one write must not acknowledge the write.
+// ---------------------------------------------------------------------------
+
+/// Issue #7122.
+///
+/// etl hands rows over as writes the connector queues as several buffers, and
+/// the reader flushes those buffers over as many steps. A checkpoint taken
+/// between two of those steps holds only a prefix of a write. The connector
+/// must not answer etl for a write until its last buffer is in the circuit,
+/// because the answer moves etl's flush position past every row of it: a crash
+/// after such a checkpoint would then resume from a position that no longer
+/// carries the rows the checkpoint lacks.
+///
+/// Run 1 checkpoints once inside a write and stops without another one, so
+/// every row the checkpoint does not hold must come back in run 2.
+///
+/// One worker, so the circuit takes the rows in the order the source produced
+/// them and the checkpoint holds ids `1..=R` for the `R` records it reports.
+/// The test checks that prefix property against run 1's output rather than
+/// assume it.
+///
+/// What this test does and does not prove: it drives the whole path, from a
+/// checkpoint inside a multi-buffer write to a crash and a resume, and asserts
+/// the property a user cares about, that no row is lost. It did not go red
+/// against the connector before the fix, because the early answer moved
+/// nothing: etl left its flush position untouched for the 45 seconds measured
+/// after the checkpoint, so the rows came back from the replication slot
+/// regardless. The unit tests of the acknowledgment path are what pin the fix
+/// itself.
+#[test]
+#[serial]
+fn test_a_checkpoint_inside_one_write_does_not_acknowledge_it() {
+    // Rows are padded so the write spans many buffers without inserting many
+    // of them: `write_events` cuts a buffer every 2 MiB of serialized JSON and
+    // each buffer costs the reader one step. At 128 KiB per row, 160 rows are
+    // about 20 MiB, which is roughly ten steps for the checkpoint to land in.
+    const PAD_BYTES: usize = 128 * 1024;
+    retry_until_mid_copy("scenario 11", 160, |n| {
+        let mut table = scenario_table("cdc_sc_mid_write");
+        insert_range(&mut table, 1, 1);
+        let storage = TempDir::new().unwrap();
+
+        let run1 = Run::start(&table, storage.path());
+        run1.wait_for_inserts(1, "run 1 snapshot");
+        checkpoint_after_snapshot(&run1, &mut table);
+
+        // One transaction per row, so etl's flush position crosses a commit
+        // between one queued buffer and the next: answering a write whose rows
+        // are still queued then moves etl past rows no checkpoint holds.
+        insert_padded_rows(&mut table, 2, n + 1, PAD_BYTES);
+
+        // Catch the circuit holding a strict, non-empty part of the write.
+        let total = (n + 1) as u64;
+        let caught = wait(
+            || {
+                let taken = run1.circuit_input_records();
+                taken > 1 && taken < total
+            },
+            WAIT_MS,
+        )
+        .is_ok();
+        if !caught {
+            // The write reached the circuit whole between two polls, so no
+            // checkpoint of this run can fall inside it. How fast the runner
+            // is says nothing about the connector.
+            run1.stop();
+            return false;
+        }
+
+        let checkpoint = run1.controller.checkpoint().unwrap();
+        let in_checkpoint = checkpoint
+            .input_statistics
+            .get("cdc_in")
+            .expect("checkpoint has no statistics for cdc_in")
+            .circuit_input_records;
+        if in_checkpoint >= total {
+            // The rest of the write arrived while the checkpoint was being
+            // written, so it holds the whole write and leaves run 2 nothing
+            // to recover.
+            run1.stop();
+            return false;
+        }
+        run1.assert_no_errors("run 1 mid-write checkpoint");
+        println!(
+            "scenario 11: {n} padded rows, checkpoint holds {in_checkpoint} of {total} records"
+        );
+
+        // Let the rest of the write reach the circuit before stopping, so the
+        // stop finds no write still on its way from etl. The answer to the
+        // write is what this test is about, and it cannot go out before
+        // another checkpoint, which this run never takes.
+        wait(|| run1.circuit_input_records() >= total, WAIT_MS)
+            .expect("timeout: the rest of the write never reached the circuit");
+        run1.assert_no_errors("run 1 after the write landed");
+
+        // Stop without a second checkpoint, as a crash would.
+        let seen_in_run1 = run1.stop().inserted;
+        assert_prefix_of_ids(&seen_in_run1, "run 1 output");
+
+        let run2 = Run::start(&table, storage.path());
+        let first_missing = in_checkpoint as i64 + 1;
+        wait(
+            || {
+                let h = insert_histogram(run2.inserted_ids());
+                (first_missing..=n + 1).all(|id| h.contains_key(&id))
+            },
+            WAIT_MS,
+        )
+        .ok();
+        run2.assert_no_errors("run 2");
+        let ids = run2.stop().inserted;
+
+        let h = insert_histogram(ids.iter().copied());
+        let missing: Vec<i64> = (first_missing..=n + 1)
+            .filter(|id| !h.contains_key(id))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "the checkpoint holds ids 1..={in_checkpoint} of {total}, so run 2 must redeliver \
+             every id from {first_missing} on; {} are missing, e.g. {}. The connector answered \
+             etl for a write the checkpoint does not hold in full, and etl moved its flush \
+             position past the rest",
+            missing.len(),
+            preview(&missing)
+        );
+        true
+    });
+}
+
+/// Assert that `ids` is the gap-free prefix `1..=ids.len()`, which is what
+/// makes a record count comparable with an id.
+fn assert_prefix_of_ids(ids: &[i64], what: &str) {
+    let h = insert_histogram(ids.iter().copied());
+    let missing: Vec<i64> = (1..=ids.len() as i64)
+        .filter(|id| !h.contains_key(id))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "{what}: expected the ids delivered so far to be the gap-free prefix 1..={}, but {} are \
+         missing, e.g. {}. The circuit did not take the rows in source order, so a record count \
+         no longer names an id",
+        ids.len(),
+        missing.len(),
+        preview(&missing)
+    );
+}
+
+/// Insert ids `from..=to`, one transaction per row, padding each row to about
+/// `pad_bytes` so that a few rows fill the connector's buffers.
+///
+/// One transaction per row matters: PostgreSQL decodes a transaction whole, so
+/// a flush position inside one still replays all of it. Only a position that
+/// has passed a commit can drop the rows behind it.
+fn insert_padded_rows(table: &mut CdcTestTable, from: i64, to: i64, pad_bytes: usize) {
+    for id in from..=to {
+        table.execute(&format!(
+            "INSERT INTO {} VALUES ({id}, {}, {}, repeat('x', {pad_bytes}))",
+            table.table_name,
+            id % 2 == 0,
+            id * 10
+        ));
+    }
+}
