@@ -744,7 +744,9 @@ public final class ExpressionOracleHarvest {
 
     private static String innerJson(DBSPCompiler compiler, IDBSPInnerNode node) {
         JsonStream stream = new JsonStream(new IndentStreamBuilder());
-        ToJsonInnerVisitor visitor = new ToJsonInnerVisitor(compiler, stream, 1);
+        // The corpus is graded by the Gen-2 evaluator, so it takes the Gen-2 JSON form even
+        // though the test suite compiles (and runs) the Rust backend without --gen2.
+        ToJsonInnerVisitor visitor = new ToJsonInnerVisitor(compiler, stream, 1, true);
         node.accept(visitor);
         return visitor.getJsonString();
     }
