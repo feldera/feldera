@@ -32,7 +32,7 @@ use feldera_types::transport::postgres::{PostgresCdcReaderConfig, PostgresTlsCon
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -466,8 +466,9 @@ struct PostgresCdcInputInner {
     queue: Arc<InputQueue<QueueAux>>,
     /// Deterministic pipeline ID used for replication slot naming and resume.
     pipeline_id: u64,
-    /// Watch receiver for step completion, read in the Queue handler to stamp
-    /// acknowledgments. Always tracks `total_completed_steps`.
+    /// Watch receiver for step completion. It tracks `total_completed_steps`,
+    /// which stamps acknowledgments only for a consumer that reports no
+    /// current step; see [`flush_step`].
     step_completion_rx: Option<tokio::sync::watch::Receiver<Completion>>,
     /// Watcher source for the background task.  Taken once by `worker_task_inner`.
     /// `Strict` when fault tolerance is enabled (gates slot on checkpoint);
@@ -486,6 +487,11 @@ struct PostgresCdcInputInner {
     copy: Arc<CopyBarrier>,
     /// Fault tolerance is enabled: the slot advances only past checkpoints.
     strict: bool,
+    /// The connector is shutting etl down. The destination reads it after
+    /// every push, so a write that queues an answer while the shutdown drains
+    /// the queue does not leave that answer behind; see
+    /// [`PostgresCdcInputInner::shutdown_etl_pipeline`].
+    stopping: Arc<AtomicBool>,
 }
 
 impl PostgresCdcInputInner {
@@ -527,6 +533,7 @@ impl PostgresCdcInputInner {
             etl_shutdown_tx: Mutex::new(None),
             copy: Arc::new(CopyBarrier::new()),
             strict,
+            stopping: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -718,6 +725,7 @@ impl PostgresCdcInputInner {
             pipeline_state_rx: receiver.clone(),
             copy: Arc::clone(&self.copy),
             consumer: self.consumer.clone(),
+            stopping: Arc::clone(&self.stopping),
         };
 
         let table_error_monitor = TableErrorMonitor {
@@ -824,6 +832,9 @@ impl PostgresCdcInputInner {
     }
 
     fn shutdown_etl_pipeline(&self) {
+        // Raise the flag before draining, so a write that queues an answer
+        // just after the drain sees it and drains that answer itself.
+        self.stopping.store(true, Ordering::SeqCst);
         if let Some(shutdown_tx) = self.etl_shutdown_tx.lock().unwrap().take() {
             let _ = shutdown_tx.shutdown();
         }
@@ -1195,6 +1206,9 @@ struct FelderaDestination {
     /// lowered away from the reader; see
     /// [`FelderaDestination::hold_copy_barrier`].
     consumer: Box<dyn InputConsumer>,
+    /// The connector is shutting etl down; see
+    /// [`FelderaDestination::push_event_buffer`].
+    stopping: Arc<AtomicBool>,
 }
 
 /// Per-entry auxiliary data on the input queue.
@@ -1586,6 +1600,14 @@ impl FelderaDestination {
                 ack,
             },
         );
+        // etl runs alongside the shutdown, so this push may land after the
+        // shutdown drained the queue, leaving an answer nothing will flush and
+        // etl waiting on it for good. A drain that missed this entry ran after
+        // the flag was raised, so this read sees the flag and drains the entry
+        // here instead.
+        if self.stopping.load(Ordering::SeqCst) {
+            drop(self.queue.abandon());
+        }
     }
 
     /// Queue a buffer of initial-copy rows and account for it, so the reader
@@ -2288,8 +2310,9 @@ impl WatcherReceiver {
 /// passes the step whose input held it.
 ///
 /// Each entry is `(flush_step, acks)`, where `flush_step` is the step the
-/// flush that earned those acknowledgments fed. The rows land in the step
-/// after `flush_step` completes, so the frontier has to pass it strictly.
+/// flush that earned those acknowledgments fed. The rows are in that step
+/// itself, and a frontier of `n` means the steps below `n` are durable, so the
+/// frontier has to pass `flush_step` strictly.
 async fn completion_watcher_task(
     mut watcher: WatcherReceiver,
     mut pending_rx: mpsc::UnboundedReceiver<(u64, DeferredAcks)>,
@@ -3250,6 +3273,21 @@ mod tests {
         consumer: MockInputConsumer,
         defer_acks: bool,
     ) -> FelderaDestination {
+        destination_stopping(
+            copy,
+            consumer,
+            defer_acks,
+            &Arc::new(AtomicBool::new(false)),
+        )
+    }
+
+    /// A destination that shares `stopping` with a reader shutting etl down.
+    fn destination_stopping(
+        copy: &Arc<CopyBarrier>,
+        consumer: MockInputConsumer,
+        defer_acks: bool,
+        stopping: &Arc<AtomicBool>,
+    ) -> FelderaDestination {
         let stream = MockDeZSet::<TestStruct, TestStruct>::new()
             .configure_deserializer(RecordFormat::Json(JsonFlavor::Datagen))
             .unwrap();
@@ -3264,6 +3302,7 @@ mod tests {
             pipeline_state_rx,
             copy: Arc::clone(copy),
             consumer: Box::new(consumer),
+            stopping: Arc::clone(stopping),
         }
     }
 
@@ -3397,6 +3436,31 @@ mod tests {
         assert_eq!(acks.len(), 1, "the flush that takes its rows answers it");
         acks.pop().unwrap()();
         assert!(answered(&flag));
+    }
+
+    #[test]
+    fn a_write_queued_while_the_connector_stops_keeps_nothing_waiting() {
+        let copy = Arc::new(CopyBarrier::new());
+        let consumer = MockInputConsumer::new();
+        let stopping = Arc::new(AtomicBool::new(false));
+        let destination = destination_stopping(&copy, consumer, true, &stopping);
+
+        // etl runs alongside the shutdown, so a write can reach the queue
+        // after the shutdown drained it. Leaving its answer there would keep
+        // etl waiting for a step that no longer comes.
+        stopping.store(true, Ordering::SeqCst);
+        let flag = Arc::new(AtomicBool::new(false));
+        let buffer = event_buffer(&destination, 0);
+        destination.push_event_buffer(buffer, Utc::now(), Some(terminal(&flag)));
+
+        assert!(
+            destination.queue.is_empty(),
+            "the push drained the queue it had just landed in"
+        );
+        assert!(
+            !answered(&flag),
+            "the write was never in a step, so it must fail rather than be answered"
+        );
     }
 
     #[test]

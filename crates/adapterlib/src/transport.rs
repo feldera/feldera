@@ -387,6 +387,11 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
     /// A reader that is shutting down calls this to release whatever the
     /// auxiliary data owns. The entries are not reaching the circuit any more,
     /// so anything waiting on them has to be told rather than left waiting.
+    ///
+    /// The discarded records stay charged to the endpoint: they were reported
+    /// to the consumer when they were queued, and only a flush credits them
+    /// back. A caller therefore uses this when the endpoint is finished, never
+    /// to shed load from one that keeps running.
     pub fn abandon(&self) -> Vec<A> {
         self.queue
             .lock()
