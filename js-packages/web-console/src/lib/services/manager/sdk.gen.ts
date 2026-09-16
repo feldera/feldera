@@ -1420,6 +1420,8 @@ export const httpInput = <ThrowOnError extends boolean = true>(
  * position is `feldera-logs-seq` plus the number of lines it has received. To reconnect,
  * pass `cursor=<epoch>:<position>`.
  *
+ * A 503 means the position could not be resolved. Retry it with the same cursor.
+ *
  * A pipeline's logs buffer is created when the runner first sees the pipeline and
  * discarded when the runner restarts or the pipeline is deleted, which is also when the
  * logs are cleared. Stopping and starting a pipeline leaves the buffer alone: the epoch
