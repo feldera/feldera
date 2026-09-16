@@ -3,6 +3,16 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAtomicSumOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
@@ -44,7 +54,6 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import java.util.ArrayList;
 import java.util.List;
 import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
-import java.util.function.Consumer;
 
 /** Simplifies some operators if they have empty sources. */
 public class PropagateEmptySources extends CircuitCloneVisitor {
@@ -79,26 +88,29 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         }
     }
 
-    /** An empty stream with the type and kind of 'operator', to replace it.
-     * A constant is a collection; for a delta the constant is differentiated.
-     * @param created  Receives every operator built, so the caller can register it. */
-    static DBSPSimpleOperator emptyStream(CircuitCloneVisitor visitor, DBSPSimpleOperator operator,
-                                          Consumer<DBSPSimpleOperator> created) {
-        DBSPConstantOperator constant = new DBSPConstantOperator(
+    /** An empty stream with the type and kind of 'operator'.  A constant is a collection,
+     * so a differentiator follows it when the operator produces deltas.  'visitor' receives
+     * the constant in that case; the caller maps 'operator' to the result. */
+    static DBSPSimpleOperator emptyStream(CircuitCloneVisitor visitor, DBSPSimpleOperator operator) {
+        DBSPSimpleOperator constant = new DBSPConstantOperator(
                 operator.getRelNode(), emptySet(operator.getType()), operator.isMultiset);
-        created.accept(constant);
         if (operator.outputKind(0) != StreamKind.DELTA)
             return constant;
         visitor.addOperator(constant);
-        DBSPDifferentiateOperator delta = new DBSPDifferentiateOperator(operator.getRelNode(), constant.outputPort());
-        created.accept(delta);
-        return delta;
+        return new DBSPDifferentiateOperator(operator.getRelNode(), constant.outputPort());
+    }
+
+    /** Replaces 'operator' with an empty stream of the same type and kind. */
+    void replaceWithEmpty(DBSPSimpleOperator operator) {
+        DBSPSimpleOperator empty = emptyStream(this, operator);
+        this.emptySources.add(empty);
+        this.map(operator, empty);
     }
 
     boolean replaceUnary(DBSPUnaryOperator operator) {
         OutputPort source = this.mapped(operator.input());
         if (this.emptySources.contains(source.node())) {
-            this.map(operator, emptyStream(this, operator, this.emptySources::add));
+            this.replaceWithEmpty(operator);
             return false;
         }
         return true;
@@ -116,6 +128,9 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
             super.postorder(operator);
     }
 
+    // Aggregates are keyed, so an empty input yields no groups.  DBSPAggregateZeroOperator
+    // has no handler on purpose: it is the operator that gives a global aggregate its value
+    // for an empty input, e.g. COUNT(*) = 0.
     @Override
     public void postorder(DBSPStreamAggregateOperator operator) {
         if (this.replaceUnary(operator))
@@ -195,6 +210,60 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPFlatMapOperator operator) {
+        if (this.replaceUnary(operator))
+            super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPDeindexOperator operator) {
+        if (this.replaceUnary(operator))
+            super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPIndexedTopKOperator operator) {
+        if (this.replaceUnary(operator))
+            super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPHopOperator operator) {
+        if (this.replaceUnary(operator))
+            super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPInternOperator operator) {
+        if (this.replaceUnary(operator))
+            super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPLagOperator operator) {
+        if (this.replaceUnary(operator))
+            super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPRankOperator operator) {
+        if (this.replaceUnary(operator))
+            super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPRowNumberOperator operator) {
+        if (this.replaceUnary(operator))
+            super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPChainAggregateOperator operator) {
+        if (this.replaceUnary(operator))
+            super.postorder(operator);
+    }
+
+    @Override
     public void postorder(DBSPSumOperator operator) {
         List<OutputPort> newSources = new ArrayList<>();
         for (OutputPort prev: operator.inputs) {
@@ -205,7 +274,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         }
 
         if (newSources.isEmpty()) {
-            this.map(operator, emptyStream(this, operator, this.emptySources::add));
+            this.replaceWithEmpty(operator);
         } else if (newSources.size() == 1) {
             this.map(operator.outputPort(), newSources.get(0), false);
         } else if (newSources.size() < operator.inputs.size()) {
@@ -226,9 +295,9 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
             newSources.add(source);
         }
         if (newSources.isEmpty()) {
-            this.map(operator, emptyStream(this, operator, this.emptySources::add));
+            this.replaceWithEmpty(operator);
         } else if (newSources.size() < operator.inputs.size()) {
-            // Keep the sum even for 1 input
+            // Keep the sum even for 1 input: it also keeps successors from seeing partial results
             DBSPSimpleOperator result = operator.withInputs(newSources, false).to(DBSPSimpleOperator.class);
             this.map(operator, result);
         } else {
@@ -242,7 +311,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         OutputPort right = this.mapped(operator.inputs.get(1));
         if (this.emptySources.contains(right.node())) {
             if (this.emptySources.contains(left.node())) {
-                this.map(operator, emptyStream(this, operator, this.emptySources::add));
+                this.replaceWithEmpty(operator);
             } else {
                 this.map(operator.outputPort(), left, false);
             }
@@ -256,7 +325,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         for (OutputPort prev: operator.inputs) {
             OutputPort source = this.mapped(prev);
             if (this.emptySources.contains(source.node())) {
-                this.map(operator, emptyStream(this, operator, this.emptySources::add));
+                this.replaceWithEmpty(operator);
                 return;
             }
         }
@@ -268,7 +337,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         for (OutputPort prev: operator.inputs) {
             OutputPort source = this.mapped(prev);
             if (this.emptySources.contains(source.node())) {
-                this.map(operator, emptyStream(this, operator, this.emptySources::add));
+                this.replaceWithEmpty(operator);
                 return;
             }
         }
@@ -280,7 +349,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         for (OutputPort prev: operator.inputs) {
             OutputPort source = this.mapped(prev);
             if (this.emptySources.contains(source.node())) {
-                this.map(operator, emptyStream(this, operator, this.emptySources::add));
+                this.replaceWithEmpty(operator);
                 return;
             }
         }
@@ -292,7 +361,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         for (OutputPort prev: operator.inputs) {
             OutputPort source = this.mapped(prev);
             if (this.emptySources.contains(source.node())) {
-                this.map(operator, emptyStream(this, operator, this.emptySources::add));
+                this.replaceWithEmpty(operator);
                 return;
             }
         }
@@ -304,7 +373,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         for (OutputPort prev: operator.inputs) {
             OutputPort source = this.mapped(prev);
             if (this.emptySources.contains(source.node())) {
-                this.map(operator, emptyStream(this, operator, this.emptySources::add));
+                this.replaceWithEmpty(operator);
                 return;
             }
         }
@@ -315,7 +384,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
     public void postorder(DBSPLeftJoinOperator operator) {
         OutputPort left = this.mapped(operator.left());
         if (this.emptySources.contains(left.node())) {
-            this.map(operator, emptyStream(this, operator, this.emptySources::add));
+            this.replaceWithEmpty(operator);
             return;
         }
         OutputPort right = this.mapped(operator.right());
@@ -340,7 +409,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
     public void postorder(DBSPLeftJoinIndexOperator operator) {
         OutputPort left = this.mapped(operator.left());
         if (this.emptySources.contains(left.node())) {
-            this.map(operator, emptyStream(this, operator, this.emptySources::add));
+            this.replaceWithEmpty(operator);
             return;
         }
         // TODO: could optimize empty RHS, but this probably won't occur
@@ -351,10 +420,21 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
     public void postorder(DBSPLeftJoinFilterMapOperator operator) {
         OutputPort left = this.mapped(operator.left());
         if (this.emptySources.contains(left.node())) {
-            this.map(operator, emptyStream(this, operator, this.emptySources::add));
+            this.replaceWithEmpty(operator);
             return;
         }
         // TODO: could optimize empty RHS, but this probably won't occur
+        super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPAsofJoinOperator operator) {
+        OutputPort left = this.mapped(operator.left());
+        if (this.emptySources.contains(left.node())) {
+            this.replaceWithEmpty(operator);
+            return;
+        }
+        // TODO: an empty right input makes this a Map, as for a left join
         super.postorder(operator);
     }
 
@@ -363,7 +443,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         // Empty left input -> empty result
         OutputPort left = this.mapped(operator.left());
         if (this.emptySources.contains(left.node())) {
-            this.map(operator, emptyStream(this, operator, this.emptySources::add));
+            this.replaceWithEmpty(operator);
             return;
         }
         // Empty right input -> result is left input
