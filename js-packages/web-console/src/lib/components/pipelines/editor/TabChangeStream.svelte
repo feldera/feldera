@@ -132,7 +132,7 @@
           }),
           {
             bufferSize: 4 * 1024 * 1024,
-            onBytesSkipped: (skippedBytes) => {
+            onSkipped: ({ bytes: skippedBytes }) => {
               const cs = changeStream[tenantName][pipelineName]
               // Coalesce consecutive skip markers for the same relation: if the row
               // at the tail is already a skip marker tagged with this relation, just

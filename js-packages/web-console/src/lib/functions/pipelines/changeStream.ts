@@ -104,8 +104,9 @@ const yieldToEventLoop = (): Promise<void> => {
  * that statically, decoders are obtained via a `StreamFormatDecoderFactory`
  * rather than passed directly — the orchestrator calls the factory exactly
  * once. Each decoder also owns its own shedding policy and skip-event
- * reporting: NDJSON keeps a per-flush-window byte budget and reports
- * `onBytesSkipped`; arrow IPC counts admitted rows and reports `onRowsSkipped`.
+ * reporting: the newline decoders keep a per-flush-window byte budget and
+ * report `onSkipped`; arrow IPC counts admitted rows and reports
+ * `onRowsSkipped`.
  */
 export interface StreamFormatDecoder<T> {
   /**
@@ -264,7 +265,7 @@ export const parseStream = <T>(
  *
  * **Load shedding.** Independent of UI flush cadence. The decoder caps the
  * bytes it admits to the orchestrator to `bufferSize` per `bufferWindowMs`;
- * anything past the cap is dropped (and reported via `onBytesSkipped`)
+ * anything past the cap is dropped (and reported via `onSkipped`)
  * instead of parsed. The budget resets on the decoder's own `setInterval`
  * so even parser chunks that produced no admitted items still release their
  * reservation. Failed parses do **not** consume the budget. In steady state,
@@ -282,19 +283,19 @@ export const parseStream = <T>(
  * @param opts.bufferSize Bytes admitted per `bufferWindowMs`; default 1 MB.
  * @param opts.bufferWindowMs Budget reset period; default 100ms. Independent
  *   of the orchestrator's UI flush cadence.
- * @param opts.onBytesSkipped Called when a parser chunk is dropped.
+ * @param opts.onSkipped Called when a parser chunk is dropped.
  */
 export const newlineJsonDecoder = <T>(
   parser: StreamingJsonParser<T>,
   opts?: {
     bufferSize?: number
     bufferWindowMs?: number
-    onBytesSkipped?: (bytes: number) => void
+    onSkipped?: (skipped: { bytes: number }) => void
   }
 ): StreamFormatDecoderFactory<T> => {
   const maxPendingBytes = opts?.bufferSize ?? 1_000_000
   const bufferWindowMs = opts?.bufferWindowMs ?? 100
-  const onBytesSkipped = opts?.onBytesSkipped ?? (() => {})
+  const onSkipped = opts?.onSkipped ?? (() => {})
 
   return () => {
     let pendingBytes = 0
@@ -354,7 +355,7 @@ export const newlineJsonDecoder = <T>(
               const end = nl + 1
               const parserChunkLen = end - cursor
               if (pendingBytes + parserChunkLen > maxPendingBytes) {
-                onBytesSkipped(parserChunkLen)
+                onSkipped({ bytes: parserChunkLen })
               } else {
                 const parserChunk = text.slice(cursor, end)
                 try {
@@ -365,7 +366,7 @@ export const newlineJsonDecoder = <T>(
                   pendingBytes += parserChunkLen
                 } catch {
                   parser.reset()
-                  onBytesSkipped(parserChunkLen)
+                  onSkipped({ bytes: parserChunkLen })
                 }
               }
               cursor = end
@@ -378,7 +379,7 @@ export const newlineJsonDecoder = <T>(
             // Cap the leftover: accepting unbounded leftovers would let a
             // runaway record without any terminator exhaust browser memory.
             if (leftover.length > MAX_LINE_SIZE) {
-              onBytesSkipped(leftover.length)
+              onSkipped({ bytes: leftover.length })
               leftover = ''
             }
           }
