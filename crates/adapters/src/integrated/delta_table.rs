@@ -1,3 +1,4 @@
+mod bounded_upload;
 mod deletion_vector;
 mod input;
 mod merge;

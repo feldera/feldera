@@ -23,6 +23,8 @@ use deltalake::DeltaTable;
 use deltalake::kernel::transaction::{CommitBuilder, CommitProperties, TableReference};
 use deltalake::kernel::{Action, Add, ArrayType, DataType, MapType, StructField, StructType};
 use deltalake::logstore::ObjectStoreRef;
+
+use super::bounded_upload::bound_uploads;
 use deltalake::operations::create::CreateBuilder;
 use deltalake::operations::write::writer::{DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
@@ -366,7 +368,9 @@ impl DeltaTableWriter {
                 )
             })?;
 
-        let object_store = task.delta_table.object_store();
+        // Every range of a flush writes through this one store, so the cap it carries bounds
+        // the whole connector rather than a single writer.
+        let object_store = bound_uploads(task.delta_table.object_store());
 
         let merge = if config.is_merge() {
             Some(build_merge_writer(&inner, &task.delta_table).map_err(|e| {

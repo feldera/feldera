@@ -460,7 +460,9 @@ taking the figure. **Raise the pipeline's memory limit along with `threads`**, o
 will run out of memory instead.
 
 On a constrained network path a high thread count can saturate the link before it saturates the writers, which
-shows up as a slower write rather than a faster one.
+shows up as a slower write rather than a faster one. The connector caps the part uploads it keeps in flight across
+all threads, so a high setting backs off rather than exhausting the host's sockets, but the cap bounds the damage
+rather than making the setting free.
 
 Threads speed a backfill up sublinearly, because a thread spends most of its time serializing rows and the
 threads compete for the same cores. On a twelve-core machine, a ten-million-row backfill of fifty columns flushed
