@@ -128,8 +128,10 @@ pub trait StorageBackend: Send + Sync {
     /// Writes `content` to `name`, automatically creating any parent
     /// directories within `name` that don't already exist.
     ///
-    /// The caller must call `commit` on the returned file if it wants to make
-    /// sure that the file is committed to stable storage.
+    /// The returned file is readable but not durable. To make it durable, the
+    /// caller must either call `commit` on it or hand it to the checkpoint
+    /// commit phase.
+    #[must_use = "the file is not durable until this committer is committed"]
     fn write(
         &self,
         name: &StoragePath,
@@ -284,8 +286,10 @@ impl dyn StorageBackend + '_ {
     /// Writes `content` to `name` as JSON, automatically creating any parent
     /// directories within `name` that don't already exist.
     ///
-    /// The caller must call `commit` on the returned file if it wants to make
-    /// sure that the file is committed to stable storage.
+    /// The returned file is readable but not durable. To make it durable, the
+    /// caller must either call `commit` on it or hand it to the checkpoint
+    /// commit phase.
+    #[must_use = "the file is not durable until this committer is committed"]
     pub fn write_json<V>(
         &self,
         name: &StoragePath,
@@ -343,8 +347,10 @@ pub trait FileWriter: Send + Sync + FileRw {
     /// The file will be deleted if the reader is dropped without calling
     /// [FileReader::mark_for_checkpoint].
     ///
-    /// The file is not necessarily committed to stable storage before calling
-    /// `commit` on the returned file.
+    /// This makes the file readable, not durable. The contents survive a crash
+    /// only once [FileCommitter::commit] returns for the reader, so a caller
+    /// that needs durability must commit, either directly or by handing the
+    /// reader to the checkpoint commit phase.
     fn complete(self: Box<Self>) -> Result<Arc<dyn FileReader>, StorageError>;
 }
 

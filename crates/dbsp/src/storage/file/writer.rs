@@ -1080,9 +1080,11 @@ impl BlockWriter {
     }
 
     fn complete(self) -> Result<Arc<dyn FileReader>, StorageError> {
-        let reader = self.file_handle.complete()?;
-        reader.commit()?;
-        Ok(reader)
+        // Not committed here. A layer file only has to be durable once a
+        // checkpoint references it, and the checkpoint commit phase syncs every
+        // batch it captures. Syncing on the writing thread instead would stall
+        // that thread on one fsync per file, including throughout a merge.
+        self.file_handle.complete()
     }
 
     fn write_block(

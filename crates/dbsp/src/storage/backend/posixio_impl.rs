@@ -36,6 +36,21 @@ use std::{
 };
 use tracing::{debug, warn};
 
+/// fsync the file `file`, named `path` for error reporting.
+///
+/// This is the only place that syncs a file, and only [FileCommitter::commit]
+/// calls it. Keeping it to one call site is what lets `files_synced_total`
+/// account for every fsync a pipeline performs, and what keeps the sync off the
+/// threads that write files.
+fn sync_file(file: &File, path: &Path) -> Result<(), StorageError> {
+    SYNC_LATENCY_MICROSECONDS.record_callback(|| {
+        file.sync_all()
+            .map_err(|e| StorageError::stdio(e.kind(), "fsync", path.display()))?;
+        FILES_SYNCED.fetch_add(1, Ordering::Relaxed);
+        Ok(())
+    })
+}
+
 /// fsync the directory at `path` so a freshly-created child entry (a
 /// rename target or a new subdirectory) becomes durable. Without this,
 /// POSIX gives no guarantee that the directory entry survives a crash
@@ -124,11 +139,7 @@ impl FileRw for PosixReader {
 
 impl FileCommitter for PosixReader {
     fn commit(&self) -> Result<(), StorageError> {
-        self.file
-            .sync_all()
-            .map_err(|e| StorageError::stdio(e.kind(), "fsync", self.drop.path.display()))?;
-        FILES_SYNCED.fetch_add(1, Ordering::Relaxed);
-        Ok(())
+        sync_file(&self.file, &self.drop.path)
     }
 }
 
@@ -276,31 +287,25 @@ impl FileWriter for PosixWriter {
             self.flush()?;
         }
 
-        SYNC_LATENCY_MICROSECONDS.record_callback(|| {
-            self.file
-                .sync_all()
-                .map_err(|e| StorageError::stdio(e.kind(), "fsync", self.drop.path.display()))?;
+        // Remove the .mut extension from the file.
+        let finalized_path = self.drop.path.with_extension("");
+        self.drop.usage.fetch_sub(
+            finalized_path
+                .metadata()
+                .map_or(0, |metadata| metadata.size() as i64),
+            Ordering::Relaxed,
+        );
+        fs::rename(&self.drop.path, &finalized_path)
+            .map_err(|e| StorageError::stdio(e.kind(), "rename", self.drop.path.display()))?;
 
-            // Remove the .mut extension from the file.
-            let finalized_path = self.drop.path.with_extension("");
-            self.drop.usage.fetch_sub(
-                finalized_path
-                    .metadata()
-                    .map_or(0, |metadata| metadata.size() as i64),
-                Ordering::Relaxed,
-            );
-            fs::rename(&self.drop.path, &finalized_path)
-                .map_err(|e| StorageError::stdio(e.kind(), "rename", self.drop.path.display()))?;
-
-            Ok(Arc::new(PosixReader::new(
-                self.name,
-                Arc::new(self.file),
-                self.file_id,
-                self.drop.with_path(finalized_path),
-                self.async_threads,
-                self.ioop_delay,
-            )) as Arc<dyn FileReader>)
-        })
+        Ok(Arc::new(PosixReader::new(
+            self.name,
+            Arc::new(self.file),
+            self.file_id,
+            self.drop.with_path(finalized_path),
+            self.async_threads,
+            self.ioop_delay,
+        )) as Arc<dyn FileReader>)
     }
 }
 
