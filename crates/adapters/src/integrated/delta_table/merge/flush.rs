@@ -235,6 +235,19 @@ pub struct MergeWriter {
     bytes_per_row: AtomicU64,
 }
 
+/// The failure a flush reports when several ranges fail at once.
+///
+/// A deterministic failure outranks a transient one whichever range raised it: the flush
+/// cannot succeed on retry, and reporting the transient error instead would rewrite the whole
+/// batch on every attempt -- for ever, under the default `max_retries: None`.
+fn worse(existing: Option<WriteError>, failure: WriteError) -> Option<WriteError> {
+    match (existing, failure) {
+        (None, failure) => Some(failure),
+        (Some(WriteError::Transient(_)), failure @ WriteError::Deterministic(_)) => Some(failure),
+        (Some(existing), _) => Some(existing),
+    }
+}
+
 impl MergeWriter {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -503,12 +516,9 @@ impl MergeWriter {
         for handle in handles {
             match handle.await {
                 Ok(Ok(output)) => outputs.push(output),
-                Ok(Err(e)) => failure = Some(failure.unwrap_or(e)),
+                Ok(Err(e)) => failure = worse(failure, e),
                 Err(e) => {
-                    failure = Some(
-                        failure
-                            .unwrap_or_else(|| transient(format!("a merge range panicked: {e}"))),
-                    )
+                    failure = worse(failure, transient(format!("a merge range panicked: {e}")))
                 }
             }
         }
@@ -1011,5 +1021,29 @@ mod test {
 
         assert!(mins.contains_key("id"));
         assert!(mins.contains_key("payload"));
+    }
+    /// A transient failure must not hide a deterministic one raised by another range.
+    ///
+    /// The retry loop fails a deterministic error fast because no attempt can succeed, but
+    /// retries a transient one -- for ever, under the default `max_retries: None`. Reporting
+    /// the transient error of whichever range happened to be joined first would therefore
+    /// rewrite the whole batch on every attempt and orphan its files each time.
+    #[test]
+    fn a_deterministic_range_failure_outranks_a_transient_one() {
+        let transient = || WriteError::Transient(anyhow!("socket"));
+        let deterministic = || WriteError::Deterministic(anyhow!("two values for one key"));
+
+        let joined = |first: Option<WriteError>, second: WriteError| {
+            matches!(worse(first, second), Some(WriteError::Deterministic(_)))
+        };
+
+        // Whichever order the ranges are joined in.
+        assert!(joined(Some(transient()), deterministic()));
+        assert!(joined(Some(deterministic()), transient()));
+        assert!(joined(None, deterministic()));
+
+        // And a flush whose ranges only failed transiently stays retryable.
+        assert!(!joined(None, transient()));
+        assert!(!joined(Some(transient()), transient()));
     }
 }
