@@ -96,6 +96,7 @@ const browserTestProject = ({
   exclude?: string[]
 }): TestProjectInlineConfiguration => ({
   extends: './vite.config.ts',
+  envPrefix: ['VITE_', 'CI', 'FELDERA_TEST_', 'PLAYWRIGHT_'],
   test: {
     name,
     browser: {
