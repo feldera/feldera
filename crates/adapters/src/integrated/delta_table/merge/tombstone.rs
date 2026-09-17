@@ -1,19 +1,18 @@
 //! Tombstoning superseded rows with Delta deletion vectors.
 //!
-//! A row is superseded by appending its new version and marking the old one deleted in the
-//! file's vector. The protocol expresses that as a `remove` of the file paired with an `add`
-//! of the same path carrying the new vector; log replay keys files by (path, vector id), so
-//! the pair is unambiguous.
+//! The protocol expresses a tombstone as a `remove` of the file paired with an `add` of the
+//! same path carrying the new vector; log replay keys files by (path, vector id), so the pair
+//! is unambiguous.
 //!
 //! Every vector a flush touches is packed into one object at the table root, named
-//! `deletion_vector_<uuid>.bin` as Delta Spark names it. Packing keeps the number of objects
-//! written independent of the number of files touched. The object is written before the
-//! commit, as data files are; VACUUM protects an untracked object younger than the retention
-//! period, so that window is safe.
+//! `deletion_vector_<uuid>.bin` as Delta Spark names it, which keeps the number of objects
+//! written independent of the number of files touched. It is written before the commit, as
+//! data files are; VACUUM protects an untracked object younger than the retention period, so
+//! that window is safe.
 //!
 //! Only Spark's VACUUM reclaims these. A vector is named inside a descriptor rather than as a
-//! path of its own, so delta-rs's `Lite` never sees one and leaves it for ever, while `Full`
-//! deletes live ones as orphans and resurrects every row they tombstoned.
+//! path, so delta-rs's `Lite` never sees one and leaves it for ever, while `Full` deletes
+//! live ones as orphans and resurrects every row they tombstoned.
 
 use std::collections::BTreeMap;
 
