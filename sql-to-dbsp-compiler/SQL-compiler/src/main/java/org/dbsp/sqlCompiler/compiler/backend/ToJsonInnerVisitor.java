@@ -68,10 +68,12 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     public final JsonStream stream;
     final int verbosity;
     final Set<Long> serialized;
-    /** Serialize for the Gen-2 engine, which evaluates expressions over columns and has no
-     * type-erased values: a {@code TYPEDBOX} (the Rust backend's {@code TypedBox::new}, an
-     * identity that boxes a window bound or waterline for the dynamically typed operators) is
-     * written as the expression it boxes, and a {@code TypedBox<T, _>} type as {@code T}. */
+    /** Serialize for the Gen-2 engine, which evaluates expressions over immutable columns and
+     * has neither type-erased values nor ownership: a {@code TYPEDBOX} (the Rust backend's
+     * {@code TypedBox::new}, an identity that boxes a window bound or waterline for the
+     * dynamically typed operators) is written as the expression it boxes, a
+     * {@code TypedBox<T, _>} type as {@code T}, and a {@code clone()} as the expression it
+     * clones. */
     final boolean gen2;
 
     /** Serialize as the compiler options ask: the Gen-2 form under {@code --gen2}. */
@@ -91,6 +93,15 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     public VisitDecision preorder(DBSPUnaryExpression node) {
         if (this.gen2 && node.opcode == DBSPOpcode.TYPEDBOX) {
             node.source.accept(this);
+            return VisitDecision.STOP;
+        }
+        return super.preorder(node);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPCloneExpression node) {
+        if (this.gen2) {
+            node.expression.accept(this);
             return VisitDecision.STOP;
         }
         return super.preorder(node);

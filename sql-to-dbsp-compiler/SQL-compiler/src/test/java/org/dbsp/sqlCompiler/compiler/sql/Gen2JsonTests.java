@@ -10,9 +10,9 @@ import org.junit.Test;
 
 /** The circuit JSON written for the Gen-2 engine ({@code --gen2}) carries no Rust-codegen
  * artifacts: a {@code TYPEDBOX} is written as the expression it boxes, a
- * {@code TypedBox<T, _>} type as {@code T}, and an aggregate operator keeps its per-aggregate
- * list instead of one fold over a tuple accumulator.  The {@code --jit} JSON keeps the Rust
- * forms. */
+ * {@code TypedBox<T, _>} type as {@code T}, a {@code clone()} as the expression it clones, and
+ * an aggregate operator keeps its per-aggregate list instead of one fold over a tuple
+ * accumulator.  The {@code --jit} JSON keeps the Rust forms. */
 public class Gen2JsonTests extends SqlIoTest {
     /** A temporal filter against NOW(): the Rust backend boxes its window bounds. */
     static final String WINDOW_PROGRAM = """
@@ -56,6 +56,20 @@ public class Gen2JsonTests extends SqlIoTest {
         // The window and the bound it boxed (NOW() - INTERVAL 1 HOUR) are still there, unwrapped.
         Assert.assertTrue(json.contains("\"DBSPWindowOperator\""));
         Assert.assertTrue(json.contains("\"DBSPTimeAddSub\""));
+    }
+
+    @Test
+    public void jitJsonKeepsClone() {
+        // ARRAY_AGG(tag) clones the VARCHAR it appends.
+        Assert.assertTrue(this.circuitJson(FOLD_PROGRAM, false).contains("\"DBSPCloneExpression\""));
+    }
+
+    @Test
+    public void gen2JsonDropsClone() {
+        String json = this.circuitJson(FOLD_PROGRAM, true);
+        Assert.assertFalse(json.contains("DBSPCloneExpression"));
+        // The cloned field access is still the argument of the step.
+        Assert.assertTrue(json.contains("\"array_aggN\""));
     }
 
     static int occurrences(String text, String pattern) {
