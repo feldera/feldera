@@ -124,15 +124,23 @@ fn delta_schema_options() -> ArrowSchemaOptions {
 
 const DELTA_TEST_INPUT_ENDPOINT: &str = "test_input1";
 
-/// Completed Delta table version reported by the input connector waterline.
-fn pipeline_completed_version(pipeline: &Controller) -> Option<i64> {
+/// Watermark metadata reported by the input connector's completed frontier.
+fn completed_frontier_metadata(pipeline: &Controller) -> Option<Value> {
     pipeline
         .status()
         .input_status()
         .values()
         .next()
         .and_then(|s| s.completed_frontier.completed_watermark())
-        .and_then(|w| w.metadata["version"].as_i64())
+        .map(|w| w.metadata)
+}
+
+/// Completed Delta table version reported by the input connector waterline.
+///
+/// The connector reports `version: null` until it has processed a table version,
+/// which this reports as `None` rather than mistaking it for a number (issue 7174).
+fn pipeline_completed_version(pipeline: &Controller) -> Option<i64> {
+    completed_frontier_metadata(pipeline).and_then(|metadata| metadata["version"].as_i64())
 }
 
 /// One deterministic test row (even `bigint` so `bigint % 2 = 0` filters pass).
@@ -1646,18 +1654,6 @@ async fn test_follow(
     inject_failure: Option<Box<dyn Fn()>>,
     clear_failure: Option<Box<dyn Fn()>>,
 ) {
-    fn completed_version(pipeline: &Controller) -> Option<i64> {
-        pipeline
-            .status()
-            .input_status()
-            .values()
-            .next()
-            .unwrap()
-            .completed_frontier
-            .completed_watermark()
-            .map(|w| w.metadata["version"].as_i64().unwrap())
-    }
-
     init_logging();
 
     let storage_dir = TempDir::new().unwrap();
@@ -1786,7 +1782,7 @@ async fn test_follow(
     // The connector should report the initial version as the completed version (issue 5447).
     wait(
         || {
-            if let Some(version) = completed_version(&pipeline) {
+            if let Some(version) = pipeline_completed_version(&pipeline) {
                 let expected = input_table.version().unwrap() as i64;
                 debug!(
                     "pipeline completed version {version}, expected (initial version) {expected}, waterlines: {:?}",
@@ -1899,7 +1895,7 @@ async fn test_follow(
         // Test the waterline tracking mechanism.
         wait(
                 || {
-                    if let Some(version) = completed_version(&pipeline) {
+                    if let Some(version) = pipeline_completed_version(&pipeline) {
                         let expected = if test_end_version {
                             min(input_table.version().unwrap() as i64, end_version)
                         } else {
@@ -3861,6 +3857,60 @@ async fn delta_table_transactional_always_snapshot_and_follow_file_test_suspend(
 #[tokio::test]
 async fn delta_table_snapshot_and_follow_file_test_suspend_end_version() {
     delta_table_follow_file_test_common(true, DeltaTableTransactionMode::None, true, true).await
+}
+
+/// Suspending a pipeline before its Delta connector has read anything checkpoints
+/// `version: null`.  The connector republishes that state as a watermark when it
+/// resumes, so its completed frontier reports a null version until the connector
+/// processes a table version (issue 7174).
+#[tokio::test]
+async fn delta_table_completed_frontier_null_version_after_resume() {
+    init_logging();
+
+    let input_table_dir = TempDir::new().unwrap();
+    let input_table_uri = input_table_dir.path().display().to_string();
+    let output_table_dir = TempDir::new().unwrap();
+    let output_table_uri = output_table_dir.path().display().to_string();
+    let storage_dir = TempDir::new().unwrap();
+
+    let arrow_schema = ArrowSchema::new(relation_to_arrow_fields(
+        &DeltaTestStruct::schema(),
+        delta_schema_options(),
+    ));
+    let input_table = create_table_from_arrow(&input_table_uri, &arrow_schema, &[]).await;
+    write_data_to_table(input_table, &arrow_schema, &[delta_test_record(0)]).await;
+
+    // In `snapshot_and_follow` mode the connector reports no table version until it
+    // reads the snapshot, which it cannot do while its endpoint is paused.
+    let input_config = HashMap::from([("mode".to_string(), Value::from("snapshot_and_follow"))]);
+    let start = async || {
+        start_delta_to_delta_pipeline(
+            &input_table_uri,
+            &output_table_uri,
+            &input_config,
+            &HashMap::new(),
+            storage_dir.path(),
+            1000,
+            100,
+        )
+        .await
+    };
+
+    // Checkpoint the connector in its initial state, then resume from it.
+    suspend_pipeline(start().await).await;
+    let pipeline = start().await;
+
+    wait(|| completed_frontier_metadata(&pipeline).is_some(), 20_000)
+        .expect("timeout waiting for the resumed connector to report its completed frontier");
+
+    let metadata = completed_frontier_metadata(&pipeline).unwrap();
+    assert!(
+        metadata["version"].is_null(),
+        "a connector that has read nothing must report no table version, got {metadata}"
+    );
+    assert_eq!(pipeline_completed_version(&pipeline), None);
+
+    pipeline.stop().unwrap();
 }
 
 #[cfg(feature = "delta-s3-test")]
