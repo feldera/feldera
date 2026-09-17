@@ -15598,7 +15598,7 @@
           },
           "min_step_storage_bytes": {
             "type": "integer",
-            "description": "For a batch of data passed through the pipeline during a single step,\nthe minimum estimated number of bytes to write it to storage.\n\nThis is provided for debugging and fine-tuning and should ordinarily be\nleft unset.  A value of 0 will write even empty batches to storage, and\nnonzero values provide a threshold.  `usize::MAX`, the default,\neffectively disables storage for such batches.  If it is set to another\nvalue, it should ordinarily be greater than or equal to\n`min_storage_bytes`.",
+            "description": "For a batch of data passed through the pipeline during a single step,\nthe minimum estimated number of bytes to write it to storage.\n\nThis is provided for debugging and fine-tuning and should ordinarily be\nleft unset.  A value of 0 writes every batch that holds anything to\nstorage; an empty batch stays in memory, since it has nothing to spill\nand a layer file is not free.  Nonzero values provide a threshold.\n`usize::MAX`, the default, effectively disables storage for such\nbatches.  If it is set to another value, it should ordinarily be\ngreater than or equal to `min_storage_bytes`.",
             "default": null,
             "nullable": true,
             "minimum": 0

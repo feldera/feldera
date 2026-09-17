@@ -1288,12 +1288,12 @@ impl Runtime {
     ///
     /// The output is determined by the current memory pressure level and the user-configured `min_step_storage_bytes` option.
     /// When memory pressure is below critical, the output is `min_step_storage_bytes`, when memory pressure is critical,
-    /// the output is `0`, meaning all batches are spilled to storage.
+    /// the output is `0`, meaning every batch that holds anything is spilled to storage.
     ///
     /// # Returns
     ///
     /// - `None` - if this thread doesn't have a Runtime or if it doesn't have storage configured.
-    /// - `Some(0)` - spill all batches to storage.
+    /// - `Some(0)` - spill every batch with content to storage; an empty batch has nothing to spill and stays in memory.
     /// - `Some(N)` - spill batches with size >= N to storage.
     pub fn min_step_storage_bytes() -> Option<usize> {
         RUNTIME.with(|rt| {
@@ -1785,7 +1785,7 @@ impl Iterator for WorkerLocations {
 impl ExactSizeIterator for WorkerLocations {}
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::{Parker, Runtime, RuntimeInner};
     use crate::{
         Circuit, RootCircuit,
@@ -1845,6 +1845,15 @@ mod tests {
                 std::env::remove_var("MOCK_PROCESS_RSS_BYTES");
             }
         }
+    }
+
+    /// Runs `f` with the runtime's view of the process size pinned at `bytes`,
+    /// serialized against the other tests that pin it.
+    pub(crate) fn with_mock_process_rss<R>(bytes: u64, f: impl FnOnce() -> R) -> R {
+        let _lock = MOCK_RSS_LOCK.lock().unwrap();
+        let _clear = MockRssVarGuard;
+        set_mock_process_rss_bytes(bytes);
+        f()
     }
 
     fn query_runtime_memory_state(runtime: &Runtime) -> (MemoryPressure, usize, usize, usize) {

@@ -486,7 +486,11 @@ where
                 value_capacity,
             )),
             BuildTo::Threshold(bytes) => Self::Threshold {
-                vec: Self::new_vec(factories, key_capacity, value_capacity),
+                vec: Self::new_vec(
+                    factories,
+                    BuildTo::capped_capacity(bytes, key_capacity),
+                    BuildTo::capped_capacity(bytes, value_capacity),
+                ),
                 size: 0,
                 threshold: bytes,
             },

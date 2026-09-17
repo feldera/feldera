@@ -5,9 +5,12 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
     },
+    thread::sleep,
+    time::{Duration, Instant},
 };
 
 use feldera_storage::tokio::TOKIO;
+use feldera_types::memory_pressure::MemoryPressure;
 use proptest::{collection::vec, prelude::*, strategy::BoxedStrategy};
 use size_of::SizeOf;
 use tempfile::tempdir;
@@ -41,6 +44,7 @@ use crate::{
 };
 
 use super::Filter;
+use crate::circuit::runtime::tests::with_mock_process_rss;
 use itertools::Itertools;
 
 pub mod test_batch;
@@ -1402,6 +1406,199 @@ fn build_fallback_indexed_wset_i32_at(
         DynZWeight,
     > as Batch>::Builder::for_merge(&factories, [&initial], Some(location));
     ListMerger::merge(&factories, builder, vec![initial.merge_cursor(None, None)])
+}
+
+/// Under a zero step threshold, which is what Critical memory pressure
+/// imposes, a builder that receives nothing must finish in memory.  It has
+/// nothing to spill, and a layer file costs two fsyncs on the way out, which a
+/// backfill paid for every step whose output was empty.  A builder that
+/// receives anything still spills, at its first item.
+#[test]
+fn an_empty_builder_stays_in_memory_under_a_zero_threshold() {
+    let dir = tempdir().expect("temp dir");
+    let config = CircuitConfig::with_workers(1).with_storage(Some(
+        crate::circuit::CircuitStorageConfig::for_config(
+            crate::circuit::StorageConfig {
+                path: dir.path().to_string_lossy().into_owned(),
+                cache: crate::circuit::StorageCacheConfig::default(),
+            },
+            crate::circuit::StorageOptions {
+                min_storage_bytes: Some(0),
+                min_step_storage_bytes: Some(0),
+                ..Default::default()
+            },
+        )
+        .unwrap(),
+    ));
+    run_in_circuit_with_storage_config(config, || {
+        // The capacity is what the lazy input map's per-step builder asks for,
+        // and at 32 estimated bytes per slot it clears any positive threshold.
+        const CAPACITY: usize = 10_000;
+
+        let factories =
+            <crate::trace::FallbackIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+        type Indexed =
+            <crate::trace::FallbackIndexedWSet<DynI32, DynI32, DynZWeight> as Batch>::Builder;
+        let empty = Indexed::with_capacity(&factories, CAPACITY, CAPACITY).done();
+        assert_eq!(
+            empty.location(),
+            BatchLocation::Memory,
+            "an empty indexed batch went to storage"
+        );
+
+        let (key, val, weight): (i32, i32, ZWeight) = (1, 7, 1);
+        let mut one = Indexed::with_capacity(&factories, CAPACITY, CAPACITY);
+        one.push_time_diff(&(), weight.erase());
+        one.push_val(val.erase());
+        one.push_key(key.erase());
+        assert_eq!(
+            one.done().location(),
+            BatchLocation::Storage,
+            "an indexed batch with content stayed in memory under a zero threshold"
+        );
+
+        let factories =
+            <crate::trace::FallbackWSetFactories<DynI32, DynZWeight>>::new::<i32, (), ZWeight>();
+        type Plain = <crate::trace::FallbackWSet<DynI32, DynZWeight> as Batch>::Builder;
+        let empty = Plain::with_capacity(&factories, CAPACITY, CAPACITY).done();
+        assert_eq!(
+            empty.location(),
+            BatchLocation::Memory,
+            "an empty batch went to storage"
+        );
+
+        let mut one = Plain::with_capacity(&factories, CAPACITY, CAPACITY);
+        one.push_time_diff(&(), weight.erase());
+        one.push_val(().erase());
+        one.push_key(key.erase());
+        assert_eq!(
+            one.done().location(),
+            BatchLocation::Storage,
+            "a batch with content stayed in memory under a zero threshold"
+        );
+    });
+}
+
+/// A builder that starts in memory under a threshold reserves room for what
+/// it can hold before it spills, not for the caller's whole capacity guess.
+/// Under a zero threshold every item spills at once, so a guess of a million
+/// rows must not cost a million slots of memory first.
+#[test]
+fn a_threshold_builder_reserves_no_more_than_the_threshold() {
+    let dir = tempdir().expect("temp dir");
+    let config = CircuitConfig::with_workers(1).with_storage(Some(
+        crate::circuit::CircuitStorageConfig::for_config(
+            crate::circuit::StorageConfig {
+                path: dir.path().to_string_lossy().into_owned(),
+                cache: crate::circuit::StorageCacheConfig::default(),
+            },
+            crate::circuit::StorageOptions {
+                min_storage_bytes: Some(0),
+                min_step_storage_bytes: Some(0),
+                ..Default::default()
+            },
+        )
+        .unwrap(),
+    ));
+    run_in_circuit_with_storage_config(config, || {
+        const CAPACITY: usize = 1_000_000;
+        // Room for the bookkeeping of an empty builder, far below what a
+        // million slots of keys, values and weights would take.
+        const ALLOWANCE: usize = 64 * 1024;
+
+        let factories =
+            <crate::trace::FallbackIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+        type Indexed =
+            <crate::trace::FallbackIndexedWSet<DynI32, DynI32, DynZWeight> as Batch>::Builder;
+        let reserved = Indexed::with_capacity(&factories, CAPACITY, CAPACITY)
+            .size_of()
+            .total_bytes();
+        assert!(
+            reserved < ALLOWANCE,
+            "an indexed builder under a zero threshold holds {reserved} bytes for a guess of {CAPACITY} rows"
+        );
+
+        let factories =
+            <crate::trace::FallbackWSetFactories<DynI32, DynZWeight>>::new::<i32, (), ZWeight>();
+        type Plain = <crate::trace::FallbackWSet<DynI32, DynZWeight> as Batch>::Builder;
+        let reserved = Plain::with_capacity(&factories, CAPACITY, CAPACITY)
+            .size_of()
+            .total_bytes();
+        assert!(
+            reserved < ALLOWANCE,
+            "a builder under a zero threshold holds {reserved} bytes for a guess of {CAPACITY} rows"
+        );
+    });
+}
+
+/// Critical memory pressure is what imposes the zero threshold in practice:
+/// `Runtime::min_step_storage_bytes()` answers zero under it whatever the
+/// configured value.  An empty builder still finishes in memory, one that
+/// receives an item spills, and neither reserves room for its capacity guess.
+#[test]
+fn critical_memory_pressure_keeps_an_empty_builder_in_memory() {
+    const GIB: u64 = 1 << 30;
+    // 9.6 GiB of a 10 GiB limit is past the 95% where Critical starts.
+    with_mock_process_rss(96 * GIB / 10, || {
+        let dir = tempdir().expect("temp dir");
+        let config = CircuitConfig::with_workers(1)
+            .with_temporary_storage(dir.path())
+            .with_max_rss_bytes(Some(10 * GIB));
+        run_in_circuit_with_storage_config(config, || {
+            // The runtime samples the process size once a second.
+            let deadline = Instant::now() + Duration::from_secs(30);
+            while Runtime::memory_pressure() != Some(MemoryPressure::Critical) {
+                assert!(
+                    Instant::now() < deadline,
+                    "memory pressure stayed at {:?}",
+                    Runtime::memory_pressure()
+                );
+                sleep(Duration::from_millis(100));
+            }
+            assert_eq!(Runtime::min_step_storage_bytes(), Some(0));
+
+            const CAPACITY: usize = 1_000_000;
+            const ALLOWANCE: usize = 64 * 1024;
+            let factories =
+                <crate::trace::FallbackIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<
+                    i32,
+                    i32,
+                    ZWeight,
+                >();
+            type Indexed =
+                <crate::trace::FallbackIndexedWSet<DynI32, DynI32, DynZWeight> as Batch>::Builder;
+            let empty = Indexed::with_capacity(&factories, CAPACITY, CAPACITY);
+            let reserved = empty.size_of().total_bytes();
+            assert!(
+                reserved < ALLOWANCE,
+                "a builder under Critical pressure holds {reserved} bytes for a guess of {CAPACITY} rows"
+            );
+            assert_eq!(
+                empty.done().location(),
+                BatchLocation::Memory,
+                "an empty batch went to storage under Critical pressure"
+            );
+
+            let (key, val, weight): (i32, i32, ZWeight) = (1, 7, 1);
+            let mut one = Indexed::with_capacity(&factories, CAPACITY, CAPACITY);
+            one.push_time_diff(&(), weight.erase());
+            one.push_val(val.erase());
+            one.push_key(key.erase());
+            assert_eq!(
+                one.done().location(),
+                BatchLocation::Storage,
+                "a batch with content stayed in memory under Critical pressure"
+            );
+        });
+    });
 }
 
 /// Strategy for the storage tier of a single proptest input batch.
