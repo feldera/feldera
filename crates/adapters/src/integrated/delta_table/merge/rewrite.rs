@@ -1,20 +1,17 @@
 //! Reclaiming storage from data files whose rows are mostly superseded.
 //!
-//! Merge mode marks a superseded row deleted in its file's deletion vector, so the row stays
-//! in storage, and in every scan of that file, until something rewrites the file. `OPTIMIZE`
-//! does not: it bin-packs files below the target size and drops single-file bins, so a file
-//! that has reached the target size is never rewritten however dead it is, and its vector
-//! grows without bound.
+//! A superseded row stays in its file, and in every scan of it, until something rewrites the
+//! file. `OPTIMIZE` does not: it bin-packs files below the target size and drops single-file
+//! bins, so a file at the target size is never rewritten however dead it is.
 //!
 //! This rewrites exactly those files: read the live rows, write them as a new file, commit
 //! the swap. `data_change` is false on both actions, as `OPTIMIZE` sets it, so a streaming
 //! reader sees no row appear or disappear.
 //!
-//! One file per commit, re-planned against a fresh snapshot each time. That keeps the vector
-//! being applied current with the version the commit declares as its read version, so a flush
-//! that tombstones more rows in the same file mid-rewrite loses the race rather than having
-//! its tombstones undone: both sides `remove` the path, which delta-rs rejects as a
-//! delete/delete conflict.
+//! One file per commit, re-planned against a fresh snapshot each time, so the vector being
+//! applied stays current with the version the commit declares it read. A flush that
+//! tombstones more rows in that file mid-rewrite then loses the race rather than having its
+//! tombstones undone: both sides `remove` the path, which delta-rs rejects.
 
 use std::collections::HashMap;
 use std::num::NonZeroU64;

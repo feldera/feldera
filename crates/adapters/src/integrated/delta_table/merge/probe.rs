@@ -1,27 +1,25 @@
 //! Locating the rows a flush must supersede.
 //!
 //! A deletion vector addresses rows by file path and physical row ordinal, not by key, so the
-//! connector must turn a set of keys into a set of (path, ordinal) pairs. This lookup is the
-//! only expensive step in a flush, and it reads the key columns of the row groups that survive
-//! pruning and nothing else.
+//! lookup turns a set of keys into a set of (path, ordinal) pairs. It is the only expensive
+//! step in a flush, reading the key columns of the row groups that survive pruning.
 //!
-//! The keys sought live in a sorted [`LookupChunk`], so each decoded key is resolved by binary
-//! search with no auxiliary index. Peak memory is one decoded batch per concurrent task.
+//! The keys sought live in a sorted [`LookupChunk`], so each decoded key is resolved by
+//! binary search with no auxiliary index. Peak memory is one decoded batch per task.
 //!
 //! # Ordinals are physical
 //!
-//! Ordinals count rows as if no deletion vector were applied, since that is the space a vector
-//! addresses. Two things perturb the count, and either one, got wrong, shifts every ordinal
-//! after it and tombstones rows nobody asked about:
+//! Ordinals count rows as if no deletion vector were applied, since that is the space a
+//! vector addresses. Get that wrong and every ordinal after the mistake shifts, tombstoning
+//! rows nobody asked about. Two things perturb the count:
 //!
-//! - **Skipped row groups.** A pruned group's rows still occupy their positions, so each
-//!   group's base ordinal comes from the footer's row counts rather than from a running
-//!   count of rows actually read.
-//! - **Rows an existing vector already covers.** They must not shift the numbering, so the
-//!   read applies no row selection.
+//! - A pruned row group's rows still occupy their positions, so a group's base ordinal comes
+//!   from the footer's row counts, not from a count of rows actually read.
+//! - Rows an existing vector covers must not shift the numbering, so the read applies no row
+//!   selection.
 //!
-//! The invariant is checked rather than assumed: a batch may not cross a row group boundary,
-//! and every group read must yield exactly the rows its footer declares.
+//! Both are checked rather than assumed: a batch may not cross a row group boundary, and
+//! every group read must yield exactly the rows its footer declares.
 
 use std::collections::HashMap;
 use std::sync::Arc;

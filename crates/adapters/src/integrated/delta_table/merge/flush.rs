@@ -1,9 +1,4 @@
-//! One merge-mode flush: walk the batch once, append new rows, tombstone superseded ones,
-//! commit.
-//!
-//! The whole flush runs while the output batch is still available, which is what lets a
-//! conflicting commit retry from the top. A retry cannot reuse the previous attempt's row
-//! ordinals: a compaction changes file paths, and an ordinal only means something within one.
+//! One merge-mode flush: walk the batch, append new rows, tombstone superseded ones, commit.
 //!
 //! ```text
 //! for each key in the batch, in key order:
@@ -16,6 +11,14 @@
 //!
 //! commit: the appended files, plus a remove/add pair per tombstoned file
 //! ```
+//!
+//! `threads` splits the batch into that many disjoint key ranges, each running the walk
+//! above; the flush joins their files and tombstones into one commit.
+//!
+//! The whole flush runs while the output batch is still available, which is what lets a
+//! conflicting commit retry from the top. A retry cannot reuse the previous attempt's
+//! ordinals, because a compaction changes file paths and an ordinal only means something
+//! within one.
 //!
 //! Nothing derived from the batch is held whole: appended rows stream into the writer, and
 //! removal keys are held as encoded bytes, one chunk at a time.
@@ -55,42 +58,36 @@ use super::startup::{MergeSetup, Regime, StatsConfig};
 use super::tombstone::{DvWriteMetrics, Tombstones, write_deletion_vectors};
 use super::transient;
 
-/// Rows buffered in the append writers before a chunk is written out, over the whole flush.
-///
-/// A flush that splits into ranges divides this between them rather than giving each the
-/// whole of it, so its buffers cost the same whatever `threads` says.
+/// Rows buffered in the append writers, for the whole flush: ranges divide it, so the
+/// buffers cost the same whatever `threads` says.
 pub(super) const APPEND_CHUNK_ROWS: usize = 100_000;
+
 /// Target-sized files a range must be worth before a flush splits into one more.
 ///
-/// A range's last file is however full it happens to be, so a split costs one partial file
-/// per range. One file per range would make a range mostly that partial file; three holds
-/// the waste under a sixth of what the range writes.
+/// A split costs one partial file per range, so one file per range would make a range mostly
+/// that partial file; three holds the waste under a sixth of what the range writes.
 const FILES_PER_RANGE: u64 = 3;
 
 /// Rows a range buffers before writing, never so few that a write is pure overhead.
 pub(super) const MIN_RANGE_CHUNK_ROWS: usize = 8_192;
 
-/// Encoded keys a range holds per lookup pass, never so few that it pays for the split in
-/// extra passes: each pass re-reads the candidate files its keys did not rule out.
+/// Encoded keys a range holds per lookup pass. Below this, the split pays for itself in
+/// extra passes, since each pass re-reads the candidates its keys did not rule out.
 ///
-/// A floor on the division alone.  `lookup_chunk_bytes` below it is an operator capping what
-/// a flush may hold, and raising a range past that would defeat the setting.
+/// It floors the division only: a smaller `lookup_chunk_bytes` is an operator capping what
+/// the flush may hold, and raising a range past that would defeat the setting.
 pub(super) const MIN_RANGE_LOOKUP_BYTES: usize = 8 * 1024 * 1024;
 
 /// Keys buffered before they are encoded into the lookup chunk. Encoding works on an arrow
 /// batch, so keys are gathered into one first.
 const KEY_BATCH_ROWS: usize = 8192;
 
-/// Where a flush's time went.
+/// Where a flush's time went. A flush reports minutes against a large table, and the
+/// counters alone cannot say which phase spent them.
 ///
-/// A flush reports minutes against a large table and the counters alone cannot say which
-/// phase spent them.
-///
-/// The phases partition one flush and sum to `total`, but only while the flush walks a
-/// single key range.  `threads` splits it into ranges that run at once, and the three phases
-/// a range performs -- `batch_walk`, `probe` and `append` -- are then summed across ranges:
-/// they measure the work the flush did rather than the time it took, and can exceed `total`.
-/// The three outside a range stay wall time whatever the thread count.
+/// The phases sum to `total` only while the flush walks one key range. Ranges run at once,
+/// so the three a range performs -- `batch_walk`, `probe`, `append` -- are summed across
+/// them and can exceed `total`: they measure work done, not time elapsed.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct FlushTimings {
     /// The whole flush, including every phase below.
@@ -172,9 +169,9 @@ impl FlushMetrics {
 
 /// One range's share of the budgets a flush spends as a whole.
 ///
-/// Both are configured for a flush, not for a thread, so ranges divide them. Left
-/// undivided, `threads` would quietly multiply the memory the buffers cost and the requests
-/// the lookup has in flight.
+/// Each is configured for a flush, not for a thread, so ranges divide it. Left undivided,
+/// `threads` would quietly multiply the memory the buffers cost and the requests the lookup
+/// has in flight.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct RangeBudget {
     /// Rows this range buffers before it writes them.
@@ -194,8 +191,6 @@ impl RangeBudget {
         )
     }
 
-    /// Every field is a budget for the flush, divided between its ranges rather than handed
-    /// to each of them, so what a flush costs does not rise with `threads`.
     fn divide(max_concurrent_probes: usize, lookup_chunk_bytes: usize, ranges: usize) -> Self {
         let ranges = ranges.max(1);
         Self {
@@ -314,25 +309,21 @@ impl MergeWriter {
 
     /// Apply one batch to `table` and commit, refreshing the table to the new version.
     ///
-    /// The whole batch is taken rather than a cursor over it, because a flush may walk it as
-    /// several key ranges, and because a retry has to re-run the lookup against whatever
-    /// paths exist now.
+    /// Takes the whole batch rather than a cursor over it: a flush may walk it as several key
+    /// ranges, and a retry has to re-run the lookup against whatever paths exist now.
     ///
     /// `retrying` must be set on every attempt after the first. A commit error can mean the
-    /// commit landed and only its response was lost, so the rows an earlier attempt appended
-    /// may be in the table: [`Regime::Owned`]'s insert shortcut is unsound from then on, and
-    /// skipping the lookup would leave two live rows for one key.
+    /// commit landed and only its response was lost, so rows an earlier attempt appended may
+    /// be in the table: [`Regime::Owned`]'s insert shortcut is unsound from then on.
     ///
-    /// `progress` counts the rows written so far, for the controller to report while a large
-    /// flush is still running. The caller owns resetting it.
+    /// `threads` splits the batch into that many disjoint key ranges, each walked by its own
+    /// task; their files concatenate and their tombstones union into one commit.
     ///
-    /// `threads` splits the batch into that many key ranges, each walked and written by its
-    /// own task. Ranges are disjoint, so their appended files concatenate and their
-    /// tombstones union; the flush still commits once.
+    /// `progress` counts rows written so far, for the controller to report mid-flush. The
+    /// caller owns resetting it.
     ///
-    /// A flush that fails part-way leaves the data files it had already streamed behind,
-    /// which `VACUUM` collects; nothing is committed, so no reader sees them. Splitting the
-    /// batch does not change that, only how many ranges can be the one that failed.
+    /// A flush that fails part-way leaves its streamed data files behind for `VACUUM`;
+    /// nothing is committed, so no reader sees them.
     #[allow(clippy::too_many_arguments)]
     pub async fn flush(
         self: &Arc<Self>,
@@ -366,15 +357,14 @@ impl MergeWriter {
 
     /// Rows a range must be worth for the flush to be split into one.
     ///
-    /// Only a flush that follows one knows what a row costs, so the floor comes in two parts:
+    /// Only a flush that follows one knows what a row costs, so the floor has two parts:
     /// [`APPEND_CHUNK_ROWS`] until a flush has written, then the rows [`FILES_PER_RANGE`]
-    /// files take at the rate that flush wrote at.
+    /// files take at that flush's rate.
     ///
-    /// The first floor is deliberately permissive -- a backfill is the flush most worth
-    /// splitting, and it is the one with no rate to go on -- so it buys speed with files:
-    /// measured on a 2.2 GB backfill needing 21 files, 8 ranges wrote 24 and 16 wrote 32.
-    /// `threads` is what bounds that; the second floor keeps the steady stream of update
-    /// flushes that follows from fragmenting the table for ever.
+    /// The first is deliberately permissive, because a backfill is the flush most worth
+    /// splitting and the one with no rate to go on, so it buys speed with files: on a 2.2 GB
+    /// backfill needing 21 files, 8 ranges wrote 24 and 16 wrote 32. `threads` bounds that.
+    /// The second keeps the update flushes that follow from fragmenting the table for ever.
     fn rows_per_range(&self) -> usize {
         #[cfg(test)]
         if let Some(rows) = self.rows_per_range_override {

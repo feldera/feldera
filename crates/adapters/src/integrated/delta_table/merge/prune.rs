@@ -1,33 +1,27 @@
 //! Deciding which files and row groups the lookup has to read.
 //!
 //! The lookup's cost is the key columns of everything it opens, so pruning is what keeps a
-//! flush proportional to the change rather than to the table. Two facts make it cheap:
+//! flush proportional to the change rather than to the table.
 //!
-//! - The keys being sought are known exactly, as a sorted [`LookupChunk`], so a unit can be
-//!   tested against the key set itself rather than against a summary of it.
-//! - The row encoding orders bytes the way it orders values, so a unit's per-column
-//!   `[min, max]` box maps to one lexicographic interval `[min_tuple, max_tuple]` that
-//!   contains the box. Testing "does the chunk meet this interval" is then one binary
-//!   search, whatever the key's arity.
+//! The keys sought are known exactly, as a sorted [`LookupChunk`], and the row encoding
+//! orders bytes the way it orders values. So a unit's per-column `[min, max]` box maps to one
+//! lexicographic interval containing it, and "does the chunk meet this interval" is a single
+//! binary search whatever the key's arity.
 //!
-//! Partition columns get an exact test of their own, [`PartitionFilter`], because the box
-//! test wastes them: a wide range on a leading column swallows what a trailing partition
-//! column says. Since the partition columns are key columns, the flush knows every partition
-//! its keys belong to, so a file outside that set holds nothing it wants. On a table
-//! partitioned by date, a flush touching one day skips every other day unread.
+//! Partition columns get an exact test of their own, [`PartitionFilter`], because a wide
+//! range on a leading column swallows what a trailing partition column says.
 //!
 //! # Pruning is sound in one direction only
 //!
-//! Failing to prune costs a read. Pruning a unit that holds a key we must supersede skips
-//! the tombstone and leaves two live rows for one key -- silent corruption. So every
-//! uncertainty resolves to "keep":
+//! Failing to prune costs a read. Pruning a unit that holds a key we must supersede skips the
+//! tombstone and leaves two live rows for one key. So every uncertainty resolves to "keep":
 //!
 //! | Situation | Behavior |
 //! |-----------|----------|
 //! | A key column has no statistic on this unit | Keep. A missing statistic is not an empty range |
 //! | A statistic is null, or a `ROW` statistic has a null leaf | Keep. Delta records no statistic for a `BINARY` leaf, and `delta.dataSkippingNumIndexedCols` can cut through a struct |
 //! | The encoder rejects a statistic's type | Keep |
-//! | A key column is `FLOAT` or `DOUBLE` | Statistics pruning is off for the whole key: Parquet and Delta conventionally leave NaN out of min/max, so a box test could exclude a NaN key that is present |
+//! | A key column is `FLOAT` or `DOUBLE` | Statistics pruning is off for the whole key: Parquet and Delta leave NaN out of min/max, so a box test could exclude a NaN key that is present |
 //! | A key being sought is null | Pruning is off for that lookup pass: nulls are left out of min/max too, so a null key falls below every range |
 //!
 //! String statistics are truncated by the writer -- minimum down, maximum up -- so the box
