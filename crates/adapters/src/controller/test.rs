@@ -6762,7 +6762,7 @@ fn test_output_progress_counter_waits_for_owed_output() {
     // checkpoint path blocks until that counter reaches the records processed when
     // the checkpoint started, so a regression here would stall checkpoints rather
     // than merely misreport progress.
-    status.update_total_completed_records(None);
+    status.update_total_completed_records();
     assert_eq!(status.num_total_completed_records(), RESTORED_RECORDS);
 
     // Queueing the owed output does not count as delivering it.
@@ -6833,6 +6833,10 @@ fn test_removing_a_lagging_output_endpoint_republishes_completion() {
     status.processed_data(BufferSize {
         records: STEP_RECORDS as usize,
         bytes: 0,
+    });
+    status.set_committed(ProcessedRecords {
+        total_processed_input_records: STEP_RECORDS,
+        total_processed_steps: 1,
     });
     status.enqueue_batch(0, STEP_RECORDS as usize);
     status.enqueue_batch(1, STEP_RECORDS as usize);
@@ -7645,4 +7649,104 @@ fn sample_views(controller: &Controller) -> Option<Sample> {
             counts: column(1),
         })
     })
+}
+
+/// Removing the last output endpoint while a step is in flight must not report
+/// that step complete.
+///
+/// The completion frontier is the minimum over the output endpoints, so removing
+/// the last one leaves whatever ceiling the computation started from. Starting it
+/// from the steps the circuit has initiated hands out the step the circuit is
+/// still evaluating: a Postgres CDC connector deferring its acknowledgment until
+/// the frontier passes that step then acknowledges rows the circuit does not yet
+/// hold, and `/completion_status` reports them complete.
+#[test]
+fn test_removing_last_output_endpoint_mid_step_keeps_the_frontier() {
+    use super::stats::ProcessedRecords;
+
+    let status = test_controller_status("test_remove_last_output_mid_step");
+    let output_config = test_output_config();
+    let parker = Parker::new();
+    let unparker = parker.unparker().clone();
+
+    // A `/egress` stream is the only output endpoint of this pipeline.
+    status.add_output(&0, "egress", &output_config, None, true);
+
+    // Step 0: initiated, evaluated, and delivered by the endpoint.
+    status
+        .global_metrics
+        .total_initiated_steps
+        .store(1, Ordering::Release);
+    status.processed_data(BufferSize {
+        records: 10,
+        bytes: 0,
+    });
+    status.set_committed(ProcessedRecords {
+        total_processed_input_records: 10,
+        total_processed_steps: 1,
+    });
+    status.enqueue_batch(0, 10);
+    status.output_batch(
+        0,
+        Some(ProcessedRecords {
+            total_processed_input_records: 10,
+            total_processed_steps: 1,
+        }),
+        10,
+        &unparker,
+    );
+    assert_eq!(status.global_metrics.total_completed_steps(), 1);
+
+    // Step 1 starts. The circuit is still evaluating it, so it has committed
+    // neither the step nor its records.
+    status
+        .global_metrics
+        .total_initiated_steps
+        .store(2, Ordering::Release);
+
+    // The client closes the stream in the middle of that step.
+    status.remove_output(&0);
+
+    assert_eq!(
+        status.global_metrics.total_completed_steps(),
+        1,
+        "step 1 is still in flight, so the completion frontier must stay at 1"
+    );
+}
+
+/// Removing the last output endpoint during a transaction must not report the
+/// transaction's records complete.
+///
+/// Records ingested inside a transaction are in the circuit but are not committed
+/// until it ends, which is why a step taken during one advances
+/// `total_processed_records` and leaves the completion frontier where it was.
+/// Removal has to respect the same rule.
+#[test]
+fn test_removing_last_output_endpoint_mid_transaction_keeps_the_frontier() {
+    let status = test_controller_status("test_remove_last_output_mid_transaction");
+    let output_config = test_output_config();
+
+    status.add_output(&0, "egress", &output_config, None, true);
+
+    // One step ingests 10 records inside an open transaction: processed by the
+    // circuit, not committed, so nothing is published.
+    status
+        .global_metrics
+        .total_initiated_steps
+        .store(1, Ordering::Release);
+    status.processed_data(BufferSize {
+        records: 10,
+        bytes: 0,
+    });
+    status.update_total_completed_records();
+    assert_eq!(status.num_total_completed_records(), 0);
+
+    // The client closes the stream while the transaction is still open.
+    status.remove_output(&0);
+
+    assert_eq!(
+        status.num_total_completed_records(),
+        0,
+        "the transaction has not committed, so its records are not complete"
+    );
 }

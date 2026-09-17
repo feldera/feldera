@@ -3776,15 +3776,7 @@ impl CircuitThread {
         // Record that we've processed the records, unless there is a transaction in progress,
         // in which case records are ingested by the circuit but are not fully processed.
         let transaction_state = self.controller.get_transaction_state();
-        let processed_records = self.processed_records(total_consumed, Some(transaction_state));
-        let processed_records = if transaction_state == TransactionState::None {
-            Some(ProcessedRecords {
-                total_processed_input_records: processed_records,
-                total_processed_steps: self.step,
-            })
-        } else {
-            None
-        };
+        let processed_records = self.processed_records(total_consumed, transaction_state);
 
         if let Some(ft) = self.ft.as_mut() {
             ft.sync_step()?;
@@ -4551,18 +4543,27 @@ impl CircuitThread {
 
     /// Reports that `total_consumed` has been consumed.
     ///
-    /// Returns the total number of records processed.
+    /// Returns what the circuit committed, or `None` if a transaction is in
+    /// progress: its records are in the circuit but are not committed until it
+    /// ends.
     fn processed_records(
         &mut self,
         total_consumed: BufferSize,
-        transaction_state: Option<TransactionState>,
-    ) -> u64 {
+        transaction_state: TransactionState,
+    ) -> Option<ProcessedRecords> {
         let processed_records = self.controller.status.processed_data(total_consumed);
-        // If there are no output connectors, completed records can only get updated here.
-        self.controller
-            .status
-            .update_total_completed_records(transaction_state);
-        processed_records
+
+        let committed = (transaction_state == TransactionState::None).then_some(ProcessedRecords {
+            total_processed_input_records: processed_records,
+            total_processed_steps: self.step,
+        });
+        if let Some(committed) = committed {
+            self.controller.status.set_committed(committed);
+        }
+
+        self.controller.status.update_total_completed_records();
+
+        committed
     }
 
     /// Pushes all of the records to the output.
