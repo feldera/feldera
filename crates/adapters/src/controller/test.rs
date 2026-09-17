@@ -7876,3 +7876,21 @@ fn test_committed_is_neither_the_processed_count_nor_the_frontier() {
         "the lagging connector holds the frontier, not what the circuit committed"
     );
 }
+
+/// An input reader asks which step it is feeding while handling a `Queue`
+/// command, and the controller answers from the count of steps it has
+/// initiated. A connector that defers acknowledgment stamps its writes with
+/// that step, so an off-by-one here would acknowledge rows against a
+/// checkpoint that predates them.
+#[test]
+fn the_step_a_reader_feeds_is_one_below_the_count_initiated() {
+    use super::current_step_of;
+
+    // `CircuitThread::step` stores the count before it collects input, so
+    // while the reader feeds step 0 the count already reads 1.
+    assert_eq!(current_step_of(1), Some(0));
+    assert_eq!(current_step_of(42), Some(41));
+    // No step has started, so there is none to feed. A reader never asks
+    // then, and saying `Some(0)` would claim a step that has not begun.
+    assert_eq!(current_step_of(0), None);
+}

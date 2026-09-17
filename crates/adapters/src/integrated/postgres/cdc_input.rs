@@ -466,10 +466,6 @@ struct PostgresCdcInputInner {
     queue: Arc<InputQueue<QueueAux>>,
     /// Deterministic pipeline ID used for replication slot naming and resume.
     pipeline_id: u64,
-    /// Watch receiver for step completion. It tracks `total_completed_steps`,
-    /// which stamps acknowledgments only for a consumer that reports no
-    /// current step; see [`flush_step`].
-    step_completion_rx: Option<tokio::sync::watch::Receiver<Completion>>,
     /// Watcher source for the background task.  Taken once by `worker_task_inner`.
     /// `Strict` when fault tolerance is enabled (gates slot on checkpoint);
     /// `Fast` otherwise (gates slot on step completion).
@@ -501,7 +497,7 @@ impl PostgresCdcInputInner {
         consumer: Box<dyn InputConsumer>,
     ) -> Self {
         let queue = Arc::new(InputQueue::new(consumer.clone()));
-        let step_completion_rx = consumer.completion_watcher();
+        let completion_rx = consumer.completion_watcher();
 
         let pipeline_id = pipeline_id(&config.uri, &config.publication, &config.source_table);
 
@@ -509,7 +505,7 @@ impl PostgresCdcInputInner {
         // fast mode (gate slot on step completion) otherwise.
         let watcher_rx = match consumer.checkpoint_watcher() {
             Some(rx) => Some(WatcherReceiver::Strict(rx)),
-            None => step_completion_rx.clone().map(WatcherReceiver::Fast),
+            None => completion_rx.map(WatcherReceiver::Fast),
         };
         let strict = matches!(watcher_rx, Some(WatcherReceiver::Strict(_)));
 
@@ -526,7 +522,6 @@ impl PostgresCdcInputInner {
             consumer,
             queue,
             pipeline_id,
-            step_completion_rx,
             watcher_rx: Mutex::new(watcher_rx),
             completion_task_tx,
             completion_task_rx: Mutex::new(completion_task_rx),
@@ -551,12 +546,25 @@ impl PostgresCdcInputInner {
             }
             return;
         };
-        let flush_step = flush_step(
-            self.consumer.current_step(),
-            self.step_completion_rx
-                .as_ref()
-                .map(|rx| rx.borrow().total_completed_steps),
-        );
+        let Some(flush_step) = self.consumer.current_step() else {
+            // A consumer that reports step progress must say which step it is
+            // feeding. Falling back to the count of steps every output
+            // connector has finished would stamp these writes with a step
+            // whose checkpoint predates their rows, and a crash after the
+            // answer would lose them (#7122). Fail the endpoint and drop the
+            // answers instead: etl reads those rows again on the next start.
+            self.consumer.error(
+                true,
+                anyhow!(
+                    "the pipeline reports step progress but not the step it is feeding, so the \
+                     connector cannot tell PostgreSQL which changes are safely stored. This is a \
+                     bug, please report it to Feldera developers: \
+                     https://github.com/feldera/feldera/issues/"
+                ),
+                None,
+            );
+            return;
+        };
         let _ = tx.send((flush_step, acks));
     }
 
@@ -2422,16 +2430,6 @@ async fn completion_watcher_task(
     );
 }
 
-/// The step a flush fed, which is what an acknowledgment waits on.
-///
-/// `total_completed_steps` is the fallback for a consumer that reports no
-/// current step. It is a minimum over the output connectors, so a lagging
-/// output makes it name an earlier step than the one the rows landed in, and
-/// the answer would go out against a checkpoint that predates them.
-fn flush_step(current_step: Option<u64>, completed_steps: Option<u64>) -> u64 {
-    current_step.or(completed_steps).unwrap_or(0)
-}
-
 /// Answer the writes a stop finds durable, and leave the rest waiting.
 ///
 /// An answer sent but not yet received is as durable as one already waiting,
@@ -3660,15 +3658,6 @@ mod tests {
                 "queued={queued} tail_rows={tail_rows} defer_acks={defer_acks}"
             );
         }
-    }
-
-    #[test]
-    fn the_stamp_is_the_step_being_fed_not_the_one_the_outputs_have_finished() {
-        // An output connector lagging two steps behind the circuit reports
-        // three completed steps while the controller feeds step five.
-        assert_eq!(flush_step(Some(5), Some(3)), 5);
-        assert_eq!(flush_step(None, Some(3)), 3);
-        assert_eq!(flush_step(None, None), 0);
     }
 
     #[test]
