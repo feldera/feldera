@@ -7749,3 +7749,26 @@ fn test_removing_last_output_endpoint_mid_transaction_keeps_the_frontier() {
         "the transaction has not committed, so its records are not complete"
     );
 }
+
+/// The completion watch must never move backwards.
+///
+/// A caller publishes its count and then announces it, and the two steps are not one operation,
+/// so the caller holding the smaller count can announce last. Watchers act on what they read
+/// here rather than on the published counter: the Postgres CDC connector records the count at
+/// flush time and acknowledges the write once the watch passes it, so a watch reading below the
+/// steps that are really complete acknowledges a write one step early.
+#[test]
+fn test_completion_watch_never_moves_backwards() {
+    let status = test_controller_status("test_completion_watch_monotonic");
+
+    status.publish_completed_steps(7);
+    assert_eq!(status.completion_notifier.borrow().total_completed_steps, 7);
+
+    // What the racing caller with the smaller count announces.
+    status.publish_completed_steps(5);
+    assert_eq!(
+        status.completion_notifier.borrow().total_completed_steps,
+        7,
+        "a smaller count announced last must not lower the watch"
+    );
+}

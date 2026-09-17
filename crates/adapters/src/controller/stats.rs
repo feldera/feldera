@@ -1112,20 +1112,27 @@ impl ControllerStatus {
             self.watermarks_update_completed(total_completed_records);
         }
 
-        let old_steps = self
-            .global_metrics
+        self.global_metrics
             .total_completed_steps
             .fetch_max(total_completed_steps, Ordering::SeqCst);
-        if total_completed_steps >= old_steps {
-            self.completion_notifier.send_if_modified(|state| {
-                if state.total_completed_steps != total_completed_steps {
-                    state.total_completed_steps = total_completed_steps;
-                    true
-                } else {
-                    false
-                }
-            });
-        }
+        self.publish_completed_steps(total_completed_steps);
+    }
+
+    /// Announce `total_completed_steps` to the completion watchers.
+    ///
+    /// Only a larger count is announced. Callers race between publishing their count and
+    /// announcing it, so the thread with the smaller count can announce last; watchers act on
+    /// what they read here, and the Postgres CDC connector acknowledges a write one step early
+    /// if it reads a count below the steps that are really complete.
+    pub(super) fn publish_completed_steps(&self, total_completed_steps: Step) {
+        self.completion_notifier.send_if_modified(|state| {
+            if state.total_completed_steps < total_completed_steps {
+                state.total_completed_steps = total_completed_steps;
+                true
+            } else {
+                false
+            }
+        });
     }
 
     /// Notify input adapters that a checkpoint covering `step` steps has
