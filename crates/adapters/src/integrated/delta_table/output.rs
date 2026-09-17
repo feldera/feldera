@@ -238,7 +238,7 @@ pub struct DeltaTableWriter {
     num_rows: usize,
     /// Present in merge mode, which applies and commits a batch in `encode` rather than
     /// writing files there and committing in `batch_end`.
-    merge: Option<MergeWriter>,
+    merge: Option<Arc<MergeWriter>>,
     merge_metrics: Option<Arc<MergeMetrics>>,
     /// Present when `optimize_interval_secs` asks the connector to compact the table itself.
     compactor: Option<Compactor>,
@@ -458,7 +458,7 @@ impl DeltaTableWriter {
             threads,
             pending_actions: Vec::new(),
             num_rows: 0,
-            merge,
+            merge: merge.map(Arc::new),
             merge_metrics,
             compactor,
             #[cfg(test)]
@@ -1314,6 +1314,7 @@ impl DeltaTableWriter {
             merge,
             merge_metrics,
             compactor,
+            threads,
             #[cfg(test)]
             merge_violations,
             ..
@@ -1336,7 +1337,6 @@ impl DeltaTableWriter {
         let max_backoff = Duration::from_secs(10);
 
         loop {
-            let mut cursor = batch.cursor(format.clone())?;
             let retrying = retry_count > 0;
             // A retry rewrites the same rows, so its progress restarts rather than adds.
             inner.records_written.store(0, Ordering::Relaxed);
@@ -1378,10 +1378,12 @@ impl DeltaTableWriter {
                         .flush(
                             &mut task.delta_table,
                             object_store.clone(),
-                            &mut *cursor,
+                            batch.clone(),
+                            format.clone(),
+                            *threads,
                             retrying,
                             &mut report_violation,
-                            &inner.records_written,
+                            inner.records_written.clone(),
                         )
                         .await
                 }
