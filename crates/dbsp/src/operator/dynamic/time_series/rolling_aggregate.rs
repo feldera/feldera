@@ -1734,19 +1734,27 @@ mod test {
             .collect::<Vec<_>>()
     }
 
+    // 100 batches stepping a 10_000-wide window by 2_000 sweeps the window
+    // forward 20 times over, which is what exercises retention.  Cost grows
+    // with the square of the batch count, because the reference implementation
+    // rescans the whole integral every step, so batches buy coverage dearly:
+    // 200 batches cost 36s per case against 9.9s here.
+    //
+    // The 30_000-byte bound holds the trace to roughly 3x its measured peak of
+    // 10.4KB.  That peak does not move with the batch count, or with the input
+    // volume at all, so a longer run does not tighten the bound: see
+    // https://github.com/feldera/feldera/issues/7183.
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(5))]
+        #![proptest_config(ProptestConfig::with_cases(10))]
 
         #[test]
-        fn proptest_partitioned_rolling_aggregate_quasi_monotone_small_steps(trace in input_trace_quasi_monotone(5, 10_000, 2_000, 20, 200)) {
-            // 10_000 is an empirically established bound: without GC this test needs >10KB.
+        fn proptest_partitioned_rolling_aggregate_quasi_monotone_small_steps(trace in input_trace_quasi_monotone(5, 10_000, 2_000, 20, 100)) {
             test_partition_rolling_aggregate(10000, Some(30_000), trace, false);
         }
 
         #[test]
         #[ignore = "https://github.com/feldera/feldera/issues/4764"]
-        fn proptest_partitioned_rolling_aggregate_quasi_monotone_big_step(trace in input_trace_quasi_monotone(5, 10_000, 2_000, 20, 200)) {
-            // 10_000 is an empirically established bound: without GC this test needs >10KB.
+        fn proptest_partitioned_rolling_aggregate_quasi_monotone_big_step(trace in input_trace_quasi_monotone(5, 10_000, 2_000, 20, 100)) {
             test_partition_rolling_aggregate(10000, Some(30_000), trace, true);
         }
     }
