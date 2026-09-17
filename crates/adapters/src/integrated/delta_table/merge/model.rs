@@ -34,6 +34,7 @@ use serde_arrow::schema::SerdeArrowSchema;
 use size_of::SizeOf;
 use tempfile::TempDir;
 
+use super::super::WriteError;
 use super::flush::{FlushMetrics, MergeWriter};
 use super::startup::{Regime, prepare};
 use super::test::{arrow_schema, fixture_columns, key_relation};
@@ -1012,6 +1013,52 @@ async fn violations_from_every_range_are_reported() {
         "a key with two values was written anyway"
     );
     assert!(live_rows(&table).await.is_empty());
+}
+
+/// A panicked key range fails the flush rather than retrying for ever.
+///
+/// Ranges run as spawned tasks, so a panic in one arrives as a `JoinError` instead of
+/// unwinding the flush. Reported as transient it would be retried, and under the documented
+/// default `max_retries: None` that loop is unbounded -- rewriting the whole batch and
+/// orphaning its parquet on every attempt, for a flush that panics again each time.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_panicked_range_is_reported_as_deterministic() {
+    let dir = TempDir::new().unwrap();
+    let mut table = create_table(&dir).await;
+    let (writer, _) = writer_for(&table);
+    let mut writer = Arc::try_unwrap(writer).unwrap_or_else(|_| unreachable!());
+    writer.split_every(1);
+    writer.panic_in_range();
+    let writer = Arc::new(writer);
+
+    let inserts: Vec<Change> = (0..8)
+        .map(|id| Change::Insert(id, format!("v{id}")))
+        .collect();
+    let batch = build_batch(&inserts);
+    let format = RecordFormat::Parquet(delta_output_serde_config(DeltaVariantEncoding::default()));
+    let object_store = table.object_store();
+    let result = writer
+        .flush(
+            &mut table,
+            object_store,
+            batch.as_batch_reader().snapshot(),
+            format,
+            4,
+            false,
+            &mut |e| panic!("unexpected uniqueness violation: {e}"),
+            Arc::new(AtomicU64::new(0)),
+        )
+        .await;
+
+    match result {
+        Err(WriteError::Deterministic(e)) => {
+            assert!(
+                e.to_string().contains("panicked"),
+                "the panic did not reach the error: {e}"
+            );
+        }
+        other => panic!("a panicked range was not reported as deterministic: {other:?}"),
+    }
 }
 
 /// A range that outgrows its lookup budget runs several passes, like a sequential flush.
