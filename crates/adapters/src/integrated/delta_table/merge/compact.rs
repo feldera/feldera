@@ -1,18 +1,17 @@
 //! Compaction driven by the connector, for tables nothing else maintains.
 //!
-//! Merge mode marks a superseded row deleted rather than rewriting its file, so old versions
-//! stay in the table until something rewrites that file. Compacting is normally the table
-//! administrator's job, so `optimize_interval_secs` is off by default; it is there for tables
-//! where Feldera is the only writer.
+//! Superseded rows stay in the table until something rewrites their file. Compacting is
+//! normally the table administrator's job, so `optimize_interval_secs` is off by default; it
+//! is there for tables where Feldera is the only writer.
 //!
-//! Compaction runs in the background because its cost follows the size of the table, not the
-//! size of the flush, so running it inline would stall output. A flush that loses the race is
-//! redone against the new files, which merge mode must handle anyway to survive an
-//! administrator's own `OPTIMIZE`.
+//! It runs in the background because its cost follows the size of the table, not the size of
+//! the flush, so running it inline would stall output. A flush that loses the race is redone
+//! against the new files, which merge mode must handle anyway to survive an administrator's
+//! own `OPTIMIZE`.
 //!
-//! delta-rs plans `OPTIMIZE` on file size alone: it skips a file at the target size, and
-//! drops a bin holding one file. Either way a mostly superseded file keeps its rows.
-//! [`super::rewrite`] runs after the packing and rewrites those on their own.
+//! delta-rs plans `OPTIMIZE` on file size alone: it skips a file at the target size and drops
+//! a bin holding one file, so a mostly superseded file keeps its rows either way.
+//! [`super::rewrite`] runs after the packing and rewrites those.
 
 use std::collections::HashMap;
 use std::sync::Arc;
