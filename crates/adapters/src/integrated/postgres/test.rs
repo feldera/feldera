@@ -4168,13 +4168,31 @@ mod cdc_tests {
             storage_dir,
             output_path,
             &TestStruct::schema(),
-            1,
+            CircuitShape::default(),
         )
     }
 
     /// Fault-tolerant CDC circuit for record type `T` with `schema`, run on
     /// `workers` worker threads. Checkpoints only when the test asks for one
     /// (interval set to one hour).
+    /// How a fault-tolerant test circuit runs: how many workers it has, and
+    /// how many records its reader takes per step, which a test that needs a
+    /// write to reach the circuit over several steps sets to one.
+    #[derive(Clone, Copy)]
+    pub(super) struct CircuitShape {
+        pub workers: usize,
+        pub max_batch_size: Option<u64>,
+    }
+
+    impl Default for CircuitShape {
+        fn default() -> Self {
+            Self {
+                workers: 1,
+                max_batch_size: None,
+            }
+        }
+    }
+
     pub(super) fn cdc_ft_test_circuit_for<T>(
         url: &str,
         publication: &str,
@@ -4182,7 +4200,7 @@ mod cdc_tests {
         storage_dir: &Path,
         output_path: &Path,
         schema: &[Field],
-        workers: usize,
+        shape: CircuitShape,
     ) -> (Controller, crossbeam::channel::Receiver<String>)
     where
         T: DBData
@@ -4193,13 +4211,14 @@ mod cdc_tests {
         let url = cdc_connector_url(url);
         let config: PipelineConfig = serde_json::from_value(json!({
             "name": "cdc_ft_test",
-            "workers": workers,
+            "workers": shape.workers,
             "storage_config": { "path": storage_dir },
             "storage": true,
             "fault_tolerance": { "model": "at_least_once", "checkpoint_interval_secs": 3600 },
             "inputs": {
                 "cdc_in": {
                     "stream": "test_input1",
+                    "max_batch_size": shape.max_batch_size,
                     "transport": {
                         "name": "postgres_cdc_input",
                         "config": {
