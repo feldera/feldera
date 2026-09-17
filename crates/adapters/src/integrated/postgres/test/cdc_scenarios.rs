@@ -28,7 +28,7 @@
 //! ```
 
 use super::cdc_tests::{
-    CdcAllTypesStruct, CdcTestTable, ETL_SYNC_COMPLETED_STATES, cdc_connector_url,
+    CdcAllTypesStruct, CdcTestTable, CircuitShape, ETL_SYNC_COMPLETED_STATES, cdc_connector_url,
     cdc_ft_test_circuit, cdc_ft_test_circuit_for, etl_table_states, read_output_json,
     wait_for_etl_copy_in_progress, wait_for_etl_sync_completed,
 };
@@ -115,6 +115,26 @@ impl OutputTail {
 }
 
 impl Run {
+    /// Like [`Run::start`], with the reader taking `max_batch_size` records a
+    /// step, so a write that arrives as several buffers reaches the circuit
+    /// over as many steps instead of in one.
+    fn start_batched(table: &CdcTestTable, storage: &Path, max_batch_size: u64) -> Self {
+        let output = NamedTempFile::new().unwrap();
+        let (controller, errors) = cdc_ft_test_circuit_for::<TestStruct>(
+            &table.url,
+            &table.publication_name,
+            &format!("public.{}", table.table_name),
+            storage,
+            output.path(),
+            &TestStruct::schema(),
+            CircuitShape {
+                max_batch_size: Some(max_batch_size),
+                ..CircuitShape::default()
+            },
+        );
+        Self::started(table, controller, errors, output)
+    }
+
     /// Start a fault-tolerant CDC pipeline on `storage`. Checkpoints only
     /// happen when the test asks for them (interval set to one hour).
     fn start(table: &CdcTestTable, storage: &Path) -> Self {
@@ -146,7 +166,10 @@ impl Run {
             storage,
             output.path(),
             schema,
-            workers,
+            CircuitShape {
+                workers,
+                ..CircuitShape::default()
+            },
         );
         Self::started(table, controller, errors, output)
     }
@@ -1278,7 +1301,10 @@ fn test_a_checkpoint_inside_one_write_does_not_acknowledge_it() {
             insert_range(&mut table, 1, 1);
             let storage = TempDir::new().unwrap();
 
-            let run1 = Run::start(&table, storage.path());
+            // One buffer a step, so the write spreads over as many steps as
+            // it has buffers instead of arriving in one. That is what leaves a
+            // window for the checkpoint to land inside the write.
+            let run1 = Run::start_batched(&table, storage.path(), 1);
             run1.wait_for_inserts(1, "run 1 snapshot");
             checkpoint_after_snapshot(&run1, &mut table);
 
