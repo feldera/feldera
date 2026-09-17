@@ -70,6 +70,13 @@ const FILES_PER_RANGE: u64 = 3;
 /// Rows a range buffers before writing, never so few that a write is pure overhead.
 pub(super) const MIN_RANGE_CHUNK_ROWS: usize = 8_192;
 
+/// Encoded keys a range holds per lookup pass, never so few that it pays for the split in
+/// extra passes: each pass re-reads the candidate files its keys did not rule out.
+///
+/// A floor on the division alone.  `lookup_chunk_bytes` below it is an operator capping what
+/// a flush may hold, and raising a range past that would defeat the setting.
+pub(super) const MIN_RANGE_LOOKUP_BYTES: usize = 8 * 1024 * 1024;
+
 /// Keys buffered before they are encoded into the lookup chunk. Encoding works on an arrow
 /// batch, so keys are gathered into one first.
 const KEY_BATCH_ROWS: usize = 8192;
@@ -174,25 +181,39 @@ pub(super) struct RangeBudget {
     pub(super) chunk_rows: usize,
     /// Data files this range's lookup reads at once.
     pub(super) probes: usize,
+    /// Encoded keys this range holds before it runs a lookup pass.
+    pub(super) lookup_bytes: usize,
 }
 
 impl RangeBudget {
     fn split(writer: &MergeWriter, ranges: usize) -> Self {
-        Self::divide(writer.max_concurrent_probes, ranges)
+        Self::divide(
+            writer.max_concurrent_probes,
+            writer.lookup_chunk_bytes,
+            ranges,
+        )
     }
 
-    fn divide(max_concurrent_probes: usize, ranges: usize) -> Self {
+    /// Every field is a budget for the flush, divided between its ranges rather than handed
+    /// to each of them, so what a flush costs does not rise with `threads`.
+    fn divide(max_concurrent_probes: usize, lookup_chunk_bytes: usize, ranges: usize) -> Self {
         let ranges = ranges.max(1);
         Self {
             chunk_rows: (APPEND_CHUNK_ROWS / ranges).max(MIN_RANGE_CHUNK_ROWS),
             probes: (max_concurrent_probes / ranges).max(1),
+            lookup_bytes: (lookup_chunk_bytes / ranges)
+                .max(MIN_RANGE_LOOKUP_BYTES.min(lookup_chunk_bytes)),
         }
     }
 
-    /// The division alone, without a writer to take the configured value from.
+    /// The division alone, without a writer to take the configured values from.
     #[cfg(test)]
-    pub(super) fn for_test(max_concurrent_probes: usize, ranges: usize) -> Self {
-        Self::divide(max_concurrent_probes, ranges)
+    pub(super) fn for_test(
+        max_concurrent_probes: usize,
+        lookup_chunk_bytes: usize,
+        ranges: usize,
+    ) -> Self {
+        Self::divide(max_concurrent_probes, lookup_chunk_bytes, ranges)
     }
 }
 
@@ -570,7 +591,13 @@ impl MergeWriter {
         let mut rows = ArrayBuilder::new(self.row_serde_schema.clone()).map_err(|e| {
             WriteError::Deterministic(anyhow!("error creating the row builder: {e}"))
         })?;
-        let mut keys = KeyChunk::new(self.clone(), object_store, candidates, budget.probes)?;
+        let mut keys = KeyChunk::new(
+            self.clone(),
+            object_store,
+            candidates,
+            budget.probes,
+            budget.lookup_bytes,
+        )?;
         let mut buffered_rows = 0;
 
         while cursor.key_valid() {
@@ -839,13 +866,14 @@ impl KeyChunk {
         store: ObjectStoreRef,
         candidates: Arc<Vec<Candidate>>,
         probes: usize,
+        lookup_bytes: usize,
     ) -> Result<Self, WriteError> {
         Ok(Self {
             builder: ArrayBuilder::new(writer.key_serde_schema.clone()).map_err(|e| {
                 WriteError::Deterministic(anyhow!("error creating the key builder: {e}"))
             })?,
             buffered: 0,
-            chunk: LookupChunk::new(writer.lookup_chunk_bytes),
+            chunk: LookupChunk::new(lookup_bytes),
             partitions: PartitionFilter::new(
                 writer.key_encoder.column_names(),
                 &writer.key_arrow_fields,

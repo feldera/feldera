@@ -703,8 +703,8 @@ Declared in `crates/feldera-types/src/transport/delta_table.rs`.
 | `optimize_interval_secs` | `Option<u64>` | none | Connector-driven maintenance: OPTIMIZE, then the reclamation pass. Off by default, because the table administrator normally maintains the table; set it where Feldera is the only writer. Runs in the background after a flush, one at a time, first run one interval after startup |
 
 `threads` divides the per-flush budgets rather than multiplying them: the ranges share
-`max_concurrent_probes` and the append chunk between them, so raising it buys parallelism
-without raising the working set. What it does raise is the uploads in flight, since delta-rs
+`max_concurrent_probes`, `lookup_chunk_bytes` and the append chunk between them, so raising it
+buys parallelism without raising the working set. What it does raise is the uploads in flight, since delta-rs
 drives ten concurrent parts per writer and a flush runs one writer per range; those draw on a
 process-wide cap (`bounded_upload.rs`) so that the ranges cannot exhaust the host's socket
 budget, which would otherwise fail the whole flush and orphan every file it had written.
