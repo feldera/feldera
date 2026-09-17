@@ -25,6 +25,10 @@ where
     }
 }
 
+/// Bytes per item that a capacity guess is converted at, short of a better
+/// estimate from the caller.
+const GUESSED_BYTES_PER_ITEM: usize = 32;
+
 /// The location where a [Builder] should build.
 pub(super) enum BuildTo {
     /// Build in memory.
@@ -53,16 +57,21 @@ impl BuildTo {
                 Self::Memory
             }
 
+            // A threshold of zero comes from Critical memory pressure or from
+            // a user who set `min_step_storage_bytes` to 0, and either way the
+            // point is to keep a step's records out of memory.  An empty batch
+            // holds none, and a batch that turns out to hold some spills at
+            // its first item through `Threshold` below.  Going to storage on
+            // the capacity guess alone creates a layer file, and an fsync of
+            // it, for every step that produces nothing.
             min_step_storage_bytes
-                if key_capacity
-                    .saturating_add(value_capacity)
-                    .saturating_mul(32)
-                    >= min_step_storage_bytes =>
+                if min_step_storage_bytes > 0
+                    && key_capacity
+                        .saturating_add(value_capacity)
+                        .saturating_mul(GUESSED_BYTES_PER_ITEM)
+                        >= min_step_storage_bytes =>
             {
                 // Just guess that this will need to go to storage.
-                //
-                // 32 bytes per item is a guess.  I don't know a better way to
-                // guess, short of having the caller provide it.
                 Self::Storage
             }
             min_step_storage_bytes => {
@@ -71,6 +80,15 @@ impl BuildTo {
                 Self::Threshold(min_step_storage_bytes)
             }
         }
+    }
+
+    /// How many of `capacity` items a builder that spills past `threshold`
+    /// bytes should make room for up front: no more than fit under the
+    /// threshold, since the rest spills before the room is used.  Under a
+    /// zero threshold that is none, so a builder that turns out empty costs
+    /// no memory, and one that receives an item spills at once.
+    pub fn capped_capacity(threshold: usize, capacity: usize) -> usize {
+        capacity.min(threshold / GUESSED_BYTES_PER_ITEM)
     }
 }
 
