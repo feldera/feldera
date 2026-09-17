@@ -2040,7 +2040,6 @@ public class SqlToRelCompiler implements IWritesLogs {
             case CreateViewStatement.EMIT_FINAL:
                 // Actual value validated elsewhere
                 break;
-            case "rust":
             case "connectors":
                 this.validateConnectorsProperty(node, false, view, List.of(), viewKind, key, value);
                 break;
@@ -2092,6 +2091,13 @@ public class SqlToRelCompiler implements IWritesLogs {
             int index = 1;
             final Set<String> names = new HashSet<>();
             final String objectName = (isTable ? "table " : "view ") + tableView.singleQuote();
+            if (viewKind == SqlCreateView.ViewKind.LOCAL && !jsonNode.ok().isEmpty()) {
+                // The compiler builds no sink for a local view, so such a connector never emits data
+                SourcePositionRange pos = elementPositionRange(value, "/0", false);
+                throw new CompilationError(pos, "Connector on LOCAL VIEW",
+                        "LOCAL VIEW (" + objectName + ") is not an output of the pipeline, so it cannot have connectors.\n" +
+                        "Use CREATE VIEW or CREATE MATERIALIZED VIEW instead");
+            }
             for (Iterator<JsonNode> it = jsonNode.ok().elements(); it.hasNext(); index++) {
                 final String path = "/" + (index-1);
                 final JsonNode connector = it.next();
