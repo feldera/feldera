@@ -1209,6 +1209,7 @@ pub mod test {
 
     use std::{cell::RefCell, rc::Rc};
 
+    use crate::utils::test::CIRCUIT_CASES;
     use crate::{
         Circuit, RootCircuit, Runtime, Stream,
         algebra::DefaultSemigroup,
@@ -1384,6 +1385,8 @@ pub mod test {
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(CIRCUIT_CASES))]
+
         #[test]
         fn proptest_aggregate_test_st(inputs in test_input()) {
             let iterations = inputs.len();
@@ -2006,6 +2009,7 @@ pub mod test {
     mod retain_values_test {
         use proptest::{collection, prelude::*};
 
+        use crate::utils::test::CIRCUIT_CASES;
         use crate::{Runtime, ZWeight, circuit::CircuitConfig, operator::Max, utils::Tup2};
 
         const LATENESS: u32 = 10;
@@ -2148,6 +2152,8 @@ pub mod test {
         }
 
         proptest! {
+            #![proptest_config(ProptestConfig::with_cases(CIRCUIT_CASES))]
+
             #[test]
             fn proptest_max_retain_values_test(inputs in inputs(100, 100, 20)) {
                 max_retain_values_test(inputs);

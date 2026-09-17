@@ -224,6 +224,7 @@ where
 
 #[cfg(test)]
 mod test {
+    use crate::utils::test::CIRCUIT_CASES;
     use crate::{
         DBData, OrdIndexedZSet, OrdZSet, RootCircuit, Runtime, Stream, ZWeight,
         algebra::DefaultSemigroup,
@@ -476,6 +477,8 @@ mod test {
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(CIRCUIT_CASES))]
+
         #[test]
         fn proptest_left_join_big_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
             proptest_left_join(inputs.0, inputs.1, |_k, v1, v2| Tup2(*v1, *v2), true, false);

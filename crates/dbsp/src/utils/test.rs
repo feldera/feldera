@@ -12,3 +12,18 @@ pub(crate) fn init_test_logger() {
         .try_init();
     init();
 }
+
+/// Number of proptest cases for a test that drives a whole circuit.
+///
+/// Such a test builds and tears down a multi-worker [`Runtime`] per case, which
+/// costs milliseconds rather than microseconds, so proptest's own default of
+/// 256 makes a handful of tests dominate the suite.  Each run still draws fresh
+/// seeds, so coverage accumulates across runs, and a failure that does surface
+/// lands in `proptest-regressions` and is replayed from then on.
+///
+/// `PROPTEST_CASES` overrides this, as it does any case count: `proptest!`
+/// passes the configuration through `contextualize_config`, which re-reads the
+/// environment after the expression is evaluated.
+///
+/// [`Runtime`]: crate::Runtime
+pub(crate) const CIRCUIT_CASES: u32 = 32;

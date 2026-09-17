@@ -298,6 +298,7 @@ mod test {
 
     use proptest::{collection::vec, prelude::*};
 
+    use crate::utils::test::CIRCUIT_CASES;
     use crate::{DBData, Runtime, ZWeight, algebra::NegByRef, circuit::CircuitConfig, utils::Tup2};
 
     fn test_zset<K: DBData>(inputs: Vec<(Vec<Vec<Tup2<K, ZWeight>>>, bool)>, transaction: bool) {
@@ -510,6 +511,8 @@ mod test {
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(CIRCUIT_CASES))]
+
         #[test]
         fn proptest_concat_zset_big_step(inputs in generate_test_zsets(10, 3, 100)) {
             let (inputs1, inputs2, inputs3) = inputs;

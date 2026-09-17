@@ -1,4 +1,5 @@
 use crate::trace::StoragePath;
+use crate::utils::test::CIRCUIT_CASES;
 use std::{
     cmp::max,
     sync::{
@@ -852,6 +853,8 @@ fn test_vec_wset_key_bounds() {
 }
 
 proptest! {
+    #![proptest_config(ProptestConfig::with_cases(CIRCUIT_CASES))]
+
     #[test]
     fn test_truncate_key_bounded_memory(batches in kvr_batches_monotone_keys(100, 20, 50, 20, 500)) {
         Runtime::run(CircuitConfig::with_workers(1), move |_parker| {
@@ -1887,10 +1890,7 @@ fn run_indexed_wset_storage_merges_dense(batches: MergeInputBatches, fc: FilterC
 }
 
 proptest! {
-    // 32 cases per test × 8 tests = 256 cases per `cargo test` run. CI runs
-    // the suite many times across PRs so cumulative coverage compounds.
-    // Override with `PROPTEST_CASES=N` for occasional deeper sweeps.
-    #![proptest_config(ProptestConfig::with_cases(32))]
+    #![proptest_config(ProptestConfig::with_cases(CIRCUIT_CASES))]
 
     #[test]
     fn indexed_wset_storage_merges_bloom_only(
