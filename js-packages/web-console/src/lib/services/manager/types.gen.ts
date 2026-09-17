@@ -1677,7 +1677,8 @@ export type DeltaTableWriterConfig = {
    *
    * Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.
    * Values above 1 require the view to have a unique key, so that the connector can order inserts and deletes correctly.
-   * Must be 1 with `update_mode: merge`, where two threads would write conflicting deletion vectors for one data file.
+   * With `update_mode: merge` the connector splits a batch only when each thread would get a
+   * substantial share of it, so a small change still writes one file rather than one small file per thread.
    * Define the key with `CREATE INDEX` and set the connector's `index` property to that index;
    * see [views with unique keys](https://docs.feldera.com/connectors/sinks/delta/#views-with-unique-keys) and
    * [writing in parallel](https://docs.feldera.com/connectors/sinks/delta/#writing-in-parallel).

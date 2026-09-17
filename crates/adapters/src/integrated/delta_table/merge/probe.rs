@@ -30,7 +30,8 @@ use anyhow::{Result as AnyResult, anyhow};
 use arrow::array::{ArrayRef, RecordBatch};
 use delta_kernel::expressions::Scalar;
 use deltalake::kernel::LogicalFileView;
-use deltalake::{DeltaTable, ObjectStore, Path};
+use deltalake::logstore::ObjectStoreRef;
+use deltalake::{ObjectStore, Path};
 use futures::StreamExt;
 use futures::stream::{self, TryStreamExt};
 use parquet::arrow::ProjectionMask;
@@ -201,13 +202,29 @@ impl<'a> Pruning<'a> {
 /// `candidates` is every data file in the snapshot; the pruning happens here. `max_concurrent`
 /// bounds both request concurrency and the number of decoded batches held at once. The chunk
 /// must already be sorted.
-pub async fn locate(
-    chunk: &LookupChunk,
-    candidates: &[Candidate],
-    table: &DeltaTable,
-    encoder: &KeyEncoder,
+/// Probe one file, retrying it alone: one flaky request costs a re-read of that file rather
+/// than a re-run of the whole lookup.
+async fn probe_with_retries<'a>(
+    chunk: &'a LookupChunk,
+    candidate: &'a Candidate,
+    store: ObjectStoreRef,
+    encoder: &'a KeyEncoder,
+    on_stats: bool,
+) -> Result<FileHits, WriteError> {
+    retry_io(
+        &format!("probing Delta data file '{}'", candidate.path),
+        || probe_file(chunk, candidate, store.clone(), encoder, on_stats),
+    )
+    .await
+}
+
+pub async fn locate<'a>(
+    chunk: &'a LookupChunk,
+    candidates: &'a [Candidate],
+    store: ObjectStoreRef,
+    encoder: &'a KeyEncoder,
     max_concurrent: usize,
-    pruning: Pruning<'_>,
+    pruning: Pruning<'a>,
     tombstones: &mut Tombstones,
 ) -> Result<ProbeMetrics, WriteError> {
     let mut metrics = ProbeMetrics::default();
@@ -219,22 +236,18 @@ pub async fn locate(
     let to_read = prune_files(chunk, candidates, encoder, pruning, &mut metrics);
     metrics.files_scanned = to_read.len();
 
-    let store = table.object_store();
-    let results: Vec<FileHits> = stream::iter(to_read.iter().map(|candidate| {
-        let store = store.clone();
-        // Per file, so one flaky request costs a re-read of that file rather than a
-        // re-run of the whole lookup.
-        async move {
-            retry_io(
-                &format!("probing Delta data file '{}'", candidate.path),
-                || probe_file(chunk, candidate, store.clone(), encoder, pruning.on_stats),
-            )
-            .await
-        }
-    }))
-    .buffer_unordered(max_concurrent.max(1))
-    .try_collect()
-    .await?;
+    // Built before the stream rather than inside it: a closure that returns a future
+    // borrowing its argument defeats the lifetime check once a caller spawns the lookup.
+    let probes: Vec<_> = to_read
+        .into_iter()
+        .map(|candidate| {
+            probe_with_retries(chunk, candidate, store.clone(), encoder, pruning.on_stats)
+        })
+        .collect();
+    let results: Vec<FileHits> = stream::iter(probes)
+        .buffer_unordered(max_concurrent.max(1))
+        .try_collect()
+        .await?;
 
     // A key found in two files yields two rows to tombstone but is one key found, so
     // distinct positions are tracked separately from row count.
@@ -606,6 +619,7 @@ mod test {
     use arrow::array::{ArrayRef, Int64Array, StringArray};
     use arrow::datatypes::DataType;
     use arrow::row::{RowConverter, SortField};
+    use deltalake::DeltaTable;
     use deltalake::operations::create::CreateBuilder;
     use tempfile::TempDir;
 
@@ -761,7 +775,7 @@ mod test {
         let metrics = locate(
             &chunk,
             &candidates,
-            &table,
+            table.object_store(),
             &encoder,
             4,
             Pruning::new(true, None),
@@ -790,7 +804,7 @@ mod test {
         let error = locate(
             &chunk_of(&[20]),
             &candidates,
-            &table,
+            table.object_store(),
             &encoder,
             4,
             Pruning::new(true, None),
@@ -825,7 +839,7 @@ mod test {
         locate(
             &chunk,
             &candidates,
-            &table,
+            table.object_store(),
             &encoder,
             1,
             Pruning::new(true, None),
@@ -856,7 +870,7 @@ mod test {
         let metrics = locate(
             &chunk,
             &candidates,
-            &table,
+            table.object_store(),
             &encoder,
             4,
             Pruning::new(true, None),
@@ -903,7 +917,7 @@ mod test {
         let metrics = locate(
             &chunk,
             &candidates,
-            &table,
+            table.object_store(),
             &encoder,
             1,
             Pruning::new(true, None),
@@ -940,7 +954,7 @@ mod test {
         let pruned = locate(
             &chunk,
             &candidates,
-            &table,
+            table.object_store(),
             &encoder,
             4,
             Pruning::new(true, None),
@@ -953,7 +967,7 @@ mod test {
         locate(
             &chunk,
             &candidates,
-            &table,
+            table.object_store(),
             &encoder,
             4,
             Pruning::none(),
@@ -994,7 +1008,7 @@ mod test {
                 locate(
                     chunk,
                     candidates,
-                    table,
+                    table.object_store(),
                     encoder,
                     1,
                     Pruning::new(on_stats, None),
@@ -1050,7 +1064,7 @@ mod test {
         let metrics = locate(
             &chunk,
             &candidates,
-            &table,
+            table.object_store(),
             &encoder,
             1,
             Pruning::new(true, None),
@@ -1063,7 +1077,7 @@ mod test {
         let full_metrics = locate(
             &chunk,
             &candidates,
-            &table,
+            table.object_store(),
             &encoder,
             1,
             Pruning::none(),
@@ -1103,7 +1117,7 @@ mod test {
         let metrics = locate(
             &chunk,
             &candidates,
-            &table,
+            table.object_store(),
             &encoder,
             4,
             Pruning::new(true, None),
