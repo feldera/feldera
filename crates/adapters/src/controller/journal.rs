@@ -69,8 +69,12 @@ impl Journal {
             path: self.path.as_ref().into(),
             error,
         })?;
+        // Commit before returning: a step is replayable only if its journal
+        // record survives a crash, and `write` alone leaves the record in the
+        // page cache.
         self.backend
             .write(&path, data)
+            .and_then(|record| record.commit())
             .map_err(|error| StepError::storage_error(&path, error))?;
         Ok(())
     }
@@ -264,9 +268,10 @@ mod tests {
     };
 
     use dbsp::{
-        circuit::StorageCacheConfig,
+        circuit::{StorageCacheConfig, metrics::FILES_SYNCED},
         storage::backend::{StoragePath, posixio_impl::PosixBackend},
     };
+    use std::sync::atomic::Ordering;
 
     use feldera_types::config::FileBackendConfig;
     use tempfile::TempDir;
@@ -315,6 +320,51 @@ mod tests {
 
         let last_record = records.last().unwrap();
         assert_eq!(journal.read(last_record.step + 1).unwrap(), None);
+    }
+
+    /// Every journal record must be fsynced before `write` returns.
+    ///
+    /// A step is replayable only if its record survives a crash, and
+    /// `StorageBackend::write` leaves the record in the page cache: durability
+    /// is the caller's job. `Journal::write` used to rely on the POSIX
+    /// backend's `complete` happening to fsync, which it no longer does.
+    ///
+    /// `FILES_SYNCED` counts the whole process, and other tests in this binary
+    /// run concurrently, so this asserts a lower bound. Concurrent tests can
+    /// only inflate the count, never deflate it, so the assertion never fails
+    /// spuriously; dropping the commit takes the contribution to zero.
+    #[test]
+    fn write_commits_every_record() {
+        init_test_logger();
+
+        let tempdir = TempDir::new().unwrap();
+        let backend = Arc::new(PosixBackend::new(
+            tempdir,
+            StorageCacheConfig::default(),
+            &FileBackendConfig::default(),
+        ));
+        let journal = Journal::create(backend, &StoragePath::from("journal")).unwrap();
+
+        const RECORDS: u64 = 10;
+        let before = FILES_SYNCED.load(Ordering::Relaxed);
+        for step in 0..RECORDS {
+            journal
+                .write(&StepMetadata {
+                    step,
+                    transaction_id: step as i64,
+                    remove_inputs: HashSet::new(),
+                    add_inputs: HashMap::new(),
+                    changed_inputs: HashMap::new(),
+                    input_logs: HashMap::new(),
+                    changed_outputs: HashMap::new(),
+                })
+                .unwrap();
+        }
+        let synced = FILES_SYNCED.load(Ordering::Relaxed) - before;
+        assert!(
+            synced >= RECORDS,
+            "{RECORDS} journal records must produce at least {RECORDS} fsyncs, saw {synced}"
+        );
     }
 
     /// A record written before [StepMetadata::changed_outputs] existed is one

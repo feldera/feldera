@@ -89,7 +89,9 @@ where
         filter.layout().total_modules(),
     );
     let content = storage_backend.read(&tmp_path)?;
-    storage_backend.write(&output_storage_path, (*content).clone())?;
+    storage_backend
+        .write(&output_storage_path, (*content).clone())?
+        .commit()?;
     storage_backend.delete(&tmp_path)?;
 
     println!("wrote {} rows to {}", rows, output.display());
@@ -152,7 +154,9 @@ where
         "writer2 golden files must persist a roaring filter",
     );
     let content = storage_backend.read(&tmp_path)?;
-    storage_backend.write(&output_storage_path, (*content).clone())?;
+    storage_backend
+        .write(&output_storage_path, (*content).clone())?
+        .commit()?;
     storage_backend.delete(&tmp_path)?;
 
     println!("wrote {} rows to {}", rows, output.display());
