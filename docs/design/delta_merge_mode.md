@@ -89,7 +89,7 @@ Two further mismatches, either of which would rule it out on its own:
 | Its source is a DataFusion `DataFrame` (`merge/mod.rs:164`) | The output batch would have to be materialized as a table provider. The connector instead walks it through a single forward cursor and holds only the encoded keys, which is what bounds memory by configuration rather than by batch size |
 
 DataFusion itself is not a reason. `crates/adapters` already enables it, because delta-rs
-needs it for the writer's `Invariant` support (`crates/adapters/Cargo.toml:157`).
+needs it for the writer's `Invariant` support (`crates/adapters/Cargo.toml:162`).
 
 What MERGE offers beyond this design -- schema evolution, arbitrary match predicates,
 several conditional clauses -- merge mode does not need. Its predicate is always key
@@ -102,7 +102,7 @@ moves.
 
 | Requirement | Reason |
 |-------------|--------|
-| `index` property naming a unique key | The key identifies the row to supersede. The Postgres sink imposes the same requirement (`crates/adapters/src/integrated/postgres/output.rs:1093`) |
+| `index` property naming a unique key | The key identifies the row to supersede. The Postgres sink imposes the same requirement (`crates/adapters/src/integrated/postgres/output.rs:1101`) |
 | Key columns are scalars, or `ROW` of scalars | See "Supported key types" |
 | Key column physical types match what the connector encodes | Decimal scale, timestamp unit, and binary representation are fixed by `delta_output_serde_config` (`crates/adapters/src/integrated/delta_table/output.rs`). A mismatch would make a round-tripped key compare unequal to itself |
 | `delta.enableDeletionVectors` is true | Without it the connector cannot tombstone |
@@ -165,38 +165,44 @@ path deliberately does not truncate. That is a throughput change, not a correctn
 ## The algorithm
 
 The controller delivers one `encode` call per `batch_end`, so a flush is a well-defined
-unit.
+unit. It walks the batch as one key range, or as `threads` disjoint ranges at once. Ranges
+are independent until the commit: each appends its own files and collects its own
+tombstones, and the flush joins them.
+
+Per range:
 
 1. Walk the cursor once. It yields keys in index-key order from a spine snapshot that the
    storage layer already keeps on disk when it is large, so the walk itself costs no memory
    beyond the cursor.
 2. Rows to append (inserts and the new side of updates) stream straight into the existing
    `DeltaWriter`, with the table's partition columns rather than the empty list cdc mode
-   passes. A partitioned table gets at least one file per partition present in the batch,
-   and rolls over at `TARGET_FILE_SIZE` as cdc mode does.
+   passes. Files roll over at `TARGET_FILE_SIZE`, as cdc mode does.
 3. Keys to remove (deletes, the old side of updates, and in the default regime inserts too)
-   accumulate into a lookup chunk of encoded keys, bounded by `lookup_chunk_bytes`. The old
-   side carries the old row, so it carries the old partition values.
+   accumulate into a lookup chunk of encoded keys. The old side carries the old row, so it
+   carries the old partition values.
 4. When a chunk fills, and once more at the end of the walk, one lookup pass over the
    candidate row groups turns its keys into (file path, physical row ordinal) pairs.
+
+Then once for the flush:
+
 5. For each data file with new tombstones, read its existing deletion vector, union the new
-   ordinals into it, and append the result to a single packed vector file for the whole
-   flush.
+   ordinals into it, and append the result to a single packed vector file.
 6. Commit.
 
 Actions per commit:
 
 | Action | Count | Contents |
 |--------|-------|----------|
-| `Add` for appended data | 1 per touched partition | New rows, `data_change: true`, statistics covering key columns |
+| `Add` for appended data | One per range, partition, and `TARGET_FILE_SIZE` rollover | New rows, `data_change: true`, statistics covering key columns |
 | `Remove` plus `Add` per tombstoned file | 2 per touched file | Same path, size, partition values, and statistics as the current `Add`, with the new `deletionVector` |
+| `Remove` alone | 1 per file dropped whole | Every row in the file is superseded, so no vector is needed |
 
 Log replay keys files by (path, deletion vector id), so the remove and add pair for one
 path is unambiguous within a commit.
 
-Object writes per commit: one data file per touched partition, one deletion vector file,
-one log entry. The number of files a flush touches drives the number of small log records,
-never the number of objects written.
+Object writes per commit: the appended data files, one deletion vector file, one log entry.
+The number of files a flush touches drives the number of small log records, never the
+number of objects written.
 
 Partition changes need no special handling. The tombstone targets the old row wherever it
 lives, and the append writes the new row into its new partition. That matters because on a
@@ -221,7 +227,7 @@ require(schema_matches(view_schema, table.schema))
 require(key_types_supported(index_key))              # scalars, or ROW of scalars
 require(key_physical_types_match(index_key, table))  # decimal scale, timestamp unit, ...
 
-regime      = OWNED if snapshot.files().is_empty() else DEFAULT
+regime      = OWNED if snapshot.log_data().is_empty() else DEFAULT
 prune_parts = partition_cols_subset_of(key_cols)     # then a partition is a function of the key
 encoder     = KeyEncoder(index_key)                  # RowConverter, canonical field order
 log(regime, prune_parts)
@@ -229,13 +235,22 @@ log(regime, prune_parts)
 
 # ---------------- one flush, one commit ----------------
 
-def flush(batch):                        # batch: spine snapshot, sorted by index key
+def flush(batch, threads):               # batch: spine snapshot, sorted by index key
+    ranges  = split_by_key(batch, threads)          # disjoint; see rows_per_range()
+    walked  = run_at_once(walk_range(r) for r in ranges)
+
+    appends    = concat(w.files for w in walked)
+    tombstones = union(w.tombstones for w in walked)     # path -> RoaringBitmap
+    commit(appends + write_deletion_vectors(tombstones))
+
+
+def walk_range(range):                   # one range, one task
     appends    = DeltaWriter(table.partition_columns, arrow_schema)   # streams out
     tombstones = {}                      # path -> RoaringBitmap; <= table_rows/8 bytes
-    chunk      = EncodedKeys()           # <= lookup_chunk_bytes
+    chunk      = EncodedKeys()           # <= budget.lookup_bytes
     partitions = set()                   # distinct partition tuples in this chunk
 
-    cursor = batch.cursor()
+    cursor = range.cursor()
     while cursor.key_valid():
         op = indexed_operation_type(cursor)          # Insert | Upsert | Delete | None
         if op is None:
@@ -245,14 +260,14 @@ def flush(batch):                        # batch: spine snapshot, sorted by inde
             cursor.position_at_new_value()
             appends.write_row(cursor)                # flushes every CHUNK_SIZE rows
 
-        if needs_lookup(op):                         # removal side
+        if needs_lookup(op, retrying):               # removal side
             if op != Insert:
                 cursor.position_at_old_value()       # carries the old partition values
             key = encoder.encode(cursor.key())
             chunk.push(key)
             if prune_parts:
                 partitions.add(cursor.partition_values())
-            if chunk.bytes() >= lookup_chunk_bytes:
+            if chunk.bytes() >= budget.lookup_bytes:
                 lookup(chunk, partitions, tombstones)
                 chunk.clear(); partitions.clear()
 
@@ -261,7 +276,7 @@ def flush(batch):                        # batch: spine snapshot, sorted by inde
     if not chunk.is_empty():
         lookup(chunk, partitions, tombstones)
 
-    commit(appends.close() + write_deletion_vectors(tombstones))
+    return (appends.close(), tombstones)
 
 
 def needs_lookup(op, retrying):
@@ -297,7 +312,7 @@ def stats_may_contain(stats, chunk):
 
 def probe(file, rg, chunk, tombstones):
     base = rg.first_row_index                        # physical, ignores any existing DV
-    for b in read_key_columns(file, rg):             # ProjectionMask::leaves, streamed
+    for b in read_key_columns(file, rg):             # ProjectionMask::roots, streamed
         for i, key in enumerate(encoder.encode_batch(b)):
             if chunk.contains(key):                  # binary search; no extra index
                 tombstones[file.path].insert(base + b.offset + i)
@@ -434,9 +449,10 @@ either sound or wrong, so it is switched off wholesale rather than applied cauti
 Read the key columns of the surviving row groups with a `ProjectionMask` over
 `ParquetObjectReader`, in streamed batches, and binary search each decoded key in the
 sorted chunk. The adapter's vector reader establishes the pattern
-(`deletion_vector.rs:320`, `:365`). Row groups are probed concurrently up to
-`max_concurrent_probes`. Project by leaves rather than roots, so a `ROW` key pulls only its
-own leaves.
+(`deletion_vector.rs:492`, `:574`). Row groups are probed concurrently up to
+`max_concurrent_probes`. The mask selects key columns by name, so a file whose column
+order differs from the table's still works and a partition column the file does not store
+is skipped.
 
 Searching the chunk rather than indexing the row group is what keeps the probe's peak at
 one decoded batch: no auxiliary hash index is built for either side. The two sides are made
@@ -511,9 +527,9 @@ keys are held only as encoded bytes, one chunk at a time.
 | Structure | Bound |
 |-----------|-------|
 | Output batch | Not materialized. One forward cursor pass over a disk-backed snapshot |
-| Lookup chunk | `lookup_chunk_bytes`. A flush exceeding it is split into successive chunks |
+| Lookup chunk | `lookup_chunk_bytes` for the flush, divided between its ranges. A range exceeding its share runs successive chunks |
 | Appended rows | Streamed into the writer, as cdc mode's `CHUNK_SIZE` already does |
-| Probe input | One decoded batch per concurrent task, capped by `max_concurrent_probes` |
+| Probe input | One decoded batch per concurrent task, capped by `max_concurrent_probes` for the flush |
 | Deletion vector bitmaps | One bit per table row across all files, and one file's bitmap at any instant |
 | Row group metadata | Offsets and row counts, tens of bytes per row group |
 | Packed vector object | The flush's vectors, buffered before the single `put` |
@@ -625,7 +641,7 @@ Retries reuse the existing `retry!` macro's backoff and health reporting.
 
 Because no other party writes data, the connector does not declare a read predicate on its
 commits. `DeltaOperation::Write { predicate }` stays `None` as it is today, in
-`merge::commit_actions`.
+`MergeWriter::commit` (`flush.rs:735`).
 
 ## Table maintenance obligations
 
@@ -656,9 +672,11 @@ template change, as the Delta input connector's `input_connector_delta_*` alread
 | `keys_not_found_total` | Removal keys absent from the table. A sustained rate signals divergence |
 | `probe_files_scanned_total`, `probe_files_pruned_total` | Whether file pruning is doing anything |
 | `probe_row_groups_scanned_total`, `probe_row_groups_pruned_total` | The same, within the files that are opened |
-| `lookup_passes_total` | Above one per flush only when a key set exceeded `lookup_chunk_bytes` |
-| `bytes_written_total` | Data files plus deletion vectors |
+| `lookup_passes_total` | Above one per flush only when a key set exceeded its lookup budget |
+| `ranges_walked_total` | Above one per flush when `threads` split the batch |
+| `probe_key_bytes_read_total`, `bytes_written_total` | Bytes read by the lookup; bytes written as data files plus deletion vectors |
 | `flush_latency_microseconds` | Histogram of whole flushes. Where object-store latency shows up; the counters above cannot show it |
+| `log_scan_`, `batch_walk_`, `probe_`, `append_`, `deletion_vector_`, `commit_microseconds_total` | Where a flush spent its time, one counter per phase. They partition a single-range flush; with several ranges the three a range runs (`batch_walk`, `probe`, `append`) are summed across ranges, so they measure work rather than elapsed time |
 | `compactions_total`, `compaction_failures_total` | Connector-driven maintenance runs, and how many of them failed |
 | `reclaimed_rows_total` | Superseded rows the reclamation pass took out of storage |
 | `reclaim_incomplete` | 1 while the last run left mostly-superseded files behind, so the backlog is growing faster than the interval clears it |
@@ -698,16 +716,18 @@ Declared in `crates/feldera-types/src/transport/delta_table.rs`.
 |-------|------|---------|-------|
 | `update_mode` | `cdc \| merge` | `cdc` | Orthogonal to `mode`, which governs what happens to an existing table at startup |
 | `lookup_chunk_bytes` | `usize` | 256 MiB | Ceiling on encoded removal keys held at once. Capped at 2 GiB: the chunk addresses its buffer with 32-bit offsets |
-| `threads` | `usize` | 1 | Key ranges a flush walks at once. A flush splits only when the batch is worth three target-sized files per range, so a small batch stays whole rather than fragmenting the table. The first flush has no write rate to size that against and falls back to a row count, so a backfill splits as far as `threads` allows and pays a partial file per range |
+| `threads` | `Option<usize>` | none | Key ranges a flush may walk at once. A flush splits only when the batch is worth three target-sized files per range, so a small batch stays whole rather than fragmenting the table. The first flush has no write rate to size that against and falls back to a row count, so a backfill splits as far as `threads` allows and pays a partial file per range |
 | `max_concurrent_probes` | `usize` | 4 | Caps the probe working set and its request concurrency |
 | `optimize_interval_secs` | `Option<u64>` | none | Connector-driven maintenance: OPTIMIZE, then the reclamation pass. Off by default, because the table administrator normally maintains the table; set it where Feldera is the only writer. Runs in the background after a flush, one at a time, first run one interval after startup |
 
 `threads` divides the per-flush budgets rather than multiplying them: the ranges share
-`max_concurrent_probes`, `lookup_chunk_bytes` and the append chunk between them, so raising it
-buys parallelism without raising the working set. What it does raise is the uploads in flight, since delta-rs
-drives ten concurrent parts per writer and a flush runs one writer per range; those draw on a
-process-wide cap (`bounded_upload.rs`) so that the ranges cannot exhaust the host's socket
-budget, which would otherwise fail the whole flush and orphan every file it had written.
+`max_concurrent_probes`, `lookup_chunk_bytes` and the append chunk between them, so raising
+it buys parallelism without raising the working set.
+
+It does raise the uploads in flight, because delta-rs drives ten concurrent parts per
+writer and a flush runs one writer per range. A process-wide cap (`bounded_upload.rs`)
+bounds those, so the ranges cannot exhaust the host's socket budget, which would fail the
+whole flush and orphan every file it had written.
 
 Output buffering is a requirement of merge mode rather than a tuning knob, since the pass
 over the file list is per flush. The connector says so once at startup when it is off, and
@@ -729,6 +749,8 @@ Merge mode lives under `crates/adapters/src/integrated/delta_table/merge/`.
 | `flush.rs` | The cursor walk that drives all of the above, and the commit |
 | `compact.rs` | The opt-in background maintenance behind `optimize_interval_secs`: `OPTIMIZE`, then `rewrite.rs` |
 | `metrics.rs` | The exported counters, and the compaction warning |
+| `model.rs` | Model-based tests: random operation sequences through the real writer, compared against an in-memory oracle after every flush |
+| `test.rs` | Shared test fixtures, and the protocol-level checks the design rests on |
 
 Changes to the existing connector, in `output.rs`:
 
@@ -747,7 +769,7 @@ draw on the pipeline memory pool. `rewrite.rs` does use one, on the background c
 path, to read a file's live rows.
 
 External dependencies are pinned in the workspace `Cargo.toml`: delta-rs at rev
-`78a5d066d60feffcc7dcd9bae62d1c537dd9018c`, `delta_kernel` (package `buoyant_kernel`) at
+`9c85899091c75f5f3283e9628157f7b739807002`, `delta_kernel` (package `buoyant_kernel`) at
 0.22, which supplies the deletion vector file format writer, and `object_store` at 0.14.
 `put` lives on `ObjectStoreExt`, so the `object_store` version has to be the one delta-rs's
 `Arc<dyn ObjectStore>` implements.

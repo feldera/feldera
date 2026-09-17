@@ -226,7 +226,7 @@ The connector exports these alongside the standard connector metrics.
 | `output_connector_delta_merge_probe_files_scanned_total`, `output_connector_delta_merge_probe_files_pruned_total` | Whether file pruning is doing anything |
 | `output_connector_delta_merge_probe_row_groups_scanned_total`, `output_connector_delta_merge_probe_row_groups_pruned_total` | The same, within the files that are opened |
 | `output_connector_delta_merge_files_appended_total`, `output_connector_delta_merge_files_dropped_total` | Small-file growth, and the files reclaimed because every row in them was superseded |
-| `output_connector_delta_merge_lookup_passes_total` | Above one per flush only when a key set exceeded `lookup_chunk_bytes` |
+| `output_connector_delta_merge_lookup_passes_total` | Above one per flush only when a key set exceeded its share of `lookup_chunk_bytes` |
 | `output_connector_delta_merge_bytes_written_total` | Bytes written: new data files plus deletion vectors |
 | `output_connector_delta_merge_ranges_walked_total` | Key ranges walked, summed over flushes. Above the flush count when `threads` split a batch into ranges written in parallel. |
 | `output_connector_delta_merge_probe_key_bytes_read_total` | Key-column bytes the lookup read. Against `bytes_written_total`, the flush's read amplification |

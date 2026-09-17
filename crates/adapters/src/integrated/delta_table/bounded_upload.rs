@@ -1,17 +1,16 @@
 //! A process-wide cap on concurrent object-store part uploads.
 //!
 //! delta-rs drives ten concurrent parts per writer and a flush runs one writer per key range,
-//! so `threads` ranges keep `threads * 10` uploads in flight.  Past the host's socket budget
+//! so `threads` ranges keep `threads * 10` uploads in flight. Past the host's socket budget
 //! the store fails with ENOBUFS, and because the retry rewrites the whole flush, each attempt
 //! orphans the parquet the last one wrote: eight attempts left 113 GB behind for a 20 GB
-//! table.  The cap turns that overrun into backpressure.
+//! table. The cap turns that overrun into backpressure.
 //!
-//! It covers every store this connector builds, so `append` and `cdc` mode get it too: they
-//! write one Parquet file per range through the same writer, and so run the same overrun.
+//! It covers every store this connector builds, so `append` and `cdc` mode get it too.
 //!
 //! The bin-packing half of `OPTIMIZE` escapes it, because delta-rs opens that table itself
 //! and handing it a bounded store means rebuilding the table from a root store this connector
-//! assembles -- which is what `uc://` credential vending exists to avoid.  Its two rewrite
+//! assembles -- which is what `uc://` credential vending exists to avoid. Its two rewrite
 //! tasks are a tenth of the concurrency that exhausted the socket budget, so the gap is
 //! recorded rather than closed.
 
