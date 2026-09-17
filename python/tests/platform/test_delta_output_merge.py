@@ -36,25 +36,29 @@ from tests.utils import DeltaTestLocation, run_delta_spark, wait_for_condition
 # ─── helpers ───────────────────────────────────────────────────────────
 
 
-def _sql(loc: DeltaTestLocation, extra: dict | None = None) -> str:
+def _sql(
+    loc: DeltaTestLocation,
+    extra: dict | None = None,
+    connector_extra: dict | None = None,
+) -> str:
     """A view keyed on `id`, with a merge-mode connector on it.
 
     Merge mode needs a unique key, which the index and the connector's `index`
-    property supply.
+    property supply. `extra` goes in the transport config; `connector_extra`
+    beside it, where the output buffer is configured.
     """
     config = dict(loc.connector_config)
     config["update_mode"] = "merge"
     if extra:
         config.update(extra)
-    connectors = json.dumps(
-        [
-            {
-                "name": "out",
-                "index": "v_idx",
-                "transport": {"name": "delta_table_output", "config": config},
-            }
-        ]
-    )
+    connector = {
+        "name": "out",
+        "index": "v_idx",
+        "transport": {"name": "delta_table_output", "config": config},
+    }
+    if connector_extra:
+        connector.update(connector_extra)
+    connectors = json.dumps([connector])
     return (
         "CREATE TABLE t (id INT NOT NULL, tag VARCHAR) WITH ('materialized' = 'true');\n"
         "CREATE MATERIALIZED VIEW v WITH ('connectors' = '" + connectors + "') AS "
@@ -446,3 +450,112 @@ def test_delta_spark_agrees_through_maintenance(pipeline_name):
                 )
         finally:
             loc.cleanup()
+
+
+def _superseded_in_vectors(loc: DeltaTestLocation) -> list[int]:
+    """Deletion-vector cardinalities of the files the table currently holds."""
+    return [
+        add["deletionVector"]["cardinality"]
+        for add in _active_adds(loc).values()
+        if add.get("deletionVector")
+    ]
+
+
+def _merge_metric(pipeline, name: str) -> int:
+    """One `output_connector_delta_merge_*` counter, summed over its label sets."""
+    total = 0
+    for line in pipeline.metrics().splitlines():
+        if line.startswith((f"{name}{{", f"{name} ")):
+            total += int(float(line.rsplit(" ", 1)[1]))
+    return total
+
+
+@enterprise_only
+def test_merge_splits_a_batch_across_threads(pipeline_name):
+    """`threads` above 1 walks one batch as several key ranges, and the table still tracks.
+
+    Several ranges write Parquet at once, through one object store, and their files have to
+    land in a single commit under names none of them chose. That is what only a real
+    pipeline against a real store can show, and what the Rust tests, which drive the writer
+    against a temporary directory, cannot.
+
+    What this cannot reach is the tombstone union across ranges: a flush splits only when it
+    is worth several target-sized files per range, and after a backfill that threshold is
+    millions of keys, so an update batch a test can afford is walked as one range. The
+    backfill splits, and in the owned regime it looks nothing up. So the union is left to
+    `tombstones_from_every_range_survive_the_join` in `merge/model.rs`, which reaches it by
+    lowering the threshold; the updates here check that a split backfill left a table the
+    next flush can still supersede rows in.
+
+    The output buffer is what makes the split deterministic, and is what merge mode asks for
+    anyway: without it the rows arrive in however many steps the circuit took, and a flush
+    holding a fraction of them falls below the threshold and is never split.
+    """
+    rows = 250_000
+    loc = DeltaTestLocation.create(pipeline_name, mode="append")
+    try:
+        pipeline = _build_pipeline(
+            pipeline_name,
+            _sql(
+                loc,
+                {"threads": 4},
+                {
+                    "enable_output_buffer": True,
+                    "max_output_buffer_size_records": 10 * rows,
+                    "max_output_buffer_time_millis": 2000,
+                },
+            ),
+        )
+        pipeline.start()
+
+        pipeline.input_json(
+            "t", [{"id": i, "tag": f"v1_{i}"} for i in range(rows)], wait=True
+        )
+        # The buffer holds the rows past the input being processed, so the table lags it.
+        wait_for_condition(
+            "the backfill reaches the table",
+            lambda: loc.live_row_count() == rows,
+            timeout_s=180.0,
+            poll_interval_s=1.0,
+        )
+
+        walked = _merge_metric(
+            pipeline, "output_connector_delta_merge_ranges_walked_total"
+        )
+        flushes = _merge_metric(
+            pipeline, "output_connector_delta_merge_flush_latency_microseconds_count"
+        )
+        assert walked > flushes, (
+            f"the batch was never split: {walked} range(s) over {flushes} flush(es). "
+            "The test cannot say anything about parallel ranges."
+        )
+
+        commits_after_backfill = len(loc.log_json_paths())
+
+        # Update every hundredth key. Their old rows are scattered over every file the
+        # backfill wrote, so the ranges of this flush tombstone files in common.
+        updated = list(range(0, rows, 100))
+        updates = []
+        for i in updated:
+            updates.append({"delete": {"id": i, "tag": f"v1_{i}"}})
+            updates.append({"insert": {"id": i, "tag": f"v2_{i}"}})
+        pipeline.input_json("t", updates, update_format="insert_delete", wait=True)
+        # Wait for the flush to land, not for the count the assertion is about, so a wrong
+        # count reports itself rather than timing out.
+        wait_for_condition(
+            "the update flush commits",
+            lambda: len(loc.log_json_paths()) > commits_after_backfill,
+            timeout_s=180.0,
+            poll_interval_s=1.0,
+        )
+
+        tombstoned = sum(_superseded_in_vectors(loc))
+        assert tombstoned == len(updated), (
+            f"expected {len(updated)} superseded rows in deletion vectors, found "
+            f"{tombstoned}; the rows a split backfill wrote were not all locatable"
+        )
+        assert loc.live_row_count() == rows
+
+        pipeline.stop(force=True)
+    finally:
+        loc.cleanup()
