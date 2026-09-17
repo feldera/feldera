@@ -891,6 +891,43 @@ pub struct FileBackendConfig {
 
     /// Configuration to synchronize checkpoints to object store.
     pub sync: Option<SyncConfig>,
+
+    /// How to make files durable when committing a checkpoint.
+    ///
+    /// This is provided for debugging and fine-tuning and should ordinarily be
+    /// left unset.
+    pub sync_mode: Option<StorageSyncMode>,
+}
+
+/// How a pipeline makes its files durable when it commits a checkpoint.
+///
+/// A checkpoint can hold tens of thousands of files, so committing them one at
+/// a time is the dominant cost of making one. Both alternatives below fix that,
+/// but they suit different deployments.
+#[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum StorageSyncMode {
+    /// Use `syncfs` when storage has a filesystem to itself, and fsync files in
+    /// parallel otherwise.
+    #[default]
+    Auto,
+
+    /// Always `syncfs`.
+    ///
+    /// One syscall makes the whole filesystem durable, which is the cheapest
+    /// option by far when storage is a dedicated volume. On a filesystem shared
+    /// with anything else, it also writes back that other data.
+    ///
+    /// A pipeline falls back to `per_file` where `syncfs` cannot report a failed
+    /// writeback, rather than honoring this setting: off Linux, and before Linux
+    /// 5.8, where `syncfs` returned success and discarded the error.
+    Syncfs,
+
+    /// Always fsync each file, spread across several threads.
+    ///
+    /// Slower than `syncfs` on a dedicated volume, but it touches only this
+    /// pipeline's files.
+    PerFile,
 }
 
 /// Global pipeline configuration settings. This is the publicly

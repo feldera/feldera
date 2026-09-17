@@ -18,6 +18,7 @@ use crate::block::BlockLocation;
 use crate::error::StorageError;
 use crate::fbuf::FBuf;
 use crate::file::FileId;
+use crate::metrics::COMMIT_ALL_LATENCY_MICROSECONDS;
 
 pub use object_store::path::{Path as StoragePath, PathPart as StoragePathPart};
 
@@ -142,6 +143,38 @@ pub trait StorageBackend: Send + Sync {
         let reader = writer.complete()?;
         reader.mark_for_checkpoint();
         Ok(reader)
+    }
+
+    /// Makes every file in `files` durable, and times how long that took.
+    ///
+    /// This is how the checkpoint commit phase makes a checkpoint's files
+    /// durable. Backends vary what they do here, so this times the call rather
+    /// than the syncs inside it: that is the figure the strategies have to be
+    /// compared on, and for a backend that overlaps its syncs it cannot be
+    /// recovered by adding up the individual ones.
+    ///
+    /// Override [Self::sync_files], not this.
+    fn commit_all(&self, files: &[Arc<dyn FileCommitter>]) -> Result<(), StorageError> {
+        if files.is_empty() {
+            return Ok(());
+        }
+        COMMIT_ALL_LATENCY_MICROSECONDS.record_callback(|| self.sync_files(files))
+    }
+
+    /// Makes every file in `files` durable, however this backend does it best.
+    ///
+    /// Committing each file in turn is the obvious implementation and the
+    /// default here, which is right for a backend whose `commit` is a no-op. On
+    /// a real filesystem it is the slowest option available: it keeps exactly
+    /// one sync in flight, so nothing the kernel does to batch them applies.
+    ///
+    /// Committing a file that is already durable is harmless, so a backend may
+    /// make more files durable than were asked for. `files` is never empty.
+    fn sync_files(&self, files: &[Arc<dyn FileCommitter>]) -> Result<(), StorageError> {
+        for file in files {
+            file.commit()?;
+        }
+        Ok(())
     }
 
     /// Flushes the directory entry metadata for `dir` to stable storage.

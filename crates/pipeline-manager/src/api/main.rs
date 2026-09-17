@@ -400,6 +400,7 @@ It contains the following fields:
         feldera_types::config::StartFromCheckpoint,
         feldera_types::config::FileBackendConfig,
         feldera_types::config::StorageCompression,
+        feldera_types::config::StorageSyncMode,
         feldera_types::config::RuntimeConfig,
         feldera_types::config::FtConfig,
         feldera_types::config::InputEndpointConfig,

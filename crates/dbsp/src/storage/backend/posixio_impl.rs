@@ -17,12 +17,14 @@ use feldera_storage::{
     StoragePathPart, append_to_path, default_read_async,
 };
 use feldera_types::config::{
-    FileBackendConfig, StorageBackendConfig, StorageCacheConfig, StorageConfig,
+    FileBackendConfig, StorageBackendConfig, StorageCacheConfig, StorageConfig, StorageSyncMode,
 };
-use std::fmt::Debug;
+use std::fmt::{self, Debug, Display, Formatter};
 use std::fs::{DirEntry, create_dir_all};
 use std::io::{ErrorKind, IoSlice, Write};
-use std::thread::sleep;
+use std::sync::Mutex;
+use std::sync::atomic::AtomicUsize;
+use std::thread::{scope, sleep};
 use std::time::{Duration, Instant};
 use std::{
     fs::{self, File, OpenOptions},
@@ -34,14 +36,17 @@ use std::{
         atomic::{AtomicBool, AtomicI64, Ordering},
     },
 };
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 /// fsync the file `file`, named `path` for error reporting.
 ///
 /// This is the only place that syncs a file, and only [FileCommitter::commit]
-/// calls it. Keeping it to one call site is what lets `files_synced_total`
-/// account for every fsync a pipeline performs, and what keeps the sync off the
-/// threads that write files.
+/// calls it, which is what keeps the sync off the threads that write files.
+///
+/// `files_synced_total` and `storage_sync_latency_seconds` therefore count
+/// per-file fsyncs only. Under [SyncStrategy::Syncfs] a checkpoint's files
+/// never come through here, so both stay near zero and
+/// `storage_commit_all_latency_seconds` is the one that moves.
 fn sync_file(file: &File, path: &Path) -> Result<(), StorageError> {
     SYNC_LATENCY_MICROSECONDS.record_callback(|| {
         file.sync_all()
@@ -49,6 +54,398 @@ fn sync_file(file: &File, path: &Path) -> Result<(), StorageError> {
         FILES_SYNCED.fetch_add(1, Ordering::Relaxed);
         Ok(())
     })
+}
+
+/// How many fsyncs [commit_in_parallel] keeps in flight.
+///
+/// An fsync blocks rather than burning CPU, and jbd2 merges the ones that
+/// overlap into a single journal commit, so the useful figure is set by how
+/// many commits we want to collapse rather than by the core count.
+const CONCURRENT_SYNCS: usize = 16;
+
+/// Everything `syncfs` needs.
+///
+/// `syncfs` is a Linux system call, and deciding whether it is safe to use
+/// reads Linux-specific files, so all of it lives here behind one `cfg` rather
+/// than as a dozen scattered ones. The module off Linux below answers for the
+/// same calls.
+#[cfg(target_os = "linux")]
+mod syncfs {
+    use super::{StorageError, SyncStrategy, SyncfsObstacle};
+    use std::fs::{self, File, create_dir_all};
+    use std::path::{Path, PathBuf};
+    use tracing::warn;
+
+    /// Where `/proc/self/mountinfo` lives. A constant so that tests can hand
+    /// [mount_is_exclusive] a copy from somewhere else.
+    const MOUNTINFO: &str = "/proc/self/mountinfo";
+
+    /// As much of one `/proc/self/mountinfo` line as this decision needs.
+    struct MountEntry {
+        /// `major:minor` of the filesystem, shared by every mount of it.
+        device: String,
+
+        /// The subtree of the filesystem that was mounted: `/` for a whole
+        /// filesystem, a path for a bind mount of part of one.
+        root: String,
+
+        /// Where it is mounted.
+        mount_point: PathBuf,
+    }
+
+    /// Decodes the octal escapes `mountinfo` uses for space, tab, newline and
+    /// backslash in paths.
+    pub(super) fn unescape_mountinfo(field: &str) -> String {
+        let mut out = String::with_capacity(field.len());
+        let mut rest = field;
+        while let Some(index) = rest.find('\\') {
+            out.push_str(&rest[..index]);
+            let escape = &rest[index..];
+            let (decoded, width) = match escape.get(..4) {
+                Some("\\040") => (' ', 4),
+                Some("\\011") => ('\t', 4),
+                Some("\\012") => ('\n', 4),
+                Some("\\134") => ('\\', 4),
+                _ => ('\\', 1),
+            };
+            out.push(decoded);
+            rest = &escape[width..];
+        }
+        out.push_str(rest);
+        out
+    }
+
+    /// Parses the `mountinfo` fields that [mount_is_exclusive] reads.
+    ///
+    /// Only the first six fields are fixed, with optional ones following until a
+    /// `-` separator. Everything needed here comes before that, so the variable
+    /// part can be ignored.
+    fn parse_mountinfo(mountinfo: &str) -> Vec<MountEntry> {
+        mountinfo
+            .lines()
+            .filter_map(|line| {
+                let mut fields = line.split(' ');
+                let device = fields.nth(2)?;
+                let root = fields.next()?;
+                let mount_point = fields.next()?;
+                Some(MountEntry {
+                    device: device.to_string(),
+                    root: unescape_mountinfo(root),
+                    mount_point: PathBuf::from(unescape_mountinfo(mount_point)),
+                })
+            })
+            .collect()
+    }
+
+    /// Whether a filesystem is mounted at `base` and holds nothing else.
+    ///
+    /// This decides whether `syncfs` on `base` would write back data belonging to
+    /// anything else. It takes `mountinfo` as text so that it can be tested against
+    /// real layouts.
+    ///
+    /// Comparing device numbers with the parent directory is not enough, because a
+    /// bind mount has a device of its own and containers bind mount constantly. A
+    /// Kubernetes `subPath`, or a `hostPath` into a shared host directory, is
+    /// indistinguishable that way from a volume of our own while sharing a
+    /// filesystem with everything else on it. Three things disqualify a mount here,
+    /// each one a case that occurs:
+    ///
+    /// * A mount root other than `/` means only part of the filesystem was mounted
+    ///   here, which is exactly what those bind mounts look like.
+    /// * The same device mounted more than once means the filesystem is reachable
+    ///   elsewhere too, as it is for btrfs subvolumes and repeated bind mounts.
+    /// * The root filesystem holds the operating system, so it is never ours
+    ///   alone, however few times it is mounted.
+    ///
+    /// What this cannot see is a filesystem shared through another mount namespace,
+    /// such as one read-write-many volume mounted by several pods. Only
+    /// [StorageSyncMode] covers that.
+    pub(super) fn mount_is_exclusive(mountinfo: &str, base: &Path) -> bool {
+        let entries = parse_mountinfo(mountinfo);
+
+        // A later mount at the same path shadows an earlier one, so take the last.
+        let Some(mount) = entries.iter().rfind(|entry| entry.mount_point == base) else {
+            // Nothing is mounted here, so `base` is a directory inside a filesystem
+            // that holds more than it.
+            return false;
+        };
+
+        // Every mount of one filesystem reports that filesystem's major:minor, so a
+        // second entry carrying this device (common in practice for btrfs subtree
+        // mounts) is that same filesystem reachable by another path. syncfs takes
+        // the filesystem, not the mount, and would flush whatever is written
+        // through that other path too.
+        let mounted_once = entries
+            .iter()
+            .filter(|entry| entry.device == mount.device)
+            .count()
+            == 1;
+
+        mount.root == "/" && mount.mount_point != Path::new("/") && mounted_once
+    }
+
+    /// Whether `base` has a filesystem to itself.
+    ///
+    /// `base` is resolved first, because `mountinfo` names mount points by their
+    /// real paths. A `base` that does not exist answers false, which is right
+    /// rather than merely safe: nothing can be mounted on a path that is not there.
+    pub(super) fn has_own_filesystem(base: &Path) -> bool {
+        let Ok(base) = base.canonicalize() else {
+            return false;
+        };
+        fs::read_to_string(MOUNTINFO).is_ok_and(|mountinfo| mount_is_exclusive(&mountinfo, &base))
+    }
+
+    /// Whether the kernel release string `release` names Linux 5.8 or later.
+    pub(super) fn release_reports_syncfs_errors(release: &str) -> bool {
+        let mut numbers = release
+            .split(|c: char| !c.is_ascii_digit())
+            .filter(|field| !field.is_empty())
+            .map(|field| field.parse::<u32>().unwrap_or(0));
+        let (major, minor) = (numbers.next().unwrap_or(0), numbers.next().unwrap_or(0));
+        (major, minor) >= (5, 8)
+    }
+
+    /// What stops this kernel from using `syncfs`, regardless of where storage is.
+    ///
+    /// An unreadable or unparsable release counts as an obstacle, so an
+    /// unrecognized kernel takes the safe path rather than the fast one.
+    pub(super) fn platform_obstacle() -> Option<SyncfsObstacle> {
+        let Ok(utsname) = nix::sys::utsname::uname() else {
+            return Some(SyncfsObstacle::KernelUnknown);
+        };
+        match utsname.release().to_str() {
+            Some(release) if release_reports_syncfs_errors(release) => None,
+            Some(release) => Some(SyncfsObstacle::KernelTooOld(release.to_string())),
+            None => Some(SyncfsObstacle::KernelUnknown),
+        }
+    }
+
+    /// Opens `base` for `syncfs`, or returns `None` with the reason logged.
+    pub(super) fn open(base: &Path) -> Option<SyncStrategy> {
+        // Only this path needs the directory to exist, and only because syncfs
+        // takes a descriptor. Creating it here rather than leaving it to the first
+        // write keeps a configured syncfs working on the very first run, instead of
+        // falling back until some later start finds the directory already there.
+        match create_dir_all(base).and_then(|()| File::open(base)) {
+            Ok(dir) => Some(SyncStrategy::Syncfs(dir)),
+            Err(error) => {
+                warn!(
+                    "{}: committing checkpoints one file at a time: \
+                     the storage directory could not be opened for syncfs ({error})",
+                    base.display()
+                );
+                None
+            }
+        }
+    }
+
+    /// syncfs the filesystem holding `dir`, named `path` for error reporting.
+    pub(super) fn sync(dir: &File, path: &Path) -> Result<(), StorageError> {
+        use std::io::Error as StdIoError;
+        use std::os::fd::AsRawFd;
+
+        nix::unistd::syncfs(dir.as_raw_fd()).map_err(|errno| {
+            StorageError::stdio(
+                StdIoError::from_raw_os_error(errno as i32).kind(),
+                "syncfs",
+                path.display(),
+            )
+        })
+    }
+}
+
+/// Stands in for [syncfs] where the system call does not exist.
+#[cfg(not(target_os = "linux"))]
+mod syncfs {
+    use super::{SyncStrategy, SyncfsObstacle};
+    use std::path::Path;
+
+    /// Always an obstacle: there is no `syncfs` to call.
+    pub(super) fn platform_obstacle() -> Option<SyncfsObstacle> {
+        Some(SyncfsObstacle::Unsupported)
+    }
+
+    /// Never consulted, because [platform_obstacle] has already refused.
+    pub(super) fn has_own_filesystem(_base: &Path) -> bool {
+        false
+    }
+
+    /// Never reached, for the same reason.
+    pub(super) fn open(_base: &Path) -> Option<SyncStrategy> {
+        None
+    }
+}
+
+/// What stops storage at `base` from using `syncfs`.
+///
+/// Each variant is also the explanation logged for the choice, because a
+/// pipeline that quietly settles on the slow strategy looks exactly like one
+/// that chose the fast strategy and got no benefit from it.
+///
+/// Which variants can occur depends on the platform, hence the blanket allow:
+/// `Unsupported` is the only one off Linux, and never happens on it.
+#[derive(Debug)]
+#[allow(dead_code)]
+enum SyncfsObstacle {
+    /// `syncfs` is a Linux system call and this is not Linux.
+    Unsupported,
+
+    /// Before Linux 5.8, `syncfs` returned success unconditionally and
+    /// discarded writeback errors.
+    KernelTooOld(String),
+
+    /// The kernel release could not be read, so 5.8 cannot be ruled in.
+    KernelUnknown,
+
+    /// `base` is not a mount point, so its filesystem holds more than this
+    /// pipeline and `syncfs` would write back that too.
+    NotAMountPoint,
+}
+
+impl SyncfsObstacle {
+    /// Whether [StorageSyncMode::Syncfs] may go ahead despite this obstacle.
+    ///
+    /// Sharing a filesystem only costs the writeback of data that is not ours,
+    /// a tradeoff an operator is entitled to make. The other obstacles decide
+    /// whether `syncfs` reports a failed writeback at all: before Linux 5.8 it
+    /// returned success and discarded the error, so [PosixBackend::commit_all]
+    /// would call a checkpoint durable whose data never reached the device and
+    /// `publish` would then enter it in the catalog. No setting may ask for
+    /// that.
+    fn is_overridable(&self) -> bool {
+        matches!(self, Self::NotAMountPoint)
+    }
+}
+
+impl Display for SyncfsObstacle {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unsupported => {
+                write!(f, "syncfs is a Linux system call and this is not Linux")
+            }
+            Self::KernelTooOld(release) => write!(
+                f,
+                "Linux {release} predates 5.8, which is where syncfs started reporting \
+                 writeback errors instead of discarding them"
+            ),
+            Self::KernelUnknown => write!(
+                f,
+                "the kernel release is unreadable, and syncfs discarded writeback errors \
+                 before Linux 5.8"
+            ),
+            Self::NotAMountPoint => write!(
+                f,
+                "storage is not a mount point, so syncfs would also write back whatever \
+                 else shares its filesystem"
+            ),
+        }
+    }
+}
+
+/// What stops storage at `base` from using `syncfs`, or `None` if nothing does.
+fn syncfs_obstacle(base: &Path) -> Option<SyncfsObstacle> {
+    syncfs::platform_obstacle()
+        .or_else(|| (!syncfs::has_own_filesystem(base)).then_some(SyncfsObstacle::NotAMountPoint))
+}
+
+/// How [PosixBackend::commit_all] makes a checkpoint's files durable.
+enum SyncStrategy {
+    /// One `syncfs` on the open directory, covering every file at once.
+    #[cfg(target_os = "linux")]
+    Syncfs(File),
+
+    /// An fsync per file, [CONCURRENT_SYNCS] at a time.
+    PerFile,
+}
+
+impl SyncStrategy {
+    /// Whether this strategy commits with one `syncfs`.
+    #[cfg(test)]
+    fn is_syncfs(&self) -> bool {
+        #[cfg(target_os = "linux")]
+        return matches!(self, Self::Syncfs(_));
+        #[cfg(not(target_os = "linux"))]
+        false
+    }
+
+    /// Chooses a strategy for storage at `base`, honoring `mode` as far as
+    /// [SyncfsObstacle::is_overridable] allows, and logs both the choice and
+    /// the reason for it.
+    fn new(mode: StorageSyncMode, base: &Path) -> Self {
+        let path = base.display();
+
+        if mode == StorageSyncMode::PerFile {
+            info!("{path}: committing checkpoints one file at a time, as configured");
+            return Self::PerFile;
+        }
+
+        match &syncfs_obstacle(base) {
+            // Configured explicitly, and the obstacle is one the operator is
+            // free to accept. Name it anyway, because accepting it costs the
+            // writeback of data that is not ours.
+            Some(obstacle) if mode == StorageSyncMode::Syncfs && obstacle.is_overridable() => {
+                warn!("{path}: syncfs requested despite {obstacle}");
+            }
+
+            // Either `auto` declining, or `syncfs` asking for what no setting
+            // may have: see [SyncfsObstacle::is_overridable].
+            Some(obstacle) => {
+                if mode == StorageSyncMode::Syncfs {
+                    warn!("{path}: syncfs requested but not usable: {obstacle}");
+                }
+                info!("{path}: committing checkpoints one file at a time: {obstacle}");
+                return Self::PerFile;
+            }
+
+            None => (),
+        }
+
+        match syncfs::open(base) {
+            Some(strategy) => {
+                info!("{path}: committing checkpoints with one syncfs");
+                strategy
+            }
+            None => Self::PerFile,
+        }
+    }
+}
+
+/// Commits `files`, [CONCURRENT_SYNCS] at a time, and returns the first error.
+///
+/// Overlapping the fsyncs is the point: the kernel collapses concurrent ones
+/// into shared journal commits, which a sequential loop never gives it a chance
+/// to do.
+fn commit_in_parallel(files: &[Arc<dyn FileCommitter>]) -> Result<(), StorageError> {
+    let threads = CONCURRENT_SYNCS.min(files.len());
+    if threads <= 1 {
+        return files.iter().try_for_each(|file| file.commit());
+    }
+
+    let next = AtomicUsize::new(0);
+    let failed = AtomicBool::new(false);
+    let failure: Mutex<Option<StorageError>> = Mutex::new(None);
+    scope(|scope| {
+        for _ in 0..threads {
+            scope.spawn(|| {
+                // The flag, not the mutex, ends the loop: this runs once per
+                // file per worker, and only the first error needs the lock.
+                while !failed.load(Ordering::Relaxed) {
+                    let index = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(file) = files.get(index) else { break };
+                    if let Err(error) = file.commit() {
+                        failure.lock().unwrap().get_or_insert(error);
+                        failed.store(true, Ordering::Relaxed);
+                        break;
+                    }
+                }
+            });
+        }
+    });
+    match failure.into_inner().unwrap() {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 /// fsync the directory at `path` so a freshly-created child entry (a
@@ -391,6 +788,9 @@ pub struct PosixBackend {
 
     /// Per-I/O operation sleep delay, for simulating slow storage devices.
     ioop_delay: Duration,
+
+    /// How to make a checkpoint's files durable.
+    sync_strategy: SyncStrategy,
 }
 
 impl PosixBackend {
@@ -405,12 +805,15 @@ impl PosixBackend {
         options: &FileBackendConfig,
     ) -> Self {
         init();
+        let base = base.as_ref().to_path_buf();
+        let sync_strategy = SyncStrategy::new(options.sync_mode.unwrap_or_default(), &base);
         Self {
-            base: Arc::new(base.as_ref().to_path_buf()),
+            base: Arc::new(base),
             cache,
             usage: Arc::new(AtomicI64::new(0)),
             async_threads: options.async_threads.unwrap_or(true),
             ioop_delay: Duration::from_millis(options.ioop_delay.unwrap_or_default()),
+            sync_strategy,
         }
     }
 
@@ -623,6 +1026,14 @@ impl StorageBackend for PosixBackend {
     fn fsync_dir(&self, dir: &StoragePath) -> Result<(), StorageError> {
         fsync_dir(&self.fs_path(dir))
     }
+
+    fn sync_files(&self, files: &[Arc<dyn FileCommitter>]) -> Result<(), StorageError> {
+        match &self.sync_strategy {
+            #[cfg(target_os = "linux")]
+            SyncStrategy::Syncfs(dir) => syncfs::sync(dir, &self.base),
+            SyncStrategy::PerFile => commit_in_parallel(files),
+        }
+    }
 }
 
 pub(crate) struct DefaultBackendFactory;
@@ -680,13 +1091,332 @@ inventory::submit! {
 #[cfg(test)]
 mod tests {
     use feldera_storage::{StorageBackend, StoragePath};
-    use feldera_types::config::{FileBackendConfig, StorageCacheConfig};
+    use feldera_types::config::{FileBackendConfig, StorageCacheConfig, StorageSyncMode};
     use std::{path::Path, sync::Arc};
 
     use crate::storage::backend::tests::{random_sizes, test_backend};
     use crate::storage::buffer_cache::FBuf;
 
-    use super::PosixBackend;
+    #[cfg(target_os = "linux")]
+    use super::syncfs::{mount_is_exclusive, unescape_mountinfo};
+    use super::{
+        CONCURRENT_SYNCS, PosixBackend, SyncStrategy, SyncfsObstacle, commit_in_parallel,
+        syncfs::has_own_filesystem,
+    };
+    use super::{FileId, FileRw, StorageError};
+    use feldera_storage::FileCommitter;
+    use std::io::ErrorKind;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// A committer that records how often it was committed, so a test can check
+    /// the fan-out without reaching for a process-wide counter.
+    #[derive(Debug)]
+    struct CountingCommitter {
+        file_id: FileId,
+        path: StoragePath,
+        commits: Arc<AtomicUsize>,
+        fail: bool,
+    }
+
+    impl CountingCommitter {
+        fn arc(commits: &Arc<AtomicUsize>, fail: bool) -> Arc<dyn FileCommitter> {
+            Arc::new(Self {
+                file_id: FileId::new(),
+                path: StoragePath::from("counting"),
+                commits: commits.clone(),
+                fail,
+            })
+        }
+    }
+
+    impl FileRw for CountingCommitter {
+        fn file_id(&self) -> FileId {
+            self.file_id
+        }
+        fn path(&self) -> &StoragePath {
+            &self.path
+        }
+    }
+
+    impl FileCommitter for CountingCommitter {
+        fn commit(&self) -> Result<(), StorageError> {
+            self.commits.fetch_add(1, Ordering::Relaxed);
+            if self.fail {
+                Err(StorageError::stdio(ErrorKind::Other, "fsync", "counting"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    /// Linux 5.8 is where `syncfs` started reporting writeback errors, and an
+    /// unrecognized release must read as older so it takes the safe path.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn syncfs_error_reporting_by_release() {
+        use super::syncfs::release_reports_syncfs_errors;
+
+        for release in [
+            "5.8",
+            "5.8.0",
+            "5.9.1-arch",
+            "6.19.11-200.fc43.x86_64",
+            "10.0.0",
+        ] {
+            assert!(
+                release_reports_syncfs_errors(release),
+                "{release} should report syncfs errors"
+            );
+        }
+        for release in ["5.7.19", "4.18.0-553.el8", "2.6.32", "", "not-a-version"] {
+            assert!(
+                !release_reports_syncfs_errors(release),
+                "{release} should not report syncfs errors"
+            );
+        }
+    }
+
+    /// The kernel this test runs on must be identified, not fall through to
+    /// the unreadable-release default. That default is safe but silent, so
+    /// hitting it would disable syncfs with nothing to show for it.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn running_kernel_release_parses() {
+        let utsname = nix::sys::utsname::uname().expect("uname must work");
+        let release = utsname.release().to_str().expect("release must be UTF-8");
+        let mut numbers = release
+            .split(|c: char| !c.is_ascii_digit())
+            .filter(|field| !field.is_empty())
+            .map(|field| field.parse::<u32>().unwrap_or(0));
+        let (major, minor) = (numbers.next().unwrap_or(0), numbers.next().unwrap_or(0));
+        assert!(major >= 2, "unparsable kernel release {release:?}");
+
+        let obstacle = super::syncfs::platform_obstacle();
+        if (major, minor) >= (5, 8) {
+            assert!(
+                obstacle.is_none(),
+                "kernel {release:?} wrongly blocked by {obstacle:?}"
+            );
+        } else {
+            assert!(
+                matches!(obstacle, Some(SyncfsObstacle::KernelTooOld(_))),
+                "kernel {release:?} should be reported as too old, got {obstacle:?}"
+            );
+        }
+    }
+
+    /// Every obstacle must say which one it is, and the too-old one must name
+    /// the kernel it found. Reading "syncfs is off" without the version leaves
+    /// no way to tell a genuinely old kernel from a misparse.
+    #[test]
+    fn obstacles_explain_themselves() {
+        let messages = [
+            SyncfsObstacle::Unsupported.to_string(),
+            SyncfsObstacle::KernelTooOld("4.18.0-553.el8.x86_64".to_string()).to_string(),
+            SyncfsObstacle::KernelUnknown.to_string(),
+            SyncfsObstacle::NotAMountPoint.to_string(),
+        ];
+        assert!(
+            messages[1].contains("4.18.0-553.el8.x86_64"),
+            "an old kernel must be named: {}",
+            messages[1]
+        );
+        for (i, message) in messages.iter().enumerate() {
+            assert!(!message.is_empty());
+            assert!(
+                !messages[..i].contains(message),
+                "obstacles must read differently: {message}"
+            );
+        }
+    }
+
+    /// Mount layouts that do and do not give storage a filesystem to itself.
+    ///
+    /// The bind mount cases are the point: a container's storage path nearly
+    /// always is one, and comparing device numbers against the parent
+    /// directory calls every one of them exclusive.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn exclusive_mounts_by_layout() {
+        // A volume of our own: whole filesystem, mounted once.
+        let dedicated = "\
+25 1 259:1 / / rw,relatime shared:1 - ext4 /dev/nvme0n1p1 rw
+88 25 259:3 / /data rw,relatime shared:2 - ext4 /dev/nvme1n1 rw";
+        assert!(mount_is_exclusive(dedicated, Path::new("/data")));
+
+        // The root filesystem is never ours alone.
+        assert!(!mount_is_exclusive(dedicated, Path::new("/")));
+
+        // Nothing mounted there: a directory inside a filesystem holding more.
+        assert!(!mount_is_exclusive(dedicated, Path::new("/data/pipeline")));
+
+        // Kubernetes subPath: part of a volume shared with other subPaths.
+        let subpath = "\
+25 1 259:1 / / rw,relatime shared:1 - ext4 /dev/nvme0n1p1 rw
+88 25 259:3 /pipelines/p1 /data rw,relatime shared:2 - ext4 /dev/nvme1n1 rw";
+        assert!(!mount_is_exclusive(subpath, Path::new("/data")));
+
+        // hostPath or local-path: a host directory bound in, sharing the node's
+        // filesystem with every other pod on it.
+        let hostpath = "\
+25 1 259:1 / / rw,relatime shared:1 - ext4 /dev/nvme0n1p1 rw
+88 25 259:1 /opt/local-path-provisioner/pvc-abc /data rw,relatime - ext4 /dev/nvme0n1p1 rw";
+        assert!(!mount_is_exclusive(hostpath, Path::new("/data")));
+
+        // The same filesystem mounted twice, as btrfs subvolumes are.
+        let subvolumes = "\
+25 1 0:34 /root / rw,relatime - btrfs /dev/mapper/luks rw
+48 25 0:34 /home /home rw,relatime - btrfs /dev/mapper/luks rw";
+        assert!(!mount_is_exclusive(subvolumes, Path::new("/home")));
+
+        // A whole filesystem, but reachable at a second path as well.
+        let bound_twice = "\
+25 1 259:1 / / rw,relatime - ext4 /dev/nvme0n1p1 rw
+88 25 259:3 / /data rw,relatime - ext4 /dev/nvme1n1 rw
+89 25 259:3 / /mnt/also-data rw,relatime - ext4 /dev/nvme1n1 rw";
+        assert!(!mount_is_exclusive(bound_twice, Path::new("/data")));
+
+        // A later mount shadows an earlier one at the same path.
+        let shadowed = "\
+25 1 259:1 / / rw,relatime - ext4 /dev/nvme0n1p1 rw
+88 25 259:3 / /data rw,relatime - ext4 /dev/nvme1n1 rw
+89 25 259:4 /sub /data rw,relatime - ext4 /dev/nvme2n1 rw";
+        assert!(!mount_is_exclusive(shadowed, Path::new("/data")));
+    }
+
+    /// Mount points with awkward characters are escaped in `mountinfo`, and a
+    /// path that does not decode would silently never match its own mount.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn mount_points_are_unescaped() {
+        let spaced = "\
+25 1 259:1 / / rw,relatime - ext4 /dev/nvme0n1p1 rw
+88 25 259:3 / /var/my\\040data rw,relatime - ext4 /dev/nvme1n1 rw";
+        assert!(mount_is_exclusive(spaced, Path::new("/var/my data")));
+        assert_eq!(
+            unescape_mountinfo("a\\040b\\011c\\012d\\134e"),
+            "a b\tc\nd\\e"
+        );
+        assert_eq!(unescape_mountinfo("plain"), "plain");
+    }
+
+    /// An ordinary subdirectory shares its parent's filesystem, so syncing it
+    /// would sync whatever else lives there.
+    #[test]
+    fn subdirectory_does_not_have_its_own_filesystem() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let subdirectory = tempdir.path().join("storage");
+        std::fs::create_dir(&subdirectory).unwrap();
+        assert!(!has_own_filesystem(&subdirectory));
+    }
+
+    /// `sync_mode: syncfs` may accept the cost of syncing a filesystem shared
+    /// with others, but it may not ask for a `syncfs` that cannot report a
+    /// failed writeback. Overriding that one buys a checkpoint that reports
+    /// success with its data still in memory, which is worse than a slow
+    /// checkpoint by a wide margin.
+    #[test]
+    fn only_shared_storage_is_the_operators_to_override() {
+        assert!(SyncfsObstacle::NotAMountPoint.is_overridable());
+        for obstacle in [
+            SyncfsObstacle::Unsupported,
+            SyncfsObstacle::KernelTooOld("4.18.0-553.el8.x86_64".to_string()),
+            SyncfsObstacle::KernelUnknown,
+        ] {
+            assert!(
+                !obstacle.is_overridable(),
+                "{obstacle:?} must not be overridable"
+            );
+        }
+    }
+
+    /// The decision that `sync_mode` exists to make: `auto` declines syncfs for
+    /// storage that shares a filesystem, `per_file` declines it everywhere, and
+    /// `syncfs` overrides the sharing obstacle rather than being silently
+    /// downgraded by it.
+    ///
+    /// The inputs to this decision are covered above; this covers the decision,
+    /// whose five-way match is easy to reorder into a different policy without
+    /// anything noticing.
+    #[test]
+    fn strategy_honors_sync_mode() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let shared = tempdir.path().join("storage");
+        std::fs::create_dir(&shared).unwrap();
+        assert!(!has_own_filesystem(&shared), "precondition");
+
+        assert!(!SyncStrategy::new(StorageSyncMode::Auto, &shared).is_syncfs());
+        assert!(!SyncStrategy::new(StorageSyncMode::PerFile, &shared).is_syncfs());
+        assert_eq!(
+            SyncStrategy::new(StorageSyncMode::Syncfs, &shared).is_syncfs(),
+            cfg!(target_os = "linux"),
+            "an explicit syncfs must survive a shared filesystem"
+        );
+    }
+
+    /// A configured syncfs must work on the very first run, before anything has
+    /// created the storage directory. Otherwise the first start falls back and
+    /// only a later one, finding the directory already there, goes fast.
+    #[test]
+    fn strategy_creates_missing_storage_directory_for_syncfs() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let missing = tempdir.path().join("not-created");
+        let strategy = SyncStrategy::new(StorageSyncMode::Syncfs, &missing);
+        assert_eq!(strategy.is_syncfs(), cfg!(target_os = "linux"));
+        assert_eq!(missing.is_dir(), cfg!(target_os = "linux"));
+    }
+
+    /// A directory that does not exist is not a mount point, because nothing
+    /// can be mounted on a path that is not there.
+    ///
+    /// Answering this correctly without the directory is what lets the backend
+    /// skip creating one just to decide, and creating one would not change the
+    /// answer anyway: a fresh directory sits on its parent's filesystem.
+    #[test]
+    fn missing_directory_does_not_have_its_own_filesystem() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let missing = tempdir.path().join("not-created");
+        assert!(!missing.exists());
+        assert!(!has_own_filesystem(&missing));
+
+        std::fs::create_dir(&missing).unwrap();
+        assert!(
+            !has_own_filesystem(&missing),
+            "creating the directory must not change the answer"
+        );
+    }
+
+    /// The root filesystem never has a filesystem to itself, by definition.
+    /// Without this, `auto` could pick syncfs for storage sharing the root.
+    #[test]
+    fn root_does_not_have_its_own_filesystem() {
+        assert!(!has_own_filesystem(Path::new("/")));
+    }
+
+    /// Every file must be committed exactly once, including well past the
+    /// thread count, where the workers loop for more.
+    #[test]
+    fn parallel_commit_covers_every_file() {
+        for count in [0, 1, 2, CONCURRENT_SYNCS, CONCURRENT_SYNCS * 7 + 3] {
+            let commits = Arc::new(AtomicUsize::new(0));
+            let files: Vec<_> = (0..count)
+                .map(|_| CountingCommitter::arc(&commits, false))
+                .collect();
+            commit_in_parallel(&files).unwrap();
+            assert_eq!(commits.load(Ordering::Relaxed), count, "with {count} files");
+        }
+    }
+
+    /// A failing fsync must surface, not be swallowed by a worker thread.
+    #[test]
+    fn parallel_commit_reports_failure() {
+        let commits = Arc::new(AtomicUsize::new(0));
+        let mut files: Vec<_> = (0..CONCURRENT_SYNCS * 4)
+            .map(|_| CountingCommitter::arc(&commits, false))
+            .collect();
+        files.push(CountingCommitter::arc(&commits, true));
+        assert!(commit_in_parallel(&files).is_err());
+    }
 
     fn create_posix_backend(path: &Path) -> Arc<dyn StorageBackend> {
         Arc::new(PosixBackend::new(

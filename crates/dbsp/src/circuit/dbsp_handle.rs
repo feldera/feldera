@@ -2711,9 +2711,15 @@ impl CheckpointCommitter {
     /// wait for output connectors to complete writing the output corresponding
     /// to the checkpoint.
     pub fn commit(self) -> Result<CheckpointPublisher, DbspError> {
-        for reader in self.readers.into_iter().flatten() {
-            reader.commit()?;
-        }
+        // One call for every worker's files, so the backend can sync them
+        // together. Committing them one at a time here would keep a single
+        // fsync in flight across the whole checkpoint.
+        let files: Vec<_> = self.readers.into_iter().flatten().collect();
+        // Clone the backend rather than holding the checkpointer lock across
+        // the syncs, which are the slowest part of making a checkpoint.
+        let backend = self.checkpointer.lock().unwrap().backend().clone();
+        backend.commit_all(&files)?;
+
         let metadata = self.checkpointer.lock().unwrap().commit(
             self.uuid,
             self.fingerprint,
