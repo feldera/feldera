@@ -963,7 +963,8 @@ mod test {
         assert!(cp_dir.join("dependencies.json").exists());
         assert!(batch_path.exists());
 
-        let log = LogCapture::new(|| drop(Checkpointer::new(make_backend()).unwrap())).log;
+        let backend = make_backend();
+        let log = LogCapture::new(|| drop(Checkpointer::new(backend).unwrap())).log;
         assert_eq!(
             log,
             " INFO dbsp::circuit::checkpointer: GC kept 2/1/0 expected files/directories/other, kept 0/0/0 unexpected, and deleted 0/0/0 unused; 0 error(s) reading directory entries\n"
@@ -976,8 +977,9 @@ mod test {
 
         // Now delete the batch and ensure that startup reports that it's missing.
         std::fs::remove_file(&batch_path).unwrap();
+        let backend = make_backend();
         assert_eq!(
-            LogCapture::new(|| drop(Checkpointer::new(make_backend()).unwrap())).log,
+            LogCapture::new(|| drop(Checkpointer::new(backend).unwrap())).log,
             r#" INFO dbsp::circuit::checkpointer: GC kept 1/1/0 expected files/directories/other, kept 0/0/0 unexpected, and deleted 0/0/0 unused; 0 error(s) reading directory entries
 ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) with the following UUID(s) have 1 missing file(s) in storage: 019e4708-bac8-7c10-b2f7-5cb248871905
 ERROR dbsp::circuit::checkpointer: 1 checkpoint(s) need missing file: w0-aaaaaaaa.feldera
