@@ -56,7 +56,10 @@ Source edition can be found on github.
   stopped offering the rest, so a crash before the next checkpoint lost those
   changes. The connector now reports a batch only once all of it has arrived,
   and waits for the checkpoint that holds it rather than for one that may
-  predate it when an output connector runs behind (#7122). See
+  predate it when an output connector runs behind. Stopping a pipeline now also
+  reports the batches a checkpoint already holds, instead of leaving them
+  unreported: an unreported batch made the next start read the whole source
+  table again, which a large table made expensive (#7122). See
   [PostgreSQL CDC input connector](/connectors/sources/postgresql-cdc).
 
 - The PostgreSQL CDC input connector moves to a newer etl. It no longer fails
