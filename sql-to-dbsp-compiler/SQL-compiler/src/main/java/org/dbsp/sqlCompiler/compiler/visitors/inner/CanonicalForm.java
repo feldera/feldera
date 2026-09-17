@@ -1,5 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
+import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
+import org.dbsp.util.Linq;
+import java.util.List;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -100,12 +104,41 @@ public class CanonicalForm extends InnerRewriteVisitor {
         return VisitDecision.STOP;
     }
 
+    /** An aggregate list declares the row variable its entries share: every entry's row
+     * parameter carries the list's row-variable name, so all of them take one canonical name.
+     * Reached only under {@code --gen2}; the Rust backend packs the list before this pass. */
+    @Override
+    public VisitDecision preorder(DBSPAggregateList list) {
+        String rowName = this.nextName();
+        for (IAggregate aggregate : list.aggregates) {
+            for (DBSPParameter param : aggregate.getRowVariableReferences()) {
+                if (!this.newParam.containsKey(param))
+                    this.newParam.substituteNew(
+                            param, new DBSPParameter(param.getNode(), rowName, param.getType()));
+            }
+        }
+        this.push(list);
+        // The entries share variable nodes (every step uses the compiler's one weight variable),
+        // and the resolver needs a distinct node per declaration.  A deep copy has fresh variable
+        // nodes and the same parameter objects, which the substitutions above are keyed by.
+        List<IAggregate> aggregates = Linq.map(
+                list.aggregates, a -> this.transform(a.deepCopy()).to(IAggregate.class));
+        this.pop(list);
+        DBSPVariablePath rowVar = new DBSPVariablePath(
+                list.rowVar.getNode(), rowName, list.rowVar.getType());
+        this.map(list, new DBSPAggregateList(list.getNode(), rowVar, aggregates));
+        return VisitDecision.STOP;
+    }
+
     @Override
     public VisitDecision preorder(DBSPClosureExpression node) {
         node.accept(this.resolver);
         DBSPClosureExpression closure = node.to(DBSPClosureExpression.class);
         for (int i = 0; i < closure.parameters.length; i++) {
             DBSPParameter param = closure.parameters[i];
+            if (this.newParam.containsKey(param))
+                // The row parameter of an aggregate list entry, named by the list.
+                continue;
             DBSPParameter replacement = new DBSPParameter(param.getNode(), this.nextName(), param.getType());
             this.newParam.substituteNew(param, replacement);
         }

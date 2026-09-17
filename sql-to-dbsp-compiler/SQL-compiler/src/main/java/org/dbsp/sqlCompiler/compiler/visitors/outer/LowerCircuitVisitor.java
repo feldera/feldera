@@ -299,10 +299,19 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         this.map(node, instrumented);
     }
 
+    /** True when aggregate operators keep their per-aggregate list.  Only the Rust backend needs
+     * the list packed into one {@link DBSPFold} over a tuple accumulator, because dbsp's
+     * {@code Fold} takes a single step function.  The Gen-2 engine reads the list: each entry
+     * declares its own zero, step, and post-processing, so the aggregates of a group are
+     * independent by construction instead of by analysis of a packed block. */
+    boolean keepsAggregateList() {
+        return this.compiler().options.ioOptions.gen2;
+    }
+
     @Override
     public void postorder(DBSPStreamAggregateOperator node) {
-        if (node.function != null) {
-            // OrderBy implemented as an aggregate
+        if (node.function != null || this.keepsAggregateList()) {
+            // OrderBy implemented as an aggregate, or the list form the Gen-2 engine reads
             super.postorder(node);
             return;
         }
@@ -316,8 +325,8 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPAggregateOperator node) {
-        if (node.function != null) {
-            // OrderBy implemented as an aggregate
+        if (node.function != null || this.keepsAggregateList()) {
+            // OrderBy implemented as an aggregate, or the list form the Gen-2 engine reads
             super.postorder(node);
             return;
         }
@@ -438,7 +447,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPPartitionedRollingAggregateOperator node) {
-        if (node.aggregateList == null) {
+        if (node.aggregateList == null || this.keepsAggregateList()) {
             super.postorder(node);
             return;
         }
@@ -451,7 +460,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPPartitionedRollingAggregateWithWaterlineOperator node) {
-        if (node.aggregateList == null) {
+        if (node.aggregateList == null || this.keepsAggregateList()) {
             super.postorder(node);
             return;
         }
