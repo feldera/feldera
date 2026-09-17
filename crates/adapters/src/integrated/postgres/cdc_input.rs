@@ -2579,10 +2579,13 @@ fn parse_pg_uri(
 mod tests {
     use super::*;
     use crate::test::{MockDeZSet, MockInputConsumer, TestStruct};
+    use anyhow::Error as AnyError;
     use chrono::{FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
     use etl::data::{PgNumeric, PgTimeTz};
     use etl::schema::PgLsn;
     use feldera_adapterlib::catalog::DeCollectionHandle;
+    use feldera_adapterlib::format::BufferSize;
+    use feldera_types::adapter_stats::ConnectorHealth;
     use serde_json::json;
     use std::str::FromStr;
     use std::sync::atomic::AtomicBool;
@@ -3921,5 +3924,150 @@ mod tests {
         barrier.note_sync_done_lsn(300);
         barrier.note_sync_done_lsn(200);
         assert_eq!(barrier.sync_done_lsn(), Some(300));
+    }
+
+    // -----------------------------------------------------------------------
+    // Acknowledgment against an unnamed step
+    // -----------------------------------------------------------------------
+
+    /// A consumer that reports completed steps but never says which step it is
+    /// feeding.
+    ///
+    /// The controller returns `Some` from both `completion_watcher` and
+    /// `current_step`. This one stands for a future consumer that offers the
+    /// first and forgets the second, the shape
+    /// [`PostgresCdcInputInner::acknowledge_after_step`] refuses to
+    /// acknowledge against (#7122).
+    #[derive(Clone)]
+    struct StepBlindConsumer {
+        mock: MockInputConsumer,
+        /// Keeps the completion channel open for the receivers handed out.
+        completions: Arc<Sender<Completion>>,
+        /// The last error the endpoint reported: whether it was fatal, and its
+        /// text. Recorded here rather than delegated, because the mock panics
+        /// on an error no callback claims.
+        error: Arc<Mutex<Option<(bool, String)>>>,
+    }
+
+    impl StepBlindConsumer {
+        fn new() -> Self {
+            let (completions, _rx) = channel(Completion::default());
+            Self {
+                mock: MockInputConsumer::new(),
+                completions: Arc::new(completions),
+                error: Arc::new(Mutex::new(None)),
+            }
+        }
+
+        fn reported_error(&self) -> Option<(bool, String)> {
+            self.error.lock().unwrap().clone()
+        }
+    }
+
+    impl InputConsumer for StepBlindConsumer {
+        fn max_batch_size(&self) -> usize {
+            self.mock.max_batch_size()
+        }
+
+        fn pipeline_fault_tolerance(&self) -> Option<FtModel> {
+            self.mock.pipeline_fault_tolerance()
+        }
+
+        fn parse_errors(&self, errors: Vec<ParseError>) {
+            self.mock.parse_errors(errors)
+        }
+
+        fn buffered(&self, amt: BufferSize) {
+            self.mock.buffered(amt)
+        }
+
+        fn replayed(&self, amt: BufferSize, hash: u64) {
+            self.mock.replayed(amt, hash)
+        }
+
+        fn extended(&self, amt: BufferSize, resume: Option<Resume>, watermarks: Vec<Watermark>) {
+            self.mock.extended(amt, resume, watermarks)
+        }
+
+        fn eoi(&self) {
+            self.mock.eoi()
+        }
+
+        fn request_step(&self) {
+            self.mock.request_step()
+        }
+
+        fn start_transaction(&self, label: Option<&str>) {
+            self.mock.start_transaction(label)
+        }
+
+        fn commit_transaction(&self) {
+            self.mock.commit_transaction()
+        }
+
+        fn update_connector_health(&self, health: ConnectorHealth) {
+            self.mock.update_connector_health(health)
+        }
+
+        /// Step completion is tracked, so the connector may defer its answers.
+        fn completion_watcher(&self) -> Option<Receiver<Completion>> {
+            Some(self.completions.subscribe())
+        }
+
+        fn error(&self, fatal: bool, error: AnyError, _tag: Option<&'static str>) {
+            *self.error.lock().unwrap() = Some((fatal, error.to_string()));
+        }
+
+        // `current_step` keeps the trait default, `None`: this consumer never
+        // says which step it feeds, which is what the tests below exercise.
+    }
+
+    /// The configuration the reader needs to exist. Construction opens no
+    /// connection, so the URI only has to parse.
+    fn cdc_config() -> PostgresCdcReaderConfig {
+        PostgresCdcReaderConfig {
+            uri: "postgres://user@localhost:5432/db".to_string(),
+            publication: "pub".to_string(),
+            source_table: "public.t".to_string(),
+            tls: PostgresTlsConfig::default(),
+        }
+    }
+
+    #[test]
+    fn a_pipeline_that_hides_the_step_it_feeds_fails_the_endpoint() {
+        let consumer = StepBlindConsumer::new();
+        let inner = PostgresCdcInputInner::new("cdc_in", cdc_config(), Box::new(consumer.clone()));
+
+        let flag = Arc::new(AtomicBool::new(false));
+        inner.acknowledge_after_step(vec![terminal(&flag)]);
+
+        let (fatal, message) = consumer
+            .reported_error()
+            .expect("the connector cannot tell which step holds the rows, so it must fail");
+        assert!(fatal, "the connector cannot go on acknowledging blindly");
+        assert!(
+            message.contains("not the step it is feeding"),
+            "the error names what the pipeline withheld: {message}"
+        );
+        assert!(
+            !answered(&flag),
+            "answering etl here would report rows as stored against a step that may not \
+             hold them (#7122)"
+        );
+    }
+
+    #[test]
+    fn a_pipeline_that_tracks_no_steps_is_answered_by_the_flush() {
+        let inner =
+            PostgresCdcInputInner::new("cdc_in", cdc_config(), Box::new(MockInputConsumer::new()));
+
+        let flag = Arc::new(AtomicBool::new(false));
+        inner.acknowledge_after_step(vec![terminal(&flag)]);
+
+        assert!(
+            answered(&flag),
+            "nothing tracks steps, so no step is worth waiting for and the flush answers \
+             etl itself"
+        );
     }
 }
