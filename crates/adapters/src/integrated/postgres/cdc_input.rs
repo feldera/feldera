@@ -112,6 +112,26 @@ impl IntegratedInputEndpoint for PostgresCdcInputEndpoint {
     }
 }
 
+/// What the connector knows, from the resume metadata Feldera hands it at
+/// startup, about the checkpoint or suspended state it is resuming from; see
+/// [`reconcile_decision`].
+#[derive(Clone, Copy)]
+struct ResumeState {
+    /// The circuit starts empty because there is no checkpoint to resume
+    /// from, so a table sync etl already completed must be read again; see
+    /// [`PostgresCdcInputReader::new`].
+    redo_snapshot: bool,
+    /// The `sync_done` LSN the checkpoint or suspended state was taken at,
+    /// when known.
+    checkpoint_sync_lsn: Option<u64>,
+    /// Whether there is any checkpoint or suspended state to resume from at
+    /// all, as opposed to a plain restart that only has etl's own stored
+    /// state to go on. `checkpoint_sync_lsn` alone cannot tell the two
+    /// apart: it is `None` both when there is no checkpoint and when there
+    /// is one that predates every copy etl has completed.
+    has_checkpoint: bool,
+}
+
 struct PostgresCdcInputReader {
     sender: Sender<PipelineState>,
     inner: Arc<PostgresCdcInputInner>,
@@ -131,11 +151,14 @@ impl PostgresCdcInputReader {
         // table sync as complete, so the copy has to be read again. A restart
         // without fault tolerance keeps resuming from the replication slot
         // alone.
-        let redo_snapshot = resume_info.is_none() && endpoint.strict;
-        let checkpoint_sync_lsn = resume_info
-            .as_ref()
-            .and_then(|info| info.get(COPY_SYNC_LSN_KEY))
-            .and_then(Value::as_u64);
+        let resume = ResumeState {
+            redo_snapshot: resume_info.is_none() && endpoint.strict,
+            has_checkpoint: resume_info.is_some(),
+            checkpoint_sync_lsn: resume_info
+                .as_ref()
+                .and_then(|info| info.get(COPY_SYNC_LSN_KEY))
+                .and_then(Value::as_u64),
+        };
         let (sender, receiver) = channel(PipelineState::Paused);
         let endpoint_clone = endpoint.clone();
 
@@ -166,8 +189,7 @@ impl PostgresCdcInputReader {
                             feldera_required_columns,
                             receiver,
                             init_status_sender,
-                            redo_snapshot,
-                            checkpoint_sync_lsn,
+                            resume,
                         )
                         .await;
                 })
@@ -557,8 +579,7 @@ impl PostgresCdcInputInner {
         feldera_required_columns: Vec<String>,
         receiver: Receiver<PipelineState>,
         init_status_sender: tokio::sync::oneshot::Sender<Result<(), ControllerError>>,
-        redo_snapshot: bool,
-        checkpoint_sync_lsn: Option<u64>,
+        resume: ResumeState,
     ) {
         self.clone()
             .worker_task_inner(
@@ -566,8 +587,7 @@ impl PostgresCdcInputInner {
                 feldera_required_columns,
                 receiver,
                 init_status_sender,
-                redo_snapshot,
-                checkpoint_sync_lsn,
+                resume,
             )
             .await;
         debug!(
@@ -582,8 +602,7 @@ impl PostgresCdcInputInner {
         feldera_required_columns: Vec<String>,
         receiver: Receiver<PipelineState>,
         init_status_sender: tokio::sync::oneshot::Sender<Result<(), ControllerError>>,
-        redo_snapshot: bool,
-        checkpoint_sync_lsn: Option<u64>,
+        resume: ResumeState,
     ) {
         let pg_conn = match parse_pg_uri(&self.config.uri, &self.config.tls, &self.endpoint_name) {
             Ok(conn) => conn,
@@ -676,14 +695,15 @@ impl PostgresCdcInputInner {
         match reconcile_table_state(
             &store,
             &self.config.source_table,
-            redo_snapshot,
-            checkpoint_sync_lsn,
+            resume.redo_snapshot,
+            resume.checkpoint_sync_lsn,
+            resume.has_checkpoint,
             &self.endpoint_name,
         )
         .await
         {
             Ok(reconciled) => {
-                if let Some(lsn) = checkpoint_sync_lsn.max(reconciled.sync_done_lsn) {
+                if let Some(lsn) = resume.checkpoint_sync_lsn.max(reconciled.sync_done_lsn) {
                     self.copy.note_sync_done_lsn(lsn);
                 }
                 self.copy.set_copy_open(reconciled.copy_outstanding);
@@ -1785,6 +1805,7 @@ fn reconcile_decision(
     state: &TableState,
     redo_snapshot: bool,
     checkpoint_sync_lsn: Option<u64>,
+    has_checkpoint: bool,
 ) -> Reconcile {
     if let TableState::Errored {
         reason,
@@ -1804,15 +1825,16 @@ fn reconcile_decision(
     }
     // etl skips a `sync_done` table's events below its LSN, because the copy
     // at that LSN is meant to hold them. A checkpoint that predates the copy
-    // holds neither, so its rows would be lost for good. `Ready` needs no
-    // check under fault tolerance: etl reaches it only once its persisted
-    // progress has passed the LSN, and that progress advances only past
-    // checkpointed steps, so a checkpoint holding the copy exists. Without
-    // fault tolerance etl's progress runs ahead of any checkpoint, and a
-    // resume after a crash loses the changes since the checkpoint anyway;
-    // the copy is one more thing that resume cannot recover, and the docs
-    // say so.
+    // holds neither, so its rows would be lost for good. This only applies
+    // when resuming from an actual checkpoint or suspended state: a plain
+    // restart with no checkpoint to resume from has nothing to compare the
+    // copy against, and without fault tolerance (handled above, via
+    // `redo_snapshot`) etl's progress runs ahead of any checkpoint anyway, so
+    // a resume after a crash loses the changes since the checkpoint whether
+    // or not the copy is redone; the docs describe the table as absent
+    // rather than promise it gets read again.
     if let TableState::SyncDone { lsn, .. } = state
+        && has_checkpoint
         && checkpoint_sync_lsn.is_none_or(|recorded| u64::from(*lsn) > recorded)
     {
         return Reconcile::RedoNewerCopy;
@@ -1853,6 +1875,7 @@ async fn reconcile_table_state(
     source_table: &str,
     redo_snapshot: bool,
     checkpoint_sync_lsn: Option<u64>,
+    has_checkpoint: bool,
     endpoint_name: &str,
 ) -> EtlResult<Reconciled> {
     let outstanding = Reconciled {
@@ -1869,7 +1892,7 @@ async fn reconcile_table_state(
     };
 
     loop {
-        match reconcile_decision(&state, redo_snapshot, checkpoint_sync_lsn) {
+        match reconcile_decision(&state, redo_snapshot, checkpoint_sync_lsn, has_checkpoint) {
             Reconcile::RollBack => {
                 let rolled_back = format!("{state:?}");
                 // etl deletes the row it rolls back from, so a table whose
@@ -3183,7 +3206,7 @@ mod tests {
     fn startup_rolls_back_only_what_a_restart_makes_moot() {
         let shutdown = errored(TERMINATED_BEFORE_BATCH, TableRetryPolicy::ManualRetry);
         assert_eq!(
-            reconcile_decision(&shutdown, false, None),
+            reconcile_decision(&shutdown, false, None, false),
             Reconcile::RollBack
         );
         let timed = errored(
@@ -3192,12 +3215,15 @@ mod tests {
                 next_retry: Utc::now(),
             },
         );
-        assert_eq!(reconcile_decision(&timed, false, None), Reconcile::RollBack);
+        assert_eq!(
+            reconcile_decision(&timed, false, None, false),
+            Reconcile::RollBack
+        );
         // An error only etl or the user can clear stays put; the monitor
         // reports it once the pipeline runs.
         let manual = errored("unsupported schema change", TableRetryPolicy::ManualRetry);
         assert_eq!(
-            reconcile_decision(&manual, true, None),
+            reconcile_decision(&manual, true, None, false),
             Reconcile::CopyOutstanding
         );
         for state in [
@@ -3206,17 +3232,17 @@ mod tests {
             TableState::FinishedCopy,
         ] {
             assert_eq!(
-                reconcile_decision(&state, true, None),
+                reconcile_decision(&state, true, None, false),
                 Reconcile::CopyOutstanding,
                 "{state:?}"
             );
         }
         assert_eq!(
-            reconcile_decision(&TableState::Ready, true, None),
+            reconcile_decision(&TableState::Ready, true, None, false),
             Reconcile::RedoCopy
         );
         assert_eq!(
-            reconcile_decision(&TableState::Ready, false, None),
+            reconcile_decision(&TableState::Ready, false, None, false),
             Reconcile::SyncCompleted
         );
     }
@@ -3225,27 +3251,35 @@ mod tests {
     fn a_copy_completed_after_the_checkpoint_is_read_again() {
         // The checkpoint recorded the copy etl holds: nothing to do.
         assert_eq!(
-            reconcile_decision(&sync_done(200), false, Some(200)),
+            reconcile_decision(&sync_done(200), false, Some(200), true),
             Reconcile::SyncCompleted
         );
         // etl completed a newer copy than the one the checkpoint knows.
         assert_eq!(
-            reconcile_decision(&sync_done(200), false, Some(100)),
+            reconcile_decision(&sync_done(200), false, Some(100), true),
             Reconcile::RedoNewerCopy
         );
         // A checkpoint without the key predates every copy etl completed.
         assert_eq!(
-            reconcile_decision(&sync_done(200), false, None),
+            reconcile_decision(&sync_done(200), false, None, true),
             Reconcile::RedoNewerCopy
+        );
+        // A plain restart with no checkpoint or suspended state to resume
+        // from at all has nothing to compare the copy against: etl's own
+        // stored state resumes from the replication slot, and the copy is
+        // not read again (#7097).
+        assert_eq!(
+            reconcile_decision(&sync_done(200), false, None, false),
+            Reconcile::SyncCompleted
         );
         // `Ready` implies a later checkpoint that holds the copy.
         assert_eq!(
-            reconcile_decision(&TableState::Ready, false, Some(100)),
+            reconcile_decision(&TableState::Ready, false, Some(100), true),
             Reconcile::SyncCompleted
         );
         // No checkpoint at all under fault tolerance outranks the LSN check.
         assert_eq!(
-            reconcile_decision(&sync_done(200), true, Some(200)),
+            reconcile_decision(&sync_done(200), true, Some(200), false),
             Reconcile::RedoCopy
         );
     }
