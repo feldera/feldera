@@ -10,30 +10,6 @@ Source edition can be found on github.
 
 ## Unreleased
 
-- The pipeline logs stream can be resumed instead of replayed from the
-  start of the buffer. Passing `cursor=<epoch>:<sequence>` to
-  `GET /v0/pipelines/{pipeline}/logs` returns only the lines that follow
-  that position, and the response reports where the stream starts in the
-  `feldera-logs-epoch`, `feldera-logs-seq` and `feldera-logs-gap`
-  headers. A request without a `cursor` behaves as before. In Python, use
-  `Pipeline.resume_logs` or `FelderaClient.resume_pipeline_logs`, which
-  returns the open stream and its `LogPosition`.
-
-- Bug fix (Delta Lake input connector, `cdc` mode): a CDC read no longer
-  decodes columns the pipeline does not need. A column the SQL table
-  never declares, and that no connector expression names, is left out of
-  the read. This also fixes a transaction such as `UPDATE` or `MERGE`
-  that rewrote a file while changing only such a column: its `add` and
-  `remove` actions did not cancel, and the connector re-emitted the
-  rewritten rows as inserts (#7116).
-
-- Incompatible change (SQL compiler): the `WATERMARK` column annotation is
-  removed, and a table that declares one no longer compiles.  There is no
-  replacement. The annotation was experimental and undocumented, and a table that
-  combined it with a `PRIMARY KEY` never compiled.  `WATERMARK` is no longer a
-  reserved keyword, so a program may use it as an identifier, and a column's
-  `watermark` property no longer appears in a program's schema.
-
 - Incompatible change (PostgreSQL CDC input connector): an unqualified
   `source_table` names a table in the `public` schema. A pipeline whose
   `source_table` gives a bare name for a table outside `public` no longer
@@ -68,6 +44,32 @@ Source edition can be found on github.
   initial read. The initial read uses etl's current defaults: batches of up to
   32 MiB instead of 8 MiB and four copy connections per table instead of two.
   See [PostgreSQL CDC input connector](/connectors/sources/postgresql-cdc).
+
+## v0.350.0
+
+- The pipeline logs stream can be resumed instead of replayed from the
+  start of the buffer. Passing `cursor=<epoch>:<sequence>` to
+  `GET /v0/pipelines/{pipeline}/logs` returns only the lines that follow
+  that position, and the response reports where the stream starts in the
+  `feldera-logs-epoch`, `feldera-logs-seq` and `feldera-logs-gap`
+  headers. A request without a `cursor` behaves as before. In Python, use
+  `Pipeline.resume_logs` or `FelderaClient.resume_pipeline_logs`, which
+  returns the open stream and its `LogPosition`.
+
+- Bug fix (Delta Lake input connector, `cdc` mode): a CDC read no longer
+  decodes columns the pipeline does not need. A column the SQL table
+  never declares, and that no connector expression names, is left out of
+  the read. This also fixes a transaction such as `UPDATE` or `MERGE`
+  that rewrote a file while changing only such a column: its `add` and
+  `remove` actions did not cancel, and the connector re-emitted the
+  rewritten rows as inserts (#7116).
+
+- Incompatible change (SQL compiler): the `WATERMARK` column annotation is
+  removed, and a table that declares one no longer compiles.  There is no
+  replacement. The annotation was experimental and undocumented, and a table that
+  combined it with a `PRIMARY KEY` never compiled.  `WATERMARK` is no longer a
+  reserved keyword, so a program may use it as an identifier, and a column's
+  `watermark` property no longer appears in a program's schema.
 
 - The Kafka connector's `sasl.mechanism = OAUTHBEARER` authentication can now
   target GCP Managed Service for Apache Kafka, in addition to AWS MSK. Set the
