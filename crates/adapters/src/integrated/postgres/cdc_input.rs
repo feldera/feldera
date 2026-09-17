@@ -24,7 +24,7 @@ use etl::store::{
 };
 use feldera_adapterlib::catalog::{DeCollectionStream, InputCollectionHandle};
 use feldera_adapterlib::format::ParseError;
-use feldera_adapterlib::transport::{Resume, Watermark};
+use feldera_adapterlib::transport::{Resume, Step, Watermark};
 use feldera_types::config::FtModel;
 use feldera_types::coordination::Completion;
 use feldera_types::format::json::JsonFlavor;
@@ -54,6 +54,16 @@ type Ack = Box<dyn FnOnce() + Send>;
 /// Acknowledgments waiting for the step that holds their rows to become
 /// durable.
 type DeferredAcks = Vec<Ack>;
+
+/// Acknowledgments and the step whose input holds their rows.
+///
+/// The step and the frontier are both step counts, so naming this one keeps a
+/// call site from passing one where the other belongs.
+struct HeldAcks {
+    /// The step the flush that earned these acknowledgments fed.
+    flush_step: Step,
+    acks: DeferredAcks,
+}
 
 /// Error the destination returns when Feldera terminates the connector while
 /// etl is waiting to hand over a batch. etl persists it as a table error, so
@@ -472,9 +482,9 @@ struct PostgresCdcInputInner {
     watcher_rx: Mutex<Option<WatcherReceiver>>,
     /// Sender passing acknowledgments and the step that holds their rows to the
     /// background task. Created at construction if completion tracking exists.
-    completion_task_tx: Option<mpsc::UnboundedSender<(u64, DeferredAcks)>>,
+    completion_task_tx: Option<mpsc::UnboundedSender<HeldAcks>>,
     /// Receiver half, taken once by worker_task_inner to spawn the background task.
-    completion_task_rx: Mutex<Option<mpsc::UnboundedReceiver<(u64, DeferredAcks)>>>,
+    completion_task_rx: Mutex<Option<mpsc::UnboundedReceiver<HeldAcks>>>,
     /// etl shutdown handle for the currently running pipeline.
     /// Used to stop etl workers when Feldera terminates the connector.
     etl_shutdown_tx: Mutex<Option<ShutdownTx>>,
@@ -565,7 +575,7 @@ impl PostgresCdcInputInner {
             );
             return;
         };
-        let _ = tx.send((flush_step, acks));
+        let _ = tx.send(HeldAcks { flush_step, acks });
     }
 
     async fn worker_task(
@@ -812,12 +822,12 @@ impl PostgresCdcInputInner {
                     &self.endpoint_name
                 );
                 self.shutdown_etl_pipeline();
-                stop_completion_watcher(&mut completion_handle).await;
+                stop_completion_watcher(&mut completion_handle, &self.endpoint_name).await;
                 (pipeline_wait.as_mut().await, false)
             }
             _ = table_error_monitor.run() => {
                 self.shutdown_etl_pipeline();
-                stop_completion_watcher(&mut completion_handle).await;
+                stop_completion_watcher(&mut completion_handle, &self.endpoint_name).await;
                 (pipeline_wait.as_mut().await, false)
             }
         };
@@ -837,7 +847,7 @@ impl PostgresCdcInputInner {
             }
         }
 
-        stop_completion_watcher(&mut completion_handle).await;
+        stop_completion_watcher(&mut completion_handle, &self.endpoint_name).await;
 
         self.consumer.eoi();
     }
@@ -2357,7 +2367,7 @@ impl WatcherReceiver {
         }
     }
 
-    fn frontier(&self) -> u64 {
+    fn frontier(&self) -> Step {
         match self {
             Self::Fast(rx) => rx.borrow().total_completed_steps,
             Self::Strict(rx) => *rx.borrow(),
@@ -2378,11 +2388,11 @@ impl WatcherReceiver {
 /// that are not durable.
 async fn completion_watcher_task(
     mut watcher: WatcherReceiver,
-    mut pending_rx: mpsc::UnboundedReceiver<(u64, DeferredAcks)>,
+    mut pending_rx: mpsc::UnboundedReceiver<HeldAcks>,
     mut shutdown_rx: tokio::sync::oneshot::Receiver<()>,
     endpoint_name: String,
 ) {
-    let mut waiting: Vec<(u64, DeferredAcks)> = Vec::new();
+    let mut waiting: Vec<HeldAcks> = Vec::new();
 
     loop {
         tokio::select! {
@@ -2395,15 +2405,14 @@ async fn completion_watcher_task(
             }
             maybe_entry = pending_rx.recv() => {
                 match maybe_entry {
-                    Some((flush_step, acks)) => {
-                        let f = watcher.frontier();
-                        if f > flush_step {
+                    Some(held) => {
+                        if watcher.frontier() > held.flush_step {
                             // Already past the threshold, so answer at once.
-                            for ack in acks {
+                            for ack in held.acks {
                                 ack();
                             }
                         } else {
-                            waiting.push((flush_step, acks));
+                            waiting.push(held);
                         }
                     }
                     None => break, // Channel closed
@@ -2436,9 +2445,9 @@ async fn completion_watcher_task(
 /// so a stop judges it by the same frontier rather than drop it. Closing the
 /// channel first bounds the drain: no send can enter it afterwards.
 fn answer_durable_on_stop(
-    waiting: &mut Vec<(u64, DeferredAcks)>,
-    pending_rx: &mut mpsc::UnboundedReceiver<(u64, DeferredAcks)>,
-    frontier: u64,
+    waiting: &mut Vec<HeldAcks>,
+    pending_rx: &mut mpsc::UnboundedReceiver<HeldAcks>,
+    frontier: Step,
 ) {
     pending_rx.close();
     while let Ok(entry) = pending_rx.try_recv() {
@@ -2448,10 +2457,10 @@ fn answer_durable_on_stop(
 }
 
 /// Answers the writes whose rows the frontier has passed.
-fn fire_completed(waiting: &mut Vec<(u64, DeferredAcks)>, frontier: u64) {
-    waiting.retain_mut(|(flush_step, acks)| {
-        if frontier > *flush_step {
-            for ack in acks.drain(..) {
+fn fire_completed(waiting: &mut Vec<HeldAcks>, frontier: Step) {
+    waiting.retain_mut(|held| {
+        if frontier > held.flush_step {
+            for ack in held.acks.drain(..) {
                 ack();
             }
             false
@@ -2472,7 +2481,7 @@ const WATCHER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Stop the completion watcher, letting it answer the writes the frontier has
 /// already passed. Calling it again finds nothing to stop.
-async fn stop_completion_watcher(watcher: &mut Option<CompletionWatcher>) {
+async fn stop_completion_watcher(watcher: &mut Option<CompletionWatcher>, endpoint_name: &str) {
     let Some(CompletionWatcher {
         shutdown_tx,
         mut handle,
@@ -2488,7 +2497,12 @@ async fn stop_completion_watcher(watcher: &mut Option<CompletionWatcher>) {
         .await
         .is_err()
     {
-        warn!("postgres_cdc: completion watcher did not stop in time; aborting it");
+        warn!(
+            "postgres_cdc {endpoint_name}: the completion watcher did not stop within \
+             {WATCHER_SHUTDOWN_TIMEOUT:?}, so it is being aborted. The writes it had not yet \
+             answered stay unacknowledged, so PostgreSQL offers their changes again on the \
+             next start"
+        );
         handle.abort();
         let _ = handle.await;
     }
@@ -3036,6 +3050,15 @@ mod tests {
     // reader. etl keeps the constructor of a `WriteTableRowsResult` private, so
     // the terminal barrier is answered here by setting a flag, exactly as the
     // destination answers it by sending `Durable`.
+
+    /// Acknowledgments of one write, waiting for `flush_step` to become
+    /// durable, answered by raising `answered`.
+    fn held(flush_step: Step, answered: &Arc<AtomicBool>) -> HeldAcks {
+        HeldAcks {
+            flush_step,
+            acks: vec![terminal(answered)],
+        }
+    }
 
     /// Answer a terminal barrier by raising `answered`.
     fn terminal(answered: &Arc<AtomicBool>) -> Box<dyn FnOnce() + Send> {
@@ -3610,14 +3633,11 @@ mod tests {
             Arc::new(AtomicBool::new(false)),
             Arc::new(AtomicBool::new(false)),
         );
-        let mut pending: Vec<(u64, DeferredAcks)> = vec![
-            (3, vec![terminal(&durable)]),
-            (9, vec![terminal(&waiting_still)]),
-        ];
+        let mut pending = vec![held(3, &durable), held(9, &waiting_still)];
         // An answer the reader sent but the watcher had not yet received is as
         // durable as one already waiting.
         let (tx, mut rx) = mpsc::unbounded_channel();
-        tx.send((4, vec![terminal(&in_channel)])).unwrap();
+        tx.send(held(4, &in_channel)).unwrap();
 
         answer_durable_on_stop(&mut pending, &mut rx, 5);
 
@@ -3666,8 +3686,7 @@ mod tests {
             Arc::new(AtomicBool::new(false)),
             Arc::new(AtomicBool::new(false)),
         );
-        let mut waiting: Vec<(u64, DeferredAcks)> =
-            vec![(3, vec![terminal(&early)]), (5, vec![terminal(&late)])];
+        let mut waiting = vec![held(3, &early), held(5, &late)];
 
         // A frontier of n means steps 0..n-1 are durable, so a write flushed
         // during step n waits for n + 1.

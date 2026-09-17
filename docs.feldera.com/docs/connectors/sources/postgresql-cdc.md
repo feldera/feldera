@@ -313,3 +313,10 @@ checkpoints on its own, by default every 60 seconds; the
 `checkpoint_interval_secs` setting described on the
 [fault tolerance](/pipelines/fault-tolerance) page changes the interval, and
 `null` disables automatic checkpoints.
+
+How often the pipeline checkpoints is therefore how often the replication slot
+advances. With automatic checkpoints off, or with fault tolerance off, the slot
+moves only when someone requests a checkpoint or suspends the pipeline, and
+PostgreSQL keeps every write-ahead log segment since the last one. A pipeline
+left running that way holds the source's disk, so either keep checkpoints
+automatic or make requesting one part of how the pipeline is operated.
