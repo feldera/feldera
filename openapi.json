@@ -10736,6 +10736,15 @@
             ],
             "default": null,
             "nullable": true
+          },
+          "sync_mode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageSyncMode"
+              }
+            ],
+            "default": null,
+            "nullable": true
           }
         }
       },
@@ -15656,6 +15665,15 @@
             "description": "Present checkpoints."
           }
         }
+      },
+      "StorageSyncMode": {
+        "type": "string",
+        "description": "How a pipeline makes its files durable when it commits a checkpoint.\n\nA checkpoint can hold tens of thousands of files, so committing them one at\na time is the dominant cost of making one. Both alternatives below fix that,\nbut they suit different deployments.",
+        "enum": [
+          "auto",
+          "syncfs",
+          "per_file"
+        ]
       },
       "SuspendError": {
         "oneOf": [

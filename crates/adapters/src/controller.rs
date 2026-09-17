@@ -82,8 +82,8 @@ use feldera_storage::disk::DiskUsage;
 use feldera_storage::fbuf::slab::FBufSlabsStats;
 use feldera_storage::histogram::{ExponentialHistogram, ExponentialHistogramSnapshot};
 use feldera_storage::metrics::{
-    READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS, SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES,
-    WRITE_LATENCY_MICROSECONDS,
+    COMMIT_ALL_LATENCY_MICROSECONDS, READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS,
+    SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES, WRITE_LATENCY_MICROSECONDS,
 };
 use feldera_types::adapter_stats::{
     ConnectorHealth, ExternalControllerStatus, ExternalInputEndpointStatus,
@@ -1611,7 +1611,7 @@ impl Controller {
         );
         metrics.counter(
             "files_synced_total",
-            "Total number of files fsynced to stable storage.",
+            "Total number of files fsynced to stable storage individually.",
             labels,
             &FILES_SYNCED,
         );
@@ -1742,9 +1742,15 @@ impl Controller {
         );
         metrics.histogram(
             "storage_sync_latency_seconds",
-            "Sync latency in seconds",
+            "Latency in seconds of syncing one file to stable storage.",
             labels,
             &HistogramDiv::new(SYNC_LATENCY_MICROSECONDS.snapshot(), 1_000_000.0),
+        );
+        metrics.histogram(
+            "storage_commit_all_latency_seconds",
+            "Latency in seconds of making a checkpoint's files durable, counting the whole operation however the backend performs it.",
+            labels,
+            &HistogramDiv::new(COMMIT_ALL_LATENCY_MICROSECONDS.snapshot(), 1_000_000.0),
         );
 
         metrics.histogram(

@@ -96,7 +96,7 @@ async-stream = { workspace = true }
 futures-util = { workspace = true }
 feldera-buffer-cache = { workspace = true }
 memory-stats = { workspace = true }
-nix = { workspace = true, features = ["process", "time"] }
+nix = { workspace = true, features = ["process", "time", "fs", "feature"] }
 pin-project-lite = { workspace = true }
 
 [dev-dependencies]

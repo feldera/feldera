@@ -661,6 +661,7 @@ export type {
   StorageOptions,
   StorageStatus,
   StorageStatusDetails,
+  StorageSyncMode,
   SuspendError,
   SyncCheckpointData,
   SyncCheckpointError,

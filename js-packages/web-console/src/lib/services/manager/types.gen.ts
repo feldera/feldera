@@ -2145,6 +2145,7 @@ export type FileBackendConfig = {
    */
   ioop_delay?: number | null
   sync?: SyncConfig | null
+  sync_mode?: StorageSyncMode | null
 }
 
 /**
@@ -6015,6 +6016,15 @@ export type StorageStatusDetails = {
    */
   checkpoints: Array<CheckpointMetadata>
 }
+
+/**
+ * How a pipeline makes its files durable when it commits a checkpoint.
+ *
+ * A checkpoint can hold tens of thousands of files, so committing them one at
+ * a time is the dominant cost of making one. Both alternatives below fix that,
+ * but they suit different deployments.
+ */
+export type StorageSyncMode = 'auto' | 'syncfs' | 'per_file'
 
 /**
  * Whether a pipeline supports checkpointing and suspend-and-resume.

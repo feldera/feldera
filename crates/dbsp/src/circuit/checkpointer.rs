@@ -48,6 +48,11 @@ impl Checkpointer {
     /// We keep at least this many checkpoints around.
     pub(super) const MIN_CHECKPOINT_THRESHOLD: usize = 2;
 
+    /// Returns the storage backend this checkpointer writes to.
+    pub(super) fn backend(&self) -> &Arc<dyn StorageBackend> {
+        &self.backend
+    }
+
     /// Creates a new checkpointer for directory `storage_path`.  Deletes any
     /// unreferenced files in the directory.
     pub fn new(backend: Arc<dyn StorageBackend>) -> Result<Self, Error> {

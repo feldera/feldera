@@ -19,7 +19,11 @@ pub static FILES_CREATED: AtomicU64 = AtomicU64::new(0);
 /// Total number of files deleted.
 pub static FILES_DELETED: AtomicU64 = AtomicU64::new(0);
 
-/// Total number of files fsynced to stable storage.
+/// Total number of files fsynced to stable storage individually.
+///
+/// A backend that makes a checkpoint durable in one operation, such as
+/// `syncfs`, does not sync its files one by one and so does not count them
+/// here.
 pub static FILES_SYNCED: AtomicU64 = AtomicU64::new(0);
 
 /// Time in nanoseconds a worker was stalled waiting for more merges to complete.

@@ -104,10 +104,11 @@ to work with data larger than memory.
 | :--- | :--- | :---------- |
 | <a name='files_created_total'>`files_created_total`</a> |counter | Total number of files created. |
 | <a name='files_deleted_total'>`files_deleted_total`</a> |counter | Total number of files deleted. |
-| <a name='files_synced_total'>`files_synced_total`</a> |counter | Total number of files fsynced to stable storage. |
+| <a name='files_synced_total'>`files_synced_total`</a> |counter | Total number of files fsynced to stable storage individually. |
 | <a name='storage_byte_seconds_total'>`storage_byte_seconds_total`</a> |counter | Storage usage integrated over time during this run of the pipeline, in bytes × seconds. |
 | <a name='storage_cache_usage_bytes'>`storage_cache_usage_bytes`</a> |gauge | The number of bytes of memory currently in use for caching data on storage. |
 | <a name='storage_cache_usage_limit_bytes_total'>`storage_cache_usage_limit_bytes_total`</a> |counter | The limit for the number of bytes of memory for caching data on storage. |
+| <a name='storage_commit_all_latency_seconds'>`storage_commit_all_latency_seconds`</a> |histogram | Latency in seconds of making a checkpoint's files durable, counting the whole operation however the backend performs it. |
 | <a name='storage_fbuf_slab_alloc_served_by_slab_percent'>`storage_fbuf_slab_alloc_served_by_slab_percent`</a> |gauge | The percentage of `FBuf` allocation requests served by slab pools. |
 | <a name='storage_fbuf_slab_alloc_total'>`storage_fbuf_slab_alloc_total`</a> |counter | The total number of `FBuf` allocation requests across all slab size classes and fallbacks. |
 | <a name='storage_fbuf_slab_free_served_by_slab_percent'>`storage_fbuf_slab_free_served_by_slab_percent`</a> |gauge | The percentage of `FBuf` deallocation requests served by slab pools. |
@@ -118,7 +119,7 @@ to work with data larger than memory.
 | <a name='storage_fbuf_slab_size_class_free_total'>`storage_fbuf_slab_size_class_free_total`</a> |counter | The total number of `FBuf` deallocation requests for each slab size class. |
 | <a name='storage_read_block_bytes'>`storage_read_block_bytes`</a> |histogram | Sizes in bytes of blocks read from storage. |
 | <a name='storage_read_latency_seconds'>`storage_read_latency_seconds`</a> |histogram | Read latency for storage blocks in seconds |
-| <a name='storage_sync_latency_seconds'>`storage_sync_latency_seconds`</a> |histogram | Sync latency in seconds |
+| <a name='storage_sync_latency_seconds'>`storage_sync_latency_seconds`</a> |histogram | Latency in seconds of syncing one file to stable storage. |
 | <a name='storage_usage_bytes'>`storage_usage_bytes`</a> |gauge | The number of bytes of storage currently in use |
 | <a name='storage_write_block_bytes'>`storage_write_block_bytes`</a> |histogram | Sizes in bytes of blocks written to storage. |
 | <a name='storage_write_latency_seconds'>`storage_write_latency_seconds`</a> |histogram | Write latency for storage blocks in seconds |
