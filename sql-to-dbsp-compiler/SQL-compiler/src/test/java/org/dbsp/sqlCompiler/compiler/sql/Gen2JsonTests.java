@@ -10,9 +10,10 @@ import org.junit.Test;
 
 /** The circuit JSON written for the Gen-2 engine ({@code --gen2}) carries no Rust-codegen
  * artifacts: a {@code TYPEDBOX} is written as the expression it boxes, a
- * {@code TypedBox<T, _>} type as {@code T}, a {@code clone()} as the expression it clones, and
- * an aggregate operator keeps its per-aggregate list instead of one fold over a tuple
- * accumulator.  The {@code --jit} JSON keeps the Rust forms. */
+ * {@code TypedBox<T, _>} type as {@code T}, a {@code clone()} as the expression it clones, a
+ * constant stays where it is used instead of moving to a {@code static} declaration, and an
+ * aggregate operator keeps its per-aggregate list instead of one fold over a tuple accumulator.
+ * The {@code --jit} JSON keeps the Rust forms. */
 public class Gen2JsonTests extends SqlIoTest {
     /** A temporal filter against NOW(): the Rust backend boxes its window bounds. */
     static final String WINDOW_PROGRAM = """
@@ -25,6 +26,11 @@ public class Gen2JsonTests extends SqlIoTest {
             CREATE TABLE sales(region VARCHAR NOT NULL, qty INT, score DOUBLE, tag VARCHAR);
             CREATE VIEW fold_agg AS
             SELECT region, SUM(score), ARRAY_AGG(tag), BIT_XOR(qty) FROM sales GROUP BY region;""";
+
+    /** A string and a decimal constant, which the Rust backend hoists into statics. */
+    static final String CONSTANT_PROGRAM = """
+            CREATE TABLE sales(region VARCHAR NOT NULL, price DECIMAL(10, 2));
+            CREATE VIEW labelled AS SELECT region || '-suffix', price * 1.25 FROM sales;""";
 
     String circuitJson(boolean gen2) {
         return this.circuitJson(WINDOW_PROGRAM, gen2);
@@ -70,6 +76,23 @@ public class Gen2JsonTests extends SqlIoTest {
         Assert.assertFalse(json.contains("DBSPCloneExpression"));
         // The cloned field access is still the argument of the step.
         Assert.assertTrue(json.contains("\"array_aggN\""));
+    }
+
+    @Test
+    public void jitJsonHoistsConstantsIntoStatics() {
+        String json = this.circuitJson(CONSTANT_PROGRAM, false);
+        Assert.assertTrue(json.contains("\"DBSPStaticItem\""));
+        Assert.assertTrue(json.contains("\"DBSPStaticExpression\""));
+    }
+
+    @Test
+    public void gen2JsonKeepsConstantsInline() {
+        String json = this.circuitJson(CONSTANT_PROGRAM, true);
+        Assert.assertFalse(json.contains("DBSPStaticItem"));
+        Assert.assertFalse(json.contains("DBSPStaticExpression"));
+        // The constants are still in the projection, as literals.
+        Assert.assertTrue(json.contains("-suffix"));
+        Assert.assertTrue(json.contains("\"DBSPDecimalLiteral\""));
     }
 
     static int occurrences(String text, String pattern) {

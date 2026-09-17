@@ -189,7 +189,11 @@ public class CircuitOptimizer extends Passes {
         // The canonical form is needed if we want the Merkle hashes to be "stable".
         this.add(new CanonicalForm(compiler).getCircuitRewriter(false));
         this.add(new ConstantViews(compiler));
-        this.add(new StaticDeclarations(compiler, new ImplementStatics(compiler, !compiler.options.ioOptions.multiCrates())));
+        // Hoisting constants into Rust `static` items spares the Rust backend from rebuilding them
+        // on every call.  The Gen-2 JSON keeps each constant where it is used, so that a closure
+        // is self-contained and its reader resolves no declarations.
+        if (!compiler.options.ioOptions.gen2)
+            this.add(new StaticDeclarations(compiler, new ImplementStatics(compiler, !compiler.options.ioOptions.multiCrates())));
         // From now on we cannot really change the graph anymore.
 
         // this.add(new TestSerialize(compiler));
