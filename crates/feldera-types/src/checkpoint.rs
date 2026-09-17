@@ -46,6 +46,16 @@ pub enum CheckpointActivity {
     },
 }
 
+impl CheckpointActivity {
+    /// Returns `delayed_since` if this is `CheckpointActivity::Delayed`.
+    pub fn delayed_since(&self) -> Option<DateTime<Utc>> {
+        match self {
+            Self::Delayed { delayed_since, .. } => Some(*delayed_since),
+            _ => None,
+        }
+    }
+}
+
 /// Information about a failed checkpoint.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, ToSchema)]
 pub struct CheckpointFailure {
