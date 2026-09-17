@@ -2027,6 +2027,7 @@ mod key_count_estimate_test {
 
 #[cfg(test)]
 pub(crate) mod test {
+    use crate::utils::test::CIRCUIT_CASES;
     use crate::{
         DBData, Runtime, Stream, ZWeight,
         circuit::CircuitConfig,
@@ -2662,6 +2663,8 @@ pub(crate) mod test {
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(CIRCUIT_CASES))]
+
         #[test]
         fn proptest_antijoin_big_step(inputs in generate_antijoin_test_data(10, 5, 3, 100)) {
             proptest_antijoin(inputs.0, inputs.1, true);

@@ -579,6 +579,7 @@ where
 #[cfg(test)]
 #[allow(clippy::type_complexity)]
 mod test {
+    use crate::utils::test::CIRCUIT_CASES;
     use crate::{
         DBData, DynZWeight, RootCircuit, Runtime, Stream, ZWeight,
         dynamic::{DowncastTrait, DynData, Erase},
@@ -911,6 +912,8 @@ mod test {
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(CIRCUIT_CASES))]
+
         #[test]
         fn neighborhood_proptest(trace in input_trace(100, 5, 200, 20)) {
 

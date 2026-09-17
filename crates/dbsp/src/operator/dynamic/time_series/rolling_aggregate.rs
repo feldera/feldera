@@ -1038,6 +1038,7 @@ where
 
 #[cfg(test)]
 mod test {
+    use crate::utils::test::CIRCUIT_CASES;
     use crate::{
         DBData, DBSPHandle, IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime,
         Stream, TypedBox, ZWeight,
@@ -1751,6 +1752,8 @@ mod test {
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(CIRCUIT_CASES))]
+
         #[test]
         fn proptest_partitioned_over_range_sparse_small_steps(trace in input_trace(5, 1_000_000, 10, 10)) {
             test_partition_rolling_aggregate(u64::MAX, None, trace, false);

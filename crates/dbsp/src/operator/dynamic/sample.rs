@@ -333,6 +333,7 @@ where
 #[cfg(test)]
 #[allow(clippy::type_complexity)]
 mod test {
+    use crate::utils::test::CIRCUIT_CASES;
     use crate::{
         DynZWeight, RootCircuit, Runtime, ZWeight,
         dynamic::{DowncastTrait, DynData, DynPair},
@@ -448,6 +449,8 @@ mod test {
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(CIRCUIT_CASES))]
+
         #[test]
         fn sample_keys_proptest(trace in input_trace(100, 5, 200, 20)) {
 

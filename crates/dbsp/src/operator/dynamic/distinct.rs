@@ -1316,6 +1316,7 @@ mod test {
     use anyhow::Result as AnyResult;
     use std::{cell::RefCell, rc::Rc};
 
+    use crate::utils::test::CIRCUIT_CASES;
     use crate::{
         Circuit, IndexedZSetHandle, RootCircuit, Runtime, ZSetHandle,
         algebra::ZSet as DynZSet,
@@ -1980,6 +1981,8 @@ mod test {
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(CIRCUIT_CASES))]
+
         #[test]
         fn proptest_distinct_test_mt_small_step(inputs in test_input(), workers in (2..=16usize)) {
             proptest_distinct_test_mt(inputs, workers, false);

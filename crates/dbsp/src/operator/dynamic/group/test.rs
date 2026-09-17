@@ -2,6 +2,7 @@
 
 use std::{cmp::Ordering, sync::Arc};
 
+use crate::utils::test::CIRCUIT_CASES;
 use crate::{
     DBData, DynZWeight, RootCircuit, Runtime, ZWeight,
     circuit::CircuitConfig,
@@ -879,6 +880,8 @@ fn test_topk(trace: Vec<Vec<(i32, i32, ZWeight)>>, transaction: bool) {
 }
 
 proptest! {
+    #![proptest_config(ProptestConfig::with_cases(CIRCUIT_CASES))]
+
     #[test]
     fn test_topk_small_step(trace in input_trace(5, 1_000, 200, 20)) {
         test_topk(trace, false)

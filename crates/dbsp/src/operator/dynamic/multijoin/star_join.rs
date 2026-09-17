@@ -724,6 +724,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::test::CIRCUIT_CASES;
     use crate::{
         OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit, Runtime, Stream, ZSetHandle, ZWeight,
         algebra::F64,
@@ -1372,6 +1373,8 @@ mod tests {
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(CIRCUIT_CASES))]
+
         #[test]
         fn proptest_star_join_index4_small_steps(
             input_data in prop::collection::vec(input_step_strategy(5, 10, 2, 5), 0..15),

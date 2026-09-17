@@ -252,6 +252,7 @@ where
 mod test {
     use std::cmp::{max, min};
 
+    use crate::utils::test::CIRCUIT_CASES;
     use crate::{
         OrdIndexedZSet, OutputHandle, RootCircuit, Runtime, ZSetHandle, ZWeight,
         circuit::CircuitConfig, operator::Min, typed_batch::IndexedZSetReader,
@@ -301,6 +302,8 @@ mod test {
     }
 
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(CIRCUIT_CASES))]
+
         #[test]
         fn chain_aggregate_min_test(inputs in test_inputs()) {
             let (mut dbsp, (input, aggregate, delta_aggregate)) =
