@@ -7894,3 +7894,59 @@ fn the_step_a_reader_feeds_is_one_below_the_count_initiated() {
     // then, and saying `Some(0)` would claim a step that has not begun.
     assert_eq!(current_step_of(0), None);
 }
+
+/// The step a reader feeds comes from the steps the controller has started,
+/// never from the steps its output connectors have finished. The two agree
+/// while every output keeps up, which is why reading the wrong one hid for so
+/// long, and they part as soon as one falls behind. A connector that defers
+/// acknowledgment stamps its writes with this step, so reading the lagging
+/// count acknowledges rows against a checkpoint that predates them (#7122).
+///
+/// Reading `total_completed_steps` here instead of `total_initiated_steps`
+/// makes this test fail, which the arithmetic test above cannot do.
+#[test]
+fn a_reader_is_told_the_step_being_fed_not_the_one_the_outputs_finished() {
+    init_test_logger();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "current_step_test",
+        "workers": 1,
+        "inputs": {},
+        "outputs": {},
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[], &[None])),
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    // An output connector two steps behind the circuit, which is what a slow
+    // sink looks like to the counters.
+    let metrics = &controller.inner.status.global_metrics;
+    metrics.total_initiated_steps.store(7, Ordering::Release);
+    metrics.total_completed_steps.store(5, Ordering::Release);
+
+    let probe = super::InputProbe {
+        endpoint_id: 0,
+        endpoint_name: "test_input".to_string(),
+        controller: controller.inner.clone(),
+        max_batch_size: 1024,
+        transaction_in_progress: AtomicBool::new(false),
+    };
+
+    assert_eq!(
+        probe.current_step(),
+        Some(6),
+        "the controller started seven steps, so it is feeding the seventh"
+    );
+    assert_ne!(
+        probe.current_step(),
+        Some(metrics.total_completed_steps.load(Ordering::Acquire)),
+        "the outputs have finished fewer steps than the circuit has started, \
+         and an answer stamped with their count would go out too early"
+    );
+
+    controller.stop().unwrap();
+}

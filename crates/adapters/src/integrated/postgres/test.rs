@@ -4172,9 +4172,6 @@ mod cdc_tests {
         )
     }
 
-    /// Fault-tolerant CDC circuit for record type `T` with `schema`, run on
-    /// `workers` worker threads. Checkpoints only when the test asks for one
-    /// (interval set to one hour).
     /// How a fault-tolerant test circuit runs: how many workers it has, and
     /// how many records its reader takes per step, which a test that needs a
     /// write to reach the circuit over several steps sets to one.
@@ -4193,6 +4190,9 @@ mod cdc_tests {
         }
     }
 
+    /// Fault-tolerant CDC circuit for record type `T` with `schema`, in the
+    /// given `shape`. Checkpoints only when the test asks for one (interval
+    /// set to one hour).
     pub(super) fn cdc_ft_test_circuit_for<T>(
         url: &str,
         publication: &str,

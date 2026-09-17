@@ -825,8 +825,18 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// and so only a lower bound on the step being fed: a lagging output makes
     /// it name a step whose checkpoint predates the rows.
     ///
+    /// A consumer that returns `Some` from [`completion_watcher`] or
+    /// [`checkpoint_watcher`] must return `Some` here while handling a `Queue`
+    /// command. Those two say that acknowledgment can be deferred, and this
+    /// says what it waits for; an adapter offered the first two without this
+    /// cannot tell which step holds its rows, and may refuse to run rather
+    /// than acknowledge them against the wrong one.
+    ///
     /// The value is meaningful only while handling a `Queue` command. Returns
     /// `None` if the consumer does not track steps.
+    ///
+    /// [`completion_watcher`]: Self::completion_watcher
+    /// [`checkpoint_watcher`]: Self::checkpoint_watcher
     fn current_step(&self) -> Option<Step> {
         None
     }
