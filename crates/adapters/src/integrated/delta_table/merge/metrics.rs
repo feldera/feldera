@@ -41,6 +41,8 @@ pub struct MergeMetrics {
     probe_row_groups_scanned: AtomicU64,
     probe_row_groups_pruned: AtomicU64,
     probe_key_bytes_read: AtomicU64,
+    /// Key ranges walked, summed over flushes. Above `flushes` when `threads` split a batch.
+    ranges_walked: AtomicU64,
     bytes_written: AtomicU64,
     /// Where flush time went, in microseconds. These partition one flush, so they sum to
     /// what `flush_latency` records for it -- over a successful flush only, since a failed
@@ -124,6 +126,7 @@ impl MergeMetrics {
         );
         add(&self.bytes_written, flush.bytes_written);
         add(&self.probe_key_bytes_read, flush.probe.key_bytes_read);
+        add(&self.ranges_walked, flush.ranges as u64);
 
         let t = &flush.timings;
         let micros = |d: Duration| d.as_micros() as u64;
@@ -132,7 +135,7 @@ impl MergeMetrics {
         add(&self.append_micros, micros(t.append));
         add(&self.deletion_vector_micros, micros(t.deletion_vectors));
         add(&self.commit_micros, micros(t.commit));
-        add(&self.batch_walk_micros, micros(t.other()));
+        add(&self.batch_walk_micros, micros(t.batch_walk));
     }
 
     /// Record the table's superseded-row ratio, warning when it crosses the threshold.
@@ -252,6 +255,13 @@ impl ConnectorMetrics for MergeMetrics {
                 "Row groups the lookup skipped on their footer statistics.",
                 ValueType::Counter,
                 get(&self.probe_row_groups_pruned),
+            ),
+            (
+                "output_connector_delta_merge_ranges_walked_total",
+                "Key ranges walked by merge-mode flushes. Above the flush count when \
+                 `threads` split a batch into ranges written in parallel.",
+                ValueType::Counter,
+                get(&self.ranges_walked),
             ),
             (
                 "output_connector_delta_merge_probe_key_bytes_read_total",

@@ -57,6 +57,21 @@ impl Tombstones {
         };
     }
 
+    /// Absorb another range's tombstones.
+    ///
+    /// Ranges cover disjoint keys, so they mark disjoint rows; the union is well defined
+    /// either way, since marking a row twice is already a no-op.
+    pub fn merge(&mut self, other: Self) {
+        for (path, bitmap) in other.files {
+            match self.files.get_mut(&path) {
+                Some(existing) => *existing |= bitmap,
+                None => {
+                    self.files.insert(path, bitmap);
+                }
+            }
+        }
+    }
+
     pub fn is_empty(&self) -> bool {
         self.files.is_empty()
     }
