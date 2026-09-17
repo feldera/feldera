@@ -467,65 +467,103 @@ fn test_checkpoint_mid_snapshot_waits_for_the_whole_copy_multiworker() {
 /// circuit before it gives up.
 const CATCH_MIDWAY_ATTEMPTS: u32 = 3;
 
-/// Run a scenario that must catch rows still on their way to the circuit, on
-/// tables of `base_rows`, then twice and four times as many rows, until
-/// `attempt` reports that it caught them. `attempt` receives the row count,
-/// builds its own table and run, and returns `false` after stopping its run
-/// when the rows reached the circuit before the poll could measure them.
-/// `caught` names what the scenario had to catch, for the message it prints
-/// when it never does.
-///
-/// How fast rows reach the circuit is a property of the runner, not of the
-/// connector, so an outrun poll is a reason to widen the window, not to fail.
-/// A runner that outruns every attempt leaves the scenario unexercised, which
-/// the test says instead of going red: red must mean the connector is wrong.
-/// Every assertion about the connector stays inside `attempt`.
-/// What a scenario makes of never catching what it had to catch.
+/// What one attempt at catching rows still on their way to the circuit made of
+/// its run. The variants say only whether there was anything for the checks to
+/// assert against; every assertion about the connector stays inside the
+/// attempt.
+#[derive(Clone, Copy)]
+enum Attempt {
+    /// The poll caught what the scenario had to catch, and the checks resting
+    /// on it ran.
+    Caught,
+    /// The poll never saw it: the rows reached the circuit whole between two
+    /// polls. A wider window is the answer, and a scenario that holds its own
+    /// window open has none left to widen.
+    Outrun,
+    /// The poll caught it, but the run then lost a race it has no lever over,
+    /// which left the checks nothing to assert against. Another attempt is the
+    /// only answer, whatever the scenario can do about its window.
+    Raced,
+}
+
+/// What a scenario makes of a poll that caught nothing. It governs
+/// [`Attempt::Outrun`] alone: [`Attempt::Raced`] is always reported, because no
+/// scenario can hold a race open.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum WhenMissed {
-    /// The scenario has no lever over the window, so a miss says only that
-    /// this runner is fast. Report it and pass: red must mean the connector is
-    /// wrong.
+enum WhenOutrun {
+    /// The scenario has no lever over the window, so an outrun poll says only
+    /// that this runner is fast. Report it and pass: red must mean the
+    /// connector is wrong.
     Report,
-    /// The scenario holds the window open itself, so a miss means its setup no
-    /// longer works, which is worth a red build because no report from a
-    /// passing test reaches anyone.
+    /// The scenario holds the window open itself, so an outrun poll means its
+    /// setup no longer works, which is worth a red build because no report from
+    /// a passing test reaches anyone.
     Fail,
 }
 
+/// Run a scenario that must catch rows still on their way to the circuit, on
+/// tables of `base_rows`, then twice and four times as many rows, until
+/// `attempt` reports [`Attempt::Caught`]. `attempt` receives the row count,
+/// builds its own table and run, and stops that run before reporting anything
+/// else. `what` names the scenario and `caught` names what it had to catch, for
+/// the messages this helper prints.
+///
+/// How fast rows reach the circuit is a property of the runner, not of the
+/// connector, so [`Attempt::Outrun`] is a reason to widen the window rather
+/// than to fail, unless `when_outrun` is [`WhenOutrun::Fail`] because the
+/// scenario holds that window open itself. [`Attempt::Raced`] is nobody's setup
+/// breaking, so an attempt that raced is reported and passes whatever
+/// `when_outrun` says. A runner that outruns or outraces every attempt leaves
+/// the scenario unexercised, which the test says instead of going red: red must
+/// mean the connector is wrong.
 fn retry_until_caught_midway(
     what: &str,
     caught: &str,
     base_rows: i64,
-    when_missed: WhenMissed,
-    mut attempt: impl FnMut(i64) -> bool,
+    when_outrun: WhenOutrun,
+    mut attempt: impl FnMut(i64) -> Attempt,
 ) {
     let mut rows = base_rows;
+    let mut raced = false;
     for i in 1..=CATCH_MIDWAY_ATTEMPTS {
-        if attempt(rows) {
-            return;
-        }
+        let why = match attempt(rows) {
+            Attempt::Caught => return,
+            Attempt::Outrun => format!("{caught} of {rows} rows outran the poll"),
+            Attempt::Raced => {
+                raced = true;
+                format!(
+                    "the poll caught {caught} of {rows} rows, and the run then lost the race \
+                     that follows it"
+                )
+            }
+        };
         if i < CATCH_MIDWAY_ATTEMPTS {
-            println!(
-                "{what}: {caught} of {rows} rows outran the poll; retrying with {} rows",
-                rows * 2
-            );
+            println!("{what}: {why}; retrying with {} rows", rows * 2);
             rows *= 2;
+        } else {
+            println!("{what}: {why}");
         }
     }
     let missed = format!(
         "{what}: scenario not exercised: in {CATCH_MIDWAY_ATTEMPTS} attempts, on tables of up to \
-         {rows} rows, the poll never caught {caught}. The connector passed every check that ran"
+         {rows} rows, no attempt reached the checks that rest on catching {caught}. The connector \
+         passed every check that ran"
     );
-    match when_missed {
-        WhenMissed::Report => eprintln!(
-            "{missed}; this runner is too fast for the window this \
-             scenario needs"
-        ),
-        WhenMissed::Fail => panic!(
-            "{missed}. This scenario holds the window open itself, by capping the records the \
-             reader takes per step, so missing it means that setup no longer works rather than \
-             that the runner is fast"
+    if raced {
+        eprintln!(
+            "{missed}; at least one attempt caught {caught} and then lost the race that follows \
+             it, which no scenario holds open"
+        );
+        return;
+    }
+    match when_outrun {
+        WhenOutrun::Report => {
+            eprintln!("{missed}; this runner is too fast for the window this scenario needs")
+        }
+        WhenOutrun::Fail => panic!(
+            "{missed}. Every attempt was outrun, and this scenario holds its window open itself, \
+             by capping the records the reader takes per step, so a poll that caught nothing \
+             means that setup no longer works rather than that the runner is fast"
         ),
     }
 }
@@ -551,7 +589,7 @@ fn checkpoint_mid_snapshot_waits_for_the_whole_copy(workers: usize) {
         "scenario 2",
         "the copy in progress",
         base_rows,
-        WhenMissed::Report,
+        WhenOutrun::Report,
         |n| {
             let mut table = scenario_table("cdc_sc_mid_snap");
             insert_range(&mut table, 1, n);
@@ -578,7 +616,7 @@ fn checkpoint_mid_snapshot_waits_for_the_whole_copy(workers: usize) {
                 // be requested, so this run says nothing about a deferred
                 // checkpoint.
                 run1.stop();
-                return false;
+                return Attempt::Outrun;
             };
             let checkpoint = run1.controller.checkpoint().unwrap();
             let in_checkpoint = checkpoint
@@ -618,7 +656,7 @@ fn checkpoint_mid_snapshot_waits_for_the_whole_copy(workers: usize) {
                 vec![n + 1],
                 "run 2 must deliver only the row inserted after the restart"
             );
-            true
+            Attempt::Caught
         },
     );
 }
@@ -652,7 +690,7 @@ fn test_suspend_mid_copy_is_refused() {
         "scenario 2b",
         "the copy in progress",
         BASE_ROWS,
-        WhenMissed::Report,
+        WhenOutrun::Report,
         |n| {
             let mut table = scenario_table("cdc_sc_partial");
             insert_range(&mut table, 1, n);
@@ -670,7 +708,7 @@ fn test_suspend_mid_copy_is_refused() {
                 // The whole copy reached the circuit before the pause, so this
                 // run says nothing about a suspend requested mid-copy.
                 run.stop();
-                return false;
+                return Attempt::Outrun;
             };
             // Pausing stops etl from handing over the rest of the copy, so the
             // barrier stays up for as long as the pause does.
@@ -701,7 +739,7 @@ fn test_suspend_mid_copy_is_refused() {
                  {prefix} of {n} rows in the circuit"
                 )
             });
-            true
+            Attempt::Caught
         },
     );
 }
@@ -1342,7 +1380,7 @@ fn test_a_checkpoint_inside_one_write_does_not_acknowledge_it() {
         "scenario 11",
         "a write still reaching the circuit",
         160,
-        WhenMissed::Fail,
+        WhenOutrun::Fail,
         |n| {
             let mut table = scenario_table("cdc_sc_mid_write");
             insert_range(&mut table, 1, 1);
@@ -1377,10 +1415,11 @@ fn test_a_checkpoint_inside_one_write_does_not_acknowledge_it() {
             .is_ok();
             if !caught {
                 // The write reached the circuit whole between two polls, so no
-                // checkpoint of this run can fall inside it. How fast the runner
-                // is says nothing about the connector.
+                // checkpoint of this run can fall inside it. The cap on records
+                // per step is what holds this window open, so a poll that
+                // catches nothing says that cap stopped working.
                 run1.stop();
-                return false;
+                return Attempt::Outrun;
             }
 
             let checkpoint = run1.controller.checkpoint().unwrap();
@@ -1392,9 +1431,11 @@ fn test_a_checkpoint_inside_one_write_does_not_acknowledge_it() {
             if in_checkpoint >= total {
                 // The rest of the write arrived while the checkpoint was being
                 // written, so it holds the whole write and leaves run 2 nothing
-                // to recover.
+                // to recover. Nothing here paces the checkpoint against the
+                // reader's next steps, so this is a race to retry rather than a
+                // window to widen.
                 run1.stop();
-                return false;
+                return Attempt::Raced;
             }
             run1.assert_no_errors("run 1 mid-write checkpoint");
             println!(
@@ -1419,6 +1460,7 @@ fn test_a_checkpoint_inside_one_write_does_not_acknowledge_it() {
             // it by making progress. Only a run 2 that has stopped delivering
             // without the rows lets the assertion below speak.
             wait_while_delivering(
+                wait_ms,
                 || {
                     let h = insert_histogram(run2.inserted_ids());
                     (first_missing..=n + 1).all(|id| h.contains_key(&id))
@@ -1441,7 +1483,7 @@ fn test_a_checkpoint_inside_one_write_does_not_acknowledge_it() {
                 missing.len(),
                 preview(&missing)
             );
-            true
+            Attempt::Caught
         },
     );
 }
@@ -1471,7 +1513,9 @@ fn assert_prefix_of_ids(ids: &[i64], what: &str) {
 const EXTRA_DELIVERY_WINDOWS: u32 = 3;
 
 /// Wait for `done`, giving up once `delivered` stops moving or after
-/// [`EXTRA_DELIVERY_WINDOWS`] further windows, whichever comes first.
+/// [`EXTRA_DELIVERY_WINDOWS`] further windows of `wait_ms`, whichever comes
+/// first. The caller states the window, because a scenario that doubles its
+/// payload on a retry needs a deadline that doubles with it.
 ///
 /// A row count that is still rising means the pipeline is working and the
 /// runner is merely slow, which is a reason to keep waiting rather than to
@@ -1479,10 +1523,10 @@ const EXTRA_DELIVERY_WINDOWS: u32 = 3;
 /// would not change the answer. Returning either way leaves the caller's
 /// assertion to speak, so the worst case is a red test rather than a job that
 /// hangs with nothing to read.
-fn wait_while_delivering(done: impl Fn() -> bool, delivered: impl Fn() -> usize) {
+fn wait_while_delivering(wait_ms: u128, done: impl Fn() -> bool, delivered: impl Fn() -> usize) {
     let mut last = delivered();
     for _ in 0..=EXTRA_DELIVERY_WINDOWS {
-        if wait(&done, WAIT_MS).is_ok() {
+        if wait(&done, wait_ms).is_ok() {
             return;
         }
         let now = delivered();
