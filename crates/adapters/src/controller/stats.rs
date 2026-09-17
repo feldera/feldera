@@ -265,6 +265,16 @@ pub struct GlobalControllerMetrics {
     /// may still be buffered by output connectors.
     pub total_processed_bytes: AtomicU64,
 
+    /// Total number of input records committed by the DBSP engine.
+    ///
+    /// Equal to `total_processed_records` as of the last step that ended outside
+    /// a transaction: records ingested inside an open transaction are in the
+    /// circuit but are not committed until the transaction ends.
+    ///
+    /// This is the ceiling on `total_completed_records`, which additionally
+    /// waits for the output connectors.
+    pub total_committed_records: AtomicU64,
+
     /// Total number of input records processed to completion.
     ///
     /// A record is processed to completion if it has been processed by the DBSP engine and
@@ -288,6 +298,16 @@ pub struct GlobalControllerMetrics {
     /// `total_initiated_steps - 1` has been started and all steps previous to
     /// that have been completely processed by the circuit.
     pub total_initiated_steps: Atomic<Step>,
+
+    /// Number of steps committed by the DBSP engine.
+    ///
+    /// A step is committed once the circuit has evaluated it and it ended
+    /// outside a transaction. Counted the same way as `total_initiated_steps`,
+    /// so during a step this is `total_initiated_steps - 1`.
+    ///
+    /// This is the ceiling on `total_completed_steps`, which additionally waits
+    /// for the output connectors.
+    pub total_committed_steps: Atomic<Step>,
 
     /// Number of steps whose input records have been processed to completion.
     ///
@@ -338,11 +358,13 @@ impl GlobalControllerMetrics {
             total_circuit_input_bytes: AtomicU64::new(0),
             total_processed_records: AtomicU64::new(processed_records),
             total_processed_bytes: AtomicU64::new(0),
+            total_committed_records: AtomicU64::new(processed_records),
             total_completed_records: AtomicU64::new(processed_records),
             output_stall_start: Mutex::new(None),
             accumulated_output_stall: Mutex::new(Duration::ZERO),
             step_requested: AtomicBool::new(false),
             total_initiated_steps: Atomic::new(0),
+            total_committed_steps: Atomic::new(0),
             total_completed_steps: Atomic::new(0),
         }
     }
@@ -425,6 +447,14 @@ impl GlobalControllerMetrics {
 
     pub fn total_initiated_steps(&self) -> Step {
         self.total_initiated_steps.load(Ordering::Acquire)
+    }
+
+    pub fn num_total_committed_records(&self) -> u64 {
+        self.total_committed_records.load(Ordering::Acquire)
+    }
+
+    pub fn total_committed_steps(&self) -> Step {
+        self.total_committed_steps.load(Ordering::Acquire)
     }
 
     pub fn total_completed_steps(&self) -> Step {
@@ -802,7 +832,7 @@ impl ControllerStatus {
         // already have. Republish the counters now, since the only other
         // refresh happens on a step or an output batch, and an idle pipeline
         // produces neither.
-        self.update_total_completed_records(None);
+        self.update_total_completed_records();
     }
 
     /// Initialize stats for a new output endpoint.
@@ -873,6 +903,19 @@ impl ControllerStatus {
 
     pub fn num_total_processed_bytes(&self) -> u64 {
         self.global_metrics.num_total_processed_bytes()
+    }
+
+    /// Record what the circuit has committed.
+    ///
+    /// The circuit thread calls this after a step that ends outside a
+    /// transaction, with the same figures it hands to the output connectors.
+    pub fn set_committed(&self, committed: ProcessedRecords) {
+        self.global_metrics
+            .total_committed_records
+            .fetch_max(committed.total_processed_input_records, Ordering::SeqCst);
+        self.global_metrics
+            .total_committed_steps
+            .fetch_max(committed.total_processed_steps, Ordering::SeqCst);
     }
 
     pub fn processed_data(&self, amt: BufferSize) -> u64 {
@@ -1020,42 +1063,36 @@ impl ControllerStatus {
 
     /// Update `global_metrics.total_completed_records` and `global_metrics.total_completed_steps`.
     ///
-    /// Must be invoked any time this metric can change, i.e., after every output
-    /// produced by an output connector as well as after each step.
+    /// Must be invoked any time these metrics can change: after every output
+    /// produced by an output connector, after each step, and when an output
+    /// connector is removed.
     ///
-    /// The `transaction_state` parameter indicates the state of the current transaction when the
-    /// function is invoked after a step. Otherwise, if it is invoked by an output connector, it is None.
-    ///
-    /// Computes `total_completed_records` as the minimum `total_processed_input_records` across
-    /// all output connectors. In case there are no output connectors attached to the pipeline,
-    /// and the transaction state is None, it returns `total_processed_records`. Otherwise, it there
-    /// is currently a transaction in progress, it returns `total_completed_records`.
+    /// What the circuit has committed is the ceiling, and each output connector
+    /// lowers it to what that connector has delivered. Reading the ceiling from
+    /// `total_committed_*` rather than from `total_processed_records` and
+    /// `total_initiated_steps` is what makes the result independent of when this
+    /// runs: the latter two count a step the circuit is still evaluating and
+    /// records an open transaction has not committed, which a pipeline with no
+    /// output connector left would then report as complete (issue 7169).
     ///
     /// Also updates watermark trackers in input endpoints.
-    pub fn update_total_completed_records(&self, transaction_state: Option<TransactionState>) {
-        // Compute new `total_completed_records` atomically, protected by the output status lock.
-        // However we don't want to call `watermarks_update_completed` while holding the lock, as that
-        // will take the input status lock. This is not necessarily a bug, but it will complicate
-        // reasoning about potential deadlocks.
+    pub fn update_total_completed_records(&self) {
+        // The output status lock holds the set of endpoints still, so the loop below sees each
+        // endpoint exactly once. It does not make the whole computation atomic: it is a read lock,
+        // so other callers compute their own minimum at the same time, and the ceiling is read
+        // before the lock is taken.
         //
-        // So we call `watermarks_update_completed` outside the atomic section, but use compare_exchange to
-        // ensure that the biggest value wins among multiple writers (`total_completed_records` increases
-        // monotonically).
+        // What makes that safe is that every input grows monotonically, so a stale read can only
+        // produce a smaller result, and `fetch_max` below discards it. The caller that wrote the
+        // input always computes again afterwards, so no change goes unpublished.
+        //
+        // `watermarks_update_completed` runs after the lock is dropped because it takes the input
+        // status lock, and holding both would complicate reasoning about deadlocks.
+
+        let mut total_completed_records = self.global_metrics.num_total_committed_records();
+        let mut total_completed_steps = self.global_metrics.total_committed_steps();
 
         let output_status = self.output_status();
-
-        let (mut total_completed_records, mut total_completed_steps) =
-            if transaction_state == Some(TransactionState::None) || transaction_state.is_none() {
-                (
-                    self.num_total_processed_records(),
-                    self.global_metrics.total_initiated_steps(),
-                )
-            } else {
-                (
-                    self.num_total_completed_records(),
-                    self.global_metrics.total_completed_steps(),
-                )
-            };
 
         for output_ep in output_status.values() {
             total_completed_records =
@@ -1332,7 +1369,7 @@ impl ControllerStatus {
                 circuit_thread_unparker.unpark();
             }
         };
-        self.update_total_completed_records(None);
+        self.update_total_completed_records();
     }
 
     pub fn update_output_memory(&self, endpoint_id: EndpointId, memory: usize) {
@@ -1348,7 +1385,7 @@ impl ControllerStatus {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
             endpoint_stats.output_buffered_batches(processed);
         }
-        self.update_total_completed_records(None);
+        self.update_total_completed_records();
     }
 
     pub fn output_buffer(&self, endpoint_id: EndpointId, num_bytes: usize, num_records: usize) {
