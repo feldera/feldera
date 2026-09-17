@@ -233,6 +233,16 @@ counts as contained only once its last change is in the checkpoint, so a
 checkpoint taken while such a batch is still arriving leaves the slot where it
 is.
 
+The slot therefore follows the slowest part of the pipeline. A batch counts as
+contained once the step that holds it is checkpointed, and that step is
+complete only when every output connector has finished it, so an output that
+runs behind holds the slot back with it. PostgreSQL retains the write-ahead log
+covering everything the slot has not passed, and the source reads a batch of
+changes into Feldera only after the previous one is acknowledged, so a slow
+sink shows up as both disk held on the source and a slower read from it. Sizing
+a source's log retention means allowing for the slowest sink, not only for the
+checkpoint interval.
+
 The initial read of a table is all or nothing. A checkpoint holding only part
 of it would be unusable, because PostgreSQL streams changes from the
 replication slot once the read is complete and cannot supply the missing rows
