@@ -704,7 +704,10 @@ Declared in `crates/feldera-types/src/transport/delta_table.rs`.
 
 `threads` divides the per-flush budgets rather than multiplying them: the ranges share
 `max_concurrent_probes` and the append chunk between them, so raising it buys parallelism
-without raising the working set.
+without raising the working set. What it does raise is the uploads in flight, since delta-rs
+drives ten concurrent parts per writer and a flush runs one writer per range; those draw on a
+process-wide cap (`bounded_upload.rs`) so that the ranges cannot exhaust the host's socket
+budget, which would otherwise fail the whole flush and orphan every file it had written.
 
 Output buffering is a requirement of merge mode rather than a tuning knob, since the pass
 over the file list is per flush. The connector says so once at startup when it is off, and

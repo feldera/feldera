@@ -42,6 +42,7 @@ use super::super::deletion_vector::{
 };
 use super::super::output::TARGET_FILE_SIZE;
 use super::commit_actions;
+use crate::integrated::delta_table::bounded_upload::bound_uploads;
 
 /// Fraction of a file's rows that must be superseded before it is rewritten.
 ///
@@ -235,7 +236,7 @@ async fn rewrite_one(
     let (num_indexed_cols, stats_columns) =
         get_num_idx_cols_and_stats_columns(Some(properties), HashMap::new());
     let mut writer = DeltaWriter::new(
-        table.object_store(),
+        bound_uploads(table.object_store()),
         WriterConfig::new(
             table_schema.clone(),
             partition_columns,
