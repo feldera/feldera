@@ -352,23 +352,22 @@ describe('newlineTextDecoder', () => {
   //
   // The lines are grouped into network chunks so that one dropped chunk takes several of
   // them with it. With a line per chunk this would still pass if the count were always 1.
-  it.each([40, 100, 250, 1000])(
-    'accounts for every input line at a %i byte budget',
-    async (bufferSize) => {
-      const lines = Array.from({ length: 40 }, (_, i) => `line ${i}\n`)
-      const networkChunks = Array.from({ length: 4 }, (_, c) =>
-        lines.slice(c * 10, c * 10 + 10).join('')
-      )
-      const { values, skipped } = await runNewlineTextDecoder(networkChunks, {
-        bufferSize,
-        bufferWindowMs: 60_000
-      })
-      const skippedLines = skipped.reduce((n, s) => n + s.lines, 0)
-      expect(values.length + skippedLines).toBe(lines.length)
-      // Whole chunks are dropped in order, so whatever arrives is the start of the input.
-      expect(values).toEqual(lines.slice(0, values.length))
-    }
-  )
+  it.each([
+    40, 100, 250, 1000
+  ])('accounts for every input line at a %i byte budget', async (bufferSize) => {
+    const lines = Array.from({ length: 40 }, (_, i) => `line ${i}\n`)
+    const networkChunks = Array.from({ length: 4 }, (_, c) =>
+      lines.slice(c * 10, c * 10 + 10).join('')
+    )
+    const { values, skipped } = await runNewlineTextDecoder(networkChunks, {
+      bufferSize,
+      bufferWindowMs: 60_000
+    })
+    const skippedLines = skipped.reduce((n, s) => n + s.lines, 0)
+    expect(values.length + skippedLines).toBe(lines.length)
+    // Whole chunks are dropped in order, so whatever arrives is the start of the input.
+    expect(values).toEqual(lines.slice(0, values.length))
+  })
 })
 
 describe('appendRowsForRelation', () => {
