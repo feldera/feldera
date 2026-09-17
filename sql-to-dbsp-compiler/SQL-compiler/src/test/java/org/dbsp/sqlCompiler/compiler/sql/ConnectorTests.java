@@ -22,7 +22,11 @@ public class ConnectorTests extends BaseSQLTests {
 
     /** Compiles SQL and asserts that it produces neither errors nor warnings. */
     private void runCleanConnectorTest(String sql) {
-        DBSPCompiler compiler = this.chattyCompiler();
+        this.runCleanConnectorTest(this.chattyCompiler(), sql);
+    }
+
+    /** Like {@link #runCleanConnectorTest(String)}, using a caller-configured compiler. */
+    private void runCleanConnectorTest(DBSPCompiler compiler, String sql) {
         compiler.submitStatementsForCompilation(sql);
         compiler.getFinalCircuit(true);
         Assert.assertEquals(0, compiler.messages.exitCode);
@@ -719,6 +723,51 @@ public class ConnectorTests extends BaseSQLTests {
                 ) AS SELECT * FROM T;""";
         this.statementsFailingInCompilation(sql,
                 "\"send_snapshot\" property for view 'v' requires a materialized view");
+    }
+
+    @Test
+    public void connectorOnLocalView() {
+        String sql = """
+                CREATE TABLE T (x INT);
+                CREATE LOCAL VIEW V WITH (
+                  'connectors' = '[{
+                    "name": "c",
+                    "transport": {
+                      "name": "delta_table_output",
+                      "config": { "uri": "s3://bucket/table", "mode": "truncate" }
+                    }
+                  }]'
+                ) AS SELECT * FROM T;
+                CREATE VIEW W AS SELECT * FROM V;""";
+        this.statementsFailingInCompilation(sql,
+                "error: Connector on LOCAL VIEW: LOCAL VIEW (view 'v') is not an output of the " +
+                "pipeline, so it cannot have connectors.");
+    }
+
+    @Test
+    public void emptyConnectorListOnLocalView() {
+        runCleanConnectorTest("""
+                CREATE TABLE T (x INT);
+                CREATE LOCAL VIEW V WITH ('connectors' = '[]') AS SELECT * FROM T;
+                CREATE VIEW W AS SELECT * FROM V;""");
+    }
+
+    @Test
+    public void connectorOnViewWithCte() {
+        // CteToLocalViews rewrites each CTE into a LOCAL VIEW; the connectors stay on the outer view
+        DBSPCompiler compiler = this.chattyCompiler();
+        compiler.options.languageOptions.cteViews = true;
+        runCleanConnectorTest(compiler, """
+                CREATE TABLE T (x INT);
+                CREATE VIEW V WITH (
+                  'connectors' = '[{
+                    "name": "c",
+                    "transport": {
+                      "name": "delta_table_output",
+                      "config": { "uri": "s3://bucket/table", "mode": "truncate" }
+                    }
+                  }]'
+                ) AS WITH cte AS (SELECT * FROM T) SELECT * FROM cte;""");
     }
 
     @Test
