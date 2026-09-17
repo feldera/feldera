@@ -475,6 +475,12 @@ In `merge` mode a thread also needs enough rows to be worth a file of its own, s
 when each thread would get a substantial share of it. A steady stream of small transactions therefore keeps writing
 one file per flush whatever `threads` says, and only a large change -- a backfill, typically -- is split.
 
+A backfill is the one flush the connector cannot size that way, because no flush has yet measured what a row costs,
+so it splits into as many ranges as `threads` allows. Each range ends on a partially filled file, so a high setting
+leaves the table with more files than it needs: the 2.2 GB backfill above fills 21 files, and wrote 24 at `threads`
+8 but 32 at 16. Those files cost every later lookup, so raise `threads` for the speed a backfill needs and not
+beyond it. A rough ceiling is the backfill's size divided by 300 MB, which gives each range three full files.
+
 `max_concurrent_probes` is a budget for a flush rather than for a thread: the threads of one flush divide it
 between them, so raising `threads` does not multiply the requests the lookup has in flight.
 

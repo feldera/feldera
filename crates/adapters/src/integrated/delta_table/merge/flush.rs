@@ -62,8 +62,9 @@ use super::transient;
 pub(super) const APPEND_CHUNK_ROWS: usize = 100_000;
 /// Target-sized files a range must be worth before a flush splits into one more.
 ///
-/// One would let a range be mostly the partial file it ends with; three holds the waste
-/// under a sixth of what the range writes.
+/// A range's last file is however full it happens to be, so a split costs one partial file
+/// per range. One file per range would make a range mostly that partial file; three holds
+/// the waste under a sixth of what the range writes.
 const FILES_PER_RANGE: u64 = 3;
 
 /// Rows a range buffers before writing, never so few that a write is pure overhead.
@@ -339,14 +340,15 @@ impl MergeWriter {
 
     /// Rows a range must be worth for the flush to be split into one.
     ///
-    /// Before any flush has written, [`APPEND_CHUNK_ROWS`]: enough that a first flush worth
-    /// splitting still is, and a small one is left whole. After one, the rows
-    /// [`FILES_PER_RANGE`] files take at the rate that flush wrote at.
+    /// Only a flush that follows one knows what a row costs, so the floor comes in two parts:
+    /// [`APPEND_CHUNK_ROWS`] until a flush has written, then the rows [`FILES_PER_RANGE`]
+    /// files take at the rate that flush wrote at.
     ///
-    /// A range's last file is however full it happens to be, so splitting costs one partial
-    /// file per range whatever the rows: a range worth one file writes half a file of waste,
-    /// one worth several writes the same waste against several times the data. Measured on a
-    /// 2.2 GB backfill, which needs 21 files: 8 ranges wrote 24 and 16 ranges wrote 32.
+    /// The first floor is deliberately permissive -- a backfill is the flush most worth
+    /// splitting, and it is the one with no rate to go on -- so it buys speed with files:
+    /// measured on a 2.2 GB backfill needing 21 files, 8 ranges wrote 24 and 16 wrote 32.
+    /// `threads` is what bounds that; the second floor keeps the steady stream of update
+    /// flushes that follows from fragmenting the table for ever.
     fn rows_per_range(&self) -> usize {
         #[cfg(test)]
         if let Some(rows) = self.rows_per_range_override {

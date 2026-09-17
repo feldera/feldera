@@ -698,7 +698,7 @@ Declared in `crates/feldera-types/src/transport/delta_table.rs`.
 |-------|------|---------|-------|
 | `update_mode` | `cdc \| merge` | `cdc` | Orthogonal to `mode`, which governs what happens to an existing table at startup |
 | `lookup_chunk_bytes` | `usize` | 256 MiB | Ceiling on encoded removal keys held at once. Capped at 2 GiB: the chunk addresses its buffer with 32-bit offsets |
-| `threads` | `usize` | 1 | Key ranges a flush walks at once. A flush splits only when the batch is worth at least one target-sized file per range, so a small batch stays whole rather than fragmenting the table |
+| `threads` | `usize` | 1 | Key ranges a flush walks at once. A flush splits only when the batch is worth three target-sized files per range, so a small batch stays whole rather than fragmenting the table. The first flush has no write rate to size that against and falls back to a row count, so a backfill splits as far as `threads` allows and pays a partial file per range |
 | `max_concurrent_probes` | `usize` | 4 | Caps the probe working set and its request concurrency |
 | `optimize_interval_secs` | `Option<u64>` | none | Connector-driven maintenance: OPTIMIZE, then the reclamation pass. Off by default, because the table administrator normally maintains the table; set it where Feldera is the only writer. Runs in the background after a flush, one at a time, first run one interval after startup |
 
