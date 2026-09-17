@@ -257,6 +257,19 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub streaming_exchange: Option<bool>,
 
+    /// Maximum number of bytes of queued but unacknowledged exchange messages
+    /// per pair of remote host and message type.
+    ///
+    /// A sender that pushes past this budget waits for the receiver to
+    /// acknowledge earlier messages before it queues more.  There are three
+    /// message types, so a host buffers up to three times this many bytes for
+    /// each of the other hosts, plus any single message that exceeds the
+    /// budget on its own.
+    ///
+    /// The default is 10,000,000 bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exchange_channel_capacity_bytes: Option<usize>,
+
     /// Optimize input operators during transaction commit.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub optimize_input_during_commit: Option<bool>,
@@ -343,6 +356,10 @@ impl DevTweaks {
 
     pub fn streaming_exchange(&self) -> bool {
         self.streaming_exchange.unwrap_or(true)
+    }
+
+    pub fn exchange_channel_capacity_bytes(&self) -> usize {
+        self.exchange_channel_capacity_bytes.unwrap_or(10_000_000)
     }
 
     pub fn optimize_input_during_commit(&self) -> bool {

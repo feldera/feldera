@@ -197,11 +197,34 @@ struct ExchangeMessage {
     /// The workers and the host are implicit in the [ExchangeClient] that this
     /// `ExchangeMessage` is sent to.
     data: Vec<FBuf>,
+
+    /// Number of bytes that this message occupies on the wire, which is what
+    /// it charges against the capacity of the channel that queues it.
+    ///
+    /// The header counts along with the payloads, so that a message with empty
+    /// payloads still charges something.  That way the channel bounds the
+    /// number of queued messages as well as their total size.
+    wire_len: isize,
 }
 
 impl ExchangeMessage {
-    fn isize_len(&self) -> isize {
-        isize::try_from(self.data.len()).unwrap()
+    fn new(
+        global_node_id: Arc<String>,
+        exchange_id: ExchangeId,
+        sender: usize,
+        data: Vec<FBuf>,
+    ) -> Self {
+        let payloads = data.iter().map(|payload| payload.len()).sum::<usize>();
+        let wire_len =
+            isize::try_from(ExchangeHeader::len_for_count(data.len()) + payloads).unwrap();
+        Self {
+            start: Instant::now(),
+            global_node_id,
+            exchange_id,
+            sender,
+            data,
+            wire_len,
+        }
     }
 }
 
@@ -262,7 +285,7 @@ impl MessageType {
 }
 
 struct ExchangeChannelInner {
-    /// Remaining capacity.  When this is negative, the channel is
+    /// Remaining capacity, in bytes.  When this is negative, the channel is
     /// oversubscribed and no more messages should be queued until the other end
     /// acknowledges some of the messages that have been sent.
     remaining: isize,
@@ -281,6 +304,8 @@ struct ExchangeChannelInner {
 }
 
 impl ExchangeChannelInner {
+    /// Creates a channel that queues up to `capacity` bytes of unacknowledged
+    /// messages before it reports itself overfull.
     fn new(capacity: usize) -> Self {
         Self {
             remaining: capacity.try_into().unwrap(),
@@ -305,7 +330,7 @@ impl ExchangeChannelInner {
             && let Some(message) = self.messages.pop_front()
         {
             self.sequence += 1;
-            self.remaining += message.isize_len();
+            self.remaining += message.wire_len;
         }
         if before < 0 && self.remaining >= 0 {
             self.nonfull.notify_waiters();
@@ -313,7 +338,7 @@ impl ExchangeChannelInner {
     }
 
     fn push(&mut self, message: ExchangeMessage) {
-        self.remaining -= message.isize_len();
+        self.remaining -= message.wire_len;
         self.messages.push_back(Arc::new(message));
         self.nonempty.notify_waiters();
     }
@@ -327,6 +352,8 @@ impl ExchangeChannelInner {
 struct ExchangeChannel(Arc<Mutex<ExchangeChannelInner>>);
 
 impl ExchangeChannel {
+    /// Creates a channel that queues up to `capacity` bytes of unacknowledged
+    /// messages before it reports itself overfull.
     pub fn new(capacity: usize) -> Self {
         Self(Arc::new(Mutex::new(ExchangeChannelInner::new(capacity))))
     }
@@ -375,12 +402,17 @@ pub struct ExchangeClient {
 }
 
 impl ExchangeClient {
+    /// Creates a client that queues up to `capacity` bytes of unacknowledged
+    /// messages before a sender has to wait.  A single message larger than
+    /// `capacity` still goes out on its own; the sender just waits for the
+    /// receiver to acknowledge it before queuing another one.
     async fn new(
         message_type: MessageType,
         remote_address: SocketAddr,
         remote_workers: &Range<usize>,
+        capacity: usize,
     ) -> Self {
-        let channel = ExchangeChannel::new(10_000_000);
+        let channel = ExchangeChannel::new(capacity);
         TOKIO.spawn(Self::run(
             message_type,
             remote_address,
@@ -553,13 +585,12 @@ impl ExchangeClient {
         sender: usize,
         data: Vec<FBuf>,
     ) -> Option<OwnedNotified> {
-        self.channel.push(ExchangeMessage {
-            start: Instant::now(),
+        self.channel.push(ExchangeMessage::new(
             global_node_id,
             exchange_id,
             sender,
             data,
-        })
+        ))
     }
 
     pub async fn wait(&self) {
@@ -986,6 +1017,14 @@ pub struct ExchangeClients {
     ///
     /// We use one RPC client per [MessageType] per [Host].
     clients: Vec<(Host, EnumMap<MessageType, OnceCell<ExchangeClient>>)>,
+
+    /// Bytes of queued but unacknowledged messages that each client in
+    /// `clients` admits, from `dev_tweaks.exchange_channel_capacity_bytes`.
+    ///
+    /// We read it here, where we still have the [Runtime], because the clients
+    /// connect from the Tokio runtime's threads, where the dev tweaks are not
+    /// in scope.
+    channel_capacity_bytes: usize,
 }
 
 impl ExchangeClients {
@@ -1010,6 +1049,7 @@ impl ExchangeClients {
                 .other_hosts()
                 .map(|host| (host.clone(), Default::default()))
                 .collect(),
+            channel_capacity_bytes: runtime.dev_tweaks().exchange_channel_capacity_bytes(),
         }
     }
 
@@ -1040,16 +1080,31 @@ impl ExchangeClients {
             .find(|(host, _client)| host.workers.contains(&worker))
             .unwrap();
         cell[message_type]
-            .get_or_init(|| ExchangeClient::new(message_type, host.address, &host.workers))
+            .get_or_init(|| {
+                ExchangeClient::new(
+                    message_type,
+                    host.address,
+                    &host.workers,
+                    self.channel_capacity_bytes,
+                )
+            })
             .await
     }
 
-    pub async fn wait(&self) {
+    /// Waits until every `message_type` channel to a remote host is under its
+    /// capacity.
+    ///
+    /// The caller names the message type it sends.  Waiting on the others
+    /// would couple unrelated flow control: synchronous exchange discards the
+    /// waiters from its own sends, because it drains each message before it
+    /// sends the next one, and its delivery path parks until the receiving
+    /// workers have consumed the previous round.  Waiting on a synchronous
+    /// channel here would therefore make one host's progress depend on how far
+    /// another host has advanced within a step.
+    pub async fn wait(&self, message_type: MessageType) {
         for (_, clients) in &self.clients {
-            for client in clients.values() {
-                if let Some(client) = client.get() {
-                    client.wait().await;
-                }
+            if let Some(client) = clients[message_type].get() {
+                client.wait().await;
             }
         }
     }
@@ -2244,6 +2299,7 @@ fn ping_interval() -> Duration {
 #[cfg(test)]
 mod tests {
     use feldera_storage::tokio::TOKIO;
+    use feldera_types::config::DevTweaks;
     use itertools::Itertools;
 
     use super::Exchange;
@@ -2513,7 +2569,13 @@ mod tests {
             let listener = AsyncTcpListener::bind("127.0.0.1:0").await.unwrap();
             let addr = listener.local_addr().unwrap();
             let remote_workers = 0..1;
-            let client = ExchangeClient::new(MessageType::Streaming, addr, &remote_workers).await;
+            let client = ExchangeClient::new(
+                MessageType::Streaming,
+                addr,
+                &remote_workers,
+                DevTweaks::default().exchange_channel_capacity_bytes(),
+            )
+            .await;
             let (mut stream, _) = listener.accept().await.unwrap();
 
             client.send(Arc::new("test".into()), 0, 0, vec![FBuf::new()]);
@@ -2556,7 +2618,13 @@ mod tests {
             let listener = AsyncTcpListener::bind("127.0.0.1:0").await.unwrap();
             let addr = listener.local_addr().unwrap();
             let remote_workers = 0..1;
-            let client = ExchangeClient::new(MessageType::Streaming, addr, &remote_workers).await;
+            let client = ExchangeClient::new(
+                MessageType::Streaming,
+                addr,
+                &remote_workers,
+                DevTweaks::default().exchange_channel_capacity_bytes(),
+            )
+            .await;
             let (mut stream, _) = listener.accept().await.unwrap();
 
             // Send and never acknowledge the first message, leaving the sender
@@ -2583,6 +2651,194 @@ mod tests {
                 start.elapsed() < Duration::from_millis(15),
                 "new data should be sent immediately after a ping, not held up behind it"
             );
+        });
+    }
+
+    /// Number of payloads per message in the channel tests below, that is, the
+    /// number of workers on the receiving host.
+    const CHANNEL_TEST_WORKERS: usize = 2;
+
+    /// Bytes that a message charges against a channel's capacity beyond its
+    /// payloads.
+    fn header_len() -> usize {
+        super::ExchangeHeader::len_for_count(CHANNEL_TEST_WORKERS)
+    }
+
+    /// Returns a message with `CHANNEL_TEST_WORKERS` payloads of `payload_len`
+    /// bytes each.
+    fn test_message(payload_len: usize) -> super::ExchangeMessage {
+        use feldera_storage::fbuf::FBuf;
+
+        let data = (0..CHANNEL_TEST_WORKERS)
+            .map(|_| {
+                let mut payload = FBuf::new();
+                payload.resize(payload_len, 0);
+                payload
+            })
+            .collect();
+        super::ExchangeMessage::new(Arc::new("test".into()), 0, 0, data)
+    }
+
+    fn remaining(channel: &super::ExchangeChannel) -> isize {
+        channel.inner().remaining
+    }
+
+    // A channel's capacity is a budget of bytes, so a few big messages exhaust
+    // it even though the number of messages is small.
+    #[test]
+    fn channel_capacity_counts_bytes() {
+        let cost = (header_len() + CHANNEL_TEST_WORKERS * 1000) as isize;
+        let channel = super::ExchangeChannel::new(2 * cost as usize);
+
+        assert!(channel.push(test_message(1000)).is_none());
+        assert_eq!(remaining(&channel), cost);
+
+        assert!(channel.push(test_message(1000)).is_none());
+        assert_eq!(remaining(&channel), 0);
+
+        assert!(
+            channel.push(test_message(1000)).is_some(),
+            "a third message should exhaust a budget of two messages' bytes"
+        );
+        assert_eq!(remaining(&channel), -cost);
+    }
+
+    // A message with empty payloads still charges for its header, so that the
+    // queue bounds the number of messages as well as their total size.
+    #[test]
+    fn channel_capacity_counts_empty_messages() {
+        let channel = super::ExchangeChannel::new(2 * header_len());
+
+        assert!(channel.push(test_message(0)).is_none());
+        assert!(channel.push(test_message(0)).is_none());
+        assert_eq!(remaining(&channel), 0);
+        assert!(
+            channel.push(test_message(0)).is_some(),
+            "an empty message should still charge for its header"
+        );
+    }
+
+    // Acknowledging a message returns exactly the bytes that it charged.
+    #[test]
+    fn channel_drain_returns_bytes() {
+        let cost = (header_len() + CHANNEL_TEST_WORKERS * 1000) as isize;
+        let capacity = 2 * cost as usize;
+        let channel = super::ExchangeChannel::new(capacity);
+
+        for _ in 0..3 {
+            channel.push(test_message(1000));
+        }
+        assert_eq!(remaining(&channel), capacity as isize - 3 * cost);
+
+        channel.drain(2);
+        assert_eq!(remaining(&channel), capacity as isize - cost);
+        assert!(channel.drain_waiter().is_none());
+
+        channel.drain(3);
+        assert_eq!(remaining(&channel), capacity as isize);
+        assert!(!channel.has_unacknowledged());
+    }
+
+    // A message bigger than the whole budget is still queued; the sender just
+    // waits for it to be acknowledged before queuing another one.
+    #[test]
+    fn channel_queues_oversized_message() {
+        let channel = super::ExchangeChannel::new(10);
+        let cost = (header_len() + CHANNEL_TEST_WORKERS * 1000) as isize;
+
+        assert!(channel.push(test_message(1000)).is_some());
+        assert_eq!(remaining(&channel), 10 - cost);
+        assert!(
+            channel.get(0).is_ok(),
+            "the message should be queued to send"
+        );
+
+        channel.drain(1);
+        assert_eq!(remaining(&channel), 10);
+        assert!(channel.drain_waiter().is_none());
+    }
+
+    // A sender receives its waiter from `push` but may not poll it until
+    // later, so a drain in between must still wake it.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn channel_waiter_wakes_after_an_earlier_drain() {
+        use std::time::Duration;
+        use tokio::time::timeout;
+
+        let channel = super::ExchangeChannel::new(10);
+        let waiter = channel
+            .push(test_message(1000))
+            .expect("channel is overfull");
+
+        // Drain before the waiter is ever polled.
+        channel.drain(1);
+
+        TOKIO.block_on(async {
+            timeout(Duration::from_secs(5), waiter)
+                .await
+                .expect("a waiter handed out before the drain should still wake");
+        });
+    }
+
+    // End to end at the configured budget: a sender that pushes past the
+    // capacity through a real client and socket waits, and resumes once the
+    // receiver acknowledges.  This is the behavior that #7176 was missing; the
+    // tests above only check the arithmetic that produces it.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn client_applies_backpressure_past_capacity() {
+        use super::{ExchangeClient, ExchangeHeader, MessageType};
+        use feldera_storage::fbuf::FBuf;
+        use std::time::Duration;
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener as AsyncTcpListener,
+            time::timeout,
+        };
+
+        init_test_logger();
+        let _guard = FaultInjectionDisabled::new();
+
+        let capacity = DevTweaks::default().exchange_channel_capacity_bytes();
+
+        // Two of these messages, headers included, fill the budget exactly.
+        let payload_len = capacity / 2 - ExchangeHeader::len_for_count(1);
+
+        TOKIO.block_on(async {
+            let listener = AsyncTcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let remote_workers = 0..1;
+            let client =
+                ExchangeClient::new(MessageType::Streaming, addr, &remote_workers, capacity).await;
+            let (mut stream, _) = listener.accept().await.unwrap();
+
+            let message = || {
+                let mut payload = FBuf::new();
+                payload.resize(payload_len, 0);
+                vec![payload]
+            };
+            let send =
+                |client: &ExchangeClient| client.send(Arc::new("test".into()), 0, 0, message());
+
+            assert!(send(&client).is_none(), "half the budget should fit");
+            assert!(send(&client).is_none(), "the whole budget should fit");
+            let waiter = send(&client).expect("a third message should exceed the budget");
+
+            // Receive all three messages, then acknowledge them.
+            for sequence in 0..3 {
+                let header = ExchangeHeader::read(1, &mut stream).await.unwrap().unwrap();
+                assert_eq!(header.sequence, sequence);
+                assert_eq!(header.payload_lens, vec![payload_len as u64]);
+                let mut payload = vec![0; payload_len];
+                stream.read_exact(&mut payload).await.unwrap();
+            }
+            stream.write_u64_le(3).await.unwrap();
+
+            timeout(Duration::from_secs(5), waiter)
+                .await
+                .expect("acknowledgement should release the sender");
+            assert!(send(&client).is_none(), "the budget should be free again");
         });
     }
 }

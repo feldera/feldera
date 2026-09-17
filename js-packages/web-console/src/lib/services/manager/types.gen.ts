@@ -1814,6 +1814,19 @@ export type DevTweaks = {
    */
   enable_roaring?: boolean | null
   /**
+   * Maximum number of bytes of queued but unacknowledged exchange messages
+   * per pair of remote host and message type.
+   *
+   * A sender that pushes past this budget waits for the receiver to
+   * acknowledge earlier messages before it queues more.  There are three
+   * message types, so a host buffers up to three times this many bytes for
+   * each of the other hosts, plus any single message that exceeds the
+   * budget on its own.
+   *
+   * The default is 10,000,000 bytes.
+   */
+  exchange_channel_capacity_bytes?: number | null
+  /**
    * Target number of cached bytes retained in each `FBuf` slab size class.
    *
    * The default is 16 MiB.
