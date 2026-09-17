@@ -10368,6 +10368,13 @@
             "default": null,
             "nullable": true
           },
+          "exchange_channel_capacity_bytes": {
+            "type": "integer",
+            "description": "Maximum number of bytes of queued but unacknowledged exchange messages\nper pair of remote host and message type.\n\nA sender that pushes past this budget waits for the receiver to\nacknowledge earlier messages before it queues more.  There are three\nmessage types, so a host buffers up to three times this many bytes for\neach of the other hosts, plus any single message that exceeds the\nbudget on its own.\n\nThe default is 10,000,000 bytes.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
           "fbuf_slab_bytes_per_class": {
             "type": "integer",
             "description": "Target number of cached bytes retained in each `FBuf` slab size class.\n\nThe default is 16 MiB.",

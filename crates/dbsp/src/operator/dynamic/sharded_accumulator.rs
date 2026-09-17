@@ -715,7 +715,7 @@ impl Operator for ShardedAccumulatorRemoteWaiter {
 
 impl SourceOperator<()> for ShardedAccumulatorRemoteWaiter {
     async fn eval(&mut self) {
-        self.clients.wait().await;
+        self.clients.wait(MessageType::Streaming).await;
     }
 }
 
