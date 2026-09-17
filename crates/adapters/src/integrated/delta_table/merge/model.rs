@@ -178,30 +178,70 @@ async fn live_rows(table: &DeltaTable) -> HashMap<i64, String> {
 }
 
 /// Apply one batch through the real writer, failing on a uniqueness violation.
-async fn apply(writer: &MergeWriter, table: &mut DeltaTable, changes: &[Change]) {
+async fn apply(writer: &Arc<MergeWriter>, table: &mut DeltaTable, changes: &[Change]) {
     apply_attempt(writer, table, changes, false).await;
 }
 
 /// The same, choosing whether the writer treats this as a retry of an earlier attempt.
 async fn apply_attempt(
-    writer: &MergeWriter,
+    writer: &Arc<MergeWriter>,
     table: &mut DeltaTable,
     changes: &[Change],
     retrying: bool,
 ) -> FlushMetrics {
+    apply_attempt_with_threads(writer, table, changes, retrying, 1).await
+}
+
+/// The same, collecting uniqueness violations rather than failing on them.
+async fn apply_collecting_violations(
+    writer: &Arc<MergeWriter>,
+    table: &mut DeltaTable,
+    changes: &[Change],
+    threads: usize,
+) -> (FlushMetrics, Vec<String>) {
     let batch = build_batch(changes);
     let format = RecordFormat::Parquet(delta_output_serde_config(DeltaVariantEncoding::default()));
-    let mut cursor = batch.cursor(format).unwrap();
+    let object_store = table.object_store();
+    let mut violations = Vec::new();
+
+    let metrics = writer
+        .flush(
+            table,
+            object_store,
+            batch.as_batch_reader().snapshot(),
+            format,
+            threads,
+            false,
+            &mut |e| violations.push(e.to_string()),
+            Arc::new(AtomicU64::new(0)),
+        )
+        .await
+        .unwrap();
+    (metrics, violations)
+}
+
+/// The same, over a chosen number of key ranges.
+async fn apply_attempt_with_threads(
+    writer: &Arc<MergeWriter>,
+    table: &mut DeltaTable,
+    changes: &[Change],
+    retrying: bool,
+    threads: usize,
+) -> FlushMetrics {
+    let batch = build_batch(changes);
+    let format = RecordFormat::Parquet(delta_output_serde_config(DeltaVariantEncoding::default()));
     let object_store = table.object_store();
 
     writer
         .flush(
             table,
             object_store,
-            &mut *cursor,
+            batch.as_batch_reader().snapshot(),
+            format,
+            threads,
             retrying,
             &mut |e| panic!("unexpected uniqueness violation: {e}"),
-            &AtomicU64::new(0),
+            Arc::new(AtomicU64::new(0)),
         )
         .await
         .unwrap()
@@ -219,12 +259,24 @@ async fn create_table(dir: &TempDir) -> DeltaTable {
 
 /// Build a writer against `table`, the way a starting pipeline would. The replay test calls
 /// it a second time, since building a fresh writer is what a restart does.
-fn writer_for(table: &DeltaTable) -> (MergeWriter, Regime) {
+fn writer_for(table: &DeltaTable) -> (Arc<MergeWriter>, Regime) {
     writer_for_with_chunk(table, 1 << 20)
 }
 
+/// The same, splitting the batch into ranges of `split_every` rows, to drive the parallel
+/// path without a fixture of `APPEND_CHUNK_ROWS` rows.
+fn writer_for_split(table: &DeltaTable, split_every: usize) -> (Arc<MergeWriter>, Regime) {
+    let (writer, regime) = writer_for_with_chunk(table, 1 << 20);
+    let mut writer = Arc::try_unwrap(writer).unwrap_or_else(|_| unreachable!());
+    writer.split_every(split_every);
+    (Arc::new(writer), regime)
+}
+
 /// The same, with the key-chunk byte budget named, to drive the multi-pass lookup.
-fn writer_for_with_chunk(table: &DeltaTable, lookup_chunk_bytes: usize) -> (MergeWriter, Regime) {
+fn writer_for_with_chunk(
+    table: &DeltaTable,
+    lookup_chunk_bytes: usize,
+) -> (Arc<MergeWriter>, Regime) {
     let setup = prepare(table, &Some(key_relation()), &fixture_columns()).unwrap();
     let regime = setup.regime;
     let schema = Arc::new(arrow_schema());
@@ -239,7 +291,7 @@ fn writer_for_with_chunk(table: &DeltaTable, lookup_chunk_bytes: usize) -> (Merg
     )
     .unwrap();
 
-    (writer, regime)
+    (Arc::new(writer), regime)
 }
 
 /// The oracle: what the view holds, which is what the table must hold.
@@ -555,6 +607,7 @@ async fn a_flush_times_every_phase_it_runs() {
 
     for (name, phase) in [
         ("log_scan", t.log_scan),
+        ("batch_walk", t.batch_walk),
         ("probe", t.probe),
         ("append", t.append),
         ("deletion_vectors", t.deletion_vectors),
@@ -566,11 +619,445 @@ async fn a_flush_times_every_phase_it_runs() {
         );
     }
 
-    let phases = t.log_scan + t.probe + t.append + t.deletion_vectors + t.commit;
+    // One range, so the phases partition the flush rather than merely accounting for its
+    // work: they are disjoint spans of it and none is counted twice.
+    let phases = t.log_scan + t.batch_walk + t.probe + t.append + t.deletion_vectors + t.commit;
     assert!(
         phases <= t.total,
         "the phases overlap or exceed the flush: {phases:?} of {:?}",
         t.total
     );
-    assert_eq!(t.other(), t.total - phases);
+}
+
+/// Splitting a batch across ranges must not change what the table ends up holding.
+///
+/// Each range writes its own files and looks its own keys up; the flush joins them into one
+/// commit. Replaying one recorded sequence at one range and at four is the test that the
+/// join is faithful -- a lost tombstone leaves two live rows for a key, a lost file loses
+/// rows.
+///
+/// The sequence is recorded rather than regenerated per run: [`Model::next_batch`] draws
+/// from a `HashMap`, so two models walk different keys from the same seed.
+#[tokio::test]
+async fn a_parallel_flush_leaves_the_table_where_a_sequential_one_does() {
+    for seed in 0..4u64 {
+        let rounds = {
+            let mut rng = SmallRng::seed_from_u64(seed);
+            let mut model = Model::default();
+            (0..10)
+                .map(|_| model.next_batch(&mut rng, 40))
+                .filter(|changes| !changes.is_empty())
+                .collect::<Vec<_>>()
+        };
+
+        let mut finals = Vec::new();
+        let mut split_rounds = 0;
+        for threads in [1usize, 4] {
+            let dir = TempDir::new().unwrap();
+            let mut table = create_table(&dir).await;
+            // A floor of one row, or these batches of a handful of changes never split and
+            // the two runs would be the same sequential path twice.
+            let (writer, _) = writer_for_split(&table, 1);
+
+            for changes in &rounds {
+                let metrics =
+                    apply_attempt_with_threads(&writer, &mut table, changes, false, threads).await;
+                if threads > 1 && metrics.ranges > 1 {
+                    split_rounds += 1;
+                }
+            }
+            finals.push(live_rows(&table).await);
+        }
+        assert!(
+            split_rounds > 0,
+            "seed {seed}: no round actually ran in parallel"
+        );
+        assert_eq!(
+            finals[0], finals[1],
+            "seed {seed}: one range and four disagree on the table"
+        );
+        assert!(
+            !finals[0].is_empty(),
+            "seed {seed}: the sequence wrote nothing"
+        );
+    }
+}
+
+/// A flush splits only when each range is worth a writer of its own.
+///
+/// Every range needs its own [`DeltaWriter`], so splitting a small flush would swap one
+/// reasonable file for several too small to want.
+#[tokio::test]
+async fn a_small_batch_is_not_split_across_ranges() {
+    let dir = TempDir::new().unwrap();
+    let mut table = create_table(&dir).await;
+    let (writer, _) = writer_for_split(&table, 1_000);
+
+    let changes: Vec<Change> = (0..20)
+        .map(|id| Change::Insert(id, format!("v{id}")))
+        .collect();
+    // Twenty keys against a floor of a thousand: eight threads still walk it as one range.
+    let metrics = apply_attempt_with_threads(&writer, &mut table, &changes, false, 8).await;
+    assert_eq!(metrics.ranges, 1, "a batch below the floor was split");
+
+    let (writer, _) = writer_for_split(&table, 4);
+    let updates: Vec<Change> = (0..20)
+        .map(|id| Change::Update(id, format!("v{id}"), format!("w{id}")))
+        .collect();
+    let metrics = apply_attempt_with_threads(&writer, &mut table, &updates, false, 4).await;
+    assert!(metrics.ranges > 1, "a batch above the floor was not split");
+    assert_eq!(live_rows(&table).await.len(), 20);
+}
+
+/// Ranges supersede rows in files they share, and every tombstone must survive the join.
+///
+/// The backfill writes one file, so updates from all four ranges land on it. Union the
+/// bitmaps wrongly -- keep one range's and drop the rest -- and the table keeps two live
+/// rows for most keys.
+#[tokio::test]
+async fn tombstones_from_every_range_survive_the_join() {
+    const KEYS: i64 = 400;
+
+    let dir = TempDir::new().unwrap();
+    let mut table = create_table(&dir).await;
+    let (writer, _) = writer_for_split(&table, 4);
+
+    let inserts: Vec<Change> = (0..KEYS)
+        .map(|id| Change::Insert(id, format!("v{id}")))
+        .collect();
+    apply_attempt_with_threads(&writer, &mut table, &inserts, false, 1).await;
+
+    let updates: Vec<Change> = (0..KEYS)
+        .map(|id| Change::Update(id, format!("v{id}"), format!("w{id}")))
+        .collect();
+    let metrics = apply_attempt_with_threads(&writer, &mut table, &updates, false, 4).await;
+    assert!(metrics.ranges > 1, "the batch was not split");
+
+    // live_rows panics on a duplicate key, which is what a dropped tombstone produces.
+    let rows = live_rows(&table).await;
+    assert_eq!(rows.len(), KEYS as usize);
+    for id in 0..KEYS {
+        assert_eq!(
+            rows.get(&id).map(String::as_str),
+            Some(format!("w{id}").as_str())
+        );
+    }
+}
+
+/// Compaction and reclaim must survive a table a parallel flush built.
+///
+/// Both maintenance paths rewrite files and drop the deletion vectors covering them. A
+/// parallel flush leaves a different shape for them to work on than a sequential one -- a
+/// file per range rather than one, and tombstones spread across every file the ranges
+/// touched -- so the table each path leaves behind is worth pinning.
+#[tokio::test]
+async fn compaction_and_reclaim_preserve_a_table_written_in_parallel() {
+    use super::compact::compact;
+    use super::rewrite::reclaim_superseded_rows;
+    use deltalake::{ensure_table_uri, open_table_with_storage_options};
+    use std::time::Duration;
+
+    const KEYS: i64 = 300;
+
+    let dir = TempDir::new().unwrap();
+    let mut table = create_table(&dir).await;
+    let (writer, _) = writer_for_split(&table, 4);
+
+    let inserts: Vec<Change> = (0..KEYS)
+        .map(|id| Change::Insert(id, format!("v{id}")))
+        .collect();
+    let metrics = apply_attempt_with_threads(&writer, &mut table, &inserts, false, 4).await;
+    assert!(metrics.ranges > 1, "the backfill was not split");
+    assert!(metrics.files_appended > 1, "the ranges shared one file");
+
+    // Supersede most rows, so the rewrite's threshold is met on the files it looks at.
+    let updates: Vec<Change> = (0..KEYS)
+        .filter(|id| id % 4 != 0)
+        .map(|id| Change::Update(id, format!("v{id}"), format!("w{id}")))
+        .collect();
+    apply_attempt_with_threads(&writer, &mut table, &updates, false, 4).await;
+
+    let expected = live_rows(&table).await;
+    assert_eq!(expected.len(), KEYS as usize);
+
+    let uri = dir.path().to_str().unwrap();
+    compact(uri, Default::default(), Duration::from_secs(60))
+        .await
+        .unwrap();
+
+    let mut table =
+        open_table_with_storage_options(ensure_table_uri(uri).unwrap(), Default::default())
+            .await
+            .unwrap();
+    assert_eq!(
+        live_rows(&table).await,
+        expected,
+        "compaction changed what a reader sees"
+    );
+
+    reclaim_superseded_rows(&mut table, Duration::from_secs(60))
+        .await
+        .unwrap();
+    assert_eq!(
+        live_rows(&table).await,
+        expected,
+        "reclaiming changed what a reader sees"
+    );
+}
+
+/// A retry must converge whatever the thread count.
+///
+/// A commit error can mean the commit landed, so a retry walks the same batch against a
+/// table that may already hold its rows. Every range must then look its inserts up rather
+/// than trust the owned-table shortcut, or the retry appends a second live row per key.
+#[tokio::test]
+async fn a_parallel_retry_converges_like_a_sequential_one() {
+    for threads in [1usize, 4] {
+        let dir = TempDir::new().unwrap();
+        let mut table = create_table(&dir).await;
+        let mut rng = SmallRng::seed_from_u64(7);
+        let mut model = Model::default();
+
+        for _ in 0..6 {
+            let changes = model.next_batch(&mut rng, 30);
+            if changes.is_empty() {
+                continue;
+            }
+            let (writer, _) = writer_for_split(&table, 1);
+            // The attempt whose commit landed, and the retry that cannot know it did.
+            apply_attempt_with_threads(&writer, &mut table, &changes, false, threads).await;
+            apply_attempt_with_threads(&writer, &mut table, &changes, true, threads).await;
+
+            assert_eq!(
+                live_rows(&table).await,
+                model.rows,
+                "threads {threads}: a retry diverged from the view"
+            );
+        }
+    }
+}
+
+/// Partition values are per row, so ranges write into partitions independently.
+///
+/// A range prunes the lookup to the partitions its own keys fall in. Splitting an update
+/// that moves rows between partitions must still supersede the row in the partition it came
+/// from, not the one it is going to.
+#[tokio::test]
+async fn a_parallel_flush_moves_rows_between_partitions() {
+    let dir = TempDir::new().unwrap();
+    let mut table = create_partitioned_table(&dir).await;
+    let (writer, _) = writer_for_split(&table, 1);
+
+    let inserts: Vec<Change> = (0..8)
+        .map(|id| Change::Insert(id, format!("p{id}")))
+        .collect();
+    apply_attempt_with_threads(&writer, &mut table, &inserts, false, 4).await;
+
+    let moves: Vec<Change> = (0..8)
+        .map(|id| Change::Update(id, format!("p{id}"), format!("q{id}")))
+        .collect();
+    let metrics = apply_attempt_with_threads(&writer, &mut table, &moves, false, 4).await;
+    assert!(metrics.ranges > 1, "the batch was not split");
+
+    let rows = live_rows(&table).await;
+    assert_eq!(
+        rows.len(),
+        8,
+        "a row was lost or duplicated across partitions"
+    );
+    for id in 0..8 {
+        assert_eq!(
+            rows.get(&id).map(String::as_str),
+            Some(format!("q{id}").as_str())
+        );
+    }
+}
+
+/// Every range's uniqueness violations must reach the controller.
+///
+/// A range cannot call the controller itself, so it collects its violations and the flush
+/// reports them after the join. Keeping only one range's would hide the rest, and the keys
+/// they name would be silently absent from the table.
+#[tokio::test]
+async fn violations_from_every_range_are_reported() {
+    let dir = TempDir::new().unwrap();
+    let mut table = create_table(&dir).await;
+    let (writer, _) = writer_for_split(&table, 1);
+
+    // Each key carries two values at weight +1, which is no single row to write.
+    let mut changes = Vec::new();
+    for id in 0..8 {
+        changes.push(Change::Insert(id, format!("a{id}")));
+        changes.push(Change::Insert(id, format!("b{id}")));
+    }
+    let (metrics, violations) = apply_collecting_violations(&writer, &mut table, &changes, 4).await;
+
+    assert!(metrics.ranges > 1, "the batch was not split");
+    assert_eq!(
+        violations.len(),
+        8,
+        "not every range reported: {violations:?}"
+    );
+    assert_eq!(
+        metrics.rows_appended, 0,
+        "a key with two values was written anyway"
+    );
+    assert!(live_rows(&table).await.is_empty());
+}
+
+/// A range that outgrows its lookup budget runs several passes, like a sequential flush.
+///
+/// Keys reach the chunk in batches of `KEY_BATCH_ROWS`, so a range needs more than one such
+/// batch of its own before its budget can split its lookup.
+#[tokio::test]
+async fn a_parallel_lookup_past_the_budget_runs_several_passes() {
+    const KEYS: i64 = 40_000;
+
+    let dir = TempDir::new().unwrap();
+    let mut table = create_table(&dir).await;
+    let (writer, _) = writer_for_with_chunk(&table, 1);
+    let mut writer = Arc::try_unwrap(writer).unwrap_or_else(|_| unreachable!());
+    writer.split_every(1);
+    let writer = Arc::new(writer);
+
+    let inserts: Vec<Change> = (0..KEYS)
+        .map(|id| Change::Insert(id, format!("v{id}")))
+        .collect();
+    apply_attempt_with_threads(&writer, &mut table, &inserts, false, 1).await;
+
+    let updates: Vec<Change> = (0..KEYS)
+        .map(|id| Change::Update(id, format!("v{id}"), format!("w{id}")))
+        .collect();
+    let metrics = apply_attempt_with_threads(&writer, &mut table, &updates, false, 4).await;
+
+    assert!(metrics.ranges > 1, "the batch was not split");
+    assert!(
+        metrics.lookup_passes > metrics.ranges,
+        "ranges did not each run several passes: {} pass(es) over {} range(s)",
+        metrics.lookup_passes,
+        metrics.ranges
+    );
+    assert_eq!(live_rows(&table).await.len(), KEYS as usize);
+}
+
+/// Once a flush has written, a range must be worth a file rather than merely a buffer.
+///
+/// A range writes its own files, so splitting a batch that is only a couple of files' worth
+/// turns each into a file well under the size the writer aims for. The first flush has no
+/// rate to judge that by; the second does, and must leave such a batch whole.
+#[tokio::test]
+async fn a_batch_worth_too_few_files_is_left_whole_once_the_rate_is_known() {
+    let dir = TempDir::new().unwrap();
+    let mut table = create_table(&dir).await;
+    // No override: the writer judges a range by what a file costs, as in production.
+    let (writer, _) = writer_for(&table);
+
+    // Enough rows to clear the pre-history floor, so the first flush does split.
+    let inserts: Vec<Change> = (0..400_000)
+        .map(|id| Change::Insert(id, format!("v{id}")))
+        .collect();
+    let first = apply_attempt_with_threads(&writer, &mut table, &inserts, false, 4).await;
+    assert!(
+        first.ranges > 1,
+        "the first flush had no rate and should have split"
+    );
+    assert!(first.bytes_written > 0);
+
+    // The same size again, now judged against the rate the first flush wrote at. These rows
+    // are far smaller than a target file, so four ranges would be four undersized files.
+    let updates: Vec<Change> = (0..400_000)
+        .map(|id| Change::Update(id, format!("v{id}"), format!("w{id}")))
+        .collect();
+    let second = apply_attempt_with_threads(&writer, &mut table, &updates, false, 4).await;
+    assert_eq!(
+        second.ranges, 1,
+        "a batch worth well under a file was split anyway, into {} files",
+        second.files_appended
+    );
+    assert_eq!(live_rows(&table).await.len(), 400_000);
+}
+
+/// One failing range must fail the flush, and commit nothing.
+///
+/// Ranges write their files before the flush commits, so a range that fails leaves the
+/// others' files in the object store. The flush must still report the failure and leave the
+/// table at the version it read: a partial commit would publish some ranges' rows and drop
+/// the rest, which is worse than the retry those orphans cost.
+#[tokio::test]
+async fn a_failing_range_fails_the_flush_without_committing() {
+    use super::test::{FlakyStore, table_over};
+
+    let dir = TempDir::new().unwrap();
+    let mut table = create_table(&dir).await;
+    let (writer, _) = writer_for_split(&table, 1);
+
+    let inserts: Vec<Change> = (0..200)
+        .map(|id| Change::Insert(id, format!("v{id}")))
+        .collect();
+    apply_attempt_with_threads(&writer, &mut table, &inserts, false, 1).await;
+    let before = live_rows(&table).await;
+    let version_before = table.version();
+    drop(table);
+
+    // An outage no retry can outlast, so every range's lookup fails rather than one.
+    let store = FlakyStore::new(usize::MAX, 0);
+    let mut table = table_over(store, &dir).await;
+    let (writer, _) = writer_for_split(&table, 1);
+
+    let updates: Vec<Change> = (0..200)
+        .map(|id| Change::Update(id, format!("v{id}"), format!("w{id}")))
+        .collect();
+    let batch = build_batch(&updates);
+    let format = RecordFormat::Parquet(delta_output_serde_config(DeltaVariantEncoding::default()));
+    let object_store = table.object_store();
+    let result = writer
+        .flush(
+            &mut table,
+            object_store,
+            batch.as_batch_reader().snapshot(),
+            format,
+            4,
+            false,
+            &mut |e| panic!("unexpected uniqueness violation: {e}"),
+            Arc::new(AtomicU64::new(0)),
+        )
+        .await;
+
+    assert!(result.is_err(), "a failing range let the flush succeed");
+    assert_eq!(table.version(), version_before, "a failed flush committed");
+
+    // The table still reads as it did, through a store that is no longer failing.
+    let table = create_table(&dir).await;
+    assert_eq!(
+        live_rows(&table).await,
+        before,
+        "a failed flush changed the table"
+    );
+}
+
+/// The budgets a flush is configured with are for the flush, not for each of its ranges.
+///
+/// Left undivided, `threads` would multiply both the rows the writers buffer and the files
+/// the lookup reads at once, so a thread count would quietly change how much memory a flush
+/// needs and how hard it leans on the object store.
+#[test]
+fn ranges_divide_the_flush_budgets_between_them() {
+    use super::flush::{APPEND_CHUNK_ROWS, MIN_RANGE_CHUNK_ROWS, RangeBudget};
+
+    let whole = RangeBudget::for_test(16, 1);
+    assert_eq!(whole.chunk_rows, APPEND_CHUNK_ROWS);
+    assert_eq!(whole.probes, 16);
+
+    let split = RangeBudget::for_test(16, 4);
+    assert_eq!(split.chunk_rows, APPEND_CHUNK_ROWS / 4);
+    assert_eq!(
+        split.probes, 4,
+        "four ranges of four probes is the configured sixteen"
+    );
+
+    // Divided past what is useful, each range still buffers enough to be worth a write and
+    // still reads one file at a time.
+    let thin = RangeBudget::for_test(2, 64);
+    assert_eq!(thin.chunk_rows, MIN_RANGE_CHUNK_ROWS);
+    assert_eq!(thin.probes, 1);
 }

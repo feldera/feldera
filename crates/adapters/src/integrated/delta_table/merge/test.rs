@@ -340,7 +340,7 @@ pub(super) async fn tombstone_ids(mut table: DeltaTable, ids: &[i64]) -> DeltaTa
     locate(
         &chunk,
         &candidates,
-        &table,
+        table.object_store(),
         &encoder,
         4,
         Pruning::new(true, None),
@@ -454,7 +454,7 @@ async fn a_partition_column_key_is_reconstructed_from_the_log() {
     let metrics = locate(
         &chunk,
         &candidates,
-        &table,
+        table.object_store(),
         &encoder,
         4,
         Pruning::new(true, Some(&partitions)),
@@ -496,7 +496,7 @@ async fn a_key_made_only_of_partition_columns_still_locates_rows() {
     let metrics = locate(
         &chunk,
         &candidates,
-        &table,
+        table.object_store(),
         &encoder,
         4,
         Pruning::none(),
@@ -821,7 +821,7 @@ async fn a_file_maintenance_replaced_is_transient() {
 /// bad minute, and nothing exercised them end to end: the unit tests drive the retry helper
 /// directly, and the probe test only shows a failure that never recovers.
 #[derive(Debug)]
-struct FlakyStore {
+pub(super) struct FlakyStore {
     inner: Arc<dyn deltalake::ObjectStore>,
     /// Remaining reads of a data file to fail.
     fail_reads: AtomicUsize,
@@ -833,7 +833,7 @@ struct FlakyStore {
 impl FlakyStore {
     /// Wraps the whole local filesystem: `with_storage_backend` wants a store rooted at "/"
     /// and resolves the table's own location against it.
-    fn new(fail_reads: usize, fail_writes: usize) -> Arc<Self> {
+    pub(super) fn new(fail_reads: usize, fail_writes: usize) -> Arc<Self> {
         Arc::new(Self {
             inner: Arc::new(object_store::local::LocalFileSystem::new()),
             fail_reads: AtomicUsize::new(fail_reads),
@@ -939,7 +939,7 @@ impl deltalake::ObjectStore for FlakyStore {
 }
 
 /// Open `dir`'s table through `store`, so the merge paths read and write through it.
-async fn table_over(store: Arc<FlakyStore>, dir: &TempDir) -> DeltaTable {
+pub(super) async fn table_over(store: Arc<FlakyStore>, dir: &TempDir) -> DeltaTable {
     let url = deltalake::table::builder::ensure_table_uri(dir.path().to_str().unwrap()).unwrap();
     deltalake::DeltaTableBuilder::from_url(url.clone())
         .unwrap()

@@ -38,7 +38,8 @@ use serde_arrow::ArrayBuilder;
 use serde_arrow::schema::SerdeArrowSchema;
 use tracing::debug;
 
-use crate::catalog::SerCursor;
+use crate::RecordFormat;
+use crate::catalog::{SerBatchReader, SerCursor, SplitCursorBuilder};
 use crate::util::{IndexedOperationType, indexed_operation_type};
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 
@@ -54,18 +55,34 @@ use super::startup::{MergeSetup, Regime, StatsConfig};
 use super::tombstone::{DvWriteMetrics, Tombstones, write_deletion_vectors};
 use super::transient;
 
-/// Rows buffered in the append writer before a chunk is written out.
-const APPEND_CHUNK_ROWS: usize = 100_000;
+/// Rows buffered in the append writers before a chunk is written out, over the whole flush.
+///
+/// A flush that splits into ranges divides this between them rather than giving each the
+/// whole of it, so its buffers cost the same whatever `threads` says.
+pub(super) const APPEND_CHUNK_ROWS: usize = 100_000;
+/// Target-sized files a range must be worth before a flush splits into one more.
+///
+/// One would let a range be mostly the partial file it ends with; three holds the waste
+/// under a sixth of what the range writes.
+const FILES_PER_RANGE: u64 = 3;
+
+/// Rows a range buffers before writing, never so few that a write is pure overhead.
+pub(super) const MIN_RANGE_CHUNK_ROWS: usize = 8_192;
 
 /// Keys buffered before they are encoded into the lookup chunk. Encoding works on an arrow
 /// batch, so keys are gathered into one first.
 const KEY_BATCH_ROWS: usize = 8192;
 
-/// Where one flush's wall time went.
+/// Where a flush's time went.
 ///
-/// The fields below are disjoint spans of the same sequential flush, so they sum to at most
-/// `total`; [`Self::other`] is the remainder.  A flush reports minutes against a large table
-/// and the counters alone cannot say which phase spent them.
+/// A flush reports minutes against a large table and the counters alone cannot say which
+/// phase spent them.
+///
+/// The phases partition one flush and sum to `total`, but only while the flush walks a
+/// single key range.  `threads` splits it into ranges that run at once, and the three phases
+/// a range performs -- `batch_walk`, `probe` and `append` -- are then summed across ranges:
+/// they measure the work the flush did rather than the time it took, and can exceed `total`.
+/// The three outside a range stay wall time whatever the thread count.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct FlushTimings {
     /// The whole flush, including every phase below.
@@ -73,6 +90,8 @@ pub struct FlushTimings {
     /// Walking the Delta log: once to build the probe's candidate list, once after the
     /// commit to count the table's rows.  Grows with the table's file count, not the batch.
     pub log_scan: Duration,
+    /// Walking the batch: serializing each row and encoding each key.
+    pub batch_walk: Duration,
     /// Locating the rows to supersede, summed over every lookup pass.
     pub probe: Duration,
     /// Encoding appended rows to parquet and streaming them to the object store.
@@ -84,12 +103,15 @@ pub struct FlushTimings {
 }
 
 impl FlushTimings {
-    /// What the phases above do not account for: the walk over the batch, which serializes
-    /// each row and encodes each key.
-    pub fn other(&self) -> Duration {
-        self.total.saturating_sub(
-            self.log_scan + self.probe + self.append + self.deletion_vectors + self.commit,
-        )
+    /// Add one range's timings. `total` belongs to the flush, not to a range, so it is left
+    /// alone.
+    fn merge(&mut self, range: &Self) {
+        self.log_scan += range.log_scan;
+        self.batch_walk += range.batch_walk;
+        self.probe += range.probe;
+        self.append += range.append;
+        self.deletion_vectors += range.deletion_vectors;
+        self.commit += range.commit;
     }
 }
 
@@ -121,7 +143,64 @@ pub struct FlushMetrics {
     pub table_live_rows: u64,
     /// Rows in the table that a deletion vector covers, after this flush.
     pub table_superseded_rows: u64,
+    /// Key ranges this flush walked. Above one when `threads` split the batch.
+    pub ranges: usize,
     pub timings: FlushTimings,
+}
+
+impl FlushMetrics {
+    /// Absorb what one key range produced.
+    ///
+    /// Counters add. So do the timings, which makes them the work the flush did rather than
+    /// the time it took: ranges run at once, so their spans overlap in wall time.
+    fn merge_range(&mut self, range: &Self) {
+        self.rows_appended += range.rows_appended;
+        self.keys_probed += range.keys_probed;
+        self.lookup_passes += range.lookup_passes;
+        self.probe.merge(&range.probe);
+        self.timings.merge(&range.timings);
+    }
+}
+
+/// One range's share of the budgets a flush spends as a whole.
+///
+/// Both are configured for a flush, not for a thread, so ranges divide them. Left
+/// undivided, `threads` would quietly multiply the memory the buffers cost and the requests
+/// the lookup has in flight.
+#[derive(Debug, Clone, Copy)]
+pub(super) struct RangeBudget {
+    /// Rows this range buffers before it writes them.
+    pub(super) chunk_rows: usize,
+    /// Data files this range's lookup reads at once.
+    pub(super) probes: usize,
+}
+
+impl RangeBudget {
+    fn split(writer: &MergeWriter, ranges: usize) -> Self {
+        Self::divide(writer.max_concurrent_probes, ranges)
+    }
+
+    fn divide(max_concurrent_probes: usize, ranges: usize) -> Self {
+        let ranges = ranges.max(1);
+        Self {
+            chunk_rows: (APPEND_CHUNK_ROWS / ranges).max(MIN_RANGE_CHUNK_ROWS),
+            probes: (max_concurrent_probes / ranges).max(1),
+        }
+    }
+
+    /// The division alone, without a writer to take the configured value from.
+    #[cfg(test)]
+    pub(super) fn for_test(max_concurrent_probes: usize, ranges: usize) -> Self {
+        Self::divide(max_concurrent_probes, ranges)
+    }
+}
+
+/// What one key range produced, before the ranges are joined into one commit.
+struct RangeOutput {
+    added: Vec<Add>,
+    tombstones: Tombstones,
+    metrics: FlushMetrics,
+    violations: Vec<anyhow::Error>,
 }
 
 /// Everything a flush needs that outlives it.
@@ -142,6 +221,18 @@ pub struct MergeWriter {
     max_concurrent_probes: usize,
     view_name: SqlIdentifier,
     index_name: SqlIdentifier,
+    /// Rows a key range must be worth before a flush splits the batch, whatever the rate
+    /// below says. Pinned by a test so the parallel path is reachable without a fixture
+    /// large enough to fill a [`TARGET_FILE_SIZE`] file.
+    #[cfg(test)]
+    rows_per_range_override: Option<usize>,
+    /// Bytes one appended row took in the last flush that wrote any, or zero before then.
+    ///
+    /// A range writes its own files, so a range worth less than [`TARGET_FILE_SIZE`] costs
+    /// a file below the size the writer aims for.  Rows are what a split can be measured in
+    /// up front and bytes are what the cost is in, so the rate between them is carried from
+    /// one flush to the next.
+    bytes_per_row: AtomicU64,
 }
 
 impl MergeWriter {
@@ -174,14 +265,18 @@ impl MergeWriter {
             lookup_chunk_bytes,
             max_concurrent_probes,
             view_name,
+            #[cfg(test)]
+            rows_per_range_override: None,
+            bytes_per_row: AtomicU64::new(0),
             index_name: key_schema.name.clone(),
         })
     }
 
     /// Apply one batch to `table` and commit, refreshing the table to the new version.
     ///
-    /// The caller rebuilds `cursor` on every attempt, because a retry has to re-run the lookup
-    /// against whatever paths exist now.
+    /// The whole batch is taken rather than a cursor over it, because a flush may walk it as
+    /// several key ranges, and because a retry has to re-run the lookup against whatever
+    /// paths exist now.
     ///
     /// `retrying` must be set on every attempt after the first. A commit error can mean the
     /// commit landed and only its response was lost, so the rows an earlier attempt appended
@@ -190,15 +285,25 @@ impl MergeWriter {
     ///
     /// `progress` counts the rows written so far, for the controller to report while a large
     /// flush is still running. The caller owns resetting it.
+    ///
+    /// `threads` splits the batch into that many key ranges, each walked and written by its
+    /// own task. Ranges are disjoint, so their appended files concatenate and their
+    /// tombstones union; the flush still commits once.
+    ///
+    /// A flush that fails part-way leaves the data files it had already streamed behind,
+    /// which `VACUUM` collects; nothing is committed, so no reader sees them. Splitting the
+    /// batch does not change that, only how many ranges can be the one that failed.
     #[allow(clippy::too_many_arguments)]
     pub async fn flush(
-        &self,
+        self: &Arc<Self>,
         table: &mut DeltaTable,
         object_store: ObjectStoreRef,
-        cursor: &mut dyn SerCursor,
+        batch: Arc<dyn SerBatchReader>,
+        format: RecordFormat,
+        threads: usize,
         retrying: bool,
         on_uniqueness_violation: &mut dyn FnMut(anyhow::Error),
-        progress: &AtomicU64,
+        progress: Arc<AtomicU64>,
     ) -> Result<FlushMetrics, WriteError> {
         let mut metrics = FlushMetrics::default();
         let started = Instant::now();
@@ -206,7 +311,9 @@ impl MergeWriter {
             .flush_phases(
                 table,
                 object_store,
-                cursor,
+                batch,
+                format,
+                threads,
                 retrying,
                 on_uniqueness_violation,
                 progress,
@@ -217,30 +324,221 @@ impl MergeWriter {
         result.map(|()| metrics)
     }
 
+    /// Rows a range must be worth for the flush to be split into one.
+    ///
+    /// Before any flush has written, [`APPEND_CHUNK_ROWS`]: enough that a first flush worth
+    /// splitting still is, and a small one is left whole. After one, the rows
+    /// [`FILES_PER_RANGE`] files take at the rate that flush wrote at.
+    ///
+    /// A range's last file is however full it happens to be, so splitting costs one partial
+    /// file per range whatever the rows: a range worth one file writes half a file of waste,
+    /// one worth several writes the same waste against several times the data. Measured on a
+    /// 2.2 GB backfill, which needs 21 files: 8 ranges wrote 24 and 16 ranges wrote 32.
+    fn rows_per_range(&self) -> usize {
+        #[cfg(test)]
+        if let Some(rows) = self.rows_per_range_override {
+            return rows.max(1);
+        }
+        match self.bytes_per_row.load(Ordering::Relaxed) {
+            0 => APPEND_CHUNK_ROWS,
+            rate => {
+                ((FILES_PER_RANGE * TARGET_FILE_SIZE.get() / rate) as usize).max(APPEND_CHUNK_ROWS)
+            }
+        }
+    }
+
+    /// Split every `rows` rows, so a test need not build a fixture large enough to fill a
+    /// [`TARGET_FILE_SIZE`] file to reach the parallel path.
+    #[cfg(test)]
+    pub(super) fn split_every(&mut self, rows: usize) {
+        self.rows_per_range_override = Some(rows);
+    }
+
+    /// Key ranges to walk in parallel, at most one per thread.
+    ///
+    /// A range needs its own [`DeltaWriter`], so splitting a small flush only fragments it
+    /// into files below [`TARGET_FILE_SIZE`]. Once a flush has written rows, the floor is
+    /// the rows that size takes; before then it is [`APPEND_CHUNK_ROWS`], which splits a
+    /// first flush large enough to be worth splitting and leaves a small one whole.
+    fn ranges(
+        &self,
+        batch: &Arc<dyn SerBatchReader>,
+        format: &RecordFormat,
+        threads: usize,
+    ) -> Vec<SplitCursorBuilder> {
+        let wanted = threads
+            .min(batch.key_count() / self.rows_per_range())
+            .max(1);
+        // One range is the common case, and it needs no bounds: `partition_keys` samples the
+        // batch to find them, which is work with nothing to split.
+        if wanted <= 1 {
+            return SplitCursorBuilder::from_bounds(
+                batch.clone(),
+                &*batch.keys_factory().default_box(),
+                0,
+                format.clone(),
+            )
+            .into_iter()
+            .collect();
+        }
+
+        let mut bounds = batch.keys_factory().default_box();
+        batch.partition_keys(wanted, &mut *bounds);
+        (0..=bounds.len())
+            .filter_map(|i| {
+                SplitCursorBuilder::from_bounds(batch.clone(), &*bounds, i, format.clone())
+            })
+            .collect()
+    }
+
     /// The flush itself. Split out so [`Self::flush`] times the whole of it in one place,
     /// including whatever a failure ran before it gave up.
     #[allow(clippy::too_many_arguments)]
     async fn flush_phases(
-        &self,
+        self: &Arc<Self>,
         table: &mut DeltaTable,
         object_store: ObjectStoreRef,
-        cursor: &mut dyn SerCursor,
+        batch: Arc<dyn SerBatchReader>,
+        format: RecordFormat,
+        threads: usize,
         retrying: bool,
         on_uniqueness_violation: &mut dyn FnMut(anyhow::Error),
-        progress: &AtomicU64,
+        progress: Arc<AtomicU64>,
         metrics: &mut FlushMetrics,
     ) -> Result<(), WriteError> {
         // The snapshot the lookup runs against. The commit declares it as its read version,
         // so a conflicting change to these files is caught rather than overwritten.
         let scan_started = Instant::now();
-        let candidates = self.snapshot_files(table)?;
+        let candidates = Arc::new(self.snapshot_files(table)?);
         metrics.timings.log_scan += scan_started.elapsed();
 
-        let mut appends = self.append_writer(object_store);
+        let ranges = self.ranges(&batch, &format, threads);
+        metrics.ranges = ranges.len();
+        let outputs = self
+            .walk_ranges(ranges, object_store, candidates, retrying, progress.clone())
+            .await?;
+
+        let mut added = Vec::new();
+        let mut tombstones = Tombstones::new();
+        for output in outputs {
+            // Reported after the join rather than from inside a range, so the order does not
+            // depend on which range happened to finish first.
+            for violation in output.violations {
+                on_uniqueness_violation(violation);
+            }
+            added.extend(output.added);
+            tombstones.merge(output.tombstones);
+            metrics.merge_range(&output.metrics);
+        }
+
+        metrics.files_appended = added.len();
+        metrics.bytes_written = added.iter().map(|a| a.size.max(0) as u64).sum();
+        if metrics.rows_appended > 0 && metrics.bytes_written > 0 {
+            self.bytes_per_row.store(
+                (metrics.bytes_written / metrics.rows_appended).max(1),
+                Ordering::Relaxed,
+            );
+        }
+
+        self.commit(table, added, tombstones, metrics).await?;
+        // Counted too, or a delete-only flush reports no progress while it is working.
+        progress.fetch_add(metrics.dv.rows_tombstoned, Ordering::Relaxed);
+        let scan_started = Instant::now();
+        count_table_rows(table, metrics);
+        metrics.timings.log_scan += scan_started.elapsed();
+        Ok(())
+    }
+
+    /// Walk every range, in parallel when there is more than one.
+    ///
+    /// A single range runs inline: spawning for it would cost a task and hand the work to
+    /// another thread for no gain.
+    async fn walk_ranges(
+        self: &Arc<Self>,
+        ranges: Vec<SplitCursorBuilder>,
+        object_store: ObjectStoreRef,
+        candidates: Arc<Vec<Candidate>>,
+        retrying: bool,
+        progress: Arc<AtomicU64>,
+    ) -> Result<Vec<RangeOutput>, WriteError> {
+        let budget = RangeBudget::split(self, ranges.len());
+        if ranges.len() <= 1 {
+            let mut outputs = Vec::with_capacity(ranges.len());
+            for range in ranges {
+                outputs.push(
+                    self.clone()
+                        .walk_range(
+                            range,
+                            object_store.clone(),
+                            candidates.clone(),
+                            retrying,
+                            progress.clone(),
+                            budget,
+                        )
+                        .await?,
+                );
+            }
+            return Ok(outputs);
+        }
+
+        // Each range is mostly serialization, so a spawned range occupies a runtime worker
+        // for as long as it runs. This is what the non-merge path does with `threads` too.
+        let mut handles = Vec::with_capacity(ranges.len());
+        for range in ranges {
+            let writer = self.clone();
+            let object_store = object_store.clone();
+            let candidates = candidates.clone();
+            let progress = progress.clone();
+            handles.push(tokio::spawn(async move {
+                writer
+                    .walk_range(range, object_store, candidates, retrying, progress, budget)
+                    .await
+            }));
+        }
+
+        // Every handle is awaited even after one fails, so no range is left writing to the
+        // object store while the flush reports its error.
+        let mut outputs = Vec::with_capacity(handles.len());
+        let mut failure = None;
+        for handle in handles {
+            match handle.await {
+                Ok(Ok(output)) => outputs.push(output),
+                Ok(Err(e)) => failure = Some(failure.unwrap_or(e)),
+                Err(e) => {
+                    failure = Some(
+                        failure
+                            .unwrap_or_else(|| transient(format!("a merge range panicked: {e}"))),
+                    )
+                }
+            }
+        }
+        match failure {
+            Some(e) => Err(e),
+            None => Ok(outputs),
+        }
+    }
+
+    /// Walk one key range: append its new rows, look up the rows they supersede.
+    async fn walk_range(
+        self: Arc<Self>,
+        range: SplitCursorBuilder,
+        object_store: ObjectStoreRef,
+        candidates: Arc<Vec<Candidate>>,
+        retrying: bool,
+        progress: Arc<AtomicU64>,
+        budget: RangeBudget,
+    ) -> Result<RangeOutput, WriteError> {
+        let walk_started = Instant::now();
+        let mut metrics = FlushMetrics::default();
+        let mut violations = Vec::new();
+        let mut split = range.build();
+        let cursor: &mut dyn SerCursor = &mut split;
+
+        let mut appends = self.append_writer(object_store.clone());
         let mut rows = ArrayBuilder::new(self.row_serde_schema.clone()).map_err(|e| {
             WriteError::Deterministic(anyhow!("error creating the row builder: {e}"))
         })?;
-        let mut keys = KeyChunk::new(self, table, &candidates)?;
+        let mut keys = KeyChunk::new(self.clone(), object_store, candidates, budget.probes)?;
         let mut buffered_rows = 0;
 
         while cursor.key_valid() {
@@ -249,7 +547,7 @@ impl MergeWriter {
                 Err(e) => {
                     // A key with two values has no single row to write. Skip it and let the
                     // controller report it, as cdc mode does.
-                    on_uniqueness_violation(e);
+                    violations.push(e);
                     cursor.step_key();
                     continue;
                 }
@@ -263,7 +561,7 @@ impl MergeWriter {
             if self.needs_lookup(&op, retrying) {
                 // A flattened cursor reads its key out of the current value.
                 cursor.rewind_vals();
-                keys.push(cursor, metrics).await?;
+                keys.push(cursor, &mut metrics).await?;
             }
 
             if matches!(
@@ -277,7 +575,7 @@ impl MergeWriter {
                 buffered_rows += 1;
                 metrics.rows_appended += 1;
 
-                if buffered_rows >= APPEND_CHUNK_ROWS {
+                if buffered_rows >= budget.chunk_rows {
                     timed(
                         &mut metrics.timings.append,
                         write_rows(&mut rows, &mut appends),
@@ -299,23 +597,26 @@ impl MergeWriter {
             .await?;
             progress.fetch_add(buffered_rows as u64, Ordering::Relaxed);
         }
-        let tombstones = keys.finish(metrics).await?;
+        let tombstones = keys.finish(&mut metrics).await?;
 
         // Transient: the writer streamed data files to the object store, so a failure here
         // is I/O.  It cannot be retried in place, only by redoing the flush.
         let added = timed(&mut metrics.timings.append, appends.close())
             .await
             .map_err(|e| transient(format!("error closing the Delta writer: {e:?}")))?;
-        metrics.files_appended = added.len();
-        metrics.bytes_written = added.iter().map(|a| a.size.max(0) as u64).sum();
 
-        self.commit(table, added, tombstones, metrics).await?;
-        // Counted too, or a delete-only flush reports no progress while it is working.
-        progress.fetch_add(metrics.dv.rows_tombstoned, Ordering::Relaxed);
-        let scan_started = Instant::now();
-        count_table_rows(table, metrics);
-        metrics.timings.log_scan += scan_started.elapsed();
-        Ok(())
+        // What the walk cost is what is left of it once its two timed phases are taken out.
+        // Timing the loop body directly would read the clock once per row.
+        metrics.timings.batch_walk = walk_started
+            .elapsed()
+            .saturating_sub(metrics.timings.probe + metrics.timings.append);
+
+        Ok(RangeOutput {
+            added,
+            tombstones,
+            metrics,
+            violations,
+        })
     }
 
     /// Whether the row this operation supersedes has to be located in the table.
@@ -486,10 +787,12 @@ async fn write_rows(
 /// Accumulates the keys whose rows must be located, and runs the lookup when it fills.
 ///
 /// Split out from the walk so the walk reads as the algorithm, not as buffer management.
-struct KeyChunk<'a> {
-    writer: &'a MergeWriter,
-    table: &'a DeltaTable,
-    candidates: &'a [Candidate],
+struct KeyChunk {
+    writer: Arc<MergeWriter>,
+    store: ObjectStoreRef,
+    candidates: Arc<Vec<Candidate>>,
+    /// Data files read at once, this range's share of `max_concurrent_probes`.
+    probes: usize,
     builder: ArrayBuilder,
     buffered: usize,
     chunk: LookupChunk,
@@ -498,16 +801,14 @@ struct KeyChunk<'a> {
     tombstones: Tombstones,
 }
 
-impl<'a> KeyChunk<'a> {
+impl KeyChunk {
     fn new(
-        writer: &'a MergeWriter,
-        table: &'a DeltaTable,
-        candidates: &'a [Candidate],
+        writer: Arc<MergeWriter>,
+        store: ObjectStoreRef,
+        candidates: Arc<Vec<Candidate>>,
+        probes: usize,
     ) -> Result<Self, WriteError> {
         Ok(Self {
-            writer,
-            table,
-            candidates,
             builder: ArrayBuilder::new(writer.key_serde_schema.clone()).map_err(|e| {
                 WriteError::Deterministic(anyhow!("error creating the key builder: {e}"))
             })?,
@@ -520,6 +821,10 @@ impl<'a> KeyChunk<'a> {
             )
             .map_err(WriteError::Deterministic)?,
             tombstones: Tombstones::new(),
+            writer,
+            store,
+            candidates,
+            probes,
         })
     }
 
@@ -592,10 +897,10 @@ impl<'a> KeyChunk<'a> {
             &mut metrics.timings.probe,
             locate(
                 &self.chunk,
-                self.candidates,
-                self.table,
+                &self.candidates,
+                self.store.clone(),
                 &self.writer.key_encoder,
-                self.writer.max_concurrent_probes,
+                self.probes,
                 Pruning::new(self.writer.prune_on_stats, self.partitions.as_ref()),
                 &mut self.tombstones,
             ),

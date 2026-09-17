@@ -170,7 +170,7 @@ impl Drop for Slot {
 }
 
 /// What one compaction did, for the log line.
-struct Outcome {
+pub(super) struct Outcome {
     files_added: u64,
     files_removed: u64,
     reclaim: ReclaimMetrics,
@@ -193,7 +193,7 @@ const COMMIT_INTERVAL: Duration = Duration::from_secs(60);
 ///
 /// Only the reclamation half can stop early. delta-rs offers no deadline for the
 /// bin-packing, so a run that spends the whole budget there reclaims nothing this time.
-async fn compact(
+pub(super) async fn compact(
     uri: &str,
     storage_options: HashMap<String, String>,
     budget: Duration,

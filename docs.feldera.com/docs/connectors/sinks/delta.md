@@ -94,7 +94,7 @@ MERGE INTO {target_table} AS target
 | `log_retention_duration` | <p>Log retention duration for newly created Delta tables.</p><p>Configures the `delta.logRetentionDuration` table property, which controls how long the table's transaction-log history is kept.  Each time a checkpoint is written, Delta Lake automatically cleans up log entries older than this interval (subject to `enable_expired_log_cleanup`).</p><p>The option is only available when creating the Delta table (`mode = append` and there is no existing table at the target location, or `mode = truncate`).</p><p>The value follows the Delta Lake interval syntax `"interval <N> <unit>"`, where `<unit>` is one of `nanosecond[s]`, `microsecond[s]`, `millisecond[s]`, `second[s]`, `minute[s]`, `hour[s]`, `day[s]`, or `week[s]`.  Examples: `"interval 30 days"`, `"interval 6 hours"`.</p><p>Default: `"interval 30 days"` (Delta Lake default).</p>|
 | `enable_expired_log_cleanup` | <p>Whether to clean up expired log entries when a checkpoint is written.</p><p>Configures the `delta.enableExpiredLogCleanup` table property.  When set to `false`, transaction-log entries are retained indefinitely regardless of `log_retention_duration`.</p><p>The option is only available when creating the Delta table (`mode = append` and there is no existing table at the target location, or `mode = truncate`).</p><p>Default: `true` (Delta Lake default).</p>|
 | `max_retries`|<p>Maximum number of retries for failed Delta Lake operations like writing Parquet files and committing transactions.</p><p>The connector performs retries on several levels: individual S3 operations, Delta Lake transaction commits, and overall operation retries. This setting controls the overall operation retries. When a write to the table fails, because of an S3 timeout or any other reason that was not resolved by lower-level retries, the connector will retry the entire operation.</p><p>When not specified, the connector performs infinite retries. When set to 0, the connector doesn't retry failed operations.</p>|
-| `threads` | <p>Number of parallel threads used by the connector. Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.</p><p>Values above 1 require the view to have a unique key, so that the connector can order inserts and deletes correctly. Define the key with `CREATE INDEX` and set the connector's `index` property to that index; see [views with unique keys](#views-with-unique-keys) and [writing in parallel](#writing-in-parallel).</p><p>Must be `1` when `update_mode` is `merge`.</p><p>Default: `1`.</p>|
+| `threads` | <p>Number of parallel threads used by the connector. Increasing this value can improve Delta Lake write throughput by enabling concurrent writes.</p><p>Values above 1 require the view to have a unique key, so that the connector can order inserts and deletes correctly. Define the key with `CREATE INDEX` and set the connector's `index` property to that index; see [views with unique keys](#views-with-unique-keys) and [writing in parallel](#writing-in-parallel).</p><p>In `merge` mode the connector splits a batch only when each thread would get a substantial share of it, so a small change stays one file rather than becoming one small file per thread.</p><p>Default: `1`.</p>|
 | `variant_encoding` | <p>Encoding of `VARIANT` columns. Options:</p><p>- `variant`: the Delta `variant` type, holding the Parquet variant binary encoding.</p><p>- `json_string`: JSON text in a `string` column.</p><p>See [VARIANT](#variant).</p><p>Default: `variant`.</p>|
 | `update_mode` | <p>How the connector applies the view's changes to the table. Orthogonal to `mode`, which governs what happens to an existing table when the pipeline starts.</p><p>- `cdc`: append a change log with `__feldera_op` and `__feldera_ts` metadata columns, which a job of yours folds into a state table.</p><p>- `merge`: keep the table in sync with the view. See [Merge mode](#merge-mode).</p><p>Default: `cdc`.</p>|
 | `lookup_chunk_bytes` | <p>Ceiling, in bytes, on the encoded keys the connector holds while locating rows to supersede. `merge` mode only.</p><p>A flush whose key set exceeds this budget is split into successive lookup passes, which bounds memory at the cost of re-scanning candidate files. Default: 256 MiB.</p>|
@@ -129,7 +129,6 @@ before any data moves.
 | At least one key column is stored in the data files | A key made entirely of partition columns leaves nothing in the file to read the key from, and would mean one partition directory per row |
 | `delta.enableChangeDataFeed` is off | A change data feed needs `_change_data` files that this connector does not write |
 | `delta.appendOnly` is off | Superseding a row means removing the old one |
-| `threads` is `1` | The connector already reads the table concurrently while locating rows |
 
 Merge mode also assumes the pipeline is the only process writing rows to the table.
 Maintenance is fine -- `OPTIMIZE` and `VACUUM` conflict with a flush and the connector
@@ -229,10 +228,11 @@ The connector exports these alongside the standard connector metrics.
 | `output_connector_delta_merge_files_appended_total`, `output_connector_delta_merge_files_dropped_total` | Small-file growth, and the files reclaimed because every row in them was superseded |
 | `output_connector_delta_merge_lookup_passes_total` | Above one per flush only when a key set exceeded `lookup_chunk_bytes` |
 | `output_connector_delta_merge_bytes_written_total` | Bytes written: new data files plus deletion vectors |
+| `output_connector_delta_merge_ranges_walked_total` | Key ranges walked, summed over flushes. Above the flush count when `threads` split a batch into ranges written in parallel. |
 | `output_connector_delta_merge_probe_key_bytes_read_total` | Key-column bytes the lookup read. Against `bytes_written_total`, the flush's read amplification |
 | `output_connector_delta_merge_compactions_total`, `output_connector_delta_merge_compaction_failures_total` | Maintenance runs, and how many failed. Only when `optimize_interval_secs` is set |
 | `output_connector_delta_merge_flush_latency_microseconds` | Histogram of whole flushes. Where object-store latency shows up; no combination of the counters above reveals it |
-| `output_connector_delta_merge_probe_microseconds_total`, `..._append_...`, `..._deletion_vector_...`, `..._commit_...`, `..._log_scan_...`, `..._batch_walk_...` | Where flush time goes. These partition a flush, so they sum to what the latency histogram records for it. Only successful flushes report them |
+| `output_connector_delta_merge_probe_microseconds_total`, `..._append_...`, `..._deletion_vector_...`, `..._commit_...`, `..._log_scan_...`, `..._batch_walk_...` | Where flush time goes. Only successful flushes report them. At `threads` 1 they partition a flush and sum to what the latency histogram records for it; above 1 the phases a key range performs -- `batch_walk`, `probe` and `append` -- are summed across ranges that ran at once, so they measure work rather than elapsed time and can exceed the flush's latency |
 | `output_connector_delta_merge_reclaimed_rows_total` | Superseded rows that maintenance removed from storage |
 | `output_connector_delta_merge_reclaim_incomplete` | `1` while the last run ran out of time with files still mostly superseded. Sustained, reclamation is falling behind the writes |
 
@@ -450,6 +450,31 @@ Set `threads` above 1 to have the connector write Parquet files concurrently. Pa
 unique key, so that the connector can order inserts and deletes correctly; without one the pipeline fails to start.
 Define the key with `CREATE INDEX` and set the connector's `index` property to that index. See
 [views with unique keys](#views-with-unique-keys) for additional details.
+
+Each thread writes its own files, so both the memory a write needs and the uploads it has in flight scale with
+`threads`: a thread holds the Parquet file it is building, and the buffers that feed it, until the file is
+uploaded. On a twenty-million-row backfill of fifty columns, `threads` 8 peaked between 2.5 GB and 3.8 GB above
+`threads` 1 across runs -- the spread is wide because peak memory also depends on what the pipeline itself is
+holding, so treat this as a few hundred megabytes per added thread and measure your own workload rather than
+taking the figure. **Raise the pipeline's memory limit along with `threads`**, or a thread count that writes faster
+will run out of memory instead.
+
+On a constrained network path a high thread count can saturate the link before it saturates the writers, which
+shows up as a slower write rather than a faster one.
+
+Threads speed a backfill up sublinearly, because a thread spends most of its time serializing rows and the
+threads compete for the same cores. On a twelve-core machine, a ten-million-row backfill of fifty columns flushed
+in 65.4 s at `threads` 1, 24.2 s at 4 (2.7x) and 18.1 s at 8 (3.6x), each the mean of three runs. The CPU the
+flush spends rises with it -- 15% above `threads` 1 at 4, and 52% at 8 -- so the gain costs cores and memory that
+the rest of the pipeline could use. Raise `threads` a step at a time and keep the setting that stops improving
+throughput; the point where it stops depends on how many cores the pipeline itself needs.
+
+In `merge` mode a thread also needs enough rows to be worth a file of its own, so the connector splits a batch only
+when each thread would get a substantial share of it. A steady stream of small transactions therefore keeps writing
+one file per flush whatever `threads` says, and only a large change -- a backfill, typically -- is split.
+
+`max_concurrent_probes` is a budget for a flush rather than for a thread: the threads of one flush divide it
+between them, so raising `threads` does not multiply the requests the lookup has in flight.
 
 ```sql
 CREATE VIEW v
