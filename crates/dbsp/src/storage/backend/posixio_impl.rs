@@ -5,7 +5,7 @@ use super::{
     StorageError,
 };
 use crate::Runtime;
-use crate::circuit::metrics::{FILES_CREATED, FILES_DELETED};
+use crate::circuit::metrics::{FILES_CREATED, FILES_DELETED, FILES_SYNCED};
 use crate::storage::{buffer_cache::FBuf, init};
 use feldera_storage::metrics::{
     READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS, SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES,
@@ -126,7 +126,9 @@ impl FileCommitter for PosixReader {
     fn commit(&self) -> Result<(), StorageError> {
         self.file
             .sync_all()
-            .map_err(|e| StorageError::stdio(e.kind(), "fsync", self.drop.path.display()))
+            .map_err(|e| StorageError::stdio(e.kind(), "fsync", self.drop.path.display()))?;
+        FILES_SYNCED.fetch_add(1, Ordering::Relaxed);
+        Ok(())
     }
 }
 

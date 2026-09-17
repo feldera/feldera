@@ -104,6 +104,7 @@ to work with data larger than memory.
 | :--- | :--- | :---------- |
 | <a name='files_created_total'>`files_created_total`</a> |counter | Total number of files created. |
 | <a name='files_deleted_total'>`files_deleted_total`</a> |counter | Total number of files deleted. |
+| <a name='files_synced_total'>`files_synced_total`</a> |counter | Total number of files fsynced to stable storage. |
 | <a name='storage_byte_seconds_total'>`storage_byte_seconds_total`</a> |counter | Storage usage integrated over time during this run of the pipeline, in bytes × seconds. |
 | <a name='storage_cache_usage_bytes'>`storage_cache_usage_bytes`</a> |gauge | The number of bytes of memory currently in use for caching data on storage. |
 | <a name='storage_cache_usage_limit_bytes_total'>`storage_cache_usage_limit_bytes_total`</a> |counter | The limit for the number of bytes of memory for caching data on storage. |

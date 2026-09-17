@@ -57,7 +57,7 @@ use dbsp::circuit::circuit_builder::{BootstrapInfo, ConcurrentRestoreOutcome};
 use dbsp::circuit::metrics::{
     COMPACTION_STALL_TIME_NANOSECONDS, DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS, DBSP_STEP,
     DBSP_STEP_LATENCY_MICROSECONDS, DUPLICATE_EXCHANGE_MESSAGES_RECEIVED,
-    EXCHANGE_MESSAGES_RECEIVED, FILES_CREATED, FILES_DELETED, TOTAL_LATE_RECORDS,
+    EXCHANGE_MESSAGES_RECEIVED, FILES_CREATED, FILES_DELETED, FILES_SYNCED, TOTAL_LATE_RECORDS,
 };
 use dbsp::circuit::tokio::TOKIO;
 use dbsp::circuit::{CheckpointCommitter, CircuitStorageConfig, Mode};
@@ -1608,6 +1608,12 @@ impl Controller {
             "Total number of files deleted.",
             labels,
             &FILES_DELETED,
+        );
+        metrics.counter(
+            "files_synced_total",
+            "Total number of files fsynced to stable storage.",
+            labels,
+            &FILES_SYNCED,
         );
         metrics.counter(
             "dbsp_steps_total",

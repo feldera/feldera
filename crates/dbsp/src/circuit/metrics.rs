@@ -19,6 +19,9 @@ pub static FILES_CREATED: AtomicU64 = AtomicU64::new(0);
 /// Total number of files deleted.
 pub static FILES_DELETED: AtomicU64 = AtomicU64::new(0);
 
+/// Total number of files fsynced to stable storage.
+pub static FILES_SYNCED: AtomicU64 = AtomicU64::new(0);
+
 /// Time in nanoseconds a worker was stalled waiting for more merges to complete.
 pub static COMPACTION_STALL_TIME_NANOSECONDS: AtomicU64 = AtomicU64::new(0);
 
