@@ -2,8 +2,8 @@
   font-family: "generic-icons";
   font-display: block;
   src:
-    url("generic-icons.woff2?033f330cef2f06323d21562ae6e6b4d9") format("woff2"),
-    url("generic-icons.woff?033f330cef2f06323d21562ae6e6b4d9") format("woff");
+    url("generic-icons.woff2?4d852ba8b6abd9e01907b7645555f3dc") format("woff2"),
+    url("generic-icons.woff?4d852ba8b6abd9e01907b7645555f3dc") format("woff");
 }
 
 .gc {
@@ -20,15 +20,21 @@
 .gc-http-get:before {
   content: "\f101";
 }
-.gc-circle-solid:before {
+.gc-arrow-up:before {
   content: "\f102";
 }
-.gc-layout-panel-right:before {
+.gc-circle-solid:before {
   content: "\f103";
 }
-.gc-boiling-flask:before {
+.gc-layout-panel-right:before {
   content: "\f104";
 }
-.gc-loader-alt:before {
+.gc-arrow-down:before {
   content: "\f105";
+}
+.gc-boiling-flask:before {
+  content: "\f106";
+}
+.gc-loader-alt:before {
+  content: "\f107";
 }

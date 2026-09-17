@@ -103,7 +103,7 @@
   const td = 'h-10 text-base border-t-[0.5px]'
   // The last row also gets a bottom border, closing off the table instead of
   // leaving its final row's underside open.
-  const rowTd = (i: number) => td + (i === table.rows.length - 1 ? ' border-b-[0.5px]' : '')
+  const rowTd = `${td} group-last:border-b-[0.5px]`
 
   // Persist the active sort and restore it on the matching column. Each ThSort
   // owns the upstream `direction`/`onSort` API; the column identity lives here.
@@ -156,33 +156,33 @@
       <thead style="top: {controlsHeight}px; z-index: 1;">
         <tr>
           <th class="w-10 px-3 text-left"
-            ><div class="flex h-full items-center"
-              ><input
+            ><div class="flex h-full items-center">
+              <input
                 class="checkbox"
                 type="checkbox"
                 checked={table.isAllSelected}
                 onclick={() => table.selectAll()}
-              /></div
-            ></th
+              />
+            </div></th
           >
-          <ThSort class="px-3 h-10" {table} field="name" {...sortColumn('name')}
+          <ThSort class="h-10 px-3" {table} field="name" {...sortColumn('name')}
             ><span class="text-base font-normal text-surface-950-50">Pipeline name</span></ThSort
           >
-          <th class="px-3 h-10 text-left"
+          <th class="h-10 px-3 text-left"
             ><span class="text-base font-normal text-surface-950-50">Storage</span></th
           >
-          <ThSort {table} class="px-3 h-10 text-center" field="status" {...sortColumn('status')}
+          <ThSort {table} class="h-10 justify-center px-3" field="status" {...sortColumn('status')}
             ><span class="text-base font-normal text-surface-950-50">Status</span></ThSort
           >
-          <th class="px-3 h-10 text-left"
+          <th class="h-10 px-3 text-left"
             ><span class="text-base font-normal text-surface-950-50">Message</span></th
           >
-          <th class="px-3 h-10 text-left"
+          <th class="h-10 px-3 text-left"
             ><span class="text-base font-normal text-surface-950-50">Tags</span></th
           >
           <ThSort
             {table}
-            class="w-20 px-3 h-10 xl:w-32"
+            class="h-10 w-20 px-3 xl:w-32"
             field="platformVersion"
             {...sortColumn('platformVersion')}
           >
@@ -192,7 +192,7 @@
           </ThSort>
           <ThSort
             {table}
-            class="w-20 h-10 px-3 text-right xl:w-32"
+            class="h-10 w-20 justify-end px-3 xl:w-32"
             field={(p) => p.connectors?.numErrors}
             {...sortColumn('numErrors')}
           >
@@ -203,14 +203,14 @@
           </ThSort>
           <ThSort
             {table}
-            class="px-3 h-10"
+            class="h-10 px-3"
             field="lastStatusSince"
             {...sortColumn('lastStatusSince')}
             ><span class="text-base font-normal text-surface-950-50">Status changed</span></ThSort
           >
           <ThSort
             {table}
-            class="px-3 h-10"
+            class="h-10 px-3"
             field="deploymentResourcesStatusSince"
             {...sortColumn('deploymentResourcesStatusSince')}
             ><span class="text-base font-normal text-surface-950-50">Deployed on</span></ThSort
@@ -218,9 +218,9 @@
         </tr>
       </thead>
       <tbody>
-        {#each table.rows as pipeline, i}
+        {#each table.rows as pipeline}
           <tr class="group" data-testid="box-row-{pipeline.name}"
-            ><td class="{rowTd(i)} border-surface-100-900 px-3 group-hover:bg-surface-50-950">
+            ><td class="{rowTd} border-surface-100-900 px-3 group-hover:bg-surface-50-950">
               <div class="flex h-full items-center">
                 <input
                   class="checkbox"
@@ -230,17 +230,14 @@
                 />
               </div>
             </td>
-            <td
-              class="{rowTd(i)} relative w-3/12 border-surface-100-900 group-hover:bg-surface-50-950"
+            <td class="{rowTd} relative w-3/12 border-surface-100-900 group-hover:bg-surface-50-950"
               ><a
-                class=" absolute top-2.5 inset-x-3 overflow-hidden overflow-ellipsis whitespace-nowrap"
+                class=" absolute inset-x-3 top-2.5 overflow-hidden overflow-ellipsis whitespace-nowrap"
                 href="/pipelines/{pipeline.name}/">{pipeline.name}</a
               ></td
             >
             <td
-              class="{rowTd(
-                i
-              )} relative w-12 border-surface-100-900 px-3 group-hover:bg-surface-50-950"
+              class="{rowTd} relative w-12 border-surface-100-900 px-3 group-hover:bg-surface-50-950"
             >
               <div
                 class="fd {pipeline.storageStatus === 'Cleared'
@@ -256,18 +253,14 @@
               >
             </td>
             <td
-              class="px-3 {rowTd(
-                i
-              )} w-36 text-center border-surface-100-900 group-hover:bg-surface-50-950"
+              class="px-3 {rowTd} w-36 border-surface-100-900 text-center group-hover:bg-surface-50-950"
               ><PipelineStatus status={pipeline.status}></PipelineStatus></td
             >
             <td
-              class="{rowTd(
-                i
-              )} relative border-surface-100-900 whitespace-pre-wrap group-hover:bg-surface-50-950"
+              class="{rowTd} relative border-surface-100-900 whitespace-pre-wrap group-hover:bg-surface-50-950"
             >
               <span
-                class="absolute top-2.5 inset-x-3 overflow-hidden align-middle overflow-ellipsis whitespace-nowrap"
+                class="absolute inset-x-3 top-2.5 overflow-hidden align-middle overflow-ellipsis whitespace-nowrap"
               >
                 {#if pipeline.deploymentError}
                   {@const message = pipeline.deploymentError.message}
@@ -283,14 +276,10 @@
                 {/if}
               </span>
             </td>
-            <td class="px-3 {rowTd(i)} w-36 border-surface-100-900 group-hover:bg-surface-50-950"
+            <td class="px-3 {rowTd} w-36 border-surface-100-900 group-hover:bg-surface-50-950"
               ><Tags pipelineName={pipeline.name} tags={pipeline.tags} {knownTags} {api}></Tags></td
             >
-            <td
-              class="{rowTd(
-                i
-              )} relative border-surface-100-900 px-3 group-hover:bg-surface-50-950"
-            >
+            <td class="{rowTd} relative border-surface-100-900 px-3 group-hover:bg-surface-50-950">
               <div class="flex w-full flex-nowrap items-center gap-2 text-nowrap">
                 <PipelineVersion
                   pipelineName={pipeline.name}
@@ -300,24 +289,20 @@
                 ></PipelineVersion>
               </div>
             </td>
-            <td class="{rowTd(i)} border-surface-100-900 px-3 group-hover:bg-surface-50-950">
+            <td class="{rowTd} border-surface-100-900 px-3 group-hover:bg-surface-50-950">
               <div class="text-right text-nowrap">
                 {pipeline.connectors?.numErrors ?? '-'}
               </div>
             </td>
             <td
-              class="{rowTd(
-                i
-              )} relative w-28 border-surface-100-900 px-3 group-hover:bg-surface-50-950"
+              class="{rowTd} relative w-28 border-surface-100-900 px-3 group-hover:bg-surface-50-950"
             >
               <div class="w-32 text-right text-nowrap">
                 {formatElapsedTime(pipeline.lastStatusSince, 'dhm')} ago
               </div>
             </td>
             <td
-              class="{rowTd(
-                i
-              )} relative w-40 border-surface-100-900 px-3 group-hover:bg-surface-50-950"
+              class="{rowTd} relative w-40 border-surface-100-900 px-3 group-hover:bg-surface-50-950"
             >
               <div class="text-right text-nowrap">
                 {pipeline.deploymentResourcesStatus === 'Provisioned'

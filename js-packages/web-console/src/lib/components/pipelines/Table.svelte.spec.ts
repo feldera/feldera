@@ -197,3 +197,113 @@ describe('Table — column order', () => {
       ])
   })
 })
+
+describe('Table — row borders', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useLayoutSettings().pipelinesTableSort.value = { column: 'name', direction: 'asc' }
+  })
+
+  afterEach(async () => {
+    // See the sorting suite's afterEach: wait out @vincjo/datatables' 2 ms
+    // scroll-restore timer so it fires while the component is still mounted.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    localStorage.clear()
+  })
+
+  // Every cell draws a top border; only the last row draws a bottom one, so the
+  // widths below are read off the rendered CSS rather than off the class strings.
+  const bottomBorderWidths = () =>
+    Array.from(document.querySelectorAll('tbody tr[data-testid^="box-row-"]')).map((tr) =>
+      Array.from(tr.querySelectorAll('td')).map((td) => getComputedStyle(td).borderBottomWidth)
+    )
+
+  it('closes off the table with a bottom border on the last row only', async () => {
+    mountTable()
+    await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
+
+    const widths = bottomBorderWidths()
+    expect(
+      widths
+        .slice(0, -1)
+        .flat()
+        .every((width) => parseFloat(width) === 0)
+    ).toBe(true)
+    expect(widths.at(-1)!.every((width) => parseFloat(width) > 0)).toBe(true)
+  })
+})
+
+describe('Table — sort affordances', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useLayoutSettings().pipelinesTableSort.value = { column: 'name', direction: 'asc' }
+  })
+
+  afterEach(async () => {
+    // See the sorting suite's afterEach: wait out @vincjo/datatables' 2 ms
+    // scroll-restore timer so it fires while the component is still mounted.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    localStorage.clear()
+  })
+
+  // ThSort paints the pill and reveals the arrow through `group-hover/sort:`
+  // variants, so both are read back off the rendered CSS under a real hover.
+  // The pill is the second <div> in the header cell; the arrow is its last child.
+  const pill = (label: string) => headerCell(label).querySelectorAll('div')[1] as HTMLElement
+  const arrow = (label: string) => pill(label).lastElementChild as HTMLElement
+  const painted = (el: HTMLElement) => getComputedStyle(el).backgroundColor !== 'rgba(0, 0, 0, 0)'
+
+  it('reveals the arrow and the pill on an unsorted column only while it is hovered', async () => {
+    mountTable()
+    await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
+
+    expect(getComputedStyle(arrow('Deployed on')).visibility).toBe('hidden')
+    expect(painted(pill('Deployed on'))).toBe(false)
+
+    await header('Deployed on').hover()
+
+    await expect.poll(() => getComputedStyle(arrow('Deployed on')).visibility).toBe('visible')
+    expect(painted(pill('Deployed on'))).toBe(true)
+  })
+
+  it('shows the arrow and the pill on the sorted column without a hover', async () => {
+    mountTable()
+    await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
+
+    expect(getComputedStyle(arrow('Pipeline name')).visibility).toBe('visible')
+    expect(painted(pill('Pipeline name'))).toBe(true)
+  })
+})
+
+describe('Table — header alignment', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useLayoutSettings().pipelinesTableSort.value = { column: 'name', direction: 'asc' }
+  })
+
+  afterEach(async () => {
+    // See the sorting suite's afterEach: wait out @vincjo/datatables' 2 ms
+    // scroll-restore timer so it fires while the component is still mounted.
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    localStorage.clear()
+  })
+
+  // A sortable header lays its label out in a flex row, so the `justify-*` the
+  // column passes to ThSort only takes effect if it reaches that row. Headers are
+  // matched on their whitespace-collapsed text, as in the column-order suite.
+  const justifyOf = (text: string) => {
+    const th = Array.from(document.querySelectorAll('thead th')).find(
+      (cell) => cell.textContent!.replace(/\s+/g, ' ').trim() === text
+    )!
+    return getComputedStyle(th.querySelector('div')!).justifyContent
+  }
+
+  it('passes each column justify-* down to the row holding the label', async () => {
+    mountTable()
+    await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
+
+    expect(justifyOf('Status')).toBe('center')
+    expect(justifyOf('Errors Runtime errors')).toBe('flex-end')
+    expect(justifyOf('Pipeline name')).toBe('normal')
+  })
+})
