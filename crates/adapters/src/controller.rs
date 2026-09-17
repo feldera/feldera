@@ -1154,13 +1154,16 @@ impl Controller {
     /// Returns the time when the current checkpoint delay started, or `None`
     /// if no checkpoint is delayed.
     pub fn checkpoint_delay_started(&self) -> Option<DateTime<Utc>> {
-        *self.inner.checkpoint_delay_started.lock().unwrap()
+        self.checkpoint_activity().delayed_since()
     }
 
-    /// Returns the time when the current in-progress checkpoint started
-    /// writing, or `None` if no checkpoint is in progress.
+    /// Returns the time when the current in-progress checkpoint started, or
+    /// `None` if no checkpoint is in progress.
     pub fn checkpoint_started(&self) -> Option<DateTime<Utc>> {
-        *self.inner.checkpoint_started.lock().unwrap()
+        match self.checkpoint_activity() {
+            CheckpointActivity::InProgress { started_at } => Some(started_at),
+            _ => None,
+        }
     }
 
     /// Returns the reasons why the pipeline fundamentally cannot checkpoint
@@ -1173,42 +1176,9 @@ impl Controller {
         }
     }
 
-    /// Computes the current [`CheckpointActivity`] from the coordination watch
-    /// channel and the timestamp mutexes.
+    /// Returns the current [CheckpointActivity].
     pub fn checkpoint_activity(&self) -> CheckpointActivity {
-        let coordination = self.checkpoint_watcher().borrow().clone();
-        match coordination {
-            Some(
-                CheckpointCoordination::Delayed(reasons)
-                | CheckpointCoordination::Barriers(reasons),
-            ) => {
-                let delayed_since = self
-                    .checkpoint_delay_started()
-                    .expect("delay timestamp should be set when coordination is Delayed/Barriers");
-                CheckpointActivity::Delayed {
-                    reasons,
-                    delayed_since,
-                }
-            }
-            Some(CheckpointCoordination::Ready) => {
-                let delayed_since = self
-                    .checkpoint_delay_started()
-                    .expect("delay timestamp should be set when coordination is Ready");
-                CheckpointActivity::Delayed {
-                    reasons: vec![TemporarySuspendError::Coordination],
-                    delayed_since,
-                }
-            }
-            Some(CheckpointCoordination::InProgress) => {
-                let started_at = self
-                    .checkpoint_started()
-                    .expect("started timestamp should be set when coordination is InProgress");
-                CheckpointActivity::InProgress { started_at }
-            }
-            None | Some(CheckpointCoordination::Done) | Some(CheckpointCoordination::Error(_)) => {
-                CheckpointActivity::Idle
-            }
-        }
+        self.inner.checkpoint_activity.lock().unwrap().clone()
     }
 
     /// Returns an object for monitoring progress of transactions.
@@ -4033,38 +4003,38 @@ impl CircuitThread {
 
     /// Sets the value in `self.checkpoint_sender` to `checkpoint_coordination`,
     /// but only if that's a real change.  This suppresses lots of duplicate
-    /// sends.  Also maintains the timestamp mutexes for the HTTP-facing
-    /// `/checkpoint_status` endpoint.
+    /// sends.  Also updates the [CheckpointActivity] reported by `/status`.
     fn set_checkpoint_coordination(
         &mut self,
         checkpoint_coordination: Option<CheckpointCoordination>,
     ) {
         if *self.checkpoint_sender.borrow() != checkpoint_coordination {
-            let now = Utc::now();
-            match &checkpoint_coordination {
+            // Update the activity before publishing the new coordination state,
+            // so that a coordinator that reacts to the state change already
+            // sees the matching activity.
+            let mut activity = self.controller.checkpoint_activity.lock().unwrap();
+            let delayed_since = activity.delayed_since().unwrap_or_else(Utc::now);
+            *activity = match &checkpoint_coordination {
                 Some(
-                    CheckpointCoordination::Delayed(_)
-                    | CheckpointCoordination::Barriers(_)
-                    | CheckpointCoordination::Ready,
-                ) => {
-                    // Only set the delay start time on the first transition
-                    // into a delayed state (not on subsequent reason changes).
-                    // Ready is still "delayed" — waiting for the coordinator.
-                    let mut guard = self.controller.checkpoint_delay_started.lock().unwrap();
-                    if guard.is_none() {
-                        *guard = Some(now);
-                    }
-                }
-                Some(CheckpointCoordination::InProgress) => {
-                    *self.controller.checkpoint_delay_started.lock().unwrap() = None;
-                    *self.controller.checkpoint_started.lock().unwrap() = Some(now);
-                }
-                _ => {
-                    // None, Done, Error — clear both timestamps.
-                    *self.controller.checkpoint_delay_started.lock().unwrap() = None;
-                    *self.controller.checkpoint_started.lock().unwrap() = None;
-                }
-            }
+                    CheckpointCoordination::Delayed(reasons)
+                    | CheckpointCoordination::Barriers(reasons),
+                ) => CheckpointActivity::Delayed {
+                    reasons: reasons.clone(),
+                    delayed_since,
+                },
+                // `Ready` is still "delayed" — waiting for the coordinator.
+                Some(CheckpointCoordination::Ready) => CheckpointActivity::Delayed {
+                    reasons: vec![TemporarySuspendError::Coordination],
+                    delayed_since,
+                },
+                Some(CheckpointCoordination::InProgress) => CheckpointActivity::InProgress {
+                    started_at: Utc::now(),
+                },
+                // `None`, `Done`, `Error`.
+                _ => CheckpointActivity::Idle,
+            };
+            drop(activity);
+
             self.checkpoint_sender.send_replace(checkpoint_coordination);
         }
     }
@@ -7224,15 +7194,10 @@ pub struct ControllerInner {
     /// Is the circuit thread still restoring from a checkpoint (this includes the journal replay phase)?
     restoring: AtomicBool,
 
-    /// Wall-clock time when the checkpoint entered the Delayed or
-    /// Barriers state.  `None` means "not delayed".  Set by the circuit thread
-    /// in `set_checkpoint_coordination`, read by the HTTP thread.
-    checkpoint_delay_started: Mutex<Option<DateTime<Utc>>>,
-
-    /// Wall-clock time when the checkpoint entered the InProgress
-    /// state.  `None` means "not in progress".  Set by the circuit thread in
+    /// Checkpoint activity, including the wall-clock time when the current
+    /// delay or checkpoint started.  Set by the circuit thread in
     /// `set_checkpoint_coordination`, read by the HTTP thread.
-    checkpoint_started: Mutex<Option<DateTime<Utc>>>,
+    checkpoint_activity: Mutex<CheckpointActivity>,
 
     /// Output endpoint names whose definition or associated relation
     /// changed across the checkpoint restart. `add_output_endpoint` uses
@@ -7327,8 +7292,7 @@ impl ControllerInner {
                 coordination_request: Mutex::new(is_multihost.then_some(StepRequest::new_idle(0))),
                 coordination_prepare_checkpoint: AtomicBool::new(false),
                 input_completion_notify: Arc::new(Notify::new()),
-                checkpoint_delay_started: Mutex::new(None),
-                checkpoint_started: Mutex::new(None),
+                checkpoint_activity: Mutex::new(CheckpointActivity::Idle),
                 modified_output_endpoints,
                 bootstrapped_output_endpoints,
             }
