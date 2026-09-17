@@ -1559,6 +1559,61 @@ fn init_logging() {
         .try_init();
 }
 
+/// Checkpoint a running pipeline and stop it.
+async fn suspend_pipeline(pipeline: Controller) {
+    println!("start suspend");
+    let (sender, mut receiver) = mpsc::channel(1);
+    pipeline.start_suspend(Box::new(move |result| sender.try_send(result).unwrap()));
+
+    timeout(Duration::from_secs(100), receiver.recv())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    println!("pipeline suspended");
+
+    pipeline.stop().unwrap();
+    println!("pipeline stopped");
+}
+
+/// Start a pipeline that copies one delta table to another, with its input
+/// endpoint paused.
+async fn start_delta_to_delta_pipeline(
+    input_table_uri: &str,
+    output_table_uri: &str,
+    input_config: &HashMap<String, Value>,
+    output_config: &HashMap<String, String>,
+    storage_dir: &Path,
+    buffer_size: u64,
+    buffer_timeout_ms: u64,
+) -> Controller {
+    let input_table_uri_clone = input_table_uri.to_string();
+    let output_table_uri_clone = output_table_uri.to_string();
+    let input_config_clone = input_config.clone();
+    let output_config_clone = output_config.clone();
+    let storage_dir_path = storage_dir.to_path_buf();
+    let pipeline = tokio::task::spawn_blocking(move || {
+        delta_to_delta_pipeline::<DeltaTestStruct>(
+            &input_table_uri_clone,
+            true,
+            &input_config_clone,
+            &output_table_uri_clone,
+            &output_config_clone,
+            buffer_size,
+            buffer_timeout_ms,
+            &storage_dir_path,
+            true,
+        )
+    })
+    .await
+    .unwrap();
+
+    println!("Pipeline created");
+
+    pipeline.start();
+    pipeline
+}
+
 /// Read delta table in follow mode, write data to another delta table.
 ///
 /// ```text
@@ -1591,58 +1646,6 @@ async fn test_follow(
     inject_failure: Option<Box<dyn Fn()>>,
     clear_failure: Option<Box<dyn Fn()>>,
 ) {
-    async fn suspend_pipeline(pipeline: Controller) {
-        println!("start suspend");
-        let (sender, mut receiver) = mpsc::channel(1);
-        pipeline.start_suspend(Box::new(move |result| sender.try_send(result).unwrap()));
-
-        timeout(Duration::from_secs(100), receiver.recv())
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
-        println!("pipeline suspended");
-
-        pipeline.stop().unwrap();
-        println!("pipeline stopped");
-    }
-
-    async fn start_pipeline(
-        input_table_uri: &str,
-        output_table_uri: &str,
-        input_config: &HashMap<String, Value>,
-        output_config: &HashMap<String, String>,
-        storage_dir: &TempDir,
-        buffer_size: u64,
-        buffer_timeout_ms: u64,
-    ) -> Controller {
-        let input_table_uri_clone = input_table_uri.to_string();
-        let output_table_uri_clone = output_table_uri.to_string();
-        let input_config_clone = input_config.clone();
-        let output_config_clone = output_config.clone();
-        let storage_dir_path = storage_dir.path().to_path_buf();
-        let pipeline = tokio::task::spawn_blocking(move || {
-            delta_to_delta_pipeline::<DeltaTestStruct>(
-                &input_table_uri_clone,
-                true,
-                &input_config_clone,
-                &output_table_uri_clone,
-                &output_config_clone,
-                buffer_size,
-                buffer_timeout_ms,
-                &storage_dir_path,
-                true,
-            )
-        })
-        .await
-        .unwrap();
-
-        println!("Pipeline created");
-
-        pipeline.start();
-        pipeline
-    }
-
     fn completed_version(pipeline: &Controller) -> Option<i64> {
         pipeline
             .status()
@@ -1713,12 +1716,12 @@ async fn test_follow(
 
     input_config.insert("filter".to_string(), "bigint % 2 = 0".into());
 
-    let mut pipeline = start_pipeline(
+    let mut pipeline = start_delta_to_delta_pipeline(
         input_table_uri,
         output_table_uri,
         &input_config,
         storage_options,
-        &storage_dir,
+        storage_dir.path(),
         buffer_size,
         buffer_timeout_ms,
     )
@@ -1740,12 +1743,12 @@ async fn test_follow(
     if suspend {
         suspend_pipeline(pipeline).await;
 
-        pipeline = start_pipeline(
+        pipeline = start_delta_to_delta_pipeline(
             input_table_uri,
             output_table_uri,
             &input_config,
             storage_options,
-            &storage_dir,
+            storage_dir.path(),
             buffer_size,
             buffer_timeout_ms,
         )
@@ -1881,12 +1884,12 @@ async fn test_follow(
         if suspend {
             suspend_pipeline(pipeline).await;
 
-            pipeline = start_pipeline(
+            pipeline = start_delta_to_delta_pipeline(
                 input_table_uri,
                 output_table_uri,
                 &input_config,
                 storage_options,
-                &storage_dir,
+                storage_dir.path(),
                 buffer_size,
                 buffer_timeout_ms,
             )
@@ -1934,12 +1937,12 @@ async fn test_follow(
     if test_end_version && suspend && input_table.version().unwrap() as i64 >= end_version {
         suspend_pipeline(pipeline).await;
 
-        pipeline = start_pipeline(
+        pipeline = start_delta_to_delta_pipeline(
             input_table_uri,
             output_table_uri,
             &input_config,
             storage_options,
-            &storage_dir,
+            storage_dir.path(),
             buffer_size,
             buffer_timeout_ms,
         )
