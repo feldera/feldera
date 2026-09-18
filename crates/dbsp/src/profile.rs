@@ -8,10 +8,10 @@ use crate::{
         metadata::{
             BACKGROUND_CACHE_OCCUPANCY, CIRCUIT_CPU_TIME_SECONDS, CIRCUIT_IDLE_TIME_SECONDS,
             CIRCUIT_METRICS, CIRCUIT_NONBLOCKING_PERCENT, CIRCUIT_RUNTIME_ELAPSED_SECONDS,
-            CIRCUIT_RUNTIME_SECONDS, CIRCUIT_WAIT_TIME_SECONDS, CircuitMetric,
-            FOREGROUND_CACHE_OCCUPANCY, INVOCATIONS_COUNT, MetaItem, MetricId, MetricReading,
-            OperatorMeta, RUNTIME_NONBLOCKING_PERCENT, RUNTIME_PERCENT, RUNTIME_SECONDS,
-            SPINE_STORAGE_SIZE_BYTES, STEPS_COUNT, USED_MEMORY_BYTES,
+            CIRCUIT_RUNTIME_SECONDS, CIRCUIT_WAIT_BY_REASON_SECONDS, CIRCUIT_WAIT_TIME_SECONDS,
+            CircuitMetric, FOREGROUND_CACHE_OCCUPANCY, INVOCATIONS_COUNT, MetaItem, MetricId,
+            MetricReading, OperatorMeta, RUNTIME_NONBLOCKING_PERCENT, RUNTIME_PERCENT,
+            RUNTIME_SECONDS, SPINE_STORAGE_SIZE_BYTES, STEPS_COUNT, USED_MEMORY_BYTES,
         },
     },
     monitor::{TraceMonitor, visual_graph::Graph},
@@ -31,7 +31,9 @@ use std::{
 use zip::{ZipWriter, result::ZipResult, write::SimpleFileOptions};
 
 mod cpu;
-pub use cpu::{CPUProfiler, RuntimeIdle};
+pub use cpu::{BlockingFor, CPUProfiler, ParkReason, ParkingFor, RuntimeIdle};
+#[cfg(test)]
+pub(crate) use cpu::{current_park_reason, current_runtime_idle};
 
 /// Rudimentary circuit profiler.
 ///
@@ -450,6 +452,16 @@ impl Profiler {
 
                 meta.extend(default_meta);
 
+                meta.extend(ParkReason::ALL.iter().zip(profile.wait_by_reason).map(
+                    |(reason, wait)| {
+                        MetricReading::new(
+                            CIRCUIT_WAIT_BY_REASON_SECONDS,
+                            vec![(Cow::Borrowed("reason"), Cow::Borrowed(reason.name()))],
+                            MetaItem::Duration(wait),
+                        )
+                    },
+                ));
+
                 fn cache_occupancy_metric(thread_type: ThreadType) -> MetricId {
                     match thread_type {
                         ThreadType::Foreground => FOREGROUND_CACHE_OCCUPANCY,
@@ -532,8 +544,245 @@ impl Profiler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::circuit::circuit_builder::NodeId;
+    use crate::{
+        Runtime,
+        circuit::{
+            Circuit, CircuitConfig,
+            circuit_builder::{NodeId, Scope},
+            operator_traits::{Operator, UnaryOperator},
+        },
+        operator::Generator,
+        utils::Tup2,
+    };
     use std::io::Read;
+
+    /// Runs a circuit that keeps an integral spine busy and returns its profile.
+    ///
+    /// `shard` decides whether the workers have to exchange, which is the one
+    /// knob that changes which blocking site the step reaches.
+    fn profile_of_a_spine_under_load(workers: usize, shard: bool, steps: i32) -> DbspProfile {
+        const RECORDS_PER_STEP: i32 = 500;
+
+        let storage = tempfile::tempdir().unwrap();
+        let mut config =
+            CircuitConfig::with_workers(workers).with_temporary_storage(storage.path());
+        // Spill every batch, so the mergers fall behind the ingest and the spine
+        // reaches the batch count at which it applies backpressure.
+        config.storage.as_mut().unwrap().options.min_storage_bytes = Some(0);
+
+        let (mut dbsp, input) = Runtime::init_circuit(config, move |circuit| {
+            let (stream, input) = circuit.add_input_indexed_zset::<i32, i32>();
+            let stream = if shard { stream.shard() } else { stream };
+            stream.accumulate_integrate_trace();
+            Ok(input)
+        })
+        .unwrap();
+        dbsp.enable_cpu_profiler().unwrap();
+
+        for step in 0..steps {
+            let mut records = (0..RECORDS_PER_STEP)
+                .map(|record| Tup2(step * RECORDS_PER_STEP + record, Tup2(record, 1)))
+                .collect::<Vec<_>>();
+            input.append(&mut records);
+            dbsp.transaction().unwrap();
+        }
+
+        let profile = dbsp.retrieve_profile().unwrap();
+        dbsp.kill().unwrap();
+        profile
+    }
+
+    /// Every circuit's wait, split by reason, keyed by worker and circuit.
+    ///
+    /// Each reason is a reading of its own, told apart by its `reason` label.
+    fn wait_breakdowns(profile: &DbspProfile) -> Vec<(GlobalNodeId, BTreeMap<String, Duration>)> {
+        profile
+            .worker_profiles
+            .iter()
+            .flat_map(|worker| worker.metadata.iter())
+            .map(|(node_id, meta)| {
+                let breakdown = meta
+                    .readings(&CIRCUIT_WAIT_BY_REASON_SECONDS)
+                    .map(|(labels, parked)| {
+                        let [(name, reason)] = &labels[..] else {
+                            panic!("a breakdown reading carries one label: {labels:?}");
+                        };
+                        assert_eq!(name, "reason");
+                        match parked {
+                            MetaItem::Duration(parked) => (reason.to_string(), *parked),
+                            parked => panic!("a breakdown reading is a duration: {parked:?}"),
+                        }
+                    })
+                    .collect::<BTreeMap<_, _>>();
+                (node_id.clone(), breakdown)
+            })
+            .filter(|(_, breakdown)| !breakdown.is_empty())
+            .collect()
+    }
+
+    fn parked_under(breakdown: &BTreeMap<String, Duration>, reason: ParkReason) -> Duration {
+        breakdown[reason.name()]
+    }
+
+    /// The breakdown names every reason and adds up to the wait it splits.
+    ///
+    /// Both come from the same per-step deltas, so any drift means a park was
+    /// counted in one and not the other.
+    #[test]
+    fn the_wait_breakdown_accounts_for_the_whole_wait() {
+        let profile = profile_of_a_spine_under_load(2, true, 100);
+        let mut waits = profile
+            .worker_profiles
+            .iter()
+            .flat_map(|worker| worker.attribute_profile(&CIRCUIT_WAIT_TIME_SECONDS))
+            .collect::<Vec<_>>();
+        assert!(!waits.is_empty(), "no circuit reported a wait time");
+
+        let mut expected_reasons = ParkReason::ALL.map(ParkReason::name).to_vec();
+        expected_reasons.sort();
+
+        for (node_id, breakdown) in wait_breakdowns(&profile) {
+            let named = breakdown.keys().cloned().collect::<Vec<_>>();
+            assert_eq!(named, expected_reasons);
+
+            let position = waits
+                .iter()
+                .position(|(waiting_node_id, _)| *waiting_node_id == node_id)
+                .unwrap_or_else(|| panic!("circuit {node_id} reports a breakdown but no wait"));
+            let (_, MetaItem::Duration(wait)) = waits.swap_remove(position) else {
+                panic!("circuit_wait_time_seconds must be a duration");
+            };
+
+            assert_eq!(
+                breakdown.values().sum::<Duration>(),
+                wait,
+                "circuit {node_id}"
+            );
+        }
+
+        assert!(
+            waits.is_empty(),
+            "circuits report a wait but no breakdown: {waits:?}"
+        );
+    }
+
+    /// A spine that the mergers cannot keep up with blocks its worker, and the
+    /// breakdown says so.
+    #[test]
+    fn a_backlogged_spine_waits_for_its_mergers() {
+        let breakdowns = wait_breakdowns(&profile_of_a_spine_under_load(1, false, 400));
+        assert!(!breakdowns.is_empty());
+
+        for (node_id, breakdown) in breakdowns {
+            assert!(
+                parked_under(&breakdown, ParkReason::MergeBackpressure) > Duration::ZERO,
+                "circuit {node_id} never waited for its mergers: {breakdown:?}"
+            );
+            // One worker has nobody to exchange with.
+            assert_eq!(
+                parked_under(&breakdown, ParkReason::Peers),
+                Duration::ZERO,
+                "circuit {node_id} waited for peers it does not have: {breakdown:?}"
+            );
+        }
+    }
+
+    /// Workers that shard their input wait on each other, and the breakdown
+    /// tells that apart from waiting on the mergers.
+    #[test]
+    fn sharded_workers_wait_for_their_peers() {
+        let breakdowns = wait_breakdowns(&profile_of_a_spine_under_load(2, true, 100));
+        assert!(!breakdowns.is_empty());
+
+        for (node_id, breakdown) in breakdowns {
+            assert!(
+                parked_under(&breakdown, ParkReason::Peers) > Duration::ZERO,
+                "circuit {node_id} never waited for its peers: {breakdown:?}"
+            );
+        }
+    }
+
+    /// An operator that hands the runtime nothing else to do while it sleeps.
+    ///
+    /// A worker's runtime has no timer, so the sleep happens on a plain thread
+    /// and the operator awaits word that it finished.
+    struct Sleeper;
+
+    impl Sleeper {
+        const NAP: Duration = Duration::from_millis(1);
+    }
+
+    impl Operator for Sleeper {
+        fn name(&self) -> Cow<'static, str> {
+            Cow::Borrowed("Sleeper")
+        }
+
+        fn clock_start(&mut self, _scope: Scope) {}
+        fn clock_end(&mut self, _scope: Scope) {}
+
+        fn fixedpoint(&self, _scope: Scope) -> bool {
+            true
+        }
+    }
+
+    impl UnaryOperator<i32, i32> for Sleeper {
+        async fn eval(&mut self, input: &i32) -> i32 {
+            let (slept, wake) = tokio::sync::oneshot::channel();
+            std::thread::spawn(move || {
+                std::thread::sleep(Self::NAP);
+                let _ = slept.send(());
+            });
+            wake.await.unwrap();
+            *input
+        }
+    }
+
+    /// An operator awaiting something the instrumentation does not model still
+    /// lands in a bucket of its own, rather than looking like idle time.
+    #[test]
+    fn a_pending_operator_is_told_apart_from_an_idle_runtime() {
+        const STEPS: u32 = 20;
+
+        let (mut dbsp, ()) = Runtime::init_circuit(CircuitConfig::with_workers(1), |circuit| {
+            let source = circuit.add_source(Generator::new(|| 1i32));
+            circuit.add_unary_operator(Sleeper, &source);
+            Ok(())
+        })
+        .unwrap();
+        dbsp.enable_cpu_profiler().unwrap();
+        for _ in 0..STEPS {
+            dbsp.transaction().unwrap();
+        }
+        let profile = dbsp.retrieve_profile().unwrap();
+        dbsp.kill().unwrap();
+
+        let breakdowns = wait_breakdowns(&profile);
+        assert!(!breakdowns.is_empty());
+        for (node_id, breakdown) in breakdowns {
+            assert!(
+                parked_under(&breakdown, ParkReason::OperatorPending) >= Sleeper::NAP * STEPS,
+                "circuit {node_id} did not charge the sleeps to the operator: {breakdown:?}"
+            );
+        }
+    }
+
+    /// Every park inside a step happens under some declaration, if only the
+    /// scheduler's own.  Time landing in `unattributed` means the step blocked
+    /// somewhere this instrumentation does not know about.
+    #[test]
+    fn a_step_never_waits_without_saying_why() {
+        for (workers, shard, steps) in [(1, false, 400), (2, true, 100)] {
+            for (node_id, breakdown) in
+                wait_breakdowns(&profile_of_a_spine_under_load(workers, shard, steps))
+            {
+                assert_eq!(
+                    parked_under(&breakdown, ParkReason::Unattributed),
+                    Duration::ZERO,
+                    "circuit {node_id} waited without declaring why: {breakdown:?}"
+                );
+            }
+        }
+    }
 
     /// A worker profile with three operators carrying two metrics each.
     fn worker_profile(seed: u64) -> WorkerProfile {

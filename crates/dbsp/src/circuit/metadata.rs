@@ -164,6 +164,8 @@ pub const RUNTIME_SECONDS: MetricId = MetricId(Cow::Borrowed("runtime_seconds"))
 /// to blocking in the kernel (e.g. because it is waiting for I/O).
 pub const RUNTIME_NONBLOCKING_PERCENT: MetricId = MetricId(Cow::Borrowed("nonblocking_percent"));
 pub const RUNTIME_PERCENT: MetricId = MetricId(Cow::Borrowed("runtime_percent"));
+pub const CIRCUIT_WAIT_BY_REASON_SECONDS: MetricId =
+    MetricId(Cow::Borrowed("circuit_wait_by_reason_seconds"));
 pub const CIRCUIT_WAIT_TIME_SECONDS: MetricId =
     MetricId(Cow::Borrowed("circuit_wait_time_seconds"));
 pub const STEPS_COUNT: MetricId = MetricId(Cow::Borrowed("steps_count"));
@@ -187,7 +189,7 @@ pub const PREFIX_BATCHES_STATS: MetricId = MetricId(Cow::Borrowed("prefix_batche
 pub const INPUT_INTEGRAL_RECORDS_COUNT: MetricId =
     MetricId(Cow::Borrowed("input_integral_records_count"));
 
-pub const CIRCUIT_METRICS: [CircuitMetric; 78] = [
+pub const CIRCUIT_METRICS: [CircuitMetric; 79] = [
     // State
     CircuitMetric {
         name: USED_MEMORY_BYTES,
@@ -475,10 +477,16 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 78] = [
         description: "Percentage of time spent evaluating the operator as a fraction of the total runtime of all operators in the circuit.",
     },
     CircuitMetric {
+        name: CIRCUIT_WAIT_BY_REASON_SECONDS,
+        category: CircuitMetricCategory::Time,
+        advanced: true,
+        description: "'circuit_wait_time_seconds' split by what the worker was waiting for: a spine to merge its batches down ('merge_backpressure'), the other workers ('peers'), what it sent to another host to drain to the wire ('network'), an operator that is in flight ('operator_pending'), the scheduler to find a runnable operator ('scheduler'), a layer-file block read from storage ('storage_read'), blocks spilled to storage ('storage_write'), an fsync the worker takes itself ('storage_sync'), a file to be created, opened, renamed, listed or unlinked ('storage_metadata'), or a reason no site declared ('unattributed').",
+    },
+    CircuitMetric {
         name: CIRCUIT_WAIT_TIME_SECONDS,
         category: CircuitMetricCategory::Time,
         advanced: false,
-        description: "Time during a step when the worker's async runtime had nothing to run, for example while waiting for other workers at an exchange or for background work to finish. Excludes time an operator blocks its thread without yielding, which shows up instead as a low 'circuit_nonblocking_percent'.",
+        description: "Time during a step when the worker was not running: its async runtime had nothing to run, for example while waiting for other workers at an exchange or for background work to finish, or its thread was blocked in a storage system call, reading a layer-file block, spilling blocks, fsyncing a layer file, or creating, renaming and unlinking one. 'circuit_wait_by_reason_seconds' says which. A system call counts only for the part its thread spends off the CPU: the rest of it runs in the kernel on the worker's own thread and is already in 'circuit_cpu_time_seconds'. Other blocking an operator does without yielding is not counted here and shows up instead as a low 'circuit_nonblocking_percent'.",
     },
     CircuitMetric {
         name: STEPS_COUNT,
@@ -508,7 +516,7 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 78] = [
         name: CIRCUIT_IDLE_TIME_SECONDS,
         category: CircuitMetricCategory::Time,
         advanced: false,
-        description: "Total time spent between circuit invocations, waiting for new data from input connectors or for output connector queues to clear out.",
+        description: "Time between one step ending and the next beginning. This time includes waiting for the other workers to finish their step and for the pipeline to initiate the next step.",
     },
     CircuitMetric {
         name: CIRCUIT_RUNTIME_ELAPSED_SECONDS,
@@ -777,6 +785,21 @@ impl OperatorMeta {
 
     pub fn get(&self, metric_id: MetricId) -> Option<MetaItem> {
         self.entries.get(&(metric_id, Vec::new())).cloned()
+    }
+
+    /// Every reading of `metric_id`, with the labels that tell them apart.
+    ///
+    /// [`Self::get`] answers for the one reading that carries no labels; a
+    /// metric that reports a value per label, such as one wait time per reason,
+    /// is read here.
+    pub fn readings(
+        &self,
+        metric_id: &MetricId,
+    ) -> impl Iterator<Item = (&MetricLabels, &MetaItem)> {
+        self.entries
+            .iter()
+            .filter(move |((id, _), _)| id == metric_id)
+            .map(|((_, labels), value)| (labels, value))
     }
 
     pub fn merge(&mut self, other: &Self) {

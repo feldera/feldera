@@ -1,5 +1,6 @@
 use super::super::Factories;
 use crate::dynamic::{DataTrait, WeightTrait};
+use crate::profile::{ParkReason, ParkingFor};
 use crate::storage::file::reader::{
     DataBlock, Error, FilteredKeys, Reader, TreeBlock, TreeNode, decompress,
 };
@@ -100,7 +101,10 @@ where
     ) -> Result<VecWSet<K, A>, Error> {
         while !self.is_done() {
             let mut reads = Vec::new();
-            let msg = self.receiver.recv().await.unwrap();
+            let msg = {
+                let _parked = ParkingFor::new(ParkReason::StorageRead);
+                self.receiver.recv().await.unwrap()
+            };
             self.process_results(msg, &mut reads)?;
             self.run_(reads)?;
         }

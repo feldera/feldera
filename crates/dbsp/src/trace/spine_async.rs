@@ -27,6 +27,7 @@ use crate::{
         runtime::{TOKIO_BUFFER_CACHE, TOKIO_WORKER_INDEX},
     },
     dynamic::{DynVec, Factory},
+    profile::{ParkReason, ParkingFor},
     storage::{
         buffer_cache::{BufferCache, CacheStats},
         file::{FilterKind, FilterStats},
@@ -622,9 +623,24 @@ struct BackpressureWait {
 
 impl BackpressureWait {
     /// Splits into the future to await and the description to report afterwards.
-    fn split(self) -> (OwnedNotified, BackpressureWaitReport) {
+    ///
+    /// The future carries the declaration that the park hook reads, so that a
+    /// caller outside this module charges `circuit_wait_by_reason_seconds` the
+    /// same way [`SpineInner::backpressure_wait`] does, without having to know
+    /// that it must.
+    fn split(
+        self,
+    ) -> (
+        impl Future<Output = ()> + Send + use<>,
+        BackpressureWaitReport,
+    ) {
+        let notify = self.notify;
+        let wait = async move {
+            let _parked = ParkingFor::new(ParkReason::MergeBackpressure);
+            notify.await;
+        };
         (
-            self.notify,
+            wait,
             BackpressureWaitReport {
                 name: self.name,
                 start: self.start,
@@ -830,6 +846,7 @@ where
         }
 
         // Wait for the loose batch count to drop below the threshold.
+        let _parked = ParkingFor::new(ParkReason::MergeBackpressure);
         loop {
             let notify = self.no_backpressure.notified();
             {
@@ -2435,7 +2452,12 @@ where
     /// Pass the report half to [`Self::record_backpressure_wait`] after
     /// awaiting, so the wait shows up in
     /// `merge_backpressure_wait_time_seconds` and in profiles.
-    pub(crate) fn backpressure_waiter(&self) -> Option<(OwnedNotified, BackpressureWaitReport)> {
+    pub(crate) fn backpressure_waiter(
+        &self,
+    ) -> Option<(
+        impl Future<Output = ()> + Send + use<B>,
+        BackpressureWaitReport,
+    )> {
         self.merger.backpressure_waiter().map(|wait| wait.split())
     }
 
@@ -2453,5 +2475,58 @@ where
 
     fn ro_snapshot(&self) -> SpineSnapshot<B> {
         self.into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BackpressureWait, LooseBatchCount};
+    use crate::profile::{ParkReason, current_park_reason};
+    use std::{
+        future::Future,
+        sync::Arc,
+        task::{Context, Poll, Waker},
+        time::Instant,
+    };
+    use tokio::sync::Notify;
+
+    fn backpressure_wait() -> BackpressureWait {
+        BackpressureWait {
+            notify: Arc::new(Notify::new()).notified_owned(),
+            name: Arc::new("spine".into()),
+            start: Instant::now(),
+            initial_loose: LooseBatchCount::HIGH_THRESHOLD,
+            initial_total: LooseBatchCount::HIGH_THRESHOLD,
+        }
+    }
+
+    /// A caller outside this module awaits the future that `split` hands out
+    /// rather than `backpressure_wait`, so the declaration the park hook reads
+    /// has to travel with the future.  Without it the wait lands in the
+    /// breakdown's catch-all instead of `merge_backpressure`.
+    #[test]
+    fn a_handed_out_wait_declares_merge_backpressure() {
+        let (wait, _report) = backpressure_wait().split();
+        let mut wait = Box::pin(wait);
+        let mut context = Context::from_waker(Waker::noop());
+
+        assert_eq!(current_park_reason(), ParkReason::Unattributed);
+        assert_eq!(wait.as_mut().poll(&mut context), Poll::Pending);
+        assert_eq!(current_park_reason(), ParkReason::MergeBackpressure);
+    }
+
+    /// The declaration lasts as long as the wait and no longer: dropping the
+    /// future, which is what awaiting it to completion does, takes it back.
+    #[test]
+    fn dropping_a_handed_out_wait_takes_back_the_declaration() {
+        // Boxed rather than `pin!`ed, so that dropping the binding drops the
+        // future and not just a pin to it.
+        let (wait, _report) = backpressure_wait().split();
+        let mut wait = Box::pin(wait);
+        let mut context = Context::from_waker(Waker::noop());
+
+        assert_eq!(wait.as_mut().poll(&mut context), Poll::Pending);
+        drop(wait);
+        assert_eq!(current_park_reason(), ParkReason::Unattributed);
     }
 }

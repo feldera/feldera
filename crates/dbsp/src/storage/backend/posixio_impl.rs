@@ -6,6 +6,7 @@ use super::{
 };
 use crate::Runtime;
 use crate::circuit::metrics::{FILES_CREATED, FILES_DELETED, FILES_SYNCED};
+use crate::profile::{BlockingFor, ParkReason};
 use crate::storage::{buffer_cache::FBuf, init};
 use feldera_storage::metrics::{
     READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS, SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES,
@@ -49,6 +50,7 @@ use tracing::{debug, info, warn};
 /// `storage_commit_all_latency_seconds` is the one that moves.
 fn sync_file(file: &File, path: &Path) -> Result<(), StorageError> {
     SYNC_LATENCY_MICROSECONDS.record_callback(|| {
+        let _blocked = BlockingFor::new(ParkReason::StorageSync);
         file.sync_all()
             .map_err(|e| StorageError::stdio(e.kind(), "fsync", path.display()))?;
         FILES_SYNCED.fetch_add(1, Ordering::Relaxed);
@@ -453,8 +455,12 @@ fn commit_in_parallel(files: &[Arc<dyn FileCommitter>]) -> Result<(), StorageErr
 /// POSIX gives no guarantee that the directory entry survives a crash
 /// even if the child file itself has been fully fsynced.
 fn fsync_dir(path: &Path) -> Result<(), StorageError> {
-    let dir = File::open(path)
-        .map_err(|e| StorageError::stdio(e.kind(), "open dir for fsync", path.display()))?;
+    let dir = {
+        let _blocked = BlockingFor::new(ParkReason::StorageMetadata);
+        File::open(path)
+            .map_err(|e| StorageError::stdio(e.kind(), "open dir for fsync", path.display()))?
+    };
+    let _blocked = BlockingFor::new(ParkReason::StorageSync);
     dir.sync_all()
         .map_err(|e| StorageError::stdio(e.kind(), "fsync dir", path.display()))
 }
@@ -504,6 +510,7 @@ impl PosixReader {
         async_threads: bool,
         ioop_delay: Duration,
     ) -> Result<Arc<dyn FileReader>, StorageError> {
+        let _blocked = BlockingFor::new(ParkReason::StorageMetadata);
         let file = OpenOptions::new()
             .read(true)
             .cache_flags(&cache)
@@ -548,9 +555,10 @@ impl FileReader for PosixReader {
     fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError> {
         READ_BLOCKS_BYTES.record(location.size);
         READ_LATENCY_MICROSECONDS.record_callback(|| {
-            sleep(self.ioop_delay);
             let mut buffer = FBuf::with_capacity(location.size);
 
+            let _blocked = BlockingFor::new(ParkReason::StorageRead);
+            sleep(self.ioop_delay);
             match buffer.read_exact_at(&self.file, location.offset, location.size) {
                 Ok(()) => Ok(Arc::new(buffer)),
                 Err(e) => Err(StorageError::stdio(
@@ -615,6 +623,7 @@ pub struct DeleteOnDrop {
 impl Drop for DeleteOnDrop {
     fn drop(&mut self) {
         if !self.keep.load(Ordering::Relaxed) {
+            let _blocked = BlockingFor::new(ParkReason::StorageMetadata);
             if let Err(e) = fs::remove_file(&self.path) {
                 warn!(
                     "{}: unable to delete dropped file: {e}",
@@ -686,14 +695,17 @@ impl FileWriter for PosixWriter {
 
         // Remove the .mut extension from the file.
         let finalized_path = self.drop.path.with_extension("");
-        self.drop.usage.fetch_sub(
-            finalized_path
-                .metadata()
-                .map_or(0, |metadata| metadata.size() as i64),
-            Ordering::Relaxed,
-        );
-        fs::rename(&self.drop.path, &finalized_path)
-            .map_err(|e| StorageError::stdio(e.kind(), "rename", self.drop.path.display()))?;
+        {
+            let _blocked = BlockingFor::new(ParkReason::StorageMetadata);
+            self.drop.usage.fetch_sub(
+                finalized_path
+                    .metadata()
+                    .map_or(0, |metadata| metadata.size() as i64),
+                Ordering::Relaxed,
+            );
+            fs::rename(&self.drop.path, &finalized_path)
+                .map_err(|e| StorageError::stdio(e.kind(), "rename", self.drop.path.display()))?;
+        }
 
         Ok(Arc::new(PosixReader::new(
             self.name,
@@ -748,6 +760,8 @@ impl PosixWriter {
                 .map(|buf| IoSlice::new(buf.as_slice()))
                 .collect::<Vec<_>>();
             let mut cursor = bufs.as_mut_slice();
+            let _blocked = BlockingFor::new(ParkReason::StorageWrite);
+            sleep(self.ioop_delay);
             while !cursor.is_empty() {
                 let n = self.file.write_vectored(cursor).map_err(|e| {
                     StorageError::stdio(e.kind(), "write", self.drop.path.display())
@@ -828,6 +842,7 @@ impl PosixBackend {
     }
 
     fn remove_dir_all(&self, path: &Path) -> Result<(), IoError> {
+        let _blocked = BlockingFor::new(ParkReason::StorageMetadata);
         let file_type = fs::symlink_metadata(path)?.file_type();
         if file_type.is_symlink() {
             fs::remove_file(path)
@@ -878,6 +893,7 @@ impl StorageBackend for PosixBackend {
         }
 
         let path = append_to_path(self.fs_path(name), MUTABLE_EXTENSION);
+        let _blocked = BlockingFor::new(ParkReason::StorageMetadata);
         let file = match try_create_named(self, &path) {
             Err(error) if error.kind() == ErrorKind::NotFound => {
                 if let Some(parent) = path.parent() {
@@ -918,6 +934,7 @@ impl StorageBackend for PosixBackend {
         cb: &mut dyn FnMut(feldera_storage::DirEntry),
     ) -> Result<(), StorageError> {
         fn get_file_type(entry: &DirEntry) -> Result<StorageFileType, StorageError> {
+            let _blocked = BlockingFor::new(ParkReason::StorageMetadata);
             let file_type = entry.file_type().map_err(|e| {
                 StorageError::stdio(e.kind(), "readdir type", entry.path().display())
             })?;
@@ -940,9 +957,12 @@ impl StorageBackend for PosixBackend {
 
         let mut result = Ok(());
         let path = self.fs_path(parent);
-        let entries = path.read_dir().map_err(|e| {
-            StorageError::stdio(e.kind(), "readdir", self.fs_path(parent).display())
-        })?;
+        let entries = {
+            let _blocked = BlockingFor::new(ParkReason::StorageMetadata);
+            path.read_dir().map_err(|e| {
+                StorageError::stdio(e.kind(), "readdir", self.fs_path(parent).display())
+            })?
+        };
         let mut warnings = 0usize..20;
         for entry in entries {
             match entry {
@@ -987,6 +1007,7 @@ impl StorageBackend for PosixBackend {
 
     fn delete(&self, name: &StoragePath) -> Result<(), StorageError> {
         let path = self.fs_path(name);
+        let _blocked = BlockingFor::new(ParkReason::StorageMetadata);
         let metadata = fs::metadata(&path)
             .map_err(|e| StorageError::stdio(e.kind(), "stat", path.display()))?;
         fs::remove_file(&path)
@@ -1028,6 +1049,7 @@ impl StorageBackend for PosixBackend {
     }
 
     fn sync_files(&self, files: &[Arc<dyn FileCommitter>]) -> Result<(), StorageError> {
+        let _blocked = BlockingFor::new(ParkReason::StorageSync);
         match &self.sync_strategy {
             #[cfg(target_os = "linux")]
             SyncStrategy::Syncfs(dir) => syncfs::sync(dir, &self.base),
