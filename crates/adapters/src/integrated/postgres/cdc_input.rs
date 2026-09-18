@@ -1604,6 +1604,16 @@ impl Destination for FelderaDestination {
         }
 
         let tail_rows = bytes > 0 || !errors.is_empty();
+        // `bytes` is bumped for every row string pushed into the stream above,
+        // success or parse failure, so `tail_rows` false means the stream is
+        // empty. `AnswerUnqueued` leans on that: it is the one branch that never
+        // calls `take_all`, so a row that reached the stream without bumping
+        // `bytes` would be dropped and etl told the write was durable. Pin the
+        // coupling in debug builds.
+        debug_assert!(
+            tail_rows || stream.is_empty(),
+            "no rows were accounted for, so the stream must be empty"
+        );
 
         match write_ending(queued, tail_rows, self.defer_acks) {
             WriteEnding::AnswerUnqueued => {
