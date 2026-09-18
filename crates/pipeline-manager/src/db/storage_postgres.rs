@@ -1665,6 +1665,25 @@ impl Storage for StoragePostgres {
         Ok(next_pipeline_program)
     }
 
+    async fn claim_next_rust_compilation(
+        &self,
+        platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
+    ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = transaction::begin(&mut client).await?;
+        let claimed = operations::pipeline::claim_next_rust_compilation(
+            &txn,
+            platform_version,
+            worker_id,
+            total_workers,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(claimed)
+    }
+
     async fn count_pipelines_needing_compilation(&self) -> Result<u64, DBError> {
         let mut client = self.pool.get().await?;
         let txn = transaction::begin(&mut client).await?;
