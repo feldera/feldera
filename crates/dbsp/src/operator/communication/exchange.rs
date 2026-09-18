@@ -20,6 +20,7 @@ use crate::{
         tokio::TOKIO,
     },
     circuit_cache_key,
+    profile::{ParkReason, ParkingFor},
 };
 use binrw::{BinRead, BinResult, BinWrite};
 use crossbeam_utils::CachePadded;
@@ -34,6 +35,7 @@ use std::{
     borrow::Cow,
     collections::{HashMap, VecDeque},
     fmt::{Debug, Display},
+    future::Future,
     io::{Cursor, IoSlice},
     iter::zip,
     marker::PhantomData,
@@ -348,6 +350,13 @@ impl ExchangeChannelInner {
     }
 }
 
+/// Wraps a wait for a tx queue to drain in the declaration the park hook
+/// reads, so that it reaches `circuit_wait_by_reason_seconds` as `network`.
+async fn declare_network_wait(drained: OwnedNotified) {
+    let _parked = ParkingFor::new(ParkReason::Network);
+    drained.await;
+}
+
 #[derive(Clone)]
 struct ExchangeChannel(Arc<Mutex<ExchangeChannelInner>>);
 
@@ -376,18 +385,21 @@ impl ExchangeChannel {
     }
 
     /// Appends `message` to the queue.  If the channel is then overfull,
-    /// returns an [OwnedNotified] that can be used to wait for it to drain.
+    /// returns a future that can be awaited to wait for it to drain.
     /// Otherwise, returns `None`.
-    pub fn push(&self, message: ExchangeMessage) -> Option<OwnedNotified> {
+    pub fn push(
+        &self,
+        message: ExchangeMessage,
+    ) -> Option<impl Future<Output = ()> + Send + use<>> {
         let mut inner = self.inner();
         inner.push(message);
-        inner.drain_waiter()
+        inner.drain_waiter().map(declare_network_wait)
     }
 
-    /// If this channel is overfull, returns an [OwnedNotified] that can be used
-    /// to wait for it to drain.  Otherwise, returns `None`.
-    fn drain_waiter(&self) -> Option<OwnedNotified> {
-        self.inner().drain_waiter()
+    /// If this channel is overfull, returns a future that can be awaited to
+    /// wait for it to drain.  Otherwise, returns `None`.
+    fn drain_waiter(&self) -> Option<impl Future<Output = ()> + Send + use<>> {
+        self.inner().drain_waiter().map(declare_network_wait)
     }
 
     /// True if the channel holds messages that the receiver has not
@@ -584,7 +596,7 @@ impl ExchangeClient {
         exchange_id: ExchangeId,
         sender: usize,
         data: Vec<FBuf>,
-    ) -> Option<OwnedNotified> {
+    ) -> Option<impl Future<Output = ()> + Send + use<>> {
         self.channel.push(ExchangeMessage::new(
             global_node_id,
             exchange_id,
@@ -1468,6 +1480,7 @@ where
 
         // Wait for the receivers to have empty mailboxes first.
         if !ready_to_send(self, sender) {
+            let _parked = ParkingFor::new(ParkReason::Peers);
             loop {
                 let notify = self.sender_notifies[sender].notified();
                 if ready_to_send(self, sender) {
@@ -1590,6 +1603,7 @@ where
                 .is_ok()
         }
         if !may_receive(self, receiver) {
+            let _parked = ParkingFor::new(ParkReason::Peers);
             loop {
                 let notifier = self.receiver_notifies[receiver].notified();
                 if may_receive(self, receiver) {
@@ -2840,5 +2854,31 @@ mod tests {
                 .expect("acknowledgement should release the sender");
             assert!(send(&client).is_none(), "the budget should be free again");
         });
+    }
+
+    /// A sender that has filled its tx queue waits for the wire to drain it,
+    /// and the park hook has to see a reason for that wait rather than the
+    /// catch-all every operator await falls into.
+    #[test]
+    fn a_full_tx_queue_declares_a_network_wait() {
+        use crate::profile::{ParkReason, current_park_reason};
+        use std::{
+            future::Future,
+            task::{Context, Waker},
+        };
+
+        // A budget of one byte, against a message that costs a header and two
+        // payloads.
+        let channel = super::ExchangeChannel::new(1);
+        let drained = channel
+            .push(test_message(1000))
+            .expect("an overfull channel hands out a wait");
+
+        let mut drained = Box::pin(drained);
+        let mut context = Context::from_waker(Waker::noop());
+
+        assert_eq!(current_park_reason(), ParkReason::Unattributed);
+        assert!(drained.as_mut().poll(&mut context).is_pending());
+        assert_eq!(current_park_reason(), ParkReason::Network);
     }
 }

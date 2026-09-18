@@ -7,6 +7,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::{
     dynamic::{DataTrait, DynVec, WeightTrait},
+    profile::{ParkReason, ParkingFor},
     storage::{
         buffer_cache::BufferCache,
         file::{
@@ -224,7 +225,10 @@ where
     async fn async_run(&mut self) -> Result<(), Error> {
         while !self.is_done() {
             let mut reads = Vec::new();
-            let msg = self.receiver.recv().await.unwrap();
+            let msg = {
+                let _parked = ParkingFor::new(ParkReason::StorageRead);
+                self.receiver.recv().await.unwrap()
+            };
             self.process_results(msg, &mut reads)?;
             self.run_(reads)?;
         }
@@ -540,7 +544,10 @@ where
     ) -> Result<VecIndexedWSet<K0, K1, A1>, Error> {
         while !self.is_done() {
             let mut reads = Vec::new();
-            let msg = self.receiver.recv().await.unwrap();
+            let msg = {
+                let _parked = ParkingFor::new(ParkReason::StorageRead);
+                self.receiver.recv().await.unwrap()
+            };
             self.process_results(msg, &mut reads)?;
             self.run_(reads)?;
         }
