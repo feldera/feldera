@@ -1,15 +1,17 @@
 /**
- * Copies of support bundle archives, kept in the same IndexedDB store as the history
- * (see `supportBundleHistory.ts`).
+ * Copies of support bundle archives, stored in IndexedDB.
  *
- * Browsers with no File System Access API give an `<input type=file>` a `File`, and a
- * `File` cannot be re-opened from its path once the page is gone. Remembering such a
- * bundle therefore means keeping the archive itself. The two limits below cap what
- * that costs in storage. A bundle over either limit still opens; it gets no history
- * entry.
+ * `supportBundleHistory.ts` remembers the support bundles the user opened from disk.
+ * This file implements a feature where, when storing history through FileSystemFileHandle
+ * is not possible, the opened files are cached instead.
  *
- * Nothing in the file-picker path reads this module, and `supportBundleHistory` does
- * not import it.
+ * Browsers with the File System Access API let the history store a handle: an object
+ * that points at the file on disk and can open it again later. Firefox and Safari do
+ * not have that API. There the user picks the file with an `<input type=file>`, and
+ * the page is handed a `File` and nothing else. A `File` says nothing about where on
+ * disk it came from, and it stops working once the page is closed or reloaded, so the
+ * only way to open that bundle a second time is to keep a copy of the archive bytes. The
+ * functions below write those copies, into the same IndexedDB store the history uses.
  */
 
 import {
@@ -25,37 +27,42 @@ import {
 } from './supportBundleHistory'
 
 /**
- * Whether remembering a bundle means keeping a copy of the archive, because this
- * browser has no file picker and so yields no handles.
+ * Whether remembering a bundle in this browser means keeping a copy of the archive,
+ * because the browser has no File System Access API and so hands the page a `File`
+ * rather than a handle that can open the archive again.
  *
- * False where IndexedDB is unusable, since there is nowhere to keep the copy.
+ * False when IndexedDB is unusable, since then there is nowhere to keep the copy.
  */
 export const isBundleCacheRequired = () => isHistorySupported() && !isBundlePickerSupported()
 
 /**
- * Biggest archive this module will copy, in bytes. A larger bundle gets no history
- * entry, because one archive filling the origin's storage quota costs the user more
- * than the history is worth.
+ * The largest archive, in bytes, that is copied into IndexedDB. A bundle larger than
+ * this still opens, it just gets no history entry: one archive filling up the storage
+ * the browser allows this site costs the user more than remembering it is worth.
  */
 export const maxCachedBundleBytes = 256 * 1024 * 1024
 
 /**
- * Bytes all the copies together may occupy. Over the budget, the least recently
- * opened copies are deleted, so a browser that copies archives remembers fewer
- * bundles than one that stores handles. The budget exceeds `maxCachedBundleBytes`, so
- * the pruning pass after a write never deletes the bundle that write just added.
+ * How many bytes all the copies together may occupy. Over that, the copies of the
+ * bundles opened longest ago are deleted, so a browser that keeps copies remembers
+ * fewer bundles than one that stores handles.
+ *
+ * The budget is larger than `maxCachedBundleBytes`, so the deletion pass that runs
+ * after a copy is written never deletes the copy that write just added.
  */
 export const cachedBundlesByteBudget = 512 * 1024 * 1024
 
+/** Whether this history entry holds a copy of the archive rather than a handle. */
 export const isCachedBundle = (bundle: StoredSupportBundle): bundle is CachedSupportBundle =>
   'file' in bundle
 
 /**
- * The copies that do not fit in the byte budget, in the order `mostRecentFirst` gives
- * them. Entries holding a handle occupy no budget and are skipped.
+ * The entries whose copies do not fit in `cachedBundlesByteBudget`, for the caller to
+ * delete. Entries holding a handle take up no space worth counting and are skipped.
  *
- * @param mostRecentFirst the history in the order `listSupportBundles` returns.
- *   Exported so tests can exercise the budget without storing half a gigabyte.
+ * @param mostRecentFirst the history, ordered as `listSupportBundles` returns it. The
+ *   result keeps that order. Taking the list as an argument rather than reading it
+ *   here lets the tests check the arithmetic without writing half a gigabyte.
  */
 export const cachedBundlesOverBudget = (
   mostRecentFirst: StoredSupportBundle[]
@@ -75,11 +82,12 @@ export const cachedBundlesOverBudget = (
 }
 
 /**
- * The existing copy of `file`, if there is one.
+ * The entry already holding a copy of `file`, if there is one.
  *
- * A `File` has no identity test, so name, size and last-modified date stand in for
- * one. Two different files agreeing on all three are treated as one, which at worst
- * leaves the user a stale entry.
+ * Two `File` objects cannot be asked whether they came from the same file on disk, so
+ * the name, the size and the last-modified date are compared instead. Two different
+ * files agreeing on all three are taken for one file, and the worst that does is show
+ * the user a history entry that opens the older contents.
  */
 const findCachedFile = async (file: File): Promise<StoredSupportBundle | undefined> =>
   (await listSupportBundles()).find(
@@ -91,11 +99,13 @@ const findCachedFile = async (file: File): Promise<StoredSupportBundle | undefin
   )
 
 /**
- * Writes a copy of `file` to IndexedDB, or returns null if the web origin's storage quota refused it.
+ * Writes a copy of `file` into IndexedDB, or returns null when the browser refused
+ * the write because this site has used up the storage it is allowed.
  *
- * The quota is a third limit on top of the two above, and it depends on how much disk
- * the browser has left, so no check up front can rule it out. A refusal here means the
- * same to the caller as an archive that is too big to copy.
+ * How much that is depends on the free space on the machine, so nothing checked
+ * beforehand can tell whether a given archive will fit. A refusal means the same to
+ * the caller as an archive too large to copy: no history entry, and the bundle the
+ * user just picked still opens.
  */
 const storeCopy = async (id: number | undefined, file: File) => {
   try {
@@ -109,12 +119,12 @@ const storeCopy = async (id: number | undefined, file: File) => {
 }
 
 /**
- * Records a bundle that came from an `<input type=file>` by keeping a copy of the
- * archive. Returns null when the copy does not fit, which leaves the bundle out of
- * the history.
+ * Remembers a bundle the user picked with an `<input type=file>`, by keeping a copy
+ * of the archive. Returns null when the copy does not fit, and the bundle is then
+ * left out of the history.
  *
- * Adding a copy is the only thing that can put the store over its byte budget, so the
- * budget is applied here.
+ * Writing a copy is the only thing that can put the store over
+ * `cachedBundlesByteBudget`, so the budget is applied here.
  */
 export const rememberSupportBundleFile = async (
   file: File
