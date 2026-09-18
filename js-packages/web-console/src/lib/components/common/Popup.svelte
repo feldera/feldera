@@ -11,8 +11,9 @@
     content: Snippet<[close: () => void]>
     wrapperClass?: string
     /**
-     * Whether the content shows. Bind it to open the popup from outside the
-     * trigger's click. Clicking away closes the popup either way.
+     * Whether the content is shown. Bind to it to open or close the popup from
+     * somewhere other than the trigger's own click. A click outside the popup closes
+     * it whether or not anything is bound here.
      */
     open?: boolean
   } = $props()

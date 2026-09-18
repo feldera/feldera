@@ -70,9 +70,9 @@
 
   let collectNewData = $state(collect)
   let fileInput: HTMLInputElement | null = $state(null)
-  // Set when the URL names a bundle in the history. Where to read the file is known,
-  // but reading it may need the user to grant access, because browsers drop file
-  // grants between sessions.
+  // Set when the URL names a bundle in the history. The page then knows where the
+  // archive is, but may still need the user to give permission to read it, which
+  // browsers forget from one visit to the next.
   let pendingBundle: StoredSupportBundle | null = $state(null)
 
   const withLoadGuard = createLoadGuard({
@@ -138,19 +138,21 @@
     withLoadGuard(async () => {
       if (source === 'upload') {
         if (storedBundleId) {
-          // The viewer reads the bundle from the history itself, which is what makes
-          // this tab reloadable.
+          // The viewer reads the archive itself, out of the history, which is what
+          // makes this URL worth reloading.
           const { bundle, needsPermission } = await resolveStoredBundle(storedBundleId)
           pendingBundle = bundle
           if (needsPermission) {
-            // Granting read access needs a click, so the empty state offers one.
+            // Giving permission has to happen inside a click, so the empty state
+            // below offers a button that asks for it.
             return
           }
           await loadStoredBundle(bundle)
           return
         }
-        // No history entry, so the tab that picked the bundle hands the bytes over.
-        // The last resort, for an archive too big to keep a copy of.
+        // With no history entry, the only source is the tab the user picked the
+        // bundle in, which hands the bytes over. That is the last resort, for an
+        // archive too large to keep a copy of.
         const buffer = await receiveUploadedBundle(channel)
         await processZipBundle(
           new Uint8Array(buffer),
@@ -203,8 +205,8 @@
   }
 
   /**
-   * Loads a bundle the user picked in this tab. A bundle in the history is named in
-   * the URL, so reloading this tab reopens that bundle.
+   * Loads a bundle the user picked in this tab. Where the bundle has a history entry,
+   * its id goes into the URL, so that reloading the tab opens the same bundle again.
    */
   async function handlePickedBundle(bundle: PickedBundle) {
     getProfileData = null
@@ -222,7 +224,10 @@
     }, onLoadError('Failed to load the selected bundle.'))
   }
 
-  /** Picks a bundle from disk, through the file picker or the input fallback. */
+  /**
+   * Lets the user pick a bundle from disk, with `showOpenFilePicker` where the browser
+   * has it and with the `<input type=file>` below where it does not.
+   */
   async function pickBundle() {
     if (!picker.isSupported) {
       fileInput?.click()
@@ -250,7 +255,10 @@
     )
   }
 
-  /** Asks for read access from within the click, then loads the bundle. */
+  /**
+   * Asks the user for permission to read the file, from inside the click that called
+   * this, and then loads the bundle.
+   */
   async function grantAndLoadStoredBundle(stored: StoredSupportBundle) {
     errorMessage = ''
     await withLoadGuard(async () => {
@@ -419,10 +427,10 @@
       {/if}
       {#if pendingBundle}
         {@const stored = pendingBundle}
-        <!-- Shown when the browser holds no grant for the file, which is the case for
-             this URL opened directly, such as after a reload. A bundle opened from the
-             home page was granted there, so the profile is already loading and there is
-             nothing to confirm. -->
+        <!-- Shown when the browser has no permission to read the file, which is what
+             opening this URL directly looks like, after a reload or in a later
+             session. A bundle just picked in another tab was given permission there,
+             so its profile is already loading and there is nothing to confirm. -->
         <SupportBundleConfirm
           name={stored.name}
           confirmLabel="Open from disk"
@@ -436,8 +444,8 @@
           Download profile
         </button>
       {/if}
-      <!-- Also the only control on a cold start, where nothing has been opened yet, so
-           the label cannot say "another". -->
+      <!-- This is also the only control on a first visit, where nothing has been
+           opened yet, so the label cannot say "another". -->
       <button class="link p-2 hover:underline" onclick={pickBundle}> Open a support bundle </button>
     </div>
   {/if}

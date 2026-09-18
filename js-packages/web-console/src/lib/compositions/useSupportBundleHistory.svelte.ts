@@ -10,24 +10,24 @@ import {
 } from '$lib/services/supportBundleHistory'
 
 /**
- * A remembered bundle plus whether reading it needs the user's permission.
+ * A remembered bundle, plus whether reading it needs the user's permission.
  *
- * The permission is queried when the list is read, not when a bundle is opened.
- * Requesting permission takes a click, so a caller has to know the answer before
- * deciding whether to ask.
+ * The permission is looked up when the list is read rather than when a bundle is
+ * opened. Asking the user for it has to happen inside a click handler, so a caller has
+ * to know the answer before it draws the button that would do the asking.
  */
 export type SupportBundleEntry = StoredSupportBundle & { needsPermission: boolean }
 
 /**
- * Reactive view of the support bundles remembered in IndexedDB.
+ * The support bundles remembered in IndexedDB, as reactive state.
  *
- * The state is module-level, like `useDemos`. Every caller reads the same list, so a
- * bundle opened in one component appears in the others without another trip to the
- * database. The first caller triggers the initial read.
+ * The state lives at module level, as it does in `useDemos`: every caller reads the
+ * same list, so a bundle opened in one component shows up in the others without
+ * another trip to the database. The first caller starts the initial read.
  *
- * IndexedDB failures, such as private-mode restrictions or a corrupt database, leave
- * the list empty instead of propagating. The history is a convenience, and losing it
- * must not stop the user from opening a bundle from disk.
+ * A failure to read IndexedDB, in a private window or with a database that cannot be
+ * opened, leaves the list empty rather than being passed on to the caller. The history
+ * is a convenience, and losing it must not stop the user opening a bundle from disk.
  */
 let bundles = $state<SupportBundleEntry[]>([])
 let loaded = false
@@ -47,7 +47,7 @@ const refresh = async () => {
   }
 }
 
-/** Re-reads the history from IndexedDB. Exposed for tests and for the first read. */
+/** Re-reads the history from IndexedDB. Exported for the tests and for the first read. */
 export const loadSupportBundleHistory = () => refresh()
 
 export const useSupportBundleHistory = () => {
@@ -59,7 +59,10 @@ export const useSupportBundleHistory = () => {
     get current() {
       return bundles
     },
-    /** Records a picked bundle and returns its entry, or null if it cannot be stored. */
+    /**
+     * Remembers a bundle the user chose in the file picker and returns its history
+     * entry, or null when the entry could not be written.
+     */
     async remember(handle: FileSystemFileHandle) {
       try {
         const bundle = await rememberSupportBundle(handle)
@@ -71,9 +74,10 @@ export const useSupportBundleHistory = () => {
       }
     },
     /**
-     * Records a bundle that came from a file input, by keeping a copy of it. Returns
-     * null when there is no room for the copy, or when the storage quota rejects it.
-     * The bundle still opens; it gets no history entry.
+     * Remembers a bundle that came from an `<input type=file>`, by keeping a copy of
+     * the archive. Returns null when the archive is too large to copy, or when the
+     * browser refused to store it. The user can open the bundle either way; without a
+     * copy it simply gets no history entry.
      */
     async rememberFile(file: File) {
       try {
@@ -86,8 +90,9 @@ export const useSupportBundleHistory = () => {
       }
     },
     /**
-     * Asks for read access to this bundle again, since browsers drop file grants
-     * between sessions. MUST be called from a user-gesture handler.
+     * Asks the user for permission to read this bundle again, which browsers forget
+     * from one visit to the next. MUST be called while handling a click: a browser
+     * turns down a permission request that no user action can be attributed to.
      */
     async grantAccess(bundle: StoredSupportBundle) {
       const granted = await requestBundleReadPermission(bundle)

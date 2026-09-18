@@ -1,17 +1,22 @@
 <script lang="ts">
-  // The dropdown body shared by the support-bundle menus: an optional download button
-  // with the "collect new data" toggle, and the entry that opens a bundle from disk.
+  // The body shared by the two support bundle dropdowns: an optional download button
+  // with its "collect new data" toggle, and the entry that opens a bundle from disk.
   //
-  // Callers supply the Popup and the outer container, so the trigger and the outer
-  // styling stay theirs. Callers also do the picking, because each one has its own use
-  // for a picked bundle, and the file input the fallback needs must sit outside this
-  // menu, where a closing popup cannot remove it while a pick is in progress.
+  // The caller supplies the Popup and the container around it, so that the trigger and
+  // the styling stay the caller's. The caller also does the picking itself, for two
+  // reasons: each one does something different with the bundle that comes back, and
+  // the `<input type=file>` needed where the browser has no `showOpenFilePicker` has
+  // to sit outside this menu, because a dropdown that closes would unmount the input
+  // while the user is still choosing a file in it.
 
   type Props = {
     collectNewData?: boolean
     /** When omitted, the menu offers no download and no "collect new data" toggle. */
     onDownload?: () => void
-    /** Opens a bundle from disk: the file picker, or a file input as a fallback. */
+    /**
+     * Runs the caller's own picking, with `showOpenFilePicker` or with an
+     * `<input type=file>` where that is missing.
+     */
     onPickBundle: () => void
     disabled?: boolean
     downloadLabel?: string

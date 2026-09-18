@@ -1,8 +1,8 @@
 /**
- * The pipeline editor's support-bundle dropdown: the menu entries specific to the
- * editor, and the two ways a bundle reaches the viewer from here. The file picker
- * yields a handle the history stores; the file input yields a `File` the history
- * copies.
+ * Tests for the pipeline editor's support bundle dropdown: the menu entries specific to
+ * the editor, and the two ways a bundle reaches the viewer from here.
+ * `showOpenFilePicker` gives back a handle, which the history stores as it is, and an
+ * `<input type=file>` gives back a `File`, of which the history keeps a copy.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -40,15 +40,15 @@ vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
   })
 }))
 
-// Imported AFTER vi.mock so the mocks take effect.
+// These imports come after the vi.mock calls above, so that the mocks are in place.
 import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
 import { clearSupportBundles, listSupportBundles } from '$lib/services/supportBundleHistory'
 import DownloadSupportBundle from './DownloadSupportBundle.svelte'
 
 /**
- * Stand-in for a `FileSystemFileHandle`. Its methods live on the prototype: the
- * bundle history stores handles with structured clone, which copies own properties
- * only and rejects own function properties.
+ * Stands in for a `FileSystemFileHandle`. Its methods are put on the prototype: the
+ * history writes a handle with structured clone, which copies only an object's own
+ * properties and turns down functions among them.
  */
 const fakeHandle = (name: string) =>
   Object.create(
@@ -77,7 +77,7 @@ const openDropdown = async (container: HTMLElement) => {
   await expect.poll(() => find(container, 'box-support-bundle-menu')).toBeTruthy()
 }
 
-/** Selects a file the way a browser without a file picker delivers one. */
+/** Chooses a file the way a browser without `showOpenFilePicker` does, through the input. */
 const pickThroughFileInput = (container: HTMLElement, name: string) => {
   const input = find(container, 'input-upload-support-bundle') as HTMLInputElement
   const transfer = new DataTransfer()
@@ -128,8 +128,8 @@ describe('DownloadSupportBundle.svelte', () => {
   })
 
   it('remembers a bundle picked here and links the viewer to it', async () => {
-    // The bundle goes into the history, so the viewer tab can re-read the file from
-    // disk.
+    // The bundle goes into the history, so that the viewer tab can read the file from
+    // disk itself.
     await clearSupportBundles()
     vi.stubGlobal('showOpenFilePicker', showOpenFilePicker)
     showOpenFilePicker.mockResolvedValue([fakeHandle('bundle-from-picker.zip')])
@@ -162,8 +162,8 @@ describe('DownloadSupportBundle.svelte', () => {
     pickThroughFileInput(container, 'bundle-from-input.zip')
     await expect.poll(() => find(container, 'btn-confirm-view-profile')).toBeTruthy()
     expect(container.textContent).toContain('bundle-from-input.zip')
-    // Picking alone must not open the tab. `window.open` has to run inside the
-    // confirming click, or the browser counts it as a popup.
+    // Picking a file must not open the tab by itself. `window.open` has to run inside
+    // the click on the confirmation, or the browser blocks it as a popup.
     expect(openStoredBundleTab).not.toHaveBeenCalled()
     await expect
       .poll(async () => (await listSupportBundles())[0]?.name)
@@ -173,7 +173,7 @@ describe('DownloadSupportBundle.svelte', () => {
     click(find(container, 'btn-confirm-view-profile'))
 
     // The history holds a copy of the archive, so the viewer reads it from there and
-    // nothing is handed over.
+    // nothing is handed from one tab to the other.
     expect(openStoredBundleTab).toHaveBeenCalledWith(id)
     expect(openUploadBundleTab).not.toHaveBeenCalled()
     expect(sendBundle).not.toHaveBeenCalled()

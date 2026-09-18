@@ -1,11 +1,11 @@
 /**
- * How the profile viewer gets hold of an uploaded bundle.
+ * Tests for how the profile viewer gets hold of a bundle from the user's disk.
  *
- * The viewer prefers the File System Access handle the bundle history keeps, because it
- * can then read the archive from disk itself: a link survives a reload, and a bundle
- * picked in this tab leaves a URL that reopens it. The heavy `profiler-layout`
- * rendering is mocked out, so what is under test is which bundle reaches the viewer,
- * and how.
+ * Where the history has an entry for the bundle, the viewer reads the archive itself
+ * instead of having the bytes handed to it: a link then survives a reload, and a bundle
+ * picked in this tab leaves behind a URL that opens it again. The `profiler-layout`
+ * rendering is mocked out, so what these tests cover is which bundle reaches the viewer
+ * and by which of the two routes.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -125,14 +125,14 @@ vi.mock('$lib/services/supportBundleHistory', () => ({
   touchSupportBundle: vi.fn(),
   clearSupportBundles: vi.fn()
 }))
-// Mocked whole, because the real module reaches into the history module for IndexedDB
-// access, which the mock above does not provide.
+// Mocked as a whole, because the real module reads IndexedDB through the history
+// module, and the mock above does not provide that.
 vi.mock('$lib/services/supportBundleCache', () => ({
   isBundleCacheRequired: vi.fn(() => false),
   rememberSupportBundleFile
 }))
 
-// Imported AFTER vi.mock so the mocks take effect.
+// These imports come after the vi.mock calls above, so that the mocks are in place.
 import ProfileViewerPage from './+page.svelte'
 
 const BUNDLE = { id: 7, name: 'checkout-2026-01-14.zip', openedAt: 1, handle: { name: 'x' } }
@@ -213,8 +213,9 @@ describe('profile viewer — uploaded bundles', () => {
 
     const container = renderViewer({ source: 'upload', bundle: BUNDLE.id })
 
-    // Nothing is read without a click of its own, which is what the grant needs. This
-    // is the page reached by opening the link directly, after a browser restart.
+    // Reading the file needs permission, and asking for permission needs a click of
+    // its own, so nothing loads until the user clicks. This is what the page looks
+    // like when the link is opened directly, in a later session.
     await expect.poll(() => find(container, 'btn-open-stored-bundle')).toBeTruthy()
     expect(find(container, 'box-support-bundle-confirm')!.textContent).toContain(BUNDLE.name)
     expect(readStoredBundle).not.toHaveBeenCalled()
@@ -250,14 +251,15 @@ describe('profile viewer — uploaded bundles', () => {
     openFromDisk.click()
 
     await expect.poll(() => processProfileFiles.mock.calls.length).toBe(1)
-    // Picking records the bundle, and the URL names that entry.
+    // Picking a file remembers it in the history, and the URL then names that entry.
     expect(rememberSupportBundle).toHaveBeenCalledOnce()
     expect(replaceState).toHaveBeenCalledWith('/profile-viewer?source=upload&bundle=42', {})
   })
 
   it('remembers a bundle from the file input by keeping a copy of it', async () => {
-    // The path browsers without a file picker take. The copy in the history gives them
-    // a reloadable URL, as a handle does in Chromium.
+    // The route taken where `showOpenFilePicker` is missing. The copy kept in the
+    // history gives that browser a URL worth reloading, just as a handle does in
+    // Chromium.
     isBundlePickerSupported.mockReturnValue(false)
     rememberSupportBundleFile.mockResolvedValue({ ...BUNDLE, id: 11 })
 
@@ -285,7 +287,8 @@ describe('profile viewer — uploaded bundles', () => {
     input.files = transfer.files
     input.dispatchEvent(new Event('change', { bubbles: true }))
 
-    // The bundle still opens, but it cannot be reopened, so the URL names no entry.
+    // The bundle still opens, but nothing can open it a second time, so the URL names
+    // no history entry.
     await expect.poll(() => processProfileFiles.mock.calls.length).toBe(1)
     expect(replaceState).not.toHaveBeenCalled()
   })

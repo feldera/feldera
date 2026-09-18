@@ -8,10 +8,11 @@ import { useSupportBundleHistory } from './useSupportBundleHistory.svelte'
 /**
  * A support bundle the user chose.
  *
- * `bundleId` names the history entry, which is what lets the profile viewer read the
- * archive again later, after a reload or in a tab opened days afterwards. Without a
- * `bundleId` the bundle exists only as the bytes `read` returns, and only once. That
- * happens for an archive too big to copy, and when the history write failed.
+ * `bundleId` names its entry in the history, which is what lets the profile viewer
+ * read the archive again later, after a reload or in a tab opened days afterwards.
+ * Without a `bundleId` the bundle exists only as the bytes `read` returns, and only
+ * once: that is what becomes of an archive too large to copy, and of one the history
+ * failed to write.
  */
 export type PickedBundle = {
   name: string
@@ -20,27 +21,33 @@ export type PickedBundle = {
 }
 
 /**
- * Choosing a support bundle from disk, in one place. The File System Access picker is
- * preferred, because its handle costs the history almost nothing. Where that API is
- * missing, callers fall back to a plain file input. Either way the bundle is recorded
- * in the history.
+ * Choosing a support bundle from disk, in one place. `showOpenFilePicker` is used
+ * wherever the browser has it, because the handle it gives back costs the history a
+ * few hundred bytes however large the archive is. Where it is missing, the caller
+ * falls back to an `<input type=file>` and hands the file to `fromFile` below. Either
+ * way the bundle is recorded in the history.
  */
 export const useBundlePicker = () => {
   const history = useSupportBundleHistory()
 
   return {
-    /** Whether `pick` is available; if not, callers open a file input. */
+    /**
+     * Whether `pick` can be used at all. Where it cannot, the caller clicks a hidden
+     * `<input type=file>` instead and passes the chosen file to `fromFile`.
+     */
     get isSupported() {
       return isBundlePickerSupported()
     },
 
     /**
-     * Shows the file picker and remembers what came back. Resolves to null when the
-     * browser has no picker or the user dismissed it.
+     * Shows the file picker and remembers the file that comes back. Resolves to null
+     * when the browser has no `showOpenFilePicker`, and when the user dismisses the
+     * picker without choosing anything.
      *
-     * The promise resolves after the history write, so the caller holds `bundleId` before
-     * it opens the viewer tab. `window.open` works only inside a click handler, and a
-     * click handler cannot await the write itself.
+     * The promise resolves only once the history has been written, so that the caller
+     * already holds `bundleId` when the user clicks to open the viewer tab. A browser
+     * allows `window.open` only while it is handling that click, and waiting for the
+     * write there would outlast it.
      */
     async pick(): Promise<PickedBundle | null> {
       if (!isBundlePickerSupported()) {
@@ -59,10 +66,11 @@ export const useBundlePicker = () => {
     },
 
     /**
-     * Wraps a file from an `<input type=file>`, which yields no handle, and records it
-     * by keeping a copy. The copy is what gives browsers without a picker a history.
+     * Takes a file from an `<input type=file>`, which comes with no handle, and
+     * remembers it by keeping a copy of the archive. That copy is what gives a browser
+     * without `showOpenFilePicker` a history at all.
      *
-     * The promise resolves after the history write, as in `pick`.
+     * As in `pick`, the promise resolves only once the history has been written.
      */
     async fromFile(file: File): Promise<PickedBundle> {
       const remembered = await history.rememberFile(file)

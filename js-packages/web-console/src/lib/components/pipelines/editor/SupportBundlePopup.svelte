@@ -3,15 +3,16 @@
    * The support bundle dropdown: the download entry, the "collect new data" toggle,
    * and the entry that opens a bundle from disk in the profile viewer.
    *
-   * Confirming a pick takes a second click: the browser treats `window.open` as a
-   * popup unless it runs synchronously inside a click handler, and picking a file is
-   * asynchronous. So picking shows the confirmation, and the click on it opens the
-   * tab.
+   * Opening the viewer takes a second click. A browser opens a new tab only while it
+   * is handling a user action, which `SupportBundleConfirm.svelte` describes, and
+   * choosing a file takes the user as long as it takes, so the click that started the
+   * picking is long over by the time there is a bundle to open. Picking therefore
+   * shows a confirmation, and the click on that confirmation opens the tab.
    *
-   * A picked bundle goes into the bundle history, so the viewer tab can read it
-   * again, including after a reload. Browsers without the File System Access API fall
-   * back to the hidden file input below, whose file the history copies; only a bundle
-   * too big to copy is handed over as bytes, once.
+   * A picked bundle goes into the bundle history, so that the viewer tab can read it
+   * again, including after a reload. A browser without `showOpenFilePicker` falls back
+   * to the hidden `<input type=file>` below, and the history keeps a copy of the file
+   * it yields. Only a bundle too large to copy is handed to the viewer as bytes, once.
    */
   import { slide } from 'svelte/transition'
   import Popup from '$lib/components/common/Popup.svelte'
@@ -64,8 +65,8 @@
 
   async function pickBundle() {
     if (!picker.isSupported) {
-      // The input sits outside the dropdown, so clicking it closes an open dropdown;
-      // confirming the pick opens the dropdown again.
+      // Clicking the input closes the dropdown, because the input sits outside it.
+      // `confirmPicked` opens the dropdown again once there is a file to confirm.
       fileInput?.click()
       return
     }
@@ -79,14 +80,14 @@
     }
   }
 
-  /** Drops the pick and goes back to the menu. */
+  /** Forgets the picked bundle, which brings the menu back. */
   function dismissPicked() {
     picked = null
   }
 
   /**
-   * Opens the viewer for the confirmed bundle. Runs inside the confirming click, so
-   * `window.open` is allowed.
+   * Opens the viewer tab for the confirmed bundle. This runs inside the click on the
+   * confirmation, which is what allows it to call `window.open`.
    */
   function openViewerTab() {
     const bundle = picked
@@ -97,7 +98,7 @@
 
     if (bundle.bundleId !== undefined) {
       // The viewer reads the bundle out of the history itself, so nothing has to be
-      // handed over and the viewer tab survives a reload.
+      // handed from this tab to that one, and the viewer tab survives a reload.
       try {
         openStoredBundleTab(bundle.bundleId)
       } catch (e) {
@@ -125,8 +126,9 @@
   }
 </script>
 
-<!-- The input sits outside the dropdown: the dropdown closes the moment the input is
-     clicked, and an unmounted input reports no file. -->
+<!-- The input is outside the dropdown on purpose: the dropdown closes the moment the
+     input is clicked, and an input that has been unmounted never reports the file the
+     user chose. -->
 <input
   type="file"
   accept=".zip"
@@ -175,8 +177,8 @@
     />
   {/snippet}
 
-  <!-- The confirmation opens the viewer tab on a direct click, so the browser keeps
-       user activation through `window.open`. -->
+  <!-- The confirmation opens the viewer tab from the click on it, which is what the
+       browser requires before it allows `window.open`. -->
   {#snippet confirmPage()}
     {#if picked}
       <SupportBundleConfirm

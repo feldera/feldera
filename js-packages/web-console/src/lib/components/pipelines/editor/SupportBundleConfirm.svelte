@@ -1,9 +1,10 @@
 <script lang="ts">
   /**
    * A chosen support bundle and the button that opens it. Shown wherever opening a
-   * bundle needs a second click - when the browser needs a so-called "user activation":
-   * a user action (usually a button click) that browser interprets as an explicit confirmation
-   * it requires to allow JS to execute an invasive action (e.g. opening a new page).
+   * bundle needs a second click, that is wherever the browser needs a so-called "user
+   * activation": a user action, usually a button click, that the browser reads as
+   * explicit confirmation before it lets a script do something invasive, such as
+   * opening a new page.
    *
    * `variant` places it: `popup` in a dropdown under whatever was clicked, `page` in
    * the middle of an empty page.
@@ -11,9 +12,9 @@
   type Props = {
     name: string
     confirmLabel?: string
-    /** Runs inside the click, so it may call `window.open`. */
+    /** Runs inside the click on the button, so it may call `window.open`. */
     onConfirm: () => void
-    /** Popup variant only: offers a way back out. The page variant ignores it. */
+    /** The way back to the menu. Only the popup variant shows it; the page variant ignores it. */
     onDismiss?: () => void
     variant?: 'popup' | 'page'
     'data-testid'?: string

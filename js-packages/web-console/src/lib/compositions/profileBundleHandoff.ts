@@ -1,11 +1,12 @@
 /**
  * Cross-tab handoff for uploaded support bundle ArrayBuffers.
  *
- * This is the fallback path. A bundle in the history opens through
- * `openStoredBundleTab`, and the viewer reads it from there, so no bytes cross tabs
- * and the tab survives a reload. Only a bundle the history cannot hold is handed over
- * as described below: an archive too big to copy, or one the storage quota rejected.
- * Such a bundle exists only as a `File`, which cannot outlive the page holding it.
+ * This is the fallback. A bundle that is in the bundle history opens through
+ * `openStoredBundleTab` instead, and the viewer reads the archive itself, so no bytes
+ * cross from one tab to the other and the viewer tab survives a reload. Only a bundle
+ * the history cannot hold is handed over the way this file describes, meaning an
+ * archive too large to copy or one the browser refused to store. Such a bundle exists
+ * only as a `File`, which stops working once the page that read it is gone.
  *
  * Hybrid transport:
  *   - Control plane (READY / ACK): BroadcastChannel keyed by a UUID in the URL,
@@ -57,8 +58,9 @@ export function openRemoteBundleTab(pipelineName: string, collect: boolean) {
 }
 
 /**
- * URL where the viewer reads the bundle itself, from the history entry `bundleId`
- * names. Nothing is handed over, so the tab survives a reload.
+ * The URL that opens the viewer on a bundle in the history. The viewer reads the
+ * archive itself, from the entry `bundleId` names, so nothing is handed from one tab
+ * to the other and the tab survives a reload.
  */
 export const storedBundleUrl = (bundleId: number) =>
   `/profile-viewer?source=upload&bundle=${bundleId}`
@@ -66,8 +68,8 @@ export const storedBundleUrl = (bundleId: number) =>
 /**
  * Opens a bundle from the history in a new tab.
  *
- * Throws when the browser blocked the new window, with the same message
- * `openUploadBundleTab` uses, so a caller can report both the same way.
+ * Throws when the browser blocked the new window. The message is the one
+ * `openUploadBundleTab` throws, so that a caller can report both the same way.
  */
 export function openStoredBundleTab(bundleId: number) {
   if (!window.open(storedBundleUrl(bundleId), '_blank')) {
