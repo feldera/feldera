@@ -16,6 +16,7 @@
   import PipelineBreadcrumbs from '$lib/components/layout/PipelineBreadcrumbs.svelte'
   import SupportBundleMenu from '$lib/components/pipelines/editor/SupportBundleMenu.svelte'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
+  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import { receiveUploadedBundle } from '$lib/compositions/profileBundleHandoff'
   import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
@@ -29,6 +30,7 @@
   const api = usePipelineManager()
   const toast = useToast()
   const layoutSettings = useLayoutSettings()
+  const darkMode = useDarkMode()
 
   let downloadProgress = useDownloadProgress()
   // If the URL provides no pipelineName, the remote-download path has no
@@ -296,6 +298,7 @@
         {globalMetrics}
         {runtimeConfig}
         {triageResults}
+        theme={darkMode.current}
         profileFiles={getProfileFiles()}
         selectedTimestamp={selectedProfile}
         onSelectTimestamp={handleSelectTimestamp}
