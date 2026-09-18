@@ -159,6 +159,17 @@ mod validate;
 #[cfg(test)]
 mod test;
 
+/// The step a controller that has initiated `initiated` steps is feeding.
+///
+/// [`CircuitThread::step`] stores `step + 1` before it collects input, so the
+/// step an input reader is feeding is one less. A controller that has
+/// initiated none is feeding nothing, which is what `None` says; a reader only
+/// ever asks while handling a [`InputReaderCommand::Queue`], which the
+/// controller issues from inside a step.
+fn current_step_of(initiated: Step) -> Option<Step> {
+    initiated.checked_sub(1)
+}
+
 use crate::adhoc::execute_sql;
 use crate::adhoc::table::AdHocTable;
 use crate::catalog::{SerBatch, SerBatchReader, SerTrace};
@@ -9402,6 +9413,15 @@ impl InputConsumer for InputProbe {
         } else {
             None
         }
+    }
+
+    fn current_step(&self) -> Option<Step> {
+        current_step_of(
+            self.controller
+                .status
+                .global_metrics
+                .total_initiated_steps(),
+        )
     }
 
     fn error(&self, fatal: bool, error: AnyError, tag: Option<&str>) {

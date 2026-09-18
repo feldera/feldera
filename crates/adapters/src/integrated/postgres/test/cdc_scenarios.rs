@@ -28,7 +28,7 @@
 //! ```
 
 use super::cdc_tests::{
-    CdcAllTypesStruct, CdcTestTable, ETL_SYNC_COMPLETED_STATES, cdc_connector_url,
+    CdcAllTypesStruct, CdcTestTable, CircuitShape, ETL_SYNC_COMPLETED_STATES, cdc_connector_url,
     cdc_ft_test_circuit, cdc_ft_test_circuit_for, etl_table_states, read_output_json,
     wait_for_etl_copy_in_progress, wait_for_etl_sync_completed,
 };
@@ -115,6 +115,26 @@ impl OutputTail {
 }
 
 impl Run {
+    /// Like [`Run::start`], with the reader taking `max_batch_size` records a
+    /// step, so a write that arrives as several buffers reaches the circuit
+    /// over as many steps instead of in one.
+    fn start_batched(table: &CdcTestTable, storage: &Path, max_batch_size: u64) -> Self {
+        let output = NamedTempFile::new().unwrap();
+        let (controller, errors) = cdc_ft_test_circuit_for::<TestStruct>(
+            &table.url,
+            &table.publication_name,
+            &format!("public.{}", table.table_name),
+            storage,
+            output.path(),
+            &TestStruct::schema(),
+            CircuitShape {
+                max_batch_size: Some(max_batch_size),
+                ..CircuitShape::default()
+            },
+        );
+        Self::started(table, controller, errors, output)
+    }
+
     /// Start a fault-tolerant CDC pipeline on `storage`. Checkpoints only
     /// happen when the test asks for them (interval set to one hour).
     fn start(table: &CdcTestTable, storage: &Path) -> Self {
@@ -146,7 +166,10 @@ impl Run {
             storage,
             output.path(),
             schema,
-            workers,
+            CircuitShape {
+                workers,
+                ..CircuitShape::default()
+            },
         );
         Self::started(table, controller, errors, output)
     }
@@ -440,41 +463,83 @@ fn test_checkpoint_mid_snapshot_waits_for_the_whole_copy_multiworker() {
     checkpoint_mid_snapshot_waits_for_the_whole_copy(4);
 }
 
-/// Attempts a mid-copy scenario makes before it gives up on catching etl
-/// inside the copy.
-const MID_COPY_ATTEMPTS: u32 = 3;
+/// Attempts a scenario makes at catching rows still on their way to the
+/// circuit before it gives up.
+const CATCH_MIDWAY_ATTEMPTS: u32 = 3;
 
-/// Run a scenario that must observe etl mid-copy, on tables of `base_rows`,
-/// then twice and four times as many rows, until `attempt` reports that it
-/// caught the copy in progress. `attempt` receives the row count, builds its
-/// own table and run, and returns `false` after stopping its run when the
-/// copy reached the circuit before the poll could measure it.
+/// What one attempt at catching rows still on their way to the circuit made of
+/// its run. The variants say only whether there was anything for the checks to
+/// assert against; every assertion about the connector stays inside the
+/// attempt.
+#[derive(Clone, Copy)]
+enum Attempt {
+    /// The poll caught what the scenario had to catch, and the checks resting
+    /// on it ran.
+    Caught,
+    /// The poll never saw it: the rows reached the circuit whole between two
+    /// polls. A wider window is the answer, and a scenario that holds its own
+    /// window open has none left to widen.
+    Outrun,
+    /// The poll caught it, but the run then lost a race it has no lever over,
+    /// which left the checks nothing to assert against. Another attempt is the
+    /// only answer, whatever the scenario can do about its window.
+    Raced,
+}
+
+/// Run a scenario that must catch rows still on their way to the circuit, on
+/// tables of `base_rows`, then twice and four times as many rows, until
+/// `attempt` reports [`Attempt::Caught`]. `attempt` receives the row count,
+/// builds its own table and run, and stops that run before reporting anything
+/// else. `what` names the scenario and `caught` names what it had to catch, for
+/// the messages this helper prints.
 ///
-/// How fast a copy reaches the circuit is a property of the runner, not of
-/// the connector, so an outrun poll is a reason to widen the window, not to
-/// fail. A runner that outruns every attempt leaves the scenario unexercised,
-/// which the test says so instead of going red: red must mean the connector
-/// is wrong. Every assertion about the connector stays inside `attempt`.
-fn retry_until_mid_copy(what: &str, base_rows: i64, mut attempt: impl FnMut(i64) -> bool) {
+/// How fast rows reach the circuit is a property of the runner, not of the
+/// connector, so an attempt that was outrun or lost its race is reported and
+/// the scenario is tried again on a larger table. A runner that outruns or
+/// outraces every attempt leaves the scenario unexercised, which the test says
+/// instead of going red: red must mean the connector is wrong. A scenario that
+/// has to tell a broken setup from a fast runner checks that premise
+/// deterministically inside `attempt` rather than reading it off a poll.
+fn retry_until_caught_midway(
+    what: &str,
+    caught: &str,
+    base_rows: i64,
+    mut attempt: impl FnMut(i64) -> Attempt,
+) {
     let mut rows = base_rows;
-    for i in 1..=MID_COPY_ATTEMPTS {
-        if attempt(rows) {
-            return;
-        }
-        if i < MID_COPY_ATTEMPTS {
-            println!(
-                "{what}: the copy of {rows} rows outran the poll; retrying with {} rows",
-                rows * 2
-            );
+    let mut raced = false;
+    for i in 1..=CATCH_MIDWAY_ATTEMPTS {
+        let why = match attempt(rows) {
+            Attempt::Caught => return,
+            Attempt::Outrun => format!("{caught} of {rows} rows outran the poll"),
+            Attempt::Raced => {
+                raced = true;
+                format!(
+                    "the poll caught {caught} of {rows} rows, and the run then lost the race \
+                     that follows it"
+                )
+            }
+        };
+        if i < CATCH_MIDWAY_ATTEMPTS {
+            println!("{what}: {why}; retrying with {} rows", rows * 2);
             rows *= 2;
+        } else {
+            println!("{what}: {why}");
         }
     }
-    eprintln!(
-        "{what}: scenario not exercised: in {MID_COPY_ATTEMPTS} attempts, etl copied every \
-         table of up to {rows} rows into the circuit before the poll caught it mid-copy. The \
-         connector passed every check that ran; this runner copies too fast for the mid-copy \
-         window"
+    let missed = format!(
+        "{what}: scenario not exercised: in {CATCH_MIDWAY_ATTEMPTS} attempts, on tables of up to \
+         {rows} rows, no attempt reached the checks that rest on catching {caught}. The connector \
+         passed every check that ran"
     );
+    if raced {
+        eprintln!(
+            "{missed}; at least one attempt caught {caught} and then lost the race that follows \
+             it, which no scenario holds open"
+        );
+    } else {
+        eprintln!("{missed}; this runner is too fast for the window this scenario needs");
+    }
 }
 
 fn checkpoint_mid_snapshot_waits_for_the_whole_copy(workers: usize) {
@@ -491,10 +556,10 @@ fn checkpoint_mid_snapshot_waits_for_the_whole_copy(workers: usize) {
     // runs; 25_024 rows, 330 to 385 ms, in three four-worker runs. A runner
     // that flushes the whole copy between two polls gets the scenario again
     // on a table four times as large, up to three attempts, through
-    // retry_until_mid_copy. A first attempt takes about 15 s with one worker
+    // retry_until_caught_midway. A first attempt takes about 15 s with one worker
     // and 19 s with four.
     let base_rows: i64 = 100_000 * workers as i64;
-    retry_until_mid_copy("scenario 2", base_rows, |n| {
+    retry_until_caught_midway("scenario 2", "the copy in progress", base_rows, |n| {
         let mut table = scenario_table("cdc_sc_mid_snap");
         insert_range(&mut table, 1, n);
         let storage = TempDir::new().unwrap();
@@ -516,7 +581,7 @@ fn checkpoint_mid_snapshot_waits_for_the_whole_copy(workers: usize) {
             // be requested, so this run says nothing about a deferred
             // checkpoint.
             run1.stop();
-            return false;
+            return Attempt::Outrun;
         };
         let checkpoint = run1.controller.checkpoint().unwrap();
         let in_checkpoint = checkpoint
@@ -552,7 +617,7 @@ fn checkpoint_mid_snapshot_waits_for_the_whole_copy(workers: usize) {
             vec![n + 1],
             "run 2 must deliver only the row inserted after the restart"
         );
-        true
+        Attempt::Caught
     });
 }
 
@@ -579,9 +644,9 @@ fn test_suspend_mid_copy_is_refused() {
     // circuit 180 to 265 ms after etl entered data_sync. A runner that
     // flushes the whole copy between two polls gets the scenario again on a
     // table four times as large, up to three attempts, through
-    // retry_until_mid_copy.
+    // retry_until_caught_midway.
     const BASE_ROWS: i64 = 100_000;
-    retry_until_mid_copy("scenario 2b", BASE_ROWS, |n| {
+    retry_until_caught_midway("scenario 2b", "the copy in progress", BASE_ROWS, |n| {
         let mut table = scenario_table("cdc_sc_partial");
         insert_range(&mut table, 1, n);
         let storage = TempDir::new().unwrap();
@@ -598,7 +663,7 @@ fn test_suspend_mid_copy_is_refused() {
             // The whole copy reached the circuit before the pause, so this
             // run says nothing about a suspend requested mid-copy.
             run.stop();
-            return false;
+            return Attempt::Outrun;
         };
         // Pausing stops etl from handing over the rest of the copy, so the
         // barrier stays up for as long as the pause does.
@@ -629,7 +694,7 @@ fn test_suspend_mid_copy_is_refused() {
                  {prefix} of {n} rows in the circuit"
             )
         });
-        true
+        Attempt::Caught
     });
 }
 
@@ -1220,4 +1285,260 @@ fn etl_schema_objects(table: &mut CdcTestTable) -> Vec<String> {
         .iter()
         .map(|r| r.get(0))
         .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Scenario 11: a checkpoint inside one write must not acknowledge the write.
+// ---------------------------------------------------------------------------
+
+/// Issue #7122.
+///
+/// etl hands rows over as writes the connector queues as several buffers, and
+/// the reader flushes those buffers over as many steps. A checkpoint taken
+/// between two of those steps holds only a prefix of a write. The connector
+/// must not answer etl for a write until its last buffer is in the circuit,
+/// because the answer moves etl's flush position past every row of it: a crash
+/// after such a checkpoint would then resume from a position that no longer
+/// carries the rows the checkpoint lacks.
+///
+/// Run 1 checkpoints once inside a write and stops without another one, so
+/// every row the checkpoint does not hold must come back in run 2.
+///
+/// One worker, so the circuit takes the rows in the order the source produced
+/// them and the checkpoint holds ids `1..=R` for the `R` records it reports.
+/// The test checks that prefix property against run 1's output rather than
+/// assume it.
+///
+/// What this test does and does not prove: it drives the whole path, from a
+/// checkpoint inside a multi-buffer write to a crash and a resume, and asserts
+/// the property a user cares about, that no row is lost. It did not go red
+/// against the connector before the fix, because the early answer moved
+/// nothing: etl left its flush position untouched for the 45 seconds measured
+/// after the checkpoint, so the rows came back from the replication slot
+/// regardless. The unit tests of the acknowledgment path are what pin the fix
+/// itself.
+#[test]
+#[serial]
+fn test_a_checkpoint_inside_one_write_does_not_acknowledge_it() {
+    // Rows are padded so that a few of them carry megabytes: `write_events`
+    // cuts a buffer every 2 MiB of serialized JSON, so 160 rows of 128 KiB are
+    // about ten buffers. The run below caps the reader at one buffer a step,
+    // so those ten buffers reach the circuit over ten steps and the checkpoint
+    // has a window to land in. Without that cap the default of 10_000 records
+    // a step never binds at 16 rows per buffer, and the window would be only as
+    // wide as etl's pacing happened to make it. Measured here: the checkpoint
+    // held 17 of 161 records.
+    const PAD_BYTES: usize = 128 * 1024;
+    retry_until_caught_midway(
+        "scenario 11",
+        "a write still reaching the circuit",
+        160,
+        |n| {
+            let mut table = scenario_table("cdc_sc_mid_write");
+            insert_range(&mut table, 1, 1);
+            let storage = TempDir::new().unwrap();
+
+            // One buffer a step, so the write spreads over as many steps as
+            // it has buffers instead of arriving in one. That is what leaves a
+            // window for the checkpoint to land inside the write.
+            let run1 = Run::start_batched(&table, storage.path(), 1);
+            run1.wait_for_inserts(1, "run 1 snapshot");
+            checkpoint_after_snapshot(&run1, &mut table);
+
+            // The premise, checked deterministically rather than by catching a
+            // mid-write poll: one buffer a step means the write advances the
+            // step counter by as many buffers as it has. A reader that swallows
+            // the whole write in one step fails this before any poll can miss
+            // it.
+            let steps_before = run1
+                .controller
+                .status()
+                .global_metrics
+                .total_initiated_steps();
+
+            // One transaction per row, so etl's flush position crosses a commit
+            // between one queued buffer and the next: answering a write whose rows
+            // are still queued then moves etl past rows no checkpoint holds.
+            insert_padded_rows(&mut table, 2, n + 1, PAD_BYTES);
+
+            // Each retry carries twice the bytes of the last, so the deadline
+            // grows with them, but a cap keeps a worst-case run of this serial
+            // test bounded.
+            let wait_ms = (WAIT_MS * (n / 160).max(1) as u128).min(WAIT_MS * 2);
+
+            // Catch the circuit holding a strict, non-empty part of the write.
+            let total = (n + 1) as u64;
+            let caught = wait(
+                || {
+                    let taken = run1.circuit_input_records();
+                    taken > 1 && taken < total
+                },
+                wait_ms,
+            )
+            .is_ok();
+            if !caught {
+                // The write reached the circuit whole between two polls, so no
+                // checkpoint of this run can fall inside it. Verify the premise
+                // before giving up on the attempt: the write must still have
+                // spread over several steps, which is the cap's doing. A fast
+                // runner is a reason to report; a cap that stopped working is a
+                // reason to fail, and only this check tells them apart.
+                if wait(|| run1.circuit_input_records() >= total, wait_ms).is_err() {
+                    // The write never reached the circuit within the deadline.
+                    // A runner that slow is worth a retry, not a red build: red
+                    // must mean the connector is wrong.
+                    run1.stop();
+                    return Attempt::Raced;
+                }
+                let steps_after = run1
+                    .controller
+                    .status()
+                    .global_metrics
+                    .total_initiated_steps();
+                assert!(
+                    steps_after > steps_before + 1,
+                    "the write of {total} records must span several steps, which the reader's \
+                     one-buffer-a-step cap guarantees, but the step counter advanced by only {}; \
+                     that cap stopped working",
+                    steps_after - steps_before
+                );
+                run1.stop();
+                return Attempt::Outrun;
+            }
+
+            let checkpoint = run1.controller.checkpoint().unwrap();
+            let in_checkpoint = checkpoint
+                .input_statistics
+                .get("cdc_in")
+                .expect("checkpoint has no statistics for cdc_in")
+                .circuit_input_records;
+            if in_checkpoint >= total {
+                // The rest of the write arrived while the checkpoint was being
+                // written, so it holds the whole write and leaves run 2 nothing
+                // to recover. Nothing here paces the checkpoint against the
+                // reader's next steps, so this is a race to retry rather than a
+                // window to widen.
+                run1.stop();
+                return Attempt::Raced;
+            }
+            run1.assert_no_errors("run 1 mid-write checkpoint");
+            println!(
+                "scenario 11: {n} padded rows, checkpoint holds {in_checkpoint} of {total} records"
+            );
+
+            // Let the rest of the write reach the circuit before stopping, so the
+            // stop finds no write still on its way from etl. The answer to the
+            // write is what this test is about, and it cannot go out before
+            // another checkpoint, which this run never takes.
+            if wait(|| run1.circuit_input_records() >= total, wait_ms).is_err() {
+                // The rest of the write did not reach the circuit within the
+                // deadline, which says this runner is slow, not that the
+                // connector dropped rows. Retry rather than go red.
+                run1.stop();
+                return Attempt::Raced;
+            }
+            run1.assert_no_errors("run 1 after the write landed");
+
+            // Stop without a second checkpoint, as a crash would.
+            let seen_in_run1 = run1.stop().inserted;
+            assert_prefix_of_ids(&seen_in_run1, "run 1 output");
+
+            let run2 = Run::start(&table, storage.path());
+            let first_missing = in_checkpoint as i64 + 1;
+            // A runner slow enough to need longer than the window buys more of
+            // it by making progress. Only a run 2 that has stopped delivering
+            // without the rows lets the assertion below speak.
+            wait_while_delivering(
+                wait_ms,
+                || {
+                    let h = insert_histogram(run2.inserted_ids());
+                    (first_missing..=n + 1).all(|id| h.contains_key(&id))
+                },
+                || run2.insert_count(),
+            );
+            run2.assert_no_errors("run 2");
+            let ids = run2.stop().inserted;
+
+            let h = insert_histogram(ids.iter().copied());
+            let missing: Vec<i64> = (first_missing..=n + 1)
+                .filter(|id| !h.contains_key(id))
+                .collect();
+            assert!(
+                missing.is_empty(),
+                "the checkpoint holds ids 1..={in_checkpoint} of {total}, so run 2 must redeliver \
+             every id from {first_missing} on; {} are missing, e.g. {}. The connector answered \
+             etl for a write the checkpoint does not hold in full, and etl moved its flush \
+             position past the rest",
+                missing.len(),
+                preview(&missing)
+            );
+            Attempt::Caught
+        },
+    );
+}
+
+/// Assert that the distinct ids in `ids` are the gap-free prefix `1..=k`, which
+/// is what makes a record count comparable with an id. Counting distinct ids
+/// rather than deliveries keeps a redelivered row, which at-least-once allows,
+/// from demanding ids that were never inserted.
+fn assert_prefix_of_ids(ids: &[i64], what: &str) {
+    let h = insert_histogram(ids.iter().copied());
+    let distinct = h.len() as i64;
+    let missing: Vec<i64> = (1..=distinct).filter(|id| !h.contains_key(id)).collect();
+    assert!(
+        missing.is_empty(),
+        "{what}: expected the {distinct} distinct ids delivered so far to be the gap-free prefix \
+         1..={distinct}, but {} are missing, e.g. {}. The circuit did not take the rows in source \
+         order, so a record count no longer names an id",
+        missing.len(),
+        preview(&missing)
+    );
+}
+
+/// Extra windows `wait_while_delivering` grants a runner that is still
+/// delivering rows. The cap is what keeps a pipeline that delivers for ever,
+/// without ever delivering the rows the caller waits for, from hanging the
+/// whole serial module instead of failing one assertion.
+const EXTRA_DELIVERY_WINDOWS: u32 = 3;
+
+/// Wait for `done`, giving up once `delivered` stops moving or after
+/// [`EXTRA_DELIVERY_WINDOWS`] further windows of `wait_ms`, whichever comes
+/// first. The caller states the window, because a scenario that doubles its
+/// payload on a retry needs a deadline that doubles with it.
+///
+/// A row count that is still rising means the pipeline is working and the
+/// runner is merely slow, which is a reason to keep waiting rather than to
+/// fail. A count that stands still through a whole window means waiting longer
+/// would not change the answer. Returning either way leaves the caller's
+/// assertion to speak, so the worst case is a red test rather than a job that
+/// hangs with nothing to read.
+fn wait_while_delivering(wait_ms: u128, done: impl Fn() -> bool, delivered: impl Fn() -> usize) {
+    let mut last = delivered();
+    for _ in 0..=EXTRA_DELIVERY_WINDOWS {
+        if wait(&done, wait_ms).is_ok() {
+            return;
+        }
+        let now = delivered();
+        if now == last {
+            return;
+        }
+        last = now;
+    }
+}
+
+/// Insert ids `from..=to`, one transaction per row, padding each row to about
+/// `pad_bytes` so that a few rows fill the connector's buffers.
+///
+/// One transaction per row matters: PostgreSQL decodes a transaction whole, so
+/// a flush position inside one still replays all of it. Only a position that
+/// has passed a commit can drop the rows behind it.
+fn insert_padded_rows(table: &mut CdcTestTable, from: i64, to: i64, pad_bytes: usize) {
+    for id in from..=to {
+        table.execute(&format!(
+            "INSERT INTO {} VALUES ({id}, {}, {}, repeat('x', {pad_bytes}))",
+            table.table_name,
+            id % 2 == 0,
+            id * 10
+        ));
+    }
 }

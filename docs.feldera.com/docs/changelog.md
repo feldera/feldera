@@ -34,6 +34,20 @@ Source edition can be found on github.
   of the read. See
   [PostgreSQL CDC input connector](/connectors/sources/postgresql-cdc).
 
+- Bug fix (PostgreSQL CDC input connector): a fault-tolerant pipeline no longer
+  loses changes when it crashes. The connector reads changes in batches, and it
+  could tell PostgreSQL that a batch was safely held while part of that batch
+  was still on its way into the pipeline. A checkpoint taken at that moment
+  held only the part that had arrived, while PostgreSQL, told it could move on,
+  stopped offering the rest, so a crash before the next checkpoint lost those
+  changes. The connector now reports a batch only once all of it has arrived,
+  and waits for the checkpoint that holds it rather than for one that may
+  predate it when an output connector runs behind. Stopping a pipeline now also
+  reports the batches a checkpoint already holds, instead of leaving them
+  unreported: an unreported batch made the next start read the whole source
+  table again, which a large table made expensive (#7122). See
+  [PostgreSQL CDC input connector](/connectors/sources/postgresql-cdc).
+
 - The PostgreSQL CDC input connector moves to a newer etl. It no longer fails
   intermittently with `Missing shared table state` when a table hands off from
   its initial read to streaming. etl runs more migrations on the source

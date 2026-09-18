@@ -382,6 +382,27 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
         self.push_entry(entry, errors);
     }
 
+    /// Runs `release` on the auxiliary data of every queued entry, leaving the
+    /// entries themselves queued.
+    ///
+    /// A reader that is shutting down calls this to release whatever the
+    /// auxiliary data owns, so that a producer waiting on a queued entry is
+    /// told rather than left waiting.
+    ///
+    /// The entries stay queued because their records were reported to the
+    /// consumer by [`Self::push_entry`] and only a flush credits them back
+    /// through [`InputConsumer::extended`]. Discarding them would leave the
+    /// endpoint charged with records no step can consume, and the controller
+    /// keeps stepping for as long as an endpoint it polls reports records
+    /// buffered.
+    ///
+    /// `release` runs under the queue lock, so it must not queue anything.
+    pub fn release_aux(&self, mut release: impl FnMut(&mut A)) {
+        for entry in self.queue.lock().unwrap().iter_mut() {
+            release(&mut entry.aux);
+        }
+    }
+
     /// Flushes a batch of records to the circuit and returns the auxiliary data
     /// that was associated with those records.
     ///
@@ -793,6 +814,30 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// Returns `None` otherwise, in which case the connector should fall back
     /// to [`completion_watcher`][Self::completion_watcher].
     fn checkpoint_watcher(&self) -> Option<tokio::sync::watch::Receiver<u64>> {
+        None
+    }
+
+    /// The step the controller is building, which is the step that data
+    /// flushed in answer to the current [`InputReaderCommand::Queue`] lands in.
+    ///
+    /// An adapter that defers acknowledgment needs this rather than
+    /// `total_completed_steps`, which is a minimum over the output connectors
+    /// and so only a lower bound on the step being fed: a lagging output makes
+    /// it name a step whose checkpoint predates the rows.
+    ///
+    /// A consumer that returns `Some` from [`completion_watcher`] or
+    /// [`checkpoint_watcher`] must return `Some` here while handling a `Queue`
+    /// command. Those two say that acknowledgment can be deferred, and this
+    /// says what it waits for; an adapter offered the first two without this
+    /// cannot tell which step holds its rows, and may refuse to run rather
+    /// than acknowledge them against the wrong one.
+    ///
+    /// The value is meaningful only while handling a `Queue` command. Returns
+    /// `None` if the consumer does not track steps.
+    ///
+    /// [`completion_watcher`]: Self::completion_watcher
+    /// [`checkpoint_watcher`]: Self::checkpoint_watcher
+    fn current_step(&self) -> Option<Step> {
         None
     }
 

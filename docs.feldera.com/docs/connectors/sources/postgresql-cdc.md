@@ -227,7 +227,27 @@ identity.
 
 With [fault tolerance](/pipelines/fault-tolerance) enabled, the connector
 delivers every change at least once: the replication slot advances only past
-changes that a Feldera checkpoint contains.
+changes that a Feldera checkpoint contains. The connector reads changes in
+batches, and a batch big enough to reach the pipeline in more than one piece
+counts as contained only once its last change is in the checkpoint, so a
+checkpoint taken while such a batch is still arriving leaves the slot where it
+is.
+
+What the slot follows depends on the fault tolerance setting. With fault
+tolerance enabled, a batch counts as contained once a checkpoint covers the
+step that holds it, and a checkpoint waits for the circuit and for the input
+connectors alone, so an output connector that runs behind does not hold the
+slot back. Without fault tolerance, the connector waits instead for the step
+that holds the batch to complete, and a step is complete only when every output
+connector has finished it, so an output that runs behind does hold the slot
+back with it.
+
+PostgreSQL retains the write-ahead log covering everything the slot has not
+passed, and the connector reads the next batch of changes into Feldera only
+after the previous one is acknowledged, so a slot that stays put shows up as
+both disk held on the source and a slower read from it. Sizing a source's log
+retention means allowing for the checkpoint interval with fault tolerance
+enabled, and for the slowest sink without it.
 
 The initial read of a table is all or nothing. A checkpoint holding only part
 of it would be unusable, because PostgreSQL streams changes from the
@@ -299,3 +319,10 @@ checkpoints on its own, by default every 60 seconds; the
 `checkpoint_interval_secs` setting described on the
 [fault tolerance](/pipelines/fault-tolerance) page changes the interval, and
 `null` disables automatic checkpoints.
+
+How often the pipeline checkpoints is therefore how often the replication slot
+advances with fault tolerance enabled. With automatic checkpoints off, the slot
+moves only when someone requests a checkpoint or suspends the pipeline, and
+PostgreSQL keeps every write-ahead log segment since the last one. A pipeline
+left running that way holds the source's disk, so either keep checkpoints
+automatic or make requesting one part of how the pipeline is operated.
