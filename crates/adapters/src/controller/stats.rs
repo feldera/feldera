@@ -2106,7 +2106,11 @@ const MAX_TRACKED_WATERMARKS: usize = 10_000;
 
 #[derive(Debug)]
 struct WatermarkTrackerInner {
-    /// The last `total_completed_records` value reported by the controller.
+    /// The furthest `total_completed_records` value reported by the controller.
+    ///
+    /// Whichever thread recomputes the completion frontier reports it, so reports arrive out of
+    /// order and this keeps the furthest one. Nothing reads the field except the derived `Debug`
+    /// that [`WatermarkTracker::debug`] prints, so this doc is its whole contract.
     total_completed_records: u64,
 
     /// The last `total_processed_records` value reported by the controller.
@@ -2190,6 +2194,10 @@ impl WatermarkTrackerInner {
         ts: DateTime<Utc>,
         metrics: &InputEndpointMetrics,
     ) {
+        // Callers race, so this can arrive out of order. Work from the furthest count reached, so
+        // that the queues below and the count this reports describe the same frontier. Popping
+        // against a stale smaller count would pop nothing the larger call had not already popped.
+        let completed_records = self.total_completed_records.max(completed_records);
         self.total_completed_records = completed_records;
 
         while let Some(entry) = self.watermark_list.front() {
