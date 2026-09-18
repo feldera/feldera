@@ -7773,3 +7773,107 @@ fn test_completion_watch_never_moves_backwards() {
         "a smaller count announced last must not lower the watch"
     );
 }
+
+/// A caught-up output endpoint must not hold the step frontier at the count it was added at.
+///
+/// `/egress` adds an endpoint to a running pipeline, and such an endpoint only receives output
+/// produced from then on, so it owes nothing for the steps before it. Claiming zero steps for it
+/// makes the minimum over the endpoints zero until it delivers its first batch, which leaves the
+/// frontier where it was even once every other endpoint has delivered the steps in between.
+#[test]
+fn test_caught_up_output_endpoint_does_not_hold_back_the_frontier() {
+    use super::stats::ProcessedRecords;
+
+    let status = test_controller_status("test_caught_up_output_seeding");
+    let output_config = test_output_config();
+    let parker = Parker::new();
+    let unparker = parker.unparker().clone();
+
+    let step = ProcessedRecords {
+        total_processed_input_records: 10,
+        total_processed_steps: 1,
+    };
+
+    // A configured connector that is slow to deliver.
+    status.add_output(&0, "slow", &output_config, None, true);
+
+    // The circuit commits one step, which the slow connector has not delivered.
+    status
+        .global_metrics
+        .total_initiated_steps
+        .store(1, Ordering::Release);
+    status.processed_data(BufferSize {
+        records: 10,
+        bytes: 0,
+    });
+    status.set_committed(step);
+    status.enqueue_batch(0, 10);
+    status.update_total_completed_records();
+    assert_eq!(status.global_metrics.total_completed_steps(), 0);
+
+    // Someone opens an `/egress` stream on the same pipeline.
+    status.add_output(&1, "egress", &output_config, None, true);
+
+    // The slow connector delivers the step it owed.
+    status.output_batch(0, Some(step), 10, &unparker);
+
+    assert_eq!(
+        status.global_metrics.total_completed_steps(),
+        1,
+        "the step is complete: the endpoint that owed it delivered, and the stream opened later"
+    );
+}
+
+/// What the circuit has committed is neither what it has processed nor the completion frontier.
+///
+/// An output connector that owes nothing claims this pair, and so does a connector receiving an
+/// initial snapshot mid-transaction. Reading it from `total_processed_records` would claim records
+/// an open transaction has not committed; reading it from `total_completed_steps` would claim
+/// fewer steps whenever another connector is behind.
+#[test]
+fn test_committed_is_neither_the_processed_count_nor_the_frontier() {
+    use super::stats::ProcessedRecords;
+
+    let status = test_controller_status("test_committed_pair");
+    let output_config = test_output_config();
+
+    // One step commits 10 records, and a connector that never delivers holds the frontier at 0.
+    status.add_output(&0, "lagging", &output_config, None, true);
+    status
+        .global_metrics
+        .total_initiated_steps
+        .store(1, Ordering::Release);
+    status.processed_data(BufferSize {
+        records: 10,
+        bytes: 0,
+    });
+    status.set_committed(ProcessedRecords {
+        total_processed_input_records: 10,
+        total_processed_steps: 1,
+    });
+    status.enqueue_batch(0, 10);
+    status.update_total_completed_records();
+    assert_eq!(status.global_metrics.total_completed_steps(), 0);
+
+    // A second step ingests 5 more records inside an open transaction: processed by the circuit,
+    // not committed, so nothing is published.
+    status
+        .global_metrics
+        .total_initiated_steps
+        .store(2, Ordering::Release);
+    status.processed_data(BufferSize {
+        records: 5,
+        bytes: 0,
+    });
+    assert_eq!(status.num_total_processed_records(), 15);
+
+    let committed = status.committed();
+    assert_eq!(
+        committed.total_processed_input_records, 10,
+        "the transaction's records are processed but not committed"
+    );
+    assert_eq!(
+        committed.total_processed_steps, 1,
+        "the lagging connector holds the frontier, not what the circuit committed"
+    );
+}
