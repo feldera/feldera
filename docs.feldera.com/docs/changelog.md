@@ -12,12 +12,15 @@ Source edition can be found on github.
 
 - Cluster monitoring data that has gone stale is now reported as such
   instead of being served as current. The cluster monitor is the only
-  writer of cluster monitor events and runs within the runner, so when
-  the runner dies, its last write kept reporting every service healthy
-  indefinitely. Once the latest event is older than 30 minutes it carries
-  `stale: true`, `GET /v0/cluster_healthz` reports `all_healthy: false`
-  and answers `503`, and the web console shows a banner instead of an
-  "Operational" status.
+  writer of cluster monitor events, and in the enterprise edition it runs
+  within the runner, so when the runner dies, its last write kept reporting
+  every service healthy indefinitely. Once the latest event is older than
+  30 minutes it carries `stale: true`, `GET /v0/cluster_healthz` reports
+  `all_healthy: false` and answers `503`, and the web console shows a
+  banner instead of an "Operational" status. This also affects retries:
+  the Rust and Python clients call that endpoint after a `502` to decide
+  whether to retry immediately, so while monitoring is down they wait
+  their fixed pause instead.
 
 ## v0.351.0
 

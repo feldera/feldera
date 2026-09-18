@@ -23,9 +23,9 @@ const MONITOR_STORE_EVENT_NUM_INTERVALS: u64 = 60;
 const MONITOR_MAX_WRITE_INTERVAL: Duration =
     Duration::from_secs(MONITOR_INTERVAL.as_secs() * MONITOR_STORE_EVENT_NUM_INTERVALS);
 
-/// An event older than this means the monitor stopped writing. It runs within the runner
-/// process, the first suspect. Three write intervals leave room for one slow iteration and
-/// a restart, so a slow cluster does not read as a dead monitor.
+/// An event older than this means the monitor stopped writing. In the enterprise edition it
+/// runs within the runner process, the first suspect there. Three write intervals leave room
+/// for one slow iteration and a restart, so a slow cluster does not read as a dead monitor.
 pub const MONITOR_STALE_AFTER: Duration =
     Duration::from_secs(3 * MONITOR_MAX_WRITE_INTERVAL.as_secs());
 
@@ -192,8 +192,13 @@ pub async fn cluster_monitor<P: ResourcesPoller>(
 
         // Only insert into the database if required
         if insert_into_database {
-            // Count the attempt, not the outcome: a failed write is retried on the backoff
-            // schedule rather than on every iteration.
+            // Count the attempt, not the outcome, so that a failed write waits for the
+            // next scheduled one rather than retrying on every iteration against a
+            // database that is already struggling. This costs one reading: three failures
+            // in a row push the newest event past MONITOR_STALE_AFTER, and
+            // `cluster_healthz` then calls the cluster stale while this monitor is still
+            // running. Record the time of a successful insert instead if that ever
+            // matters more.
             last_write = Some(Instant::now());
 
             // Insert new event

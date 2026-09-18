@@ -47,6 +47,12 @@ staleness sets `all_healthy` to `false` and the response code to `503`: monitori
 died cannot vouch for anything. Its response then carries the last recorded statuses rather
 than a description of the cluster now.
 
+This affects retries. When a request fails with `502`, the Rust and Python clients call
+this endpoint to decide what to do next. They retry immediately if the cluster is healthy,
+and wait a fixed pause if it is not, 90 seconds by default in Python. Stale data now gives
+the second answer, so retries slow down even while every service is serving. Restart the
+monitor to clear this, or shorten the pause in the client's retry settings.
+
 ## Examples
 
 ### All events

@@ -14,7 +14,8 @@ export type ClusterHealthStatus = {
   recordedAt: Date
   /**
    * The cluster monitor stopped writing events, so the statuses above are the last
-   * recorded ones rather than current ones. The monitor runs within the Kubernetes runner.
+   * recorded ones rather than current ones. Which process to suspect depends on the
+   * edition, which is why `staleMonitoringMessage` words the warning and not this type.
    */
   stale: boolean
 }
