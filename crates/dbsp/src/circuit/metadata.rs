@@ -194,7 +194,7 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 79] = [
     CircuitMetric {
         name: USED_MEMORY_BYTES,
         category: CircuitMetricCategory::State,
-        advanced: false,
+        advanced: true,
         description: "Bytes used by the in-memory state of the operator. See also 'allocated_memory_bytes'.",
     },
     CircuitMetric {
@@ -254,7 +254,7 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 79] = [
     CircuitMetric {
         name: MERGING_SIZE_BYTES,
         category: CircuitMetricCategory::State,
-        advanced: false,
+        advanced: true,
         description: "Approximate combined in-memory and on-disk size of currently merging batches.",
     },
     CircuitMetric {
@@ -302,13 +302,13 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 79] = [
     CircuitMetric {
         name: BLOOM_FILTER_HITS_COUNT,
         category: CircuitMetricCategory::State,
-        advanced: false,
+        advanced: true,
         description: "The number of hits across all Bloom filters. The hits are summed across the Bloom filters for all batches in the spine.",
     },
     CircuitMetric {
         name: BLOOM_FILTER_MISSES_COUNT,
         category: CircuitMetricCategory::State,
-        advanced: false,
+        advanced: true,
         description: "The number of misses across all Bloom filters. The misses are summed across the Bloom filters for all batches in the spine.",
     },
     CircuitMetric {
@@ -326,13 +326,13 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 79] = [
     CircuitMetric {
         name: ROARING_FILTER_HITS_COUNT,
         category: CircuitMetricCategory::State,
-        advanced: false,
+        advanced: true,
         description: "The number of hits across all bitmap filters. The hits are summed across the bitmap filters for all batches in the spine.",
     },
     CircuitMetric {
         name: ROARING_FILTER_MISSES_COUNT,
         category: CircuitMetricCategory::State,
-        advanced: false,
+        advanced: true,
         description: "The number of misses across all bitmap filters. The misses are summed across the bitmap filters for all batches in the spine.",
     },
     CircuitMetric {
@@ -350,13 +350,13 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 79] = [
     CircuitMetric {
         name: RANGE_FILTER_HITS_COUNT,
         category: CircuitMetricCategory::State,
-        advanced: false,
+        advanced: true,
         description: "The number of hits across all range filters. The hits are summed across the range filters for all batches in the spine.",
     },
     CircuitMetric {
         name: RANGE_FILTER_MISSES_COUNT,
         category: CircuitMetricCategory::State,
-        advanced: false,
+        advanced: true,
         description: "The number of misses across all range filters. The misses are summed across the range filters for all batches in the spine.",
     },
     CircuitMetric {
@@ -461,7 +461,7 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 79] = [
     CircuitMetric {
         name: INVOCATIONS_COUNT,
         category: CircuitMetricCategory::Time,
-        advanced: false,
+        advanced: true,
         description: "Number of times the operator has been invoked.",
     },
     CircuitMetric {
@@ -480,7 +480,7 @@ pub const CIRCUIT_METRICS: [CircuitMetric; 79] = [
         name: CIRCUIT_WAIT_BY_REASON_SECONDS,
         category: CircuitMetricCategory::Time,
         advanced: true,
-        description: "'circuit_wait_time_seconds' split by what the worker was waiting for: a spine to merge its batches down ('merge_backpressure'), the other workers ('peers'), what it sent to another host to drain to the wire ('network'), an operator that is in flight ('operator_pending'), the scheduler to find a runnable operator ('scheduler'), a layer-file block read from storage ('storage_read'), blocks spilled to storage ('storage_write'), an fsync the worker takes itself ('storage_sync'), a file to be created, opened, renamed, listed or unlinked ('storage_metadata'), or a reason no site declared ('unattributed').",
+        description: "'circuit_wait_time_seconds' split by what the worker was waiting for.",
     },
     CircuitMetric {
         name: CIRCUIT_WAIT_TIME_SECONDS,
