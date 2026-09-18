@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.ExpressionOracleHarvest;
 import org.dbsp.sqlCompiler.compiler.backend.MerkleOuter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -197,7 +198,7 @@ public class CircuitOptimizer extends Passes {
         // self-contained.
         this.add(new Conditional(compiler,
                 new StaticDeclarations(compiler, new ImplementStatics(compiler, !options.ioOptions.multiCrates())),
-                () -> !options.ioOptions.gen2));
+                () -> !ExpressionOracleHarvest.usesGen2ExpressionShape(options)));
         // From now on we cannot really change the graph anymore.
 
         // this.add(new TestSerialize(compiler));
