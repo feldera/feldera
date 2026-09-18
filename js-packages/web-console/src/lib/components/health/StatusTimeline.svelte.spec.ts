@@ -12,6 +12,7 @@ const recordedAt = new Date('2026-05-01T12:00:00Z')
 
 const statusStyles: Record<ClusterEventType, { bg: string; text: string; label: string }> = {
   healthy: { bg: 'bg-green-500', text: 'text-green-500', label: 'Operational' },
+  transitioning: { bg: 'bg-blue-500', text: 'text-blue-500', label: 'Transitioning' },
   unhealthy: { bg: 'bg-yellow-500', text: 'text-yellow-500', label: 'Service degradation' },
   major_issue: { bg: 'bg-red-500', text: 'text-red-500', label: 'Major Issue' }
 }

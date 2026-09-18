@@ -3469,7 +3469,7 @@ export type MirNode = {
   [key: string]: unknown
 }
 
-export type MonitorStatus = 'InitialUnhealthy' | 'Unhealthy' | 'Healthy'
+export type MonitorStatus = 'Unhealthy' | 'Transitioning' | 'Healthy'
 
 /**
  * Configuration for a multihost Feldera pipeline.

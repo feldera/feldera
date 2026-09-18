@@ -13,13 +13,13 @@ describe('toClusterStatus', () => {
     recorded_at: '2026-05-01T12:00:00Z',
     all_healthy: false,
     api_status: 'Healthy',
-    compiler_status: 'InitialUnhealthy',
+    compiler_status: 'Transitioning',
     runner_status: 'Unhealthy'
   }
 
-  it('grades each service by how long it has been failing', () => {
+  it('grades each service by what its status reports', () => {
     const { api, compiler, runner } = toClusterStatus(event)
-    expect([api, compiler, runner]).toEqual(['healthy', 'unhealthy', 'major_issue'])
+    expect([api, compiler, runner]).toEqual(['healthy', 'transitioning', 'major_issue'])
   })
 
   it('carries the verdict the server sent', () => {
