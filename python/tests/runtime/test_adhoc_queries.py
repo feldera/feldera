@@ -619,7 +619,7 @@ class TestAdhocReadAfterWrite(SharedTestPipeline):
         self.pipeline.start()
 
         # Seed one row outside the transaction as the baseline.
-        self.pipeline.execute("INSERT INTO example2 VALUES (1)")
+        self.pipeline.execute("INSERT INTO example2 VALUES (1)", wait=True)
 
         tid = self.pipeline.start_transaction()
         rows_during = list(
@@ -653,7 +653,7 @@ class TestAdhocReadAfterWrite(SharedTestPipeline):
         self.pipeline.start()
 
         # Seed one row outside the transaction as the baseline.
-        self.pipeline.execute("INSERT INTO example3 VALUES (1)")
+        self.pipeline.execute("INSERT INTO example3 VALUES (1)", wait=True)
 
         tid = self.pipeline.start_transaction()
         rows_during = list(
