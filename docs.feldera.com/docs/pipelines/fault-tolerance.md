@@ -174,7 +174,7 @@ tolerance.
 |[Delta Lake]|✅|✅|❌|
 |[HTTP GET (URL)]|✅|✅|✅|
 |[HTTP]|✅|✅|✅|
-|[Iceberg]|❌|❌|❌|
+|[Iceberg]|✅|✅|❌|
 |[Kafka]|✅|✅|✅|
 |[NATS]|✅|✅|✅|
 |[PostgreSQL]|❌|❌|❌|
