@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+## v0.351.0
+
 - Incompatible change (PostgreSQL CDC input connector): an unqualified
   `source_table` names a table in the `public` schema. A pipeline whose
   `source_table` gives a bare name for a table outside `public` no longer
