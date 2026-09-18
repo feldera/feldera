@@ -2,9 +2,9 @@
   /**
    * "Open support bundle": the button and the dialog it opens.
    *
-   * The dialog lists the remembered bundles, with the file picker as its bottom left
-   * action. Both open a profile viewer tab, and that tab reads the bundle out of the
-   * history.
+   * The dialog lists the bundles the user opened before, and the button at the bottom
+   * left of it picks a new one from disk. Both open a profile viewer tab, and that tab
+   * reads the archive out of the bundle history itself.
    */
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import SupportBundlePopup from '$lib/components/pipelines/editor/SupportBundlePopup.svelte'
@@ -37,23 +37,25 @@
   }
 
   /**
-   * Opens a remembered bundle in a new profile viewer tab, which reads the file through
-   * the stored handle.
+   * Opens a bundle from the list in a new profile viewer tab, which reads the file
+   * through the handle stored with the history entry.
    *
-   * Browsers forget file grants between sessions, so a bundle may need a permission
-   * prompt first. Answering the prompt spends the click's user activation, so the new
-   * tab relies on the grant counting as an activation of its own. A browser that
-   * disagrees blocks the tab, which `openStoredBundleTab` reports. The fix would be a
-   * confirming click, as `SupportBundlePopup` uses after a file is picked.
+   * Browsers forget permission to read a file from one visit to the next, so the user
+   * may have to be asked for it again first. Answering that question uses up the click
+   * that asked it, and opening a tab afterwards then depends on the browser counting
+   * the answer as a user action of its own. A browser that does not count it blocks
+   * the new tab, and `openStoredBundleTab` reports that. The fix would be a second
+   * click to confirm, the way `SupportBundlePopup` asks for one after a file is picked.
    *
-   * The dialog stays open on every failure, so the user can try again.
+   * The dialog stays open whatever fails, so that the user can try again.
    */
   const openBundle = async (bundle: SupportBundleEntry) => {
     const report = toast.toastError('Opening support bundle')
     let granted: boolean
     try {
-      // `requestPermission` rejects rather than resolving false when the click's
-      // activation is already spent, or when the handle is detached.
+      // `requestPermission` rejects, rather than answering false, when the click that
+      // would justify the question has already been used up, and when the handle no
+      // longer points at anything.
       granted = !bundle.needsPermission || (await history.grantAccess(bundle))
     } catch (e) {
       report(e instanceof Error ? e : new Error(String(e)), 8000)
@@ -80,9 +82,9 @@
   }
 
   /**
-   * Where the browser yields no file handles, the history keeps copies of the archives.
-   * The title says so, because those copies take up storage until the history is
-   * cleared.
+   * Where the browser hands out no file handles, the history keeps copies of the
+   * archives instead. The title says so, because those copies occupy the storage this
+   * site is allowed until the user clears the history.
    */
   const historyTitle = isBundleCacheRequired()
     ? 'Recent pipeline profiles (cached in the browser)'
@@ -102,8 +104,8 @@
 
 {#snippet openBundleDialog()}
   <GenericDialog content={{ title: historyTitle }}>
-    <!-- As wide as the dialog and no wider, whatever the names are, so the list scrolls
-         vertically only. -->
+    <!-- As wide as the dialog and no wider, however long the names are, so that the
+         list scrolls up and down only. -->
     <div
       class="scrollbar flex max-h-[50vh] w-full min-w-0 flex-col overflow-y-auto"
       data-testid="box-all-bundles"
@@ -115,10 +117,11 @@
           onclick={() => openBundle(bundle)}
           data-testid="btn-open-bundle-from-list"
         >
-          <!-- A name too long for its row is cut off with an ellipsis. The `title`
-               above carries the whole name. -->
+          <!-- A name too long for its row ends in an ellipsis. The `title` above
+               carries the whole name, for the tooltip. -->
           <span class="min-w-0 truncate" data-testid="box-bundle-name">{bundle.name}</span>
-          <!-- Keeps its width and the row's right edge. The name is truncated instead. -->
+          <!-- Keeps its width and its place at the row's right edge. The name gives up
+           the space instead. -->
           <span
             class="shrink-0 whitespace-nowrap text-surface-700-300"
             data-testid="box-bundle-opened-ago"
@@ -131,8 +134,8 @@
       {/each}
     </div>
     <div class="flex justify-between">
-      <!-- The button picks a bundle straight away, and its popup holds only the
-           confirmation that generates a user activation to open the viewer. -->
+      <!-- This button picks a bundle straight away, and its popup holds nothing but
+           the confirmation, whose click is what lets the viewer tab be opened. -->
       <SupportBundlePopup mode="pick" align="left" drop="up" onOpened={closeDialog}>
         {#snippet trigger(pick)}
           <button

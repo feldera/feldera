@@ -1,10 +1,12 @@
 /**
- * The "Open support bundle" button and the dialog it opens: the remembered bundles,
- * with the picker and "Clear history" in the row below them.
+ * Tests for the "Open support bundle" button and the dialog it opens: the list of
+ * bundles opened before, with the button that picks a new one and "Clear history" in
+ * the row below them.
  *
- * Needs the browser project. The history is the real IndexedDB-backed one, and the
- * assertions measure geometry and stored state rather than class names. Only the
- * tab-opening helpers are mocked, because a test cannot let a new window through.
+ * These run in the browser project. The history is the real one, IndexedDB included,
+ * and the assertions measure what is on screen and what is stored rather than reading
+ * class names. Only the two functions that open a tab are mocked, because a test
+ * cannot let a new window through.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -33,8 +35,8 @@ const {
   }
 })
 
-// The only observable difference between reporting a failure and swallowing it, so the
-// error-path tests below assert against this.
+// Reporting a failure and ignoring one look alike from the outside, apart from this
+// call, so the tests of the error paths below assert on it.
 vi.mock('svelte-french-toast', () => ({
   toast: { error: toastError, success: vi.fn(), dismiss: vi.fn() },
   Toaster: () => {}
@@ -52,23 +54,24 @@ vi.mock('$lib/compositions/profileBundleHandoff', async (importOriginal) => ({
   openUploadBundleTab
 }))
 // The history is real, IndexedDB included. Only the two calls that would put a browser
-// permission prompt on screen are stubbed. A stored fake handle carries no permission
-// API, which the real calls answer with 'granted', and these spies override that
-// answer.
+// permission prompt on screen are stubbed. A stand-in handle read back out of the
+// database has no permission methods, which the real calls answer with 'granted', and
+// these spies answer with whatever a test asks for instead.
 vi.mock('$lib/services/supportBundleHistory', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/services/supportBundleHistory')>()),
   queryBundleReadPermission,
   requestBundleReadPermission
 }))
-// The cache runs for real as well. `rememberSupportBundleFile` is a spy so one test can
-// make it refuse a file, which is what an archive too big to copy looks like here.
+// The copies are written for real as well. `rememberSupportBundleFile` is a spy so
+// that one test can make it refuse a file, which is how an archive too large to copy
+// behaves without one being allocated here.
 vi.mock('$lib/services/supportBundleCache', async (importOriginal) => {
   const original = await importOriginal<typeof import('$lib/services/supportBundleCache')>()
   rememberSupportBundleFile.mockImplementation(original.rememberSupportBundleFile)
   return { ...original, rememberSupportBundleFile }
 })
 
-// Imported AFTER vi.mock so the mocks take effect.
+// These imports come after the vi.mock calls above, so that the mocks are in place.
 import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
 import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
 import { loadSupportBundleHistory } from '$lib/compositions/useSupportBundleHistory.svelte'
@@ -81,9 +84,9 @@ import {
 import OpenSupportBundleButton from './OpenSupportBundleButton.svelte'
 
 /**
- * Stand-in for a `FileSystemFileHandle`. The methods live on the prototype because
- * IndexedDB stores the handle with structured clone, which copies own properties only
- * and rejects own function properties.
+ * Stands in for a `FileSystemFileHandle`. Its methods are put on the prototype: the
+ * history writes a handle with structured clone, which copies only an object's own
+ * properties and turns down functions among them.
  */
 const fakeHandle = (name: string) =>
   Object.create(
@@ -96,7 +99,7 @@ const BUNDLE_COUNT = 10
 /** The rows' `px-2`, in px. */
 const ROW_PADDING = 8
 
-/** Re-reads the history so the rows pick up a changed permission answer. */
+/** Sets the answer to the permission query, and re-reads the history so the rows use it. */
 const setReadPermission = async (state: 'granted' | 'prompt') => {
   queryBundleReadPermission.mockResolvedValue(state)
   await loadSupportBundleHistory()
@@ -331,7 +334,8 @@ describe('OpenSupportBundleButton.svelte', () => {
     })
 
     it('says the bundles are cached where the browser gives out no handles', async () => {
-      // Known from a feature check, so the title is right on the first render.
+      // Whether handles exist is known before anything is drawn, so the title is
+      // right on the very first render.
       vi.stubGlobal('showOpenFilePicker', undefined)
       const { dialog } = await openDialog()
 
@@ -410,7 +414,7 @@ describe('OpenSupportBundleButton.svelte', () => {
     })
 
     it('asks for access, then opens the profile', async () => {
-      // A browser restart leaves the history intact and the grants gone.
+      // A browser restart leaves the history intact and the permissions gone.
       await setReadPermission('prompt')
       const { dialog } = await openDialog()
       const row = listedRows(dialog)[0]
@@ -444,8 +448,8 @@ describe('OpenSupportBundleButton.svelte', () => {
     })
 
     it('reports a rejected permission request instead of failing silently', async () => {
-      // `requestPermission` rejects rather than resolving false when the click's
-      // activation is already spent, or when the handle is detached.
+      // `requestPermission` rejects, rather than answering false, when the click that
+      // would justify the question has already been used up.
       await setReadPermission('prompt')
       requestBundleReadPermission.mockRejectedValue(new Error('NotAllowedError'))
       const { dialog } = await openDialog()
@@ -490,8 +494,8 @@ describe('OpenSupportBundleButton.svelte', () => {
 
       click(dialog.querySelector('[data-testid=btn-pick-support-bundle]'))
 
-      // No menu between the button and the file picker, because the popup holds only
-      // the confirmation.
+      // No menu stands between the button and the file picker here, because in this
+      // mode the popup holds nothing but the confirmation.
       await expect
         .poll(() => dialog.querySelector('[data-testid=btn-confirm-view-profile]'))
         .toBeTruthy()
@@ -506,8 +510,8 @@ describe('OpenSupportBundleButton.svelte', () => {
         pick.getBoundingClientRect().top + 1
       )
       expect(confirm.getBoundingClientRect().top).toBeGreaterThanOrEqual(0)
-      // Opening the viewer needs a click of its own, or the browser blocks the new tab
-      // as a popup.
+      // Opening the viewer needs a click of its own, or the browser blocks the new
+      // tab as a popup.
       expect(openStoredBundleTab).not.toHaveBeenCalled()
 
       // Picking remembers the bundle, so the list shows it and the viewer points at
@@ -524,7 +528,10 @@ describe('OpenSupportBundleButton.svelte', () => {
       expect(useGlobalDialog().dialog).toBe(null)
     })
 
-    /** Drives the file input the button falls back to without a picker. */
+    /**
+     * Chooses a file through the `<input type=file>` the button falls back to where
+     * the browser has no `showOpenFilePicker`.
+     */
     const pickThroughInput = async (dialog: HTMLElement, file: File) => {
       vi.stubGlobal('showOpenFilePicker', undefined)
       click(dialog.querySelector('[data-testid=btn-pick-support-bundle]'))
@@ -543,8 +550,8 @@ describe('OpenSupportBundleButton.svelte', () => {
     }
 
     it('remembers a bundle the file input handed over', async () => {
-      // Firefox and Safari take this path for every bundle. There is no picker, so no
-      // handle, and the history keeps a copy of the archive.
+      // Firefox and Safari take this route for every bundle: no `showOpenFilePicker`
+      // means no handle, so the history keeps a copy of the archive instead.
       const { dialog } = await openDialog()
 
       await pickThroughInput(dialog, new File(['bundle contents'], 'from-input.zip'))
@@ -559,8 +566,8 @@ describe('OpenSupportBundleButton.svelte', () => {
     })
 
     it('hands the bytes over for an archive the history will not copy', async () => {
-      // What `rememberSupportBundleFile` reports for an archive past
-      // `maxCachedBundleBytes`, or one the storage quota rejected.
+      // Null is what `rememberSupportBundleFile` answers for an archive larger than
+      // `maxCachedBundleBytes`, and for one the browser refused to store.
       rememberSupportBundleFile.mockResolvedValueOnce(null)
       const { dialog } = await openDialog()
 

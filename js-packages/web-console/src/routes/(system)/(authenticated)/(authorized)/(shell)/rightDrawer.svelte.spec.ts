@@ -1,11 +1,11 @@
 /**
- * The right navigation drawer, which replaces the page header on a screen too narrow
- * for it. The drawer holds creating a pipeline, opening a support bundle, booking a
- * demo, and the documentation and community links.
+ * Tests for the right navigation drawer, which takes the place of the page header on a
+ * screen too narrow for it. The drawer holds creating a pipeline, opening a support
+ * bundle, booking a demo, and the documentation and community links.
  *
- * Needs the browser project: the assertions are layout measurements. The layout is
- * rendered whole, so the bundle button opens into the drawer's own dialog host, as it
- * does in the running app.
+ * These run in the browser project, because the assertions measure where things are on
+ * screen. The whole layout is rendered, so the support bundle button opens its dialog
+ * in the drawer's own dialog host, as it does in the running application.
  */
 
 import { createRawSnippet } from 'svelte'
@@ -53,7 +53,7 @@ vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
   usePipelineManager: () => ({ isNetworkHealthy: true, isAuthHealthy: true })
 }))
 
-// Imported AFTER vi.mock so the mocks take effect.
+// These imports come after the vi.mock calls above, so that the mocks are in place.
 import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
 import AuthorizedLayout from './+layout.svelte'
 
@@ -66,8 +66,8 @@ let mounted: { unmount: () => Promise<void> } | undefined
 
 /** Mounts the layout with the right drawer already pulled out. */
 const renderDrawer = async () => {
-  // The drawer remembers whether it is open, and closes itself on a screen wide enough
-  // not to need it. The test iframe is narrower than that.
+  // The drawer remembers whether it is open, and closes itself on a screen wide
+  // enough not to need it. The iframe these tests run in is narrower than that.
   localStorage.setItem('layout/drawer/right', 'true')
   const rendered = render(AuthorizedLayout, {
     children: pageContent,
@@ -82,7 +82,7 @@ const renderDrawer = async () => {
   return { container, drawer }
 }
 
-/** Where the drawer's panel is. Once closed it sits off the right edge. */
+/** Whether the drawer's panel is on screen. Once closed it sits past the right edge. */
 const isDrawerOpen = (drawer: HTMLElement) =>
   !drawer.parentElement!.className.includes('translate-x-full')
 
@@ -112,8 +112,8 @@ describe('(authorized) right drawer', () => {
     const top = (control: HTMLElement) => control.getBoundingClientRect().top
     expect(top(labelled(drawer, 'New Pipeline'))).toBeLessThan(top(bundles))
     expect(top(bundles)).toBeLessThan(top(labelled(drawer, 'Book a demo')))
-    // Centred in the drawer's column, like its neighbours: as wide as its label, with
-    // equal space either side.
+    // Centred in the drawer's column like its neighbours, meaning as wide as its own
+    // label with equal space on either side.
     const button = bundles.getBoundingClientRect()
     const column = drawer.getBoundingClientRect()
     expect(button.width).toBeLessThan(column.width - 2 * DRAWER_PADDING)
