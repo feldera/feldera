@@ -4,8 +4,8 @@
  * bundle, booking a demo, and the documentation and community links.
  *
  * These run in the browser project, because the assertions measure where things are on
- * screen. The whole layout is rendered, so the support bundle button opens its dialog
- * in the drawer's own dialog host, as it does in the running application.
+ * screen. The whole layout is rendered. The dialog host lives in the root layout, above
+ * this one, so a test that opens a dialog mounts `GlobalModal` itself.
  */
 
 import { createRawSnippet } from 'svelte'
@@ -54,6 +54,7 @@ vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
 }))
 
 // These imports come after the vi.mock calls above, so that the mocks are in place.
+import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
 import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
 import AuthorizedLayout from './+layout.svelte'
 
@@ -63,6 +64,15 @@ const pageContent = createRawSnippet(() => ({ render: () => '<div>PAGE</div>' })
 const DRAWER_PADDING = 16
 
 let mounted: { unmount: () => Promise<void> } | undefined
+let modal: { unmount: () => Promise<void> } | undefined
+
+/** Mounts the root layout's dialog host with whatever the drawer opened. */
+const renderOpenDialog = () => {
+  const target = document.createElement('div')
+  document.body.appendChild(target)
+  modal = render(GlobalModal, { target, props: { dialog: useGlobalDialog().dialog } }) as any
+  return target
+}
 
 /** Mounts the layout with the right drawer already pulled out. */
 const renderDrawer = async () => {
@@ -98,6 +108,8 @@ describe('(authorized) right drawer', () => {
   })
 
   afterEach(async () => {
+    await modal?.unmount()
+    modal = undefined
     await mounted?.unmount()
     mounted = undefined
     useGlobalDialog().dialog = null
@@ -123,12 +135,13 @@ describe('(authorized) right drawer', () => {
   })
 
   it('retracts when the dialog it opens covers the screen', async () => {
-    const { container, drawer } = await renderDrawer()
+    const { drawer } = await renderDrawer()
 
     drawer.querySelector<HTMLElement>('[data-testid=btn-open-support-bundle]')!.click()
 
     // The dialog covers the screen, so the drawer retracts.
     await expect.poll(() => isDrawerOpen(drawer)).toBe(false)
-    expect(container.querySelector('[data-testid=box-all-bundles]')).toBeTruthy()
+    // The button asked for the bundle dialog, and that is what the host renders.
+    expect(renderOpenDialog().querySelector('[data-testid=box-all-bundles]')).toBeTruthy()
   })
 })
