@@ -575,7 +575,16 @@ impl PostgresCdcInputInner {
             );
             return;
         };
-        let _ = tx.send(HeldAcks { flush_step, acks });
+        if let Err(send_error) = tx.send(HeldAcks { flush_step, acks }) {
+            // The completion watcher has already stopped, so nothing will pick
+            // these up. A flush that lands while the stop is draining the
+            // channel is as durable as one that landed before it, so answer
+            // the writes the frontier has passed by the same rule the watcher
+            // used, and let the rest drop: etl reads their rows again on the
+            // next start.
+            let HeldAcks { flush_step, acks } = send_error.0;
+            answer_durable_after_stop(&self.watcher_rx, flush_step, acks);
+        }
     }
 
     async fn worker_task(
@@ -778,10 +787,13 @@ impl PostgresCdcInputInner {
         }
 
         // Spawn the completion watcher background task if tracking is available.
-        // The watcher and the channel were created in new(); we take them here
-        // after etl has started so startup failures do not leave a task behind.
+        // The watcher and the channel were created in new(); we take the channel
+        // here after etl has started so startup failures do not leave a task
+        // behind. The watcher is cloned rather than taken: the reader keeps its
+        // own to read the frontier after the watcher stops, so a flush that
+        // races the stop can still tell the durable writes from the rest.
         let mut completion_handle = match (
-            self.watcher_rx.lock().unwrap().take(),
+            self.watcher_rx.lock().unwrap().as_ref().cloned(),
             self.completion_task_rx.lock().unwrap().take(),
         ) {
             (Some(watcher), Some(rx)) => {
@@ -2354,6 +2366,7 @@ fn array_cell_to_json(arr: &ArrayCell) -> Value {
 /// when fault tolerance is enabled so the replication slot only advances past
 /// the last durable checkpoint, preserving at-least-once correctness for
 /// stateful circuits after a crash.
+#[derive(Clone)]
 enum WatcherReceiver {
     Fast(tokio::sync::watch::Receiver<Completion>),
     Strict(tokio::sync::watch::Receiver<u64>),
@@ -2468,6 +2481,31 @@ fn fire_completed(waiting: &mut Vec<HeldAcks>, frontier: Step) {
             true
         }
     });
+}
+
+/// Answer the writes a flush completed after the completion watcher stopped.
+///
+/// The watcher task closes its channel when it stops, so a flush that lands
+/// while the stop drains that channel has its send refused. The frontier is
+/// still readable through the watcher clone the reader keeps, so the writes it
+/// has passed are answered and the rest dropped, by the same rule the watcher
+/// would have used: dropping a durable answer costs etl a full re-read of the
+/// source table on the next start.
+fn answer_durable_after_stop(
+    watcher_rx: &Mutex<Option<WatcherReceiver>>,
+    flush_step: Step,
+    acks: DeferredAcks,
+) {
+    let durable = watcher_rx
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|watcher| watcher.frontier() > flush_step);
+    if durable {
+        for ack in acks {
+            ack();
+        }
+    }
 }
 
 /// The completion watcher task and the signal that stops it.
@@ -4068,6 +4106,151 @@ mod tests {
             answered(&flag),
             "nothing tracks steps, so no step is worth waiting for and the flush answers \
              etl itself"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // A flush that races the completion watcher's stop
+    // -----------------------------------------------------------------------
+
+    /// A consumer that reports completed steps and names the step it is feeding,
+    /// standing for a correct controller. The completion frontier is controlled
+    /// by the `Sender<Completion>` it holds, so a test can put it ahead of or
+    /// behind the step the consumer feeds.
+    #[derive(Clone)]
+    struct StepAwareConsumer {
+        mock: MockInputConsumer,
+        /// Keeps the completion channel open and controls the frontier.
+        completions: Arc<Sender<Completion>>,
+        /// The step `current_step` reports, the step the flush feeds.
+        step: Step,
+    }
+
+    impl StepAwareConsumer {
+        fn new(step: Step, frontier: Step) -> Self {
+            let (completions, _rx) = channel(Completion {
+                total_completed_steps: frontier,
+            });
+            Self {
+                mock: MockInputConsumer::new(),
+                completions: Arc::new(completions),
+                step,
+            }
+        }
+    }
+
+    impl InputConsumer for StepAwareConsumer {
+        fn max_batch_size(&self) -> usize {
+            self.mock.max_batch_size()
+        }
+
+        fn pipeline_fault_tolerance(&self) -> Option<FtModel> {
+            self.mock.pipeline_fault_tolerance()
+        }
+
+        fn parse_errors(&self, errors: Vec<ParseError>) {
+            self.mock.parse_errors(errors)
+        }
+
+        fn buffered(&self, amt: BufferSize) {
+            self.mock.buffered(amt)
+        }
+
+        fn replayed(&self, amt: BufferSize, hash: u64) {
+            self.mock.replayed(amt, hash)
+        }
+
+        fn extended(&self, amt: BufferSize, resume: Option<Resume>, watermarks: Vec<Watermark>) {
+            self.mock.extended(amt, resume, watermarks)
+        }
+
+        fn eoi(&self) {
+            self.mock.eoi()
+        }
+
+        fn request_step(&self) {
+            self.mock.request_step()
+        }
+
+        fn start_transaction(&self, label: Option<&str>) {
+            self.mock.start_transaction(label)
+        }
+
+        fn commit_transaction(&self) {
+            self.mock.commit_transaction()
+        }
+
+        fn update_connector_health(&self, health: ConnectorHealth) {
+            self.mock.update_connector_health(health)
+        }
+
+        fn completion_watcher(&self) -> Option<Receiver<Completion>> {
+            Some(self.completions.subscribe())
+        }
+
+        fn current_step(&self) -> Option<Step> {
+            Some(self.step)
+        }
+
+        fn error(&self, fatal: bool, error: AnyError, tag: Option<&'static str>) {
+            self.mock.error(fatal, error, tag)
+        }
+    }
+
+    #[test]
+    fn a_flush_that_races_the_watcher_stop_answers_the_durable_writes() {
+        // The frontier is past the step the consumer feeds, so the write is
+        // durable.
+        let inner = PostgresCdcInputInner::new(
+            "cdc_in",
+            cdc_config(),
+            Box::new(StepAwareConsumer::new(3, 5)),
+        );
+
+        // Close the completion channel as the watcher does when it stops, so the
+        // next send is refused and the reader must answer on its own.
+        inner
+            .completion_task_rx
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .close();
+
+        let flag = Arc::new(AtomicBool::new(false));
+        inner.acknowledge_after_step(vec![terminal(&flag)]);
+
+        assert!(
+            answered(&flag),
+            "the frontier has passed the step the flush fed, so the write is durable and the \
+             stop must answer it rather than cost etl a re-read of the source table"
+        );
+    }
+
+    #[test]
+    fn a_flush_that_races_the_watcher_stop_drops_the_writes_it_has_not_reached() {
+        // The frontier has not reached the step the consumer feeds.
+        let inner = PostgresCdcInputInner::new(
+            "cdc_in",
+            cdc_config(),
+            Box::new(StepAwareConsumer::new(7, 5)),
+        );
+
+        inner
+            .completion_task_rx
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .close();
+
+        let flag = Arc::new(AtomicBool::new(false));
+        inner.acknowledge_after_step(vec![terminal(&flag)]);
+
+        assert!(
+            !answered(&flag),
+            "the frontier has not passed the step the flush fed, so the write is not durable and \
+             its answer drops, which etl records as a re-read on the next start"
         );
     }
 }
