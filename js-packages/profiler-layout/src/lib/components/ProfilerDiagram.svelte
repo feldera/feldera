@@ -170,10 +170,11 @@
     gap: 0.5rem;
   }
 
+  /* Sized by the minimap inside it, which has the shape of the circuit. */
   .visualizer-navigator {
-    width: 108px;
-    height: 108px;
+    width: fit-content;
+    height: fit-content;
     background-color: rgba(255, 255, 255, 0.95);
-    padding: 2px;
+    padding: 0px;
   }
 </style>
