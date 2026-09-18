@@ -41,13 +41,13 @@ export type HealthEventBucket<S extends string, T extends string> = {
 }
 
 /** Health status reported by the cluster monitor for a single service component. */
-export type ClusterEventType = 'healthy' | 'unhealthy' | 'major_issue'
+export type ClusterEventType = 'healthy' | 'transitioning' | 'unhealthy' | 'major_issue'
 
 export const toEventType = (status: MonitorStatus) =>
   match(status)
     .returnType<ClusterEventType>()
     .with('Healthy', () => 'healthy' as const)
-    .with('InitialUnhealthy', () => 'unhealthy' as const)
+    .with('Transitioning', () => 'transitioning' as const)
     .with('Unhealthy', () => 'major_issue' as const)
     .exhaustive()
 
@@ -55,36 +55,34 @@ export const toEventType = (status: MonitorStatus) =>
 export type ClusterRawEvent = RawHealthEvent<ClusterEventType, ClusterEventTag>
 export type ClusterBucket = HealthEventBucket<ClusterEventType, ClusterEventTag>
 
+const describeStatus = (status: MonitorStatus, component: string) =>
+  match(status)
+    .with('Healthy', () => `The ${component} is healthy.`)
+    .with('Transitioning', () => `The ${component} is starting up.`)
+    .with('Unhealthy', () => `There was an issue with the ${component}.`)
+    .exhaustive()
+
 export function unpackCombinedEvent(e: ClusterMonitorEventSelectedInfo): ClusterRawEvent[] {
   const timestamp = new Date(e.recorded_at)
   return [
     {
       timestamp,
       type: toEventType(e.api_status),
-      description:
-        e.api_status === 'Healthy'
-          ? 'The API server is healthy.'
-          : 'There was an issue with the API server.',
+      description: describeStatus(e.api_status, 'API server'),
       tag: 'api' as const,
       id: e.id
     },
     {
       timestamp,
       type: toEventType(e.compiler_status),
-      description:
-        e.compiler_status === 'Healthy'
-          ? 'The compiler server is healthy.'
-          : 'There was an issue with the compiler server.',
+      description: describeStatus(e.compiler_status, 'compiler server'),
       tag: 'compiler' as const,
       id: e.id
     },
     {
       timestamp,
       type: toEventType(e.runner_status),
-      description:
-        e.runner_status === 'Healthy'
-          ? 'The runner is healthy.'
-          : 'There was an issue with the runner.',
+      description: describeStatus(e.runner_status, 'runner'),
       tag: 'runner' as const,
       id: e.id
     }
@@ -133,6 +131,9 @@ export function groupHealthEvents(
           segments.push(current)
           current = []
         }
+        continue
+      }
+      if (e.type === 'transitioning') {
         continue
       }
 

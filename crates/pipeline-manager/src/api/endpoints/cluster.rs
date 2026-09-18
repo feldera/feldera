@@ -43,12 +43,9 @@ impl ClusterMonitorEventSelectedInfo {
         ClusterMonitorEventSelectedInfo {
             id: event.id,
             recorded_at: event.recorded_at,
-            all_healthy: (event.api_status, event.compiler_status, event.runner_status)
-                == (
-                    MonitorStatus::Healthy,
-                    MonitorStatus::Healthy,
-                    MonitorStatus::Healthy,
-                ),
+            all_healthy: [event.api_status, event.compiler_status, event.runner_status]
+                .into_iter()
+                .all(MonitorStatus::is_operational),
             api_status: event.api_status,
             api_self_info: Some(event.api_self_info),
             api_resources_info: Some(event.api_resources_info),
@@ -65,12 +62,9 @@ impl ClusterMonitorEventSelectedInfo {
         ClusterMonitorEventSelectedInfo {
             id: event.id,
             recorded_at: event.recorded_at,
-            all_healthy: (event.api_status, event.compiler_status, event.runner_status)
-                == (
-                    MonitorStatus::Healthy,
-                    MonitorStatus::Healthy,
-                    MonitorStatus::Healthy,
-                ),
+            all_healthy: [event.api_status, event.compiler_status, event.runner_status]
+                .into_iter()
+                .all(MonitorStatus::is_operational),
             api_status: event.api_status,
             api_self_info: None,
             api_resources_info: None,
@@ -285,10 +279,10 @@ fn service_unchanged_since(
         .iter()
         .skip_while(|event| event.id != latest_event_id);
     let latest_event = run.next()?;
-    let latest_healthy = service_status(latest_event) == MonitorStatus::Healthy;
+    let latest_healthy = service_status(latest_event).is_operational();
     let mut unchanged_since = latest_event.recorded_at;
     for event in run {
-        if (service_status(event) == MonitorStatus::Healthy) != latest_healthy {
+        if service_status(event).is_operational() != latest_healthy {
             break;
         }
         unchanged_since = event.recorded_at;
@@ -327,23 +321,27 @@ pub(crate) async fn get_cluster_health(
         unchanged_since(|event: &ClusterMonitorEvent| event.compiler_status);
     let runner_unchanged_since = unchanged_since(|event: &ClusterMonitorEvent| event.runner_status);
     let health_status = HealthStatus {
-        all_healthy: latest_event.api_status == MonitorStatus::Healthy
-            && latest_event.compiler_status == MonitorStatus::Healthy
-            && latest_event.runner_status == MonitorStatus::Healthy,
+        all_healthy: [
+            latest_event.api_status,
+            latest_event.compiler_status,
+            latest_event.runner_status,
+        ]
+        .into_iter()
+        .all(MonitorStatus::is_operational),
         api: ServiceStatus {
-            healthy: latest_event.api_status == MonitorStatus::Healthy,
+            healthy: latest_event.api_status.is_operational(),
             message: latest_event.api_self_info,
             unchanged_since: api_unchanged_since,
             checked_at: latest_event.recorded_at,
         },
         compiler: ServiceStatus {
-            healthy: latest_event.compiler_status == MonitorStatus::Healthy,
+            healthy: latest_event.compiler_status.is_operational(),
             message: latest_event.compiler_self_info,
             unchanged_since: compiler_unchanged_since,
             checked_at: latest_event.recorded_at,
         },
         runner: ServiceStatus {
-            healthy: latest_event.runner_status == MonitorStatus::Healthy,
+            healthy: latest_event.runner_status.is_operational(),
             message: latest_event.runner_self_info,
             unchanged_since: runner_unchanged_since,
             checked_at: latest_event.recorded_at,
@@ -377,14 +375,14 @@ mod tests {
         let events = vec![
             event(1, 100, MonitorStatus::Unhealthy),
             event(2, 90, MonitorStatus::Unhealthy),
-            event(3, 80, MonitorStatus::InitialUnhealthy),
+            event(3, 80, MonitorStatus::Unhealthy),
             event(4, 70, MonitorStatus::Healthy),
         ];
         let at = |seconds| DateTime::from_timestamp(seconds, 0).unwrap();
         let api_status = |event: &ClusterMonitorEvent| event.api_status;
         let compiler_status = |event: &ClusterMonitorEvent| event.compiler_status;
 
-        // The unhealthy run spans events 1..=3 (`InitialUnhealthy` counts as unhealthy).
+        // The unhealthy run spans events 1..=3.
         let since = service_unchanged_since(
             &events,
             ClusterMonitorEventId(Uuid::from_u128(1)),

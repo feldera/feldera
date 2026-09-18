@@ -5,7 +5,8 @@ use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::monitor::{MonitorStatus, NewClusterMonitorEvent};
 use crate::error::source_error;
 use async_trait::async_trait;
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use tracing::{error, info};
 use uuid::Uuid;
@@ -29,6 +30,10 @@ pub const MONITOR_RETENTION_NUM: u16 = 1000;
 /// above.
 const INFO_MAXIMUM_NUM_CHARS: usize = 8192;
 
+/// Window after the monitor starts in which a service that does not answer yet is still
+/// considered to be starting up.
+const STARTUP_GRACE: Duration = Duration::from_secs(60);
+
 /// Default HTTP request timeout to use
 const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -49,7 +54,7 @@ pub enum PollResourcesTarget {
 
 #[async_trait]
 pub trait ResourcesPoller {
-    async fn poll_resources(&mut self, target: PollResourcesTarget) -> (bool, String);
+    async fn poll_resources(&mut self, target: PollResourcesTarget) -> (MonitorStatus, String);
 }
 
 /// Indefinitely monitor the local cluster by polling the endpoints.
@@ -84,6 +89,7 @@ pub async fn cluster_monitor<P: ResourcesPoller>(
 
     // Indefinitely loop checking status
     let client = common_config.reqwest_client().await;
+    let started_at = Instant::now();
     let mut iterations_without_insert = 0;
     let mut backoff_threshold: u64 = 1;
     let mut first = true;
@@ -122,74 +128,80 @@ pub async fn cluster_monitor<P: ResourcesPoller>(
 
         // Perform polling of the resources backing the services
         let (
-            api_resources_ok,
-            compiler_resources_ok,
-            runner_resources_ok,
+            api_resources_status,
+            compiler_resources_status,
+            runner_resources_status,
             api_resources_info,
             compiler_resources_info,
             runner_resources_info,
         ) = if common_config.disable_cluster_monitor_resources {
             (
-                true,
-                true,
-                true,
+                MonitorStatus::Healthy,
+                MonitorStatus::Healthy,
+                MonitorStatus::Healthy,
                 RESOURCES_INFO_DISABLED.to_string(),
                 RESOURCES_INFO_DISABLED.to_string(),
                 RESOURCES_INFO_DISABLED.to_string(),
             )
         } else {
-            let (api_resources_ok, api_resources_info) = resources_poller
+            let (api_resources_status, api_resources_info) = resources_poller
                 .poll_resources(PollResourcesTarget::Api)
                 .await;
-            let (compiler_resources_ok, compiler_resources_info) = resources_poller
+            let (compiler_resources_status, compiler_resources_info) = resources_poller
                 .poll_resources(PollResourcesTarget::Compiler)
                 .await;
-            let (runner_resources_ok, runner_resources_info) = resources_poller
+            let (runner_resources_status, runner_resources_info) = resources_poller
                 .poll_resources(PollResourcesTarget::Runner)
                 .await;
             (
-                api_resources_ok,
-                compiler_resources_ok,
-                runner_resources_ok,
+                api_resources_status,
+                compiler_resources_status,
+                runner_resources_status,
                 truncate_info(api_resources_info),
                 truncate_info(compiler_resources_info),
                 truncate_info(runner_resources_info),
             )
         };
 
+        let within_startup_grace = started_at.elapsed() < STARTUP_GRACE;
+        let api_status = poll_to_status(api_self_ok, api_resources_status, within_startup_grace);
+        let compiler_status = poll_to_status(
+            compiler_self_ok,
+            compiler_resources_status,
+            within_startup_grace,
+        );
+        let runner_status = poll_to_status(
+            runner_self_ok,
+            runner_resources_status,
+            within_startup_grace,
+        );
+
         // Whether to insert the event into the database
         let insert_into_database = match &latest_event {
             Some(latest_event) => {
-                let latest_healthy = latest_event.api_status == MonitorStatus::Healthy
-                    && latest_event.compiler_status == MonitorStatus::Healthy
-                    && latest_event.runner_status == MonitorStatus::Healthy;
-
-                let new_healthy = api_self_ok
-                    && api_resources_ok
-                    && compiler_self_ok
-                    && compiler_resources_ok
-                    && runner_self_ok
-                    && runner_resources_ok;
+                let unchanged = (
+                    latest_event.api_status,
+                    latest_event.compiler_status,
+                    latest_event.runner_status,
+                ) == (api_status, compiler_status, runner_status);
+                let healthy = [api_status, compiler_status, runner_status]
+                    .into_iter()
+                    .all(|status| status == MonitorStatus::Healthy);
                 if first {
                     first = false;
                     true
-                } else if latest_healthy && new_healthy {
-                    // Remains healthy, as such just a regular update
-                    backoff_threshold = 1;
-                    iterations_without_insert >= MONITOR_STORE_EVENT_NUM_INTERVALS - 1
-                } else if !latest_healthy && !new_healthy {
-                    // Remains unhealthy, in which case we will update with exponential backoff
-                    if iterations_without_insert >= backoff_threshold - 1 {
-                        backoff_threshold =
-                            std::cmp::min(backoff_threshold * 2, MONITOR_STORE_EVENT_NUM_INTERVALS);
-                        true
-                    } else {
-                        false
-                    }
-                } else {
-                    // Changes are always inserted
+                } else if !unchanged {
                     backoff_threshold = 1;
                     true
+                } else if healthy {
+                    backoff_threshold = 1;
+                    iterations_without_insert >= MONITOR_STORE_EVENT_NUM_INTERVALS - 1
+                } else if iterations_without_insert >= backoff_threshold - 1 {
+                    backoff_threshold =
+                        std::cmp::min(backoff_threshold * 2, MONITOR_STORE_EVENT_NUM_INTERVALS);
+                    true
+                } else {
+                    false
                 }
             }
             None => true,
@@ -206,22 +218,13 @@ pub async fn cluster_monitor<P: ResourcesPoller>(
                 .new_cluster_monitor_event(
                     Uuid::now_v7(),
                     NewClusterMonitorEvent {
-                        api_status: poll_success_to_status(
-                            latest_event.as_ref().map(|v| v.api_status),
-                            api_self_ok && api_resources_ok,
-                        ),
+                        api_status,
                         api_self_info,
                         api_resources_info,
-                        compiler_status: poll_success_to_status(
-                            latest_event.as_ref().map(|v| v.compiler_status),
-                            compiler_self_ok && compiler_resources_ok,
-                        ),
+                        compiler_status,
                         compiler_self_info,
                         compiler_resources_info,
-                        runner_status: poll_success_to_status(
-                            latest_event.as_ref().map(|v| v.runner_status),
-                            runner_self_ok && runner_resources_ok,
-                        ),
+                        runner_status,
                         runner_self_info,
                         runner_resources_info,
                     },
@@ -328,22 +331,15 @@ async fn poll_service_health_endpoint(
     }
 }
 
-/// Combines the poll outcome with the previous status to return the new monitor status.
-/// If the monitor status was previously `InitialUnhealthy`, it only transitions from that
-/// upon a successful poll.
-fn poll_success_to_status(previous_status: Option<MonitorStatus>, success: bool) -> MonitorStatus {
-    if let Some(previous_status) = previous_status {
-        if previous_status == MonitorStatus::InitialUnhealthy && !success {
-            MonitorStatus::InitialUnhealthy
-        } else if success {
-            MonitorStatus::Healthy
-        } else {
-            MonitorStatus::Unhealthy
-        }
-    } else if success {
-        MonitorStatus::Healthy
-    } else {
-        MonitorStatus::InitialUnhealthy
+fn poll_to_status(
+    self_ok: bool,
+    resources_status: MonitorStatus,
+    within_startup_grace: bool,
+) -> MonitorStatus {
+    match resources_status {
+        MonitorStatus::Healthy if !self_ok && within_startup_grace => MonitorStatus::Transitioning,
+        MonitorStatus::Healthy if !self_ok => MonitorStatus::Unhealthy,
+        status => status,
     }
 }
 
@@ -353,7 +349,48 @@ pub struct LocalResourcesPoller {}
 #[async_trait]
 impl ResourcesPoller for LocalResourcesPoller {
     /// The local resources cannot be polled, as such it returns a default message indicating as such.
-    async fn poll_resources(&mut self, _target: PollResourcesTarget) -> (bool, String) {
-        (true, RESOURCES_INFO_NOT_AVAILABLE.to_string())
+    async fn poll_resources(&mut self, _target: PollResourcesTarget) -> (MonitorStatus, String) {
+        (
+            MonitorStatus::Healthy,
+            RESOURCES_INFO_NOT_AVAILABLE.to_string(),
+        )
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::poll_to_status;
+    use crate::db::types::monitor::MonitorStatus;
+
+    #[test]
+    fn transitioning_resources_are_reported_as_such() {
+        assert_eq!(
+            poll_to_status(true, MonitorStatus::Transitioning, false),
+            MonitorStatus::Transitioning
+        );
+        assert_eq!(
+            poll_to_status(false, MonitorStatus::Transitioning, false),
+            MonitorStatus::Transitioning
+        );
+    }
+
+    #[test]
+    fn a_ready_service_that_does_not_answer_is_unhealthy() {
+        assert_eq!(
+            poll_to_status(false, MonitorStatus::Healthy, false),
+            MonitorStatus::Unhealthy
+        );
+        assert_eq!(
+            poll_to_status(false, MonitorStatus::Healthy, true),
+            MonitorStatus::Transitioning
+        );
+    }
+
+    #[test]
+    fn unhealthy_resources_stay_unhealthy() {
+        assert_eq!(
+            poll_to_status(true, MonitorStatus::Unhealthy, true),
+            MonitorStatus::Unhealthy
+        );
     }
 }

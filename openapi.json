@@ -12096,8 +12096,8 @@
       "MonitorStatus": {
         "type": "string",
         "enum": [
-          "InitialUnhealthy",
           "Unhealthy",
+          "Transitioning",
           "Healthy"
         ]
       },
