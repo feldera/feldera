@@ -422,11 +422,13 @@ export const getClusterEvent = <ThrowOnError extends boolean = true>(
  * Each service's `unchanged_since` reports the approximate time it last transitioned
  * between healthy and unhealthy, bounded by event retention.
  *
- * The cluster monitor is the only writer of these events, and it runs within the runner
- * process. When it stops writing, the newest event keeps describing a cluster that no
- * longer exists, so this endpoint additionally checks how old that event is. A `stale`
- * response repeats the last recorded statuses instead of describing the cluster now, and
- * counts as unhealthy: monitoring that has died cannot vouch for anything.
+ * The cluster monitor is the only writer of these events. In the enterprise edition it
+ * runs within the runner process, so when the runner dies the newest event keeps
+ * describing a cluster that no longer exists; elsewhere the monitor is a task in the
+ * process that answers this request. Either way a service cannot report its own death, so
+ * this endpoint additionally checks how old that event is. A `stale` response repeats the
+ * last recorded statuses instead of describing the cluster now, and counts as unhealthy:
+ * monitoring that has died cannot vouch for anything.
  */
 export const getClusterHealth = <ThrowOnError extends boolean = true>(
   options?: Options<GetClusterHealthData, ThrowOnError>

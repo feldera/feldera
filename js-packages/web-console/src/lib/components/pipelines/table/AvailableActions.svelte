@@ -133,10 +133,7 @@
           pipeline.name,
           isEnterprise.value ? 'stop' : 'kill'
         )
-        updatePipeline(pipeline.name, (p) => ({
-          ...p,
-          status: isEnterprise.value ? 'Stopping' : 'Stopping'
-        }))
+        updatePipeline(pipeline.name, (p) => ({ ...p, status: 'Stopping' }))
         await waitFor().catch(toastError('Waiting for pipeline to stop'))
       }
       if (pipeline.storageStatus !== 'Cleared') {

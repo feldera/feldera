@@ -339,11 +339,13 @@ fn service_unchanged_since(
 /// Each service's `unchanged_since` reports the approximate time it last transitioned
 /// between healthy and unhealthy, bounded by event retention.
 ///
-/// The cluster monitor is the only writer of these events, and it runs within the runner
-/// process. When it stops writing, the newest event keeps describing a cluster that no
-/// longer exists, so this endpoint additionally checks how old that event is. A `stale`
-/// response repeats the last recorded statuses instead of describing the cluster now, and
-/// counts as unhealthy: monitoring that has died cannot vouch for anything.
+/// The cluster monitor is the only writer of these events. In the enterprise edition it
+/// runs within the runner process, so when the runner dies the newest event keeps
+/// describing a cluster that no longer exists; elsewhere the monitor is a task in the
+/// process that answers this request. Either way a service cannot report its own death, so
+/// this endpoint additionally checks how old that event is. A `stale` response repeats the
+/// last recorded statuses instead of describing the cluster now, and counts as unhealthy:
+/// monitoring that has died cannot vouch for anything.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -384,6 +386,9 @@ fn health_status(
     let runner_unchanged_since = unchanged_since(|event: &ClusterMonitorEvent| event.runner_status);
     let stale = is_stale(latest_event.recorded_at, now, MONITOR_STALE_AFTER);
     HealthStatus {
+        // The SDK clients read this field after a 502 to decide whether to retry at once.
+        // Stale monitoring therefore slows their retries down, however well the services
+        // themselves are serving. See `cluster_is_healthy` in the rest-api crate.
         all_healthy: !stale
             && latest_event.api_status == MonitorStatus::Healthy
             && latest_event.compiler_status == MonitorStatus::Healthy
