@@ -15,19 +15,15 @@
 </script>
 
 {#if demo}
-  <div class="flex flex-col card border border-surface-200-800 p-4">
+  <button
+    class="card flex flex-col border border-surface-200-800 p-4 text-left transition-colors hover:preset-tonal-surface disabled:pointer-events-none disabled:opacity-50"
+    disabled={!enabled}
+    onclick={() => tryPipeline(demo, placement)}
+  >
     <div class="text-sm text-surface-700-300">{demo.type}</div>
-    <button
-      class="text-left disabled:pointer-events-none disabled:opacity-50"
-      disabled={!enabled}
-      title={enabled ? undefined : 'Creating a demo pipeline needs write access'}
-      onclick={() => tryPipeline(demo, placement)}
-    >
-      <span class="py-2 font-semibold">{demo.title}</span>
-      <!-- <span class="fd fd-arrow-right inline-block w-2 text-[20px]"></span> -->
-    </button>
-    <span class="text-left text-surface-700-300">{demo.description}</span>
-  </div>
+    <span class="py-2 font-semibold">{demo.title}</span>
+    <span class="text-surface-700-300">{demo.description}</span>
+  </button>
 {:else}
   <div class="flex flex-col card border border-surface-200-800 p-4">
     <div class="flex flex-col gap-1">
