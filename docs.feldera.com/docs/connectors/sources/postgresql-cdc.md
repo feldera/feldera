@@ -325,7 +325,7 @@ checkpoints on its own, by default every 60 seconds; the
 `null` disables automatic checkpoints.
 
 How often the pipeline checkpoints is therefore how often the replication slot
-advances. With automatic checkpoints off, or with fault tolerance off, the slot
+advances with fault tolerance enabled. With automatic checkpoints off, the slot
 moves only when someone requests a checkpoint or suspends the pipeline, and
 PostgreSQL keeps every write-ahead log segment since the last one. A pipeline
 left running that way holds the source's disk, so either keep checkpoints
