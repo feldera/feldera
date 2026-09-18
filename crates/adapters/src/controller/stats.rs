@@ -850,26 +850,26 @@ impl ControllerStatus {
         initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
         caught_up: bool,
     ) {
-        // Seeding `total_processed_input_records` to `total_processed_records` claims the
-        // endpoint has already delivered the output derived from those records. That holds
-        // only for an endpoint that is caught up. An endpoint still owed output starts at
-        // zero and reaches `total_processed_records` once it has processed the batch
-        // carrying that output, keeping the counter from running ahead of the sink.
-        let total_processed_records = if caught_up {
-            self.global_metrics
-                .total_processed_records
-                .load(Ordering::Acquire)
+        // A caught-up endpoint owes nothing for what the circuit has already committed, so it
+        // starts out claiming exactly that, records and steps alike. Claiming fewer steps would
+        // hold `total_completed_steps` at the count this endpoint was added at until the endpoint
+        // delivers its first batch, even once every other endpoint has delivered. An endpoint
+        // still owed output starts at zero instead and reaches the committed figures once it has
+        // processed the batch carrying that output, keeping its counters from running ahead of
+        // the sink.
+        //
+        // An endpoint registered between the circuit committing a step and `push_output`
+        // distributing it claims that step and then receives its output anyway, so the frontier
+        // can count the step before this endpoint delivers it. That window is the one the record
+        // count has always had, and it closes as soon as the endpoint delivers the batch.
+        let committed = if caught_up {
+            self.committed()
         } else {
-            0
+            ProcessedRecords::default()
         };
         self.outputs.write().insert(
             *endpoint_id,
-            OutputEndpointStatus::new(
-                endpoint_name,
-                config,
-                total_processed_records,
-                initial_statistics,
-            ),
+            OutputEndpointStatus::new(endpoint_name, config, committed, initial_statistics),
         );
     }
 
@@ -903,6 +903,19 @@ impl ControllerStatus {
 
     pub fn num_total_processed_bytes(&self) -> u64 {
         self.global_metrics.num_total_processed_bytes()
+    }
+
+    /// What the circuit has processed to completion.
+    ///
+    /// This is the ceiling on the completion frontier, and what an output connector that owes
+    /// nothing claims for itself. It is not `total_processed_records`, which counts records an
+    /// open transaction has not committed, nor `total_completed_steps`, which is the frontier
+    /// itself and so is held back by whichever connector is furthest behind.
+    pub fn committed(&self) -> ProcessedRecords {
+        ProcessedRecords {
+            total_processed_input_records: self.global_metrics.num_total_committed_records(),
+            total_processed_steps: self.global_metrics.total_committed_steps(),
+        }
     }
 
     /// Record what the circuit has committed.
@@ -2669,7 +2682,7 @@ pub struct OutputEndpointMetrics {
 
 impl OutputEndpointMetrics {
     fn new(
-        total_processed_input_records: u64,
+        committed: ProcessedRecords,
         initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Self {
         let initial_statistics = initial_statistics.cloned().unwrap_or_default();
@@ -2682,8 +2695,8 @@ impl OutputEndpointMetrics {
             buffered_batches: AtomicU64::new(0),
             num_encode_errors: AtomicU64::new(initial_statistics.num_encode_errors),
             num_transport_errors: AtomicU64::new(initial_statistics.num_transport_errors),
-            total_processed_input_records: AtomicU64::new(total_processed_input_records),
-            total_processed_steps: Atomic::new(0),
+            total_processed_input_records: AtomicU64::new(committed.total_processed_input_records),
+            total_processed_steps: Atomic::new(committed.total_processed_steps),
             memory: AtomicU64::new(0),
             batch_records_written: None,
         }
@@ -3031,7 +3044,7 @@ impl OutputEndpointStatus {
     fn new(
         endpoint_name: &str,
         config: &OutputEndpointConfig,
-        total_processed_records: u64,
+        committed: ProcessedRecords,
         initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Self {
         // error lists are restored from the checkpoint if present, empty otherwise
@@ -3045,7 +3058,7 @@ impl OutputEndpointStatus {
         Self {
             endpoint_name: endpoint_name.to_string(),
             config: config.clone(),
-            metrics: OutputEndpointMetrics::new(total_processed_records, initial_statistics),
+            metrics: OutputEndpointMetrics::new(committed, initial_statistics),
             fatal_error: Mutex::new(None),
             encode_errors: Mutex::new(encode_errors),
             transport_errors: Mutex::new(transport_errors),

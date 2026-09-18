@@ -4698,19 +4698,7 @@ impl CircuitThread {
                     let processed_records = if owed_reemission {
                         None
                     } else {
-                        processed_records.or_else(|| {
-                            Some(ProcessedRecords {
-                                total_processed_input_records: self
-                                    .controller
-                                    .status
-                                    .num_total_processed_records(),
-                                total_processed_steps: self
-                                    .controller
-                                    .status
-                                    .global_metrics
-                                    .total_completed_steps(),
-                            })
-                        })
+                        processed_records.or_else(|| Some(self.controller.status.committed()))
                     };
 
                     self.controller.enqueue_latest_snapshot(
