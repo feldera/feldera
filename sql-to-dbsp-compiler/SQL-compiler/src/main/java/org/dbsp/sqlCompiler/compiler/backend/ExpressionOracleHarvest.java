@@ -10,9 +10,11 @@ import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
@@ -59,14 +61,20 @@ import java.util.concurrent.atomic.AtomicInteger;
  * only when explicitly collecting a corpus and never perturbs a normal test run.
  * Every failure is swallowed: harvesting must not break the test that triggered it.
  *
- * <p>Every operator (top-level and nested) is visited, and every public
- * {@code DBSPExpression}-typed field on it is a harvest candidate. Four record kinds:
+ * <p>Every compile of a harvest run takes the Gen-2 expression shape
+ * ({@link #usesGen2ExpressionShape}), so the recorded IR is the form the Gen-2 evaluator
+ * reads. The Rust text of each piece comes from the same nodes.
+ *
+ * <p>Every operator (top-level and nested) is visited, and every public field on it that
+ * holds a {@code DBSPExpression} or a {@code DBSPAggregateList} is a harvest candidate.
+ * Four record kinds:
  * <ul>
  *   <li>{@code closure}: a plain {@code DBSPClosureExpression} of any arity whose
  *       parameters are sampleable (tuples of scalar leaves, by reference or value,
  *       unit tuples, the fold {@code Weight});</li>
- *   <li>{@code fold}: a {@code DBSPFold} aggregate, decomposed into its zero,
- *       increment, and postProcess pieces;</li>
+ *   <li>{@code fold}: a {@code DBSPAggregateList}, recorded as the list; its Rust pieces
+ *       (zero, increment, postProcess) come from the list packed into one
+ *       {@code DBSPFold};</li>
  *   <li>{@code minmax}: a {@code DBSPMinMax} aggregate (the aggregation kind plus the
  *       optional postProcessing closure);</li>
  *   <li>{@code const}: a constant Z-set relation ({@code DBSPZSetExpression}).</li>
@@ -95,16 +103,33 @@ public final class ExpressionOracleHarvest {
     private static final AtomicInteger candidates = new AtomicInteger();
     private static final AtomicInteger emitted = new AtomicInteger();
     private static final Map<String, AtomicInteger> skipped = new ConcurrentHashMap<>();
+    // What threw while harvesting one expression, by operator, field, and message, so a
+    // harvest error names the shape it lost.
+    private static final Map<String, AtomicInteger> errors = new ConcurrentHashMap<>();
 
     private static void skip(String reason) {
         skipped.computeIfAbsent(reason, ignored -> new AtomicInteger()).incrementAndGet();
     }
 
-    public static void maybeHarvest(DBSPCircuit circuit, DBSPCompiler compiler) {
+    /** True when the environment asks for a harvest. */
+    public static boolean isEnabled() {
         String dir = System.getenv("FELDERA_EXPR_ORACLE_DIR");
-        if (dir == null || dir.isBlank()) {
+        return dir != null && !dir.isBlank();
+    }
+
+    /** True when expressions take the form the Gen-2 evaluator reads (aggregate lists, inline
+     * constants): under {@code --gen2}, and in every compile of a harvest run. A harvest takes
+     * only this expression shape and not the rest of the Gen-2 pipeline, so a program the
+     * Gen-2 engine does not accept yet still contributes its closures. */
+    public static boolean usesGen2ExpressionShape(CompilerOptions options) {
+        return options.ioOptions.gen2 || isEnabled();
+    }
+
+    public static void maybeHarvest(DBSPCircuit circuit, DBSPCompiler compiler) {
+        if (!isEnabled()) {
             return;
         }
+        String dir = System.getenv("FELDERA_EXPR_ORACLE_DIR");
         try {
             harvest(circuit, compiler, Paths.get(dir));
         } catch (Throwable ignored) {
@@ -118,13 +143,17 @@ public final class ExpressionOracleHarvest {
         Map<DBSPOperator, Set<String>> provenance = sqlProvenance(circuit);
 
         for (DBSPOperator operator : allOperators(circuit)) {
-            for (NamedExpression named : expressionFields(operator)) {
+            for (NamedNode named : harvestableFields(operator)) {
                 candidates.incrementAndGet();
                 try {
                     harvestExpression(circuit, compiler, dir, operator, named, provenance);
                 } catch (Throwable t) {
                     // One bad expression must not lose the rest of the circuit.
                     skip("harvest_error_" + t.getClass().getSimpleName());
+                    String message = String.valueOf(t.getMessage()).lines().findFirst().orElse("");
+                    String where = operator.getClass().getSimpleName() + "." + named.field + ": "
+                            + message.substring(0, Math.min(message.length(), 200));
+                    errors.computeIfAbsent(where, ignored -> new AtomicInteger()).incrementAndGet();
                 }
             }
         }
@@ -146,28 +175,29 @@ public final class ExpressionOracleHarvest {
         return all;
     }
 
-    private record NamedExpression(String field, DBSPExpression expression) {}
+    private record NamedNode(String field, IDBSPInnerNode node) {}
 
     /**
-     * Every public non-static {@code DBSPExpression}-typed field of the operator that
-     * holds a value: {@code function}, {@code postProcess}, {@code init},
-     * {@code extractTs}, {@code error}, and so on. Reflection keeps this complete as
-     * operator classes grow fields; non-harvestable expression kinds are skipped (and
-     * counted) downstream.
+     * Every public non-static field of the operator that holds a {@code DBSPExpression} or
+     * a {@code DBSPAggregateList}: {@code function}, {@code aggregateList},
+     * {@code postProcess}, {@code init}, {@code extractTs}, {@code error}, and so on.
+     * Reflection keeps this complete as operator classes grow fields; non-harvestable
+     * kinds are skipped (and counted) downstream.
      */
-    private static List<NamedExpression> expressionFields(DBSPOperator operator) {
-        List<NamedExpression> result = new ArrayList<>();
+    private static List<NamedNode> harvestableFields(DBSPOperator operator) {
+        List<NamedNode> result = new ArrayList<>();
         Field[] fields = operator.getClass().getFields();
         Arrays.sort(fields, Comparator.comparing(Field::getName));
         for (Field field : fields) {
-            if (Modifier.isStatic(field.getModifiers())
-                    || !DBSPExpression.class.isAssignableFrom(field.getType())) {
+            boolean isHarvestable = DBSPExpression.class.isAssignableFrom(field.getType())
+                    || DBSPAggregateList.class.isAssignableFrom(field.getType());
+            if (Modifier.isStatic(field.getModifiers()) || !isHarvestable) {
                 continue;
             }
             try {
                 Object value = field.get(operator);
                 if (value != null) {
-                    result.add(new NamedExpression(field.getName(), (DBSPExpression) value));
+                    result.add(new NamedNode(field.getName(), (IDBSPInnerNode) value));
                 }
             } catch (IllegalAccessException ignored) {
                 // A non-accessible field is not part of the harvestable surface.
@@ -179,18 +209,22 @@ public final class ExpressionOracleHarvest {
     /** Dispatch one (operator, field, expression) candidate on the expression kind. */
     private static void harvestExpression(
             DBSPCircuit circuit, DBSPCompiler compiler, Path dir, DBSPOperator operator,
-            NamedExpression named, Map<DBSPOperator, Set<String>> provenance) throws Exception {
+            NamedNode named, Map<DBSPOperator, Set<String>> provenance) throws Exception {
         ObjectNode record;
-        if (named.expression instanceof DBSPClosureExpression closure) {
+        if (named.node instanceof DBSPClosureExpression closure) {
             record = closureRecord(compiler, closure);
-        } else if (named.expression instanceof DBSPFold fold) {
+        } else if (named.node instanceof DBSPAggregateList list) {
+            // The Gen-2 circuit keeps the per-aggregate list. The Rust driver needs one
+            // fold, so the ground truth comes from the packed form of the same list.
+            record = foldRecord(compiler, list.asFold(compiler));
+        } else if (named.node instanceof DBSPFold fold) {
             record = foldRecord(compiler, fold);
-        } else if (named.expression instanceof DBSPMinMax minMax) {
+        } else if (named.node instanceof DBSPMinMax minMax) {
             record = minMaxRecord(compiler, operator, minMax);
-        } else if (named.expression instanceof DBSPZSetExpression zset) {
+        } else if (named.node instanceof DBSPZSetExpression zset) {
             record = constRecord(compiler, zset);
         } else {
-            skip("unsupported_expression_" + named.expression.getClass().getSimpleName());
+            skip("unsupported_expression_" + named.node.getClass().getSimpleName());
             return;
         }
         if (record == null) {
@@ -215,8 +249,8 @@ public final class ExpressionOracleHarvest {
         record.put("operator", operator.getClass().getSimpleName());
         record.put("field", named.field);
         attachDeclarations(compiler, declarations, record);
-        attachComparators(compiler, named.expression, allRust.toString(), record);
-        record.set("ir", buildIr(compiler, irRoot(named.expression), declarations));
+        attachComparators(compiler, named.node, allRust.toString(), record);
+        record.set("ir", buildIr(compiler, named.node, declarations));
 
         String hash = sha1(allRust.toString());
         record.put("name", "case_" + hash);
@@ -230,11 +264,6 @@ public final class ExpressionOracleHarvest {
         // JVMs converge on one file rather than racing an append.
         MAPPER.writeValue(file.toFile(), record);
         emitted.incrementAndGet();
-    }
-
-    /** The node serialized as the record's `ir.function`. */
-    private static IDBSPInnerNode irRoot(DBSPExpression expression) {
-        return expression;
     }
 
     // ------------------------------------------------------------------
@@ -594,6 +623,8 @@ public final class ExpressionOracleHarvest {
         stats.put("emitted", emitted.get());
         ObjectNode bySkip = stats.putObject("skipped");
         skipped.forEach((reason, count) -> bySkip.put(reason, count.get()));
+        ObjectNode byError = stats.putObject("errors");
+        errors.forEach((where, count) -> byError.put(where, count.get()));
         MAPPER.writeValue(dir.resolve("_stats.json").toFile(), stats);
     }
 
@@ -703,7 +734,7 @@ public final class ExpressionOracleHarvest {
      * the Rust backend would materialize the items later, so the record does it here.
      */
     private static void attachComparators(
-            DBSPCompiler compiler, DBSPExpression root, String rust, ObjectNode record) {
+            DBSPCompiler compiler, IDBSPInnerNode root, String rust, ObjectNode record) {
         List<org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression> comparators =
                 new ArrayList<>();
         var collector = new org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor(compiler) {
@@ -744,8 +775,7 @@ public final class ExpressionOracleHarvest {
 
     private static String innerJson(DBSPCompiler compiler, IDBSPInnerNode node) {
         JsonStream stream = new JsonStream(new IndentStreamBuilder());
-        // The corpus is graded by the Gen-2 evaluator, so it takes the Gen-2 JSON form even
-        // though the test suite compiles (and runs) the Rust backend without --gen2.
+        // The corpus is graded by the Gen-2 evaluator, so it takes the Gen-2 JSON form.
         ToJsonInnerVisitor visitor = new ToJsonInnerVisitor(compiler, stream, 1, true);
         node.accept(visitor);
         return visitor.getJsonString();

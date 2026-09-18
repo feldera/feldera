@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.ExpressionOracleHarvest;
 import org.dbsp.sqlCompiler.compiler.backend.MerkleOuter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -192,7 +193,7 @@ public class CircuitOptimizer extends Passes {
         // Hoisting constants into Rust `static` items spares the Rust backend from rebuilding them
         // on every call.  The Gen-2 JSON keeps each constant where it is used, so that a closure
         // is self-contained and its reader resolves no declarations.
-        if (!compiler.options.ioOptions.gen2)
+        if (!ExpressionOracleHarvest.usesGen2ExpressionShape(compiler.options))
             this.add(new StaticDeclarations(compiler, new ImplementStatics(compiler, !compiler.options.ioOptions.multiCrates())));
         // From now on we cannot really change the graph anymore.
 

@@ -287,6 +287,9 @@ public class BaseSQLTests {
     /** Runs all the tests from the testsToRun list. */
     @AfterClass
     public static void runAllTests() throws IOException, InterruptedException {
+        if (ExpressionOracleHarvest.isEnabled())
+            // A harvest run's circuits keep their aggregate lists, which have no Rust rendering.
+            testsToRun.clear();
         if (testsToRun.isEmpty())
             return;
 

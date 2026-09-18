@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.ExpressionOracleHarvest;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
@@ -305,7 +306,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
      * declares its own zero, step, and post-processing, so the aggregates of a group are
      * independent by construction instead of by analysis of a packed block. */
     boolean keepsAggregateList() {
-        return this.compiler().options.ioOptions.gen2;
+        return ExpressionOracleHarvest.usesGen2ExpressionShape(this.compiler().options);
     }
 
     @Override
