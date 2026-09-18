@@ -559,79 +559,66 @@ fn checkpoint_mid_snapshot_waits_for_the_whole_copy(workers: usize) {
     // retry_until_caught_midway. A first attempt takes about 15 s with one worker
     // and 19 s with four.
     let base_rows: i64 = 100_000 * workers as i64;
-    retry_until_caught_midway(
-        "scenario 2",
-        "the copy in progress",
-        base_rows,
-        |n| {
-            let mut table = scenario_table("cdc_sc_mid_snap");
-            insert_range(&mut table, 1, n);
-            let storage = TempDir::new().unwrap();
+    retry_until_caught_midway("scenario 2", "the copy in progress", base_rows, |n| {
+        let mut table = scenario_table("cdc_sc_mid_snap");
+        insert_range(&mut table, 1, n);
+        let storage = TempDir::new().unwrap();
 
-            let run1 = Run::start_with::<TestStruct>(
-                &table,
-                storage.path(),
-                &TestStruct::schema(),
-                workers,
-            );
-            // Measure the part of the copy the circuit holds while etl is still
-            // copying. The checkpoint below is requested against that partial
-            // state, so what it holds is what the connector's barrier decides.
-            let prefix = wait_for_etl_copy_in_progress(
-                &mut table,
-                || run1.circuit_input_records(),
-                n as u64,
-                "run 1 checkpoint requested mid-copy",
-            );
-            run1.assert_no_errors("run 1 mid-copy");
-            let Some(prefix) = prefix else {
-                // The whole copy reached the circuit before the checkpoint could
-                // be requested, so this run says nothing about a deferred
-                // checkpoint.
-                run1.stop();
-                return Attempt::Outrun;
-            };
-            let checkpoint = run1.controller.checkpoint().unwrap();
-            let in_checkpoint = checkpoint
-                .input_statistics
-                .get("cdc_in")
-                .expect("checkpoint has no statistics for cdc_in")
-                .circuit_input_records;
-            assert_eq!(
-                in_checkpoint, n as u64,
-                "the checkpoint must hold the whole copy: only {prefix} of {n} rows were in the \
+        let run1 =
+            Run::start_with::<TestStruct>(&table, storage.path(), &TestStruct::schema(), workers);
+        // Measure the part of the copy the circuit holds while etl is still
+        // copying. The checkpoint below is requested against that partial
+        // state, so what it holds is what the connector's barrier decides.
+        let prefix = wait_for_etl_copy_in_progress(
+            &mut table,
+            || run1.circuit_input_records(),
+            n as u64,
+            "run 1 checkpoint requested mid-copy",
+        );
+        run1.assert_no_errors("run 1 mid-copy");
+        let Some(prefix) = prefix else {
+            // The whole copy reached the circuit before the checkpoint could
+            // be requested, so this run says nothing about a deferred
+            // checkpoint.
+            run1.stop();
+            return Attempt::Outrun;
+        };
+        let checkpoint = run1.controller.checkpoint().unwrap();
+        let in_checkpoint = checkpoint
+            .input_statistics
+            .get("cdc_in")
+            .expect("checkpoint has no statistics for cdc_in")
+            .circuit_input_records;
+        assert_eq!(
+            in_checkpoint, n as u64,
+            "the checkpoint must hold the whole copy: only {prefix} of {n} rows were in the \
              circuit when it was requested, and the connector reports a barrier until the rest \
              arrive"
-            );
-            // The barrier lifts once the copy is in the circuit, which is before
-            // etl records the copy as finished and hands the table over to
-            // streaming. Stopping inside that window would let etl read the table
-            // again on the next start, which is legal but not what this test is
-            // about.
-            wait_for_etl_sync_completed(&mut table);
-            let delivered = run1.stop().inserted;
-            assert_exactly_once(&delivered, n, "run 1 output");
+        );
+        // The barrier lifts once the copy is in the circuit, which is before
+        // etl records the copy as finished and hands the table over to
+        // streaming. Stopping inside that window would let etl read the table
+        // again on the next start, which is legal but not what this test is
+        // about.
+        wait_for_etl_sync_completed(&mut table);
+        let delivered = run1.stop().inserted;
+        assert_exactly_once(&delivered, n, "run 1 output");
 
-            // Run 2 resumes from a checkpoint that holds the copy, so it streams
-            // from the slot and does not read the table again.
-            let run2 = Run::start_with::<TestStruct>(
-                &table,
-                storage.path(),
-                &TestStruct::schema(),
-                workers,
-            );
-            insert_range(&mut table, n + 1, n + 1);
-            run2.wait_for_inserts(1, "run 2 streamed row");
-            settle();
-            let ids = run2.stop().inserted;
-            assert_eq!(
-                ids,
-                vec![n + 1],
-                "run 2 must deliver only the row inserted after the restart"
-            );
-            Attempt::Caught
-        },
-    );
+        // Run 2 resumes from a checkpoint that holds the copy, so it streams
+        // from the slot and does not read the table again.
+        let run2 =
+            Run::start_with::<TestStruct>(&table, storage.path(), &TestStruct::schema(), workers);
+        insert_range(&mut table, n + 1, n + 1);
+        run2.wait_for_inserts(1, "run 2 streamed row");
+        settle();
+        let ids = run2.stop().inserted;
+        assert_eq!(
+            ids,
+            vec![n + 1],
+            "run 2 must deliver only the row inserted after the restart"
+        );
+        Attempt::Caught
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -659,61 +646,56 @@ fn test_suspend_mid_copy_is_refused() {
     // table four times as large, up to three attempts, through
     // retry_until_caught_midway.
     const BASE_ROWS: i64 = 100_000;
-    retry_until_caught_midway(
-        "scenario 2b",
-        "the copy in progress",
-        BASE_ROWS,
-        |n| {
-            let mut table = scenario_table("cdc_sc_partial");
-            insert_range(&mut table, 1, n);
-            let storage = TempDir::new().unwrap();
+    retry_until_caught_midway("scenario 2b", "the copy in progress", BASE_ROWS, |n| {
+        let mut table = scenario_table("cdc_sc_partial");
+        insert_range(&mut table, 1, n);
+        let storage = TempDir::new().unwrap();
 
-            let run = Run::start(&table, storage.path());
-            let prefix = wait_for_etl_copy_in_progress(
-                &mut table,
-                || run.circuit_input_records(),
-                n as u64,
-                "suspend requested mid-copy",
-            );
-            run.assert_no_errors("the copy to start");
-            let Some(prefix) = prefix else {
-                // The whole copy reached the circuit before the pause, so this
-                // run says nothing about a suspend requested mid-copy.
-                run.stop();
-                return Attempt::Outrun;
-            };
-            // Pausing stops etl from handing over the rest of the copy, so the
-            // barrier stays up for as long as the pause does.
-            run.controller.pause();
-            let blocked = |status: &Result<(), SuspendError>| {
-                matches!(
-                    status,
-                    Err(SuspendError::Temporary(reasons))
-                        if reasons
-                            .iter()
-                            .any(|r| matches!(r, TemporarySuspendError::InputEndpointBarrier(_)))
-                )
-            };
-            let refused = wait(
-                || blocked(&run.controller.can_checkpoint()) || !run.errors.is_empty(),
-                WAIT_MS,
-            );
-            let status = run.controller.can_checkpoint();
-            // A connector that died mid-copy also refuses to suspend, so report
-            // the error rather than reading it as the barrier this test is about.
-            run.assert_no_errors("suspend refused mid-copy");
-            // Let the copy finish so the run can stop.
-            run.controller.start();
+        let run = Run::start(&table, storage.path());
+        let prefix = wait_for_etl_copy_in_progress(
+            &mut table,
+            || run.circuit_input_records(),
+            n as u64,
+            "suspend requested mid-copy",
+        );
+        run.assert_no_errors("the copy to start");
+        let Some(prefix) = prefix else {
+            // The whole copy reached the circuit before the pause, so this
+            // run says nothing about a suspend requested mid-copy.
             run.stop();
-            refused.unwrap_or_else(|_| {
-                panic!(
-                    "suspending mid-copy must be refused with a barrier, got {status:?} with \
+            return Attempt::Outrun;
+        };
+        // Pausing stops etl from handing over the rest of the copy, so the
+        // barrier stays up for as long as the pause does.
+        run.controller.pause();
+        let blocked = |status: &Result<(), SuspendError>| {
+            matches!(
+                status,
+                Err(SuspendError::Temporary(reasons))
+                    if reasons
+                        .iter()
+                        .any(|r| matches!(r, TemporarySuspendError::InputEndpointBarrier(_)))
+            )
+        };
+        let refused = wait(
+            || blocked(&run.controller.can_checkpoint()) || !run.errors.is_empty(),
+            WAIT_MS,
+        );
+        let status = run.controller.can_checkpoint();
+        // A connector that died mid-copy also refuses to suspend, so report
+        // the error rather than reading it as the barrier this test is about.
+        run.assert_no_errors("suspend refused mid-copy");
+        // Let the copy finish so the run can stop.
+        run.controller.start();
+        run.stop();
+        refused.unwrap_or_else(|_| {
+            panic!(
+                "suspending mid-copy must be refused with a barrier, got {status:?} with \
                  {prefix} of {n} rows in the circuit"
-                )
-            });
-            Attempt::Caught
-        },
-    );
+            )
+        });
+        Attempt::Caught
+    });
 }
 
 // ---------------------------------------------------------------------------
