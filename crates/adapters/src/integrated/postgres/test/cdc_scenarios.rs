@@ -486,21 +486,6 @@ enum Attempt {
     Raced,
 }
 
-/// What a scenario makes of a poll that caught nothing. It governs
-/// [`Attempt::Outrun`] alone: [`Attempt::Raced`] is always reported, because no
-/// scenario can hold a race open.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum WhenOutrun {
-    /// The scenario has no lever over the window, so an outrun poll says only
-    /// that this runner is fast. Report it and pass: red must mean the
-    /// connector is wrong.
-    Report,
-    /// The scenario holds the window open itself, so an outrun poll means its
-    /// setup no longer works, which is worth a red build because no report from
-    /// a passing test reaches anyone.
-    Fail,
-}
-
 /// Run a scenario that must catch rows still on their way to the circuit, on
 /// tables of `base_rows`, then twice and four times as many rows, until
 /// `attempt` reports [`Attempt::Caught`]. `attempt` receives the row count,
@@ -509,18 +494,16 @@ enum WhenOutrun {
 /// the messages this helper prints.
 ///
 /// How fast rows reach the circuit is a property of the runner, not of the
-/// connector, so [`Attempt::Outrun`] is a reason to widen the window rather
-/// than to fail, unless `when_outrun` is [`WhenOutrun::Fail`] because the
-/// scenario holds that window open itself. [`Attempt::Raced`] is nobody's setup
-/// breaking, so an attempt that raced is reported and passes whatever
-/// `when_outrun` says. A runner that outruns or outraces every attempt leaves
-/// the scenario unexercised, which the test says instead of going red: red must
-/// mean the connector is wrong.
+/// connector, so an attempt that was outrun or lost its race is reported and
+/// the scenario is tried again on a larger table. A runner that outruns or
+/// outraces every attempt leaves the scenario unexercised, which the test says
+/// instead of going red: red must mean the connector is wrong. A scenario that
+/// has to tell a broken setup from a fast runner checks that premise
+/// deterministically inside `attempt` rather than reading it off a poll.
 fn retry_until_caught_midway(
     what: &str,
     caught: &str,
     base_rows: i64,
-    when_outrun: WhenOutrun,
     mut attempt: impl FnMut(i64) -> Attempt,
 ) {
     let mut rows = base_rows;
@@ -554,17 +537,8 @@ fn retry_until_caught_midway(
             "{missed}; at least one attempt caught {caught} and then lost the race that follows \
              it, which no scenario holds open"
         );
-        return;
-    }
-    match when_outrun {
-        WhenOutrun::Report => {
-            eprintln!("{missed}; this runner is too fast for the window this scenario needs")
-        }
-        WhenOutrun::Fail => panic!(
-            "{missed}. Every attempt was outrun, and this scenario holds its window open itself, \
-             by capping the records the reader takes per step, so a poll that caught nothing \
-             means that setup no longer works rather than that the runner is fast"
-        ),
+    } else {
+        eprintln!("{missed}; this runner is too fast for the window this scenario needs");
     }
 }
 
@@ -589,7 +563,6 @@ fn checkpoint_mid_snapshot_waits_for_the_whole_copy(workers: usize) {
         "scenario 2",
         "the copy in progress",
         base_rows,
-        WhenOutrun::Report,
         |n| {
             let mut table = scenario_table("cdc_sc_mid_snap");
             insert_range(&mut table, 1, n);
@@ -690,7 +663,6 @@ fn test_suspend_mid_copy_is_refused() {
         "scenario 2b",
         "the copy in progress",
         BASE_ROWS,
-        WhenOutrun::Report,
         |n| {
             let mut table = scenario_table("cdc_sc_partial");
             insert_range(&mut table, 1, n);
@@ -1368,19 +1340,17 @@ fn etl_schema_objects(table: &mut CdcTestTable) -> Vec<String> {
 fn test_a_checkpoint_inside_one_write_does_not_acknowledge_it() {
     // Rows are padded so that a few of them carry megabytes: `write_events`
     // cuts a buffer every 2 MiB of serialized JSON, so 160 rows of 128 KiB are
-    // about ten buffers. The run below caps the reader at one record a step,
-    // which makes it take one buffer per step, so those ten buffers reach the
-    // circuit over ten steps and the checkpoint has a window to land in.
-    // Without that cap the default of 10_000 records a step never binds at 16
-    // rows per buffer, and the window would be only as wide as etl's pacing
-    // happened to make it. Measured here: the checkpoint held 17 of 161
-    // records.
+    // about ten buffers. The run below caps the reader at one buffer a step,
+    // so those ten buffers reach the circuit over ten steps and the checkpoint
+    // has a window to land in. Without that cap the default of 10_000 records
+    // a step never binds at 16 rows per buffer, and the window would be only as
+    // wide as etl's pacing happened to make it. Measured here: the checkpoint
+    // held 17 of 161 records.
     const PAD_BYTES: usize = 128 * 1024;
     retry_until_caught_midway(
         "scenario 11",
         "a write still reaching the circuit",
         160,
-        WhenOutrun::Fail,
         |n| {
             let mut table = scenario_table("cdc_sc_mid_write");
             insert_range(&mut table, 1, 1);
@@ -1393,15 +1363,26 @@ fn test_a_checkpoint_inside_one_write_does_not_acknowledge_it() {
             run1.wait_for_inserts(1, "run 1 snapshot");
             checkpoint_after_snapshot(&run1, &mut table);
 
+            // The premise, checked deterministically rather than by catching a
+            // mid-write poll: one buffer a step means the write advances the
+            // step counter by as many buffers as it has. A reader that swallows
+            // the whole write in one step fails this before any poll can miss
+            // it.
+            let steps_before = run1
+                .controller
+                .status()
+                .global_metrics
+                .total_initiated_steps();
+
             // One transaction per row, so etl's flush position crosses a commit
             // between one queued buffer and the next: answering a write whose rows
             // are still queued then moves etl past rows no checkpoint holds.
             insert_padded_rows(&mut table, 2, n + 1, PAD_BYTES);
 
             // Each retry carries twice the bytes of the last, so the deadline
-            // grows with them: a flat one would turn a bigger payload into a
-            // timeout rather than a measurement.
-            let wait_ms = WAIT_MS * (n / 160).max(1) as u128;
+            // grows with them, but a cap keeps a worst-case run of this serial
+            // test bounded.
+            let wait_ms = (WAIT_MS * (n / 160).max(1) as u128).min(WAIT_MS * 2);
 
             // Catch the circuit holding a strict, non-empty part of the write.
             let total = (n + 1) as u64;
@@ -1415,9 +1396,25 @@ fn test_a_checkpoint_inside_one_write_does_not_acknowledge_it() {
             .is_ok();
             if !caught {
                 // The write reached the circuit whole between two polls, so no
-                // checkpoint of this run can fall inside it. The cap on records
-                // per step is what holds this window open, so a poll that
-                // catches nothing says that cap stopped working.
+                // checkpoint of this run can fall inside it. Verify the premise
+                // before giving up on the attempt: the write must still have
+                // spread over several steps, which is the cap's doing. A fast
+                // runner is a reason to report; a cap that stopped working is a
+                // reason to fail, and only this check tells them apart.
+                wait(|| run1.circuit_input_records() >= total, wait_ms)
+                    .expect("timeout: the write never reached the circuit");
+                let steps_after = run1
+                    .controller
+                    .status()
+                    .global_metrics
+                    .total_initiated_steps();
+                assert!(
+                    steps_after > steps_before + 1,
+                    "the write of {total} records must span several steps, which the reader's \
+                     one-buffer-a-step cap guarantees, but the step counter advanced by only {}; \
+                     that cap stopped working",
+                    steps_after - steps_before
+                );
                 run1.stop();
                 return Attempt::Outrun;
             }
