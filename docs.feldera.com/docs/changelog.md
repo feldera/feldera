@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+## v0.352.0
+
 - Cluster monitoring data that has gone stale is now reported as such
   instead of being served as current. The cluster monitor is the only
   writer of cluster monitor events, and in the enterprise edition it runs
