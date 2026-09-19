@@ -59,6 +59,19 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
         return this.internalOutputs.get(outputNumber) != null;
     }
 
+    /** Output numbers that have a port, in increasing order, keeping only the first of
+     * the output numbers that share a port. */
+    public List<Integer> distinctOutputs() {
+        Set<OutputPort> seen = new HashSet<>();
+        List<Integer> result = new ArrayList<>();
+        for (int i = 0; i < this.outputCount(); i++) {
+            OutputPort port = this.internalOutputs.get(i);
+            if (port != null && seen.add(port))
+                result.add(i);
+        }
+        return result;
+    }
+
     @Override
     public List<SourcePositionRange> getSourcePositions() {
         ArrayList<SourcePositionRange> result = new ArrayList<>();

@@ -185,6 +185,42 @@ public class MultiCrateTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue5193() throws IOException, SQLException, InterruptedException {
+        // More mutually recursive views than the tuple sizes that the DBSP implementations
+        // of RecursiveStreams cover
+        final int views = 16;
+        StringBuilder sql = new StringBuilder("CREATE TABLE T(v INT);\n");
+        for (int i = 0; i < views; i++)
+            sql.append("DECLARE RECURSIVE VIEW V").append(i).append("(v INT);\n");
+        for (int i = 0; i < views; i++)
+            sql.append("CREATE LOCAL VIEW V").append(i)
+                    .append(" AS SELECT v FROM T WHERE v = ").append(i)
+                    .append(" UNION SELECT v FROM V").append((i + views - 1) % views)
+                    .append(";\n");
+        sql.append("CREATE VIEW O AS SELECT v FROM V0");
+        for (int i = 1; i < views; i++)
+            sql.append(" UNION SELECT v FROM V").append(i);
+        sql.append(";");
+        compileProgramToMultiCrate(sql.toString(), true);
+    }
+
+    @Test
+    public void equalRecursiveViews() throws IOException, SQLException, InterruptedException {
+        // Views of a component that compute the same relation, which the optimizer proves
+        // equal and merges, so all the outputs of the component carry the same stream
+        String sql = """
+                CREATE TABLE T(v INT);
+                DECLARE RECURSIVE VIEW V0(v INT);
+                DECLARE RECURSIVE VIEW V1(v INT);
+                DECLARE RECURSIVE VIEW V2(v INT);
+                CREATE LOCAL VIEW V0 AS SELECT v FROM T UNION SELECT v FROM V2;
+                CREATE LOCAL VIEW V1 AS SELECT v FROM V0;
+                CREATE LOCAL VIEW V2 AS SELECT v FROM V1;
+                CREATE VIEW O AS SELECT v FROM V0 UNION SELECT v FROM V1 UNION SELECT v FROM V2;""";
+        compileProgramToMultiCrate(sql, true);
+    }
+
+    @Test
     public void testCmp() throws IOException, SQLException, InterruptedException {
         String sql = """
             CREATE TABLE T (

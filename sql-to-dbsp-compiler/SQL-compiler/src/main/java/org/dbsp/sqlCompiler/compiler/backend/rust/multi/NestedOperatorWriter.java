@@ -1,22 +1,18 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust.multi;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.annotation.RegionAnnotation;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitPostfix;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.util.HashString;
 import org.dbsp.util.Utilities;
 
@@ -113,46 +109,6 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         return "i" + inputNo;
     }
 
-    /** Emit the code that gives the stream named {@code name} the persistent id of
-     * {@code operator}. */
-    /** Name the stream that leaves the recursive circuit.
-     *
-     * <p>It must not be the operator's own id: that id already names the stream
-     * inside the scope, and the two are separate streams whose operators keep
-     * separate state.  Sharing it makes an inner trace and an outer one write
-     * the same file, and whichever restores second reads a batch that was
-     * written with the other's layout. */
-    private void setExportedPersistentId(DBSPOperator operator, String name) {
-        HashString hash = OperatorHash.getHash(operator, true);
-        if (hash == null) {
-            this.builder().append("let hash = None;").newline();
-        } else {
-            this.builder().append("let hash = Some(concat!(")
-                    .append(hash.toQuotedString())
-                    .append(", \".export\"));")
-                    .newline();
-        }
-        this.builder().append(name)
-                .append(".set_persistent_id(hash);")
-                .newline();
-    }
-
-    private void setPersistentId(DBSPOperator operator, String name) {
-        this.builder().append("let hash = ");
-        HashString hash = OperatorHash.getHash(operator, true);
-        if (hash == null) {
-            this.builder().append("None;").newline();
-        } else {
-            this.builder().append("Some(")
-                    .append(hash.toQuotedString())
-                    .append(");")
-                    .newline();
-        }
-        this.builder().append(name)
-                .append(".set_persistent_id(hash);")
-                .newline();
-    }
-
     @Override
     public void write(DBSPCompiler compiler) {
         boolean useHandles = compiler.options.ioOptions.emitHandles;
@@ -192,118 +148,23 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         this.builder().decrease().append(")");
         this.builder().append(" -> ");
         this.builder().append("(");
-        for (int i = 0; i < this.operator.outputCount(); i++) {
-            if (this.operator.hasOutput(i)) {
-                // The outputs of the nested operator are streams of the root circuit
-                DBSPType streamType = this.operator.outputStreamType(i, 0);
-                streamType.accept(visitor.innerVisitor);
-                this.builder().append(",");
-            }
+        for (int i : this.operator.distinctOutputs()) {
+            // The outputs of the nested operator are streams of the root circuit
+            DBSPType streamType = this.operator.outputStreamType(i, 0);
+            streamType.accept(visitor.innerVisitor);
+            this.builder().append(",");
         }
         this.builder().append(")");
         this.builder().append("{").increase();
 
         this.builder().append("if let Some(region) = region { circuit.open_region(region.clone()) };").newline();
-        this.builder().append("let (");
-        for (int i = 0; i < operator.outputCount(); i++) {
-            OutputPort port = operator.internalOutputs.get(i);
-            if (port == null)
-                this.builder().append("_, ");
-            else
-                this.builder().append(port.getName(false)).append(", ");
-        }
-        this.builder().append(") = ")
-                .append("circuit.recursive(|circuit, (");
-        for (int i = 0; i < operator.outputCount(); i++) {
-            ProgramIdentifier view = operator.outputViews.get(i);
-            DBSPViewDeclarationOperator decl = operator.declarationByName.get(view);
-            if (decl != null) {
-                this.builder().append(decl.getNodeName(false)).append(", ");
-            } else {
-                // view is not really recursive.
-                if (operator.internalOutputs.get(i) != null) {
-                    // It is not used in recursion,
-                    // but it must be an output of the recursive component, and we
-                    // want to assign it a persistent ID.
-                    this.builder().append("unused_").append(i).append(", ");
-                } else {
-                    // This output doesn't even exist
-                    this.builder().append("_, ");
-                }
-            }
-        }
-        this.builder().append("): (");
-        for (int i = 0; i < operator.outputCount(); i++) {
-            if (operator.internalOutputs.get(i) == null) {
-                this.builder().append("()").append(", ");
-            } else {
-                // The streams produced inside the nested circuit
-                DBSPType streamType = operator.internalOutputs.get(i).streamType(1);
-                streamType.accept(visitor.innerVisitor);
-                this.builder().append(", ");
-            }
-        }
-        this.builder().append(")| {").increase();
-
-        // Name the recursive streams before the operators of the scope are created.
-        // An operator that maintains state over a stream copies that stream's
-        // persistent id when it is constructed, so a name assigned later would leave
-        // the integrals over the recursive streams without an id, and checkpointing
-        // the circuit would fail.
-        for (int i = 0; i < operator.outputCount(); i++) {
-            ProgramIdentifier view = operator.outputViews.get(i);
-            DBSPViewDeclarationOperator decl = operator.declarationByName.get(view);
-            OutputPort port = operator.internalOutputs.get(i);
-            if (decl != null) {
-                this.setPersistentId(decl, decl.getNodeName(false));
-            } else if (port != null) {
-                HashString hash0 = OperatorHash.getHash(port.operator, true);
-                if (hash0 == null) {
-                    this.builder().append("let hash = None;");
-                } else {
-                    this.builder().append("let hash = Some(concat!(")
-                            .append(hash0.toQuotedString())
-                            .append(", \".delay\"));");
-                }
-                this.builder()
-                        .newline()
-                        .append("unused_")
-                        .append(i)
-                        .append(".set_persistent_id(hash);")
-                        .newline();
-            }
-        }
-
-        for (DBSPOperator node : this.operator.getAllOperators())
-            if (!node.is(DBSPViewDeclarationOperator.class))
-                this.processChild(node);
-
-        this.builder().append("Ok((");
-        for (int i = 0; i < this.operator.outputCount(); i++) {
-            OutputPort port = this.operator.internalOutputs.get(i);
-            if (port != null)
-                this.builder().append(port.getName(false));
-            else
-                this.builder().append("()");
-            this.builder().append(", ");
-        }
-        this.builder().append("))").newline();
-        this.builder().decrease().append("}).unwrap();").newline();
-
-        for (int i = 0; i < operator.outputCount(); i++) {
-            OutputPort port = operator.internalOutputs.get(i);
-            if (port != null)
-                this.setExportedPersistentId(port.operator, port.getName(false));
-        }
+        visitor.getRecursiveComponentsGenerator(this.operator, this::processChild).emit();
 
         this.builder().append("if let Some(region) = region { circuit.close_region(region.clone()) };").newline();
         this.builder().append("return (");
-        for (int i = 0; i < this.operator.outputCount(); i++) {
-            OutputPort port = this.operator.internalOutputs.get(i);
-            if (port != null) {
-                this.builder().append(port.getName(false));
-                this.builder().append(", ");
-            }
+        for (int i : this.operator.distinctOutputs()) {
+            this.builder().append(this.operator.internalOutputs.get(i).getName(false));
+            this.builder().append(", ");
         }
         this.builder().append(");").newline();
         this.builder().decrease().append("}");
