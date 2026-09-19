@@ -8939,6 +8939,59 @@ export type PostUpdateRuntimeResponses = {
 
 export type PostUpdateRuntimeResponse = PostUpdateRuntimeResponses[keyof PostUpdateRuntimeResponses]
 
+export type PostPipelineOutputConnectorCommandData = {
+  /**
+   * Command to send to the output connector
+   */
+  body: {
+    [key: string]: unknown
+  }
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+    /**
+     * SQL view name
+     */
+    view_name: string
+    /**
+     * Output connector name
+     */
+    connector_name: string
+  }
+  query?: never
+  url: '/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/command'
+}
+
+export type PostPipelineOutputConnectorCommandErrors = {
+  /**
+   * Command is not supported by the output connector or the connector failed to execute the command
+   */
+  400: ErrorResponse
+  /**
+   * Pipeline, view and/or output connector with that name does not exist
+   */
+  404: ErrorResponse
+  500: ErrorResponse
+  503: ErrorResponse
+}
+
+export type PostPipelineOutputConnectorCommandError =
+  PostPipelineOutputConnectorCommandErrors[keyof PostPipelineOutputConnectorCommandErrors]
+
+export type PostPipelineOutputConnectorCommandResponses = {
+  /**
+   * Command has been processed. Response contains the result of the command.
+   */
+  200: {
+    [key: string]: unknown
+  }
+}
+
+export type PostPipelineOutputConnectorCommandResponse =
+  PostPipelineOutputConnectorCommandResponses[keyof PostPipelineOutputConnectorCommandResponses]
+
 export type GetPipelineOutputConnectorStatusData = {
   body?: never
   path: {

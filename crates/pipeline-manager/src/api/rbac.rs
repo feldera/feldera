@@ -716,18 +716,11 @@ mod test {
 
     /// Routes registered in `api_scope()` but absent from the OpenAPI document
     /// (`ApiDoc::paths()`), so the OpenAPI-driven meta-tests must account for
-    /// them explicitly. Both are still classified in `ROUTE_MIN_ROLE`, so RBAC
+    /// them explicitly. They are still classified in `ROUTE_MIN_ROLE`, so RBAC
     /// covers them; they are only invisible to the OpenAPI enumeration:
     /// - `.../testing`: a test-only hook intentionally hidden from the spec.
-    /// - `.../command`: declares a non-standard `text/json` content type the
-    ///   client generator rejects, so it is left out of the spec for now.
-    const REGISTERED_BUT_UNDOCUMENTED: &[(&str, &str)] = &[
-        ("POST", "/v0/pipelines/{pipeline_name}/testing"),
-        (
-            "POST",
-            "/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/command",
-        ),
-    ];
+    const REGISTERED_BUT_UNDOCUMENTED: &[(&str, &str)] =
+        &[("POST", "/v0/pipelines/{pipeline_name}/testing")];
 
     /// Deny-by-default has teeth only if every registered route is classified.
     /// Enumerate the `/v0` surface from the OpenAPI document (which mirrors
