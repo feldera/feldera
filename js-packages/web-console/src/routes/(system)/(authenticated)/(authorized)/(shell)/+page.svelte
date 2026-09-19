@@ -15,6 +15,7 @@
   import PinnedSections from '$lib/components/layout/PinnedSections.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import DemoTile from '$lib/components/other/DemoTile.svelte'
+  import OpenSupportBundleButton from '$lib/components/other/OpenSupportBundleButton.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import PipelineTable from '$lib/components/pipelines/Table.svelte'
   import AvailableActions from '$lib/components/pipelines/table/AvailableActions.svelte'
@@ -71,6 +72,7 @@
       </button>
     {:else}
       <NavigationExtras></NavigationExtras>
+      <OpenSupportBundleButton></OpenSupportBundleButton>
       <div class="relative">
         <CreatePipelineButton inputClass="max-w-64" btnClass="preset-filled-surface-50-950"
         ></CreatePipelineButton>
