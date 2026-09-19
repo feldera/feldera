@@ -8,16 +8,19 @@
 //! skewed multi-worker circuit must report waiting, and a circuit with nothing
 //! to wait for must not.
 
-use dbsp::circuit::Circuit;
 use dbsp::circuit::metadata::{
     CIRCUIT_CPU_TIME_SECONDS, CIRCUIT_NONBLOCKING_PERCENT, CIRCUIT_RUNTIME_SECONDS,
     CIRCUIT_WAIT_TIME_SECONDS, MetaItem, MetricId,
+};
+use dbsp::circuit::{
+    Circuit, CircuitConfig, CircuitStorageConfig, StorageCacheConfig, StorageConfig, StorageOptions,
 };
 use dbsp::typed_batch::OrdZSet;
 use dbsp::utils::Tup2;
 use dbsp::{DBSPHandle, Runtime, operator::Generator};
 use std::thread::sleep;
 use std::time::Duration;
+use tempfile::TempDir;
 
 /// Sums a duration metric over all workers, in seconds.
 fn duration_metric(handle: &mut DBSPHandle, metric: &MetricId) -> f64 {
@@ -75,6 +78,71 @@ fn skewed_circuit(workers: usize, stall: Duration, steps: usize) -> DBSPHandle {
     }
     handle.commit_transaction().unwrap();
     handle
+}
+
+/// Builds a circuit whose integral spills every batch, so that its workers
+/// spend their steps in storage system calls.
+///
+/// The storage directory outlives the handle, so it is returned alongside it.
+fn spilling_circuit(workers: usize, steps: i32) -> (DBSPHandle, TempDir) {
+    const RECORDS_PER_STEP: i32 = 500;
+
+    let storage = tempfile::tempdir().unwrap();
+    let config = CircuitConfig::with_workers(workers).with_storage(Some(
+        CircuitStorageConfig::for_config(
+            StorageConfig {
+                path: storage.path().to_string_lossy().into_owned(),
+                cache: StorageCacheConfig::default(),
+            },
+            StorageOptions {
+                // Spill every batch, rather than only those past the default size.
+                min_storage_bytes: Some(0),
+                ..Default::default()
+            },
+        )
+        .unwrap(),
+    ));
+
+    let (mut handle, input) = Runtime::init_circuit(config, |circuit| {
+        let (stream, input) = circuit.add_input_indexed_zset::<i32, i32>();
+        stream.shard().accumulate_integrate_trace();
+        Ok(input)
+    })
+    .unwrap();
+
+    handle.enable_cpu_profiler().unwrap();
+    for step in 0..steps {
+        let mut records = (0..RECORDS_PER_STEP)
+            .map(|record| Tup2(step * RECORDS_PER_STEP + record, Tup2(record, 1)))
+            .collect::<Vec<_>>();
+        input.append(&mut records);
+        handle.transaction().unwrap();
+    }
+    (handle, storage)
+}
+
+/// A worker that spends its step in storage system calls still reports a step
+/// time that its CPU time and its wait time fit inside.
+///
+/// Those calls run mostly in the kernel on the worker's own thread, so
+/// `circuit_cpu_time_seconds` counts them.  Counting them as wait as well would
+/// report the same microseconds twice, and the two would then add up to more
+/// than the step they are measured against.  The circuit above touches no
+/// storage, so it never reaches these calls.
+#[test]
+fn a_storage_heavy_step_decomposes_into_cpu_and_wait() {
+    let (mut handle, _storage) = spilling_circuit(2, 50);
+
+    let runtime = duration_metric(&mut handle, &CIRCUIT_RUNTIME_SECONDS);
+    let cpu = duration_metric(&mut handle, &CIRCUIT_CPU_TIME_SECONDS);
+    let wait = duration_metric(&mut handle, &CIRCUIT_WAIT_TIME_SECONDS);
+
+    assert!(cpu > 0.0, "circuit cpu time should not be zero");
+    assert!(
+        cpu + wait <= runtime * 1.1,
+        "cpu {cpu:.3}s + wait {wait:.3}s should fit within runtime {runtime:.3}s"
+    );
+    handle.kill().unwrap();
 }
 
 /// A worker stalled every step makes its peers wait, and that wait is reported.

@@ -3224,6 +3224,9 @@ impl RootCircuit {
         // it is driving a step, so all of it belongs to some step; the profiler
         // reads the accumulator at step boundaries to say which.
         let runtime_idle = RuntimeIdle::new();
+        // The worker's own storage system calls are charged to the same
+        // accumulator, and only this thread's: the mergers have their own.
+        runtime_idle.install_on_this_thread();
         let tokio_runtime = {
             let (park, unpark) = (runtime_idle.clone(), runtime_idle.clone());
             let mut builder = tokio::runtime::Builder::new_current_thread();

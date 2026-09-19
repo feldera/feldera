@@ -207,6 +207,13 @@ where
         self.len() == 0
     }
 
+    /// Evicts this batch's file from the buffer cache, so that reading it has
+    /// to go to storage.  Requires the `eager_evict` dev tweak.
+    #[cfg(test)]
+    pub(crate) fn evict(&self) {
+        self.file.evict();
+    }
+
     fn stats(&self) -> &BatchMetadata {
         &self.file.metadata
     }

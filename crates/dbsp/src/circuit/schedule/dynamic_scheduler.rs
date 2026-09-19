@@ -64,6 +64,7 @@ use crate::{
         },
         trace::SchedulerEvent,
     },
+    profile::{ParkReason, ParkingFor},
 };
 use petgraph::algo::toposort;
 use tokio::{select, sync::Notify, task::JoinSet};
@@ -614,6 +615,15 @@ impl Inner {
         }
 
         loop {
+            // Tell the park hook which of the two waits this is: for an
+            // operator already running to make progress, or for an asynchronous
+            // operator to signal that it can run at all.
+            let _parked = ParkingFor::new(if self.handles.is_empty() {
+                ParkReason::Scheduler
+            } else {
+                ParkReason::OperatorPending
+            });
+
             select! {
                 ret = self.handles.join_next(), if !self.handles.is_empty() => {
                     completed_tasks += 1;

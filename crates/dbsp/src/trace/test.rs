@@ -1411,6 +1411,276 @@ fn build_fallback_indexed_wset_i32_at(
     ListMerger::merge(&factories, builder, vec![initial.merge_cursor(None, None)])
 }
 
+/// A worker's storage system calls are charged to their own reasons, and only
+/// for the part the thread spends off the CPU: a buffered write or a cached
+/// read runs in the kernel on this thread, where the step's CPU time already
+/// counts it, so charging the whole call would put one interval in two numbers
+/// that divide the step's wall clock between them.
+///
+/// The backend's simulated device latency stands in for the part that really
+/// does block, which is what makes the read and the write measurable here; a
+/// real fsync blocks without any help.
+#[test]
+fn storage_calls_are_charged_to_the_worker_for_their_time_off_the_cpu() {
+    /// Blocks per layer file, enough to pass the writer's 1 MiB buffer and so
+    /// to spill before the file is finished.
+    const BLOCKS: usize = 1024 * 1024 / BLOCK_SIZE + 1;
+    const BLOCK_SIZE: usize = 4096;
+    const IO_DELAY: std::time::Duration = std::time::Duration::from_millis(10);
+
+    let temp_dir = tempdir().expect("Can't create temp dir for storage");
+    run_in_circuit_with_storage_config(slow_read_storage_config(temp_dir.path(), IO_DELAY), || {
+        use crate::circuit::ThreadCpuTime;
+        use std::time::Instant;
+
+        let idle = crate::profile::current_runtime_idle()
+            .expect("a worker thread carries its runtime's accumulator");
+        let read = crate::profile::ParkReason::StorageRead as usize;
+        let write = crate::profile::ParkReason::StorageWrite as usize;
+        let sync = crate::profile::ParkReason::StorageSync as usize;
+
+        /// What a call may be charged: no more than its thread spent off the
+        /// CPU, plus a slack for the clock reads around it.
+        ///
+        /// The CPU clock is read first, so that a thread descheduled between
+        /// the two reads widens this bound rather than narrowing it.
+        fn off_cpu(wall: Instant, cpu: ThreadCpuTime) -> std::time::Duration {
+            let cpu = cpu.elapsed();
+            wall.elapsed().saturating_sub(cpu) + std::time::Duration::from_millis(1)
+        }
+
+        // Straight to the backend: the buffer cache sits above it, and a
+        // cached block would never reach `pread`.
+        let backend = crate::Runtime::storage_backend().expect("storage is configured");
+        let before = idle.by_reason();
+
+        let mut writer = backend.create().expect("create a layer file");
+        let wall = Instant::now();
+        let cpu = ThreadCpuTime::now();
+        for _ in 0..BLOCKS {
+            let mut block = crate::storage::buffer_cache::FBuf::with_capacity(BLOCK_SIZE);
+            block.resize(BLOCK_SIZE, 7);
+            writer.write_block(block).expect("write a block");
+        }
+        let after_write = idle.by_reason();
+        let written = after_write[write] - before[write];
+        assert!(
+            written >= IO_DELAY / 2,
+            "spilling blocks waited {written:?}"
+        );
+        assert!(
+            written <= off_cpu(wall, cpu),
+            "spilling blocks charged {written:?} of its time off the CPU"
+        );
+        assert_eq!(
+            after_write[sync], before[sync],
+            "spilling blocks fsyncs nothing"
+        );
+
+        // Finishing a file renames it and no longer syncs it: durability is
+        // the committer's job, which is what keeps the fsync off the threads
+        // that write files.
+        let reader = writer.complete().expect("finish the file");
+        let after_complete = idle.by_reason();
+        assert_eq!(
+            after_complete[sync], after_write[sync],
+            "finishing a file fsyncs nothing"
+        );
+
+        let wall = Instant::now();
+        let cpu = ThreadCpuTime::now();
+        reader.commit().expect("commit the file");
+        let after_sync = idle.by_reason();
+        let synced = after_sync[sync] - after_complete[sync];
+        assert!(synced > Duration::ZERO, "committing a file fsyncs it");
+        assert!(
+            synced <= off_cpu(wall, cpu),
+            "committing a file charged {synced:?} of its time off the CPU"
+        );
+        assert_eq!(
+            after_sync[read], before[read],
+            "finishing and committing a file reads nothing"
+        );
+
+        let wall = Instant::now();
+        let cpu = ThreadCpuTime::now();
+        reader
+            .read_block(feldera_storage::block::BlockLocation::new(0, BLOCK_SIZE).unwrap())
+            .expect("read the block back");
+        let after_read = idle.by_reason();
+        let waited = after_read[read] - after_sync[read];
+        assert!(waited >= IO_DELAY / 2, "a block read waited {waited:?}");
+        assert!(
+            waited <= off_cpu(wall, cpu),
+            "a block read charged {waited:?} of its time off the CPU"
+        );
+        assert_eq!(
+            after_read[sync], after_sync[sync],
+            "a block read fsyncs nothing"
+        );
+
+        assert_eq!(
+            idle.by_reason().iter().sum::<std::time::Duration>(),
+            idle.total(),
+            "the breakdown adds up to the total it splits"
+        );
+    });
+}
+
+/// A buffered write is not idle time: it runs in the kernel on this thread,
+/// where the step's CPU time already counts it.  Writing enough to make that
+/// CPU time dominate pins the difference, which a call that also blocks, or one
+/// the backend delays on purpose, would hide.
+#[test]
+fn a_buffered_write_is_charged_only_for_its_time_off_the_cpu() {
+    const BLOCK_SIZE: usize = 4096;
+    const BLOCKS: usize = 8 * 1024; // 32 MiB, enough for the kernel's copy to dominate
+
+    run_in_circuit_with_storage(|| {
+        use crate::circuit::ThreadCpuTime;
+        use std::time::Instant;
+
+        let idle = crate::profile::current_runtime_idle()
+            .expect("a worker thread carries its runtime's accumulator");
+        let write = crate::profile::ParkReason::StorageWrite as usize;
+
+        let backend = crate::Runtime::storage_backend().expect("storage is configured");
+        let mut writer = backend.create().expect("create a layer file");
+        let before = idle.by_reason();
+        let wall = Instant::now();
+        let cpu = ThreadCpuTime::now();
+        for _ in 0..BLOCKS {
+            let mut block = crate::storage::buffer_cache::FBuf::with_capacity(BLOCK_SIZE);
+            block.resize(BLOCK_SIZE, 7);
+            writer.write_block(block).expect("write a block");
+        }
+        // The CPU clock is read first, so that a thread descheduled between the
+        // two reads widens the bound rather than narrowing it.
+        let cpu = cpu.elapsed();
+        let wall = wall.elapsed();
+        let charged = idle.by_reason()[write] - before[write];
+
+        // On an idle machine the kernel's copy accounts for nearly all of this,
+        // which is what makes the bound tight enough to catch the whole call
+        // being charged.  A loaded node deschedules the thread instead, which
+        // is time the guard may charge, so the bound loosens rather than the
+        // test failing.
+        assert!(
+            charged <= wall.saturating_sub(cpu) + Duration::from_millis(1),
+            "writing {BLOCKS} blocks charged {charged:?} as wait, of {wall:?} with {cpu:?} on the CPU"
+        );
+    });
+}
+
+/// Creating, finishing and dropping a layer file costs a system call apiece
+/// that moves no data: `open`, `rename`, `unlink`.  Locally each of those runs
+/// on the CPU and so is charged almost nothing, but on storage that blocks
+/// they are exactly the calls whose time would otherwise go missing.  What is
+/// pinned here is that they never charge more than their thread spent off the
+/// CPU.
+#[test]
+fn storage_metadata_calls_charge_no_more_than_their_time_off_the_cpu() {
+    run_in_circuit_with_storage(|| {
+        use crate::circuit::ThreadCpuTime;
+        use std::time::Instant;
+
+        let idle = crate::profile::current_runtime_idle()
+            .expect("a worker thread carries its runtime's accumulator");
+        let metadata = crate::profile::ParkReason::StorageMetadata as usize;
+
+        let backend = crate::Runtime::storage_backend().expect("storage is configured");
+        let before = idle.by_reason();
+        let wall = Instant::now();
+        let cpu = ThreadCpuTime::now();
+
+        let writer = backend.create().expect("create a layer file");
+        let reader = writer.complete().expect("finish the file");
+        // The file was never marked to keep, so the last reference unlinks it.
+        drop(reader);
+
+        let charged = idle.by_reason()[metadata] - before[metadata];
+        // The CPU clock is read first; see `off_cpu` above.
+        let cpu = cpu.elapsed();
+        let off_cpu = wall.elapsed().saturating_sub(cpu) + Duration::from_millis(1);
+        assert!(
+            charged <= off_cpu,
+            "opening, renaming and unlinking a file charged {charged:?} of {off_cpu:?} off the CPU"
+        );
+    });
+}
+
+/// Storage whose reads sleep, so that a test observes a wait rather than
+/// racing a read that has already finished.
+fn slow_read_storage_config(
+    path: &std::path::Path,
+    read_delay: std::time::Duration,
+) -> CircuitConfig {
+    use feldera_types::config::{FileBackendConfig, StorageBackendConfig};
+
+    let mut config = CircuitConfig::with_workers(1).with_storage(Some(
+        crate::circuit::CircuitStorageConfig::for_config(
+            crate::circuit::StorageConfig {
+                path: path.to_string_lossy().into_owned(),
+                cache: crate::circuit::StorageCacheConfig::default(),
+            },
+            crate::circuit::StorageOptions {
+                min_storage_bytes: Some(0),
+                backend: StorageBackendConfig::File(Box::new(FileBackendConfig {
+                    ioop_delay: Some(read_delay.as_millis() as u64),
+                    ..Default::default()
+                })),
+                ..Default::default()
+            },
+        )
+        .unwrap(),
+    ));
+    // Writing a file leaves its blocks in the buffer cache, which sits above
+    // the backend, so a reader has to be able to evict them to reach storage.
+    config.dev_tweaks.eager_evict = Some(true);
+    config
+}
+
+/// `fetch` hands its block reads to the blocking pool, where no accumulator is
+/// installed, and awaits them.  The worker's runtime parks with no system call
+/// for the park hook to look at, so the wait has to name the read itself or it
+/// lands in the breakdown's catch-all.
+#[test]
+fn a_fetch_waiting_for_a_block_read_declares_the_read() {
+    use std::{
+        future::Future,
+        task::{Context, Waker},
+    };
+
+    // Long enough that the read cannot finish between issuing it and parking
+    // for it, even on a node loaded enough to deschedule this thread in
+    // between.
+    const READ_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
+
+    let temp_dir = tempdir().expect("Can't create temp dir for storage");
+    run_in_circuit_with_storage_config(
+        slow_read_storage_config(temp_dir.path(), READ_DELAY),
+        || {
+            let keys = (0..4096u32).collect::<Vec<_>>();
+            let batch = build_file_wset_u32(&keys);
+            batch.evict();
+            // Left in the cache: the fetch walks it before it issues any read,
+            // and the test is about the wait for the read.
+            let wanted = build_file_wset_u32(&keys);
+
+            let mut fetch = Box::pin(batch.fetch(&wanted));
+            let mut context = Context::from_waker(Waker::noop());
+
+            assert!(
+                fetch.as_mut().poll(&mut context).is_pending(),
+                "the fetch finished before it had to wait for a block"
+            );
+            assert_eq!(
+                crate::profile::current_park_reason(),
+                crate::profile::ParkReason::StorageRead
+            );
+        },
+    );
+}
 /// Under a zero step threshold, which is what Critical memory pressure
 /// imposes, a builder that receives nothing must finish in memory.  It has
 /// nothing to spill, and a layer file costs two fsyncs on the way out, which a
