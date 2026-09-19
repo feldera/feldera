@@ -290,6 +290,22 @@ public class AggregateCompiler implements ICompilerComponent {
         return this.resultType.is(DBSPTypeFP.class);
     }
 
+    /** True if the aggregate is implemented as a linear aggregate.  Warns when only
+     * the floating-point result type prevents the linear implementation. */
+    boolean linear() {
+        if (!this.linearAllowed)
+            return false;
+        if (!this.fp())
+            return true;
+        // $SUM0 only arises when Calcite rewrites a SUM
+        String name = this.aggFunction instanceof SqlSumEmptyIsZeroAggFunction ? "SUM" : this.aggFunction.getName();
+        this.compiler.reportWarning(this.node.getPositionRange(), "Inefficient aggregate",
+                name + " over " + this.resultType.asSqlString() + " values is inefficient " +
+                "because it uses floating-point arithmetic.  " +
+                "Consider using DECIMAL values if possible.");
+        return false;
+    }
+
     void processCount(SqlCountAggFunction function) {
         DBSPExpression zero = this.resultType.to(IsNumericType.class).getZero();
         DBSPExpression one = this.resultType.to(DBSPTypeInteger.class).getOne();
@@ -682,7 +698,7 @@ public class AggregateCompiler implements ICompilerComponent {
     void processSum(SqlSumAggFunction function) {
         DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
 
-        if (this.linearAllowed && !this.fp()) {
+        if (this.linear()) {
             DBSPClosureExpression map;
             DBSPClosureExpression post;
             // map = |v| {
@@ -731,7 +747,7 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression zero = this.resultType.to(IsNumericType.class).getZero();
         DBSPExpression increment;
         DBSPExpression aggregatedValue = this.getAggregatedValue();
-        if (this.linearAllowed && !this.fp()) {
+        if (this.linear()) {
             DBSPClosureExpression map;
             DBSPClosureExpression post;
             // map = |v| ( if filter(v) && !v.is_null() { cast(v.field, intermediate_type) } else { 0 },
@@ -776,7 +792,7 @@ public class AggregateCompiler implements ICompilerComponent {
         Utilities.enforce(function.getKind() == SqlKind.AVG);
         DBSPExpression postZero = DBSPLiteral.none(this.nullableResultType);
 
-        if (this.linearAllowed && !this.fp()) {
+        if (this.linear()) {
             DBSPClosureExpression map;
             DBSPClosureExpression post;
             // map = |v| {
@@ -905,7 +921,7 @@ public class AggregateCompiler implements ICompilerComponent {
         final DBSPType intermediateResultType = this.partialResultType.withMayBeNull(true);
         DBSPExpression postZero = DBSPLiteral.none(this.nullableResultType);
 
-        if (this.linearAllowed && !this.fp()) {
+        if (this.linear()) {
             // map = |v| {
             //     ( if filter(v) && !v.is_null() { cast(v.field, intermediate_type) * cast(v.field, intermediate_type) } else { 0 },
             //       if filter(v) && !v.is_null() { cast(v.field, intermediate_type) } else { 0 },
@@ -1073,7 +1089,7 @@ public class AggregateCompiler implements ICompilerComponent {
                 this.node, DBSPTypeBool.create(false), DBSPOpcode.AND,
                 y.is_null().not(), x.is_null().not());
 
-        if (this.linearAllowed && !this.fp()) {
+        if (this.linear()) {
             // map = |v| {
             //     ( if filter(v) && both_non_null(v) { cast(a) * cast(b) } else { 0 },
             //       if filter(v) && both_non_null(v) { cast(a) } else { 0 },
