@@ -36,6 +36,7 @@ in the PostgreSQL table.
 | `max_buffer_size_bytes`          | integer | `1048576`      | The maximum buffer size (in bytes) for a single operation. Buffers for `INSERT`, `UPDATE`, and `DELETE` queries are maintained separately. Default is 1 MiB (`1048576` bytes).                                                                                                                                                                                                                                                                                                                                                                                              |
 | `on_conflict_do_nothing`         | bool    | `false`        | Specifies how the connector handles conflicts when executing an `INSERT` into a table with a primary key. By default, an existing row with the same key is overwritten. Setting this flag to `true` preserves the existing row and ignores the new insert. <p> This setting does not affect `UPDATE` statements, which always replace the value associated with the key.</p><p>**This setting has no effect when `mode = "cdc"`, since all operations are performed as append-only `INSERT`s into the target table. Any conflict in CDC mode will result in an error.**</p> |
 | `threads`                        | integer | `1`            | Number of parallel worker threads used to write to PostgreSQL. Each worker opens its own connection and handles a disjoint partition of the data. Increasing this value can improve throughput for large batches. Must be at least 1.                                                                                                                                                                                                                                                                                                                                       |
+| `extra_columns`                  | array of strings |        | The list of PostgreSQL columns that the Feldera view does not write. The connector writes the value last set by the `set_extra_columns` command into each of them; see [Extra columns](#extra-columns).                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 
 [*]: Required fields
 
@@ -43,6 +44,32 @@ The schema of the PostgreSQL table should match the schema of the Feldera view, 
 
 - Narrower Feldera types such as `INT2` and `FLOAT4` can be stored in wider PostgreSQL column types like `INT8` and `FLOAT8` respectively.
 - Columns in the PostgreSQL table that are **nullable** or have **default** values may be omitted from the Feldera view.
+
+### Extra columns
+
+A PostgreSQL table may have more columns than the Feldera view that writes to
+it, e.g., a batch label. The value of `extra_columns` is the list of these
+columns. The `set_extra_columns` connector command sets the values written to
+them while the pipeline runs:
+
+```bash
+curl -X POST \
+  "http://127.0.0.1:8080/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/command" \
+  -H "Content-Type: application/json" \
+  -d '{"set_extra_columns": {"batch_label": "2026-01-17-morning", "loaded_by": "nightly-job"}}'
+```
+
+The command names a subset of `extra_columns`; a name outside that list is
+rejected, and the error lists the permitted names. Every row the connector
+writes from then on carries the values in effect at the time, until a later
+command changes them. A `null` value writes SQL NULL. The response echoes the
+values of every extra column set so far.
+
+Values set this way are not part of the pipeline's checkpointed state, so a
+pipeline that restarts writes NULL into these columns until the command is
+issued again. Each extra column must therefore be nullable; a column default
+does not help, because the connector always names the column in its `INSERT`
+and so writes an explicit NULL rather than letting PostgreSQL apply the default.
 
 ### Write modes
 

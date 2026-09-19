@@ -15,9 +15,33 @@ The Kafka output connector supports [fault tolerance](/pipelines/fault-tolerance
 | `initialization_timeout_secs`  | seconds          | 60      | Maximum timeout in seconds to wait for the connector to connect to a Kafka broker. |
 | `kafka_service`                | string           |         | If specified, this service is used to provide defaults for the Kafka options. |
 | `region`                       | string           |         | The AWS region to use while connecting to AWS Managed Streaming for Kafka (MSK). |
+| `fault_tolerance`              | object           |         | librdkafka options the connector uses when the pipeline runs with [exactly-once fault tolerance](/pipelines/fault-tolerance). See [Fault tolerance options](#fault-tolerance-options). |
 
 The connector passes additional options directly to [**librdkafka**](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).
 See [relevant options for producers](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).
+
+### Fault tolerance options
+
+A pipeline configured for exactly-once
+[fault tolerance](/pipelines/fault-tolerance) writes to Kafka through
+transactions, which needs a consumer as well as a producer. `fault_tolerance`
+adds librdkafka settings for those two clients:
+
+| Property           | Type   | Default | Description |
+|--------------------|--------|---------|-------------|
+| `consumer_options` | object | `{}`    | Options passed to librdkafka for consumers only, overriding the connector's other Kafka options. |
+| `producer_options` | object | `{}`    | Options passed to librdkafka for producers only, overriding the connector's other Kafka options. |
+
+`fault_tolerance` does not turn transactional writes on or off; the pipeline's
+fault tolerance model does. Omitting `fault_tolerance` leaves the consumer and
+producer with the connector's other Kafka options and the librdkafka defaults.
+
+```json
+"fault_tolerance": {
+  "consumer_options": {"fetch.max.bytes": "10485760"},
+  "producer_options": {"compression.type": "lz4"}
+}
+```
 
 ## Example usage
 
