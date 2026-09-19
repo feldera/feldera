@@ -1599,6 +1599,38 @@ async fn prepare_workspace(
     Ok(())
 }
 
+/// Validates the `CARGO_BUILD_JOBS` value before it is passed on to `cargo`.
+///
+/// `cargo` aborts the entire build on a value it cannot parse, and the empty string is
+/// not parseable. A deployment that renders the variable from an unset template field
+/// would therefore fail every Rust compilation, with an error that reads as if the
+/// user's program were at fault. Treat an empty value as unset, and reject the values
+/// `cargo` rejects here, while the error can still name the variable.
+fn validated_cargo_build_jobs(
+    value: Option<std::ffi::OsString>,
+) -> Result<Option<std::ffi::OsString>, RustCompilationError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    let invalid = || {
+        RustCompilationError::SystemError(format!(
+            "The CARGO_BUILD_JOBS environment variable is set to '{}', which cargo cannot parse. \
+             Set it to `default`, to a positive number of parallel jobs, or to a negative number \
+             (all host cores minus that many); unset it to let cargo use one job per core.",
+            value.to_string_lossy()
+        ))
+    };
+    let jobs = value.to_str().ok_or_else(invalid)?.trim();
+    if jobs.is_empty() {
+        return Ok(None);
+    }
+    if jobs == "default" || jobs.parse::<i32>().is_ok_and(|jobs| jobs != 0) {
+        Ok(Some(std::ffi::OsString::from(jobs)))
+    } else {
+        Err(invalid())
+    }
+}
+
 /// Calls the compiler on the project with the provided source checksum and using the compilation profile.
 #[allow(clippy::too_many_arguments)]
 async fn call_compiler(
@@ -1701,6 +1733,19 @@ async fn call_compiler(
     // Preserve CARGO_INCREMENTAL if set, to allow sccache to work properly.
     if let Some(cargo_incremental) = std::env::var_os("CARGO_INCREMENTAL") {
         command.env("CARGO_INCREMENTAL", cargo_incremental);
+    }
+
+    // Preserve CARGO_BUILD_JOBS if set. Without a limit, cargo defaults to
+    // running one rustc process per available core (each of which still
+    // parallelizes its own codegen further), so peak build memory scales
+    // with however many CPUs the host happens to have rather than with any
+    // resource budget this process was actually given. Deployments that set
+    // a memory limit on this process want a bounded, predictable job count
+    // to go with it.
+    if let Some(cargo_build_jobs) =
+        validated_cargo_build_jobs(std::env::var_os("CARGO_BUILD_JOBS"))?
+    {
+        command.env("CARGO_BUILD_JOBS", cargo_build_jobs);
     }
 
     // Preserve AWS_PROFILE if set, to allow sccache to use
@@ -2546,6 +2591,49 @@ mod test {
     use crate::db::types::utils::validate_program_info;
     use crate::db::types::version::Version;
     use std::collections::HashSet;
+
+    /// Tests that the `CARGO_BUILD_JOBS` values cargo accepts are forwarded verbatim, that
+    /// absent and empty values both mean "let cargo decide", and that a value cargo would
+    /// reject is reported against the variable instead of failing the user's compilation.
+    #[test]
+    fn cargo_build_jobs_validation() {
+        let validated = |value: Option<&str>| {
+            super::validated_cargo_build_jobs(value.map(std::ffi::OsString::from))
+        };
+
+        // Forwarded: every form cargo parses.
+        for accepted in ["1", "16", "-1", "default"] {
+            assert_eq!(
+                validated(Some(accepted)).unwrap(),
+                Some(std::ffi::OsString::from(accepted)),
+                "cargo accepts '{accepted}', so it must reach cargo"
+            );
+        }
+        // Surrounding whitespace is an artifact of the deployment's templating, not a value.
+        assert_eq!(
+            validated(Some(" 4 ")).unwrap(),
+            Some(std::ffi::OsString::from("4"))
+        );
+
+        // Unset and empty alike leave cargo at its default of one job per core. An empty
+        // value is what a chart renders for an unset field; it must not fail the build.
+        assert_eq!(validated(None).unwrap(), None);
+        assert_eq!(validated(Some("")).unwrap(), None);
+        assert_eq!(validated(Some("   ")).unwrap(), None);
+
+        // Rejected: cargo errors on these, so the error must name the variable.
+        for rejected in ["0", "abc", "2.5", "4 8"] {
+            let error = format!(
+                "{:?}",
+                validated(Some(rejected))
+                    .expect_err("cargo cannot parse this value, so it must be caught here")
+            );
+            assert!(
+                error.contains("CARGO_BUILD_JOBS") && error.contains(rejected),
+                "error must name the variable and the offending value: {error}"
+            );
+        }
+    }
 
     /// Tests that sccache's report is picked out of real `cargo build` output, that the
     /// diagnostics quoting the user's program are left out of it, and that a compilation
