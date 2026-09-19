@@ -5,16 +5,17 @@ use crate::{
         GlobalNodeId, LocalStoreMarker, OwnershipPreference, RootCircuit, Scope,
         circuit_builder::CircuitBase,
         metadata::{BatchSizeStats, OUTPUT_BATCHES_STATS, OperatorMeta},
-        operator_traits::{BinarySinkOperator, Operator, SinkOperator},
+        operator_traits::{
+            BinarySinkOperator, CheckpointOperator, CheckpointOperatorFile, Operator, SinkOperator,
+        },
     },
     operator::dynamic::accumulator::EnableCount,
-    storage::file::to_bytes,
     trace::{
         BatchReader as DynBatchReader, BatchReaderFactories, SpineSnapshot as DynSpineSnapshot,
     },
     typed_batch::{Spine, SpineSnapshot, TypedBatch},
 };
-use feldera_storage::{FileCommitter, StoragePath};
+use feldera_storage::{StoragePath, fbuf::FBuf};
 use std::{
     borrow::Cow,
     fmt::Debug,
@@ -510,8 +511,8 @@ where
         (output, handle)
     }
 
-    fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
-        base.clone().join(format!("output-{}.dat", persistent_id))
+    fn checkpoint_file(persistent_id: &str) -> String {
+        format!("output-{}.dat", persistent_id)
     }
 }
 
@@ -527,28 +528,20 @@ where
         self.global_id = global_id.clone();
     }
 
-    fn checkpoint(
+    fn prepare_checkpoint(
         &mut self,
-        base: &StoragePath,
-        pid: Option<&str>,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error> {
-        let pid = require_persistent_id(pid, &self.global_id)?;
-        let as_bytes = to_bytes(&()).expect("Serializing () should work.");
-
-        files.push(
-            Runtime::storage_backend()
-                .unwrap()
-                .write(&Self::checkpoint_file(base, pid), as_bytes)?,
-        );
-
-        Ok(())
+        persistent_id: Option<&str>,
+    ) -> Result<Option<Box<dyn CheckpointOperator>>, Error> {
+        Ok(Some(Box::new(CheckpointOperatorFile {
+            name: Self::checkpoint_file(require_persistent_id(persistent_id, &self.global_id)?),
+            content: FBuf::new(),
+        })))
     }
 
     fn restore(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
 
-        let path = Self::checkpoint_file(base, pid);
+        let path = base.clone().join(Self::checkpoint_file(pid));
         let _content = Runtime::storage_backend().unwrap().read(&path)?;
 
         Ok(())
@@ -689,9 +682,8 @@ where
         }
     }
 
-    fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
-        base.clone()
-            .join(format!("accumulate-output-{}.dat", persistent_id))
+    fn checkpoint_file(persistent_id: &str) -> String {
+        format!("accumulate-output-{}.dat", persistent_id)
     }
 
     /// Merge `snapshot` into the cached accumulated output.
@@ -732,28 +724,20 @@ where
         self.global_id = global_id.clone();
     }
 
-    fn checkpoint(
+    fn prepare_checkpoint(
         &mut self,
-        base: &StoragePath,
-        pid: Option<&str>,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error> {
-        let pid = require_persistent_id(pid, &self.global_id)?;
-        let as_bytes = to_bytes(&()).expect("Serializing () should work.");
-
-        files.push(
-            Runtime::storage_backend()
-                .unwrap()
-                .write(&Self::checkpoint_file(base, pid), as_bytes)?,
-        );
-
-        Ok(())
+        persistent_id: Option<&str>,
+    ) -> Result<Option<Box<dyn CheckpointOperator>>, Error> {
+        Ok(Some(Box::new(CheckpointOperatorFile {
+            name: Self::checkpoint_file(require_persistent_id(persistent_id, &self.global_id)?),
+            content: FBuf::new(),
+        })))
     }
 
     fn restore(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
 
-        let path = Self::checkpoint_file(base, pid);
+        let path = base.clone().join(Self::checkpoint_file(pid));
         let _content = Runtime::storage_backend().unwrap().read(&path)?;
 
         Ok(())

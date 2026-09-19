@@ -16,7 +16,7 @@
 //! after a `flush` call; otherwise, if `flush` is invoked while the output stream is active, it will
 //! cause ownership conflict and panic.
 
-use std::{any::Any, borrow::Cow, marker::PhantomData, pin::Pin, rc::Rc, sync::Arc};
+use std::{any::Any, borrow::Cow, marker::PhantomData, pin::Pin, rc::Rc};
 
 use crate::{
     Error, Position, Scope,
@@ -24,12 +24,12 @@ use crate::{
         GlobalNodeId,
         metadata::{OperatorLocation, OperatorMeta},
         operator_traits::{
-            BinaryOperator, NaryOperator, Operator, QuaternaryOperator, TernaryOperator,
-            TernarySinkOperator,
+            BinaryOperator, CheckpointOperator, NaryOperator, Operator, QuaternaryOperator,
+            TernaryOperator, TernarySinkOperator,
         },
     },
 };
-use feldera_storage::{FileCommitter, StoragePath};
+use feldera_storage::StoragePath;
 use futures::Stream as AsyncStream;
 use futures_util::StreamExt;
 
@@ -115,16 +115,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    #[allow(unused_variables)]
-    fn checkpoint(
+    fn prepare_checkpoint(
         &mut self,
-        base: &StoragePath,
         persistent_id: Option<&str>,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<Box<dyn CheckpointOperator>>, Error> {
         Rc::get_mut(&mut self.operator)
             .unwrap()
-            .checkpoint(base, persistent_id, files)
+            .prepare_checkpoint(persistent_id)
     }
 
     #[allow(unused_variables)]
@@ -297,16 +294,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    #[allow(unused_variables)]
-    fn checkpoint(
+    fn prepare_checkpoint(
         &mut self,
-        base: &StoragePath,
         persistent_id: Option<&str>,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<Box<dyn CheckpointOperator>>, Error> {
         Rc::get_mut(&mut self.operator)
             .unwrap()
-            .checkpoint(base, persistent_id, files)
+            .prepare_checkpoint(persistent_id)
     }
 
     #[allow(unused_variables)]
@@ -484,16 +478,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    #[allow(unused_variables)]
-    fn checkpoint(
+    fn prepare_checkpoint(
         &mut self,
-        base: &StoragePath,
         persistent_id: Option<&str>,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<Box<dyn CheckpointOperator>>, Error> {
         Rc::get_mut(&mut self.operator)
             .unwrap()
-            .checkpoint(base, persistent_id, files)
+            .prepare_checkpoint(persistent_id)
     }
 
     #[allow(unused_variables)]
@@ -669,16 +660,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    #[allow(unused_variables)]
-    fn checkpoint(
+    fn prepare_checkpoint(
         &mut self,
-        base: &StoragePath,
         persistent_id: Option<&str>,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<Box<dyn CheckpointOperator>>, Error> {
         Rc::get_mut(&mut self.operator)
             .unwrap()
-            .checkpoint(base, persistent_id, files)
+            .prepare_checkpoint(persistent_id)
     }
 
     #[allow(unused_variables)]
@@ -852,16 +840,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    #[allow(unused_variables)]
-    fn checkpoint(
+    fn prepare_checkpoint(
         &mut self,
-        base: &StoragePath,
         persistent_id: Option<&str>,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<Box<dyn CheckpointOperator>>, Error> {
         Rc::get_mut(&mut self.operator)
             .unwrap()
-            .checkpoint(base, persistent_id, files)
+            .prepare_checkpoint(persistent_id)
     }
 
     #[allow(unused_variables)]

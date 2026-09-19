@@ -6,9 +6,10 @@
 #![allow(async_fn_in_trait)]
 
 use arc_swap::ArcSwap;
+use feldera_storage::fbuf::FBuf;
 use feldera_storage::{FileCommitter, StoragePath};
 
-use crate::Error;
+use crate::{Error, Runtime};
 use crate::{
     circuit::{
         OwnershipPreference, Scope,
@@ -233,25 +234,18 @@ pub trait Operator: 'static {
     /// ([`Stream::integrate`](`crate::circuit::Stream::integrate`)).
     fn fixedpoint(&self, scope: Scope) -> bool;
 
-    /// Instructs the operator to checkpoint its state to persistent storage in
-    /// directory `base`. Any files that the operator creates should have
-    /// `persistent_id` in their names to keep them unique.
+    /// Obtains an object that can write a checkpoint of the operator's state to
+    /// persistent storage, or `None` if the operator has no state to
+    /// checkpoint.
     ///
-    /// The operator shouldn't commit the state to stable storage; rather, it
-    /// should append the files to be committed to `files` for later commit.
-    ///
-    /// For most operators this method is a no-op.
-    ///
-    /// Fails if the operator is stateful, i.e., expects a checkpoint, by
-    /// `persistent_id` is `None`
+    /// Any files that the operator creates should have `persistent_id` in their
+    /// names to keep them unique.
     #[allow(unused_variables)]
-    fn checkpoint(
+    fn prepare_checkpoint(
         &mut self,
-        base: &StoragePath,
         persistent_id: Option<&str>,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error> {
-        Ok(())
+    ) -> Result<Option<Box<dyn CheckpointOperator>>, Error> {
+        Ok(None)
     }
 
     /// Instruct the operator to restore its state from persistent storage in
@@ -383,6 +377,31 @@ pub trait Operator: 'static {
     /// converged.  Operators without a trace always return `true`.
     fn is_compaction_complete(&self) -> bool {
         true
+    }
+}
+
+pub trait CheckpointOperator {
+    fn checkpoint(
+        self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), Error>;
+}
+
+pub struct CheckpointOperatorFile {
+    pub name: String,
+    pub content: FBuf,
+}
+
+impl CheckpointOperator for CheckpointOperatorFile {
+    fn checkpoint(
+        self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), Error> {
+        let file_name = base.clone().join(&*self.name);
+        files.push(Runtime::storage_backend()?.write(&file_name, self.content)?);
+        Ok(())
     }
 }
 

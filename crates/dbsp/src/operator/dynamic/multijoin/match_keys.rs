@@ -10,6 +10,7 @@ use crate::{
             OUTPUT_REDUNDANCY_PERCENT, OperatorMeta, PREFIX_BATCHES_STATS, SHARED_MEMORY_BYTES,
             STATE_RECORDS_COUNT, USED_MEMORY_BYTES,
         },
+        operator_traits::CheckpointOperator,
         splitter_output_chunk_size,
     },
     dynamic::{
@@ -22,7 +23,7 @@ use crate::{
     utils::Tup2,
 };
 use async_stream::stream;
-use feldera_storage::{FileCommitter, StoragePath};
+use feldera_storage::StoragePath;
 use futures::{Stream as AsyncStream, StreamExt};
 use size_of::{Context, SizeOf};
 use std::{
@@ -853,12 +854,8 @@ where
         self
     }
 
-    fn checkpoint(
-        &mut self,
-        _base: &StoragePath,
-        _files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), crate::Error> {
-        Ok(())
+    fn prepare_checkpoint(&mut self) -> Result<Option<Box<dyn CheckpointOperator>>, crate::Error> {
+        Ok(None)
     }
 
     fn restore(&mut self, _base: &StoragePath) -> Result<(), crate::Error> {

@@ -12,7 +12,7 @@ use crate::{
             MetaItem, OperatorLocation, OperatorMeta, RABALANCINGS_COUNT, REBALANCING_IN_PROGRESS,
             TOTAL_REBALANCING_TIME_SECONDS,
         },
-        operator_traits::Operator,
+        operator_traits::{CheckpointOperator, CheckpointOperatorFile, Operator},
         splitter_output_chunk_size, splitter_output_first_chunk_size,
     },
     circuit_cache_key, default_hasher,
@@ -38,7 +38,7 @@ use crate::{
     },
 };
 use async_stream::stream;
-use feldera_storage::{FileCommitter, StoragePath, fbuf::FBuf};
+use feldera_storage::{StoragePath, fbuf::FBuf};
 use rkyv::AlignedVec;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -1030,9 +1030,8 @@ where
         outputs
     }
 
-    fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
-        base.clone()
-            .join(format!("rebalancing-exchange-{}.dat", persistent_id))
+    fn checkpoint_file(persistent_id: &str) -> String {
+        format!("rebalancing-exchange-{}.dat", persistent_id)
     }
 
     async fn send(
@@ -1195,37 +1194,27 @@ where
     }
 
     /// Checkpoint the current sharding policy only.
-    fn checkpoint(
+    fn prepare_checkpoint(
         &mut self,
-        base: &StoragePath,
-        pid: Option<&str>,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), crate::Error> {
-        let pid = require_persistent_id(pid, &self.global_id)?;
+        persistent_id: Option<&str>,
+    ) -> Result<Option<Box<dyn CheckpointOperator>>, crate::Error> {
+        let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
 
         let checkpoint = RebalanceExchangeSenderCheckpoint {
             current_policy: self.current_policy.get(),
             key_distribution: self.key_distribution.borrow().clone(),
         };
 
-        let checkpoint_bytes = serde_json::to_vec(&checkpoint).unwrap();
-
-        let mut buf = FBuf::new();
-        buf.extend_from_slice(&checkpoint_bytes);
-
-        files.push(
-            Runtime::storage_backend()
-                .unwrap()
-                .write(&Self::checkpoint_file(base, pid), buf)?,
-        );
-
-        Ok(())
+        Ok(Some(Box::new(CheckpointOperatorFile {
+            name: Self::checkpoint_file(persistent_id),
+            content: FBuf::from_slice(&serde_json::to_vec(&checkpoint).unwrap()),
+        })))
     }
 
     fn restore(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), crate::Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
 
-        let file_path = Self::checkpoint_file(base, pid);
+        let file_path = base.clone().join(Self::checkpoint_file(pid));
         let content = Runtime::storage_backend().unwrap().read(&file_path)?;
 
         let checkpoint = serde_json::from_slice::<RebalanceExchangeSenderCheckpoint>(&content)

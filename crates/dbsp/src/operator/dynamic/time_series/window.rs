@@ -6,7 +6,7 @@ use crate::{
     circuit::{
         Circuit, GlobalNodeId, Scope, Stream,
         metadata::{BatchSizeStats, INPUT_BATCHES_STATS, OUTPUT_BATCHES_STATS, OperatorMeta},
-        operator_traits::Operator,
+        operator_traits::{CheckpointOperator, CheckpointOperatorFile, Operator},
         splitter_output_chunk_size,
     },
     dynamic::{
@@ -25,7 +25,7 @@ use crate::{
     },
 };
 use async_stream::stream;
-use feldera_storage::{FileCommitter, StoragePath};
+use feldera_storage::StoragePath;
 use futures::Stream as AsyncStream;
 use rkyv::Deserialize;
 use rkyv::bytecheck;
@@ -34,7 +34,6 @@ use std::{
     cell::{Cell, RefCell},
     marker::PhantomData,
     rc::Rc,
-    sync::Arc,
 };
 
 impl Stream<RootCircuit, MonoIndexedZSet> {
@@ -157,8 +156,8 @@ where
     }
 
     /// Return the absolute path of the file for a checkpointed Window.
-    fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
-        base.clone().join(format!("window-{}.dat", persistent_id))
+    fn checkpoint_file(persistent_id: &str) -> String {
+        format!("window-{}.dat", persistent_id)
     }
 }
 
@@ -192,29 +191,23 @@ where
         panic!("'Window' operator used in fixedpoint iteration")
     }
 
-    fn checkpoint(
+    fn prepare_checkpoint(
         &mut self,
-        base: &StoragePath,
         persistent_id: Option<&str>,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error> {
+    ) -> Result<Option<Box<dyn CheckpointOperator>>, Error> {
         let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
-        let window_path = Self::checkpoint_file(base, persistent_id);
-
         let committed: CommittedWindow = (self as &Self).into();
-        let as_bytes = to_bytes(&committed).expect("Serializing CommittedWindow should work.");
-        files.push(
-            Runtime::storage_backend()
-                .unwrap()
-                .write(&window_path, as_bytes)?,
-        );
-        Ok(())
+        let content = to_bytes(&committed).expect("Serializing CommittedWindow should work.");
+        Ok(Some(Box::new(CheckpointOperatorFile {
+            name: Self::checkpoint_file(persistent_id),
+            content,
+        })))
     }
 
     fn restore(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
         let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
 
-        let window_path = Self::checkpoint_file(base, persistent_id);
+        let window_path = base.clone().join(Self::checkpoint_file(persistent_id));
         let content = Runtime::storage_backend().unwrap().read(&window_path)?;
         let archived = rkyv::check_archived_root::<CommittedWindow>(&content).map_err(|e| {
             crate::circuit::checkpointer::checkpoint_invalid_data_error(

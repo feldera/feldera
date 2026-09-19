@@ -22,6 +22,7 @@
 //! The API that this directly exposes runs the circuit in the context of the
 //! current thread.  To instead run the circuit in a collection of worker
 //! threads, use [`Runtime::init_circuit`].
+use crate::circuit::operator_traits::{CheckpointOperator, CheckpointOperatorFile};
 use crate::profile::RuntimeIdle;
 use crate::{
     Error as DbspError, Position, Runtime, RuntimeError,
@@ -1102,16 +1103,12 @@ pub trait Node: Any {
         Ok(())
     }
 
-    /// Instructs the node to write the state of its inner operator to
-    /// persistent storage within directory `base`.
-    ///
-    /// The node shouldn't commit the state to stable storage; rather, it should
-    /// append the files to be committed to `files` for later commit.
-    fn checkpoint(
-        &mut self,
-        base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), DbspError>;
+    /// Obtains an object that can write a checkpoint of the node's inner
+    /// operator's state to persistent storage, or `None` if the operator has no
+    /// state to checkpoint.
+    fn prepare_checkpoint(&mut self) -> Result<Option<Box<dyn CheckpointOperator>>, DbspError> {
+        Ok(None)
+    }
 
     /// Instructs the node to restore the state of its inner operator to
     /// the given checkpoint in directory `base`.
@@ -4913,13 +4910,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(
-        &mut self,
-        base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), DbspError> {
+    fn prepare_checkpoint(&mut self) -> Result<Option<Box<dyn CheckpointOperator>>, DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref(), files)
+            .prepare_checkpoint(self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5087,13 +5080,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(
-        &mut self,
-        base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), DbspError> {
+    fn prepare_checkpoint(&mut self) -> Result<Option<Box<dyn CheckpointOperator>>, DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref(), files)
+            .prepare_checkpoint(self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5271,13 +5260,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(
-        &mut self,
-        base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), DbspError> {
+    fn prepare_checkpoint(&mut self) -> Result<Option<Box<dyn CheckpointOperator>>, DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref(), files)
+            .prepare_checkpoint(self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5448,13 +5433,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(
-        &mut self,
-        base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), DbspError> {
+    fn prepare_checkpoint(&mut self) -> Result<Option<Box<dyn CheckpointOperator>>, DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref(), files)
+            .prepare_checkpoint(self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5682,13 +5663,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(
-        &mut self,
-        base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), DbspError> {
+    fn prepare_checkpoint(&mut self) -> Result<Option<Box<dyn CheckpointOperator>>, DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref(), files)
+            .prepare_checkpoint(self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5892,13 +5869,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(
-        &mut self,
-        base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), DbspError> {
+    fn prepare_checkpoint(&mut self) -> Result<Option<Box<dyn CheckpointOperator>>, DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref(), files)
+            .prepare_checkpoint(self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -6126,13 +6099,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(
-        &mut self,
-        base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), DbspError> {
+    fn prepare_checkpoint(&mut self) -> Result<Option<Box<dyn CheckpointOperator>>, DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref(), files)
+            .prepare_checkpoint(self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -6334,13 +6303,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(
-        &mut self,
-        base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), DbspError> {
+    fn prepare_checkpoint(&mut self) -> Result<Option<Box<dyn CheckpointOperator>>, DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref(), files)
+            .prepare_checkpoint(self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -6563,13 +6528,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(
-        &mut self,
-        base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), DbspError> {
+    fn prepare_checkpoint(&mut self) -> Result<Option<Box<dyn CheckpointOperator>>, DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref(), files)
+            .prepare_checkpoint(self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -6777,13 +6738,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(
-        &mut self,
-        base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), DbspError> {
+    fn prepare_checkpoint(&mut self) -> Result<Option<Box<dyn CheckpointOperator>>, DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref(), files)
+            .prepare_checkpoint(self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -6978,14 +6935,10 @@ where
         self.operator.borrow().fixedpoint(scope)
     }
 
-    fn checkpoint(
-        &mut self,
-        base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), DbspError> {
+    fn prepare_checkpoint(&mut self) -> Result<Option<Box<dyn CheckpointOperator>>, DbspError> {
         self.operator
             .borrow_mut()
-            .checkpoint(base, self.persistent_id().as_deref(), files)
+            .prepare_checkpoint(self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -7161,18 +7114,14 @@ where
         self.operator.borrow().fixedpoint(scope)
     }
 
-    fn checkpoint(
-        &mut self,
-        _base: &StoragePath,
-        _files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), DbspError> {
+    fn prepare_checkpoint(&mut self) -> Result<Option<Box<dyn CheckpointOperator>>, DbspError> {
         // The Z-1 operator consists of two logical parts.
         // The first part gets invoked at the start of a clock cycle to retrieve the
         // state stored at the previous clock tick. The second one gets invoked
         // to store the updated state inside the operator. We only want to
         // invoke commit on one of them, doesn't matter which (so we
         // do it in FeedbackOutputNode)
-        Ok(())
+        Ok(None)
     }
 
     fn restore(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
@@ -7383,9 +7332,14 @@ where
         (named > 0).then(|| format!("scope-{:016x}", fingerprint.finish()))
     }
 
+    /// Name of the file holding this subcircuit's clock.
+    fn clock_file_name(persistent_id: &str) -> String {
+        format!("clock-{persistent_id}.dat")
+    }
+
     /// Absolute path of the file holding this subcircuit's clock.
-    fn clock_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
-        base.clone().join(format!("clock-{persistent_id}.dat"))
+    fn clock_path(base: &StoragePath, persistent_id: &str) -> StoragePath {
+        base.clone().join(Self::clock_file_name(persistent_id))
     }
 }
 
@@ -7480,13 +7434,10 @@ where
     /// This clock is used to assign timestamps to Z-sets stored by operators inside
     /// the circuit. If the clock is restored to 0 instead of its previous value, this would
     /// leave the state of the operators in the future.
-    fn checkpoint(
-        &mut self,
-        base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), DbspError> {
+    fn prepare_checkpoint(&mut self) -> Result<Option<Box<dyn CheckpointOperator>>, DbspError> {
         let persistent_id = self.persistent_id();
         let persistent_id = require_persistent_id(persistent_id.as_deref(), &self.id)?;
+        let name = Self::clock_file_name(persistent_id);
 
         let time = self.circuit.time();
 
@@ -7495,15 +7446,13 @@ where
                 .expect("serializing a subcircuit clock should work")
                 .to_vec(),
         };
-        let as_bytes = to_bytes(&committed).expect("serializing CommittedClock should work");
-        let filename = Self::clock_file(base, persistent_id);
-        files.push(Runtime::storage_backend()?.write(&filename, as_bytes)?);
+        let content = to_bytes(&committed).expect("serializing CommittedClock should work");
 
         debug!(
-            "subcircuit {} clock {time:?} stored as {persistent_id} in {filename}",
+            "subcircuit {} clock {time:?} stored as {persistent_id} in {name}",
             self.id
         );
-        Ok(())
+        Ok(Some(Box::new(CheckpointOperatorFile { name, content })))
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -7513,7 +7462,7 @@ where
         // A missing file propagates as `NotFound`, which puts the subcircuit in
         // `need_backfill`: the scope is cleared and replayed, which is what a
         // checkpoint taken before its contents changed calls for.
-        let path = Self::clock_file(base, persistent_id);
+        let path = Self::clock_path(base, persistent_id);
         let content = Runtime::storage_backend()?.read(&path)?;
         let committed = rkyv::check_archived_root::<CommittedClock>(&content).map_err(|e| {
             crate::circuit::checkpointer::checkpoint_invalid_data_error(
@@ -7859,7 +7808,7 @@ impl CircuitHandle {
                     .with_category("Checkpoint")
                     .with_tooltip(|| format!("{} {}", node.name(), node.global_id()));
                 DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS
-                    .record_callback(|| node.checkpoint(base, files))
+                    .record_callback(|| node.prepare_checkpoint(base, files))
             })
     }
 

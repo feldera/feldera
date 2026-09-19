@@ -24,6 +24,7 @@ use crate::{
         },
         metrics::COMPACTION_STALL_TIME_NANOSECONDS,
         negative_weight_multiplier,
+        operator_traits::CheckpointOperator,
         runtime::{TOKIO_BUFFER_CACHE, TOKIO_WORKER_INDEX},
     },
     dynamic::{DynVec, Factory},
@@ -55,6 +56,7 @@ use feldera_storage::{
 };
 use feldera_types::memory_pressure::MemoryPressure;
 use feldera_types::{checkpoint::PSpineBatches, config::dev_tweaks::MergerType};
+use itertools::Itertools as _;
 use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
@@ -1846,7 +1848,7 @@ where
     }
 
     /// Return the absolute path of the file for this Spine's batchlist.
-    fn batchlist_file(&self, base: &StoragePath, persistent_id: &str) -> StoragePath {
+    fn batchlist_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
         base.clone()
             .join(format!("pspine-batches-{}.dat", persistent_id))
     }
@@ -2182,65 +2184,12 @@ where
         &self.value_filter
     }
 
-    fn save(
-        &mut self,
-        base: &StoragePath,
-        persistent_id: &str,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error> {
-        fn persist_batches<B>(batches: Vec<Arc<B>>) -> Vec<Arc<B>>
-        where
-            B: Batch,
-        {
-            batches
-                .into_iter()
-                .map(|batch| {
-                    if let Some(persisted) = batch.persisted() {
-                        Arc::new(persisted)
-                    } else {
-                        batch
-                    }
-                })
-                .collect::<Vec<_>>()
-        }
-
-        // Persist all the batches, and stick the not-merging batches back into
-        // the merger.  (Putting the persisted batches into the merger means
-        // that we don't have to persist them again for the next checkpoint,
-        // saving time then. On the other hand, we do have to read them back
-        // from disk to use them: no free lunch.)
-        let (not_merging, merging) = self.merger.pause_new_merges();
-        let not_merging = persist_batches(not_merging);
-        self.merger.resume(not_merging.iter().cloned());
-        let merging = persist_batches(merging);
-
-        // Get the persistent IDs.
-        let ids = not_merging
-            .iter()
-            .chain(merging.iter())
-            .map(|batch| {
-                let file = batch
-                    .file_reader()
-                    .expect("The batch should have been persisted");
-                let path = file.path().to_string();
-                files.push(file);
-                path
-            })
-            .collect::<Vec<_>>();
-
-        let backend = Runtime::storage_backend().unwrap();
-        let committed: CommittedSpine = (ids, self as &Self).into();
-        let as_bytes = to_bytes(&committed).expect("Serializing CommittedSpine should work.");
-        files.push(backend.write(&Self::checkpoint_file(base, persistent_id), as_bytes)?);
-
-        // Write the batches as a separate file, this allows to parse it
-        // in `Checkpointer` without the need to know the exact Spine type.
-        let pspine_batches = PSpineBatches {
-            files: committed.batches,
-        };
-        files.push(backend.write_json(&self.batchlist_file(base, persistent_id), &pspine_batches)?);
-
-        Ok(())
+    fn save(&mut self, persistent_id: &str) -> Result<Box<dyn CheckpointOperator>, Error> {
+        Ok(Box::new(CheckpointOperatorSpine {
+            persistent_id: persistent_id.into(),
+            batches: self.get_batches(),
+            dirty: self.dirty,
+        }))
     }
 
     fn restore(&mut self, base: &StoragePath, persistent_id: &str) -> Result<(), Error> {
@@ -2298,6 +2247,68 @@ where
 
     fn is_compaction_complete(&self) -> bool {
         self.merger.is_compaction_complete()
+    }
+}
+
+pub struct CheckpointOperatorSpine<B> {
+    persistent_id: String,
+    batches: Vec<Arc<B>>,
+    dirty: bool,
+}
+
+impl<B> CheckpointOperator for CheckpointOperatorSpine<B>
+where
+    B: Batch,
+{
+    fn checkpoint(
+        self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), Error> {
+        // Persist all the batches and collect their names.
+        let ids = self
+            .batches
+            .iter()
+            .map(|batch| {
+                let file = batch.file_reader().unwrap_or_else(|| {
+                    let persisted = batch
+                        .persisted()
+                        .expect("The batch should have been persisted");
+                    persisted
+                        .file_reader()
+                        .expect("The persisted batch should be readable")
+                });
+                let path = file.path().to_string();
+                files.push(file);
+                path
+            })
+            .collect_vec();
+
+        // Write the spine in the form that we will restore from.
+        let backend = Runtime::storage_backend().unwrap();
+        let committed_spine = CommittedSpine {
+            batches: ids,
+            merged: Vec::new(),
+            effort: 0,
+            dirty: self.dirty,
+        };
+        let as_bytes = to_bytes(&committed_spine).expect("Serializing CommittedSpine should work.");
+        files.push(backend.write(
+            &Spine::<B>::checkpoint_file(base, &self.persistent_id),
+            as_bytes,
+        )?);
+
+        // Write the batches in a form that `Checkpointer` can read without the
+        // need to know the exact Spine type.
+        let pspine_batches = PSpineBatches {
+            files: committed_spine.batches,
+        };
+        files.push(backend.write_json(
+            &Spine::<B>::batchlist_file(base, &self.persistent_id),
+            &pspine_batches,
+        )?);
+
+        todo!()
     }
 }
 

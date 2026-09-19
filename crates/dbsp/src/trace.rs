@@ -27,6 +27,7 @@
 //! the `(time, diff)` pairs associated with a key and value.
 
 use crate::circuit::metadata::OperatorMeta;
+use crate::circuit::operator_traits::CheckpointOperator;
 use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 use crate::storage::buffer_cache::CacheStats;
 use crate::storage::file::SerializerInner;
@@ -42,7 +43,7 @@ use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::CursorFactory;
 use enum_map::Enum;
 use feldera_storage::fbuf::FBufSerializer;
-use feldera_storage::{FileCommitter, FileReader, StoragePath};
+use feldera_storage::{FileReader, StoragePath};
 use rand::{Rng, thread_rng};
 use rkyv::with::{CopyOptimize, With};
 use size_of::SizeOf;
@@ -351,15 +352,9 @@ pub trait Trace: BatchReader {
     fn key_filter(&self) -> &Option<Filter<Self::Key>>;
     fn value_filter(&self) -> &Option<GroupFilter<Self::Val>>;
 
-    /// Writes this trace to storage beneath `base`, using `pid` as a file name
-    /// prefix.  Adds the files that were written to `files` so that they can be
-    /// committed later.
-    fn save(
-        &mut self,
-        base: &StoragePath,
-        pid: &str,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error>;
+    /// Obtains an object that can write a snapshot of this trace to
+    /// persistent storage
+    fn save(&mut self, pid: &str) -> Result<Box<dyn CheckpointOperator>, Error>;
 
     /// Reads this trace back from storage under `base` with `pid` as the
     /// prefix.
