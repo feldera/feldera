@@ -18,15 +18,11 @@ use crate::{
     },
     utils::{ConsolidatePairedSlices, Tup2},
 };
-use feldera_storage::FileReader;
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::any::TypeId;
-use std::{
-    fmt::{self, Debug, Display},
-    sync::Arc,
-};
+use std::fmt::{self, Debug, Display};
 
 pub struct VecKeyBatchFactories<K, T, R>
 where
@@ -353,9 +349,6 @@ where
     type Timed<T2: Timestamp> = VecKeyBatch<K, T2, R, O>;
     type Batcher = MergeBatcher<Self>;
     type Builder = VecKeyBuilder<K, T, R, O>;
-    fn file_reader(&self) -> Option<Arc<dyn FileReader>> {
-        unimplemented!()
-    }
 
     fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)> {
         Some((self.layer.keys.first()?, self.layer.keys.last()?))

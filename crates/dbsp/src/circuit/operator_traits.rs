@@ -6,9 +6,11 @@
 #![allow(async_fn_in_trait)]
 
 use arc_swap::ArcSwap;
+use feldera_storage::fbuf::FBuf;
 use feldera_storage::{FileCommitter, StoragePath};
+use smallvec::{SmallVec, smallvec};
 
-use crate::Error;
+use crate::{Error, Runtime};
 use crate::{
     circuit::{
         OwnershipPreference, Scope,
@@ -18,7 +20,7 @@ use crate::{
 };
 use std::any::Any;
 use std::borrow::Cow;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 use std::sync::Arc;
 
 use super::GlobalNodeId;
@@ -233,25 +235,21 @@ pub trait Operator: 'static {
     /// ([`Stream::integrate`](`crate::circuit::Stream::integrate`)).
     fn fixedpoint(&self, scope: Scope) -> bool;
 
-    /// Instructs the operator to checkpoint its state to persistent storage in
-    /// directory `base`. Any files that the operator creates should have
-    /// `persistent_id` in their names to keep them unique.
+    /// Makes an in-memory checkpoint of the operator's state and returns an
+    /// object that can write it to persistent storage.  Returns `None` if the
+    /// operator has no state to checkpoint.
     ///
-    /// The operator shouldn't commit the state to stable storage; rather, it
-    /// should append the files to be committed to `files` for later commit.
+    /// Any files that the operator creates should have `persistent_id` in their
+    /// names to keep them unique.
     ///
-    /// For most operators this method is a no-op.
-    ///
-    /// Fails if the operator is stateful, i.e., expects a checkpoint, by
-    /// `persistent_id` is `None`
+    /// This function prepares to write a checkpoint.  Actual I/O should be
+    /// deferred to [OperatorCheckpoint::write].
     #[allow(unused_variables)]
     fn checkpoint(
         &mut self,
-        base: &StoragePath,
         persistent_id: Option<&str>,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error> {
-        Ok(())
+    ) -> Result<Option<Box<dyn OperatorCheckpoint>>, Error> {
+        Ok(None)
     }
 
     /// Instruct the operator to restore its state from persistent storage in
@@ -383,6 +381,51 @@ pub trait Operator: 'static {
     /// converged.  Operators without a trace always return `true`.
     fn is_compaction_complete(&self) -> bool {
         true
+    }
+}
+
+/// An in-memory checkpoint of an operator that can write itself to storage.
+///
+/// Returned by [Operator::checkpoint].
+pub trait OperatorCheckpoint: Debug + Send {
+    /// Writes a checkpoint of the operator that created this object below
+    /// `base` in storage.
+    ///
+    /// This function should not commit the files that it writes; rather, it
+    /// should return objects that can commit them.
+    fn write(
+        self: Box<Self>,
+        base: &StoragePath,
+    ) -> Result<SmallVec<[Arc<dyn FileCommitter>; 1]>, Error>;
+}
+
+/// An [OperatorCheckpoint] that writes contents to a file.
+///
+/// This is intended for small files.  Spines use their own mechanism.
+pub struct FileOperatorCheckpoint {
+    /// The file's name.
+    pub name: String,
+    /// The file's content.
+    pub content: FBuf,
+}
+
+impl OperatorCheckpoint for FileOperatorCheckpoint {
+    fn write(
+        self: Box<Self>,
+        base: &StoragePath,
+    ) -> Result<SmallVec<[Arc<dyn FileCommitter>; 1]>, Error> {
+        let file_name = base.clone().join(&*self.name);
+        Ok(smallvec![
+            Runtime::storage_backend()?.write(&file_name, self.content)?
+        ])
+    }
+}
+
+impl Debug for FileOperatorCheckpoint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FileOperatorCheckpoint")
+            .field("name", &self.name)
+            .finish_non_exhaustive()
     }
 }
 

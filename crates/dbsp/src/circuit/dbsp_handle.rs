@@ -2,6 +2,7 @@ use crate::circuit::GlobalNodeId;
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::circuit_builder::{CircuitHandle, ConcurrentRestoreOutcome};
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
+use crate::circuit::operator_traits::OperatorCheckpoint;
 use crate::circuit::schedule::CommitProgress;
 use crate::monitor::visual_graph::Graph;
 use crate::operator::dynamic::balance::{BalancerHint, PartitioningPolicy};
@@ -15,7 +16,7 @@ use anyhow::Error as AnyError;
 use crossbeam::channel::{Receiver, Select, Sender, TryRecvError, bounded};
 use feldera_buffer_cache::ThreadType;
 use feldera_ir::LirCircuit;
-use feldera_storage::{FileCommitter, StorageBackend, StoragePath};
+use feldera_storage::{StorageBackend, StoragePath};
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::config::DevTweaks;
 use feldera_types::config::dev_tweaks::{
@@ -23,7 +24,7 @@ use feldera_types::config::dev_tweaks::{
 };
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use feldera_types::transaction::CommitProgressSummary;
-use itertools::Either;
+use itertools::{Either, Itertools as _};
 use std::collections::BTreeMap;
 use std::net::TcpListener;
 use std::num::NonZeroUsize;
@@ -900,11 +901,8 @@ impl Runtime {
                             return;
                         }
                     }
-                    Ok(Command::Checkpoint(base)) => {
-                        let mut files = Vec::new();
-                        let response = circuit
-                            .checkpoint(&base, &mut files)
-                            .map(|_| Response::CheckpointCreated(files));
+                    Ok(Command::PrepareCheckpoint) => {
+                        let response = circuit.checkpoint().map(Response::CheckpointPrepared);
                         if status_sender.send(response).is_err() {
                             return;
                         }
@@ -1277,7 +1275,7 @@ enum Command {
         runtime_elapsed: Duration,
     },
     GetLir,
-    Checkpoint(StoragePath),
+    PrepareCheckpoint,
     Restore(StoragePath),
     SetBalancerHintsByGlobalId(Vec<(GlobalNodeId, BalancerHint)>),
     SetBalancerHints(Vec<(String, BalancerHint)>),
@@ -1331,7 +1329,7 @@ impl Debug for Command {
                 .field("runtime_elapsed", runtime_elapsed)
                 .finish(),
             Command::GetLir => write!(f, "GetLir"),
-            Command::Checkpoint(path) => f.debug_tuple("Checkpoint").field(path).finish(),
+            Command::PrepareCheckpoint => write!(f, "PrepareCheckpoint"),
             Command::Restore(path) => f.debug_tuple("Restore").field(path).finish(),
             Command::SetBalancerHintsByGlobalId(hints) => f
                 .debug_tuple("SetBalancerHintsByGlobalId")
@@ -1378,7 +1376,7 @@ enum Response {
     CommitProgress(CommitProgress),
     ProfileDump(Graph),
     Profile(WorkerProfile),
-    CheckpointCreated(Vec<Arc<dyn FileCommitter>>),
+    CheckpointPrepared(Vec<Box<dyn OperatorCheckpoint>>),
     CheckpointRestored(Option<BootstrapInfo>),
     ConcurrentRestore(ConcurrentRestoreOutcome),
     Lir(LirCircuit),
@@ -2721,20 +2719,18 @@ impl<'a> CheckpointBuilder<'a> {
         // directories during the first checkpoint commit on fresh storage.
         checkpointer.lock().unwrap().ensure_catalog_exists()?;
 
-        let uuid = Uuid::now_v7();
-        let checkpoint_dir = Checkpointer::checkpoint_dir(uuid);
-        let mut readers = Vec::new();
+        let mut worker_checkpoints = Vec::new();
         self.handle
-            .broadcast_command(Command::Checkpoint(checkpoint_dir), |_worker, resp| {
-                let Response::CheckpointCreated(r) = resp else {
+            .broadcast_command(Command::PrepareCheckpoint, |_worker, resp| {
+                let Response::CheckpointPrepared(r) = resp else {
                     panic!("Expected checkpoint response, got {resp:?}");
                 };
-                readers.push(r);
+                worker_checkpoints.push(r);
             })?;
         Ok(CheckpointCommitter {
+            runtime: self.handle.runtime().clone(),
             checkpointer,
-            readers,
-            uuid,
+            worker_checkpoints,
             fingerprint: self.handle.fingerprint,
             name: self.name,
             steps: self.steps,
@@ -2743,18 +2739,24 @@ impl<'a> CheckpointBuilder<'a> {
     }
 }
 
+/// Size of the private buffer cache of each thread that writes a checkpoint.
+///
+/// A size of 0 is not a good choice because writing a batch file does read back
+/// the file trailer when it transforms itself into a reader in `into_reader`.
+const CHECKPOINT_THREAD_CACHE_BYTES: usize = 64 * 1024;
+
 /// First phase of checkpoint commit.
 ///
-/// The first phase commits all operator data for the checkpoint and writes
-/// everything the checkpoint owns into its directory.  It does not update the
-/// checkpoint catalog, so the checkpoint is not yet visible.  This gives the
-/// client a chance to wait for output connectors to complete the output
-/// corresponding to the checkpoint, and to write its own state into the
-/// checkpoint directory, before publication in the second phase.
+/// The first phase writes all the data for the checkpoint into its directory.
+/// It does not update the checkpoint catalog, so the checkpoint is not yet
+/// visible.  This gives the client a chance to wait for output connectors to
+/// complete the output corresponding to the checkpoint, and to write its own
+/// state into the checkpoint directory, before publication in the second phase.
 pub struct CheckpointCommitter {
+    runtime: Runtime,
     checkpointer: Arc<Mutex<Checkpointer>>,
-    uuid: Uuid,
-    readers: Vec<Vec<Arc<dyn FileCommitter>>>,
+    /// For each worker, the checkpoints of its operators.
+    worker_checkpoints: Vec<Vec<Box<dyn OperatorCheckpoint>>>,
     fingerprint: u64,
     name: Option<String>,
     steps: Option<u64>,
@@ -2764,25 +2766,92 @@ pub struct CheckpointCommitter {
 impl CheckpointCommitter {
     /// Executes the first phase of checkpoint commit.
     ///
-    /// Committing a checkpoint ensures that its data is on stable storage.  It
-    /// can run in the background while the circuit processes more steps.
+    /// Committing a checkpoint writes its data and ensures that it is on stable
+    /// storage.  It can run in the background while the circuit processes more
+    /// steps.
     ///
     /// This method commits the checkpoint and returns an object that carries
     /// the checkpoint's metadata and publishes it.  In between, the client can
     /// wait for output connectors to complete writing the output corresponding
     /// to the checkpoint.
     pub fn commit(self) -> Result<CheckpointPublisher, DbspError> {
-        // One call for every worker's files, so the backend can sync them
-        // together. Committing them one at a time here would keep a single
-        // fsync in flight across the whole checkpoint.
-        let files: Vec<_> = self.readers.into_iter().flatten().collect();
+        let uuid = Uuid::now_v7();
+
+        // Spawn threads to write out all the operators' checkpoints, and then
+        // wait for all of them.
+        //
+        // We used to populate the spine batches that we write to disk back into
+        // the spines, so that any batches that are in memory before the
+        // checkpoint are on storage afterward.  We don't do that anymore (it
+        // would be difficult since we're not keeping the spines from doing
+        // further merges while we write).  It's probably at least as valid to
+        // do it this way; the batches that were spilled to disk were the
+        // smallest ones in the spines and are ordinarily due to be merged soon
+        // anyhow.
+        //
+        // We wait for all of them even if one of them fails so that we don't
+        // leave any zombies.
+        let commit_thread_results = self
+            .worker_checkpoints
+            .into_iter()
+            .enumerate()
+            .map(|(index, operators)| {
+                let runtime = self.runtime.clone();
+                std::thread::Builder::new()
+                    .name(format!("dbsp-commit-{index}"))
+                    .spawn(move || {
+                        // This thread doesn't run in the context of a dbsp
+                        // foreground or background thread, which means it would
+                        // by default use, and pollute, the shared auxiliary
+                        // buffer cache.  Use a small private cache instead.
+                        let _guard = runtime
+                            .enter()
+                            .with_private_cache(CHECKPOINT_THREAD_CACHE_BYTES);
+                        let checkpoint_dir = Checkpointer::checkpoint_dir(uuid);
+                        let mut committers = Vec::new();
+                        for operator in operators {
+                            committers.extend(operator.write(&checkpoint_dir)?);
+                        }
+                        Ok::<_, DbspError>(committers)
+                    })
+                    .expect("should be able to start checkpoint thread")
+            })
+            .collect_vec()
+            .into_iter()
+            .map(|handle| handle.join())
+            .collect_vec();
+
+        // Check for errors, then get the FileCommitters out of them.
+        let file_committers = commit_thread_results
+            .into_iter()
+            .map(|result| {
+                result.unwrap_or_else(|error| {
+                    #[allow(clippy::manual_map)]
+                    let message = if let Some(v) = error.downcast_ref::<String>() {
+                        Some(v.clone())
+                    } else if let Some(v) = error.downcast_ref::<&str>() {
+                        Some(v.to_string())
+                    } else {
+                        None
+                    };
+
+                    Err(DbspError::Runtime(RuntimeError::CheckpointPanic(message)))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .flatten()
+            .collect_vec();
+
+        // Commit the FileCommitters.
+        //
         // Clone the backend rather than holding the checkpointer lock across
-        // the syncs, which are the slowest part of making a checkpoint.
+        // the syncs.
         let backend = self.checkpointer.lock().unwrap().backend().clone();
-        backend.commit_all(&files)?;
+        backend.commit_all(&file_committers)?;
 
         let metadata = self.checkpointer.lock().unwrap().commit(
-            self.uuid,
+            uuid,
             self.fingerprint,
             self.name,
             self.steps,
@@ -2835,20 +2904,23 @@ pub(crate) mod tests {
     use std::fs::{File, create_dir_all};
     use std::io;
     use std::path::Path;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use std::time::Duration;
     use std::{fs, vec};
 
-    use super::CircuitStorageConfig;
+    use super::{CHECKPOINT_THREAD_CACHE_BYTES, CheckpointPublisher, CircuitStorageConfig};
     use crate::algebra::OrdZSet as DynOrdZSet;
     use crate::circuit::CircuitConfig;
     use crate::circuit::checkpointer::Checkpointer;
-    use crate::circuit::runtime::{TOKIO_WORKER_INDEX, current_thread_type};
+    use crate::circuit::operator_traits::OperatorCheckpoint;
+    use crate::circuit::runtime::{AUXILIARY_CACHE, TOKIO_WORKER_INDEX, current_thread_type};
     use crate::dynamic::{ClonableTrait, DowncastTrait, DynData, Erase};
     use crate::operator::Generator;
     use crate::operator::TraceBound;
     use crate::storage::backend::StorageError;
+    use crate::storage::buffer_cache::BufferCache;
     use crate::trace::{BatchReaderFactories, Filter, Spine, Trace, TraceRole};
+    use crate::typed_batch::Batch as _;
     use crate::utils::Tup2;
     use crate::{
         Circuit, DBSPHandle, Error as DbspError, IndexedZSetHandle, InputHandle, OrdZSet,
@@ -2856,7 +2928,9 @@ pub(crate) mod tests {
     };
     use anyhow::anyhow;
     use feldera_buffer_cache::ThreadType;
+    use feldera_storage::{FileCommitter, StoragePath};
     use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
+    use smallvec::SmallVec;
     use tempfile::tempdir;
     use uuid::Uuid;
 
@@ -3412,14 +3486,22 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn mkconfig(path: &Path) -> CircuitConfig {
-        CircuitConfig::with_workers(1).with_storage(Some(
+        mkconfig_with(path, 1, 0)
+    }
+
+    /// Like [mkconfig], with `workers` workers, keeping batches smaller than
+    /// `min_storage_bytes` in memory.  A step's output batches stay in memory
+    /// unless `min_storage_bytes` is 0.
+    fn mkconfig_with(path: &Path, workers: usize, min_storage_bytes: usize) -> CircuitConfig {
+        CircuitConfig::with_workers(workers).with_storage(Some(
             CircuitStorageConfig::for_config(
                 StorageConfig {
                     path: path.to_string_lossy().into_owned(),
                     cache: StorageCacheConfig::default(),
                 },
                 StorageOptions {
-                    min_storage_bytes: Some(0),
+                    min_storage_bytes: Some(min_storage_bytes),
+                    min_step_storage_bytes: (min_storage_bytes == 0).then_some(0),
                     ..StorageOptions::default()
                 },
             )
@@ -3545,6 +3627,232 @@ pub(crate) mod tests {
             .map(|cpm| cpm.uuid)
             .collect::<Vec<_>>();
         assert_eq!(published, vec![cpm.uuid]);
+    }
+
+    /// An operator checkpoint that panics in `write`, with a payload of each
+    /// kind that `commit` must handle.
+    #[derive(Debug)]
+    enum PanickingCheckpoint {
+        Str,
+        String,
+        NotAString,
+    }
+
+    impl OperatorCheckpoint for PanickingCheckpoint {
+        fn write(
+            self: Box<Self>,
+            _base: &StoragePath,
+        ) -> Result<SmallVec<[Arc<dyn FileCommitter>; 1]>, DbspError> {
+            match *self {
+                Self::Str => std::panic::panic_any("str payload"),
+                Self::String => std::panic::panic_any(String::from("String payload")),
+                Self::NotAString => std::panic::panic_any(42u32),
+            }
+        }
+    }
+
+    /// A panic on a thread that writes a checkpoint in the background must
+    /// come back from `commit` as an error that carries the panic message.
+    /// It must not publish the checkpoint or mark the runtime as panicked,
+    /// so the circuit keeps running and can take the next checkpoint.
+    #[test]
+    fn commit_reports_panic_while_writing_checkpoint() {
+        let _temp = tempdir().expect("Can't create temp dir for storage");
+        let cconf = mkconfig_with(_temp.path(), 2, 0);
+        let backend = cconf.storage.as_ref().unwrap().backend.clone();
+        let (mut dbsp, (input_handle, _, _)) = mkcircuit(cconf).unwrap();
+        let mut batch = vec![Tup2(1, Tup2(2, 1))];
+        input_handle.append(&mut batch);
+        dbsp.transaction().unwrap();
+
+        for (checkpoint, expected) in [
+            (PanickingCheckpoint::Str, Some("str payload")),
+            (PanickingCheckpoint::String, Some("String payload")),
+            (PanickingCheckpoint::NotAString, None),
+        ] {
+            let mut committer = dbsp.checkpoint().prepare().expect("prepare failed");
+            // A thread of its own, beside the real workers', so that the
+            // real operators still write while this one panics.
+            committer
+                .worker_checkpoints
+                .push(vec![Box::new(checkpoint)]);
+
+            let Err(error) = committer.commit() else {
+                panic!("commit succeeded although an operator panicked");
+            };
+            assert!(
+                matches!(
+                    &error,
+                    DbspError::Runtime(RuntimeError::CheckpointPanic(message))
+                        if message.as_deref() == expected
+                ),
+                "expected CheckpointPanic({expected:?}), got {error:?}"
+            );
+            assert!(
+                !dbsp.runtime.as_ref().unwrap().panicked(),
+                "a checkpoint thread's panic marked the runtime as panicked"
+            );
+        }
+        assert!(
+            Checkpointer::read_checkpoints(&*backend)
+                .expect("failed to read catalog")
+                .is_empty(),
+            "a failed checkpoint was published"
+        );
+
+        dbsp.transaction().unwrap();
+        let cpm = dbsp
+            .checkpoint()
+            .run()
+            .expect("checkpoint after a panic failed");
+        let published = Checkpointer::read_checkpoints(&*backend)
+            .expect("failed to read catalog")
+            .iter()
+            .map(|cpm| cpm.uuid)
+            .collect::<Vec<_>>();
+        assert_eq!(published, vec![cpm.uuid]);
+    }
+
+    /// An operator checkpoint that records the buffer cache that `write` runs
+    /// with.
+    #[derive(Debug)]
+    struct CacheProbe(Arc<Mutex<Option<Arc<BufferCache>>>>);
+
+    impl OperatorCheckpoint for CacheProbe {
+        fn write(
+            self: Box<Self>,
+            _base: &StoragePath,
+        ) -> Result<SmallVec<[Arc<dyn FileCommitter>; 1]>, DbspError> {
+            *self.0.lock().unwrap() = Runtime::buffer_cache();
+            Ok(SmallVec::new())
+        }
+    }
+
+    /// Each thread that writes a checkpoint uses a small buffer cache of its
+    /// own, so that writing the spines' in-memory batches does not evict the
+    /// blocks that output connectors keep in the shared auxiliary cache.
+    #[test]
+    fn commit_threads_use_private_buffer_caches() {
+        let _temp = tempdir().expect("Can't create temp dir for storage");
+        let cconf = mkconfig_with(_temp.path(), 2, usize::MAX);
+        let (mut dbsp, (input_handle, _, _)) = mkcircuit(cconf).unwrap();
+        for i in 0..10 {
+            input_handle.append(&mut vec![Tup2(i, Tup2(i, 1))]);
+            dbsp.transaction().unwrap();
+        }
+
+        let mut committer = dbsp.checkpoint().prepare().expect("prepare failed");
+        // Put a probe after each worker's operators, so that it runs on the
+        // same thread and sees the cache that their batches were written
+        // through.
+        let probes = committer
+            .worker_checkpoints
+            .iter_mut()
+            .map(|operators| {
+                let probe = Arc::new(Mutex::new(None));
+                operators.push(Box::new(CacheProbe(probe.clone())));
+                probe
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(probes.len(), 2);
+        committer
+            .commit()
+            .and_then(CheckpointPublisher::publish)
+            .expect("checkpoint failed");
+
+        let caches = probes
+            .iter()
+            .map(|probe| {
+                probe
+                    .lock()
+                    .unwrap()
+                    .take()
+                    .expect("a checkpoint thread has no buffer cache")
+            })
+            .collect::<Vec<_>>();
+        for cache in &caches {
+            assert!(
+                !Arc::ptr_eq(cache, &AUXILIARY_CACHE),
+                "a checkpoint thread wrote through the shared auxiliary cache"
+            );
+            assert_eq!(cache.occupancy().1, CHECKPOINT_THREAD_CACHE_BYTES);
+        }
+        assert!(
+            !Arc::ptr_eq(&caches[0], &caches[1]),
+            "two checkpoint threads share a buffer cache"
+        );
+    }
+
+    /// A checkpoint captures the circuit state at `prepare` time.  Steps that
+    /// run between `prepare` and `commit` must stay out of it, and the running
+    /// circuit must keep its own state after the checkpoint is written.
+    ///
+    /// The circuit has two workers, so `commit` writes on more than one
+    /// thread.
+    fn check_checkpoint_is_snapshot_at_prepare(min_storage_bytes: usize) {
+        const SAMPLE_SIZE: usize = 1000;
+        let temp = tempdir().expect("Can't create temp dir for storage");
+
+        let (cpm, expected_before) = {
+            let (mut dbsp, (input_handle, output_handle, sample_size_handle)) =
+                mkcircuit(mkconfig_with(temp.path(), 2, min_storage_bytes)).unwrap();
+            for i in 0..20 {
+                sample_size_handle.set_for_all(SAMPLE_SIZE);
+                input_handle.append(&mut vec![Tup2(i, Tup2(i, 1))]);
+                dbsp.transaction().unwrap();
+            }
+            let expected_before = output_handle.take_from_all()[0].clone();
+
+            let committer = dbsp.checkpoint().prepare().expect("prepare failed");
+
+            // Change every spine, and give them the chance to merge, before
+            // the checkpoint is written.
+            for i in 20..60 {
+                sample_size_handle.set_for_all(SAMPLE_SIZE);
+                input_handle.append(&mut vec![
+                    Tup2(i, Tup2(i, 1)),
+                    Tup2(i - 20, Tup2(i - 20, -1)),
+                ]);
+                dbsp.transaction().unwrap();
+            }
+            let expected_after = output_handle.take_from_all()[0].clone();
+            assert_ne!(expected_before, expected_after);
+
+            let cpm = committer
+                .commit()
+                .and_then(CheckpointPublisher::publish)
+                .expect("checkpoint failed");
+
+            // Writing the checkpoint leaves the running circuit unchanged.
+            sample_size_handle.set_for_all(SAMPLE_SIZE);
+            dbsp.transaction().unwrap();
+            assert_eq!(output_handle.take_from_all()[0], expected_after);
+            (cpm, expected_before)
+        };
+
+        let mut cconf = mkconfig_with(temp.path(), 2, min_storage_bytes);
+        cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
+        let (mut dbsp, (input_handle, output_handle, sample_size_handle)) =
+            mkcircuit(cconf).unwrap();
+        sample_size_handle.set_for_all(SAMPLE_SIZE);
+        input_handle.append(&mut vec![Tup2(1000, Tup2(1000, 1))]);
+        dbsp.transaction().unwrap();
+        let restored = output_handle.take_from_all()[0].filter(|Tup2(k, _), _| *k != 1000);
+        assert_eq!(restored, expected_before);
+    }
+
+    /// The spines' batches are on storage before the checkpoint, so `commit`
+    /// only has to sync them.
+    #[test]
+    fn checkpoint_is_snapshot_at_prepare_on_storage() {
+        check_checkpoint_is_snapshot_at_prepare(0);
+    }
+
+    /// The spines' batches are in memory, so `commit` writes them to storage
+    /// on its own threads.
+    #[test]
+    fn checkpoint_is_snapshot_at_prepare_in_memory() {
+        check_checkpoint_is_snapshot_at_prepare(usize::MAX);
     }
 
     /// If we call commit, we should preserve the checkpoint list across circuit
