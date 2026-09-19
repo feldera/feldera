@@ -193,6 +193,9 @@ import type {
   PostPipelineOutputConnectorActionData,
   PostPipelineOutputConnectorActionErrors,
   PostPipelineOutputConnectorActionResponses,
+  PostPipelineOutputConnectorCommandData,
+  PostPipelineOutputConnectorCommandErrors,
+  PostPipelineOutputConnectorCommandResponses,
   PostPipelinePauseData,
   PostPipelinePauseErrors,
   PostPipelinePauseResponses,
@@ -2018,6 +2021,35 @@ export const postUpdateRuntime = <ThrowOnError extends boolean = true>(
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/update_runtime',
     ...options
+  })
+
+/**
+ * Send command to an output connector.
+ *
+ * Required role: `write` or higher.
+ */
+export const postPipelineOutputConnectorCommand = <ThrowOnError extends boolean = true>(
+  options: Options<PostPipelineOutputConnectorCommandData, ThrowOnError>
+): RequestResult<
+  PostPipelineOutputConnectorCommandResponses,
+  PostPipelineOutputConnectorCommandErrors,
+  ThrowOnError,
+  'data'
+> =>
+  (options.client ?? client).post<
+    PostPipelineOutputConnectorCommandResponses,
+    PostPipelineOutputConnectorCommandErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/command',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers
+    }
   })
 
 /**

@@ -207,6 +207,7 @@ It contains the following fields:
         endpoints::pipeline_interaction::get_pipeline_input_connector_status,
         endpoints::pipeline_interaction::get_pipeline_output_connector_status,
         endpoints::pipeline_interaction::post_pipeline_output_connector_action,
+        endpoints::pipeline_interaction::post_pipeline_output_connector_command,
         endpoints::pipeline_interaction::get_pipeline_stats,
         endpoints::pipeline_interaction::get_pipeline_metrics,
         endpoints::pipeline_interaction::get_pipeline_circuit_profile,

@@ -592,7 +592,7 @@ pub(crate) async fn post_pipeline_output_connector_action(
     ),
     request_body(
         content = Object,
-        content_type = "text/json",
+        content_type = "application/json",
         description = "Command to send to the output connector"),
     responses(
         (status = OK
