@@ -22,11 +22,10 @@ use crate::{
     dynamic::DataTrait,
     trace::{Batch, BatchReader, Filter, Spine, SpineSnapshot, Trace, TraceRole},
 };
-use feldera_storage::{FileCommitter, StoragePath};
+use feldera_storage::StoragePath;
 use size_of::SizeOf;
 use std::any::{Any, TypeId};
 use std::ops::Range;
-use std::sync::Arc;
 use std::{borrow::Cow, marker::PhantomData, ops::Deref};
 
 // Trace of a collection updated once per clock cycle.
@@ -1141,16 +1140,15 @@ where
 
     fn checkpoint(
         &mut self,
-        base: &StoragePath,
-        pid: Option<&str>,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error> {
-        let pid = require_persistent_id(pid, &self.name)?;
+        persistent_id: Option<&str>,
+    ) -> Result<Option<Box<dyn OperatorCheckpoint>>, Error> {
+        let persistent_id = require_persistent_id(persistent_id, &self.name)?;
         self.trace
             .get_or_insert_with(|| {
                 T::new(&self.trace_factories, self.name.get(), TraceRole::Integral)
             })
-            .save(base, pid, files)
+            .save(persistent_id)
+            .map(Some)
     }
 
     fn restore(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
@@ -1370,7 +1368,7 @@ where
     }
 }
 
-use crate::circuit::operator_traits::{OperatorName, UnaryOperator};
+use crate::circuit::operator_traits::{OperatorCheckpoint, OperatorName, UnaryOperator};
 
 pub struct AccumulateDelayTrace<B>
 where

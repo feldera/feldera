@@ -38,6 +38,7 @@ use once_cell::sync::Lazy;
 use serde::Serialize;
 use std::convert::identity;
 use std::iter::repeat;
+use std::marker::PhantomData;
 use std::net::TcpListener;
 use std::ops::{Index, Range};
 use std::path::Path;
@@ -63,7 +64,7 @@ use tokio::runtime::Builder as TokioBuilder;
 use tokio::runtime::Runtime as TokioRuntime;
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use typedmap::TypedDashMap;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -76,6 +77,8 @@ pub enum Error {
         // reported panics.
         panic_info: Vec<(usize, ThreadType, WorkerPanicInfo)>,
     },
+    /// Panic while writing a checkpoint.
+    CheckpointPanic(Option<String>),
     /// The storage directory supplied does not match the runtime circuit.
     IncompatibleStorage,
     /// Error deserializing checkpointed state.
@@ -92,6 +95,7 @@ impl DetailedError for Error {
         match self {
             Self::UnknownPersistentId(_) => Cow::from("UnknownPersistentId"),
             Self::WorkerPanic { .. } => Cow::from("WorkerPanic"),
+            Self::CheckpointPanic(_) => Cow::from("CheckpointPanic"),
             Self::Terminated => Cow::from("Terminated"),
             Self::IncompatibleStorage => Cow::from("IncompatibleStorage"),
             Self::CheckpointParseError(_) => Cow::from("CheckpointParseError"),
@@ -112,6 +116,13 @@ impl Display for Error {
                 for (worker, thread_type, worker_panic_info) in panic_info.iter() {
                     writeln!(f, "{thread_type} worker thread {worker} panicked")?;
                     writeln!(f, "{worker_panic_info}")?;
+                }
+                Ok(())
+            }
+            Self::CheckpointPanic(message) => {
+                write!(f, "Panic while writing checkpoint")?;
+                if let Some(message) = message {
+                    write!(f, ": {message}")?;
                 }
                 Ok(())
             }
@@ -1020,20 +1031,6 @@ impl Runtime {
             }
         } else {
             // Fallback path for threads outside a [Runtime].
-            //
-            // This cache is shared by all auxiliary threads in the runtime.  In
-            // particular, output connector threads use it to maintain their
-            // output buffers.
-            //
-            // FIXME: We may need a tunable strategy for aux threads. We cannot
-            // simply give each of them the same cache as DBSP worker threads,
-            // as there can be dozens of aux threads (currently one per output
-            // connector), which do not necessarily need a large cache. OTOH,
-            // sharing the same cache across all of them may potentially cause
-            // performance issues.
-            static AUXILIARY_CACHE: LazyLock<Arc<BufferCache>> =
-                LazyLock::new(|| Arc::new(BufferCache::new(1024 * 1024 * 256)));
-
             let buffer_cache = AUXILIARY_CACHE.clone();
             BUFFER_CACHE.set(Some(buffer_cache.clone()));
             Some(buffer_cache)
@@ -1042,9 +1039,15 @@ impl Runtime {
 
     /// Spawn an auxiliary thread inside the runtime.
     ///
-    /// The auxiliary thread will have access to the runtime's resources, including the
-    /// storage backend. The current use case for this is to be able to use spines outside
-    /// of the DBSP worker threads, e.g., to maintain output buffers.
+    /// The auxiliary thread will have access to the runtime's resources,
+    /// including the storage backend. The current use case for this is to be
+    /// able to use spines outside of the DBSP worker threads, e.g., to maintain
+    /// output buffers.
+    ///
+    /// This doesn't give the thread a worker index or a [ThreadType], so it
+    /// won't have access to a particular worker's storage cache.  Instead, it
+    /// will use the small global storage cache, which is probably sufficient
+    /// for simple purposes like output buffers or writing checkpoints.
     ///
     /// `f` must return once [Runtime::kill_in_progress] holds, because
     /// [RuntimeHandle::join] joins the aux threads. An aux thread that waits
@@ -1070,7 +1073,7 @@ impl Runtime {
         let handle = Builder::new()
             .name(thread_name.to_string())
             .spawn(move || {
-                RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
+                let _guard = runtime.enter();
                 f(parker)
             })
             .expect("failed to spawn auxiliary thread");
@@ -1080,6 +1083,31 @@ impl Runtime {
             .lock()
             .unwrap()
             .push((handle, unparker))
+    }
+
+    /// Makes the current thread run in this runtime.  [Runtime::runtime] will
+    /// return this runtime and [Runtime::storage_backend] will return its
+    /// storage backend.  Returns a guard that, when dropped, will take this
+    /// thread out of the runtime.
+    ///
+    /// This doesn't give the thread a worker index or a [ThreadType], so it
+    /// won't have access to a particular worker's storage cache.  Instead, it
+    /// will use the small global storage cache, which is probably sufficient
+    /// for simple purposes like output buffers or writing checkpoints.
+    ///
+    /// This must not be called from a thread that is already running in a
+    /// thread associated with a runtime.
+    ///
+    /// This is meant for short-lived uses of the runtime that will complete on
+    /// their own.  For daemon threads, [Runtime::spawn_aux_thread] is a better
+    /// choice.
+    pub fn enter(&self) -> RuntimeGuard {
+        RUNTIME.with(|rt| {
+            let mut runtime = rt.borrow_mut();
+            assert!(runtime.is_none());
+            *runtime = Some(self.clone());
+        });
+        RuntimeGuard::new()
     }
 
     /// Returns this runtime's buffer-cache handle for thread type `thread_type`
@@ -1475,9 +1503,10 @@ impl Runtime {
     fn panic(&self, panic_info: &PanicHookInfo) {
         let local_worker_offset = Self::local_worker_offset();
         let Some(thread_type) = current_thread_type() else {
-            // We only install panic hooks on foreground and background threads,
-            // so this shouldn't happen, but we cannot panic here.
-            error!("panic hook called outside of a runtime or on an aux thread");
+            // The panic hook is process-wide, so it also runs on aux and helper
+            // threads, which have `RUNTIME` but no worker slot.  Their owners
+            // report the panic through the thread's `JoinHandle`.
+            debug!("panic on a runtime thread that is not a worker");
             return;
         };
         let panic_info = WorkerPanicInfo::new(panic_info);
@@ -1515,6 +1544,64 @@ impl Runtime {
     /// Use [Runtime::with_dev_tweaks] if there's not a `Runtime` handy already.
     pub fn dev_tweaks(&self) -> &DevTweaks {
         &self.inner().dev_tweaks
+    }
+}
+
+/// Buffer cache for threads that have no worker's cache.
+///
+/// This cache is shared by all auxiliary threads in the runtime.  In
+/// particular, output connector threads use it to maintain their output
+/// buffers.
+///
+/// FIXME: We may need a tunable strategy for aux threads. We cannot simply give
+/// each of them the same cache as DBSP worker threads, as there can be dozens
+/// of aux threads (currently one per output connector), which do not
+/// necessarily need a large cache. OTOH, sharing the same cache across all of
+/// them may potentially cause performance issues.
+pub(crate) static AUXILIARY_CACHE: LazyLock<Arc<BufferCache>> =
+    LazyLock::new(|| Arc::new(BufferCache::new(1024 * 1024 * 256)));
+
+/// A guard returned by [Runtime::enter].
+///
+/// Dropping the guard takes the thread out of the runtime, so it must be kept
+/// for as long as the thread uses the runtime.
+#[must_use = "the thread leaves the runtime as soon as the guard is dropped"]
+pub struct RuntimeGuard {
+    /// Set to true if `with_private_cache` was used.
+    has_private_cache: bool,
+    /// Make this type `!Send` and `!Sync`.
+    _phantom: PhantomData<*const ()>,
+}
+
+impl RuntimeGuard {
+    fn new() -> Self {
+        Self {
+            has_private_cache: false,
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Installs a thread-local buffer cache of `max_cost` size.  The buffer
+    /// cache will be uninstalled when the guard is dropped.
+    pub fn with_private_cache(mut self, max_cost: usize) -> Self {
+        assert!(!self.has_private_cache);
+        BUFFER_CACHE.set(Some(Arc::new(BufferCache::new(max_cost))));
+        self.has_private_cache = true;
+        self
+    }
+}
+
+impl Drop for RuntimeGuard {
+    fn drop(&mut self) {
+        RUNTIME.with(|rt| {
+            let mut runtime = rt.borrow_mut();
+            debug_assert!(runtime.is_some());
+            *runtime = None;
+        });
+
+        if self.has_private_cache {
+            BUFFER_CACHE.set(None);
+        }
     }
 }
 
