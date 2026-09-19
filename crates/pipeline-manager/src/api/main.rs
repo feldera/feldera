@@ -554,6 +554,63 @@ It contains the following fields:
 )]
 pub struct ApiDoc;
 
+#[cfg(test)]
+mod api_doc_tests {
+    //! Invariants the generated OpenAPI document must satisfy for the Rust
+    //! client to build.
+
+    use super::ApiDoc;
+    use utoipa::OpenApi;
+
+    /// Request-body media types `progenitor` accepts, from
+    /// `BodyContentType::from_str` in `progenitor-impl`.
+    const PROGENITOR_MEDIA_TYPES: &[&str] = &[
+        "application/json",
+        "application/octet-stream",
+        "application/x-www-form-urlencoded",
+        "text/plain",
+        "text/x-markdown",
+    ];
+
+    /// Checks that every request body in `ApiDoc`'s OpenAPI document offers
+    /// exactly one media type, and that the media type is in
+    /// `PROGENITOR_MEDIA_TYPES`. Does not check response media types.
+    #[test]
+    fn request_bodies_use_media_types_progenitor_accepts() {
+        let mut rejected = vec![];
+        for (path, item) in ApiDoc::openapi().paths.paths.iter() {
+            for operation in item.operations.values() {
+                let Some(body) = &operation.request_body else {
+                    continue;
+                };
+                let id = operation.operation_id.as_deref().unwrap_or(path);
+                if body.content.len() > 1 {
+                    let types: Vec<&str> = body.content.keys().map(String::as_str).collect();
+                    rejected.push(format!("{id}: several media types: {}", types.join(", ")));
+                    continue;
+                }
+                for media_type in body.content.keys() {
+                    // `progenitor` matches on the part before any parameter,
+                    // as in `text/plain; charset=utf-8`.
+                    let base = media_type
+                        .split_once(';')
+                        .map_or(media_type.as_str(), |(base, _)| base);
+                    if !PROGENITOR_MEDIA_TYPES.contains(&base) {
+                        rejected.push(format!("{id}: {media_type}"));
+                    }
+                }
+            }
+        }
+        rejected.sort();
+        assert!(
+            rejected.is_empty(),
+            "these request bodies break the feldera-rest-api build; use one of {:?}:\n  {}",
+            PROGENITOR_MEDIA_TYPES,
+            rejected.join("\n  ")
+        );
+    }
+}
+
 // `static_files` magic.
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
