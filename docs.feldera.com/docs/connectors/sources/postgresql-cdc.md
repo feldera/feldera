@@ -36,7 +36,11 @@ Use transport name `postgres_cdc_input`.
 
 The CDC connector does not support client-certificate TLS options
 (`ssl_client_pem`, `ssl_client_location`, `ssl_client_key`,
-`ssl_client_key_location`, or `ssl_certificate_chain_location`).
+`ssl_client_key_location`, or `ssl_certificate_chain_location`). It also
+rejects `verify_hostname: false`: hostname verification is always on, unlike
+the [PostgreSQL source](/connectors/sources/postgresql) and
+[sink](/connectors/sinks/postgresql), where it can be disabled. A pipeline that
+sets any of these fails to start.
 
 ## PostgreSQL setup
 
