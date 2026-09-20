@@ -16,7 +16,7 @@ use chrono::{
 use chrono_tz::Tz;
 use core::fmt::Formatter;
 use dbsp::{algebra::HasZero, num_entries_scalar};
-use feldera_macros::IsNone;
+use feldera_macros::{IsNone, OrdRepr};
 use feldera_types::serde_with_context::{
     DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
     TimestampFormat,
@@ -54,6 +54,7 @@ use crate::{
     rkyv::Serialize,
     serde::Serialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -366,6 +367,7 @@ impl Timestamp {
     rkyv::Serialize,
     serde::Serialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -2240,6 +2242,7 @@ some_nullable_function2!(parse_timestamp, SqlString, SqlString, Timestamp);
     rkyv::Deserialize,
     serde::Serialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -3341,6 +3344,7 @@ some_polymorphic_function1!(date_trunc_day, Date, Date, Date);
     rkyv::Deserialize,
     serde::Serialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]

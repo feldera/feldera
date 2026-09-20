@@ -10,6 +10,24 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Incompatible change (user-defined aggregates): the accumulator type of a
+  user-defined aggregate written in Rust must now implement
+  `dbsp::dynamic::OrdRepr` for its rkyv archived form, so that an archived
+  value can be ordered against an unarchived one without deserializing it.
+  Storage searches file-backed data by comparing archived keys, and every
+  type that can be a key or a value of a Feldera collection needs the
+  comparison; the same therefore holds for any type used as a key or a
+  value with the `dbsp` crate's Rust API. A type whose `Archive` and `Ord`
+  are both derived can add `#[derive(feldera_macros::OrdRepr)]`, which
+  compares the fields in the order `#[derive(Ord)]` does. A type with a
+  hand-written `Archive` implementation, such as the `I256Wrapper`
+  accumulator in the documentation, needs a hand-written
+  `impl OrdRepr<T> for ArchivedT` whose `ord_cmp` agrees with the type's
+  `Ord` on every pair of values; a disagreement makes lookups return wrong
+  rows. Without the implementation the pipeline fails to compile with
+  `the trait bound ... OrdRepr<...> is not satisfied`. See
+  [User-defined aggregates](/sql/udf#user-defined-aggregates).
+
 ## v0.352.0
 
 - Cluster monitoring data that has gone stale is now reported as such

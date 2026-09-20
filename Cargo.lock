@@ -4309,9 +4309,9 @@ dependencies = [
  "clap",
  "csv",
  "dbsp",
+ "feldera-fxp",
  "feldera-macros",
  "feldera-size-of",
- "feldera_rust_decimal",
  "hdrhist",
  "indicatif",
  "mimalloc-rust-sys",
@@ -5564,7 +5564,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f75b89f6b944171e5b7df05e40a399ce6355f7b03a51fdd446d6235a890f5f57"
 dependencies = [
  "arcstr",
- "feldera_rust_decimal",
  "hashbrown 0.13.2",
  "ordered-float 3.9.2",
  "size-of-derive",

@@ -144,7 +144,18 @@ pub trait Timestamp: DBData + PartialOrder + Lattice {
 /// `WithClock` trait.  You can otherwise use `()` as the type for an empty
 /// timestamp.
 #[derive(
-    Clone, Debug, Hash, PartialOrd, Ord, PartialEq, Eq, SizeOf, Archive, Serialize, Deserialize,
+    Clone,
+    Debug,
+    Hash,
+    PartialOrd,
+    Ord,
+    PartialEq,
+    Eq,
+    SizeOf,
+    Archive,
+    Serialize,
+    Deserialize,
+    feldera_macros::OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd, Hash))]
 #[archive(compare(PartialEq, PartialOrd))]

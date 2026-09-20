@@ -1415,6 +1415,14 @@ impl PartialOrd for ArchivedFlatVariant {
     }
 }
 
+/// Both forms order by the encoding, so the archived bytes compare with the
+/// value's bytes directly.
+impl dbsp::dynamic::OrdRepr<FlatVariant> for ArchivedFlatVariant {
+    fn ord_cmp(&self, other: &FlatVariant) -> Ordering {
+        cmp_values(self.as_bytes(), other.as_bytes())
+    }
+}
+
 impl Hash for ArchivedFlatVariant {
     fn hash<H: Hasher>(&self, state: &mut H) {
         hash_value(self.as_bytes(), state);

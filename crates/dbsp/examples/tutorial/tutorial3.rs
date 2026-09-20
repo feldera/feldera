@@ -2,7 +2,7 @@ use anyhow::Result;
 use csv::Reader;
 use dbsp::utils::Tup2;
 use dbsp::{OrdZSet, OutputHandle, RootCircuit, ZSet, ZSetHandle, ZWeight};
-use feldera_macros::IsNone;
+use feldera_macros::{IsNone, OrdRepr};
 use rkyv::{Archive, Serialize};
 use size_of::SizeOf;
 
@@ -21,6 +21,7 @@ use size_of::SizeOf;
     rkyv::Deserialize,
     serde::Deserialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 struct Record {
