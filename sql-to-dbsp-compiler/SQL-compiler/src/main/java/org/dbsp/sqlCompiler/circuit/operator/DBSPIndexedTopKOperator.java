@@ -36,7 +36,7 @@ import java.util.Objects;
  * This always sorts the elements of each group.
  * To sort the entire collection just group by (). */
 public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator
-    implements IContainsIntegrator, IIncremental {
+    implements IHasInputIntegrator, IHasPostIntegrator, IIncremental {
     /** These values correspond to the SQL keywords
      * ROW, RANK, and DENSE RANK. */
     public enum Numbering {

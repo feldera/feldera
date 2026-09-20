@@ -25,7 +25,7 @@ import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
  * elements in the left input are compared with the two scalars
  * in the pair; when they fall between the two limits,
  * they are emitted to the output ZSet. */
-public final class DBSPWindowOperator extends DBSPBinaryOperator implements IContainsIntegrator, IIncremental {
+public final class DBSPWindowOperator extends DBSPBinaryOperator implements IHasInputIntegrator, IIncremental {
     public final boolean lowerInclusive;
     public final boolean upperInclusive;
     /** True if the window's lower bound is -infinity.
@@ -62,6 +62,12 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator implements ICon
                         newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         }
         return this;
+    }
+
+    @Override
+    public boolean hasInputIntegrator(int inputIndex) {
+        // Input 1 carries the window bounds
+        return inputIndex == 0;
     }
 
     @Override
