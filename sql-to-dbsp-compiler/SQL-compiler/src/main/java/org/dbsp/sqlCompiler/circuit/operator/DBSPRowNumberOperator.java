@@ -26,7 +26,7 @@ import java.util.Objects;
  * Corresponds to the DBSP operators row_number_custom_order.
  * Similar to {@link DBSPRankOperator}. */
 public class DBSPRowNumberOperator extends DBSPUnaryOperator
-    implements IContainsIntegrator, IIncremental {
+    implements IHasPostIntegrator, IIncremental {
     /** Closure which produces the output tuple.  The signature is
      * (i64, sorted_tuple) -> output_tuple.  i64 is the rank of the current row. */
     public final DBSPClosureExpression outputProducer;

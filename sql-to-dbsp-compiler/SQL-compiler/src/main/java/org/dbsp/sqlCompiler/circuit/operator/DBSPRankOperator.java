@@ -27,7 +27,7 @@ import java.util.Objects;
  * Corresponds to one of the DBSP operators rank_custom_order or
  * dense_rank_custom_order.  Similar to {@link DBSPIndexedTopKOperator}. */
 public class DBSPRankOperator extends DBSPUnaryOperator
-    implements IContainsIntegrator, IIncremental {
+    implements IHasPostIntegrator, IIncremental {
     public final DBSPIndexedTopKOperator.Numbering numbering;
     /** Closure which produces the output tuple.  The signature is
      * (i64, sorted_tuple) -> output_tuple.  i64 is the rank of the current row. */

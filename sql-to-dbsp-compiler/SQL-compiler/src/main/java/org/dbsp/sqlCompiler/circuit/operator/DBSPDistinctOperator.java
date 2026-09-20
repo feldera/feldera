@@ -37,7 +37,7 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 public final class DBSPDistinctOperator extends DBSPUnaryOperator
-        implements IContainsIntegrator, IIncremental {
+        implements IHasInputIntegrator, IIncremental {
     public DBSPDistinctOperator(CalciteRelNode node, OutputPort input) {
         super(node, "distinct", null, input.outputType(), false, input);
     }

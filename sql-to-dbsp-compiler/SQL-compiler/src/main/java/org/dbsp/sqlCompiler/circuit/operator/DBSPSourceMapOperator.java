@@ -25,8 +25,13 @@ import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 /** This operator produces an IndexedZSet as a result, indexed on the table keys. */
 public final class DBSPSourceMapOperator
         extends DBSPSourceTableOperator
-        implements IInputMapOperator {
+        implements IInputMapOperator, IHasPostIntegrator {
     public final List<Integer> keyFields;
+
+    @Override
+    public boolean integratorHoldsOutput() {
+        return false;
+    }
 
     /**
      * Create a DBSP operator that is a source to the dataflow graph.
