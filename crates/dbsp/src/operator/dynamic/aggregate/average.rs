@@ -9,7 +9,7 @@ use crate::{
     dynamic::{ClonableTrait, DataTrait, Erase, Factory, Weight, WeightTrait, WithFactory},
     trace::Deserializable,
 };
-use feldera_macros::IsNone;
+use feldera_macros::{IsNone, OrdRepr};
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
@@ -80,6 +80,7 @@ where
     Serialize,
     Deserialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(bound(archive = "<T as Archive>::Archived: Ord, <R as Archive>::Archived: Ord"))]

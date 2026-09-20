@@ -14,7 +14,7 @@ use crate::{
     },
     utils::Tup2,
 };
-use feldera_macros::IsNone;
+use feldera_macros::{IsNone, OrdRepr};
 use rkyv::Archive;
 use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
@@ -92,6 +92,7 @@ pub type DynNeighborhood<K, V> = OrdZSet<DynPair<DynDataTyped<i64>, DynPair<K, V
     Hash,
     SizeOf,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(

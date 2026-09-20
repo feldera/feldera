@@ -25,7 +25,7 @@ use crate::{
     },
     utils::Tup2,
 };
-use feldera_macros::IsNone;
+use feldera_macros::{IsNone, OrdRepr};
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
@@ -51,6 +51,7 @@ use super::trace::BoundsId;
     Serialize,
     Deserialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]

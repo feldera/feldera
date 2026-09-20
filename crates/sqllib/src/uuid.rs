@@ -2,7 +2,7 @@
 
 use crate::error::{SqlResult, SqlRuntimeError};
 use dbsp::NumEntries;
-use feldera_macros::IsNone;
+use feldera_macros::{IsNone, OrdRepr};
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, serde_config::UuidFormat,
 };
@@ -24,6 +24,7 @@ use std::fmt::{self, Debug, Display};
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]

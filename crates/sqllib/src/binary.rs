@@ -93,6 +93,15 @@ impl crate::__hash_repr::HashRepr for ArchivedByteArray {
     }
 }
 
+/// Hand written rather than derived so that the bytes compare as one slice
+/// rather than one element at a time.
+impl dbsp::dynamic::OrdRepr<ByteArray> for ArchivedByteArray {
+    #[inline]
+    fn ord_cmp(&self, other: &ByteArray) -> std::cmp::Ordering {
+        self.data.as_slice().cmp(other.data.as_slice())
+    }
+}
+
 impl SizeOf for ByteArray {
     fn size_of_children(&self, context: &mut size_of::Context) {
         // `SmallVec` has no `SizeOf` impl, so delegating to `self.data` resolved

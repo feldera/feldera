@@ -1,4 +1,4 @@
-use super::{AsAny, Comparable, DowncastTrait};
+use super::{AsAny, Comparable, DowncastTrait, OrdRepr};
 use crate::{
     derive_comparison_traits,
     storage::file::{DbspSerializer, Deserializer},
@@ -11,17 +11,21 @@ use std::{cmp::Ordering, marker::PhantomData, mem::transmute};
 /// The associated type `Repr` with the bound + connecting it to Archived
 /// seems to be the key for rust to know the bounds exist globally in the code
 /// without having to specify the bounds everywhere.
+///
+/// `Repr: OrdRepr<Self>` is what lets storage order an archived value
+/// against an unarchived one without deserializing it; see [`OrdRepr`] for
+/// the contract that the implementation must meet.
 pub trait ArchivedDBData:
     for<'a> Serialize<DbspSerializer<'a>> + Archive<Archived = Self::Repr> + Sized
 {
-    type Repr: Deserialize<Self, Deserializer> + Ord;
+    type Repr: Deserialize<Self, Deserializer> + Ord + OrdRepr<Self>;
 }
 
 /// We also automatically implement this bound for everything that satisfies it.
 impl<T> ArchivedDBData for T
 where
     T: Archive + for<'a> Serialize<DbspSerializer<'a>>,
-    Archived<T>: Deserialize<T, Deserializer> + Ord,
+    Archived<T>: Deserialize<T, Deserializer> + Ord + OrdRepr<T>,
 {
     type Repr = Archived<T>;
 }
@@ -99,8 +103,12 @@ pub trait DeserializeDyn<Trait: ?Sized>: AsAny + Comparable {
         self.deserialize_with(target, &mut deserializer);
     }
 
+    /// Whether the archived value equals `target`.
     fn eq_target(&self, target: &Trait) -> bool;
-    fn cmp_target(&self, target: &Trait) -> Option<Ordering>;
+
+    /// Orders the archived value against `target`, as [`Ord`] on the
+    /// unarchived value would.
+    fn cmp_target(&self, target: &Trait) -> Ordering;
 }
 
 #[repr(transparent)]
@@ -172,19 +180,13 @@ where
     }
 
     fn eq_target(&self, other: &Trait) -> bool {
-        let mut deserializer = Deserializer::default();
-        self.archived
-            .deserialize(&mut deserializer)
-            .unwrap()
-            .eq(unsafe { other.downcast::<T>() })
+        self.cmp_target(other) == Ordering::Equal
     }
 
-    fn cmp_target(&self, other: &Trait) -> Option<Ordering> {
-        let mut deserializer = Deserializer::default();
-        self.archived
-            .deserialize(&mut deserializer)
-            .unwrap()
-            .partial_cmp(unsafe { other.downcast::<T>() })
+    fn cmp_target(&self, other: &Trait) -> Ordering {
+        // Compares the archived form directly; `T::Repr: OrdRepr<T>` is part
+        // of `ArchivedDBData`.
+        self.archived.ord_cmp(unsafe { other.downcast::<T>() })
     }
 }
 

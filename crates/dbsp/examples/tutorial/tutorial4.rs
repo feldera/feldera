@@ -4,7 +4,7 @@ use csv::Reader;
 use dbsp::typed_batch::IndexedZSetReader;
 use dbsp::utils::{Tup2, Tup3};
 use dbsp::{OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight};
-use feldera_macros::IsNone;
+use feldera_macros::{IsNone, OrdRepr};
 use rkyv::{Archive, Serialize};
 use size_of::SizeOf;
 
@@ -23,6 +23,7 @@ use size_of::SizeOf;
     rkyv::Deserialize,
     serde::Deserialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 struct Record {
