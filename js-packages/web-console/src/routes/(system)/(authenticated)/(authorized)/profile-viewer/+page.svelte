@@ -11,30 +11,39 @@
   } from 'profiler-layout'
   import type { Dataflow, JsonProfiles } from 'profiler-lib'
   import { fade } from 'svelte/transition'
+  import { replaceState } from '$app/navigation'
   import Popup from '$lib/components/common/Popup.svelte'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
   import PipelineBreadcrumbs from '$lib/components/layout/PipelineBreadcrumbs.svelte'
+  import SupportBundleConfirm from '$lib/components/pipelines/editor/SupportBundleConfirm.svelte'
   import SupportBundleMenu from '$lib/components/pipelines/editor/SupportBundleMenu.svelte'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import { receiveUploadedBundle } from '$lib/compositions/profileBundleHandoff'
+  import { type PickedBundle, useBundlePicker } from '$lib/compositions/useBundlePicker'
   import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { enclosure, nonNull } from '$lib/functions/common/function'
   import { resolve } from '$lib/functions/svelte'
+  import {
+    type BundleHistoryEntry,
+    isPermissionRequired,
+    resolveStoredBundle
+  } from '$lib/services/supportBundleHistory'
 
   const { data } = $props()
-  const { pipelineName, source, collect, channel } = data
+  const { pipelineName, source, collect, channel, bundle: storedBundleId } = data
 
   const api = usePipelineManager()
   const toast = useToast()
   const layoutSettings = useLayoutSettings()
+  const picker = useBundlePicker()
 
   let downloadProgress = useDownloadProgress()
   // If the URL provides no pipelineName, the remote-download path has no
   // target. Surface the empty state immediately instead of issuing a request
   // that would 404 — the user can still upload a bundle from disk.
-  let isLoading = $state(source !== 'upload' ? !!pipelineName : true)
+  let isLoading = $state(source === 'remote' ? !!pipelineName : true)
   let errorMessage = $state('')
   // Pipeline name from the loaded bundle's pipeline_config.json. Used as a
   // fallback in the breadcrumb when the URL didn't supply one.
@@ -60,6 +69,10 @@
 
   let collectNewData = $state(collect)
   let fileInput: HTMLInputElement | null = $state(null)
+  // Set when the URL names a bundle in the history. The page then knows where the
+  // archive is, but may still need the user to give permission to read it, which
+  // browsers forget from one visit to the next.
+  let pendingBundle: BundleHistoryEntry | null = $state(null)
 
   const withLoadGuard = createLoadGuard({
     setLoading: (loading) => {
@@ -123,6 +136,23 @@
   if (source === 'upload' || pipelineName) {
     withLoadGuard(async () => {
       if (source === 'upload') {
+        if (storedBundleId) {
+          // The viewer reads the archive itself, out of the history, which is what
+          // makes this URL worth reloading.
+          const entry = await resolveStoredBundle(storedBundleId)
+          const archive = await readStoredArchive(entry)
+          if (!archive) {
+            // Giving permission has to happen inside a click, so the empty state
+            // below offers a button that asks for it.
+            pendingBundle = entry
+            return
+          }
+          await loadStoredArchive(archive)
+          return
+        }
+        // With no history entry, the only source is the tab the user picked the
+        // bundle in, which hands the bytes over. That is the last resort, for an
+        // archive too large to keep a copy of.
         const buffer = await receiveUploadedBundle(channel)
         await processZipBundle(
           new Uint8Array(buffer),
@@ -174,17 +204,88 @@
     }, onLoadError('Failed to download the profile bundle.'))
   }
 
-  async function handleUpload(file: File) {
+  /**
+   * Loads a bundle the user picked in this tab. Where the bundle has a history entry,
+   * its id goes into the URL, so that reloading the tab opens the same bundle again.
+   */
+  async function handlePickedBundle(bundle: PickedBundle) {
     getProfileData = null
     errorMessage = ''
+    pendingBundle = null
+    if (bundle.bundleId !== undefined) {
+      replaceState(`${resolve('/profile-viewer')}?source=upload&bundle=${bundle.bundleId}`, {})
+    }
     await withLoadGuard(async () => {
       downloadProgress.onProgress(0, 1)
-      const buffer = await file.arrayBuffer()
       await processZipBundle(
-        new Uint8Array(buffer),
-        'No suitable profiles found in the uploaded bundle.'
+        await bundle.read(),
+        'No suitable profiles found in the selected bundle.'
       )
-    }, onLoadError('Failed to load the uploaded bundle.'))
+    }, onLoadError('Failed to load the selected bundle.'))
+  }
+
+  /**
+   * Lets the user pick a bundle from disk, with `showOpenFilePicker` where the browser
+   * has it and with the `<input type=file>` below where it does not.
+   */
+  async function pickBundle() {
+    if (!picker.isSupported) {
+      fileInput?.click()
+      return
+    }
+    try {
+      const bundle = await picker.pick()
+      if (bundle) {
+        await handlePickedBundle(bundle)
+      }
+    } catch (e) {
+      toast.toastError('Opening support bundle')(
+        e instanceof Error ? e : new Error(String(e)),
+        8000
+      )
+    }
+  }
+
+  /**
+   * The archive behind a history entry, or null when reading it needs the user's
+   * permission. Asking for that has to happen inside a click, which loading the page
+   * is not, so the caller draws a button that asks instead.
+   */
+  async function readStoredArchive(entry: BundleHistoryEntry) {
+    try {
+      return await entry.ops.read()
+    } catch (e) {
+      if (isPermissionRequired(e)) {
+        return null
+      }
+      throw e
+    }
+  }
+
+  async function loadStoredArchive(archive: Uint8Array) {
+    getProfileData = null
+    downloadProgress.onProgress(0, 1)
+    await processZipBundle(archive, 'No suitable profiles found in the stored bundle.')
+  }
+
+  /**
+   * Asks the user for permission to read the file, from inside the click that called
+   * this, and then loads the bundle.
+   */
+  async function grantAndLoadStoredBundle(entry: BundleHistoryEntry) {
+    errorMessage = ''
+    await withLoadGuard(async () => {
+      // A bundle stored as a copy of the archive offers nothing to ask, and needs
+      // nothing: the copy is this site's own data.
+      const granted = (await entry.ops.requestPermission?.()) ?? true
+      if (!granted) {
+        throw new Error(
+          `Reading ${entry.name} needs access to the file. Click "Open from disk" and ` +
+            'allow access when the browser asks, or open the bundle from disk again.'
+        )
+      }
+      await loadStoredArchive(await entry.ops.read())
+    }, onLoadError('Failed to open the support bundle.'))
   }
 
   async function handleSelectTimestamp(timestamp: Date) {
@@ -193,10 +294,6 @@
       () => loadProfile(timestamp),
       onLoadError('Failed to load the selected profile snapshot.')
     )
-  }
-
-  function triggerFileUpload() {
-    fileInput?.click()
   }
 </script>
 
@@ -208,14 +305,15 @@
   type="file"
   accept=".zip"
   bind:this={fileInput}
-  onchange={(e) => {
+  onchange={async (e) => {
     const file = (e.currentTarget as HTMLInputElement).files?.[0]
     if (file) {
       ;(e.currentTarget as HTMLInputElement).value = ''
-      handleUpload(file)
+      handlePickedBundle(await picker.fromFile(file))
     }
   }}
   class="hidden"
+  data-testid="input-open-support-bundle"
 />
 
 <div
@@ -321,8 +419,8 @@
                       handleLoadRemote()
                       close()
                     }}
-                    onFilePicked={(file) => {
-                      handleUpload(file)
+                    onPickBundle={() => {
+                      pickBundle()
                       close()
                     }}
                     disabled={isLoading}
@@ -343,14 +441,28 @@
           {errorMessage}
         </div>
       {/if}
+      {#if pendingBundle}
+        {@const entry = pendingBundle}
+        <!-- Shown when the browser has no permission to read the file, which is what
+             opening this URL directly looks like, after a reload or in a later
+             session. A bundle just picked in another tab was given permission there,
+             so its profile is already loading and there is nothing to confirm. -->
+        <SupportBundleConfirm
+          name={entry.name}
+          confirmLabel="Open from disk"
+          onConfirm={() => grantAndLoadStoredBundle(entry)}
+          variant="page"
+          data-testid="btn-open-stored-bundle"
+        />
+      {/if}
       {#if pipelineName}
         <button class="btn preset-filled-primary-500" onclick={handleLoadRemote}>
           Download profile
         </button>
       {/if}
-      <button class="link p-2 hover:underline" onclick={triggerFileUpload}>
-        Upload a support bundle zip
-      </button>
+      <!-- This is also the only control on a first visit, where nothing has been
+           opened yet, so the label cannot say "another". -->
+      <button class="link p-2 hover:underline" onclick={pickBundle}> Open a support bundle </button>
     </div>
   {/if}
 </div>
