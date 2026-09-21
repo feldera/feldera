@@ -637,6 +637,7 @@ export type {
   RuntimeStatus,
   RuntimeStatusDetails,
   RustCompilationInfo,
+  RustCompilerMessage,
   S2InputConfig,
   S2OutputConfig,
   S2StartFrom,
