@@ -34,6 +34,7 @@ with-kafka = ["rdkafka"]
 with-deltalake = [
     "deltalake",
     "deltalake-catalog-unity",
+    "feldera-modular-bloom",
     "roaring",
     "z85",
     "parquet/async",
@@ -198,6 +199,7 @@ rmpv = { workspace = true, features = ["with-serde"] }
 serde_bytes = { workspace = true }
 governor = { workspace = true }
 nonzero_ext = { workspace = true }
+feldera-modular-bloom = { workspace = true, optional = true }
 xxhash-rust = { workspace = true, features = ["xxh3"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }

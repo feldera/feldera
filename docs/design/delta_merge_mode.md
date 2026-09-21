@@ -313,7 +313,7 @@ def probe(file, rg, chunk, tombstones):
     base = rg.first_row_index                        # physical, ignores any existing DV
     for b in read_key_columns(file, rg):             # ProjectionMask::roots, streamed
         for i, key in enumerate(encoder.encode_batch(b)):
-            if chunk.contains(key):                  # binary search; no extra index
+            if chunk.contains(key):                  # Bloom filter, then binary search
                 tombstones[file.path].insert(base + b.offset + i)
 
 
@@ -456,7 +456,7 @@ order differs from the table's still works and a partition column the file does 
 is skipped.
 
 Searching the chunk rather than indexing the row group is what keeps the probe's peak at
-one decoded batch: no auxiliary hash index is built for either side. The two sides are made
+one decoded batch. The chunk's Bloom filter rejects most absent keys before the search. The two sides are made
 comparable by `arrow_row::RowConverter`, which encodes a value of any supported type into
 bytes whose comparison matches the logical one. Struct fields are encoded positionally, so
 the encoder projects them into a fixed order by name first.
