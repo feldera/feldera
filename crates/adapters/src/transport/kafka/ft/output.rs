@@ -9,7 +9,7 @@ use feldera_types::transport::kafka::KafkaOutputConfig;
 use rdkafka::client::OAuthToken;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::ConsumerContext;
-use rdkafka::message::OwnedHeaders;
+use rdkafka::message::{Header, OwnedHeaders};
 use rdkafka::{
     ClientConfig, ClientContext, Message,
     config::FromClientConfigAndContext,
@@ -244,6 +244,21 @@ impl OutputEndpoint for KafkaOutputEndpoint {
     }
 
     fn push_buffer(&mut self, buffer: &[u8]) -> AnyResult<()> {
+        self.push_key(None, Some(buffer), &[])
+    }
+
+    fn push_key(
+        &mut self,
+        provided_key: Option<&[u8]>,
+        val: Option<&[u8]>,
+        headers: &[(&str, Option<&[u8]>)],
+    ) -> AnyResult<()> {
+        if provided_key.is_some() {
+            bail!(
+                "Kafka output transport does not support key-value pairs when configured in exactly once fault-tolerant mode."
+            );
+        }
+
         let _guard = span(&self.topic);
         let State::BatchOpen(OutputPosition {
             transaction,
@@ -261,16 +276,23 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         });
 
         if transaction >= self.next_transaction {
+            let mut all_headers = self.headers.clone();
+            for (key, value) in headers {
+                all_headers = all_headers.insert(Header { key, value: *value });
+            }
+
             let key = OutputPosition {
                 transaction,
                 substep,
             };
             let key = serde_json::to_string(&key).unwrap();
-            let record = BaseRecord::to(&self.topic)
+            let mut record = BaseRecord::to(&self.topic)
                 .key(&key)
                 .partition(self.next_partition as i32)
-                .payload(buffer)
-                .headers(self.headers.clone());
+                .headers(all_headers);
+            if let Some(val) = val {
+                record = record.payload(val);
+            }
             kafka_send(&self.kafka_producer, &self.topic, record, &self.shutdown)?;
 
             self.next_partition += 1;
@@ -279,15 +301,6 @@ impl OutputEndpoint for KafkaOutputEndpoint {
             }
         }
         Ok(())
-    }
-
-    fn push_key(
-        &mut self,
-        _key: Option<&[u8]>,
-        _val: Option<&[u8]>,
-        _headers: &[(&str, Option<&[u8]>)],
-    ) -> AnyResult<()> {
-        todo!()
     }
 
     fn batch_end(&mut self) -> AnyResult<()> {

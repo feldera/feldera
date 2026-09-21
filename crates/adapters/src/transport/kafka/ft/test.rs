@@ -38,6 +38,8 @@ use feldera_types::transport::kafka::{
 use parquet::data_type::AsBytes;
 use proptest::prelude::*;
 use rand::thread_rng;
+use rdkafka::ClientConfig;
+use rdkafka::consumer::{BaseConsumer, Consumer};
 use rdkafka::message::{BorrowedMessage, Header, Headers};
 use rdkafka::producer::BaseRecord;
 use rdkafka::{Message, Timestamp};
@@ -1045,6 +1047,147 @@ fn kafka_output_test(
             .unwrap();
         endpoint.batch_end().unwrap();
     }
+}
+
+/// Verifies that a fault-tolerant Kafka output connector attaches the headers
+/// from its configuration, plus any per-message headers, to every message.
+#[test]
+fn output_headers_test() {
+    init_test_logger();
+    let output_topic = "ft_output_headers_test_output_topic";
+
+    // Create topic.
+    let _kafka_resources = KafkaResources::create_topics(&[(output_topic, 1)]);
+
+    let config = serde_json::from_value(json!({
+      "name": "kafka_output",
+      "config": {
+        "topic": output_topic,
+        "headers": [
+          {
+            "key": "header1",
+            "value": "foobar"
+          },
+          {
+            "key": "header2",
+            "value": [1, 2, 3, 4, 5]
+          }
+        ]
+      }
+    }))
+    .unwrap();
+
+    let mut endpoint = output_transport_config_to_endpoint(
+        &config,
+        "",
+        true,
+        default_secrets_directory(),
+        CancellationToken::new(),
+    )
+    .unwrap()
+    .unwrap();
+    assert!(endpoint.is_fault_tolerant());
+    endpoint
+        .connect(Box::new(|fatal, error, tag| {
+            info!("({fatal:?}, {error:?}, {tag:?})")
+        }))
+        .unwrap();
+
+    // `push_buffer` writes just the configured headers.
+    endpoint.batch_start(0, OutputBatchType::Delta).unwrap();
+    endpoint.push_buffer(b"from push_buffer").unwrap();
+    endpoint.batch_end().unwrap();
+
+    // `push_key` adds per-message headers on top of the configured ones.  A
+    // `None` value is a header with a null value.
+    endpoint.batch_start(1, OutputBatchType::Delta).unwrap();
+    endpoint
+        .push_key(
+            None,
+            Some(b"from push_key".as_slice()),
+            &[("header3", Some(b"baz".as_slice())), ("header4", None)],
+        )
+        .unwrap();
+    endpoint.batch_end().unwrap();
+
+    // An exactly-once connector deduplicates output by Kafka message key, so
+    // it cannot also write a caller-supplied key.
+    endpoint.batch_start(2, OutputBatchType::Delta).unwrap();
+    let error = endpoint
+        .push_key(Some(b"key".as_slice()), Some(b"value".as_slice()), &[])
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("does not support key-value pairs"),
+        "unexpected error: {error}"
+    );
+    endpoint.batch_end().unwrap();
+
+    let configured = [
+        ("header1".to_string(), Some(b"foobar".to_vec())),
+        ("header2".to_string(), Some(vec![1u8, 2, 3, 4, 5])),
+    ];
+    let per_message = [
+        ("header3".to_string(), Some(b"baz".to_vec())),
+        ("header4".to_string(), None),
+    ];
+    assert_eq!(
+        read_messages(output_topic, 2),
+        vec![
+            (b"from push_buffer".to_vec(), configured.to_vec()),
+            (
+                b"from push_key".to_vec(),
+                [configured.as_slice(), per_message.as_slice()].concat()
+            ),
+        ]
+    );
+}
+
+/// A Kafka message header, where a `None` value is a null value.
+type OutputHeader = (String, Option<Vec<u8>>);
+
+/// A Kafka message's payload and headers.
+type OutputMessage = (Vec<u8>, Vec<OutputHeader>);
+
+/// Reads the first `n` messages in `topic`, returning each message's payload
+/// and headers in the order that they were produced.
+fn read_messages(topic: &str, n: usize) -> Vec<OutputMessage> {
+    let consumer = ClientConfig::new()
+        .set("bootstrap.servers", default_redpanda_server())
+        .set("auto.offset.reset", "earliest")
+        .set("enable.auto.commit", "false")
+        .set("group.id", format!("{topic}_reader"))
+        // Fault-tolerant output connectors write inside transactions.
+        .set("isolation.level", "read_committed")
+        .create::<BaseConsumer>()
+        .unwrap();
+    consumer.subscribe(&[topic]).unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let mut messages = Vec::new();
+    while messages.len() < n {
+        assert!(
+            Instant::now() < deadline,
+            "read only {} of {n} messages in {topic} before timing out",
+            messages.len()
+        );
+        let Some(message) = consumer.poll(Duration::from_millis(100)) else {
+            continue;
+        };
+        let message = message.unwrap();
+        let headers = match message.headers() {
+            Some(headers) => (0..headers.count())
+                .map(|i| {
+                    let header = headers.get(i);
+                    (header.key.to_string(), header.value.map(|v| v.to_vec()))
+                })
+                .collect(),
+            None => Vec::new(),
+        };
+        messages.push((message.payload().unwrap_or_default().to_vec(), headers));
+    }
+    messages
 }
 
 fn _test() {
