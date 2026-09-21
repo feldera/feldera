@@ -298,6 +298,8 @@ where
 fn archived_ord_eq<T: DBData>(lhs: &T, rhs: &T) -> Result<(), TestCaseError> {
     let bytes = dbsp::storage::file::to_bytes(lhs)
         .map_err(|err| TestCaseError::fail(format!("serialize failed: {err:?}")))?;
+    // SAFETY: `bytes` is the archive of a `T`, in the aligned buffer
+    // `to_bytes` produced, so a `T::Repr` sits at its root.
     let archived = unsafe { rkyv::archived_root::<T>(&bytes[..]) };
     prop_assert_eq!(
         archived.ord_cmp(rhs),

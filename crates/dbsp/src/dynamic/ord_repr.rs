@@ -295,6 +295,8 @@ mod tests {
     /// Orders the archive of `lhs` against `rhs`, the way storage does.
     fn archived_cmp<T: ArchivedDBData>(lhs: &T, rhs: &T) -> Ordering {
         let bytes = to_bytes(lhs).unwrap();
+        // SAFETY: `bytes` is the archive of a `T`, in the aligned buffer
+        // `to_bytes` produced, so a `T::Repr` sits at its root.
         let archived = unsafe { archived_root::<T>(&bytes[..]) };
         archived.ord_cmp(rhs)
     }
@@ -513,6 +515,7 @@ mod tests {
         let lhs: Tup2<u32, Option<String>> = Tup2::new(1, Some("b".into()));
         let rhs: Tup2<u32, Option<String>> = Tup2::new(1, Some("a".into()));
         let bytes = to_bytes(&lhs).unwrap();
+        // SAFETY: `bytes` is the archive of `lhs`, a `Tup2<u32, Option<String>>`.
         let archived = unsafe { archived_root::<Tup2<u32, Option<String>>>(&bytes[..]) };
         let dyn_archived = DeserializeImpl::<Tup2<u32, Option<String>>, DynData>::new(archived);
         assert_eq!(dyn_archived.cmp_target(rhs.erase()), Ordering::Greater);
