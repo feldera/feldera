@@ -11,8 +11,8 @@
   import { dateMax } from '$lib/functions/common/date'
   import { matchesSubstring } from '$lib/functions/common/string'
   import { type NamesInUnion, unionName } from '$lib/functions/common/union'
-  import { resolve } from '$lib/functions/svelte'
   import { formatDateTime } from '$lib/functions/format'
+  import { resolve } from '$lib/functions/svelte'
   import type {
     PipelineStatus as PipelineStatusType,
     PipelineThumb

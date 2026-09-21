@@ -1,7 +1,10 @@
 <script lang="ts">
   /**
-   * The support bundle dropdown in the pipeline editor: the download entry, the "collect new data" toggle,
-   * and the button to upload a bundle from disk.
+   * The support bundle dropdown, in two shapes:
+   *   - `mode="menu"` - the pipeline editor's split button: the dropdown holds the download entry,
+   *     the "collect new data" toggle, and the button to upload a bundle from disk.
+   *   - `mode="pick"` - the "Open support bundle" dialog's button: the trigger opens the system
+   *     file picker right away, and the dropdown holds only the confirmation.
    *
    * A profile from the  bundle is opened in a new window. When the bundle is chosen from disk
    * the "user activation" - a browser term - from a click is lost because the click is used
@@ -25,7 +28,18 @@
 
   type Props = {
     trigger: Snippet<[toggle: () => void, isOpen: boolean]>
-    /** When omitted the menu offers no download. */
+    /** Whether the trigger opens the bundle menu or picks a bundle right away. */
+    mode?: 'menu' | 'pick'
+    /** Which edge of the trigger the dropdown hangs from. */
+    align?: 'left' | 'right'
+    /**
+     * Which way the dropdown opens. Use `'up'` for a trigger near the bottom edge of
+     * its container, where a downward dropdown would hide below the viewport.
+     */
+    drop?: 'down' | 'up'
+    /** Runs once the viewer tab is open, so a caller such as a dialog can close itself. */
+    onOpened?: () => void
+    /** Menu mode only; when omitted the menu offers no download. */
     onDownload?: () => void
     collectNewData?: boolean
     downloadLabel?: string
@@ -37,6 +51,10 @@
 
   let {
     trigger,
+    mode = 'menu',
+    align = 'right',
+    drop = 'down',
+    onOpened,
     onDownload,
     collectNewData = $bindable(false),
     downloadLabel,
@@ -63,6 +81,11 @@
   }
 
   async function pickBundle() {
+    // Choosing again supersedes whatever is waiting for confirmation, and dropping it
+    // here covers the user who then dismisses the picker: a confirmation left standing
+    // would name a file the user has moved on from. Clearing it here rather than leaving
+    // it to the popup's outside-click handler keeps the two independent of each other.
+    dismissPicked()
     if (!picker.isSupported) {
       // Clicking the input closes the dropdown, because the input sits outside it.
       // `confirmPicked` opens the dropdown again once there is a file to confirm.
@@ -79,9 +102,15 @@
     }
   }
 
-  /** Forgets the picked bundle, which brings the menu back. */
+  /**
+   * Forgets the picked bundle. In menu mode that brings the menu back, in pick mode
+   * there is nothing else to show, so the dropdown closes.
+   */
   function dismissPicked() {
     picked = null
+    if (mode === 'pick') {
+      showDropdown = false
+    }
   }
 
   /**
@@ -102,7 +131,9 @@
         openStoredBundleTab(bundle.bundleId)
       } catch (e) {
         reportError('Opening support bundle viewer')(e)
+        return
       }
+      onOpened?.()
       return
     }
 
@@ -113,6 +144,9 @@
       reportError('Opening support bundle viewer')(e)
       return
     }
+    // The transfer below outlives this component when `onOpened` unmounts it, because
+    // the handoff closes over the opened window rather than over component state.
+    onOpened?.()
     ;(async () => {
       try {
         const bytes = await bundle.read()
@@ -125,9 +159,9 @@
   }
 </script>
 
-<!-- The input is outside the dropdown on purpose: the dropdown closes the moment the
-     input is clicked, and an input that has been unmounted never reports the file the
-     user chose. -->
+<!-- The input is outside the dropdown on purpose: in menu mode the dropdown closes the
+     moment the input is clicked, and an input that has been unmounted never reports
+     the file the user chose. -->
 <input
   type="file"
   accept=".zip"
@@ -143,21 +177,39 @@
   data-testid="input-upload-support-bundle"
 />
 
-<Popup {wrapperClass} bind:isOpen={showDropdown} {trigger} content={dropdown} />
+<Popup
+  {wrapperClass}
+  bind:isOpen={showDropdown}
+  trigger={mode === 'pick' ? pickTrigger : trigger}
+  content={dropdown}
+/>
+
+<!-- In pick mode the trigger picks instead of toggling, and the dropdown opens once
+     there is something to confirm. -->
+{#snippet pickTrigger(_toggle: () => void, isOpen: boolean)}
+  {@render trigger(pickBundle, isOpen)}
+{/snippet}
 
 {#snippet dropdown(close: () => void)}
   <div
     transition:slide={{ duration: 100 }}
-    class="bg-white-dark absolute top-10 right-0 z-30 flex min-w-[220px] flex-col overflow-hidden rounded shadow-md"
+    class="bg-white-dark absolute z-30 flex min-w-[220px] flex-col overflow-hidden rounded shadow-md {align ===
+    'right'
+      ? 'right-0'
+      : 'left-0'} {drop === 'up' ? 'bottom-10' : 'top-10'}"
     data-testid="box-support-bundle-menu"
   >
-    <SlidingPanels
-      current={picked ? 'confirm' : 'menu'}
-      pages={[
-        { key: 'menu', content: menuPage },
-        { key: 'confirm', content: confirmPage }
-      ]}
-    />
+    {#if mode === 'pick'}
+      {@render confirmPage()}
+    {:else}
+      <SlidingPanels
+        current={picked ? 'confirm' : 'menu'}
+        pages={[
+          { key: 'menu', content: menuPage },
+          { key: 'confirm', content: confirmPage }
+        ]}
+      />
+    {/if}
   </div>
 
   {#snippet menuPage()}
