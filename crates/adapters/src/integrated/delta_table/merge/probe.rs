@@ -4,8 +4,8 @@
 //! lookup turns a set of keys into a set of (path, ordinal) pairs. It is the only expensive
 //! step in a flush, reading the key columns of the row groups that survive pruning.
 //!
-//! The keys sought live in a sorted [`LookupChunk`], so each decoded key is resolved by
-//! binary search with no auxiliary index. Peak memory is one decoded batch per task.
+//! The keys sought live in a sorted [`LookupChunk`]: its Bloom filter rejects most decoded
+//! keys, and a binary search confirms the rest. Peak memory is one decoded batch per task.
 //!
 //! # Ordinals are physical
 //!
