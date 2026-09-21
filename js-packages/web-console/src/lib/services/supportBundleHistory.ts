@@ -1,82 +1,64 @@
 /**
- * The history of the support bundles the user opened from disk.
+ * The history of support bundles the user opened from disk, and the API the rest of
+ * the application calls.
  *
- * Remembering a bundle means remembering how to read the archive again, and there are
- * two ways of doing that, depending on what the browser offers:
+ * Every entry records how to read its archive again. `supportBundleStorage.ts` holds
+ * the two ways of doing that, and `supportBundleStore.ts` one level down keeps the records
+ * in IndexedDB. This module provides access to history entries.
  *
- *   Browser          Picking a file gives      An history entry costs   Reading it again needs
- *   Chromium         a FileSystemFileHandle    a few hundred Bytes      the user's permission
- *   Firefox, Safari  a File                    the whole archive        nothing
+ * Each record is matched against the two ways of storing a bundle once, as it comes
+ * out of the database. A `BundleHistoryEntry` is therefore known to be readable, and
+ * no caller has to ask which of the two kinds it holds.
  *
- * Every browser shows the user a file picker. What differs is what the page is handed
- * back. With the File System Access API, `showOpenFilePicker` returns a
- * `FileSystemFileHandle`: an object that points at the file on disk and can open it
- * again later. Storing that is the better of the two, because it costs the same few
- * hundred bytes however large the archive behind it. Firefox and Safari have neither
- * that API nor its handles, so there the user picks the file with an
- * `<input type=file>` and the page is handed a `File`, which cannot be opened again
- * once the page is reloaded. Such a bundle is remembered by keeping a copy of the
- * archive, and everything specific to those copies is in `supportBundleCache.ts`.
- *
- * The entries live in IndexedDB because it is the only browser storage that holds
- * either kind: a handle and a `File` can both be written by structured clone, and
- * neither can be turned into the JSON that `localStorage` is limited to.
- *
- * Every tab of this site reads one and the same history, so a bundle opened in one tab
- * can be opened again from another.
+ * `listBundleHistory` reads the history once. `observeBundleHistory` keeps handing it
+ * back as it changes, in this tab and in the others.
  */
 
-const DB_NAME = 'feldera-support-bundles'
-const DB_VERSION = 1
-const STORE_NAME = 'bundles'
+import {
+  bundleOps,
+  isSameCachedFile,
+  isSameHandle,
+  type StoredBundleOps
+} from './supportBundleStorage'
+export { isPermissionRequired } from './supportBundleStorage'
+import {
+  deleteBundleRecords,
+  getBundleRecord,
+  isQuotaExceeded,
+  listBundleRecords,
+  observeBundleRecords,
+  putBundleRecord,
+  type Observable,
+  type NewSupportBundle,
+  type StoredSupportBundle,
+  type SupportBundleMetadata
+} from './supportBundleStore'
 
-/** How many bundles are remembered. Those opened longest ago are dropped first. */
-export const maxRememberedBundles = 30
-
-/** The part of a history entry that does not depend on how the archive is stored. */
-type SupportBundleFacts = {
-  /** The key of the entry in IndexedDB. */
-  id: number
-  /** The name of the file the user picked. */
-  name: string
-  /**
-   * When the bundle was last opened, in milliseconds since the epoch. The history is
-   * ordered by this.
-   */
-  openedAt: number
-}
-
-/** A bundle remembered as a handle, which opens the file on disk again. */
-export type LinkedSupportBundle = SupportBundleFacts & { handle: FileSystemFileHandle }
-
-/** A bundle remembered as a copy of the archive, for browsers that give out no handle. */
-export type CachedSupportBundle = SupportBundleFacts & { file: File }
+export type { StoredBundleOps, Observable }
+export { clearBundleRecords as clearBundleHistory } from './supportBundleStore'
 
 /**
- * A remembered bundle. An entry holds either a handle or a copy of the archive, never
- * both and never neither, so reading one starts by asking which of the two it is:
- * `isLinkedBundle` below answers that for handles, and `isCachedBundle` in
- * `supportBundleCache.ts` for copies.
+ * How many bundles are remembered. The history is an LRU cache: once it is full, the
+ * entry opened longest ago is dropped to make room.
  */
-export type StoredSupportBundle = LinkedSupportBundle | CachedSupportBundle
+export const maxHistoryEntries = 30
 
-/** An entry about to be written, before IndexedDB has assigned it an id. */
-export type NewSupportBundle = Omit<LinkedSupportBundle, 'id'> | Omit<CachedSupportBundle, 'id'>
+/**
+ * The largest archive, in bytes, that is copied into IndexedDB. A bundle over this
+ * size still opens; it just gets no history entry.
+ */
+export const maxCachedBundleBytes = 256 * 1024 * 1024
 
-export const isLinkedBundle = (
-  bundle: StoredSupportBundle | NewSupportBundle
-): bundle is LinkedSupportBundle => 'handle' in bundle
+/**
+ * How many bytes all the entries together may occupy. Past that, the same LRU
+ * eviction applies, so a browser that caches copies of the archives remembers fewer
+ * bundles than one that stores handles.
+ *
+ * The budget is larger than `maxCachedBundleBytes`, which is what keeps the deletion
+ * pass after a write from deleting the copy that write just added.
+ */
+export const cachedBundlesByteBudget = 512 * 1024 * 1024
 
-/** Whether this site may read one particular file, in the words the browser uses. */
-export type BundlePermissionState = 'granted' | 'denied' | 'prompt'
-
-// The parts of the File System Access API that TypeScript 5.9's lib.dom.d.ts does not
-// declare, narrowed to the calls made here. All three are optional: a browser may have
-// the handles and not the permission methods, and outside Chromium it has neither.
-type FileHandleWithPermissions = FileSystemFileHandle & {
-  queryPermission?: (descriptor: { mode: 'read' }) => Promise<BundlePermissionState>
-  requestPermission?: (descriptor: { mode: 'read' }) => Promise<BundlePermissionState>
-}
 type WindowWithFilePicker = Window & {
   showOpenFilePicker?: (options?: {
     multiple?: boolean
@@ -104,6 +86,15 @@ export const isBundlePickerSupported = () =>
 export const isHistorySupported = () => typeof indexedDB !== 'undefined'
 
 /**
+ * Whether adding an entry in this browser means copying the whole archive into
+ * IndexedDB, because the browser has no `showOpenFilePicker` and so hands the page a
+ * `File` rather than a handle that can open the archive again.
+ *
+ * False when IndexedDB is unusable, since then there is nowhere to put the copy.
+ */
+export const isBundleCacheRequired = () => isHistorySupported() && !isBundlePickerSupported()
+
+/**
  * Shows the file picker through the File System Access API, so that what comes back is
  * a handle rather than a `File`. Resolves to null when the user dismisses the picker,
  * which the API reports by throwing an `AbortError` rather than by returning nothing.
@@ -127,254 +118,217 @@ export const pickSupportBundle = async (): Promise<FileSystemFileHandle | null> 
   }
 }
 
-const promisify = <T>(request: IDBRequest<T>) =>
-  new Promise<T>((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'))
-  })
+/** One entry of the history: what the bundle is, and the operations that read it. */
+export type BundleHistoryEntry = SupportBundleMetadata & { ops: StoredBundleOps }
 
-const openDatabase = () =>
-  new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION)
-    request.onupgradeneeded = () => {
-      const db = request.result
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        // IndexedDB generates the ids, because nothing about a file is stable enough
-        // to use as a key: one name can occur in several directories, and a handle
-        // carries no identifier of its own.
-        db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true })
-      }
+const toHistoryEntry = (record: StoredSupportBundle): BundleHistoryEntry | undefined => {
+  const ops = bundleOps(record)
+  return ops && { id: record.id, name: record.name, openedAt: record.openedAt, ops }
+}
+
+/**
+ * The whole history, most recently opened first.
+ *
+ * A record that is neither a reference to a file nor a cached copy is left out, and
+ * deleted in the background. No version of this code can read one, so keeping it
+ * would leave a row in the user's database that nothing will ever use.
+ */
+export const listBundleHistory = async (): Promise<BundleHistoryEntry[]> => {
+  const entries: BundleHistoryEntry[] = []
+  const unreadable: number[] = []
+  for (const record of await listBundleRecords()) {
+    const entry = toHistoryEntry(record)
+    if (entry) {
+      entries.push(entry)
+    } else {
+      unreadable.push(record.id)
     }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error ?? new Error('Cannot open IndexedDB'))
-    request.onblocked = () => reject(new Error('IndexedDB upgrade blocked by another tab'))
-  })
-
-/**
- * Runs `use` against the store of bundles, inside a single transaction.
- *
- * `use` has to make all of its IndexedDB requests before it awaits anything else. A
- * transaction is committed as soon as the browser's event loop finds it idle, so
- * awaiting an unrelated promise in the middle of one ends it too early. Callers that
- * have to interleave other asynchronous work use several transactions instead.
- */
-const withStore = async <T>(
-  mode: IDBTransactionMode,
-  use: (store: IDBObjectStore) => Promise<T>
-): Promise<T> => {
-  const db = await openDatabase()
-  try {
-    const transaction = db.transaction(STORE_NAME, mode)
-    const finished = new Promise<void>((resolve, reject) => {
-      transaction.oncomplete = () => resolve()
-      transaction.onerror = () => reject(transaction.error ?? new Error('IndexedDB write failed'))
-      transaction.onabort = () => reject(transaction.error ?? new Error('IndexedDB write aborted'))
-    })
-    // A failing request rejects `use` and aborts the transaction, so both promises
-    // reject. Awaiting them together reports the first failure and leaves neither
-    // rejection without a handler.
-    const [result] = await Promise.all([use(transaction.objectStore(STORE_NAME)), finished])
-    return result
-  } finally {
-    db.close()
   }
+  dropUnreadableRecords(unreadable)
+  return entries
 }
-
-/** All remembered bundles, most recently opened first. */
-export const listSupportBundles = async (): Promise<StoredSupportBundle[]> => {
-  const bundles = await withStore('readonly', (store) =>
-    promisify(store.getAll() as IDBRequest<StoredSupportBundle[]>)
-  )
-  // Two bundles opened in the same millisecond are ordered by their key instead,
-  // which puts the one stored later first.
-  return bundles.sort((a, b) => b.openedAt - a.openedAt || b.id - a.id)
-}
-
-export const getSupportBundle = async (id: number): Promise<StoredSupportBundle | undefined> =>
-  withStore('readonly', (store) =>
-    promisify(store.get(id) as IDBRequest<StoredSupportBundle | undefined>)
-  )
 
 /**
- * The entry for `handle`, if the history already holds one.
- *
- * `isSameEntry` is the only dependable way to ask whether two handles point at the
- * same file: picking one file twice yields two different objects, and one file name
- * can occur in several directories. Where the browser does not implement
- * `isSameEntry`, the names are compared instead.
+ * Deletes unreadable records, on a later turn of the event loop. A failure to delete
+ * them must not fail the read that found them, so the caller does not wait for it.
  */
-const findSameEntry = async (
-  handle: FileSystemFileHandle
-): Promise<StoredSupportBundle | undefined> => {
-  const bundles = await listSupportBundles()
-  for (const bundle of bundles) {
-    if (!isLinkedBundle(bundle)) {
+const dropUnreadableRecords = (ids: number[]) => {
+  if (!ids.length) {
+    return
+  }
+  console.warn('Dropping unreadable support bundle history entries:', ids)
+  setTimeout(async () => {
+    // Dexie refuses a write inside a `liveQuery` querier, since a query that changed the
+    // database would re-run itself forever; a deferred write is outside that querier,
+    // and the re-read it does trigger finds nothing left to delete.
+    try {
+      await deleteBundleRecords(ids)
+    } catch (error) {
+      console.warn('Failed to drop unreadable support bundle history entries:', error)
+    }
+  })
+}
+
+/**
+ * The whole history, handed to the caller again after every change to it, whether the
+ * change was made in this tab or in another one.
+ */
+export const observeBundleHistory = (): Observable<BundleHistoryEntry[]> =>
+  observeBundleRecords(listBundleHistory)
+
+/**
+ * Looks up one entry by its id.
+ *
+ * Throws when there is no readable entry under that id, which is what a stale link
+ * or a cleared history looks like.
+ *
+ * Whether reading the entry needs the user's permission is not reported here, and
+ * nothing asks the browser for it. A caller holding a user gesture calls
+ * `ops.requestPermission`, which is silent when permission has already been given;
+ * one with no gesture reads and passes the failure to `isPermissionRequired`.
+ */
+export const resolveStoredBundle = async (id: number | undefined): Promise<BundleHistoryEntry> => {
+  const record = id === undefined ? undefined : await getBundleRecord(id)
+  const entry = record && toHistoryEntry(record)
+  if (!entry) {
+    throw new Error(
+      'This support bundle is no longer in the browser history. Open it from disk again.'
+    )
+  }
+  return entry
+}
+
+/**
+ * The records that do not fit in `cachedBundlesByteBudget`, for the caller to delete.
+ * Records that occupy nothing are left alone, since deleting them would free nothing.
+ *
+ * @param mostRecentFirst the records, ordered as `listBundleRecords` returns them. The
+ *   result keeps that order. Taking the list as an argument rather than reading it
+ *   here lets the tests check the arithmetic without writing half a gigabyte.
+ */
+export const bundlesOverByteBudget = (
+  mostRecentFirst: StoredSupportBundle[]
+): StoredSupportBundle[] => {
+  const excess: StoredSupportBundle[] = []
+  let total = 0
+  for (const record of mostRecentFirst.slice(0, maxHistoryEntries)) {
+    const bytes = bundleOps(record)?.bytes() ?? 0
+    if (bytes === 0) {
       continue
     }
-    // A handle read back out of IndexedDB was written by whatever browser stored it,
-    // so it too may be missing `isSameEntry`.
-    const isSameEntry = (bundle.handle as Partial<FileSystemFileHandle>).isSameEntry
-    const same = isSameEntry
-      ? await isSameEntry.call(bundle.handle, handle)
-      : bundle.handle.name === handle.name
-    if (same) {
-      return bundle
+    total += bytes
+    if (total > cachedBundlesByteBudget) {
+      excess.push(record)
+    }
+  }
+  return excess
+}
+
+/** Deletes the entries past `maxHistoryEntries`, counting from the most recent. */
+const pruneToCountLimit = async () => {
+  const records = await listBundleRecords()
+  await deleteBundleRecords(records.slice(maxHistoryEntries).map((record) => record.id))
+}
+
+/** Deletes the records that no longer fit in `cachedBundlesByteBudget`. */
+const pruneToByteBudget = async () => {
+  const over = bundlesOverByteBudget(await listBundleRecords())
+  await deleteBundleRecords(over.map((record) => record.id))
+}
+
+/** The first record `isSameFile` accepts, searching from the most recently opened. */
+const findRecord = async (
+  isSameFile: (record: StoredSupportBundle) => boolean | Promise<boolean>
+) => {
+  for (const record of await listBundleRecords()) {
+    if (await isSameFile(record)) {
+      return record
     }
   }
   return undefined
 }
 
-/** Deletes the entries with these ids. Also called from `supportBundleCache.ts`. */
-export const deleteSupportBundles = async (ids: number[]): Promise<void> => {
-  if (!ids.length) {
-    return
-  }
-  await withStore('readwrite', async (store) => {
-    for (const id of ids) {
-      store.delete(id)
+/**
+ * Writes `entry`, or returns null when the browser refused the write because this
+ * site has used up its storage quota.
+ *
+ * The size of that quota depends on the free space on the machine, so no check
+ * beforehand can tell whether a given archive will fit.
+ */
+const putWithinQuota = async (id: number | undefined, entry: NewSupportBundle) => {
+  try {
+    return await putBundleRecord(id, entry)
+  } catch (error) {
+    if (isQuotaExceeded(error)) {
+      return null
     }
-  })
+    throw error
+  }
 }
 
 /**
- * Deletes everything past `maxRememberedBundles`, counting from the bundle opened most
- * recently. Also called from `supportBundleCache.ts`.
+ * Writes one entry, replacing the record `isSameFile` matches if there is one, and
+ * trims the history around it. Returns null when the write was refused.
  */
-export const pruneToCountLimit = async (): Promise<void> => {
-  const bundles = await listSupportBundles()
-  await deleteSupportBundles(bundles.slice(maxRememberedBundles).map((bundle) => bundle.id))
-}
-
-/**
- * Writes an entry and makes it the most recently opened one. Deleting whatever no
- * longer fits afterwards is left to the caller.
- */
-export const putSupportBundle = async (
-  id: number | undefined,
+const addHistoryEntry = async (
+  isSameFile: (record: StoredSupportBundle) => boolean | Promise<boolean>,
   entry: NewSupportBundle
-): Promise<StoredSupportBundle> => {
-  // Passing an id updates that entry in place. For a new entry the property is left
-  // out altogether, rather than set to undefined, so that IndexedDB assigns an id.
-  const record = id === undefined ? entry : { ...entry, id }
-  const key = await withStore('readwrite', (store) =>
-    promisify(store.put(record) as IDBRequest<IDBValidKey>)
-  )
-  return { ...entry, id: key as number } as StoredSupportBundle
+): Promise<BundleHistoryEntry | null> => {
+  const existing = await findRecord(isSameFile)
+  const record = await putWithinQuota(existing?.id, entry)
+  if (!record) {
+    return null
+  }
+  // Both passes run for either kind of bundle. A reference to a file occupies
+  // nothing, so the byte pass does nothing to a history made only of those.
+  await pruneToCountLimit()
+  await pruneToByteBudget()
+  // `addToBundleHistory` built this record, so it always matches one of the two
+  // kinds. The fallback is here only to satisfy the type.
+  return toHistoryEntry(record) ?? null
 }
 
 /**
- * Remembers a bundle the user chose through `pickSupportBundle`, as the most recently
- * opened one. Choosing a file that is already in the history moves its entry to the
- * front instead of adding a second entry for it.
- *
- * Afterwards only the number of entries is trimmed. A handle takes a few hundred
- * bytes, so remembering one cannot put the database over the size budget that
- * `supportBundleCache.ts` applies to stored copies.
+ * What a file picker gives back: a `FileSystemFileHandle` in Chromium, and a plain
+ * `File` in Firefox and Safari.
  */
-export const rememberSupportBundle = async (
-  handle: FileSystemFileHandle
-): Promise<StoredSupportBundle> => {
-  const existing = await findSameEntry(handle)
-  const stored = await putSupportBundle(existing?.id, {
-    name: handle.name,
-    openedAt: Date.now(),
-    handle
+export type PickedDiskFile = FileSystemFileHandle | File
+
+/**
+ * Adds the bundle the user just picked, as the most recently opened one. Picking a
+ * file that is already in the history moves its entry to the front instead of adding
+ * a second entry for it.
+ *
+ * Returns null when no entry could be added, which happens only for a `File`. Its
+ * archive has to be copied into IndexedDB, and the copy can be too large or refused
+ * for lack of quota. Either way the bundle the caller is holding still opens.
+ */
+export const addToBundleHistory = async (
+  picked: PickedDiskFile
+): Promise<BundleHistoryEntry | null> => {
+  const openedAt = Date.now()
+  if (!(picked instanceof File)) {
+    return addHistoryEntry((record) => isSameHandle(record, picked), {
+      name: picked.name,
+      openedAt,
+      handle: picked
+    })
+  }
+  if (picked.size > maxCachedBundleBytes) {
+    return null
+  }
+  return addHistoryEntry((record) => isSameCachedFile(record, picked), {
+    name: picked.name,
+    openedAt,
+    file: picked
   })
-  await pruneToCountLimit()
-  return stored
 }
 
-/** Marks a remembered bundle as opened now, which moves it to the front of the history. */
-export const touchSupportBundle = async (id: number): Promise<void> => {
-  const bundle = await getSupportBundle(id)
-  if (!bundle) {
+/** Moves the entry to the front of the history, by recording that it was opened now. */
+export const markBundleOpenedNow = async (id: number): Promise<void> => {
+  const record = await getBundleRecord(id)
+  if (!record) {
     return
   }
-  await withStore('readwrite', (store) =>
-    promisify(store.put({ ...bundle, openedAt: Date.now() }) as IDBRequest<IDBValidKey>)
-  )
-}
-
-export const clearSupportBundles = (): Promise<void> =>
-  withStore('readwrite', async (store) => {
-    store.clear()
-  })
-
-/**
- * Whether the bundle can be read without asking the user again. Browsers forget
- * permission to read a file from one visit to the next, so a handle chosen during an
- * earlier visit answers 'prompt'. A copy of the archive belongs to this site rather
- * than to the user's disk and needs no permission at all.
- */
-export const queryBundleReadPermission = async (
-  bundle: StoredSupportBundle
-): Promise<BundlePermissionState> => {
-  if (!isLinkedBundle(bundle)) {
-    return 'granted'
-  }
-  const queryPermission = (bundle.handle as FileHandleWithPermissions).queryPermission
-  // A browser without the permission methods has nothing to ask. Reading the file
-  // there either works or throws, and answering 'granted' lets the caller find out
-  // which of the two it is.
-  return queryPermission ? await queryPermission.call(bundle.handle, { mode: 'read' }) : 'granted'
-}
-
-/**
- * Asks the user for permission to read the bundle again, and reports whether it can be
- * read afterwards.
- *
- * MUST be called while handling a click or another user gesture: browsers turn down a
- * permission request that no gesture can be attributed to.
- */
-export const requestBundleReadPermission = async (
-  bundle: StoredSupportBundle
-): Promise<boolean> => {
-  if (!isLinkedBundle(bundle)) {
-    return true
-  }
-  const requestPermission = (bundle.handle as FileHandleWithPermissions).requestPermission
-  if (!requestPermission) {
-    return true
-  }
-  return (await requestPermission.call(bundle.handle, { mode: 'read' })) === 'granted'
-}
-
-/**
- * Looks up a remembered bundle and reports whether reading it needs the user to give
- * permission first. Throws when the history holds no such entry, which is what a stale
- * link or a cleared history looks like.
- */
-export const resolveStoredBundle = async (
-  id: number | undefined
-): Promise<{ bundle: StoredSupportBundle; needsPermission: boolean }> => {
-  const bundle = id === undefined ? undefined : await getSupportBundle(id)
-  if (!bundle) {
-    throw new Error(
-      'This support bundle is no longer in the browser history. Open it from disk again.'
-    )
-  }
-  return {
-    bundle,
-    needsPermission: (await queryBundleReadPermission(bundle)) !== 'granted'
-  }
-}
-
-const readFileBytes = async (file: File) => new Uint8Array(await file.arrayBuffer())
-
-/** Reads the whole archive the handle points at. */
-export const readSupportBundle = async (handle: FileSystemFileHandle): Promise<Uint8Array> =>
-  readFileBytes(await handle.getFile())
-
-/** Reads a remembered bundle, either from disk or from the copy in the database. */
-export const readStoredBundle = async (bundle: StoredSupportBundle): Promise<Uint8Array> => {
-  if (isLinkedBundle(bundle)) {
-    return readSupportBundle(bundle.handle)
-  }
-  // Nothing in this module writes an entry like that, but records come back out of
-  // IndexedDB with no type checking, so an entry holding neither a handle nor a copy
-  // of the archive is reported to the user rather than crashed on.
-  if (!(bundle.file instanceof Blob)) {
-    throw new Error(`The history entry for ${bundle.name} does not say where to read the file.`)
-  }
-  return readFileBytes(bundle.file)
+  await putBundleRecord(id, { ...record, openedAt: Date.now() })
 }

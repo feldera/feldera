@@ -41,6 +41,7 @@ const testOptimizeDepsInclude = [
   '@square/svelte-store',
   'bignumber.js',
   'dayjs',
+  'dexie',
   'flowbite-svelte',
   'new-github-issue-url',
   'paneforge',
