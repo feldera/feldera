@@ -26,6 +26,7 @@ use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
 use anyhow::Result as AnyResult;
 use futures_util::FutureExt;
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Write;
 use std::sync::OnceLock;
@@ -629,11 +630,11 @@ include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 const WEBCONSOLE_BASE_PATH_PLACEHOLDER: &str = "/__FELDERA_BASE_PATH__";
 
 /// One file of the embedded console bundle after the base-path rewrite, holding
-/// what `static_files::Resource` needs to serve it. Kept as owned `&'static`
-/// data so every worker's resource map borrows the same bytes.
+/// what `static_files::Resource` needs to serve it. Rewritten files own their
+/// bytes; the rest borrow the embedded ones.
 struct RewrittenResource {
     name: &'static str,
-    data: &'static [u8],
+    data: Cow<'static, [u8]>,
     modified: u64,
     mime_type: &'static str,
 }
@@ -643,13 +644,13 @@ struct RewrittenResource {
 ///
 /// The rewrite is computed once for the lifetime of the process — `base_path`
 /// is a process constant derived from configuration, and `HttpServer` invokes
-/// the app factory once per worker thread — so the rewritten bytes are leaked a
-/// single time and every worker rebuilds a fresh (but cheap, pointer-only)
-/// `HashMap` over the same `&'static` data.
+/// the app factory once per worker thread — so the rewritten bytes are computed
+/// a single time and every worker rebuilds a fresh (but cheap, pointer-only)
+/// `HashMap` borrowing them out of the `static`.
 fn webconsole_resources(base_path: &str) -> HashMap<&'static str, static_files::Resource> {
     static REWRITTEN: OnceLock<Vec<RewrittenResource>> = OnceLock::new();
 
-    let entries = REWRITTEN.get_or_init(|| {
+    let entries: &'static Vec<RewrittenResource> = REWRITTEN.get_or_init(|| {
         debug_assert!(
             base_path.is_empty() || base_path.starts_with('/'),
             "base path must be empty or start with '/'"
@@ -658,15 +659,17 @@ fn webconsole_resources(base_path: &str) -> HashMap<&'static str, static_files::
         let entries = generate()
             .into_iter()
             .map(|(name, resource)| {
-                let data: &'static [u8] = match std::str::from_utf8(resource.data) {
+                let data: Cow<'static, [u8]> = match std::str::from_utf8(resource.data) {
                     Ok(text) if text.contains(WEBCONSOLE_BASE_PATH_PLACEHOLDER) => {
                         rewrote_placeholder = true;
-                        let rewritten = text.replace(WEBCONSOLE_BASE_PATH_PLACEHOLDER, base_path);
-                        Box::leak(rewritten.into_bytes().into_boxed_slice())
+                        Cow::Owned(
+                            text.replace(WEBCONSOLE_BASE_PATH_PLACEHOLDER, base_path)
+                                .into_bytes(),
+                        )
                     }
                     // Binary asset, or text without the placeholder: serve the
                     // embedded bytes unchanged.
-                    _ => resource.data,
+                    _ => Cow::Borrowed(resource.data),
                 };
                 RewrittenResource {
                     name,
@@ -697,7 +700,7 @@ fn webconsole_resources(base_path: &str) -> HashMap<&'static str, static_files::
             (
                 entry.name,
                 static_files::Resource {
-                    data: entry.data,
+                    data: &entry.data,
                     modified: entry.modified,
                     mime_type: entry.mime_type,
                 },
