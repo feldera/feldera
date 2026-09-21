@@ -18,7 +18,7 @@ use actix_web::body::MessageBody;
 use actix_web::dev::{Service, ServiceResponse};
 use actix_web::http::{Method, header};
 use actix_web::{
-    App, HttpResponse, HttpServer, get, middleware,
+    App, HttpResponse, HttpServer, middleware,
     web::Data as WebData,
     web::{self},
 };
@@ -834,11 +834,24 @@ fn build_app(
         ),
     };
 
-    // These stay at the root regardless of the base path: direct liveness probes
-    // (load balancers, k8s) must keep working when Feldera is mounted on a
-    // subpath behind a proxy that only forwards `<base-path>/*`, and crawlers
-    // fetch `/robots.txt` only from the origin root, never from a subpath.
-    let app = app.service(healthz).service(robots_txt);
+    // Served under both spellings when a base path is configured. The root
+    // spelling is what a probe reaching the manager directly uses (a kubelet, a
+    // load balancer targeting the pod), and what a crawler asks the origin for;
+    // the prefixed spelling is the only one a proxy that forwards just
+    // `<base-path>/*` can reach. Both are registered ahead of `public_scope`,
+    // whose catch-all answers unknown paths with the console's `index.html` and
+    // status 200, which would leave the liveness probe unable to ever fail.
+    let app = app
+        .service(web::resource("/healthz").route(web::get().to(healthz)))
+        .service(web::resource("/robots.txt").route(web::get().to(robots_txt)));
+    let app = if base_path.is_empty() {
+        app
+    } else {
+        app.service(web::resource(format!("{base_path}/healthz")).route(web::get().to(healthz)))
+            .service(
+                web::resource(format!("{base_path}/robots.txt")).route(web::get().to(robots_txt)),
+            )
+    };
 
     // `public_scope` MUST be the last `.service()` registered: it contains an
     // empty-prefix sub-scope (the catch-all that serves the bundled
@@ -1344,7 +1357,6 @@ Version: {} v{}{}
 }
 
 /// This is an internal endpoint and as such is not exposed via OpenAPI
-#[get("/healthz")]
 async fn healthz(state: WebData<ServerState>) -> Result<HttpResponse, ManagerError> {
     let probe = state.probe.lock().await;
     Ok(probe.as_http_response())
@@ -1353,7 +1365,6 @@ async fn healthz(state: WebData<ServerState>) -> Result<HttpResponse, ManagerErr
 /// Disallow all crawlers instance-wide. The web-console is a client-side SPA, so per-page robots
 /// hints never reach crawlers; a root disallow is the only reliable way to keep app URLs (e.g.
 /// the sandbox's `/create?...` deep-links) out of search indexes.
-#[get("/robots.txt")]
 async fn robots_txt() -> HttpResponse {
     HttpResponse::Ok()
         .content_type("text/plain; charset=utf-8")
@@ -1447,6 +1458,64 @@ mod tests {
         );
         let body = test::read_body(res).await;
         assert_eq!(&body[..], b"User-agent: *\nDisallow: /\n");
+    }
+
+    /// Under a base path the probe must answer at `<base-path>/healthz` too: a
+    /// proxy that forwards only `<base-path>/*` can reach no other spelling.
+    /// Dropping the prefixed registration sends the path to the console
+    /// catch-all, which serves `index.html` with status 200 and leaves the
+    /// probe unable to report an unhealthy manager.
+    #[actix_web::test]
+    async fn healthz_answers_under_the_base_path() {
+        let mut cfg = ApiServerConfig::test_config();
+        cfg.http_base_path = "/feldera".to_string();
+        let app = test::init_service(build_app(&cfg, &None)).await;
+
+        // Both spellings reach the same handler, which fails the same way in
+        // this `ServerState`-less test App. The point is that neither answer
+        // comes from the static bundle.
+        let root =
+            test::call_service(&app, test::TestRequest::get().uri("/healthz").to_request()).await;
+        let prefixed = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri("/feldera/healthz")
+                .to_request(),
+        )
+        .await;
+        assert_eq!(prefixed.status(), root.status());
+
+        let prefixed_body = test::read_body(prefixed).await;
+        assert!(
+            !prefixed_body
+                .to_ascii_lowercase()
+                .starts_with(b"<!doctype html"),
+            "/feldera/healthz fell through to the web-console catch-all",
+        );
+        assert_eq!(prefixed_body, test::read_body(root).await);
+    }
+
+    /// Crawler rules follow the deployment: the origin root for a crawler that
+    /// reaches the manager directly, and `<base-path>/robots.txt` for one that
+    /// only ever sees the proxy's subpath.
+    #[actix_web::test]
+    async fn robots_txt_answers_under_both_spellings_of_a_base_path() {
+        let mut cfg = ApiServerConfig::test_config();
+        cfg.http_base_path = "/feldera".to_string();
+        let app = test::init_service(build_app(&cfg, &None)).await;
+
+        for uri in ["/robots.txt", "/feldera/robots.txt"] {
+            let res =
+                test::call_service(&app, test::TestRequest::get().uri(uri).to_request()).await;
+            assert_eq!(res.status(), StatusCode::OK, "{uri}");
+            assert_eq!(
+                res.headers().get(header::CONTENT_TYPE).unwrap(),
+                "text/plain; charset=utf-8",
+                "{uri}",
+            );
+            let body = test::read_body(res).await;
+            assert_eq!(&body[..], b"User-agent: *\nDisallow: /\n", "{uri}");
+        }
     }
 
     // -------- CORS surface integration tests --------
