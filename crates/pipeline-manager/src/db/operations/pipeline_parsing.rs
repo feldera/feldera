@@ -916,11 +916,11 @@ mod tests {
                     },
                 )],
             }),
-            rust_compilation: Some(RustCompilationInfo {
-                exit_code: 89,
-                stdout: "stdout-example".to_string(),
-                stderr: "stderr-example".to_string(),
-            }),
+            rust_compilation: Some(RustCompilationInfo::from_streams(
+                89,
+                "stdout-example".to_string(),
+                "stderr-example".to_string(),
+            )),
             system_error: Some("system-error-example".to_string()),
         };
         let data = serialize_program_error(&program_error).unwrap();
@@ -963,6 +963,7 @@ mod tests {
                 system_error: None,
             }
         );
+        // Older rust_compilation JSON omitted `messages`.
         assert_eq!(
             deserialize_program_error(
                 "{ \"sql_compilation\": { \"exit_code\": 0, \"messages\": [] }, \"rust_compilation\": { \"exit_code\": 0, \"stdout\": \"\", \"stderr\": \"\" } }"
@@ -973,11 +974,11 @@ mod tests {
                     exit_code: 0,
                     messages: vec![],
                 }),
-                rust_compilation: Some(RustCompilationInfo {
-                    exit_code: 0,
-                    stdout: "".to_string(),
-                    stderr: "".to_string(),
-                }),
+                rust_compilation: Some(RustCompilationInfo::from_streams(
+                    0,
+                    "".to_string(),
+                    "".to_string(),
+                )),
                 system_error: None,
             }
         );
@@ -991,11 +992,11 @@ mod tests {
                     exit_code: 2,
                     messages: vec![],
                 }),
-                rust_compilation: Some(RustCompilationInfo {
-                    exit_code: 3,
-                    stdout: "a".to_string(),
-                    stderr: "b".to_string(),
-                }),
+                rust_compilation: Some(RustCompilationInfo::from_streams(
+                    3,
+                    "a".to_string(),
+                    "b".to_string(),
+                )),
                 system_error: None,
             }
         );
