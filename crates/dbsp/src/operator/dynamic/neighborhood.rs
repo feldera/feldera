@@ -587,7 +587,7 @@ mod test {
             IndexedZSetHandle, InputHandle, NeighborhoodDescr, NeighborhoodDescrBox, OutputHandle,
         },
         trace::{
-            BatchReaderFactories, Trace,
+            BatchReaderFactories, Trace, TraceRole,
             test::test_batch::{
                 TestBatch, TestBatchFactories, assert_batch_eq, batch_to_tuples,
                 typed_batch_to_tuples,
@@ -656,7 +656,11 @@ mod test {
 
                 TestBatch::from_data(output.as_slice())
             } else {
-                TestBatch::new(&TestBatchFactories::new(), Arc::new(String::from("Test")))
+                TestBatch::new(
+                    &TestBatchFactories::new(),
+                    Arc::new(String::from("Test")),
+                    TraceRole::Integral,
+                )
             }
         }
     }
@@ -920,7 +924,7 @@ mod test {
             let (mut dbsp, (descr_handle, input_handle, output_handle)) =
                 Runtime::init_circuit(4, test_circuit).unwrap();
 
-            let mut ref_trace = TestBatch::new(&TestBatchFactories::new(), Arc::new(String::from("Test")));
+            let mut ref_trace = TestBatch::new(&TestBatchFactories::new(), Arc::new(String::from("Test")), TraceRole::Integral);
 
             for (batch, (start_key, start_val), before, after) in trace.into_iter() {
 

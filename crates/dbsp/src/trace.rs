@@ -215,6 +215,17 @@ pub trait BatchFactories<K: DataTrait + ?Sized, V: DataTrait + ?Sized, T, R: Wei
     ) -> Option<&'static dyn Factory<DynWeightedPairs<DynDataTyped<T>, R>>>;
 }
 
+/// What a trace holds, which controls how eagerly it merges its batches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum TraceRole {
+    /// Nothing searches the trace until its contents are output, so it can
+    /// merge less eagerly; see `dev_tweaks.min_accumulator_merge_batches`.
+    Accumulator,
+    /// The trace is searched continuously, so it merges eagerly; see
+    /// `dev_tweaks.min_integral_merge_batches`.
+    Integral,
+}
+
 /// A set of `(key, val, time, diff)` tuples that can be read and extended.
 ///
 /// `Trace` extends [`BatchReader`], most notably with [`insert`][Self::insert]
@@ -233,8 +244,9 @@ pub trait Trace: BatchReader {
         >;
 
     /// Allocates a new empty trace associated with `name`, which should
-    /// identify the operator or other origin of the trace.
-    fn new(factories: &Self::Factories, name: Arc<String>) -> Self;
+    /// identify the operator or other origin of the trace, with the merge
+    /// policy of `role`.
+    fn new(factories: &Self::Factories, name: Arc<String>, role: TraceRole) -> Self;
 
     /// Updates the name of the trace to `name`.
     fn set_name(&mut self, name: Arc<String>);

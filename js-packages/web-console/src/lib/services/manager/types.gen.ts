@@ -1867,6 +1867,20 @@ export type DevTweaks = {
    */
   merger_threads?: number | null
   /**
+   * Minimum number of batches an accumulator's spine merges at once,
+   * at every level above level 1.
+   *
+   * Zero restores the built-in minimum.
+   */
+  min_accumulator_merge_batches?: number | null
+  /**
+   * Minimum number of batches an integral's spine merges at once, at
+   * every level above level 1.
+   *
+   * Unset or zero keeps the built-in minimum.
+   */
+  min_integral_merge_batches?: number | null
+  /**
    * Additional bias the merger assigns to records with negative weights
    * (retractions) to promote them to higher levels of the LSM tree sooner.
    *

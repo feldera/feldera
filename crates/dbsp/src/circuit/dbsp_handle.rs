@@ -18,7 +18,9 @@ use feldera_ir::LirCircuit;
 use feldera_storage::{FileCommitter, StorageBackend, StoragePath};
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::config::DevTweaks;
-use feldera_types::config::dev_tweaks::{BufferCacheAllocationStrategy, BufferCacheStrategy};
+use feldera_types::config::dev_tweaks::{
+    BufferCacheAllocationStrategy, BufferCacheStrategy, MAX_MIN_MERGE_BATCHES,
+};
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use feldera_types::transaction::CommitProgressSummary;
 use itertools::Either;
@@ -26,7 +28,7 @@ use std::collections::BTreeMap;
 use std::net::TcpListener;
 use std::num::NonZeroUsize;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Once};
 use std::time::Duration;
 use std::{
     collections::HashSet,
@@ -445,6 +447,46 @@ pub fn max_level0_batch_size_records() -> usize {
         "max_level0_batch_size_records must be less than or equal to 99_999"
     );
     max_level0_batch_size_records
+}
+
+/// Minimum number of batches an accumulator's spine merges at once above
+/// level 1; zero means the built-in minimum.
+///
+/// Configurable via `dev_tweaks.min_accumulator_merge_batches`.
+pub fn min_accumulator_merge_batches() -> usize {
+    static WARNED: Once = Once::new();
+    checked_min_merge_batches(
+        Runtime::with_dev_tweaks(|d| d.min_accumulator_merge_batches()),
+        "min_accumulator_merge_batches",
+        &WARNED,
+    )
+}
+
+/// Minimum number of batches an integral's spine merges at once above level
+/// 1; zero means the built-in minimum.
+///
+/// Configurable via `dev_tweaks.min_integral_merge_batches`.
+pub fn min_integral_merge_batches() -> usize {
+    static WARNED: Once = Once::new();
+    checked_min_merge_batches(
+        Runtime::with_dev_tweaks(|d| d.min_integral_merge_batches()),
+        "min_integral_merge_batches",
+        &WARNED,
+    )
+}
+
+/// Clamps a value that slipped past `DevTweaks::validate`, warning once per
+/// setting.  This function runs on worker threads, where a panic would abort
+/// the pipeline, so it does not assert.
+fn checked_min_merge_batches(batches: u16, name: &str, warned: &Once) -> usize {
+    if batches > MAX_MIN_MERGE_BATCHES {
+        warned.call_once(|| {
+            warn!(
+                "dev_tweaks.{name} is {batches}, past the largest value accepted, {MAX_MIN_MERGE_BATCHES}; using {MAX_MIN_MERGE_BATCHES}"
+            );
+        });
+    }
+    usize::from(batches.min(MAX_MIN_MERGE_BATCHES))
 }
 
 pub fn negative_weight_multiplier() -> u16 {

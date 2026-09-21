@@ -20,7 +20,7 @@ use crate::{
     },
     circuit_cache_key,
     dynamic::DataTrait,
-    trace::{Batch, BatchReader, Filter, Spine, SpineSnapshot, Trace},
+    trace::{Batch, BatchReader, Filter, Spine, SpineSnapshot, Trace, TraceRole},
 };
 use dyn_clone::clone_box;
 use feldera_storage::{FileCommitter, StoragePath};
@@ -1059,7 +1059,11 @@ where
         self.dirty[scope as usize] = false;
 
         if scope == 0 && self.trace.is_none() {
-            self.trace = Some(T::new(&self.trace_factories, self.name.get()));
+            self.trace = Some(T::new(
+                &self.trace_factories,
+                self.name.get(),
+                TraceRole::Integral,
+            ));
         }
     }
 
@@ -1117,7 +1121,9 @@ where
     ) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.name)?;
         self.trace
-            .get_or_insert_with(|| T::new(&self.trace_factories, self.name.get()))
+            .get_or_insert_with(|| {
+                T::new(&self.trace_factories, self.name.get(), TraceRole::Integral)
+            })
             .save(base, pid, files)
     }
 
@@ -1125,13 +1131,19 @@ where
         let pid = require_persistent_id(pid, &self.name)?;
 
         self.trace
-            .get_or_insert_with(|| T::new(&self.trace_factories, self.name.get()))
+            .get_or_insert_with(|| {
+                T::new(&self.trace_factories, self.name.get(), TraceRole::Integral)
+            })
             .restore(base, pid)
     }
 
     fn clear_state(&mut self) -> Result<(), Error> {
         // println!("Z1Trace-{}::clear_state", &self.global_id);
-        self.trace = Some(T::new(&self.trace_factories, self.name.get()));
+        self.trace = Some(T::new(
+            &self.trace_factories,
+            self.name.get(),
+            TraceRole::Integral,
+        ));
         self.replay_state = None;
         self.dirty = vec![false; self.root_scope as usize + 1];
 
@@ -1149,7 +1161,11 @@ where
         self.replay_mode = true;
         if self.delta_stream.is_some() && self.replay_state.is_none() {
             let trace = self.trace.take().expect("Z1Trace::start_replay: no trace");
-            self.trace = Some(T::new(&self.trace_factories, self.name.get()));
+            self.trace = Some(T::new(
+                &self.trace_factories,
+                self.name.get(),
+                TraceRole::Integral,
+            ));
 
             //println!("Z1Trace-{}::initializing replay_state", &self.global_id);
 

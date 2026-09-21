@@ -13,7 +13,7 @@ use crate::{
     },
     trace::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Batcher, Builder, Cursor, Filter,
-        GroupFilter, Trace, cursor::Position,
+        GroupFilter, Trace, TraceRole, cursor::Position,
     },
 };
 use dyn_clone::clone_box;
@@ -894,7 +894,11 @@ where
     fn new_batcher(factories: &TestBatchFactories<K, V, T, R>, time: T) -> Self {
         Self {
             time,
-            result: TestBatch::new(factories, Arc::new(String::from("Test"))),
+            result: TestBatch::new(
+                factories,
+                Arc::new(String::from("Test")),
+                TraceRole::Integral,
+            ),
         }
     }
 
@@ -958,7 +962,11 @@ where
         _location: Option<BatchLocation>,
     ) -> Self {
         Self {
-            result: TestBatch::new(factories, Arc::new(String::from("Test"))),
+            result: TestBatch::new(
+                factories,
+                Arc::new(String::from("Test")),
+                TraceRole::Integral,
+            ),
             time_diffs: Vec::new(),
             vals: BTreeMap::new(),
             num_keys: 0,
@@ -1391,7 +1399,7 @@ where
 {
     type Batch = Self;
 
-    fn new(_factories: &Self::Factories, _name: Arc<String>) -> Self {
+    fn new(_factories: &Self::Factories, _name: Arc<String>, _role: TraceRole) -> Self {
         Self {
             data: BTreeMap::new(),
             lower_key_bound: None,

@@ -23,7 +23,7 @@ use crate::{
         operator_traits::{Operator, OperatorName, UnaryOperator},
     },
     circuit_cache_key,
-    trace::{Batch, BatchReader, Spine, Trace},
+    trace::{Batch, BatchReader, Spine, Trace, TraceRole},
 };
 
 circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => Accumulation<Stream<C, Option<Spine<B>>>>));
@@ -211,7 +211,7 @@ where
         let name = OperatorName::new("Accumulator");
         Self {
             factories: factories.clone(),
-            state: Spine::new(factories, name.get()),
+            state: Spine::new(factories, name.get(), TraceRole::Accumulator),
             name,
             flush: false,
             location,
@@ -220,6 +220,11 @@ where
             enable_count,
             enabled_during_current_transaction: None,
         }
+    }
+
+    /// An empty spine to accumulate the next transaction into.
+    fn new_spine(&self) -> Spine<B> {
+        Spine::new(&self.factories, self.name.get(), TraceRole::Accumulator)
     }
 }
 
@@ -273,7 +278,7 @@ where
 
     /// Clear the operator's state.
     fn clear_state(&mut self) -> Result<(), Error> {
-        self.state = Spine::new(&self.factories, self.name.get());
+        self.state = self.new_spine();
         self.flush = false;
         Ok(())
     }
@@ -318,7 +323,7 @@ where
             self.flush = false;
             self.enabled_during_current_transaction = None;
 
-            let mut spine = Spine::<B>::new(&self.factories, self.name.get());
+            let mut spine = self.new_spine();
             std::mem::swap(&mut self.state, &mut spine);
 
             self.output_batch_stats.add_batch(spine.len());

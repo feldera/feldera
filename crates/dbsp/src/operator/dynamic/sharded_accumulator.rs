@@ -37,7 +37,7 @@ use crate::{
             shard_batch,
         },
     },
-    trace::{Batch, BatchReader as _, Spine, Trace, deserialize_indexed_wset},
+    trace::{Batch, BatchReader as _, Spine, Trace, TraceRole, deserialize_indexed_wset},
 };
 
 circuit_cache_key!(local StreamingExchangeCacheId<B: Batch>(ExchangeId => Arc<ShardedAccumulator<B>>));
@@ -495,7 +495,13 @@ where
     ) -> Self {
         Self {
             n_unflushed: npeers,
-            spine: Spine::with_runtime(runtime.clone(), worker_index, factories, name),
+            spine: Spine::with_runtime(
+                runtime.clone(),
+                worker_index,
+                factories,
+                name,
+                TraceRole::Accumulator,
+            ),
         }
     }
 }

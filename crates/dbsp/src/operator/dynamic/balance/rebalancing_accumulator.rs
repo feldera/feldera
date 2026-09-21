@@ -15,7 +15,7 @@ use crate::{
         },
         operator_traits::{Operator, OperatorName, UnaryOperator},
     },
-    trace::{Batch, BatchReader, Spine, Trace},
+    trace::{Batch, BatchReader, Spine, Trace, TraceRole},
 };
 
 impl<C, B> Stream<C, B>
@@ -74,7 +74,7 @@ where
         let name = OperatorName::new("RebalancingAccumulator");
         Self {
             factories: factories.clone(),
-            state: Spine::new(factories, name.get()),
+            state: Spine::new(factories, name.get(), TraceRole::Accumulator),
             name,
             flush: false,
             location,
@@ -85,7 +85,7 @@ where
     }
 
     pub fn clear_state(&mut self) {
-        self.state = Spine::new(&self.factories, self.name.get());
+        self.state = Spine::new(&self.factories, self.name.get(), TraceRole::Accumulator);
         self.flush = false;
     }
 
@@ -163,7 +163,7 @@ where
     /// Clear the operator's state.
     fn clear_state(&mut self) -> Result<(), Error> {
         let mut inner = self.0.borrow_mut();
-        let state = Spine::new(&inner.factories, inner.name.get());
+        let state = Spine::new(&inner.factories, inner.name.get(), TraceRole::Accumulator);
         inner.state = state;
         inner.flush = false;
         Ok(())
@@ -208,7 +208,8 @@ where
         let result = if inner.flush {
             inner.flush = false;
 
-            let mut spine = Spine::<B>::new(&inner.factories, inner.name.get());
+            let mut spine =
+                Spine::<B>::new(&inner.factories, inner.name.get(), TraceRole::Accumulator);
             std::mem::swap(&mut inner.state, &mut spine);
 
             inner.output_batch_stats.add_batch(spine.len());
@@ -242,7 +243,8 @@ where
         let result = if inner.flush {
             inner.flush = false;
 
-            let mut spine = Spine::<B>::new(&inner.factories, inner.name.get());
+            let mut spine =
+                Spine::<B>::new(&inner.factories, inner.name.get(), TraceRole::Accumulator);
             std::mem::swap(&mut inner.state, &mut spine);
 
             inner.output_batch_stats.add_batch(spine.len());

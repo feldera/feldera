@@ -10583,6 +10583,22 @@
             "nullable": true,
             "minimum": 0
           },
+          "min_accumulator_merge_batches": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Minimum number of batches an accumulator's spine merges at once,\nat every level above level 1.\n\nZero restores the built-in minimum.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
+          "min_integral_merge_batches": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Minimum number of batches an integral's spine merges at once, at\nevery level above level 1.\n\nUnset or zero keeps the built-in minimum.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
           "negative_weight_multiplier": {
             "type": "integer",
             "format": "int32",

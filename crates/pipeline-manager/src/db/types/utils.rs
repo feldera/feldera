@@ -185,6 +185,8 @@ pub enum ValidationError {
     EnterpriseFeature(String),
     #[error("invalid pipeline environment: {0}")]
     InvalidPipelineEnv(String),
+    #[error("invalid dev_tweaks: {0}")]
+    InvalidDevTweaks(String),
 }
 
 /// Deserializes generic JSON value into [`RuntimeConfig`] and performs any additional validation.
@@ -209,6 +211,15 @@ pub(crate) fn validate_runtime_config(
             }
             if let Err(e) = validate_pipeline_env(&runtime_config.env) {
                 let e = ValidationError::InvalidPipelineEnv(e);
+                if log_if_invalid {
+                    error!(
+                        "Backward incompatibility detected: the following JSON:\n{value:#}\n\n... is no longer a valid runtime configuration due to: {e}"
+                    );
+                }
+                return Err(e);
+            }
+            if let Err(e) = runtime_config.dev_tweaks.validate() {
+                let e = ValidationError::InvalidDevTweaks(e);
                 if log_if_invalid {
                     error!(
                         "Backward incompatibility detected: the following JSON:\n{value:#}\n\n... is no longer a valid runtime configuration due to: {e}"
@@ -615,6 +626,26 @@ mod tests {
             validate_runtime_config(&json!({ "env": { "TOKIO_WORKER_THREADS": "1" } }), true),
             Err(ValidationError::InvalidPipelineEnv(_))
         ));
+
+        // A merge threshold above the bound is rejected; one at the bound is
+        // accepted.
+        assert!(matches!(
+            validate_runtime_config(
+                &json!({ "dev_tweaks": { "min_integral_merge_batches": 16 } }),
+                true
+            ),
+            Err(ValidationError::InvalidDevTweaks(s)) if s.contains("min_integral_merge_batches")
+        ));
+        assert_eq!(
+            validate_runtime_config(
+                &json!({ "dev_tweaks": { "min_accumulator_merge_batches": 15 } }),
+                true
+            )
+            .unwrap()
+            .dev_tweaks
+            .min_accumulator_merge_batches,
+            Some(15)
+        );
     }
 
     #[test]
