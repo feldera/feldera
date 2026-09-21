@@ -16,8 +16,11 @@ pub trait CmpFunc<T>: Send + Sync + 'static {
 
 /// Wrapper around type `T` that uses `F` instead of
 /// `Ord::cmp` to compare values.
+///
+/// Deliberately without the `#[archive(compare(PartialEq, PartialOrd))]`.
+/// A cross-form comparison for this type has to call `F`, and so
+/// has to be written by hand alongside the two below.
 #[derive(SizeOf, Archive, Serialize, Deserialize, IsNone)]
-#[archive(compare(PartialEq, PartialOrd))]
 pub struct WithCustomOrd<T, F> {
     pub val: T,
     phantom: PhantomData<F>,
