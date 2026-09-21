@@ -1071,3 +1071,10 @@ some_polymorphic_function1!(extract_microsecond, ShortInterval, ShortInterval, i
 some_polymorphic_function1!(extract_second, ShortInterval, ShortInterval, i64);
 some_polymorphic_function1!(extract_minute, ShortInterval, ShortInterval, i64);
 some_polymorphic_function1!(extract_hour, ShortInterval, ShortInterval, i64);
+
+// Hashing the archived form the way the decoded one hashes; see
+// `crate::hash_repr`.
+crate::hash_repr::hash_repr_struct! {
+    ShortInterval => ArchivedShortInterval { microseconds: i64 },
+    LongInterval => ArchivedLongInterval { months: i32 },
+}

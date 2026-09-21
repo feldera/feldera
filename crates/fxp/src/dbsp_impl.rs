@@ -1,5 +1,6 @@
 use dbsp::NumEntries;
 use dbsp::algebra::{HasOne, HasZero, MulByRef, OptionWeightType};
+use dbsp::dynamic::HashRepr;
 use dbsp::utils::{IsNone, SupportsRoaring};
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, serde_config::DecimalFormat,
@@ -19,6 +20,16 @@ impl<const P: usize, const S: usize> NumEntries for Fixed<P, S> {
 
     fn num_entries_deep(&self) -> usize {
         1
+    }
+}
+
+/// A `Fixed` archives to itself.
+impl<const P: usize, const S: usize> HashRepr for Fixed<P, S> {
+    const FAITHFUL: bool = true;
+
+    #[inline]
+    fn hash_repr<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(self, state)
     }
 }
 

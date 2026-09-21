@@ -365,6 +365,59 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         }
     });
 
+    let hash_repr_fields = self_indexes
+        .iter()
+        .map(|idx| quote!(::dbsp::dynamic::HashRepr::hash_repr(&self.#idx, state);));
+    let hash_repr_faithful = self_indexes
+        .iter()
+        .enumerate()
+        .map(|(i, _)| {
+            let ty = &elements[i];
+            quote!(<::rkyv::Archived<#ty> as ::dbsp::dynamic::HashRepr>::FAITHFUL)
+        })
+        .collect::<Vec<_>>();
+    let decoded_hash_repr_fields = self_indexes
+        .iter()
+        .map(|idx| quote!(::dbsp::dynamic::HashRepr::hash_repr(&self.#idx, state);));
+    let decoded_hash_repr_faithful = elements
+        .iter()
+        .map(|ty| quote!(<#ty as ::dbsp::dynamic::HashRepr>::FAITHFUL))
+        .collect::<Vec<_>>();
+
+    // A tuple hashes its fields in order and writes nothing else, so the
+    // archived form reproduces it by hashing each archived field the same way.
+    // Only the legacy layout gets this: the wider layout stores its fields
+    // sparsely behind a bitmap, and until someone writes that out it declines
+    // rather than guesses, which costs a decode and never an answer.
+    let legacy_hash_repr_impl = quote! {
+        impl<#(#generics),*> ::dbsp::dynamic::HashRepr for #archived_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive,)*
+            #(::rkyv::Archived<#generics>: ::dbsp::dynamic::HashRepr,)*
+        {
+            const FAITHFUL: bool = true #(&& #hash_repr_faithful)*;
+
+            #[inline]
+            fn hash_repr<H: ::std::hash::Hasher>(&self, state: &mut H) {
+                #(#hash_repr_fields)*
+            }
+        }
+    };
+
+    let decoded_hash_repr_impl = quote! {
+        impl<#(#generics),*> ::dbsp::dynamic::HashRepr for #name<#(#generics),*>
+        where
+            #(#generics: ::dbsp::dynamic::HashRepr,)*
+        {
+            const FAITHFUL: bool = true #(&& #decoded_hash_repr_faithful)*;
+
+            #[inline]
+            fn hash_repr<H: ::std::hash::Hasher>(&self, state: &mut H) {
+                #(#decoded_hash_repr_fields)*
+            }
+        }
+    };
+
     let legacy_archived_ord_impls = quote! {
         impl<#(#generics),*> core::cmp::PartialEq for #archived_name<#(#generics),*>
         where
@@ -961,19 +1014,42 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         }
     };
 
+    // The wide layout cannot reproduce the decoded hash yet: it stores its
+    // fields sparsely behind a bitmap, so hashing one means reading the
+    // bitmap and the fields' own `HashRepr`, which nobody has written.  It
+    // still implements the trait, declining, because the alternative is no
+    // implementation at all -- and then a caller bounded on
+    // `Archived<K>: HashRepr` fails to compile for a tuple of nine or more
+    // fields rather than falling back to decoding it.
+    let wide_hash_repr_impl = quote! {
+        impl<#(#generics),*> ::dbsp::dynamic::HashRepr for #archived_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+        {
+            const FAITHFUL: bool = false;
+
+            #[inline]
+            fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
+        }
+    };
+
     let rkyv_blocks = if use_legacy {
         quote! {
+            #legacy_hash_repr_impl
             #legacy_archived_ord_impls
         }
     } else {
         quote! {
             #choose_format_impl
             #rkyv_impls
+            #wide_hash_repr_impl
         }
     };
 
     expanded.extend(quote! {
         #struct_def
+        #decoded_hash_repr_impl
         #constructor
         #getter_setter
         #num_elements_const

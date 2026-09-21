@@ -1,41 +1,22 @@
 //! Does comparing two values in their archived form give the same answer as
 //! comparing them decoded?
 //!
-//! A merge orders its inputs by comparing keys, and the intent is for it to
-//! stop decoding them first.  Nothing downstream re-checks that a batch came
-//! out sorted, so a disagreement between the two orderings would not fail
-//! anywhere near its cause.  It would surface later as wrong query results.
-//! These tests pin the agreement down.
+//! The engine relies on the ordering of archived values being consistent with
+//! the ordering over thei deserializes representations for correctness.  This
+//! test suite validates this requirement for all supported types.
 //!
 //! The suite has two halves.  The first walks hand-picked values, chosen to
-//! sit where an implementation is most likely to differ: the extremes of each
+//! test various corner cases (where bugs are the most likely): the extremes of each
 //! integer, the special floats, strings that share a prefix, decimals equal in
 //! value but not in representation, empty and nested containers, and every arm
 //! of the variant enum.  The second says the same thing over random values.
-//! Both compare archived against archived, as concrete types and through the
-//! trait object a merger holds.
-//!
-//! # What is deliberately not here
-//!
-//! Comparing an archived value against a decoded one, which is what a merge of
-//! a file batch with an in-memory one needs, is left for when that comparison
-//! is supported across the board.  Two pieces are missing today.  The
-//! object-safe `cmp_target` deserializes its archived side before comparing,
-//! so an assertion on it would put the same native ordering on both sides and
-//! could not catch a disagreement.  And the direct comparison `rkyv` generates
-//! from `archive(compare(..))` exists for only a handful of types: the two
-//! float wrappers, the four timestamp-family types, both intervals, geopoints
-//! and UUIDs.
-//!
-//! Once cross-form comparison is total, every case below should assert it too,
-//! in both directions, against the same decoded answer.
 
 use std::collections::BTreeMap;
 use std::mem::size_of;
 
 use dbsp::DBData;
 use dbsp::algebra::{F32, F64};
-use dbsp::dynamic::{DynData, Erase, WithFactory};
+use dbsp::dynamic::{DynData, Erase, HashRepr, WithFactory};
 use dbsp::storage::buffer_cache::FBuf;
 use dbsp::storage::file::to_bytes;
 use dbsp::utils::tuple::TupleFormat;
@@ -288,61 +269,87 @@ fn strings() {
     check_all("char", &['\0', 'a', 'b', 'é', '\u{10ffff}']);
 }
 
+/// A byte array orders as a sequence, so a prefix sorts before what extends
+/// it, and a longer array is not automatically greater.  It hashes as one
+/// too, writing its length before its bytes, which is what the empty array
+/// and the pairs differing only in length are here to pin down.
+///
+/// The payload lives inside the `SmallVec` up to 32 bytes and on the heap
+/// beyond it, so the three around that size sit either side of the switch.
+fn byte_array_values() -> Vec<ByteArray> {
+    vec![
+        ByteArray::new(&[]),
+        ByteArray::new(&[0]),
+        ByteArray::new(&[0, 0]),
+        ByteArray::new(&[0, 1]),
+        ByteArray::new(&[1]),
+        ByteArray::new(&[1, 0]),
+        ByteArray::new(&[0xff]),
+        ByteArray::new(&[0x7f; 31]),
+        ByteArray::new(&[0x7f; 32]),
+        ByteArray::new(&[0x7f; 33]),
+        ByteArray::new(&vec![0xff; 300]),
+    ]
+}
+
 #[test]
 fn byte_arrays() {
-    // A byte array orders as a sequence, so a prefix sorts before what extends
-    // it, and a longer array is not automatically greater.
-    check_all(
-        "ByteArray",
-        &[
-            ByteArray::new(&[]),
-            ByteArray::new(&[0]),
-            ByteArray::new(&[0, 0]),
-            ByteArray::new(&[0, 1]),
-            ByteArray::new(&[1]),
-            ByteArray::new(&[1, 0]),
-            ByteArray::new(&[0xff]),
-            ByteArray::new(&vec![0xff; 300]),
-        ],
-    );
+    check_all("ByteArray", &byte_array_values());
+}
+
+/// `None` sorts before every `Some`, and hashes its discriminant first, so
+/// the archived enum has to keep the variants in that order and write the
+/// discriminant at the same width.
+fn option_i64_values() -> Vec<Option<i64>> {
+    vec![None, Some(i64::MIN), Some(0), Some(i64::MAX)]
+}
+
+fn option_string_values() -> Vec<Option<String>> {
+    vec![
+        None,
+        Some(String::new()),
+        Some("a".to_string()),
+        Some("b".to_string()),
+    ]
+}
+
+/// Nested, so the discriminant is written twice and the inner one has to be
+/// reached through the outer.
+fn option_option_i32_values() -> Vec<Option<Option<i32>>> {
+    vec![
+        None,
+        Some(None),
+        Some(Some(i32::MIN)),
+        Some(Some(0)),
+        Some(Some(i32::MAX)),
+    ]
+}
+
+fn option_f64_values() -> Vec<Option<F64>> {
+    vec![
+        None,
+        Some(F64::from(f64::NEG_INFINITY)),
+        Some(F64::from(0.0)),
+        Some(F64::from(f64::NAN)),
+    ]
+}
+
+fn option_sql_string_values() -> Vec<Option<SqlString>> {
+    vec![
+        None,
+        Some(SqlString::from("")),
+        Some(SqlString::from("a")),
+        Some(SqlString::from("b")),
+    ]
 }
 
 #[test]
 fn options() {
-    // `None` sorts before every `Some`, and the archived enum has to keep its
-    // variants in that order for the derived comparison to agree.
-    check_all(
-        "Option<i64>",
-        &[None, Some(i64::MIN), Some(0), Some(i64::MAX)],
-    );
-    check_all(
-        "Option<String>",
-        &[
-            None,
-            Some(String::new()),
-            Some("a".to_string()),
-            Some("b".to_string()),
-        ],
-    );
-    check_all(
-        "Option<Option<i32>>",
-        &[
-            None,
-            Some(None),
-            Some(Some(i32::MIN)),
-            Some(Some(0)),
-            Some(Some(i32::MAX)),
-        ],
-    );
-    check_all(
-        "Option<F64>",
-        &[
-            None,
-            Some(F64::from(f64::NEG_INFINITY)),
-            Some(F64::from(0.0)),
-            Some(F64::from(f64::NAN)),
-        ],
-    );
+    check_all("Option<i64>", &option_i64_values());
+    check_all("Option<String>", &option_string_values());
+    check_all("Option<Option<i32>>", &option_option_i32_values());
+    check_all("Option<F64>", &option_f64_values());
+    check_all("Option<SqlString>", &option_sql_string_values());
 }
 
 /// Each temporal type wraps a single integer, so the values worth comparing
@@ -448,79 +455,86 @@ fn decimals_at_several_scales() {
     check_all("SqlDecimal<28,10>", &decimals::<28, 10>());
     check_all("SqlDecimal<38,0>", &decimals::<38, 0>());
     check_all("SqlDecimal<38,38>", &decimals::<38, 38>());
-    check_all(
-        "Option<SqlDecimal<38,10>>",
-        &[
-            None,
-            Some(SqlDecimal::<38, 10>::MIN),
-            Some(SqlDecimal::<38, 10>::new(0, 10).unwrap()),
-            Some(SqlDecimal::<38, 10>::MAX),
-        ],
-    );
+    check_all("Option<SqlDecimal<38,10>>", &option_decimal_values());
 }
 
-#[test]
-fn sequences() {
-    // A sequence orders element by element, with a prefix before whatever
-    // extends it.  `rkyv` stores one out of line and compares it as a slice,
-    // so a length-first comparison would show up here.
-    check_all(
-        "Vec<i64>",
-        &[
-            Vec::new(),
-            vec![i64::MIN],
-            vec![0],
-            vec![0, i64::MIN],
-            vec![0, 0],
-            vec![0, 1],
-            vec![1],
-            vec![i64::MAX],
-            (0..300).collect::<Vec<i64>>(),
-        ],
-    );
-    check_all(
-        "Vec<String>",
-        &[
-            Vec::new(),
-            vec![String::new()],
-            vec!["a".to_string()],
-            vec!["a".to_string(), String::new()],
-            vec!["a".to_string(), "a".to_string()],
-            vec!["b".to_string()],
-        ],
-    );
-    check_all(
-        "Vec<Option<i32>>",
-        &[
-            Vec::new(),
-            vec![None],
-            vec![None, None],
-            vec![Some(i32::MIN)],
-            vec![Some(0)],
-            vec![Some(0), None],
-        ],
-    );
-    // Nested, so the element comparison itself recurses through an archived
-    // sequence rather than a scalar.
-    check_all(
-        "Vec<Vec<u8>>",
-        &[
-            Vec::new(),
-            vec![vec![]],
-            vec![vec![0]],
-            vec![vec![0], vec![]],
-            vec![vec![0, 1]],
-            vec![vec![1]],
-        ],
-    );
-    let arrays: Vec<Array<SqlString>> = vec![
+fn option_decimal_values() -> Vec<Option<SqlDecimal<38, 10>>> {
+    vec![
+        None,
+        Some(SqlDecimal::<38, 10>::MIN),
+        Some(SqlDecimal::<38, 10>::new(0, 10).unwrap()),
+        Some(SqlDecimal::<38, 10>::MAX),
+    ]
+}
+
+/// Sequences that put a prefix beside what extends it, which is where a
+/// comparison that looked at length first, or a hash that forgot to write the
+/// length at all, would show up.
+fn vec_i64_values() -> Vec<Vec<i64>> {
+    vec![
+        Vec::new(),
+        vec![i64::MIN],
+        vec![0],
+        vec![0, i64::MIN],
+        vec![0, 0],
+        vec![0, 1],
+        vec![1],
+        vec![i64::MAX],
+        (0..300).collect::<Vec<i64>>(),
+    ]
+}
+
+fn vec_string_values() -> Vec<Vec<String>> {
+    vec![
+        Vec::new(),
+        vec![String::new()],
+        vec!["a".to_string()],
+        vec!["a".to_string(), String::new()],
+        vec!["a".to_string(), "a".to_string()],
+        vec!["b".to_string()],
+    ]
+}
+
+fn vec_option_i32_values() -> Vec<Vec<Option<i32>>> {
+    vec![
+        Vec::new(),
+        vec![None],
+        vec![None, None],
+        vec![Some(i32::MIN)],
+        vec![Some(0)],
+        vec![Some(0), None],
+    ]
+}
+
+/// Nested, so the element is itself an archived sequence rather than a scalar.
+fn vec_vec_u8_values() -> Vec<Vec<Vec<u8>>> {
+    vec![
+        Vec::new(),
+        vec![vec![]],
+        vec![vec![0]],
+        vec![vec![0], vec![]],
+        vec![vec![0, 1]],
+        vec![vec![1]],
+    ]
+}
+
+fn array_sql_string_values() -> Vec<Array<SqlString>> {
+    vec![
         to_array(Vec::new()),
         to_array(vec![SqlString::from("")]),
         to_array(vec![SqlString::from("a")]),
         to_array(vec![SqlString::from("a"), SqlString::from("")]),
         to_array(vec![SqlString::from("b")]),
-    ];
-    check_all("Array<SqlString>", &arrays);
+    ]
+}
+
+#[test]
+fn sequences() {
+    check_all("Vec<i64>", &vec_i64_values());
+    check_all("Vec<String>", &vec_string_values());
+    check_all("Vec<Option<i32>>", &vec_option_i32_values());
+    check_all("Vec<Vec<u8>>", &vec_vec_u8_values());
+    check_all("Array<SqlString>", &array_sql_string_values());
 }
 
 /// Builds a map from pairs, so the cases below stay readable.
@@ -532,42 +546,73 @@ where
     to_map(entries.iter().cloned().collect::<BTreeMap<K, V>>())
 }
 
-#[test]
-fn maps_and_nesting() {
-    // A map compares as its sorted sequence of pairs.  `rkyv` stores it as a
-    // B-tree and compares by iterating, so an implementation that compared the
-    // stored layout instead would diverge on maps that hold the same entries.
-    let maps: Vec<Map<SqlString, i64>> = vec![
+/// A map compares and hashes as its sorted sequence of pairs.  `rkyv` stores
+/// it as a B-tree, so an implementation reading the stored layout instead
+/// would diverge on maps holding the same entries, and `rkyv`'s own hash
+/// leaves out the length prefix that the standard library writes.
+fn map_string_i64_values() -> Vec<Map<SqlString, i64>> {
+    vec![
         map_of::<SqlString, i64>(&[]),
         map_of(&[(SqlString::from("a"), i64::MIN)]),
         map_of(&[(SqlString::from("a"), 0)]),
         map_of(&[(SqlString::from("a"), 0), (SqlString::from("b"), 0)]),
         map_of(&[(SqlString::from("a"), 1)]),
         map_of(&[(SqlString::from("b"), 0)]),
-    ];
-    check_all("Map<SqlString, i64>", &maps);
+    ]
+}
 
-    // A map whose values are themselves maps, so the comparison recurses.
+/// A map whose values are themselves maps, so the recursion goes through a
+/// second archived map rather than a scalar.
+fn map_nested_values() -> Vec<Map<SqlString, Map<SqlString, i64>>> {
     let inner_empty = map_of::<SqlString, i64>(&[]);
     let inner_one = map_of(&[(SqlString::from("x"), 1i64)]);
     let inner_two = map_of(&[(SqlString::from("x"), 1i64), (SqlString::from("y"), 2)]);
-    let nested: Vec<Map<SqlString, Map<SqlString, i64>>> = vec![
+    vec![
         map_of::<SqlString, Map<SqlString, i64>>(&[]),
         map_of(&[(SqlString::from("k"), inner_empty)]),
         map_of(&[(SqlString::from("k"), inner_one.clone())]),
         map_of(&[(SqlString::from("k"), inner_two)]),
         map_of(&[(SqlString::from("l"), inner_one)]),
-    ];
-    check_all("Map<SqlString, Map<SqlString, i64>>", &nested);
+    ]
+}
 
-    // A sequence of maps, the other way of nesting the two containers.
-    let seq: Vec<Vec<Map<SqlString, i64>>> = vec![
+/// A sequence of maps, the other way of nesting the two containers.
+fn vec_of_maps_values() -> Vec<Vec<Map<SqlString, i64>>> {
+    vec![
         Vec::new(),
         vec![map_of::<SqlString, i64>(&[])],
         vec![map_of(&[(SqlString::from("a"), 0i64)])],
         vec![map_of(&[(SqlString::from("a"), 0i64)]), map_of(&[])],
-    ];
-    check_all("Vec<Map<SqlString, i64>>", &seq);
+    ]
+}
+
+/// Plain `BTreeMap`s, so that the map is reached without the reference count
+/// the SQL alias wraps it in.
+fn btree_map_values() -> Vec<BTreeMap<i64, i64>> {
+    vec![
+        BTreeMap::new(),
+        BTreeMap::from([(1i64, 2i64)]),
+        BTreeMap::from([(1i64, 2i64), (3, 4)]),
+        BTreeMap::from([(1i64, 3i64)]),
+    ]
+}
+
+fn btree_map_nested_values() -> Vec<BTreeMap<i64, BTreeMap<i64, i64>>> {
+    vec![
+        BTreeMap::new(),
+        BTreeMap::from([(1i64, BTreeMap::<i64, i64>::new())]),
+        BTreeMap::from([(1i64, BTreeMap::from([(2i64, 3i64)]))]),
+        BTreeMap::from([(1i64, BTreeMap::from([(2i64, 4i64)]))]),
+    ]
+}
+
+#[test]
+fn maps_and_nesting() {
+    check_all("Map<SqlString, i64>", &map_string_i64_values());
+    check_all("Map<SqlString, Map<SqlString, i64>>", &map_nested_values());
+    check_all("Vec<Map<SqlString, i64>>", &vec_of_maps_values());
+    check_all("BTreeMap<i64, i64>", &btree_map_values());
+    check_all("BTreeMap nested", &btree_map_nested_values());
 }
 
 /// One value of every `Variant` arm, in declaration order, plus a second of
@@ -687,6 +732,11 @@ fn flat_variants() -> Vec<FlatVariant> {
 #[test]
 fn flat_variant_documents() {
     check_all("FlatVariant", &flat_variants());
+}
+
+#[test]
+fn hashing_flat_variant() {
+    check_hash_all("FlatVariant", &flat_variants());
 }
 
 #[test]
@@ -1046,6 +1096,19 @@ fn maps_that_span_several_nodes() {
     check_all("Map<SqlString, i64> three levels deep", &three_level_maps());
 }
 
+#[test]
+fn hashing_maps_that_span_several_nodes() {
+    check_hash_all(
+        "BTreeMap<i64, i64> spanning nodes",
+        &i64_maps_across_node_boundaries(),
+    );
+    check_hash_all(
+        "Map<SqlString, i64> spanning nodes",
+        &string_key_maps_across_node_boundaries(),
+    );
+    check_hash_all("Map<SqlString, i64> three levels deep", &three_level_maps());
+}
+
 /// A tuple wide enough to take the layout that stores its fields behind a
 /// bitmap of which ones are NULL.
 type NullableTup10 = Tup10<
@@ -1255,6 +1318,7 @@ fn a_shared_allocation_compares_as_its_contents() {
         Tup2::new(shared.clone(), to_array(vec![1i64, 2])),
     ];
     check_all("a row sharing an array between two columns", &values);
+    check_hash_all("a row sharing an array between two columns", &values);
 }
 
 /// A wide tuple of mixed field types, half of them nullable.
@@ -1595,6 +1659,22 @@ ordering_proptest!(
     .prop_map(to_map)
 );
 ordering_proptest!(
+    prop_vec_of_maps,
+    prop::collection::vec(
+        prop::collection::btree_map(sql_string_any(), i64_any(), 0..3).prop_map(to_map),
+        0..3
+    )
+);
+ordering_proptest!(
+    prop_tup3_nested,
+    (
+        proptest::option::of(i64_any()),
+        prop::collection::vec(sql_string_any(), 0..3),
+        f64_any(),
+    )
+        .prop_map(|(a, b, c)| Tup3::new(a, b, c))
+);
+ordering_proptest!(
     prop_array_sql_string,
     prop::collection::vec(sql_string_any(), 0..4).prop_map(to_array)
 );
@@ -1654,3 +1734,359 @@ fn mixed_tup10_any() -> BoxedStrategy<MixedTup10> {
 }
 
 ordering_proptest!(prop_tup10_mixed, mixed_tup10_any());
+
+// ---------------------------------------------------------------------------
+// Hashing.
+//
+// Splicing a run of keys into a merge output has to feed the output's
+// membership filter, which hashes every key.  A spliced key is never decoded,
+// so that hash has to come from the archived form and has to equal what the
+// decoded form would produce: the filter is written here and queried later
+// from a decoded key, and a mismatch is a false negative, which a membership
+// filter is never allowed to produce.  The lookup then finds nothing and the
+// query is silently wrong.
+//
+// Meeting that requirement took hashing the archived form directly rather
+// than deferring to `rkyv`'s own `Hash`, which disagrees with the standard
+// library in two places: it leaves out the length prefix a map writes, and it
+// gives an enum a discriminant narrower than the decoded one.
+// ---------------------------------------------------------------------------
+
+/// A hasher that records what it was asked to write rather than a hash.
+///
+/// Every `write_*` is left on its default, which routes through `write`, so
+/// the log tells one write of a slice's bytes from one write an element.  The
+/// hasher the engine uses cannot: it is insensitive to where one call ends
+/// and the next begins, so it answers the same either way.  Hashing
+/// faithfully is the stronger claim of making the same calls, and this is
+/// what checks it.
+#[derive(Default)]
+struct CallLog(Vec<Vec<u8>>);
+
+impl std::hash::Hasher for CallLog {
+    fn finish(&self) -> u64 {
+        0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        self.0.push(bytes.to_vec());
+    }
+}
+
+/// The calls hashing `value` makes, in order.
+fn calls_of(hash: impl FnOnce(&mut CallLog)) -> Vec<Vec<u8>> {
+    let mut log = CallLog::default();
+    hash(&mut log);
+    log.0
+}
+
+/// Checks that an archived value hashes exactly as its decoded form does:
+/// the same answer, and the same calls to get there.
+fn check_hash<T>(label: &str, values: &[T])
+where
+    T: DBData,
+    T::Repr: HashRepr,
+{
+    for (i, value) in values.iter().enumerate() {
+        let bytes = archive(value);
+        // SAFETY: `bytes` came from `archive::<T>` on the line above.
+        let archived = unsafe { root::<T>(&bytes) };
+        assert_eq!(
+            dbsp::dynamic::archived_hash(archived),
+            Some(dbsp::default_hash(value)),
+            "{label}[{i}]: the archived form hashes differently from the decoded one\n  \
+             value: {value:?}"
+        );
+        assert_eq!(
+            calls_of(|log| std::hash::Hash::hash(value, log)),
+            calls_of(|log| archived.hash_repr(log)),
+            "{label}[{i}]: the archived form asks the hasher for something different \
+             from what the decoded one asks for\n  value: {value:?}"
+        );
+    }
+}
+
+/// Checks that a type's archived form claims to be faithful and hashes the
+/// way the decoded form does, over every value given.
+fn check_hash_all<T>(label: &str, values: &[T])
+where
+    T: DBData + HashRepr,
+    T::Repr: HashRepr,
+{
+    assert!(
+        <T::Repr as HashRepr>::FAITHFUL,
+        "{label}: the archived form does not claim to hash faithfully"
+    );
+    check_hash(label, values);
+}
+
+#[test]
+fn hashing_scalars() {
+    check_hash_all("i64", &[i64::MIN, -1, 0, 1, i64::MAX]);
+    check_hash_all("u128", &[0u128, 1, u128::MAX]);
+    check_hash_all("bool", &[false, true]);
+    check_hash_all("String", &interesting_strings());
+    let sql: Vec<SqlString> = interesting_strings()
+        .into_iter()
+        .map(SqlString::from)
+        .collect();
+    check_hash_all("SqlString", &sql);
+    check_hash_all("F32", &f32_values());
+    check_hash_all("F64", &f64_values());
+    check_hash_all("i8", &[i8::MIN, -1, 0, 1, i8::MAX]);
+    check_hash_all("i32", &[i32::MIN, -1, 0, 1, i32::MAX]);
+    check_hash_all("i128", &[i128::MIN, -1, 0, 1, i128::MAX]);
+    check_hash_all("u8", &[u8::MIN, 1, u8::MAX]);
+    check_hash_all("char", &['\0', 'a', 'b', 'é', '\u{10ffff}']);
+}
+
+/// A decimal archives to itself, so the two hashes are the same code and
+/// these cases say that the archived form really is the decoded one, at every
+/// precision and scale and after a round trip through the archive.
+#[test]
+fn hashing_decimals() {
+    check_hash_all("SqlDecimal<10,0>", &decimals::<10, 0>());
+    check_hash_all("SqlDecimal<12,2>", &decimals::<12, 2>());
+    check_hash_all("SqlDecimal<18,4>", &decimals::<18, 4>());
+    check_hash_all("SqlDecimal<28,10>", &decimals::<28, 10>());
+    check_hash_all("SqlDecimal<38,0>", &decimals::<38, 0>());
+    check_hash_all("SqlDecimal<38,38>", &decimals::<38, 38>());
+    check_hash_all("Option<SqlDecimal<38,10>>", &option_decimal_values());
+}
+
+/// A byte array does not archive to itself, and the length it writes before
+/// its bytes is the part that can go missing.
+#[test]
+fn hashing_byte_arrays() {
+    check_hash_all("ByteArray", &byte_array_values());
+}
+
+#[test]
+fn hashing_temporal_and_spatial() {
+    check_hash_all("Date", &date_values());
+    check_hash_all("Time", &time_values());
+    check_hash_all("Timestamp", &timestamp_values());
+    check_hash_all("TimestampTz", &timestamp_tz_values());
+    check_hash_all("ShortInterval", &short_interval_values());
+    check_hash_all("LongInterval", &long_interval_values());
+    check_hash_all("GeoPoint", &geo_point_values());
+    check_hash_all("Uuid", &uuid_values());
+}
+
+/// Two of the things the ordering half covers this one cannot: the legacy
+/// variant and tuples of more than eight fields.  Neither reproduces the
+/// decoded hash yet, so both decline, and a caller reads the decline and
+/// decodes the value instead.
+///
+/// Declining is an answer, not a missing implementation.  Both archived forms
+/// implement the trait, so a caller bounded on `Archived<K>: HashRepr`
+/// compiles for them and takes the fallback; without that it would fail to
+/// build for any key of nine or more columns, and for every VARIANT.
+#[test]
+fn the_types_that_decline_say_so_rather_than_answer() {
+    let wide = Tup9::new(0i64, 1i64, 2i64, 3i64, 4i64, 5i64, 6i64, 7i64, 8i64);
+    let bytes = archive(&wide);
+    // SAFETY: `bytes` came from `archive` on the line above.
+    let archived = unsafe { root::<Tup9<i64, i64, i64, i64, i64, i64, i64, i64, i64>>(&bytes) };
+    assert_eq!(dbsp::dynamic::archived_hash(archived), None);
+
+    let variant = Variant::String(SqlString::from("a"));
+    let bytes = archive(&variant);
+    // SAFETY: `bytes` came from `archive` on the line above.
+    let archived = unsafe { root::<Variant>(&bytes) };
+    assert_eq!(dbsp::dynamic::archived_hash(archived), None);
+
+    // And declining spreads, so a container of one declines too.
+    let held = vec![Variant::String(SqlString::from("a"))];
+    let bytes = archive(&held);
+    // SAFETY: `bytes` came from `archive` on the line above.
+    let archived = unsafe { root::<Vec<Variant>>(&bytes) };
+    assert_eq!(dbsp::dynamic::archived_hash(archived), None);
+}
+
+/// The same containers the ordering tests walk, hashed.
+///
+/// Drawing from the same lists is deliberate: the two halves would otherwise
+/// drift, and the container cases are where they diverge most easily, since a
+/// hash has a length prefix and a discriminant width to get right that an
+/// ordering does not.
+#[test]
+fn hashing_containers() {
+    check_hash_all("Option<i64>", &option_i64_values());
+    check_hash_all("Option<String>", &option_string_values());
+    check_hash_all("Option<Option<i32>>", &option_option_i32_values());
+    check_hash_all("Option<F64>", &option_f64_values());
+    check_hash_all("Option<SqlString>", &option_sql_string_values());
+
+    check_hash_all("Vec<i64>", &vec_i64_values());
+    check_hash_all("Vec<String>", &vec_string_values());
+    check_hash_all("Vec<Option<i32>>", &vec_option_i32_values());
+    check_hash_all("Vec<Vec<u8>>", &vec_vec_u8_values());
+    check_hash_all("Array<SqlString>", &array_sql_string_values());
+
+    // The maps are the cases `rkyv`'s own `Hash` gets wrong, by leaving out
+    // the length prefix that the standard library writes.
+    check_hash_all("Map<SqlString, i64>", &map_string_i64_values());
+    check_hash_all("Map<SqlString, Map<SqlString, i64>>", &map_nested_values());
+    check_hash_all("Vec<Map<SqlString, i64>>", &vec_of_maps_values());
+    check_hash_all("BTreeMap<i64, i64>", &btree_map_values());
+    check_hash_all("BTreeMap nested", &btree_map_nested_values());
+}
+
+#[test]
+fn hashing_tuples() {
+    check_hash_all(
+        "Tup2<i64, SqlString>",
+        &[
+            Tup2::new(0i64, SqlString::from("")),
+            Tup2::new(0i64, SqlString::from("a")),
+            Tup2::new(1i64, SqlString::from("")),
+        ],
+    );
+    check_hash_all(
+        "Tup3 with options",
+        &[
+            Tup3::new(
+                Some(1i64),
+                Option::<SqlString>::None,
+                Timestamp::from_microseconds(0),
+            ),
+            Tup3::new(
+                None,
+                Some(SqlString::from("a")),
+                Timestamp::from_microseconds(-1),
+            ),
+        ],
+    );
+    // Eight fields is the widest tuple whose archived form hashes at all: a
+    // wider one has no archived hash, faithful or otherwise.
+    check_hash_all(
+        "Tup8, the widest that hashes",
+        &[
+            Tup8::new(0i64, 1u32, 2i16, 3u8, 4i8, 5u16, 6i32, None::<i64>),
+            Tup8::new(0i64, 1u32, 2i16, 3u8, 4i8, 5u16, 6i32, Some(0i64)),
+            Tup8::new(1i64, 0u32, 0i16, 0u8, 0i8, 0u16, 0i32, Some(i64::MIN)),
+        ],
+    );
+    check_hash_all(
+        "Tup5 mixed",
+        &[
+            Tup5::new(
+                F64::from(f64::NAN),
+                Date::from_days(0),
+                SqlString::from("a"),
+                vec![1i64],
+                Uuid::from_bytes([0; 16]),
+            ),
+            Tup5::new(
+                F64::from(0.0),
+                Date::from_days(-1),
+                SqlString::from("b"),
+                Vec::new(),
+                Uuid::from_bytes([1; 16]),
+            ),
+        ],
+    );
+}
+
+macro_rules! hashing_proptest {
+    ($name:ident, $strategy:expr) => {
+        mod $name {
+            use super::*;
+
+            proptest! {
+                #[test]
+                fn hashes_alike(value in $strategy) {
+                    check_hash(stringify!($name), std::slice::from_ref(&value));
+                }
+            }
+        }
+    };
+}
+
+hashing_proptest!(hash_flat_variant, flat_variant_any());
+hashing_proptest!(hash_i64, i64_any());
+hashing_proptest!(hash_u64, u64_any());
+hashing_proptest!(hash_f64, f64_any());
+hashing_proptest!(hash_string, string_any());
+hashing_proptest!(hash_sql_string, sql_string_any());
+hashing_proptest!(hash_option_i64, proptest::option::of(i64_any()));
+hashing_proptest!(hash_option_string, proptest::option::of(string_any()));
+hashing_proptest!(hash_vec_i64, prop::collection::vec(i64_any(), 0..6));
+hashing_proptest!(hash_vec_string, prop::collection::vec(string_any(), 0..4));
+hashing_proptest!(
+    hash_option_option_i32,
+    proptest::option::of(proptest::option::of(i32_any()))
+);
+hashing_proptest!(
+    hash_vec_option_i32,
+    prop::collection::vec(proptest::option::of(i32_any()), 0..5)
+);
+hashing_proptest!(
+    hash_vec_vec_u8,
+    prop::collection::vec(prop::collection::vec(any::<u8>(), 0..4), 0..4)
+);
+hashing_proptest!(
+    hash_array_sql_string,
+    prop::collection::vec(sql_string_any(), 0..4).prop_map(to_array)
+);
+hashing_proptest!(
+    hash_vec_of_maps,
+    prop::collection::vec(
+        prop::collection::btree_map(sql_string_any(), i64_any(), 0..3).prop_map(to_map),
+        0..3
+    )
+);
+hashing_proptest!(
+    hash_map_string_i64,
+    prop::collection::btree_map(sql_string_any(), i64_any(), 0..4)
+);
+hashing_proptest!(
+    hash_map_nested,
+    prop::collection::btree_map(
+        i64_any(),
+        prop::collection::btree_map(i64_any(), i64_any(), 0..3),
+        0..3
+    )
+);
+hashing_proptest!(hash_i128, i128_any());
+hashing_proptest!(hash_f32, f32_any());
+hashing_proptest!(hash_uuid, uuid_any());
+hashing_proptest!(hash_byte_array, byte_array_any());
+hashing_proptest!(hash_decimal_12_2, decimal_any::<12, 2>());
+hashing_proptest!(hash_decimal_38_10, decimal_any::<38, 10>());
+hashing_proptest!(hash_time, u64_any().prop_map(Time::from_nanoseconds));
+hashing_proptest!(
+    hash_timestamp_tz,
+    i64_any().prop_map(TimestampTz::from_microseconds)
+);
+hashing_proptest!(
+    hash_short_interval,
+    i64_any().prop_map(ShortInterval::from_microseconds)
+);
+hashing_proptest!(
+    hash_long_interval,
+    i32_any().prop_map(LongInterval::from_months)
+);
+hashing_proptest!(hash_date, i32_any().prop_map(Date::from_days));
+hashing_proptest!(
+    hash_timestamp,
+    i64_any().prop_map(Timestamp::from_microseconds)
+);
+hashing_proptest!(
+    hash_geo_point,
+    (f64_any(), f64_any()).prop_map(|(x, y)| GeoPoint::new(x.into_inner(), y.into_inner()))
+);
+hashing_proptest!(
+    hash_tup2,
+    (i64_any(), sql_string_any()).prop_map(|(a, b)| Tup2::new(a, b))
+);
+hashing_proptest!(
+    hash_tup3_nested,
+    (
+        proptest::option::of(i64_any()),
+        prop::collection::vec(sql_string_any(), 0..3),
+        f64_any(),
+    )
+        .prop_map(|(a, b, c)| Tup3::new(a, b, c))
+);

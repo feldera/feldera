@@ -23,6 +23,10 @@ pub use error::*;
 #[doc(hidden)]
 pub mod float;
 pub use float::*;
+pub(crate) mod hash_repr;
+#[doc(hidden)]
+pub use dbsp::dynamic as __hash_repr;
+
 #[doc(hidden)]
 pub mod geopoint;
 pub use geopoint::*;

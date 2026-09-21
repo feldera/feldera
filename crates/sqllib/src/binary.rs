@@ -70,6 +70,29 @@ impl<S: RkyvSerializer + ?Sized> rkyv::Serialize<S> for ByteArray {
     }
 }
 
+/// A `ByteArray` derives its hash from the `SmallVec` holding the payload,
+/// and a `SmallVec` hashes as the slice it derefs to: the length, then the
+/// bytes in one write.
+impl crate::__hash_repr::HashRepr for ByteArray {
+    const FAITHFUL: bool = true;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, state: &mut H) {
+        ::std::hash::Hash::hash(self, state)
+    }
+}
+
+/// The archived form holds the same bytes in an `ArchivedVec`, so hashing the
+/// slice reproduces the decoded answer exactly.
+impl crate::__hash_repr::HashRepr for ArchivedByteArray {
+    const FAITHFUL: bool = true;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, state: &mut H) {
+        ::std::hash::Hash::hash(self.data.as_slice(), state)
+    }
+}
+
 impl SizeOf for ByteArray {
     fn size_of_children(&self, context: &mut size_of::Context) {
         // `SmallVec` has no `SizeOf` impl, so delegating to `self.data` resolved
