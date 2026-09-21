@@ -129,9 +129,26 @@ class TestNow(unittest.TestCase):
         elapsed = time.monotonic() - start_time
         log(f"Data ingested in {elapsed}")
 
-        # Freeze the value of now().
+        # Freeze the value of now(). The `now` clock is a streaming connector,
+        # so wait_for_completion would hang. An open transaction also means
+        # completion tokens / completed-record counts may not advance until
+        # commit. After pause(), wait until the circuit has processed every
+        # record already ingested.
         pipeline.pause()
-        pipeline.wait_for_idle()
+        target = pipeline.stats().global_metrics.total_input_records
+        deadline = time.monotonic() + 600
+        while time.monotonic() < deadline:
+            metrics = pipeline.stats().global_metrics
+            if (
+                metrics.buffered_input_records == 0
+                and metrics.total_processed_records >= target
+            ):
+                break
+            time.sleep(0.25)
+        else:
+            raise TimeoutError(
+                "timed out waiting for ingested records to be processed after pause"
+            )
 
         start_time = time.monotonic()
         pipeline.commit_transaction(transaction_id=None, wait=True, timeout_s=600)

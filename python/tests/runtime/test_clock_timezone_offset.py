@@ -27,6 +27,7 @@ from feldera.testutils import (
     unique_pipeline_name,
 )
 from tests import TEST_CLIENT
+from tests.utils import wait_for_condition
 
 # `2030-01-01T00:00:00Z` in milliseconds since epoch.  A fixed anchor, so
 # every assertion in this test can use literal values.
@@ -43,9 +44,20 @@ CLOCK_RESOLUTION_MS = 1_000
 
 
 def _advance_and_settle(pipeline, delta_ms: int | None) -> dict:
-    """`advance_clock(delta_ms)` followed by `wait_for_idle` so the view sees the new tick."""
+    """Advance the clock and wait until the materialized view reflects the new tick."""
     resp = pipeline.advance_clock(delta_ms)
-    pipeline.wait_for_idle(idle_interval_s=0.5, timeout_s=10.0, poll_interval_s=0.05)
+    expected = str(resp["now"])[:19]
+
+    def view_caught_up() -> bool:
+        rows = list(pipeline.query("SELECT t FROM v;"))
+        return bool(rows) and str(rows[0]["t"]).startswith(expected)
+
+    wait_for_condition(
+        "materialized view reflects advanced NOW()",
+        view_caught_up,
+        timeout_s=10.0,
+        poll_interval_s=0.05,
+    )
     return resp
 
 

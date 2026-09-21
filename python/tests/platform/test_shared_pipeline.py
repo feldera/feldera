@@ -345,7 +345,10 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.stop(force=True)
 
     def test_foreach_chunk(self):
+        received = {"n": 0}
+
         def callback(df: pd.DataFrame, seq_no: int):
+            received["n"] += len(df)
             print(f"\nSeq No: {seq_no}, DF size: {df.shape[0]}\n")
 
         df_students = pd.read_csv("tests/assets/students.csv")
@@ -355,7 +358,12 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_pandas("students", df_students)
         self.pipeline.input_pandas("grades", df_grades)
-        self.pipeline.wait_for_idle()
+        wait_for_condition(
+            "foreach_chunk received average_scores rows",
+            lambda: received["n"] >= 100,
+            timeout_s=60.0,
+            poll_interval_s=0.1,
+        )
         self.pipeline.stop(force=True)
 
     def test_df_without_columns(self):

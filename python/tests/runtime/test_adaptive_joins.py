@@ -139,7 +139,6 @@ class TestAdaptiveJoins(unittest.TestCase):
             uniform_b = [{"k": i, "w": i} for i in range(1, n_uniform + 1)]
             _push_chunked_json(pipeline, "tab_a", uniform_a)
             _push_chunked_json(pipeline, "tab_b", uniform_b)
-            pipeline.wait_for_idle()
 
             def all_sharded() -> bool:
                 pvals = _balancer_policy_values(_fetch_circuit_json_profile(name))
@@ -157,9 +156,7 @@ class TestAdaptiveJoins(unittest.TestCase):
             skew_n = 25_000
             skew_a = [{"k": 0, "v": i} for i in range(skew_n)]
             _push_chunked_json(pipeline, "tab_a", skew_a)
-            pipeline.wait_for_idle()
             pipeline.rebalance()
-            pipeline.wait_for_idle()
 
             def skew_policies() -> bool:
                 pvals = _balancer_policy_values(_fetch_circuit_json_profile(name))
