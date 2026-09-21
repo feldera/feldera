@@ -56,7 +56,10 @@ of a view that is not materialized receives the changes to the view, but cannot 
 through an index (see [Materialized Tables and Views](/sql/materialized)).
 
 The specific behavior of this transformation depends on the data format and transport protocol used. Currently, the `index` property is supported only for:
-- Kafka output connectors configured with the [Avro format](/formats/avro/)
+- Kafka output connectors configured with the [Avro
+  format](/formats/avro/), except in a pipeline configured for exactly
+  once fault tolerance (because Kafka connectors use the key to
+  deduplicate output in exactly once fault tolerance).
 - [Postgres output connector](/connectors/sinks/postgresql)
 - [Delta Lake output connector](/connectors/sinks/delta)
 
