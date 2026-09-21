@@ -191,5 +191,59 @@ fn bench_insert_against_cdc(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_files, bench_insert_against_cdc);
+/// How a flush's cost follows the share of the table its keys cover.
+///
+/// The lookup's pre-filter rejects a key the batch does not hold for one hash, so it pays
+/// off in proportion to how much of the table it can reject. This sweeps that ratio from a
+/// steady-state flush up to one that rewrites every row, where nothing is rejected and the
+/// filter is pure overhead. The table is fixed, so anything this shows is the batch's doing.
+fn bench_key_share(c: &mut Criterion) {
+    const FILES: usize = 16;
+    let data = generate_test_data(TABLE_ROWS);
+    let seeded = TempDir::new().unwrap();
+    seed(seeded.path().to_str().unwrap(), &data, FILES);
+
+    let mut group = c.benchmark_group("delta_merge_key_share");
+    group.sample_size(10);
+
+    for keys in [1_000usize, 10_000, TABLE_ROWS] {
+        // Spread across the whole key space, so no file prunes away on its statistics.
+        let stride = TABLE_ROWS / keys;
+        let touched: Vec<BenchTestStruct> = data.iter().step_by(stride).cloned().collect();
+        let updated: Vec<BenchTestStruct> = touched
+            .iter()
+            .map(|r| BenchTestStruct {
+                s: format!("updated_{}", r.id),
+                ..r.clone()
+            })
+            .collect();
+        let batch = build_update_batch(&touched, &updated);
+
+        group.throughput(criterion::Throughput::Elements(touched.len() as u64));
+        group.bench_with_input(BenchmarkId::new("keys", keys), &keys, |b, _| {
+            b.iter_batched(
+                || {
+                    let dir = TempDir::new().unwrap();
+                    copy_dir(seeded.path(), dir.path());
+                    let w = writer(
+                        dir.path().to_str().unwrap(),
+                        DeltaTableWriteMode::Append,
+                        DeltaTableUpdateMode::Merge,
+                    );
+                    (w, dir)
+                },
+                |(mut w, _dir)| flush(&mut w, &batch),
+                criterion::BatchSize::PerIteration,
+            );
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    bench_files,
+    bench_key_share,
+    bench_insert_against_cdc
+);
 criterion_main!(benches);

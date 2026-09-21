@@ -199,6 +199,7 @@ rmpv = { workspace = true, features = ["with-serde"] }
 serde_bytes = { workspace = true }
 governor = { workspace = true }
 nonzero_ext = { workspace = true }
+feldera-modular-bloom = { workspace = true }
 xxhash-rust = { workspace = true, features = ["xxh3"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "json"] }

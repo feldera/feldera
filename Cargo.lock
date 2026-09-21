@@ -4217,6 +4217,7 @@ dependencies = [
  "feldera-iceberg",
  "feldera-ir",
  "feldera-macros",
+ "feldera-modular-bloom",
  "feldera-observability",
  "feldera-samply",
  "feldera-size-of",
