@@ -944,4 +944,90 @@ public class Regression3Tests extends SqlIoTest {
                 -------------
                  2  | { NULL }""");
     }
+
+    /** Indexing a collection whose element is a ROW with a non-nullable ARRAY field */
+    @Test
+    public void nestedArrayInNullableRow() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT ARRAY);
+                CREATE VIEW W AS SELECT ARRAY[ROW(COALESCE(x, ARRAY()) AS b)][1].b[1] AS r FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY[2, 3])", """
+                 r
+                ---
+                 2""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(NULL)", """
+                 r
+                ------
+                 NULL""");
+
+        // The same with a MAP
+        ccs = this.getCCS("""
+                CREATE TABLE T(x INT ARRAY);
+                CREATE VIEW W AS SELECT MAP['k', ROW(COALESCE(x, ARRAY()) AS b)]['k'].b[1] AS r FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY[2, 3])", """
+                 r
+                ---
+                 2""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(NULL)", """
+                 r
+                ------
+                 NULL""");
+
+        // Two levels of nesting, each one indexing a ROW field that cannot be NULL
+        ccs = this.getCCS("""
+                CREATE TABLE T(x INT ARRAY);
+                CREATE VIEW W AS SELECT
+                  ARRAY[ROW(ARRAY[ROW(COALESCE(x, ARRAY()) AS c)] AS b)][1].b[1].c[1] AS r
+                FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY[2, 3])", """
+                 r
+                ---
+                 2""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(NULL)", """
+                 r
+                ------
+                 NULL""");
+
+        // An index out of bounds and a missing map key produce a NULL ROW result
+        ccs = this.getCCS("""
+                CREATE TABLE T(x INT ARRAY);
+                CREATE VIEW W AS SELECT
+                  ARRAY[ROW(COALESCE(x, ARRAY()) AS b)][2].b AS r,
+                  ARRAY[ROW(COALESCE(x, ARRAY()) AS b)][2].b[1] AS s,
+                  MAP['k', ROW(COALESCE(x, ARRAY()) AS b)]['nope'].b AS t
+                FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY[2, 3])", """
+                 r    | s    | t
+                ---------------------
+                 NULL | NULL | NULL""");
+
+        // SAFE_OFFSET 
+        ccs = this.getCCS("""
+                CREATE TABLE T(x INT ARRAY);
+                CREATE VIEW W AS SELECT
+                  ARRAY[ROW(COALESCE(x, ARRAY()) AS b)][SAFE_OFFSET(0)].b[1] AS r,
+                  ARRAY[ROW(COALESCE(x, ARRAY()) AS b)][SAFE_OFFSET(1)].b AS s
+                FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY[2, 3])", """
+                 r | s
+                ----------
+                 2 | NULL""");
+
+        // A DECIMAL element type, which carries a precision and a scale
+        ccs = this.getCCS("""
+                CREATE TABLE T(x DECIMAL(6, 2) ARRAY);
+                CREATE VIEW W AS SELECT ARRAY[ROW(COALESCE(x, ARRAY()) AS b)][1].b[1] AS r FROM T;""");
+        ccs.stepWeightOne("INSERT INTO T VALUES(ARRAY[2.50, 3.50])", """
+                 r
+                ------
+                 2.50""");
+    }
+
+    /** A NULL ROW constant reaching the monotonicity analysis */
+    @Test
+    public void nullRowConstantMonotone() {
+        this.getCC("""
+                CREATE TABLE T(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR, x INT);
+                CREATE VIEW V AS SELECT ts, CAST(NULL AS ROW(a INT)) AS r FROM T;""");
+    }
 }

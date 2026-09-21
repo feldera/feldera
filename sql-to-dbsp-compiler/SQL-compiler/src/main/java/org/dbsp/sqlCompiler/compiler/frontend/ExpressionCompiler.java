@@ -2043,6 +2043,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 DBSPExpression index = ops.get(1);
                 DBSPOpcode opcode = DBSPOpcode.SQL_INDEX;
                 String name = call.op.getName();
+                // Type of the values stored in the collection; null for a VARIANT
+                DBSPType elementType = null;
                 if (collectionType.is(DBSPTypeMap.class)) {
                     // index into a map
                     Utilities.enforce(name.equals("ITEM"));
@@ -2051,6 +2053,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     index = index.applyCloneIfNeeded()
                             .cast(node, map.getKeyType(), DBSPCastExpression.CastType.SqlUnsafe);
                     opcode = DBSPOpcode.MAP_INDEX;
+                    elementType = map.getValueType();
                 } else if (collectionType.is(DBSPTypeVariant.class)) {
                     Utilities.enforce(name.equals("ITEM"));
                     opcode = DBSPOpcode.VARIANT_INDEX;
@@ -2074,6 +2077,18 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         default: throw new UnimplementedException("Not yet implemented", node);
                     }
                     Utilities.enforce(collectionType.is(DBSPTypeArray.class));
+                    elementType = collectionType.to(DBSPTypeArray.class).getElementType();
+                }
+                if (elementType != null) {
+                    // Calcite's type inference for an element type makes every ROW field nullable.
+                    // Derive the type from the collection itself.
+                    DBSPType indexed = elementType.withMayBeNull(true);
+                    // Effectively final, for the message below
+                    DBSPType calciteType = type;
+                    Utilities.enforce(sameUpToFieldNullability(indexed, calciteType),
+                            () -> "Indexing a " + collectionType + " yields a " + indexed +
+                                    ", but Calcite expects a " + calciteType);
+                    type = indexed;
                 }
                 return new DBSPBinaryExpression(node, type, opcode, op0, index);
             }
@@ -2450,6 +2465,27 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
     void checkFloatingPointEquality(CalciteObject node, String construct, @Nullable RelDataType type) {
         WarnFloatingPointEquality.checkType(this.compiler, node.getPositionRange(), construct, type);
+    }
+
+    /** True when two types describe the same values except for nullability.
+     * Calcite has no nullable ROW, so it makes a ROW nullable by making each of its
+     * fields nullable, recursing into fields that are themselves ROWs.  Everything
+     * else about the two types, such as the arity of a ROW or the precision of a
+     * DECIMAL, must still agree. */
+    static boolean sameUpToFieldNullability(DBSPType type, DBSPType other) {
+        if (type.is(DBSPTypeTupleBase.class)) {
+            if (!other.is(DBSPTypeTupleBase.class))
+                return false;
+            DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);
+            DBSPTypeTupleBase otherTuple = other.to(DBSPTypeTupleBase.class);
+            if (tuple.size() != otherTuple.size())
+                return false;
+            for (int i = 0; i < tuple.size(); i++)
+                if (!sameUpToFieldNullability(tuple.getFieldType(i), otherTuple.getFieldType(i)))
+                    return false;
+            return true;
+        }
+        return type.sameTypeIgnoringNullability(other);
     }
 
     private DBSPExpression warnAlwaysNull(CalciteObject node, DBSPType type) {
