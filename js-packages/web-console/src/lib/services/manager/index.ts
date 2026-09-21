@@ -630,6 +630,7 @@ export type {
   RuntimeStatus,
   RuntimeStatusDetails,
   RustCompilationInfo,
+  RustCompilerMessage,
   S3InputConfig,
   S3TablesCatalogConfig,
   SampleStatistics,

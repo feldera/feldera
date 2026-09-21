@@ -7705,8 +7705,7 @@
             "description": "User identifier",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -7775,8 +7774,7 @@
             "description": "User identifier",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -8018,8 +8016,7 @@
             "description": "Tenant identifier",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -8088,8 +8085,7 @@
             "description": "Tenant identifier",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -15031,6 +15027,13 @@
             "format": "int32",
             "description": "Exit code of the `cargo` compilation command."
           },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RustCompilerMessage"
+            },
+            "description": "Parsed rustc diagnostics. Older stored JSON omits this field."
+          },
           "stderr": {
             "type": "string",
             "description": "Output printed to stderr by the `cargo` compilation command."
@@ -15038,6 +15041,54 @@
           "stdout": {
             "type": "string",
             "description": "Output printed to stdout by the `cargo` compilation command."
+          }
+        }
+      },
+      "RustCompilerMessage": {
+        "type": "object",
+        "description": "One rustc diagnostic (error or warning).",
+        "required": [
+          "start_line_number",
+          "start_column",
+          "end_line_number",
+          "end_column",
+          "warning",
+          "error_type",
+          "message"
+        ],
+        "properties": {
+          "end_column": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end_line_number": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "error_type": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string",
+            "nullable": true
+          },
+          "message": {
+            "type": "string"
+          },
+          "rendered": {
+            "type": "string",
+            "nullable": true
+          },
+          "start_column": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "start_line_number": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "warning": {
+            "type": "boolean"
           }
         }
       },

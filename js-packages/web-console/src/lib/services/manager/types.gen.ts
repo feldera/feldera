@@ -5571,6 +5571,10 @@ export type RustCompilationInfo = {
    */
   exit_code: number
   /**
+   * Parsed rustc diagnostics. Older stored JSON omits this field.
+   */
+  messages?: Array<RustCompilerMessage>
+  /**
    * Output printed to stderr by the `cargo` compilation command.
    */
   stderr: string
@@ -5578,6 +5582,21 @@ export type RustCompilationInfo = {
    * Output printed to stdout by the `cargo` compilation command.
    */
   stdout: string
+}
+
+/**
+ * One rustc diagnostic (error or warning).
+ */
+export type RustCompilerMessage = {
+  end_column: number
+  end_line_number: number
+  error_type: string
+  file?: string | null
+  message: string
+  rendered?: string | null
+  start_column: number
+  start_line_number: number
+  warning: boolean
 }
 
 /**
