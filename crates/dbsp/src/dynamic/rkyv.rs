@@ -186,6 +186,11 @@ where
     fn cmp_target(&self, other: &Trait) -> Ordering {
         // Compares the archived form directly; `T::Repr: OrdRepr<T>` is part
         // of `ArchivedDBData`.
+        //
+        // SAFETY: `other` holds a `T`, as `deserialize_with` above assumes
+        // of its target: a `DeserializeImpl<T, Trait>` only meets `Trait`
+        // values erased from `T`, the invariant the dynamic-dispatch design
+        // rests on (see the `dynamic` module documentation).
         self.archived.ord_cmp(unsafe { other.downcast::<T>() })
     }
 }
