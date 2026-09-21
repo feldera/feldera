@@ -344,6 +344,7 @@ It contains the following fields:
         // Program
         crate::db::types::program::CompilationProfile,
         crate::db::types::program::SqlCompilerMessage,
+        crate::db::types::program::RustCompilerMessage,
         crate::db::types::program::ProgramStatus,
         crate::db::types::program::ProgramError,
         crate::db::types::program::SqlCompilationInfo,

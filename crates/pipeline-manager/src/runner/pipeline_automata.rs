@@ -2189,11 +2189,7 @@ mod test {
                 tenant_id,
                 pipeline_id,
                 Version(1),
-                &RustCompilationInfo {
-                    exit_code: 0,
-                    stdout: "".to_string(),
-                    stderr: "".to_string(),
-                },
+                &RustCompilationInfo::from_streams(0, "".to_string(), "".to_string()),
                 "not-used-program-binary-source-checksum",
                 "not-used-program-binary-integrity-checksum",
                 "not-used-program-info-integrity-checksum",
