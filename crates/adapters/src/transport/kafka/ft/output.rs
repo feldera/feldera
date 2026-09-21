@@ -146,7 +146,8 @@ impl KafkaOutputEndpoint {
         // producers cooperating with us by using the same `transactional.id`.
         let context = DataProducerContext::new(&config)?;
         let kafka_producer =
-            ThreadedProducer::from_config_and_context(&common.producer_config, context)?;
+            ThreadedProducer::from_config_and_context(&common.producer_config, context)
+                .map_err(|e| anyhow!("error creating Kafka producer: {e}"))?;
         kafka_producer
             .context()
             .deferred_logging
@@ -188,7 +189,9 @@ impl KafkaOutputEndpoint {
         let mut next_transaction = 0;
         for partition in 0..n_partitions {
             let ctp = Ctp::new(&consumer, topic, partition as i32);
-            let watermarks = ctp.fetch_watermarks(None)?;
+            let watermarks = ctp
+                .fetch_watermarks(None)
+                .map_err(|e| anyhow!("error retrieving watermarks for topic '{topic}': {e}",))?;
             if !watermarks.is_empty() {
                 if let Some(msg) = ctp.read_last_message(&watermarks)? {
                     let key = OutputPosition::from_message(&msg).with_context(|| {
@@ -405,7 +408,11 @@ impl ClientContext for DataProducerContext {
             let fatal = error
                 .rdkafka_error_code()
                 .is_some_and(|code| code == RDKafkaErrorCode::Fatal);
-            cb(fatal, anyhow!(reason.to_string()), Some("kakfa_ft_err"));
+            cb(
+                fatal,
+                anyhow!("Kafka producer error: {error}; Reason: {reason}"),
+                Some("kafka_ft_err"),
+            );
         } else {
             warn!("{error}");
         }
