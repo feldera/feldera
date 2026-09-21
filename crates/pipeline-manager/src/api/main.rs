@@ -1787,6 +1787,43 @@ mod tests {
     /// whole API — invisible to a preflight or a 404 probe, which is why this
     /// drives a GET. Dropping the `BasePath` strip in `rbac_middleware` turns
     /// this into a 403 and fails here.
+    /// Under a base path, an alternate spelling of a route keeps that route's
+    /// role floor and stays reachable: the guard classifies the decoded path
+    /// the router dispatches on, with the prefix stripped.
+    #[actix_web::test]
+    async fn base_path_keeps_the_role_floor_for_alternate_spellings() {
+        use actix_web::http::StatusCode;
+
+        let mut cfg = ApiServerConfig::test_config();
+        cfg.http_base_path = "/feldera".to_string();
+        let app = test::init_service(build_app(&cfg, &None)).await;
+
+        // Without auth the principal is the default admin, below the owner
+        // floor of `/v0/tenants`.
+        for uri in [
+            "/feldera/v0/tenants",
+            "/feldera/v0/%74enants",
+            "/%66eldera/v0/tenants",
+        ] {
+            let req = test::TestRequest::get().uri(uri).to_request();
+            assert_eq!(
+                test::call_service(&app, req).await.status(),
+                StatusCode::FORBIDDEN,
+                "{uri}"
+            );
+        }
+        // The same spellings of a route within the admin's reach clear the
+        // guard (the handler then fails on the missing `ServerState`).
+        for uri in ["/feldera/v0/%70ipelines", "/%66eldera/v0/pipelines"] {
+            let req = test::TestRequest::get().uri(uri).to_request();
+            let status = test::call_service(&app, req).await.status();
+            assert!(
+                status != StatusCode::FORBIDDEN && status != StatusCode::NOT_FOUND,
+                "{uri}: {status}"
+            );
+        }
+    }
+
     #[actix_web::test]
     async fn base_path_api_request_clears_rbac() {
         use actix_web::http::StatusCode;
