@@ -413,8 +413,9 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     @Override
     public void postorder(DBSPBaseTupleExpression expression) {
         if (expression.fields == null) {
-            // A constant tuple with NULL value
-            this.maybeSet(expression, null);
+            // A tuple constant with NULL value cannot be monotone
+            IMaybeMonotoneType nmt = NonMonotoneType.nonMonotone(expression.getType());
+            this.set(expression, new MonotoneExpression(expression, nmt, null));
             return;
         }
         DBSPExpression reduced = null;
