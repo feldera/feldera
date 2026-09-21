@@ -332,7 +332,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
 
         if transaction >= self.next_transaction {
             if transaction > self.next_transaction {
-                warn!(
+                debug!(
                     "skipping from transaction {} to {transaction}",
                     self.next_transaction
                 );
