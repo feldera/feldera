@@ -10,6 +10,7 @@
 //! 3. Table maintenance does not delete a vector file that live `add` actions reference.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use arrow::array::{ArrayRef, Int64Array, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field as ArrowField, Schema as ArrowSchema};
@@ -248,7 +249,7 @@ pub(super) async fn append_ids_in_row_groups(
 }
 
 /// Every data file in the current snapshot.
-pub(super) fn candidates(table: &DeltaTable) -> Vec<Candidate> {
+pub(super) fn candidates(table: &DeltaTable) -> Arc<Vec<Candidate>> {
     let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
     table
         .snapshot()
@@ -256,7 +257,8 @@ pub(super) fn candidates(table: &DeltaTable) -> Vec<Candidate> {
         .log_data()
         .into_iter()
         .map(|f| Candidate::from_log(&f, Default::default(), &encoder, true))
-        .collect()
+        .collect::<Vec<_>>()
+        .into()
 }
 
 /// Ids a reader sees, in ascending order. Through DataFusion rather than reading the parquet
@@ -338,10 +340,10 @@ pub(super) async fn tombstone_ids(mut table: DeltaTable, ids: &[i64]) -> DeltaTa
     let mut tombstones = Tombstones::new();
     let candidates = candidates(&table);
     locate(
-        &chunk,
-        &candidates,
+        Arc::new(chunk),
+        candidates,
         table.object_store(),
-        &encoder,
+        Arc::new(encoder),
         4,
         Pruning::new(true, None),
         &mut tombstones,
@@ -392,7 +394,7 @@ pub(super) async fn vacuum_everything(
 
 /// Candidates carrying each file's `payload` partition value, which the log holds instead of
 /// the data file.
-fn partitioned_candidates(table: &DeltaTable, encoder: &KeyEncoder) -> Vec<Candidate> {
+fn partitioned_candidates(table: &DeltaTable, encoder: &KeyEncoder) -> Arc<Vec<Candidate>> {
     table
         .snapshot()
         .unwrap()
@@ -410,7 +412,8 @@ fn partitioned_candidates(table: &DeltaTable, encoder: &KeyEncoder) -> Vec<Candi
             }
             Candidate::from_log(&file, partition_keys, encoder, true)
         })
-        .collect()
+        .collect::<Vec<_>>()
+        .into()
 }
 
 /// A key column that is also a partition column must still be found: its value is in the log,
@@ -452,10 +455,10 @@ async fn a_partition_column_key_is_reconstructed_from_the_log() {
 
     let mut tombstones = Tombstones::new();
     let metrics = locate(
-        &chunk,
-        &candidates,
+        Arc::new(chunk),
+        candidates.clone(),
         table.object_store(),
-        &encoder,
+        Arc::new(encoder),
         4,
         Pruning::new(true, Some(&partitions)),
         &mut tombstones,
@@ -494,10 +497,10 @@ async fn a_key_made_only_of_partition_columns_still_locates_rows() {
     let candidates = partitioned_candidates(&table, &encoder);
     let mut tombstones = Tombstones::new();
     let metrics = locate(
-        &chunk,
-        &candidates,
+        Arc::new(chunk),
+        candidates.clone(),
         table.object_store(),
-        &encoder,
+        Arc::new(encoder),
         4,
         Pruning::none(),
         &mut tombstones,
@@ -1122,4 +1125,242 @@ async fn a_flush_reads_each_vector_object_once() {
             .collect();
         assert_eq!(live_ids(&table).await, expected, "{files} files");
     }
+}
+
+/// Opening a data file must cost two requests, not three.
+///
+/// A lookup that cannot prune opens every file in the table, so a request per file is a
+/// round trip per file against object storage. Without a footer size hint the reader spends
+/// one request learning the footer's length before reading it; this pins that saving.
+#[tokio::test]
+async fn a_probe_costs_two_requests_per_file() {
+    const FILES: i64 = 20;
+    const ROWS_PER_FILE: i64 = 500;
+
+    let dir = TempDir::new().unwrap();
+    let mut table = fixture_table(&dir, &[], true).await;
+    for f in 0..FILES {
+        let ids: Vec<i64> = (f * ROWS_PER_FILE..(f + 1) * ROWS_PER_FILE).collect();
+        table = append_ids_in_row_groups(table, &ids, ROWS_PER_FILE as usize, 200).await;
+    }
+
+    let store = CountingStore::new();
+    let encoder = Arc::new(KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap());
+    // One key per file, so every file is opened and none prunes away.
+    let keys: Vec<i64> = (0..FILES).map(|f| f * ROWS_PER_FILE).collect();
+    let mut chunk = LookupChunk::new(usize::MAX);
+    chunk
+        .extend(
+            &encoder
+                .encode_columns(&[Arc::new(Int64Array::from(keys))])
+                .unwrap(),
+        )
+        .unwrap();
+    chunk.sort();
+
+    let prefixed: Arc<dyn deltalake::ObjectStore> =
+        Arc::new(object_store::prefix::PrefixStore::new(
+            store.clone(),
+            object_store::path::Path::from_absolute_path(dir.path()).unwrap(),
+        ));
+    let mut tombstones = Tombstones::new();
+    let metrics = locate(
+        Arc::new(chunk),
+        candidates(&table),
+        prefixed,
+        encoder,
+        4,
+        Pruning::none(),
+        &mut tombstones,
+    )
+    .await
+    .unwrap();
+    assert_eq!(metrics.files_scanned, FILES as usize);
+
+    let (gets, objects) = store.gets_for(".parquet");
+    assert_eq!(
+        objects, FILES as usize,
+        "every file should have been opened"
+    );
+    assert_eq!(
+        gets,
+        objects * 2,
+        "expected 2 requests per file (footer, then the key column), got {gets} for {objects} files"
+    );
+}
+
+/// A store that fails the first data file it is asked for and stalls on every other.
+///
+/// The failure ends the lookup while the stalled probes are still in flight, which is the
+/// case [`a_failed_lookup_does_not_leave_its_probes_running`] is about.
+#[derive(Debug)]
+struct StallingStore {
+    inner: Arc<dyn deltalake::ObjectStore>,
+    doomed: std::sync::Mutex<Option<String>>,
+}
+
+impl StallingStore {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            inner: Arc::new(object_store::local::LocalFileSystem::new()),
+            doomed: std::sync::Mutex::new(None),
+        })
+    }
+
+    /// Whether this path is the one to fail: the first data file asked for, and thereafter
+    /// that same path, so its retries fail too rather than stalling.
+    fn is_doomed(&self, path: &str) -> bool {
+        if !path.ends_with(".parquet") {
+            return false;
+        }
+        let mut doomed = self.doomed.lock().unwrap();
+        match doomed.as_deref() {
+            Some(first) => first == path,
+            None => {
+                *doomed = Some(path.to_string());
+                true
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for StallingStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "StallingStore({})", self.inner)
+    }
+}
+
+#[async_trait::async_trait]
+impl deltalake::ObjectStore for StallingStore {
+    async fn put_opts(
+        &self,
+        location: &object_store::path::Path,
+        payload: object_store::PutPayload,
+        opts: object_store::PutOptions,
+    ) -> object_store::Result<object_store::PutResult> {
+        self.inner.put_opts(location, payload, opts).await
+    }
+
+    async fn put_multipart_opts(
+        &self,
+        location: &object_store::path::Path,
+        opts: object_store::PutMultipartOptions,
+    ) -> object_store::Result<Box<dyn object_store::MultipartUpload>> {
+        self.inner.put_multipart_opts(location, opts).await
+    }
+
+    async fn get_opts(
+        &self,
+        location: &object_store::path::Path,
+        options: object_store::GetOptions,
+    ) -> object_store::Result<object_store::GetResult> {
+        let path = location.as_ref().to_string();
+        if self.is_doomed(&path) {
+            return Err(object_store::Error::Generic {
+                store: "StallingStore",
+                source: "injected failure".into(),
+            });
+        }
+        if path.ends_with(".parquet") {
+            // Longer than the test will wait, so only an abort ends this probe.
+            tokio::time::sleep(Duration::from_secs(600)).await;
+        }
+        self.inner.get_opts(location, options).await
+    }
+
+    fn list(
+        &self,
+        prefix: Option<&object_store::path::Path>,
+    ) -> futures::stream::BoxStream<'static, object_store::Result<object_store::ObjectMeta>> {
+        self.inner.list(prefix)
+    }
+
+    async fn list_with_delimiter(
+        &self,
+        prefix: Option<&object_store::path::Path>,
+    ) -> object_store::Result<object_store::ListResult> {
+        self.inner.list_with_delimiter(prefix).await
+    }
+
+    fn delete_stream(
+        &self,
+        locations: futures::stream::BoxStream<
+            'static,
+            object_store::Result<object_store::path::Path>,
+        >,
+    ) -> futures::stream::BoxStream<'static, object_store::Result<object_store::path::Path>> {
+        self.inner.delete_stream(locations)
+    }
+
+    async fn copy_opts(
+        &self,
+        from: &object_store::path::Path,
+        to: &object_store::path::Path,
+        options: object_store::CopyOptions,
+    ) -> object_store::Result<()> {
+        self.inner.copy_opts(from, to, options).await
+    }
+}
+
+/// A lookup that gives up must not leave the probes it spawned running.
+///
+/// The probes are spawned, so dropping their handles only detaches them: they would keep
+/// decoding against the store the flush just failed against, and keep their share of the
+/// lookup chunk alive while the flush retries with a fresh one. Under the default
+/// `max_retries: None` each attempt would strand another set.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_failed_lookup_does_not_leave_its_probes_running() {
+    const FILES: i64 = 8;
+    const ROWS_PER_FILE: i64 = 100;
+
+    let dir = TempDir::new().unwrap();
+    let mut table = fixture_table(&dir, &[], true).await;
+    for f in 0..FILES {
+        let ids: Vec<i64> = (f * ROWS_PER_FILE..(f + 1) * ROWS_PER_FILE).collect();
+        table = append_ids_in_row_groups(table, &ids, ROWS_PER_FILE as usize, 100).await;
+    }
+
+    let encoder = Arc::new(KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap());
+    let keys: Vec<i64> = (0..FILES).map(|f| f * ROWS_PER_FILE).collect();
+    let mut chunk = LookupChunk::new(usize::MAX);
+    chunk
+        .extend(
+            &encoder
+                .encode_columns(&[Arc::new(Int64Array::from(keys))])
+                .unwrap(),
+        )
+        .unwrap();
+    chunk.sort();
+    let chunk = Arc::new(chunk);
+
+    let prefixed: Arc<dyn deltalake::ObjectStore> =
+        Arc::new(object_store::prefix::PrefixStore::new(
+            StallingStore::new(),
+            object_store::path::Path::from_absolute_path(dir.path()).unwrap(),
+        ));
+    let mut tombstones = Tombstones::new();
+    // Every file at once, so the doomed one fails while the rest are stalled.
+    let result = locate(
+        chunk.clone(),
+        candidates(&table),
+        prefixed,
+        encoder,
+        FILES as usize,
+        Pruning::none(),
+        &mut tombstones,
+    )
+    .await;
+    assert!(result.is_err(), "the doomed file should have failed");
+
+    // The abort is a request, not an immediate drop, so give the runtime a moment to run it.
+    for _ in 0..40 {
+        if Arc::strong_count(&chunk) == 1 {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!(
+        "{} probe(s) still hold the lookup chunk after the lookup failed",
+        Arc::strong_count(&chunk) - 1
+    );
 }

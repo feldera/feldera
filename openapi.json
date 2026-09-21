@@ -10385,7 +10385,7 @@
           },
           "max_concurrent_probes": {
             "type": "integer",
-            "description": "Number of data files read concurrently while locating the rows to supersede.\n\nOnly used when `update_mode` is `merge`. Each concurrent read holds one decoded\nbatch, so this bounds memory as well as request concurrency. Default: 4.",
+            "description": "Number of data files read concurrently while locating the rows to supersede.\n\nOnly used when `update_mode` is `merge`. Each concurrent read holds one file's\nprojected key column, so this bounds memory as well as request concurrency.\nDefault: 16.",
             "minimum": 1
           },
           "max_retries": {

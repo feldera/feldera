@@ -1633,8 +1633,9 @@ export type DeltaTableWriterConfig = {
   /**
    * Number of data files read concurrently while locating the rows to supersede.
    *
-   * Only used when `update_mode` is `merge`. Each concurrent read holds one decoded
-   * batch, so this bounds memory as well as request concurrency. Default: 4.
+   * Only used when `update_mode` is `merge`. Each concurrent read holds one file's
+   * projected key column, so this bounds memory as well as request concurrency.
+   * Default: 16.
    */
   max_concurrent_probes?: number
   /**

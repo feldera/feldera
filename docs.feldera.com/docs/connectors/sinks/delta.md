@@ -98,7 +98,7 @@ MERGE INTO {target_table} AS target
 | `variant_encoding` | <p>Encoding of `VARIANT` columns. Options:</p><p>- `variant`: the Delta `variant` type, holding the Parquet variant binary encoding.</p><p>- `json_string`: JSON text in a `string` column.</p><p>See [VARIANT](#variant).</p><p>Default: `variant`.</p>|
 | `update_mode` | <p>How the connector applies the view's changes to the table. Orthogonal to `mode`, which governs what happens to an existing table when the pipeline starts.</p><p>- `cdc`: append a change log with `__feldera_op` and `__feldera_ts` metadata columns, which a job of yours folds into a state table.</p><p>- `merge`: keep the table in sync with the view. See [Merge mode](#merge-mode).</p><p>Default: `cdc`.</p>|
 | `lookup_chunk_bytes` | <p>Ceiling, in bytes, on the encoded keys the connector holds while locating rows to supersede. `merge` mode only.</p><p>A flush whose key set exceeds this budget is split into successive lookup passes, which bounds memory at the cost of re-scanning candidate files. Like `max_concurrent_probes`, it is a budget for a flush rather than for a thread: the threads of one flush divide it between them, so raising `threads` does not raise what the lookup holds. Default: 256 MiB.</p>|
-| `max_concurrent_probes` | <p>Number of data files read concurrently while locating rows to supersede. `merge` mode only.</p><p>Each concurrent read holds one decoded batch, so this bounds memory as well as request concurrency. Default: `4`.</p>|
+| `max_concurrent_probes` | <p>Number of data files read concurrently while locating rows to supersede. `merge` mode only.</p><p>The lookup reads each file in its own task, so this sets how much of the decoding runs in parallel as well as how many requests are in flight. Each concurrent read holds one file's projected key column, so it bounds memory too. Like `lookup_chunk_bytes` it is a budget for a flush rather than for a thread. Default: `16`.</p>|
 | `optimize_interval_secs` | <p>Compact the target table from the connector, at most once every this many seconds. `merge` mode only.</p><p>Merge mode marks an old row version deleted but leaves it in place. Without compaction the table keeps growing and reads keep slowing down, however few live rows it holds. See [Compaction is required](#compaction-is-required).</p><p>Off by default, because maintenance is normally the table administrator's job. Set it for tables where Feldera is the only writer and nothing else will maintain them. Hourly (`3600`) or daily (`86400`) is typical. It runs in the background and does not hold up a flush.</p>|
 
 [*]: Required fields
@@ -297,9 +297,11 @@ table, an unbuffered flush of 16 keys cost 4.5 ms per record where a buffered fl
 keys cost 0.13 ms per record, and the buffered pipeline also grew the file count 60x more
 slowly. See [output buffer](/connectors#configuring-the-output-buffer).
 
-On object storage, raise `max_concurrent_probes` above its default of `4`. Each file the
-lookup opens is a separate request, and the default is sized for local disk, where the cost is
-CPU rather than round trips.
+`max_concurrent_probes` defaults to `16`, which is the setting that matters most on a table of
+many files: measured against 800 of them, raising it from 1 to 4 cut the lookup to a third,
+and to 16 cut it by a further half. Raise it further if the pipeline has more cores than that
+to spend, or if the object store's latency leaves them idle; each concurrent read holds one
+file's projected key column, so it costs memory in proportion.
 
 ### Limits
 

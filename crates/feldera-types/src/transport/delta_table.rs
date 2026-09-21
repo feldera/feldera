@@ -106,8 +106,13 @@ const fn default_lookup_chunk_bytes() -> usize {
 }
 
 /// Default number of data files read concurrently while locating rows to supersede.
+///
+/// The lookup reads each file in its own task, so this sets how much of the decoding runs in
+/// parallel as well as how many requests are in flight. Sixteen covers a typical core count
+/// and enough object-store round trips to keep those cores fed, for the projected key column
+/// of sixteen files -- tens of megabytes against the hundreds `lookup_chunk_bytes` allows.
 const fn default_max_concurrent_probes() -> usize {
-    4
+    16
 }
 
 /// Delta table output connector configuration.
@@ -147,8 +152,9 @@ pub struct DeltaTableWriterConfig {
 
     /// Number of data files read concurrently while locating the rows to supersede.
     ///
-    /// Only used when `update_mode` is `merge`. Each concurrent read holds one decoded
-    /// batch, so this bounds memory as well as request concurrency. Default: 4.
+    /// Only used when `update_mode` is `merge`. Each concurrent read holds one file's
+    /// projected key column, so this bounds memory as well as request concurrency.
+    /// Default: 16.
     #[serde(default = "default_max_concurrent_probes")]
     #[schema(minimum = 1)]
     pub max_concurrent_probes: usize,

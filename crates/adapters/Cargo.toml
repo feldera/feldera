@@ -188,7 +188,7 @@ dbsp_nexmark = { workspace = true, features = [], optional = true }
 enum-map = { workspace = true }
 google-cloud-pubsub = { workspace = true, optional = true }
 google-cloud-gax = { workspace = true, optional = true }
-tokio-util = { workspace = true, features = ["io"] }
+tokio-util = { workspace = true, features = ["io", "rt"] }
 tokio-stream = { workspace = true, features = ["sync"] }
 home = { workspace = true }
 datafusion = { workspace = true }

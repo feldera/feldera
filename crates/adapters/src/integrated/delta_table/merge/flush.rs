@@ -222,7 +222,7 @@ struct RangeOutput {
 
 /// Everything a flush needs that outlives it.
 pub struct MergeWriter {
-    key_encoder: KeyEncoder,
+    key_encoder: Arc<KeyEncoder>,
     /// Serde schema of the key columns alone, for turning cursor keys into arrow.
     key_serde_schema: SerdeArrowSchema,
     /// Serde schema of the full row, for the append side.
@@ -285,7 +285,7 @@ impl MergeWriter {
             .map_err(|e| anyhow!("unable to build the key encoder schema: {e}"))?;
 
         Ok(Self {
-            key_encoder: setup.key_encoder,
+            key_encoder: Arc::new(setup.key_encoder),
             key_serde_schema,
             row_serde_schema,
             row_arrow_schema,
@@ -844,7 +844,9 @@ struct KeyChunk {
     probes: usize,
     builder: ArrayBuilder,
     buffered: usize,
-    chunk: LookupChunk,
+    chunk: Arc<LookupChunk>,
+    /// Byte budget of `chunk`, kept so a replacement can be given the same one.
+    lookup_bytes: usize,
     /// Partitions the buffered keys belong to, when partition columns are key columns.
     partitions: Option<PartitionFilter>,
     tombstones: Tombstones,
@@ -863,7 +865,8 @@ impl KeyChunk {
                 WriteError::Deterministic(anyhow!("error creating the key builder: {e}"))
             })?,
             buffered: 0,
-            chunk: LookupChunk::new(lookup_bytes),
+            chunk: Arc::new(LookupChunk::new(lookup_bytes)),
+            lookup_bytes,
             partitions: PartitionFilter::new(
                 writer.key_encoder.column_names(),
                 &writer.key_arrow_fields,
@@ -876,6 +879,30 @@ impl KeyChunk {
             candidates,
             probes,
         })
+    }
+
+    /// The chunk, for filling it.
+    ///
+    /// A lookup that succeeded has awaited every probe it spawned, so the share is unique
+    /// again. One that failed aborts them, but an abort is a request rather than a join, so
+    /// a probe may still hold its share here. This refuses rather than replaces the chunk:
+    /// replacing it would drop the keys already buffered in it, and a key that never reaches
+    /// a lookup leaves the row it should have superseded live.
+    fn chunk_mut(&mut self) -> Result<&mut LookupChunk, WriteError> {
+        Arc::get_mut(&mut self.chunk).ok_or_else(|| {
+            WriteError::Deterministic(anyhow!(
+                "internal error: the lookup chunk is still shared with a probe"
+            ))
+        })
+    }
+
+    /// Start the next chunk, reusing the buffer unless an aborted probe has not yet released
+    /// its share of it.
+    fn reset_chunk(&mut self) {
+        match Arc::get_mut(&mut self.chunk) {
+            Some(chunk) => chunk.clear(),
+            None => self.chunk = Arc::new(LookupChunk::new(self.lookup_bytes)),
+        }
     }
 
     /// Add the key the cursor is on.
@@ -927,14 +954,14 @@ impl KeyChunk {
             filter.record(&columns).map_err(WriteError::Deterministic)?;
         }
         if key::contains_null(&columns) {
-            self.chunk.note_null_key();
+            self.chunk_mut()?.note_null_key();
         }
         let rows = self
             .writer
             .key_encoder
             .encode_columns(&columns)
             .map_err(WriteError::Deterministic)?;
-        self.chunk
+        self.chunk_mut()?
             .extend(&rows)
             .map_err(WriteError::Deterministic)?;
         self.buffered = 0;
@@ -942,14 +969,14 @@ impl KeyChunk {
     }
 
     async fn run_lookup(&mut self, metrics: &mut FlushMetrics) -> Result<(), WriteError> {
-        self.chunk.sort();
+        self.chunk_mut()?.sort();
         let probed = timed(
             &mut metrics.timings.probe,
             locate(
-                &self.chunk,
-                &self.candidates,
+                self.chunk.clone(),
+                self.candidates.clone(),
                 self.store.clone(),
-                &self.writer.key_encoder,
+                self.writer.key_encoder.clone(),
                 self.probes,
                 Pruning::new(self.writer.prune_on_stats, self.partitions.as_ref()),
                 &mut self.tombstones,
@@ -968,7 +995,7 @@ impl KeyChunk {
                 self.chunk.len()
             );
         }
-        self.chunk.clear();
+        self.reset_chunk();
         if let Some(filter) = &mut self.partitions {
             filter.clear();
         }
