@@ -393,6 +393,33 @@ float! {
 
 serialize_without_context!(F32);
 serialize_without_context!(F64);
+
+/// A float wrapper archives to a struct holding the very same
+/// `OrderedFloat`, so hashing the archived form writes what hashing the
+/// decoded one writes, NaN and the two zeroes included.
+macro_rules! impl_float_hash_repr {
+    ($($outer:ident => $archived:ident),* $(,)?) => {$(
+        impl $crate::dynamic::HashRepr for $outer {
+            const FAITHFUL: bool = true;
+
+            #[inline]
+            fn hash_repr<H: ::std::hash::Hasher>(&self, state: &mut H) {
+                ::std::hash::Hash::hash(self, state)
+            }
+        }
+
+        impl $crate::dynamic::HashRepr for $archived {
+            const FAITHFUL: bool = true;
+
+            #[inline]
+            fn hash_repr<H: ::std::hash::Hasher>(&self, state: &mut H) {
+                ::std::hash::Hash::hash(&self.0, state)
+            }
+        }
+    )*};
+}
+
+impl_float_hash_repr!(F32 => ArchivedF32, F64 => ArchivedF64);
 deserialize_without_context!(F32);
 deserialize_without_context!(F64);
 

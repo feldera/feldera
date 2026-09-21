@@ -1034,3 +1034,14 @@ mod test {
         )
     }
 }
+
+/// A `SqlString` archives to `ArchivedString`, whose hash already matches the
+/// decoded one, so only the decoded side needs saying.
+impl crate::__hash_repr::HashRepr for SqlString {
+    const FAITHFUL: bool = true;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, state: &mut H) {
+        ::std::hash::Hash::hash(self, state)
+    }
+}

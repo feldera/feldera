@@ -4212,3 +4212,12 @@ pub fn minus_Time_Time_LongInterval__(left: Time, _: LongInterval) -> Time {
 }
 
 some_function2!(minus_Time_Time_LongInterval, Time, LongInterval, Time);
+
+// Hashing the archived form the way the decoded one hashes; see
+// `crate::hash_repr`.
+crate::hash_repr::hash_repr_struct! {
+    Date => ArchivedDate { days: i32 },
+    Time => ArchivedTime { nanoseconds: u64 },
+    Timestamp => ArchivedTimestamp { microseconds: i64 },
+    TimestampTz => ArchivedTimestampTz { microseconds: i64 },
+}

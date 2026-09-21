@@ -1753,6 +1753,27 @@ impl SerializeWithContext<SqlSerdeConfig> for FlatVariant {
     }
 }
 
+// Both forms hash the same bytes through the same function, just as both
+// compare through the same one, so the archived hash is the decoded hash by
+// construction rather than by coincidence.  See `crate::hash_repr`.
+impl crate::__hash_repr::HashRepr for FlatVariant {
+    const FAITHFUL: bool = true;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, state: &mut H) {
+        ::std::hash::Hash::hash(self, state)
+    }
+}
+
+impl crate::__hash_repr::HashRepr for ArchivedFlatVariant {
+    const FAITHFUL: bool = true;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, state: &mut H) {
+        ::std::hash::Hash::hash(self, state)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

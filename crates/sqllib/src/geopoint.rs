@@ -95,3 +95,9 @@ pub fn st_distance_geopoint_geopoint(left: GeoPoint, right: GeoPoint) -> F64 {
 }
 
 some_polymorphic_function2!(st_distance, geopoint, GeoPoint, geopoint, GeoPoint, F64);
+
+// Hashing the archived form the way the decoded one hashes; see
+// `crate::hash_repr`.  A point is a pair of floats, hashed in order.
+crate::hash_repr::hash_repr_struct! {
+    GeoPoint => ArchivedGeoPoint { 0: F64, 1: F64 },
+}

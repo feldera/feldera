@@ -290,3 +290,9 @@ mod tests {
         }
     }
 }
+
+// Hashing the archived form the way the decoded one hashes; see
+// `crate::hash_repr`.
+crate::hash_repr::hash_repr_struct! {
+    Uuid => ArchivedUuid { value: uuid::Uuid },
+}
