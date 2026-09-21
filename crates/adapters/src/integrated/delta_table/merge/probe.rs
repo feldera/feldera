@@ -36,6 +36,7 @@ use parquet::arrow::ProjectionMask;
 use parquet::arrow::arrow_reader::statistics::StatisticsConverter;
 use parquet::arrow::async_reader::ParquetRecordBatchStreamBuilder;
 use parquet::file::metadata::ParquetMetaData;
+use tokio_util::task::AbortOnDropHandle;
 
 use super::super::WriteError;
 use super::super::deletion_vector::ObjectStoreReader;
@@ -44,6 +45,13 @@ use super::key::KeyEncoder;
 use super::prune::{KeyStats, PartitionFilter, may_contain};
 use super::tombstone::Tombstones;
 use super::{retry_io, transient};
+
+/// Bytes of a data file's tail to fetch when opening it.
+///
+/// Without a hint the reader spends one request learning the footer's length and another
+/// reading it. One request covers both whenever the footer fits, and a footer that does not
+/// fit simply costs the second request it would have cost anyway.
+const FOOTER_SIZE_HINT: usize = 32 * 1024;
 
 /// A data file the lookup may have to read, with everything the log says about it.
 ///
@@ -55,6 +63,9 @@ use super::{retry_io, transient};
 pub struct Candidate {
     /// Path relative to the table root, as it appears in the log.
     pub path: String,
+    /// Size in bytes from the log, so the reader addresses the footer directly rather than
+    /// asking for a suffix of the object, which not every store serves.
+    size: Option<u64>,
     /// Values of the key columns that are partition columns of the table.
     ///
     /// Delta keeps partition values in the log, not in the data file, so a key column that is
@@ -94,6 +105,7 @@ impl Candidate {
         };
         Self {
             path: file.path().to_string(),
+            size: u64::try_from(file.size()).ok().filter(|size| *size > 0),
             partition_keys,
             min_values,
             max_values,
@@ -227,13 +239,13 @@ async fn probe_with_retries<'a>(
     .await
 }
 
-pub async fn locate<'a>(
-    chunk: &'a LookupChunk,
-    candidates: &'a [Candidate],
+pub async fn locate(
+    chunk: Arc<LookupChunk>,
+    candidates: Arc<Vec<Candidate>>,
     store: ObjectStoreRef,
-    encoder: &'a KeyEncoder,
+    encoder: Arc<KeyEncoder>,
     max_concurrent: usize,
-    pruning: Pruning<'a>,
+    pruning: Pruning<'_>,
     tombstones: &mut Tombstones,
 ) -> Result<ProbeMetrics, WriteError> {
     let mut metrics = ProbeMetrics::default();
@@ -242,19 +254,39 @@ pub async fn locate<'a>(
         return Ok(metrics);
     }
 
-    let to_read = prune_files(chunk, candidates, encoder, pruning, &mut metrics);
+    let to_read = prune_files(&chunk, &candidates, &encoder, pruning, &mut metrics);
     metrics.files_scanned = to_read.len();
+    let on_stats = pruning.on_stats;
 
-    // Built before the stream rather than inside it: a closure that returns a future
-    // borrowing its argument defeats the lifetime check once a caller spawns the lookup.
-    let probes: Vec<_> = to_read
-        .into_iter()
-        .map(|candidate| {
-            probe_with_retries(chunk, candidate, store.clone(), encoder, pruning.on_stats)
+    // Spawned, not awaited in place: decoding a file's key columns is CPU-bound, and polling
+    // every probe on the one task driving the stream runs it all on a single core.
+    // `buffer_unordered` still caps how many are in flight, so memory is unchanged.
+    //
+    // Aborted on drop, because the first error drops the probes still in flight: a plain
+    // `JoinHandle` would only detach them, leaving them decoding against the store the flush
+    // just failed against and holding their share of the chunk alive across the retry.
+    let results: Vec<FileHits> = stream::iter(to_read)
+        .map(|file| {
+            let (chunk, candidates, encoder, store) = (
+                chunk.clone(),
+                candidates.clone(),
+                encoder.clone(),
+                store.clone(),
+            );
+            AbortOnDropHandle::new(tokio::spawn(async move {
+                probe_with_retries(&chunk, &candidates[file], store, &encoder, on_stats).await
+            }))
         })
-        .collect();
-    let results: Vec<FileHits> = stream::iter(probes)
         .buffer_unordered(max_concurrent.max(1))
+        .map(|joined| match joined {
+            Ok(hits) => hits,
+            // Deterministic, not transient: the probe panicked on data that has not changed,
+            // so retrying the flush would panic again. A cancelled probe cannot appear here:
+            // the abort only fires once this stream is dropped, which is after the collect.
+            Err(e) => Err(WriteError::Deterministic(anyhow!(
+                "a merge probe panicked: {e}"
+            ))),
+        })
         .try_collect()
         .await?;
 
@@ -280,24 +312,24 @@ pub async fn locate<'a>(
 ///
 /// The pruning that pays best: a file dropped here costs no request at all, while row group
 /// pruning still has to fetch the footer.
-fn prune_files<'a>(
+fn prune_files(
     chunk: &LookupChunk,
-    candidates: &'a [Candidate],
+    candidates: &[Candidate],
     encoder: &KeyEncoder,
     pruning: Pruning<'_>,
     metrics: &mut ProbeMetrics,
-) -> Vec<&'a Candidate> {
+) -> Vec<usize> {
     let Pruning {
         on_stats,
         partitions,
     } = pruning;
     if !on_stats && partitions.is_none() {
-        return candidates.iter().collect();
+        return (0..candidates.len()).collect();
     }
 
     let names = encoder.column_names();
     let mut keep = Vec::with_capacity(candidates.len());
-    for candidate in candidates {
+    for (file, candidate) in candidates.iter().enumerate() {
         // The partition test first: it is exact and cheaper than assembling statistics.
         if let Some(filter) = partitions
             && !filter.may_contain(&candidate.partition_keys, names)
@@ -307,7 +339,7 @@ fn prune_files<'a>(
         }
 
         if !on_stats {
-            keep.push(candidate);
+            keep.push(file);
             continue;
         }
 
@@ -325,7 +357,7 @@ fn prune_files<'a>(
         }
 
         if may_contain(chunk, encoder, &stats) {
-            keep.push(candidate);
+            keep.push(file);
         } else {
             metrics.files_pruned += 1;
         }
@@ -363,7 +395,15 @@ async fn probe_file(
     // object that does not exist. Same choice as delta-rs's own `object_store_path`.
     let path = Path::parse(candidate.path.as_str())
         .unwrap_or_else(|_| Path::from(candidate.path.as_str()));
-    let reader = ObjectStoreReader::new(store, path.clone());
+    let mut reader = ObjectStoreReader::new(store, path.clone());
+    if let Some(size) = candidate.size {
+        reader = reader.with_file_size(size);
+    }
+    reader = reader.with_footer_size_hint(match candidate.size {
+        // Never ask for more of the object than there is.
+        Some(size) => FOOTER_SIZE_HINT.min(size as usize),
+        None => FOOTER_SIZE_HINT,
+    });
     let builder = ParquetRecordBatchStreamBuilder::new(reader)
         .await
         .map_err(|e| {
@@ -653,11 +693,11 @@ mod test {
             .collect()
     }
 
-    fn chunk_of(values: &[i64]) -> LookupChunk {
+    fn chunk_of(values: &[i64]) -> Arc<LookupChunk> {
         let mut chunk = LookupChunk::new(usize::MAX);
         chunk.extend(&encode_keys(values)).unwrap();
         chunk.sort();
-        chunk
+        Arc::new(chunk)
     }
 
     fn batch_of(ids: &[i64]) -> RecordBatch {
@@ -674,7 +714,7 @@ mod test {
     }
 
     /// The same, with `None` for a null key, marked the way a flush marks one.
-    fn chunk_of_opt(values: &[Option<i64>]) -> LookupChunk {
+    fn chunk_of_opt(values: &[Option<i64>]) -> Arc<LookupChunk> {
         let converter = RowConverter::new(vec![SortField::new(DataType::Int64)]).unwrap();
         let column: ArrayRef = Arc::new(Int64Array::from(values.to_vec()));
         let rows = converter
@@ -687,7 +727,7 @@ mod test {
             chunk.note_null_key();
         }
         chunk.sort();
-        chunk
+        Arc::new(chunk)
     }
 
     fn batch_of_opt(ids: &[Option<i64>]) -> RecordBatch {
@@ -703,23 +743,23 @@ mod test {
         .unwrap()
     }
 
-    fn candidates_of(table: &DeltaTable) -> Vec<Candidate> {
+    fn candidates_of(table: &DeltaTable) -> Arc<Vec<Candidate>> {
         let mut candidates: Vec<Candidate> = table
             .snapshot()
             .unwrap()
             .log_data()
             .into_iter()
             .map(|f| {
-                let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
+                let encoder = Arc::new(KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap());
                 Candidate::from_log(&f, HashMap::new(), &encoder, true)
             })
             .collect();
         candidates.sort_by(|a, b| a.path.cmp(&b.path));
-        candidates
+        Arc::new(candidates)
     }
 
     /// Build a table holding `ids` as one data file.
-    async fn table_with(dir: &TempDir, ids: &[i64]) -> (DeltaTable, Vec<Candidate>) {
+    async fn table_with(dir: &TempDir, ids: &[i64]) -> (DeltaTable, Arc<Vec<Candidate>>) {
         let table = CreateBuilder::new()
             .with_location(dir.path().to_str().unwrap())
             .with_columns(fixture_columns())
@@ -731,7 +771,10 @@ mod test {
     }
 
     /// Build a table where each element of `files` becomes its own data file.
-    async fn table_with_files(dir: &TempDir, files: &[&[i64]]) -> (DeltaTable, Vec<Candidate>) {
+    async fn table_with_files(
+        dir: &TempDir,
+        files: &[&[i64]],
+    ) -> (DeltaTable, Arc<Vec<Candidate>>) {
         let mut table = CreateBuilder::new()
             .with_location(dir.path().to_str().unwrap())
             .with_columns(fixture_columns())
@@ -752,7 +795,7 @@ mod test {
         dir: &TempDir,
         ids: &[i64],
         row_group_rows: usize,
-    ) -> (DeltaTable, Vec<Candidate>) {
+    ) -> (DeltaTable, Arc<Vec<Candidate>>) {
         use parquet::file::properties::WriterProperties;
 
         let table = CreateBuilder::new()
@@ -777,15 +820,15 @@ mod test {
     async fn locates_present_keys_and_reports_absent_ones() {
         let dir = TempDir::new().unwrap();
         let (table, candidates) = table_with(&dir, &[10, 20, 30, 40]).await;
-        let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
+        let encoder = Arc::new(KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap());
         let chunk = chunk_of(&[20, 40, 99]);
 
         let mut tombstones = Tombstones::new();
         let metrics = locate(
-            &chunk,
-            &candidates,
+            chunk.clone(),
+            candidates.clone(),
             table.object_store(),
-            &encoder,
+            encoder.clone(),
             4,
             Pruning::new(true, None),
             &mut tombstones,
@@ -807,14 +850,14 @@ mod test {
     async fn an_unreadable_file_is_transient_and_retried() {
         let dir = TempDir::new().unwrap();
         let (table, candidates) = table_with(&dir, &[10, 20, 30, 40]).await;
-        let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
+        let encoder = Arc::new(KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap());
         std::fs::remove_file(dir.path().join(&candidates[0].path)).unwrap();
 
         let error = locate(
-            &chunk_of(&[20]),
-            &candidates,
+            chunk_of(&[20]),
+            candidates.clone(),
             table.object_store(),
-            &encoder,
+            encoder.clone(),
             4,
             Pruning::new(true, None),
             &mut Tombstones::new(),
@@ -841,15 +884,15 @@ mod test {
         let dir = TempDir::new().unwrap();
         let ids: Vec<i64> = (0..3000).collect();
         let (table, candidates) = table_with(&dir, &ids).await;
-        let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
+        let encoder = Arc::new(KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap());
         let chunk = chunk_of(&[1500, 2999]);
 
         let mut tombstones = Tombstones::new();
         locate(
-            &chunk,
-            &candidates,
+            chunk.clone(),
+            candidates.clone(),
             table.object_store(),
-            &encoder,
+            encoder.clone(),
             1,
             Pruning::new(true, None),
             &mut tombstones,
@@ -872,15 +915,15 @@ mod test {
     async fn a_key_in_two_files_is_tombstoned_in_both() {
         let dir = TempDir::new().unwrap();
         let (table, candidates) = table_with_files(&dir, &[&[10, 20], &[20, 30]]).await;
-        let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
+        let encoder = Arc::new(KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap());
         let chunk = chunk_of(&[20]);
 
         let mut tombstones = Tombstones::new();
         let metrics = locate(
-            &chunk,
-            &candidates,
+            chunk.clone(),
+            candidates.clone(),
             table.object_store(),
-            &encoder,
+            encoder.clone(),
             4,
             Pruning::new(true, None),
             &mut tombstones,
@@ -899,7 +942,10 @@ mod test {
     }
 
     /// Build a table holding `ids` as one data file, where `None` is a null key.
-    async fn table_with_opt(dir: &TempDir, ids: &[Option<i64>]) -> (DeltaTable, Vec<Candidate>) {
+    async fn table_with_opt(
+        dir: &TempDir,
+        ids: &[Option<i64>],
+    ) -> (DeltaTable, Arc<Vec<Candidate>>) {
         let table = CreateBuilder::new()
             .with_location(dir.path().to_str().unwrap())
             .with_columns(fixture_columns())
@@ -919,15 +965,15 @@ mod test {
     async fn a_null_key_is_not_pruned_away() {
         let dir = TempDir::new().unwrap();
         let (table, candidates) = table_with_opt(&dir, &[None, Some(100)]).await;
-        let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
+        let encoder = Arc::new(KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap());
         let chunk = chunk_of_opt(&[None]);
 
         let mut tombstones = Tombstones::new();
         let metrics = locate(
-            &chunk,
-            &candidates,
+            chunk.clone(),
+            candidates.clone(),
             table.object_store(),
-            &encoder,
+            encoder.clone(),
             1,
             Pruning::new(true, None),
             &mut tombstones,
@@ -956,15 +1002,15 @@ mod test {
             &[&[0, 1, 2], &[10, 11, 12], &[20, 21, 22], &[30, 31, 32]],
         )
         .await;
-        let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
+        let encoder = Arc::new(KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap());
         let chunk = chunk_of(&[11, 12]);
 
         let mut pruned_tombstones = Tombstones::new();
         let pruned = locate(
-            &chunk,
-            &candidates,
+            chunk.clone(),
+            candidates.clone(),
             table.object_store(),
-            &encoder,
+            encoder.clone(),
             4,
             Pruning::new(true, None),
             &mut pruned_tombstones,
@@ -974,10 +1020,10 @@ mod test {
 
         let mut full_tombstones = Tombstones::new();
         locate(
-            &chunk,
-            &candidates,
+            chunk.clone(),
+            candidates.clone(),
             table.object_store(),
-            &encoder,
+            encoder.clone(),
             4,
             Pruning::none(),
             &mut full_tombstones,
@@ -1006,12 +1052,13 @@ mod test {
         let dir = TempDir::new().unwrap();
         let ids: Vec<i64> = (0..1000).collect();
         let (table, candidates) = table_with_row_groups(&dir, &ids, 100).await;
-        let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
+        let encoder = Arc::new(KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap());
         // Keys in two of the ten groups, so pruning leaves a fifth of the file to read.
         let chunk = chunk_of(&[850, 999]);
 
         let read = |on_stats| {
-            let (table, candidates, encoder, chunk) = (&table, &candidates, &encoder, &chunk);
+            let (table, candidates, encoder, chunk) =
+                (&table, candidates.clone(), encoder.clone(), chunk.clone());
             async move {
                 let mut tombstones = Tombstones::new();
                 locate(
@@ -1065,16 +1112,16 @@ mod test {
         let dir = TempDir::new().unwrap();
         let ids: Vec<i64> = (0..1000).collect();
         let (table, candidates) = table_with_row_groups(&dir, &ids, 100).await;
-        let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
+        let encoder = Arc::new(KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap());
         // Keys in the last two groups only, so eight of ten groups must be skipped.
         let chunk = chunk_of(&[850, 999]);
 
         let mut pruned = Tombstones::new();
         let metrics = locate(
-            &chunk,
-            &candidates,
+            chunk.clone(),
+            candidates.clone(),
             table.object_store(),
-            &encoder,
+            encoder.clone(),
             1,
             Pruning::new(true, None),
             &mut pruned,
@@ -1084,10 +1131,10 @@ mod test {
 
         let mut full = Tombstones::new();
         let full_metrics = locate(
-            &chunk,
-            &candidates,
+            chunk.clone(),
+            candidates.clone(),
             table.object_store(),
-            &encoder,
+            encoder.clone(),
             1,
             Pruning::none(),
             &mut full,
@@ -1118,16 +1165,16 @@ mod test {
     async fn empty_chunk_reads_nothing() {
         let dir = TempDir::new().unwrap();
         let (table, candidates) = table_with(&dir, &[1, 2]).await;
-        let encoder = KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap();
+        let encoder = Arc::new(KeyEncoder::new(&key_relation(), &arrow_schema()).unwrap());
 
         let mut chunk = LookupChunk::new(usize::MAX);
         chunk.sort();
         let mut tombstones = Tombstones::new();
         let metrics = locate(
-            &chunk,
-            &candidates,
+            Arc::new(chunk),
+            candidates.clone(),
             table.object_store(),
-            &encoder,
+            encoder.clone(),
             4,
             Pruning::new(true, None),
             &mut tombstones,
@@ -1179,14 +1226,15 @@ mod test {
             properties: Default::default(),
             primary_key: None,
         };
-        let encoder = KeyEncoder::new(&relation, &schema).unwrap();
-        let candidates: Vec<Candidate> = table
+        let encoder = Arc::new(KeyEncoder::new(&relation, &schema).unwrap());
+        let candidates: Arc<Vec<Candidate>> = table
             .snapshot()
             .unwrap()
             .log_data()
             .into_iter()
             .map(|f| Candidate::from_log(&f, Default::default(), &encoder, true))
-            .collect();
+            .collect::<Vec<_>>()
+            .into();
         let mut chunk = LookupChunk::new(usize::MAX);
         chunk
             .extend(&encoder.encode_columns(&[ids]).unwrap())
@@ -1195,10 +1243,10 @@ mod test {
 
         let mut tombstones = Tombstones::new();
         let metrics = locate(
-            &chunk,
-            &candidates,
+            Arc::new(chunk),
+            candidates,
             table.object_store(),
-            &encoder,
+            encoder,
             4,
             Pruning::new(true, None),
             &mut tombstones,

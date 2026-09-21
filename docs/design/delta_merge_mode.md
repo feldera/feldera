@@ -450,7 +450,7 @@ either sound or wrong, so it is switched off wholesale rather than applied cauti
 Read the key columns of the surviving row groups with a `ProjectionMask` over
 `ParquetObjectReader`, in streamed batches, and binary search each decoded key in the
 sorted chunk. The adapter's vector reader establishes the pattern
-(`deletion_vector.rs:492`, `:574`). Row groups are probed concurrently up to
+(`deletion_vector.rs`). Data files are probed concurrently, one task per file, up to
 `max_concurrent_probes`. The mask selects key columns by name, so a file whose column
 order differs from the table's still works and a partition column the file does not store
 is skipped.
@@ -724,7 +724,7 @@ Declared in `crates/feldera-types/src/transport/delta_table.rs`.
 | `update_mode` | `cdc \| merge` | `cdc` | Orthogonal to `mode`, which governs what happens to an existing table at startup |
 | `lookup_chunk_bytes` | `usize` | 256 MiB | Ceiling on encoded removal keys held at once. Capped at 2 GiB: the chunk addresses its buffer with 32-bit offsets |
 | `threads` | `Option<usize>` | none | Key ranges a flush may walk at once. A flush splits only when the batch is worth three target-sized files per range, so a small batch stays whole rather than fragmenting the table. The first flush has no write rate to size that against and falls back to a row count, so a backfill splits as far as `threads` allows and pays a partial file per range |
-| `max_concurrent_probes` | `usize` | 4 | Caps the probe working set and its request concurrency |
+| `max_concurrent_probes` | `usize` | 16 | Caps the probe working set and its request concurrency |
 | `optimize_interval_secs` | `Option<u64>` | none | Connector-driven maintenance: OPTIMIZE, then the reclamation pass. Off by default, because the table administrator normally maintains the table; set it where Feldera is the only writer. Runs in the background after a flush, one at a time, first run one interval after startup |
 
 `threads` divides the per-flush budgets rather than multiplying them: the ranges share
