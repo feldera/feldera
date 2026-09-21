@@ -471,6 +471,80 @@ def _merge_metric(pipeline, name: str) -> int:
 
 
 @enterprise_only
+def test_merge_survives_a_suspend_and_resume(pipeline_name):
+    """A resumed connector must supersede rows its previous incarnation wrote.
+
+    The rows to supersede are in data files this pipeline incarnation never wrote,
+    so the resumed connector has to rebuild its candidate list from the log rather
+    than from anything it remembers. Getting that wrong is silent: the new row
+    version is appended beside the old one instead of superseding it, leaving two
+    live rows for one key, and only the row count ever says so.
+
+    Verified to fail when the lookup cannot see files written before the restart.
+
+    Two things this deliberately does not claim to cover. Replay -- re-applying a
+    batch the connector already committed -- cannot be forced here, because the
+    input is pushed over HTTP and so is not replayable; the Rust model test drives
+    it exactly. And the "owned" regime, which lets an insert skip the lookup, is
+    not exercised by a clean resume: every change to a key the view already holds
+    arrives as an update, which is looked up whatever the regime.
+    """
+    loc = DeltaTestLocation.create(pipeline_name, mode="append")
+    try:
+        pipeline = _build_pipeline(pipeline_name, _sql(loc))
+        pipeline.start()
+        pipeline.input_json(
+            "t", [{"id": i, "tag": f"v1_{i}"} for i in range(10)], wait=True
+        )
+        assert loc.live_row_count() == 10
+        before_restart = set(_active_adds(loc))
+
+        pipeline.checkpoint(wait=True)
+        pipeline.stop(force=False)
+
+        # Resume the same pipeline, so the connector keeps its identity and the
+        # table is not re-truncated.
+        pipeline.start()
+        assert loc.live_row_count() == 10, "the resume lost or duplicated rows"
+
+        # Update keys written before the restart. The resumed writer has to look
+        # these up, which it only does if it re-derived the regime from a table
+        # that is no longer empty.
+        updates = []
+        for i in range(3):
+            updates.append({"delete": {"id": i, "tag": f"v1_{i}"}})
+            updates.append({"insert": {"id": i, "tag": f"v2_{i}"}})
+        pipeline.input_json("t", updates, update_format="insert_delete", wait=True)
+
+        assert loc.live_row_count() == 10, (
+            "the resumed connector appended new row versions without superseding "
+            "the ones written before the restart"
+        )
+
+        # And it tombstoned them in place rather than rewriting the old files.
+        adds = _active_adds(loc)
+        tombstoned = sum(
+            add["deletionVector"]["cardinality"]
+            for add in adds.values()
+            if add.get("deletionVector")
+        )
+        assert tombstoned == 3, (
+            f"expected 3 superseded rows recorded in deletion vectors, found {tombstoned}"
+        )
+        assert before_restart <= set(adds), (
+            "the resumed connector rewrote a data file instead of tombstoning rows in it"
+        )
+
+        # A key new after the restart still lands exactly once.
+        pipeline.input_json("t", [{"id": 100, "tag": "v1_100"}], wait=True)
+        assert loc.live_row_count() == 11
+
+        pipeline.stop(force=True)
+    finally:
+        loc.cleanup()
+
+
+@enterprise_only
 def test_merge_splits_a_batch_across_threads(pipeline_name):
     """`threads` above 1 walks one batch as several key ranges, and the table still tracks.
 
