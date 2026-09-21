@@ -171,6 +171,7 @@ Tenant-based authorization for the API server. Requires `auth.enabled: true`.
 |-----|---------|-------------|
 | `allowedOrigins` | `null` | List of allowed CORS origins. `null` permits all origins. Example: `["https://app.example.com"]`. |
 | `posthogTelemetryKey` | `null` | PostHog API key for usage telemetry. No data is collected when `null`. |
+| `FELDERA_HTTP_BASE_PATH` (set through `controlPlane.env`) | `""` | URL path prefix the API and web console are served under, for example `/feldera`, when an ingress mounts Feldera on a subpath. See [serving Feldera under a URL subpath](/get-started/docker#serving-feldera-under-a-url-subpath). |
 
 ### Demos
 
