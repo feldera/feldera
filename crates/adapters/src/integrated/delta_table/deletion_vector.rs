@@ -78,6 +78,18 @@ impl ObjectStoreReader {
             footer_size_hint: None,
         }
     }
+
+    /// Read the footer at a known offset rather than with a suffix request.
+    pub(super) fn with_file_size(mut self, size: u64) -> Self {
+        self.file_size = Some(size);
+        self
+    }
+
+    /// Fetch this many trailing bytes at once, so one request can cover the whole footer.
+    pub(super) fn with_footer_size_hint(mut self, hint: usize) -> Self {
+        self.footer_size_hint = Some(hint);
+        self
+    }
 }
 
 fn to_parquet_err(e: delta_kernel::object_store::Error) -> ParquetError {
