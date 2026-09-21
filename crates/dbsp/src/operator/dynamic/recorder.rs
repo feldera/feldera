@@ -40,7 +40,7 @@ use crate::{
         operator_traits::{Operator, OperatorName, SinkOperator},
     },
     circuit_cache_key,
-    trace::{Batch, Spine, Trace},
+    trace::{Batch, Spine, Trace, TraceRole},
 };
 use size_of::SizeOf;
 
@@ -151,8 +151,13 @@ where
     pub fn start_recording(&self) {
         let mut inner = self.0.borrow_mut();
         if matches!(inner.state, RecordingState::Disabled) {
-            inner.state =
-                RecordingState::Recording(Some(Spine::new(&inner.factories, inner.name.clone())));
+            // Nothing searches this spine until it is output by the operator,
+            // so it merges as an accumulator does.
+            inner.state = RecordingState::Recording(Some(Spine::new(
+                &inner.factories,
+                inner.name.clone(),
+                TraceRole::Accumulator,
+            )));
         }
     }
 

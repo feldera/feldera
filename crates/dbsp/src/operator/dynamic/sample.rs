@@ -339,7 +339,7 @@ mod test {
         dynamic::{DowncastTrait, DynData, DynPair},
         operator::{IndexedZSetHandle, InputHandle, MapHandle, OutputHandle, Update},
         trace::{
-            Cursor, Trace,
+            Cursor, Trace, TraceRole,
             test::test_batch::{TestBatch, TestBatchFactories, batch_to_tuples},
         },
         typed_batch::{
@@ -457,7 +457,7 @@ mod test {
             let (mut dbsp, (sample_size_handle, input_handle, output_sample_handle, output_quantile_handle)) =
                 Runtime::init_circuit(4, test_circuit).unwrap();
 
-            let mut ref_trace: TestBatch<DynData/*<i32>*/, DynData/*<i32>*/, (), DynZWeight> = TestBatch::new(&TestBatchFactories::new(), Arc::new(String::from("Test")));
+            let mut ref_trace: TestBatch<DynData/*<i32>*/, DynData/*<i32>*/, (), DynZWeight> = TestBatch::new(&TestBatchFactories::new(), Arc::new(String::from("Test")), TraceRole::Integral);
 
             for (batch, sample_size) in trace.into_iter() {
 

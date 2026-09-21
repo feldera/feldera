@@ -18,7 +18,7 @@ use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
 use dbsp::{
     Batch, BatchReader, OutputHandle, Trace,
     dynamic::{Data, Factory},
-    trace::{BatchReaderFactories, Cursor},
+    trace::{BatchReaderFactories, Cursor, TraceRole},
     typed_batch::{DynSpineSnapshot, SpineSnapshot},
 };
 use dbsp::{
@@ -610,6 +610,7 @@ where
         let mut spine = TypedBatch::new(DynSpine::<B::Inner>::new(
             &B::factories(),
             Arc::new(String::from("SerTrace")),
+            TraceRole::Integral,
         ));
         TOKIO.block_on(spine.insert(Arc::unwrap_or_clone(self).batch.into_inner()));
         Box::new(SerBatchImpl::<Spine<B>, KD, VD>::new(spine))

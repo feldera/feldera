@@ -181,6 +181,11 @@ pub enum ConfigError {
         max_rss_mb: u64,
     },
 
+    /// A `dev_tweaks` setting is outside the range it accepts.
+    InvalidDevTweaks {
+        error: String,
+    },
+
     InvalidLayout(LayoutError),
 }
 
@@ -220,6 +225,7 @@ impl DbspDetailedError for ConfigError {
             Self::DatafusionMemoryExceedsBudget { .. } => {
                 Cow::from("DatafusionMemoryExceedsBudget")
             }
+            Self::InvalidDevTweaks { .. } => Cow::from("InvalidDevTweaks"),
             Self::InvalidLayout(_) => Cow::from("LayoutError"),
         }
     }
@@ -450,6 +456,7 @@ impl Display for ConfigError {
                 f,
                 "'datafusion_memory_mb' ({datafusion_memory_mb} MB) must be less than the pipeline's memory budget ({max_rss_mb} MB); the difference is the budget available to the DBSP circuit"
             ),
+            Self::InvalidDevTweaks { error } => write!(f, "invalid dev_tweaks: {error}"),
             Self::InvalidLayout(e) => write!(f, "Multihost layout error: {e}"),
         }
     }

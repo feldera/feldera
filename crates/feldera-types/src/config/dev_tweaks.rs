@@ -4,6 +4,14 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+/// The largest value either merge threshold accepts.
+///
+/// A spine blocks its producer at 128 loose batches, and a level below its
+/// threshold never merges.  With threshold `n`, `14 + 7 * (n - 1)` batches
+/// can wait with no merge due, which reaches 128 at `n = 18`.  15 is a
+/// conservative choice; `merge_threshold_test` pins it.
+pub const MAX_MIN_MERGE_BATCHES: u16 = 15;
+
 /// Optional settings for tweaking Feldera internals.
 ///
 /// These settings reflect experiments that may come and go and change from
@@ -198,6 +206,20 @@ pub struct DevTweaks {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_level0_batch_size_records: Option<u16>,
 
+    /// Minimum number of batches an accumulator's spine merges at once,
+    /// at every level above level 1.
+    ///
+    /// Zero restores the built-in minimum.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_accumulator_merge_batches: Option<u16>,
+
+    /// Minimum number of batches an integral's spine merges at once, at
+    /// every level above level 1.
+    ///
+    /// Unset or zero keeps the built-in minimum.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_integral_merge_batches: Option<u16>,
+
     /// The number of merger threads.
     ///
     /// The default value is equal to the number of worker threads.
@@ -336,6 +358,44 @@ impl DevTweaks {
         // available as a kill switch while the feature is still being tuned.
         self.enable_roaring.unwrap_or(true)
     }
+
+    /// Rejects settings outside their valid range, naming the field, the
+    /// value and the range.
+    pub fn validate(&self) -> Result<(), String> {
+        for (name, value) in [
+            (
+                "min_accumulator_merge_batches",
+                self.min_accumulator_merge_batches,
+            ),
+            (
+                "min_integral_merge_batches",
+                self.min_integral_merge_batches,
+            ),
+        ] {
+            if let Some(value) = value
+                && value > MAX_MIN_MERGE_BATCHES
+            {
+                return Err(format!(
+                    "dev_tweaks.{name} is {value}, but the valid range is 0 through \
+                     {MAX_MIN_MERGE_BATCHES}; 0 keeps the built-in minimum"
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Batches an accumulator's spine waits for above level 1; zero means the
+    /// built-in minimum.
+    pub fn min_accumulator_merge_batches(&self) -> u16 {
+        self.min_accumulator_merge_batches.unwrap_or(10)
+    }
+
+    /// Batches an integral's spine waits for above level 1; zero means the
+    /// built-in minimum.
+    pub fn min_integral_merge_batches(&self) -> u16 {
+        self.min_integral_merge_batches.unwrap_or(0)
+    }
+
     pub fn negative_weight_multiplier(&self) -> u16 {
         self.negative_weight_multiplier.unwrap_or(0)
     }
@@ -414,6 +474,39 @@ mod tests {
     use crate::config::{PipelineConfig, RuntimeConfig};
 
     use super::*;
+
+    /// Either merge threshold is accepted up to the bound and rejected past
+    /// it, by name, with the value and the range in the message.
+    #[test]
+    fn merge_thresholds_are_bounded() {
+        assert_eq!(DevTweaks::default().validate(), Ok(()));
+        for field in [
+            "min_accumulator_merge_batches",
+            "min_integral_merge_batches",
+        ] {
+            let with = |value: u16| {
+                let mut tweaks = DevTweaks::default();
+                if field == "min_accumulator_merge_batches" {
+                    tweaks.min_accumulator_merge_batches = Some(value);
+                } else {
+                    tweaks.min_integral_merge_batches = Some(value);
+                }
+                tweaks
+            };
+            assert_eq!(with(0).validate(), Ok(()), "{field} = 0");
+            assert_eq!(
+                with(MAX_MIN_MERGE_BATCHES).validate(),
+                Ok(()),
+                "{field} at the bound"
+            );
+            let error = with(MAX_MIN_MERGE_BATCHES + 1)
+                .validate()
+                .expect_err("a value past the bound must be rejected");
+            assert!(error.contains(field), "{error}");
+            assert!(error.contains("16"), "{error}");
+            assert!(error.contains("0 through 15"), "{error}");
+        }
+    }
 
     /// Regression test: `Option<f64>` fields inside `DevTweaks` must
     /// survive a JSON-string round-trip through `PipelineConfig`, which

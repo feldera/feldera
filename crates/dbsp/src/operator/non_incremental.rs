@@ -10,6 +10,7 @@ use crate::{
     operator::Generator,
     trace::{
         Batch as DynBatch, BatchReader as _, BatchReaderFactories, Spine as DynSpine, Trace as _,
+        TraceRole,
     },
     typed_batch::{Spine, TypedBatch},
 };
@@ -185,7 +186,7 @@ where
         let name = OperatorName::new("ImportAccumulator");
         Self {
             factories: factories.clone(),
-            spine: DynSpine::<B>::new(factories, name.get()),
+            spine: DynSpine::<B>::new(factories, name.get(), TraceRole::Accumulator),
             name,
         }
     }
@@ -222,7 +223,8 @@ where
     }
 
     async fn eval(&mut self) -> DynSpine<B> {
-        let mut spine = DynSpine::<B>::new(&self.factories, self.name.get());
+        let mut spine =
+            DynSpine::<B>::new(&self.factories, self.name.get(), TraceRole::Accumulator);
         std::mem::swap(&mut self.spine, &mut spine);
         spine
     }

@@ -11,7 +11,7 @@ use crate::operator::async_stream_operators::{StreamingBinaryOperator, Streaming
 use crate::operator::dynamic::concat::dyn_concat_accumulated;
 use crate::trace::cursor::SaturatingCursor;
 use crate::trace::spine_async::WithSnapshot;
-use crate::trace::{Spine, SpineSnapshot, Trace};
+use crate::trace::{Spine, SpineSnapshot, Trace, TraceRole};
 use crate::{
     DBData, ZWeight,
     algebra::{
@@ -1773,7 +1773,13 @@ where
                     start += run_length;
 
                     if let Entry::Vacant(vacant) = self.future_outputs.borrow_mut().entry(batch_time) {
-                        let mut spine = <Spine<Z> as Trace>::new(&self.output_factories, self.name.get());
+                        // Nothing searches this spine until it is output by the
+                        // operator, so it merges as an accumulator does.
+                        let mut spine = <Spine<Z> as Trace>::new(
+                            &self.output_factories,
+                            self.name.get(),
+                            TraceRole::Accumulator,
+                        );
                         spine.insert(Z::dyn_from_tuples(&self.output_factories, (), &mut batch)).await;
                         vacant.insert(spine);
                     };

@@ -6042,6 +6042,11 @@ impl ControllerInit {
         if dev_tweaks != DevTweaks::default() {
             info!("using non-default `dev_tweaks`: {dev_tweaks:#?}")
         }
+        dev_tweaks
+            .validate()
+            .map_err(|error| ControllerError::Config {
+                config_error: Box::new(ConfigError::InvalidDevTweaks { error }),
+            })?;
 
         let mut max_rss_mb = pipeline_config.global.max_rss_mb;
 
@@ -9968,7 +9973,7 @@ mod controller_init_tests {
     use super::ControllerInit;
     use crate::ControllerError;
     use feldera_adapterlib::errors::controller::ConfigError;
-    use feldera_types::config::{InputEndpointConfig, PipelineConfig, RuntimeConfig};
+    use feldera_types::config::{DevTweaks, InputEndpointConfig, PipelineConfig, RuntimeConfig};
     use feldera_types::pipeline_diff::PipelineDiff;
     use serde_json::json;
     use std::{borrow::Cow, collections::BTreeMap};
@@ -10013,6 +10018,33 @@ mod controller_init_tests {
                     assert_eq!(max_rss_mb, 2_000);
                 }
                 other => panic!("expected DatafusionMemoryExceedsBudget, got {other:?}"),
+            },
+            other => panic!("expected ControllerError::Config, got {other:?}"),
+        }
+    }
+
+    /// A merge threshold past its bound is rejected before the circuit is
+    /// built, naming the field.
+    #[test]
+    fn circuit_config_rejects_a_merge_threshold_past_its_bound() {
+        let config = pipeline_config(RuntimeConfig {
+            workers: 1,
+            dev_tweaks: DevTweaks {
+                min_accumulator_merge_batches: Some(16),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        let err = match ControllerInit::circuit_config(None, &config, None) {
+            Err(e) => e,
+            Ok(_) => panic!("a threshold of 16 must be rejected"),
+        };
+        match err {
+            ControllerError::Config { config_error } => match *config_error {
+                ConfigError::InvalidDevTweaks { error } => {
+                    assert!(error.contains("min_accumulator_merge_batches"), "{error}");
+                }
+                other => panic!("expected InvalidDevTweaks, got {other:?}"),
             },
             other => panic!("expected ControllerError::Config, got {other:?}"),
         }
