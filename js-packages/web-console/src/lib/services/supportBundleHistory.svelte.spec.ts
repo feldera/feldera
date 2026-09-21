@@ -1,41 +1,64 @@
 /**
- * Tests for the history of the support bundles the user opened from disk.
+ * Tests for the support bundle history: adding, listing and looking up an entry, for
+ * both ways of storing a bundle.
  *
- * These run in the browser project, not against a simulated DOM, because a real
- * IndexedDB and a real structured clone decide whether a File System Access handle can
- * be stored at all. The other kind of entry, a copy of the archive, is covered by
- * `supportBundleCache.svelte.spec.ts`.
+ * These run in the browser project rather than against a simulated DOM, because it
+ * is a real IndexedDB and a real structured clone that decide whether a
+ * `FileSystemFileHandle` or a `File` can be stored at all.
  */
 
+import Dexie from 'dexie'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+const { deleteBundleRecords, listBundleRecords, putBundleRecord } = vi.hoisted(() => ({
+  // Typed like the real functions, so the tests reading them keep their types.
+  deleteBundleRecords: vi.fn<(ids: number[]) => Promise<void>>(),
+  listBundleRecords: vi.fn<() => Promise<StoredSupportBundle[]>>(),
+  putBundleRecord: vi.fn<typeof actualStore.putBundleRecord>()
+}))
+
+// The store module is not replaced: these tests run against the real database and
+// the real writes. Three of its functions are wrapped so that one test can report
+// archive sizes far larger than anything writable here, and others can make a write
+// or a delete fail.
+vi.mock('./supportBundleStore', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./supportBundleStore')>()),
+  deleteBundleRecords,
+  listBundleRecords,
+  putBundleRecord
+}))
+
+// These imports follow the vi.mock call above, so that the mock is in place.
 import {
-  clearSupportBundles,
-  getSupportBundle,
+  addToBundleHistory,
+  bundlesOverByteBudget,
+  cachedBundlesByteBudget,
+  clearBundleHistory,
+  isBundleCacheRequired,
   isBundlePickerSupported,
   isHistorySupported,
-  isLinkedBundle,
-  type LinkedSupportBundle,
-  listSupportBundles,
-  maxRememberedBundles,
+  listBundleHistory,
+  markBundleOpenedNow,
+  maxCachedBundleBytes,
+  maxHistoryEntries,
+  observeBundleHistory,
   pickSupportBundle,
-  queryBundleReadPermission,
-  readStoredBundle,
-  readSupportBundle,
-  rememberSupportBundle,
-  requestBundleReadPermission,
-  resolveStoredBundle,
-  type StoredSupportBundle,
-  touchSupportBundle
+  resolveStoredBundle
 } from './supportBundleHistory'
+import type { Observable, StoredSupportBundle } from './supportBundleStore'
+
+/** The unwrapped store module, to restore real behaviour after a test faked it. */
+const actualStore =
+  await vi.importActual<typeof import('./supportBundleStore')>('./supportBundleStore')
 
 /**
  * Stands in for a `FileSystemFileHandle`, which a test cannot construct.
  *
- * The two methods are put on the prototype rather than on the object itself. IndexedDB
- * writes a handle with structured clone, which copies only an object's own properties
- * and turns down functions among them with a `DataCloneError`. So a stand-in read back
- * out of the database carries the name and the kind and none of the methods, whereas a
- * real handle keeps its methods.
+ * The two methods sit on the prototype rather than on the object itself. IndexedDB
+ * writes a handle through structured clone, which copies an object's own properties
+ * only and rejects functions among them with a `DataCloneError`. A stand-in read back
+ * out of the database therefore has the name and the kind and none of the methods,
+ * while a real handle keeps its methods.
  */
 const fakeHandle = (name: string, contents = 'bundle contents') =>
   Object.create(
@@ -49,13 +72,15 @@ const fakeHandle = (name: string, contents = 'bundle contents') =>
     }
   ) as FileSystemFileHandle
 
-/** A history entry holding `handle`, in the shape the permission calls take. */
-const fakeEntry = (handle: FileSystemFileHandle): StoredSupportBundle => ({
-  id: 1,
-  name: handle.name,
-  openedAt: 1,
-  handle
-})
+/**
+ * A record whose cached copy claims to be `size` bytes. Working out the budget reads
+ * `file.size` and nothing else, so those bytes do not have to exist.
+ */
+const recordOfSize = (id: number, size: number): StoredSupportBundle => {
+  const file = new File([], `bundle-${id}.zip`)
+  Object.defineProperty(file, 'size', { value: size })
+  return { id, name: file.name, openedAt: id, file }
+}
 
 /**
  * Makes `Date.now` return a larger value on every call, so that bundles stored one
@@ -66,189 +91,58 @@ const useCountingClock = () => {
   vi.spyOn(Date, 'now').mockImplementation(() => ++now)
 }
 
+const historyNames = async () => (await listBundleHistory()).map((entry) => entry.name)
+
+/** Collects everything an observable hands over, until the test stops it. */
+const watch = <T>(observable: Observable<T>) => {
+  const seen: T[] = []
+  const subscription = observable.subscribe((value) => seen.push(value))
+  return { seen, stop: () => subscription.unsubscribe() }
+}
+
+/** Long enough for an unwanted re-read to have arrived, had one been coming. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 100))
+
 describe('supportBundleHistory', () => {
   beforeEach(async () => {
     vi.restoreAllMocks()
-    // A test that fails part way through can leave a stubbed global behind, and that
-    // would break every test after it.
+    // A test that fails part way through can leave a stubbed global behind, which
+    // would then break every test after it.
     vi.unstubAllGlobals()
+    deleteBundleRecords.mockImplementation(actualStore.deleteBundleRecords)
+    listBundleRecords.mockImplementation(actualStore.listBundleRecords)
+    putBundleRecord.mockImplementation(actualStore.putBundleRecord)
     useCountingClock()
-    await clearSupportBundles()
+    await clearBundleHistory()
   })
 
-  describe('remembering bundles', () => {
-    it('stores a picked bundle with its file name', async () => {
-      const stored = await rememberSupportBundle(fakeHandle('pipeline-a.zip'))
-
-      expect(stored.id).toBeTypeOf('number')
-      expect(await listSupportBundles()).toEqual([
-        {
-          id: stored.id,
-          name: 'pipeline-a.zip',
-          openedAt: stored.openedAt,
-          handle: expect.any(Object)
-        }
-      ])
-    })
-
-    it('keeps the handle usable across a database round trip', async () => {
-      const { id } = await rememberSupportBundle(fakeHandle('pipeline-a.zip'))
-
-      // A handle survives being written to the database and read back out of it. It
-      // could not be written to localStorage at all, since it has no JSON form.
-      const stored = await getSupportBundle(id)
-      expect(isLinkedBundle(stored!)).toBe(true)
-      const { handle } = stored as LinkedSupportBundle
-      expect(handle.name).toBe('pipeline-a.zip')
-      expect(handle.kind).toBe('file')
-    })
-
-    it('lists the most recently opened bundle first', async () => {
-      await rememberSupportBundle(fakeHandle('first.zip'))
-      await rememberSupportBundle(fakeHandle('second.zip'))
-      await rememberSupportBundle(fakeHandle('third.zip'))
-
-      expect((await listSupportBundles()).map((b) => b.name)).toEqual([
-        'third.zip',
-        'second.zip',
-        'first.zip'
-      ])
-    })
-
-    it('moves an already remembered file to the front instead of duplicating it', async () => {
-      const first = await rememberSupportBundle(fakeHandle('first.zip'))
-      await rememberSupportBundle(fakeHandle('second.zip'))
-
-      const again = await rememberSupportBundle(fakeHandle('first.zip'))
-
-      expect(again.id).toBe(first.id)
-      expect((await listSupportBundles()).map((b) => b.name)).toEqual(['first.zip', 'second.zip'])
-    })
-
-    it('drops the oldest bundles past the history limit', async () => {
-      for (let i = 0; i <= maxRememberedBundles; i++) {
-        await rememberSupportBundle(fakeHandle(`bundle-${i}.zip`))
-      }
-
-      const bundles = await listSupportBundles()
-      expect(bundles).toHaveLength(maxRememberedBundles)
-      expect(bundles.at(0)?.name).toBe(`bundle-${maxRememberedBundles}.zip`)
-      // The bundle stored first is the one dropped.
-      expect(bundles.map((b) => b.name)).not.toContain('bundle-0.zip')
-    })
-  })
-
-  describe('reading the history', () => {
-    it('moves a re-opened bundle to the front', async () => {
-      const first = await rememberSupportBundle(fakeHandle('first.zip'))
-      await rememberSupportBundle(fakeHandle('second.zip'))
-
-      await touchSupportBundle(first.id)
-
-      expect((await listSupportBundles()).map((b) => b.name)).toEqual(['first.zip', 'second.zip'])
-    })
-
-    it('ignores a request to touch a bundle that is gone', async () => {
-      await expect(touchSupportBundle(4321)).resolves.toBeUndefined()
-      expect(await listSupportBundles()).toEqual([])
-    })
-
-    it('reports an unknown id as missing', async () => {
-      expect(await getSupportBundle(4321)).toBeUndefined()
-    })
-
-    it('forgets every bundle when the history is cleared', async () => {
-      await rememberSupportBundle(fakeHandle('first.zip'))
-      await rememberSupportBundle(fakeHandle('second.zip'))
-
-      await clearSupportBundles()
-
-      expect(await listSupportBundles()).toEqual([])
-    })
-  })
-
-  describe('looking up a remembered bundle by its id', () => {
-    it('hands back a bundle that can be read right away', async () => {
-      const { id } = await rememberSupportBundle(fakeHandle('pipeline-a.zip'))
-
-      const { bundle, needsPermission } = await resolveStoredBundle(id)
-
-      // A stand-in read back out of the database has no permission methods, and
-      // `queryBundleReadPermission` answers 'granted' for those. A real handle whose
-      // permission has expired answers 'prompt', and then needsPermission is true.
-      expect(bundle.name).toBe('pipeline-a.zip')
-      expect(needsPermission).toBe(false)
-    })
-
-    it('refuses a bundle that is no longer in the history', async () => {
-      const { id } = await rememberSupportBundle(fakeHandle('pipeline-a.zip'))
-      await clearSupportBundles()
-
-      await expect(resolveStoredBundle(id)).rejects.toThrow('no longer in the browser history')
-      await expect(resolveStoredBundle(undefined)).rejects.toThrow(
-        'no longer in the browser history'
-      )
-    })
-  })
-
-  describe('reading a bundle', () => {
-    it('reads the whole archive behind a handle', async () => {
-      const bytes = await readSupportBundle(fakeHandle('pipeline-a.zip', 'PK-not-really'))
-
-      expect(new TextDecoder().decode(bytes)).toBe('PK-not-really')
-    })
-
-    it('reads a linked bundle through its handle', async () => {
-      const stored = await rememberSupportBundle(fakeHandle('linked.zip', 'from-disk'))
-
-      expect(new TextDecoder().decode(await readStoredBundle(stored))).toBe('from-disk')
-    })
-
-    it('reports an entry that says nothing about where to read', async () => {
-      // Nothing in the history writes an entry like this, but records come back out
-      // of IndexedDB with no type checking, so one is reported rather than crashed on.
-      const orphan = { id: 1, name: 'orphan.zip', openedAt: 1 } as StoredSupportBundle
-
-      await expect(readStoredBundle(orphan)).rejects.toThrow('does not say where to read')
-    })
-  })
-
-  describe('read permission', () => {
-    it('asks the browser whether the file can still be read', async () => {
-      const queryPermission = vi.fn(async () => 'prompt' as const)
-      const handle = Object.assign(fakeHandle('pipeline-a.zip'), { queryPermission })
-
-      expect(await queryBundleReadPermission(fakeEntry(handle))).toBe('prompt')
-      expect(queryPermission).toHaveBeenCalledWith({ mode: 'read' })
-    })
-
-    it('treats a browser without the permission API as granting access', async () => {
-      // There is no permission method to call, so 'granted' is the only useful answer:
-      // reading the file either works or throws, and the caller finds out which.
-      expect(await queryBundleReadPermission(fakeEntry(fakeHandle('pipeline-a.zip')))).toBe(
-        'granted'
-      )
-    })
-
-    it('reports whether the user granted access', async () => {
-      const granted = Object.assign(fakeHandle('a.zip'), {
-        requestPermission: async () => 'granted' as const
-      })
-      const denied = Object.assign(fakeHandle('b.zip'), {
-        requestPermission: async () => 'denied' as const
-      })
-
-      expect(await requestBundleReadPermission(fakeEntry(granted))).toBe(true)
-      expect(await requestBundleReadPermission(fakeEntry(denied))).toBe(false)
-    })
-  })
-
-  describe('whether a history can be kept', () => {
-    it('follows IndexedDB, not the File System Access API', () => {
+  describe('what the browser allows', () => {
+    it('follows IndexedDB for whether a history can be kept', () => {
       expect(isHistorySupported()).toBe(true)
 
       vi.stubGlobal('indexedDB', undefined)
       expect(isHistorySupported()).toBe(false)
+    })
+
+    it('needs a copy of the archive only where showOpenFilePicker is missing', () => {
+      // Where `showOpenFilePicker` exists, picking a file gives back a reference to
+      // the file on disk, and the history stores that instead of the archive.
+      vi.stubGlobal('showOpenFilePicker', vi.fn())
+      expect(isBundlePickerSupported()).toBe(true)
+      expect(isBundleCacheRequired()).toBe(false)
+
+      vi.stubGlobal('showOpenFilePicker', undefined)
+      expect(isBundlePickerSupported()).toBe(false)
+      expect(isBundleCacheRequired()).toBe(true)
+    })
+
+    it('needs no copy where IndexedDB is unusable', () => {
+      // There would be nowhere to put the copy. Answering true would send the caller
+      // on to `indexedDB.open`, which throws when IndexedDB is missing.
+      vi.stubGlobal('showOpenFilePicker', undefined)
+      vi.stubGlobal('indexedDB', undefined)
+
+      expect(isBundleCacheRequired()).toBe(false)
     })
   })
 
@@ -260,7 +154,6 @@ describe('supportBundleHistory', () => {
         vi.fn(async () => [handle])
       )
 
-      expect(isBundlePickerSupported()).toBe(true)
       expect(await pickSupportBundle()).toBe(handle)
     })
 
@@ -275,14 +168,6 @@ describe('supportBundleHistory', () => {
       expect(await pickSupportBundle()).toBe(null)
     })
 
-    it('reports no handle support where the API is missing', async () => {
-      // `showOpenFilePicker` and IndexedDB are separate capabilities: a browser can
-      // have one of them and not the other.
-      vi.stubGlobal('showOpenFilePicker', undefined)
-
-      expect(isBundlePickerSupported()).toBe(false)
-    })
-
     it('propagates a picker failure that is not a dismissal', async () => {
       vi.stubGlobal(
         'showOpenFilePicker',
@@ -292,6 +177,307 @@ describe('supportBundleHistory', () => {
       )
 
       await expect(pickSupportBundle()).rejects.toThrow('Not allowed')
+    })
+  })
+
+  describe('adding a bundle picked as a handle', () => {
+    it('adds an entry that reads the file on disk', async () => {
+      const entry = await addToBundleHistory(fakeHandle('pipeline-a.zip', 'from-disk'))
+
+      expect(entry?.name).toBe('pipeline-a.zip')
+      expect(await historyNames()).toEqual(['pipeline-a.zip'])
+      expect(new TextDecoder().decode(await entry!.ops.read())).toBe('from-disk')
+    })
+
+    it('lists the most recently opened bundle first', async () => {
+      await addToBundleHistory(fakeHandle('first.zip'))
+      await addToBundleHistory(fakeHandle('second.zip'))
+      await addToBundleHistory(fakeHandle('third.zip'))
+
+      expect(await historyNames()).toEqual(['third.zip', 'second.zip', 'first.zip'])
+    })
+
+    it('moves a file it already holds to the front instead of duplicating it', async () => {
+      const first = await addToBundleHistory(fakeHandle('first.zip'))
+      await addToBundleHistory(fakeHandle('second.zip'))
+
+      const again = await addToBundleHistory(fakeHandle('first.zip'))
+
+      expect(again?.id).toBe(first?.id)
+      expect(await historyNames()).toEqual(['first.zip', 'second.zip'])
+    })
+
+    it('drops the bundles opened longest ago past the limit on the count', async () => {
+      for (let i = 0; i <= maxHistoryEntries; i++) {
+        await addToBundleHistory(fakeHandle(`bundle-${i}.zip`))
+      }
+
+      const names = await historyNames()
+      expect(names).toHaveLength(maxHistoryEntries)
+      expect(names.at(0)).toBe(`bundle-${maxHistoryEntries}.zip`)
+      expect(names).not.toContain('bundle-0.zip')
+    })
+  })
+
+  describe('adding a bundle picked as a File', () => {
+    it('adds an entry that reads a copy of the archive', async () => {
+      // A `File` cannot be opened a second time by any other means, so the archive
+      // itself goes into the database and is read back out of it.
+      const entry = await addToBundleHistory(new File(['PK-not-really'], 'from-input.zip'))
+
+      expect(entry?.name).toBe('from-input.zip')
+      const [listed] = await listBundleHistory()
+      expect(new TextDecoder().decode(await listed.ops.read())).toBe('PK-not-really')
+    })
+
+    it('moves a file it already holds to the front instead of duplicating it', async () => {
+      const first = await addToBundleHistory(
+        new File(['contents'], 'again.zip', { lastModified: 1_000 })
+      )
+      await addToBundleHistory(new File(['other'], 'other.zip'))
+
+      const again = await addToBundleHistory(
+        new File(['contents'], 'again.zip', { lastModified: 1_000 })
+      )
+
+      expect(again?.id).toBe(first?.id)
+      expect(await historyNames()).toEqual(['again.zip', 'other.zip'])
+    })
+
+    it('tells two different files of the same name apart', async () => {
+      await addToBundleHistory(new File(['one'], 'bundle.zip', { lastModified: 1_000 }))
+      await addToBundleHistory(new File(['two'], 'bundle.zip', { lastModified: 2_000 }))
+
+      expect(await historyNames()).toHaveLength(2)
+    })
+
+    it('adds no entry for an archive over the per-bundle limit', async () => {
+      const huge = new File(['small enough really'], 'huge.zip')
+      // The size is faked rather than allocated, because the limit is 256 MB.
+      Object.defineProperty(huge, 'size', { value: maxCachedBundleBytes + 1 })
+
+      // Returning null rather than throwing leaves the caller free to open the bundle
+      // it is holding.
+      expect(await addToBundleHistory(huge)).toBe(null)
+      expect(await listBundleHistory()).toEqual([])
+    })
+
+    it('adds no entry for an archive the browser refused to write', async () => {
+      // The size of the quota depends on the free space on the machine, so no check
+      // beforehand can tell that a write will be refused. A refused write ends the
+      // same way as an archive that is too large: null, and no entry.
+      //
+      // Dexie raises an error class of its own here rather than passing on the
+      // `DOMException` IndexedDB threw, so a test throwing a `DOMException` would
+      // let an `instanceof DOMException` check pass while the real path failed.
+      putBundleRecord.mockRejectedValue(new Dexie.QuotaExceededError())
+
+      expect(await addToBundleHistory(new File(['zip'], 'refused.zip'))).toBe(null)
+      expect(await listBundleHistory()).toEqual([])
+    })
+
+    it('drops the bundles opened longest ago past the limit on the count', async () => {
+      for (let i = 0; i <= maxHistoryEntries; i++) {
+        await addToBundleHistory(new File(['contents'], `bundle-${i}.zip`))
+      }
+
+      const names = await historyNames()
+      expect(names).toHaveLength(maxHistoryEntries)
+      expect(names.at(0)).toBe(`bundle-${maxHistoryEntries}.zip`)
+      expect(names).not.toContain('bundle-0.zip')
+    })
+  })
+
+  describe('the budget on the total number of bytes', () => {
+    it('reports nothing while the entries fit', () => {
+      expect(
+        bundlesOverByteBudget([recordOfSize(2, cachedBundlesByteBudget), recordOfSize(1, 0)])
+      ).toEqual([])
+    })
+
+    it('reports the entries that do not fit, in the order it was given them', () => {
+      const half = cachedBundlesByteBudget / 2
+      const newest = recordOfSize(3, half)
+      const middle = recordOfSize(2, half)
+      const oldest = recordOfSize(1, half)
+
+      // The two most recently opened bundles fill the budget exactly, so counting the
+      // third goes over it. The third, opened longest ago, is the one to drop.
+      expect(bundlesOverByteBudget([newest, middle, oldest])).toEqual([oldest])
+    })
+
+    it('reports no entry that occupies nothing', () => {
+      // Deleting a reference to a file frees no bytes, so it is left alone even when
+      // the copies before it have already gone over the budget.
+      const linked: StoredSupportBundle = {
+        id: 9,
+        name: 'linked.zip',
+        openedAt: 9,
+        handle: fakeHandle('linked.zip')
+      }
+      const fillsTheBudget = recordOfSize(3, cachedBundlesByteBudget)
+      const oneByteOver = recordOfSize(2, 1)
+
+      expect(bundlesOverByteBudget([fillsTheBudget, oneByteOver, linked])).toEqual([oneByteOver])
+    })
+
+    it('reports no entry that the limit on the count has dropped', () => {
+      // The history keeps maxHistoryEntries entries and deletes the rest, so the
+      // budget must not count bytes that nothing can free.
+      const records = Array.from({ length: maxHistoryEntries + 2 }, (_, i) =>
+        recordOfSize(maxHistoryEntries + 2 - i, cachedBundlesByteBudget)
+      )
+
+      expect(bundlesOverByteBudget(records)).toEqual(records.slice(1, maxHistoryEntries))
+    })
+
+    it('deletes what no longer fits when a new copy is stored', async () => {
+      const older = await addToBundleHistory(new File(['older'], 'older.zip'))
+      // The entry for older.zip really is in the database, but half a gigabyte cannot
+      // be written here, so the listing is replaced by two records that only claim
+      // that size. The first fills the whole budget, leaving no room for the second,
+      // older.zip.
+      listBundleRecords.mockResolvedValue([
+        recordOfSize(9999, cachedBundlesByteBudget),
+        recordOfSize(older!.id, cachedBundlesByteBudget)
+      ])
+
+      await addToBundleHistory(new File(['newest'], 'newest.zip'))
+
+      listBundleRecords.mockImplementation(actualStore.listBundleRecords)
+      expect(await historyNames()).toEqual(['newest.zip'])
+    })
+  })
+
+  describe('marking a bundle as opened now', () => {
+    it('moves it to the front of the history', async () => {
+      const first = await addToBundleHistory(fakeHandle('first.zip'))
+      await addToBundleHistory(fakeHandle('second.zip'))
+
+      await markBundleOpenedNow(first!.id)
+
+      expect(await historyNames()).toEqual(['first.zip', 'second.zip'])
+    })
+
+    it('ignores an id that is no longer in the history', async () => {
+      await expect(markBundleOpenedNow(4321)).resolves.toBeUndefined()
+      expect(await listBundleHistory()).toEqual([])
+    })
+  })
+
+  describe('clearing the history', () => {
+    it('forgets every entry', async () => {
+      await addToBundleHistory(fakeHandle('first.zip'))
+      await addToBundleHistory(fakeHandle('second.zip'))
+
+      await clearBundleHistory()
+
+      expect(await listBundleHistory()).toEqual([])
+    })
+  })
+
+  describe('a record that is neither a reference to a file nor a cached copy', () => {
+    /** Writes a record that says nothing about where its archive is. */
+    const addUnreadableRecord = async () =>
+      (
+        await actualStore.putBundleRecord(undefined, {
+          name: 'orphan.zip',
+          openedAt: 1
+        } as unknown as Parameters<typeof actualStore.putBundleRecord>[1])
+      ).id
+
+    it('leaves it out of the history and returns the rest', async () => {
+      await addToBundleHistory(fakeHandle('readable.zip'))
+      await addUnreadableRecord()
+
+      expect(await historyNames()).toEqual(['readable.zip'])
+    })
+
+    it('deletes it, so the next read no longer finds it', async () => {
+      const id = await addUnreadableRecord()
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      await listBundleHistory()
+
+      // The delete runs after the read has returned, so the test waits for it.
+      await vi.waitFor(async () => expect(await actualStore.getBundleRecord(id)).toBeUndefined())
+    })
+
+    it('still returns the readable entries when the delete fails', async () => {
+      await addToBundleHistory(fakeHandle('readable.zip'))
+      await addUnreadableRecord()
+      deleteBundleRecords.mockRejectedValue(new Error('IndexedDB is unavailable'))
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+      expect(await historyNames()).toEqual(['readable.zip'])
+      await vi.waitFor(() => expect(deleteBundleRecords).toHaveBeenCalled())
+    })
+
+    it('refuses to open it by id', async () => {
+      const id = await addUnreadableRecord()
+
+      await expect(resolveStoredBundle(id)).rejects.toThrow('no longer in the browser history')
+    })
+
+    it('settles after deleting it, rather than reading the history forever', async () => {
+      // Deleting the record is a change to the database, so a watcher reads the
+      // history once more. That read finds nothing left to delete, which is what
+      // stops the two from feeding each other.
+      await addUnreadableRecord()
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const watcher = watch(observeBundleHistory())
+
+      try {
+        await vi.waitFor(() => expect(watcher.seen.length).toBeGreaterThan(1))
+        const reads = watcher.seen.length
+        await settle()
+
+        expect(watcher.seen).toHaveLength(reads)
+      } finally {
+        watcher.stop()
+      }
+    })
+  })
+
+  describe('watching the history', () => {
+    it('hands over the history again after a bundle is added', async () => {
+      const watcher = watch(observeBundleHistory())
+
+      try {
+        await vi.waitFor(() => expect(watcher.seen).toHaveLength(1))
+        await addToBundleHistory(fakeHandle('watched.zip'))
+
+        await vi.waitFor(() =>
+          expect(watcher.seen.at(-1)?.map((entry) => entry.name)).toEqual(['watched.zip'])
+        )
+      } finally {
+        watcher.stop()
+      }
+    })
+  })
+
+  describe('looking up an entry by its id', () => {
+    it('hands back the entry itself, not a wrapper around it', async () => {
+      // A cached copy rather than a handle: a stand-in handle read back out of
+      // IndexedDB has lost `getFile`, so only a copy can be read here.
+      const added = await addToBundleHistory(new File(['archive'], 'pipeline-a.zip'))
+
+      const entry = await resolveStoredBundle(added!.id)
+
+      expect(entry.name).toBe('pipeline-a.zip')
+      expect(new TextDecoder().decode(await entry.ops.read())).toBe('archive')
+    })
+
+    it('refuses an entry that is no longer in the history', async () => {
+      const added = await addToBundleHistory(fakeHandle('pipeline-a.zip'))
+      await clearBundleHistory()
+
+      await expect(resolveStoredBundle(added!.id)).rejects.toThrow(
+        'no longer in the browser history'
+      )
+      await expect(resolveStoredBundle(undefined)).rejects.toThrow(
+        'no longer in the browser history'
+      )
     })
   })
 })
