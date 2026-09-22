@@ -221,38 +221,103 @@ const extractRustCompilerMessage =
     }
   }
 
-/** sccache/cargo failures never appear in rustc JSON. */
-const leftoverRustStderrError = <Report>(
+const extractRustCompilerError =
+  <Report>(
+    pipelineName: string,
+    source: string,
+    getReport: (pipelineName: string, message: string) => Report
+  ) =>
+  (stderr: string): SystemError<any, Report> => {
+    const matchFileError = (
+      fileName: string,
+      fileRegex: RegExp,
+      lineOffset: number,
+      warning: boolean
+    ) => {
+      const match = stderr.match(fileRegex)
+      if (!match) {
+        return undefined
+      }
+      const startLineNumber = parseInt(match[1]) + lineOffset
+      const startColumn = parseInt(match[2])
+      return {
+        name: `${warning ? 'Warning in' : 'Error compiling'} ${pipelineName}`,
+        message: stderr,
+        cause: {
+          entityName: pipelineName,
+          tag: 'programError',
+          source:
+            source +
+            `#${fileName}:` +
+            startLineNumber +
+            (startColumn > 0 ? ':' + startColumn.toString() : ''),
+          report: getReport(pipelineName, stderr),
+          body: {
+            startLineNumber: startLineNumber,
+            endLineNumber: startLineNumber,
+            startColumn: startColumn,
+            endColumn: startColumn + 10,
+            message: stderr
+          },
+          warning
+        }
+      }
+    }
+    const warning = /^(?:[\w-]+: )?warning:/.test(stderr)
+    return (
+      matchFileError('udf.toml', /\/Cargo\.toml:(\d+):(\d+)/, -10, warning) ??
+      matchFileError('udf.rs', /\/udf\.rs:(\d+):(\d+)/, 0, warning) ??
+      matchFileError('stubs.rs', /\/stubs\.rs:(\d+):(\d+)/, 0, warning) ?? {
+        name: `${warning ? 'Warning in' : 'Error compiling'} ${pipelineName}`,
+        message: stderr,
+        cause: {
+          entityName: pipelineName,
+          tag: 'unrecognizedProgramError',
+          source: source + '#program.sql',
+          report: getReport(pipelineName, stderr),
+          body: warning
+            ? stderr
+            : {
+                startLineNumber: 0,
+                endLineNumber: 9999,
+                startColumn: 0,
+                endColumn: 9999,
+                message: stderr
+              },
+          warning
+        }
+      }
+    )
+  }
+
+const ignoredRustErrors = [
+  'warning: patch for the non root package will be ignored',
+  'error: could not compile',
+  'warning: build failed, waiting for other jobs to finish',
+  "error: process didn't exit successfully"
+]
+
+/** Split cargo's `--- stderr` marker so the echoed tool error is its own message. */
+const flattenStderr = (stderr: string) => stderr.replaceAll('\n--- stderr\n', '\n\n')
+
+const rustCompilerErrorRegex =
+  /^((?:[\w-]+: )?(warning:(?! `)|error(\[[\w]+\])?:)([\s\S])+?)(\n(\n|(?=error|warning))|\n?$(?![\s\S]))/gm
+
+/** Old managers put rustc text in stderr and do not send `messages`. */
+const extractRustStderrErrors = <Report>(
   stderr: string,
   pipelineName: string,
   source: string,
   getReport: (pipelineName: string, message: string) => Report
-): SystemError<any, Report> | null => {
+): SystemError<any, Report>[] => {
   const internal = extractInternalCompilationError(stderr, pipelineName, source, getReport)
   if (internal) {
-    return internal
+    return [internal]
   }
-  const text = stderr.trimEnd()
-  if (!text) {
-    return null
-  }
-  return {
-    name: `Error compiling ${pipelineName}`,
-    message: text,
-    cause: {
-      entityName: pipelineName,
-      tag: 'unrecognizedProgramError',
-      source: source + '#program.sql',
-      report: getReport(pipelineName, text),
-      body: {
-        startLineNumber: 0,
-        endLineNumber: 9999,
-        startColumn: 0,
-        endColumn: 9999,
-        message: text
-      }
-    }
-  }
+  return Array.from(flattenStderr(stderr).matchAll(rustCompilerErrorRegex))
+    .map((match) => match[1])
+    .filter((stderrPart) => !ignoredRustErrors.some((ignored) => stderrPart.startsWith(ignored)))
+    .map(extractRustCompilerError(pipelineName, source, getReport))
 }
 
 /**
@@ -293,11 +358,11 @@ export const extractProgramErrors =
           result,
           messages.map(extractRustCompilerMessage(pipeline.name, source, getReport))
         )
-      } else if (rust.exit_code !== 0) {
-        const leftover = leftoverRustStderrError(rust.stderr, pipeline.name, source, getReport)
-        if (leftover) {
-          result.push(leftover)
-        }
+      } else {
+        result.push.apply(
+          result,
+          extractRustStderrErrors(rust.stderr, pipeline.name, source, getReport)
+        )
       }
     }
     if (pipeline.compilerOutput.systemError) {
