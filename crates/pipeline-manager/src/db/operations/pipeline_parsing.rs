@@ -918,7 +918,7 @@ mod tests {
                     },
                 )],
             }),
-            rust_compilation: Some(RustCompilationInfo::from_streams(
+            rust_compilation: Some(RustCompilationInfo::from_process_output_streams(
                 89,
                 "stdout-example".to_string(),
                 "stderr-example".to_string(),
@@ -976,7 +976,7 @@ mod tests {
                     exit_code: 0,
                     messages: vec![],
                 }),
-                rust_compilation: Some(RustCompilationInfo::from_streams(
+                rust_compilation: Some(RustCompilationInfo::from_process_output_streams(
                     0,
                     "".to_string(),
                     "".to_string(),
@@ -994,7 +994,7 @@ mod tests {
                     exit_code: 2,
                     messages: vec![],
                 }),
-                rust_compilation: Some(RustCompilationInfo::from_streams(
+                rust_compilation: Some(RustCompilationInfo::from_process_output_streams(
                     3,
                     "a".to_string(),
                     "b".to_string(),
