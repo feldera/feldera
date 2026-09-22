@@ -15,10 +15,10 @@
   import Popup from '$lib/components/common/Popup.svelte'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
   import PipelineBreadcrumbs from '$lib/components/layout/PipelineBreadcrumbs.svelte'
-  import SupportBundleConfirm from '$lib/components/pipelines/editor/SupportBundleConfirm.svelte'
-  import SupportBundleMenu from '$lib/components/pipelines/editor/SupportBundleMenu.svelte'
+  import SupportBundleConfirm from '$lib/components/supportBundle/SupportBundleConfirm.svelte'
+  import SupportBundleMenu from '$lib/components/supportBundle/SupportBundleMenu.svelte'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
-  import { receiveUploadedBundle } from '$lib/compositions/profileBundleHandoff'
+  import { receiveUploadedBundle, storedBundleUrl } from '$lib/compositions/profileBundleHandoff'
   import { type PickedBundle, useBundlePicker } from '$lib/compositions/useBundlePicker'
   import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
@@ -28,6 +28,7 @@
   import {
     type BundleHistoryEntry,
     isPermissionRequired,
+    markBundleOpenedNow,
     resolveStoredBundle
   } from '$lib/services/supportBundleHistory'
 
@@ -136,10 +137,14 @@
   if (source === 'upload' || pipelineName) {
     withLoadGuard(async () => {
       if (source === 'upload') {
-        if (storedBundleId) {
-          // The viewer reads the archive itself, out of the history, which is what
-          // makes this URL worth reloading.
-          const entry = await resolveStoredBundle(storedBundleId)
+        if (storedBundleId !== undefined) {
+          // Read the archive from the history, so reloading this URL reopens the
+          // bundle. A malformed id is passed as `undefined`, which makes
+          // `resolveStoredBundle` throw the same "no longer in the history" error
+          // as an id that is not in the history.
+          const entry = await resolveStoredBundle(
+            storedBundleId === 'invalid' ? undefined : storedBundleId
+          )
           const archive = await readStoredArchive(entry)
           if (!archive) {
             // Giving permission has to happen inside a click, so the empty state
@@ -147,12 +152,13 @@
             pendingBundle = entry
             return
           }
-          await loadStoredArchive(archive)
+          await loadStoredArchive(archive, entry.id)
           return
         }
-        // With no history entry, the only source is the tab the user picked the
-        // bundle in, which hands the bytes over. That is the last resort, for an
-        // archive too large to keep a copy of.
+        // With no history entry, the only way to load the bundle in a new tab
+        // is to directly send the bundle bytes from the tab the user picked the bundle in.
+        // This happens as a last resort mechanism when the browser does not issue file handles,
+        // and the archive is too large to cache.
         const buffer = await receiveUploadedBundle(channel)
         await processZipBundle(
           new Uint8Array(buffer),
@@ -213,7 +219,7 @@
     errorMessage = ''
     pendingBundle = null
     if (bundle.bundleId !== undefined) {
-      replaceState(`${resolve('/profile-viewer')}?source=upload&bundle=${bundle.bundleId}`, {})
+      replaceState(storedBundleUrl(bundle.bundleId), {})
     }
     await withLoadGuard(async () => {
       downloadProgress.onProgress(0, 1)
@@ -247,9 +253,8 @@
   }
 
   /**
-   * The archive behind a history entry, or null when reading it needs the user's
-   * permission. Asking for that has to happen inside a click, which loading the page
-   * is not, so the caller draws a button that asks instead.
+   * The archive bytes behind a history entry, or null when reading it needs the user's
+   * permission. Asking for the user's permission has to happen inside a click handler.
    */
   async function readStoredArchive(entry: BundleHistoryEntry) {
     try {
@@ -262,9 +267,17 @@
     }
   }
 
-  async function loadStoredArchive(archive: Uint8Array) {
+  /**
+   * Loads an archive that came out of the history, and records that its entry was
+   * opened now.
+   * The bookkeeping must not fail the load, so its failure is only logged.
+   */
+  async function loadStoredArchive(archive: Uint8Array, entryId: number) {
     getProfileData = null
     downloadProgress.onProgress(0, 1)
+    markBundleOpenedNow(entryId).catch((e) =>
+      console.warn('Failed to record the support bundle as opened:', e)
+    )
     await processZipBundle(archive, 'No suitable profiles found in the stored bundle.')
   }
 
@@ -284,7 +297,7 @@
             'allow access when the browser asks, or open the bundle from disk again.'
         )
       }
-      await loadStoredArchive(await entry.ops.read())
+      await loadStoredArchive(await entry.ops.read(), entry.id)
     }, onLoadError('Failed to open the support bundle.'))
   }
 
@@ -460,8 +473,6 @@
           Download profile
         </button>
       {/if}
-      <!-- This is also the only control on a first visit, where nothing has been
-           opened yet, so the label cannot say "another". -->
       <button class="link p-2 hover:underline" onclick={pickBundle}> Open a support bundle </button>
     </div>
   {/if}

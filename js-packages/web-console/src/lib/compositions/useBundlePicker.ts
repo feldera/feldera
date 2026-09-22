@@ -1,28 +1,27 @@
 import {
   addToBundleHistory,
   isBundlePickerSupported,
-  pickSupportBundle,
-  type PickedDiskFile
+  type PickedDiskFile,
+  pickSupportBundle
 } from '$lib/services/supportBundleHistory'
 
-/**
- * A support bundle the user chose.
- *
- * `bundleId` names its entry in the history, which is what lets the profile viewer
- * read the archive again later, after a reload or in a tab opened days afterwards.
- * Without a `bundleId` the bundle exists only as the bytes `read` returns, and only
- * once: that is what becomes of an archive too large to copy, and of one the history
- * failed to write.
- */
+/** A support bundle the user chose. */
 export type PickedBundle = {
+  /** The file name of the archive. */
   name: string
+  /**
+   * The bundle's entry in the history, which lets the profile viewer reopen it later.
+   * Unset when the history could not store the bundle.
+   */
   bundleId?: number
+  /** Reads the archive's bytes from the chosen file. */
   read: () => Promise<Uint8Array>
 }
 
 /**
- * Reads what the picker handed back. This is the file the user just chose, so the
- * browser grants the read without asking, whichever of the two forms it took.
+ * Reads the file the user just chose: either a `File` from an `<input type=file>` or a
+ * `FileSystemFileHandle` from `showOpenFilePicker`. The browser grants either read
+ * without prompting, because the user chose the file moments ago.
  */
 const readPicked = async (picked: PickedDiskFile): Promise<Uint8Array> => {
   const file = picked instanceof File ? picked : await picked.getFile()
@@ -30,9 +29,9 @@ const readPicked = async (picked: PickedDiskFile): Promise<Uint8Array> => {
 }
 
 /**
- * Adds the chosen file to the history and describes it for the caller. A history that
- * cannot be written leaves `bundleId` unset, and the bundle still opens: the caller
- * holds the bytes either way, it just cannot reopen them in a later tab.
+ * Adds the chosen file to the history and returns it as a `PickedBundle`. If the
+ * history write fails, `bundleId` stays unset: the bundle still opens now, but a later
+ * tab cannot reopen it.
  */
 const toPickedBundle = async (picked: PickedDiskFile): Promise<PickedBundle> => {
   let bundleId: number | undefined
@@ -45,16 +44,17 @@ const toPickedBundle = async (picked: PickedDiskFile): Promise<PickedBundle> => 
 }
 
 /**
- * Choosing a support bundle from disk, in one place. `showOpenFilePicker` is used
- * wherever the browser has it, because the handle it gives back costs the history a
- * few hundred bytes however large the archive is. Where it is missing, the caller
- * falls back to an `<input type=file>` and hands the file to `fromFile` below. Either
- * way the bundle is recorded in the history.
+ * Lets the user choose a support bundle from disk and records it in the history.
+ *
+ * Chromium-based browsers provide `showOpenFilePicker`, which returns a
+ * `FileSystemFileHandle`. The history stores that handle in a few hundred bytes,
+ * regardless of the archive's size. Firefox and Safari lack `showOpenFilePicker`, so
+ * there the caller uses an `<input type=file>` and passes the file to `fromFile`, and
+ * the history stores a copy of the archive instead.
  */
 export const useBundlePicker = () => ({
   /**
-   * Whether `pick` can be used at all. Where it cannot, the caller clicks a hidden
-   * `<input type=file>` instead and passes the chosen file to `fromFile`.
+   * Whether the browser can return a `FileSystemFileHandle` for a picked file.
    */
   get isSupported() {
     return isBundlePickerSupported()
@@ -62,13 +62,13 @@ export const useBundlePicker = () => ({
 
   /**
    * Shows the file picker and remembers the file that comes back. Resolves to null
-   * when the browser has no `showOpenFilePicker`, and when the user dismisses the
+   * when the browser has no `showOpenFilePicker`, or when the user dismisses the
    * picker without choosing anything.
    *
-   * The promise resolves only once the history has been written, so that the caller
-   * already holds `bundleId` when the user clicks to open the viewer tab. A browser
-   * allows `window.open` only while it is handling that click, and waiting for the
-   * write there would outlast it.
+   * The caller needs `bundleId` before the user clicks to open the viewer tab, so the
+   * promise waits for the history write to finish before it resolves. The click
+   * handler must call `window.open` synchronously: if it first awaited the write, the
+   * browser would block the new tab as a popup.
    */
   async pick(): Promise<PickedBundle | null> {
     if (!isBundlePickerSupported()) {

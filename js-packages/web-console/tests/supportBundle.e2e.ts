@@ -20,7 +20,8 @@ const PIPELINE_NAME = `test-support-bundle-${Date.now()}`
  * reuse it. Each test then opens the profile viewer through a different entry
  * point (a fresh remote download, or the saved bundle re-opened from disk into a
  * new tab) and asserts the loaded viewer renders its core panels (logs, per-node
- * metrics).
+ * metrics). The upload path additionally reloads the viewer tab, which is the promise
+ * the bundle history exists to keep.
  *
  * Serial: the tests share the pipeline created in `beforeAll`, and there's no
  * value in running the upload path once the remote path has already proven the
@@ -92,7 +93,19 @@ test.describe('Profile viewer', () => {
     const confirmViewProfile = page.getByTestId('btn-confirm-view-profile')
     await expect(confirmViewProfile).toBeVisible({ timeout: 10_000 })
 
-    await withProfileViewer(context, () => confirmViewProfile.click())
+    await withProfileViewer(
+      context,
+      () => confirmViewProfile.click(),
+      async (viewer) => {
+        // The link names the history entry the file input wrote, which is the whole
+        // point of the change: were the archive still handed over as bytes, the URL
+        // would carry a `channel` instead and the reload below would time out waiting
+        // for a tab that has nothing left to send.
+        await expect(viewer).toHaveURL(/[?&]bundle=\d+/)
+        await viewer.reload()
+        await assertLogsPanelPopulates(viewer)
+      }
+    )
   })
 
   test('opens an uploaded bundle with the manager unreachable', async ({ browser }) => {
@@ -105,7 +118,7 @@ test.describe('Profile viewer', () => {
     try {
       // The bare route is the viewer with nothing to load, offering the upload.
       await viewer.goto('/profile-viewer')
-      await expect(viewer.getByText('Upload a support bundle zip')).toBeVisible({ timeout: 30_000 })
+      await expect(viewer.getByText('Open a support bundle')).toBeVisible({ timeout: 30_000 })
       await viewer.locator('input[type="file"]').setInputFiles(bundlePath)
       await assertLogsPanelPopulates(viewer)
       // Error toasts carry role=status.
@@ -134,8 +147,15 @@ async function openSupportBundleControls(page: Page) {
  * Run `trigger` (which opens /profile-viewer in a new tab), then verify the
  * loaded viewer's core functionality before closing the tab. The caller's
  * `page` still refers to the originating pipeline page afterwards.
+ *
+ * @param alsoCheck further assertions on the viewer tab, run once the core ones have
+ *   passed. Used by the upload path, whose promise is that its tab survives a reload.
  */
-async function withProfileViewer(context: BrowserContext, trigger: () => Promise<void>) {
+async function withProfileViewer(
+  context: BrowserContext,
+  trigger: () => Promise<void>,
+  alsoCheck?: (viewer: Page) => Promise<void>
+) {
   const viewerPromise = context.waitForEvent('page')
   await trigger()
   const viewer = await viewerPromise
@@ -148,6 +168,8 @@ async function withProfileViewer(context: BrowserContext, trigger: () => Promise
     await assertNodeMetricsShowPersistentId(viewer)
     // The viewer reads a bundle, so nothing on its route may poll the manager.
     expect(requests.paths.filter((path) => !viewerMayRequest(path))).toEqual([])
+
+    await alsoCheck?.(viewer)
   } finally {
     requests.stop()
     await viewer.close()

@@ -1,18 +1,17 @@
 <script lang="ts">
   /**
-   * The support bundle dropdown: the download entry, the "collect new data" toggle,
-   * and the entry that opens a bundle from disk in the profile viewer.
+   * The support bundle dropdown in the pipeline editor: the download entry, the "collect new data" toggle,
+   * and the button to upload a bundle from disk.
    *
-   * Opening the viewer takes a second click. A browser opens a new tab only while it
-   * is handling a user action, which `SupportBundleConfirm.svelte` describes, and
-   * choosing a file takes the user as long as it takes, so the click that started the
-   * picking is long over by the time there is a bundle to open. Picking therefore
-   * shows a confirmation, and the click on that confirmation opens the tab.
+   * A profile from the  bundle is opened in a new window. When the bundle is chosen from disk
+   * the "user activation" - a browser term - from a click is lost because the click is used
+   * to open the system file picker dialog. When the user picks the bundle file in the system dialog
+   * the browser requires a fresh "user activation" to open a new browser page.
+   * It is achieved through a second click - on a confirmation button that appears in the popup
+   * together with the filename of the picked bundle (<SupportBundleConfirm>), after the system dialog is closed.
    *
    * A picked bundle goes into the bundle history, so that the viewer tab can read it
-   * again, including after a reload. A browser without `showOpenFilePicker` falls back
-   * to the hidden `<input type=file>` below, and the history keeps a copy of the file
-   * it yields. Only a bundle too large to copy is handed to the viewer as bytes, once.
+   * again.
    */
   import { slide } from 'svelte/transition'
   import Popup from '$lib/components/common/Popup.svelte'
@@ -144,7 +143,7 @@
   data-testid="input-upload-support-bundle"
 />
 
-<Popup {wrapperClass} bind:open={showDropdown} {trigger} content={dropdown} />
+<Popup {wrapperClass} bind:isOpen={showDropdown} {trigger} content={dropdown} />
 
 {#snippet dropdown(close: () => void)}
   <div

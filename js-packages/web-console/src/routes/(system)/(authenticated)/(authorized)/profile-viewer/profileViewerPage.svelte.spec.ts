@@ -17,6 +17,7 @@ const {
   addToBundleHistory,
   getSuitableProfiles,
   isBundlePickerSupported,
+  markBundleOpenedNow,
   pickSupportBundle,
   processProfileFiles,
   readArchive,
@@ -28,6 +29,7 @@ const {
   addToBundleHistory: vi.fn(),
   getSuitableProfiles: vi.fn(),
   isBundlePickerSupported: vi.fn(() => true),
+  markBundleOpenedNow: vi.fn(),
   pickSupportBundle: vi.fn(),
   processProfileFiles: vi.fn(),
   readArchive: vi.fn(),
@@ -102,18 +104,22 @@ vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
     getPipelineSupportBundle: vi.fn(() => ({ dataPromise: new Promise(() => {}) }))
   })
 }))
-vi.mock('$lib/compositions/profileBundleHandoff', () => ({
+// `storedBundleUrl` is the real one, so that the URL these tests assert on is the URL
+// a new tab would be opened with.
+vi.mock('$lib/compositions/profileBundleHandoff', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('$lib/compositions/profileBundleHandoff')>()),
   receiveUploadedBundle,
   openRemoteBundleTab: vi.fn(),
   openStoredBundleTab: vi.fn(),
   openUploadBundleTab: vi.fn()
 }))
-// Only the four functions the page calls are replaced. `isPermissionRequired` is left
-// as it is, so that these tests fail if the page stops recognizing a refused read.
+// Only the functions the page calls are replaced. `isPermissionRequired` is left as it
+// is, so that these tests fail if the page stops recognizing a refused read.
 vi.mock('$lib/services/supportBundleHistory', async (importOriginal) => ({
   ...(await importOriginal<typeof import('$lib/services/supportBundleHistory')>()),
   addToBundleHistory,
   isBundlePickerSupported,
+  markBundleOpenedNow,
   pickSupportBundle,
   resolveStoredBundle
 }))
@@ -146,7 +152,7 @@ type PageData = {
   pipelineName?: string
   source?: 'remote' | 'upload'
   collect?: boolean
-  bundle?: number
+  bundle?: number | 'invalid'
   channel?: string
 }
 
@@ -171,6 +177,7 @@ describe('profile viewer — uploaded bundles', () => {
     isBundlePickerSupported.mockReturnValue(true)
     readArchive.mockResolvedValue(BUNDLE_BYTES)
     requestPermission.mockResolvedValue(true)
+    markBundleOpenedNow.mockResolvedValue(undefined)
     getSuitableProfiles.mockReturnValue([[new Date('2026-01-14T00:00:00Z'), []]])
     processProfileFiles.mockResolvedValue({
       profile: {},
@@ -211,6 +218,82 @@ describe('profile viewer — uploaded bundles', () => {
     await expect.poll(() => receiveUploadedBundle.mock.calls.length).toBe(1)
     expect(receiveUploadedBundle).toHaveBeenCalledWith('channel-1')
     expect(resolveStoredBundle).not.toHaveBeenCalled()
+  })
+
+  it('moves a reopened bundle to the front of the history', async () => {
+    // The history is ordered by when each bundle was last opened, and opening one
+    // through its link is an opening like any other.
+    resolveStoredBundle.mockResolvedValue(historyEntry())
+
+    renderViewer({ source: 'upload', bundle: BUNDLE.id })
+
+    await expect.poll(() => processProfileFiles.mock.calls.length).toBe(1)
+    expect(markBundleOpenedNow).toHaveBeenCalledWith(BUNDLE.id)
+  })
+
+  it('loads the bundle even when recording the reopen fails', async () => {
+    // The history is a convenience. Failing to update it must not cost the user the
+    // bundle they asked for.
+    resolveStoredBundle.mockResolvedValue(historyEntry())
+    markBundleOpenedNow.mockRejectedValue(new Error('the database is gone'))
+
+    const container = renderViewer({ source: 'upload', bundle: BUNDLE.id })
+
+    await expect.poll(() => processProfileFiles.mock.calls.length).toBe(1)
+    expect(container.textContent).not.toContain('the database is gone')
+  })
+
+  it('reports a link whose bundle id is not an id at all', async () => {
+    // A truncated or hand-edited `?bundle=` names no entry, and has to say so. Reading
+    // it as an absent id would send the page to the handoff instead, where it would
+    // wait out the timeout and then blame a tab the user never opened.
+    resolveStoredBundle.mockRejectedValue(new Error('This support bundle is no longer here.'))
+
+    const container = renderViewer({ source: 'upload', bundle: 'invalid' })
+
+    await expect
+      .poll(() => container.textContent)
+      .toContain('This support bundle is no longer here.')
+    expect(resolveStoredBundle).toHaveBeenCalledWith(undefined)
+    expect(receiveUploadedBundle).not.toHaveBeenCalled()
+  })
+
+  it('reports a permission the user refused, and what to do about it', async () => {
+    resolveStoredBundle.mockResolvedValue(historyEntry())
+    readArchive.mockRejectedValueOnce(new DOMException('no permission', 'NotAllowedError'))
+    requestPermission.mockResolvedValue(false)
+
+    const container = renderViewer({ source: 'upload', bundle: BUNDLE.id })
+    await expect.poll(() => find(container, 'btn-open-stored-bundle')).toBeTruthy()
+
+    find(container, 'btn-open-stored-bundle')!.click()
+
+    // Dismissing the browser's prompt leaves the user where they started, so the
+    // message has to name the way out rather than stop at what failed.
+    await expect.poll(() => container.textContent).toContain(BUNDLE.name)
+    expect(container.textContent).toContain('Open from disk')
+    expect(container.textContent).toContain('allow access when the browser asks')
+    expect(processProfileFiles).not.toHaveBeenCalled()
+  })
+
+  it('keeps the empty state when the user dismisses the file picker', async () => {
+    // Dismissing the operating system's dialog is not an error: nothing loads, nothing
+    // is remembered, and no error is shown.
+    pickSupportBundle.mockResolvedValue(null)
+
+    const container = renderViewer()
+    const openFromDisk = [...container.querySelectorAll('button')].find((button) =>
+      button.textContent?.includes('Open a support bundle')
+    )!
+
+    openFromDisk.click()
+
+    await expect.poll(() => pickSupportBundle.mock.calls.length).toBe(1)
+    // Let the dismissed pick settle before checking that nothing moved.
+    await new Promise((resolve) => setTimeout(resolve))
+    expect(addToBundleHistory).not.toHaveBeenCalled()
+    expect(processProfileFiles).not.toHaveBeenCalled()
+    expect(replaceState).not.toHaveBeenCalled()
   })
 
   it('asks for access when the browser dropped the read permission', async () => {
@@ -299,7 +382,7 @@ describe('profile viewer — uploaded bundles', () => {
     expect(replaceState).toHaveBeenCalledWith('/profile-viewer?source=upload&bundle=11', {})
   })
 
-  it('leaves no URL behind for a bundle the history would not take', async () => {
+  it('keeps the URL unchanged when the history does not store the bundle', async () => {
     isBundlePickerSupported.mockReturnValue(false)
     addToBundleHistory.mockResolvedValue(null)
 
