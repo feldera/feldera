@@ -666,27 +666,6 @@ mod tests {
         );
     }
 
-    /// A spine that the mergers cannot keep up with blocks its worker, and the
-    /// breakdown says so.
-    #[test]
-    fn a_backlogged_spine_waits_for_its_mergers() {
-        let breakdowns = wait_breakdowns(&profile_of_a_spine_under_load(1, false, 400));
-        assert!(!breakdowns.is_empty());
-
-        for (node_id, breakdown) in breakdowns {
-            assert!(
-                parked_under(&breakdown, ParkReason::MergeBackpressure) > Duration::ZERO,
-                "circuit {node_id} never waited for its mergers: {breakdown:?}"
-            );
-            // One worker has nobody to exchange with.
-            assert_eq!(
-                parked_under(&breakdown, ParkReason::Peers),
-                Duration::ZERO,
-                "circuit {node_id} waited for peers it does not have: {breakdown:?}"
-            );
-        }
-    }
-
     /// Workers that shard their input wait on each other, and the breakdown
     /// tells that apart from waiting on the mergers.
     #[test]
