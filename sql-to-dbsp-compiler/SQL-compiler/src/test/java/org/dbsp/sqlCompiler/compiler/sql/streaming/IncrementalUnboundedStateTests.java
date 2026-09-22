@@ -68,6 +68,19 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
 
     // ---- Programs that must not produce warnings ----
 
+    /** A view with an 'emit_final' builds a Window operator. */
+    @Test
+    public void emitFinalWaterlineBound() {
+        this.assertNoUnboundedStateWarnings("""
+                CREATE TABLE t(
+                    created_at TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE,
+                    amount INT,
+                    id INT NOT NULL,
+                    PRIMARY KEY (id, created_at));
+                CREATE VIEW v WITH ('emit_final' = 'created_at') AS
+                SELECT created_at, id FROM t;""");
+    }
+
     @Test
     public void batchProgram() {
         // Without LATENESS, append_only, or NOW() the program is not a

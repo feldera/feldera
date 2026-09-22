@@ -11,6 +11,9 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.PositionOnlyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
@@ -2151,8 +2154,19 @@ public class InsertLimiters extends CircuitCloneVisitor {
                                     field.getType(), dataType), true,
                             this.mapped(operator.input()));
                     this.addOperator(ix);
-                    // The upper bound must be exclusive; -infinity lower bound
-                    WindowStreams window = this.window(operator.getRelNode(), true, false, true,
+                    // The upper bound must be exclusive; -infinity lower bound.
+                    // The 'emit_final' annotation is the only source code behind this window,
+                    // so diagnostics about the window point at the annotation.
+                    // A circuit decoded from JSON has properties without positions, so use
+                    // the view's own node unless the annotation's position survived.
+                    SourcePositionRange emitFinal = operator.metadata.properties == null ?
+                            SourcePositionRange.INVALID :
+                            operator.metadata.properties.getPropertyKeyPosition(
+                                    CreateViewStatement.EMIT_FINAL);
+                    CalciteRelNode windowNode = emitFinal.isValid() ?
+                            new PositionOnlyRel(emitFinal) :
+                            operator.getRelNode();
+                    WindowStreams window = this.window(windowNode, true, false, true,
                             ix.outputPort(), apply.outputPort());
                     // GC for window: the waterline delayed
                     PartiallyMonotoneTuple projection = new PartiallyMonotoneTuple(
