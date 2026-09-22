@@ -1,9 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -13,8 +13,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Finds chains of operators in the graph that end in an operator with an integral
- * and are formed only of Map and MapIndex.
+ * Finds chains of operators in the graph that end in an input whose index may be shared,
+ * and are formed only of Map and MapIndex
  */
 class FindMapChains extends CircuitVisitor {
     final List<MapChain> chains;
@@ -35,15 +35,15 @@ class FindMapChains extends CircuitVisitor {
     }
 
     @Override
-    public void postorder(DBSPJoinBaseOperator join) {
-        var left = this.findMapChain(join.left());
-        if (!left.isEmpty())
-            // This can happen when compiling without -i and the input is
-            // an integrator, not a MapIndex
-            this.chains.add(new MapChain(left));
-        var right = this.findMapChain(join.right());
-        if (!right.isEmpty())
-            this.chains.add(new MapChain(right));
+    public void postorder(DBSPOperator operator) {
+        for (int inputIndex = 0; inputIndex < operator.inputs.size(); inputIndex++) {
+            if (!FindSharedIndexes.canShareInputIntegral(operator, inputIndex))
+                continue;
+            List<DBSPUnaryOperator> chain = this.findMapChain(operator.inputs.get(inputIndex));
+            if (!chain.isEmpty())
+                // The chain is empty when compiling without -i and the input is an integrator
+                this.chains.add(new MapChain(chain));
+        }
     }
 
     record MapChain(List<DBSPUnaryOperator> operators) {
