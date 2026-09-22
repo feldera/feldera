@@ -8,18 +8,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-svelte'
 
+type AddToBundleHistory = typeof import('$lib/services/supportBundleHistory').addToBundleHistory
+
 const {
+  addToBundleHistory,
+  cancelHandoff,
   openRemoteBundleTab,
   openStoredBundleTab,
   openUploadBundleTab,
+  realHistory,
   sendBundle,
   showOpenFilePicker
 } = vi.hoisted(() => {
   const sendBundle = vi.fn(async (_bundle: ArrayBuffer) => {})
+  const cancelHandoff = vi.fn()
   return {
+    addToBundleHistory: vi.fn<AddToBundleHistory>(),
+    cancelHandoff,
     openRemoteBundleTab: vi.fn(),
     openStoredBundleTab: vi.fn(),
-    openUploadBundleTab: vi.fn(() => ({ send: sendBundle, cancel: vi.fn() })),
+    openUploadBundleTab: vi.fn(() => ({ send: sendBundle, cancel: cancelHandoff })),
+    // Filled in by the `supportBundleHistory` mock factory below.
+    realHistory: { addToBundleHistory: null as unknown as AddToBundleHistory },
     sendBundle,
     showOpenFilePicker: vi.fn()
   }
@@ -31,6 +41,18 @@ vi.mock('$lib/compositions/profileBundleHandoff', () => ({
   openStoredBundleTab,
   receiveUploadedBundle: vi.fn()
 }))
+/**
+ * Only `addToBundleHistory` is replaced, and it runs the real one unless a test says
+ * otherwise, so the tests below still write to and read from IndexedDB. The stub is
+ * here for the one case that cannot be staged with a real file: a history that refuses
+ * the bundle, which needs an archive over `maxCachedBundleBytes` or a browser out of
+ * storage quota.
+ */
+vi.mock('$lib/services/supportBundleHistory', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('$lib/services/supportBundleHistory')>()
+  realHistory.addToBundleHistory = actual.addToBundleHistory
+  return { ...actual, addToBundleHistory }
+})
 vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
   usePipelineManager: () => ({
     downloadPipelineSupportBundle: vi.fn(() => ({
@@ -90,6 +112,7 @@ describe('DownloadSupportBundle.svelte', () => {
   beforeEach(() => {
     localStorage.setItem('layout/pipelines/supportBundle/collect', 'true')
     vi.clearAllMocks()
+    addToBundleHistory.mockImplementation((picked) => realHistory.addToBundleHistory(picked))
   })
 
   afterEach(async () => {
@@ -177,5 +200,77 @@ describe('DownloadSupportBundle.svelte', () => {
     expect(openStoredBundleTab).toHaveBeenCalledWith(id)
     expect(openUploadBundleTab).not.toHaveBeenCalled()
     expect(sendBundle).not.toHaveBeenCalled()
+  })
+
+  it('hands the bytes over when the history will not take the bundle', async () => {
+    // The last resort, and the one path a hand test can barely reach: it needs an
+    // archive over `maxCachedBundleBytes` or a browser out of storage quota. With no
+    // entry to point the viewer at, this tab opens the viewer and transfers the
+    // archive to it, once.
+    addToBundleHistory.mockResolvedValue(null)
+    vi.stubGlobal('showOpenFilePicker', showOpenFilePicker)
+    showOpenFilePicker.mockResolvedValue([fakeHandle('too-large.zip')])
+    const container = renderControls()
+    await openDropdown(container)
+
+    click(find(container, 'btn-upload-support-bundle'))
+    await expect.poll(() => find(container, 'btn-confirm-view-profile')).toBeTruthy()
+
+    click(find(container, 'btn-confirm-view-profile'))
+
+    expect(openStoredBundleTab).not.toHaveBeenCalled()
+    expect(openUploadBundleTab).toHaveBeenCalledOnce()
+    await expect.poll(() => sendBundle.mock.calls.length).toBe(1)
+    expect(new TextDecoder().decode(sendBundle.mock.calls[0][0])).toBe('bundle contents')
+    expect(cancelHandoff).not.toHaveBeenCalled()
+  })
+
+  it('cancels the handoff when the picked file can no longer be read', async () => {
+    // The viewer tab is already open by the time the read fails, so the handoff has to
+    // be called off; otherwise that tab waits for bytes that never come.
+    addToBundleHistory.mockResolvedValue(null)
+    vi.stubGlobal('showOpenFilePicker', showOpenFilePicker)
+    showOpenFilePicker.mockResolvedValue([
+      Object.create(
+        {
+          getFile: async () => {
+            throw new DOMException('The file has been moved', 'NotFoundError')
+          }
+        },
+        {
+          name: { value: 'moved.zip', enumerable: true },
+          kind: { value: 'file', enumerable: true }
+        }
+      )
+    ])
+    const container = renderControls()
+    await openDropdown(container)
+
+    click(find(container, 'btn-upload-support-bundle'))
+    await expect.poll(() => find(container, 'btn-confirm-view-profile')).toBeTruthy()
+
+    click(find(container, 'btn-confirm-view-profile'))
+
+    await expect.poll(() => cancelHandoff.mock.calls.length).toBe(1)
+    expect(sendBundle).not.toHaveBeenCalled()
+  })
+
+  it('keeps the menu up when the user dismisses the file picker', async () => {
+    // Dismissing the operating system's dialog is not an error, and must leave the
+    // dropdown exactly as the user left it.
+    vi.stubGlobal('showOpenFilePicker', showOpenFilePicker)
+    showOpenFilePicker.mockRejectedValue(new DOMException('dismissed', 'AbortError'))
+    const container = renderControls()
+    await openDropdown(container)
+
+    click(find(container, 'btn-upload-support-bundle'))
+
+    await expect.poll(() => showOpenFilePicker.mock.calls.length).toBe(1)
+    // Let the dismissed pick settle before checking that nothing moved.
+    await new Promise((resolve) => setTimeout(resolve))
+    expect(find(container, 'btn-upload-support-bundle')).toBeTruthy()
+    expect(find(container, 'btn-confirm-view-profile')).toBe(null)
+    expect(openStoredBundleTab).not.toHaveBeenCalled()
+    expect(openUploadBundleTab).not.toHaveBeenCalled()
   })
 })

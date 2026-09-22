@@ -1,24 +1,23 @@
 <script lang="ts">
   /**
-   * A chosen support bundle and the button that opens it. Shown wherever opening a
+   * A confirmation popup for the chosen support bundle. It is shown wherever opening a
    * bundle needs a second click, that is wherever the browser needs a so-called "user
    * activation": a user action, usually a button click, that the browser reads as
    * explicit confirmation before it lets a script do something invasive, such as
    * opening a new page.
    *
-   * `variant` places it: `popup` in a dropdown under whatever was clicked, `page` in
-   * the middle of an empty page.
+   * `variant` adjusts appearance based on the parent container:
+   * `popup` is shown in a dropdown under whatever was clicked,
+   * `page` - in the middle of an empty page.
+   * The two take different props, e.g. `onDismiss`, since only the dropdown has a menu to navigate back to.
    */
   type Props = {
     name: string
     confirmLabel?: string
     /** Runs inside the click on the button, so it may call `window.open`. */
     onConfirm: () => void
-    /** The way back to the menu. Only the popup variant shows it; the page variant ignores it. */
-    onDismiss?: () => void
-    variant?: 'popup' | 'page'
     'data-testid'?: string
-  }
+  } & ({ variant?: 'popup'; onDismiss?: () => void } | { variant: 'page'; onDismiss?: never })
 
   let {
     name,

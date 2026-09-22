@@ -2,13 +2,13 @@
   import { Tooltip } from 'common-ui'
   import DownloadProgressDisplay from '$lib/components/dialogs/DownloadProgressDisplay.svelte'
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
+  import SupportBundlePopup from '$lib/components/supportBundle/SupportBundlePopup.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { openRemoteBundleTab } from '$lib/compositions/profileBundleHandoff'
   import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import type { SupportBundleOptions } from '$lib/services/pipelineManager'
-  import SupportBundlePopup from './SupportBundlePopup.svelte'
 
   const { pipelineName }: { pipelineName: string } = $props()
 
