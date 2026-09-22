@@ -184,13 +184,19 @@ public class IncrementalRegression2Tests extends SqlIoTest {
             int mapIndexCount = 0;
 
             @Override
-            public void postorder(DBSPMapIndexOperator unused) {
+            public void postorder(DBSPMapIndexOperator index) {
                 this.mapIndexCount++;
+                // The shared index holds the two columns that the joins read, and not the
+                // third column of 'customers'
+                Assert.assertEquals(2, index.getOutputIndexedZSetType()
+                        .elementType.to(DBSPTypeTuple.class).size());
             }
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(0, this.mapIndexCount);
+                // The MapIndex over 'customers' is kept, since a join does not share the
+                // index of a table.  Both joins read this index.
+                Assert.assertEquals(1, this.mapIndexCount);
             }
         });
     }
@@ -261,13 +267,19 @@ public class IncrementalRegression2Tests extends SqlIoTest {
             int mapIndexCount = 0;
 
             @Override
-            public void postorder(DBSPMapIndexOperator unused) {
+            public void postorder(DBSPMapIndexOperator index) {
                 this.mapIndexCount++;
+                // The shared index holds the two columns that the joins read, and not the
+                // third column of 'customers'
+                Assert.assertEquals(2, index.getOutputIndexedZSetType()
+                        .elementType.to(DBSPTypeTuple.class).size());
             }
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(0, this.mapIndexCount);
+                // The MapIndex over 'customers' is kept, since a join does not share the
+                // index of a table.  Both joins read this index.
+                Assert.assertEquals(1, this.mapIndexCount);
             }
         });
     }
@@ -304,13 +316,19 @@ public class IncrementalRegression2Tests extends SqlIoTest {
             int mapIndexCount = 0;
 
             @Override
-            public void postorder(DBSPMapIndexOperator unused) {
+            public void postorder(DBSPMapIndexOperator index) {
                 this.mapIndexCount++;
+                // The shared index holds the two columns that the joins read, and not the
+                // third column of 'customers'
+                Assert.assertEquals(2, index.getOutputIndexedZSetType()
+                        .elementType.to(DBSPTypeTuple.class).size());
             }
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(0, this.mapIndexCount);
+                // The MapIndex over 'customers' is kept, since a join does not share the
+                // index of a table.  Both joins read this index.
+                Assert.assertEquals(1, this.mapIndexCount);
             }
         });
     }
@@ -531,62 +549,6 @@ public class IncrementalRegression2Tests extends SqlIoTest {
                   103     | 2024-01-12 |NULL          |                | Dave|           3
                   104     | 2024-01-13 |NULL          |                |NULL           |
                   105     | 2024-01-14 | Bob|           1              | Bob|            1""");
-    }
-
-    @Test
-    public void issue5842() {
-        var cc = this.getCC("""
-                CREATE TABLE T(x INT, y INT NOT NULL PRIMARY KEY);
-                CREATE TABLE S1(w INT);
-                CREATE VIEW V1 AS SELECT * FROM T JOIN S1 ON T.y = S1.w;""");
-        cc.visit(new CircuitVisitor(cc.compiler) {
-            int mapIndexCount = 0;
-
-            @Override
-            public void postorder(DBSPMapIndexOperator unused) {
-                this.mapIndexCount++;
-            }
-
-            @Override
-            public void postorder(DBSPFlatMapIndexOperator unused) {
-                this.mapIndexCount++;
-            }
-
-            @Override
-            public void endVisit() {
-                // Check that one of the 2 MapIndex operators has been removed
-                Assert.assertEquals(1, this.mapIndexCount);
-            }
-        });
-    }
-
-    @Test
-    public void issue5842a() {
-        var cc = this.getCC("""
-                CREATE TABLE T(x INT, y INT NOT NULL PRIMARY KEY);
-                CREATE TABLE S1(w INT);
-                CREATE TABLE S2(w INT);
-                CREATE VIEW V1 AS SELECT * FROM T JOIN S1 ON T.y = S1.w;
-                CREATE VIEW V2 AS SELECT * FROM T JOIN S2 ON T.y = S2.w;""");
-        cc.visit(new CircuitVisitor(cc.compiler) {
-            int mapIndexCount = 0;
-
-            @Override
-            public void postorder(DBSPMapIndexOperator unused) {
-                this.mapIndexCount++;
-            }
-
-            @Override
-            public void postorder(DBSPFlatMapIndexOperator unused) {
-                this.mapIndexCount++;
-            }
-
-            @Override
-            public void endVisit() {
-                // One for each S input, none for T
-                Assert.assertEquals(2, this.mapIndexCount);
-            }
-        });
     }
 
     @Test

@@ -1,7 +1,12 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
@@ -9,22 +14,26 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
+import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
-import org.dbsp.util.Linq;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
@@ -33,77 +42,107 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /** Works in tandem with FindSharedIndexes; it replaces multiple
  {@link org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator} with a single wide one
  by adjusting the consumers */
 class ReplaceSharedIndexes extends CircuitCloneVisitor {
     final FindSharedIndexes finder;
-    /**
-     * Maps the operators with integrals to the information needed to synthesize their inputs
-     */
-    final Map<DBSPJoinBaseOperator, JoinInputs> combinations;
+    /** Maps each join, star join, aggregate, or fixed-index operator that reads a shared index
+     * to the shared sources of its inputs */
+    final Map<DBSPSimpleOperator, ConsumerInputs> sharedInputs;
+    /** Maps a builder to the wide MapIndex operator created from it */
+    final Map<WideMapIndexBuilder, DBSPMapIndexOperator> sharedIndexes;
 
     public ReplaceSharedIndexes(DBSPCompiler compiler, FindSharedIndexes finder) {
         super(compiler, false);
         this.finder = finder;
-        this.combinations = new HashMap<>();
+        this.sharedInputs = new HashMap<>();
+        this.sharedIndexes = new HashMap<>();
     }
 
     @Override
     public Token startVisit(IDBSPOuterNode circuit) {
+        // Compute the groups of operators that will share inputs
         int count = 1;
-        if (!this.finder.clusters.isEmpty()) {
+        if (!this.finder.candidates.isEmpty()) {
             Logger.INSTANCE.belowLevel(ShareIndexes.class, 1)
                     .append("Shared indexes found:").newline();
         }
-        for (var pairs : this.finder.clusters) {
-            Logger.INSTANCE.belowLevel(ShareIndexes.class, 1)
-                    .append(count)
-                    .append(". ")
-                    .append(pairs.size() + " indexes")
-                    .newline();
-            // System.out.println(pairs);
-            List<DBSPClosureExpression> functions = Linq.map(pairs, s -> s.index().getClosureFunction());
-            WideMapIndexBuilder builder = WideMapIndexBuilder.create(pairs.get(0).index().getRelNode(), this.compiler, functions);
-            for (int i = 0; i < pairs.size(); i++) {
-                FindSharedIndexes.MapIndexAndConsumer mi = pairs.get(i);
-                DBSPJoinBaseOperator join = mi.consumer();
-                JoinSource cvi = new JoinSource(builder, i);
-                if (!this.combinations.containsKey(join))
-                    Utilities.putNew(this.combinations, join, new JoinInputs());
-                if (mi.leftInput())
-                    this.combinations.get(join).setLeft(cvi);
-                else
-                    this.combinations.get(join).setRight(cvi);
-            }
-            count++;
-        }
+        for (FindSharedIndexes.Candidates candidates : this.finder.candidates)
+            for (List<FindSharedIndexes.MapIndexAndConsumer> members : candidates.split(this.compiler))
+                this.implement(members, count++);
         return super.startVisit(circuit);
     }
 
-    DBSPClosureExpression rewriteJoinClosure(
-            DBSPClosureExpression closure,
-            JoinInputs inputs) {
-        DBSPVariablePath keyVar = closure.parameters[0].asVariable();
-        DBSPVariablePath leftVar = closure.parameters[1].asVariable();
-        DBSPVariablePath rightVar = closure.parameters[2].asVariable();
+    /** Make every member read one shared index instead of the index it computes.
+     * @param members  Members that share an index, in the order they are merged.
+     * @param number   Number of this index in the log. */
+    void implement(List<FindSharedIndexes.MapIndexAndConsumer> members, int number) {
+        Logger.INSTANCE.belowLevel(ShareIndexes.class, 1)
+                .append(number)
+                .append(". ")
+                .append(members.size() + " indexes")
+                .newline();
+        WideMapIndexBuilder builder = WideMapIndexBuilder.create(this.compiler, members);
+        for (int i = 0; i < members.size(); i++) {
+            FindSharedIndexes.MapIndexAndConsumer member = members.get(i);
+            ConsumerInputs inputs = this.sharedInputs.computeIfAbsent(
+                    member.consumer(), c -> new ConsumerInputs());
+            inputs.set(member.inputIndex(), new SharedSource(builder, i));
+        }
+    }
+
+    /** The input of a consumer at position {@code inputIndex} after sharing: the wide MapIndex
+     * when the input is shared, or the clone of the original input otherwise */
+    OutputPort sharedInput(ConsumerInputs inputs, int inputIndex, OutputPort original) {
+        OutputPort mapped = this.mapped(original);
+        SharedSource source = inputs.get(inputIndex);
+        if (source == null)
+            return mapped;
+        // 'mapped' is the clone of the narrow MapIndex; the wide MapIndex reads the same parent
+        OutputPort parent = mapped.node().inputs.get(0);
+        return this.sharedIndex(source.builder(), parent).outputPort();
+    }
+
+    /** The wide MapIndex that {@code builder} describes, reading {@code input}.  The operator
+     * is created and inserted in the circuit the first time a consumer connects to it. */
+    DBSPMapIndexOperator sharedIndex(WideMapIndexBuilder builder, OutputPort input) {
+        DBSPMapIndexOperator index = this.sharedIndexes.get(builder);
+        if (index == null) {
+            index = new DBSPMapIndexOperator(builder.node, builder.closure(), input);
+            this.addOperator(index);
+            Utilities.putNew(this.sharedIndexes, builder, index);
+        }
+        return index;
+    }
+
+    /** Rewrite the function of a join or star join to read the wide values of its shared inputs */
+    DBSPClosureExpression rewriteJoinClosure(DBSPClosureExpression closure, ConsumerInputs inputs) {
         ParameterIndexMapSet set = new ParameterIndexMapSet();
-
-        if (inputs.left != null) {
-            var remap = inputs.left.getParameterRemap();
-            leftVar = remap.var;
-            set.add(closure.parameters[1], remap);
+        // Parameter 0 is the key; parameter i + 1 reads the value of input i
+        for (int inputIndex = 0; inputIndex < closure.parameters.length - 1; inputIndex++) {
+            SharedSource source = inputs.get(inputIndex);
+            if (source == null)
+                continue;
+            set.add(closure.parameters[inputIndex + 1], source.getParameterRemap());
         }
-        if (inputs.right != null) {
-            var remap = inputs.right.getParameterRemap();
-            rightVar = remap.var;
-            set.add(closure.parameters[2], remap);
-        }
-
         ParameterIndexRewriter rewriter = new ParameterIndexRewriter(this.compiler, set);
-        DBSPClosureExpression result = rewriter.apply(closure).to(DBSPClosureExpression.class);
-        return result.body.closure(keyVar, leftVar, rightVar);
+        return rewriter.apply(closure).to(DBSPClosureExpression.class);
+    }
+
+    /** Rewrite the aggregates to read the row from the value of the wide MapIndex */
+    DBSPAggregateList rewriteAggregateList(DBSPAggregateList list, ParameterIndexMap remap) {
+        List<IAggregate> aggregates = new ArrayList<>(list.size());
+        for (IAggregate aggregate : list.aggregates) {
+            ParameterIndexMapSet set = new ParameterIndexMapSet();
+            for (DBSPParameter row : aggregate.getRowVariableReferences())
+                set.add(row, remap);
+            ParameterIndexRewriter rewriter = new ParameterIndexRewriter(this.compiler, set);
+            aggregates.add(rewriter.apply(aggregate).to(IAggregate.class));
+        }
+        return new DBSPAggregateList(list.getNode(), remap.var(), aggregates);
     }
 
     @Override
@@ -162,164 +201,198 @@ class ReplaceSharedIndexes extends CircuitCloneVisitor {
         }
     }
 
-    public boolean processJoin(DBSPJoinBaseOperator operator) {
-        JoinInputs joinInputs = this.combinations.get(operator);
-        if (joinInputs == null)
+    @Override
+    public void postorder(DBSPStarJoinOperator operator) {
+        if (!this.processJoin(operator)) {
+            super.postorder(operator);
+        }
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinIndexOperator operator) {
+        if (!this.processJoin(operator)) {
+            super.postorder(operator);
+        }
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinFilterMapOperator operator) {
+        if (!this.processJoin(operator)) {
+            super.postorder(operator);
+        }
+    }
+
+    @Override
+    public void postorder(DBSPDistinctOperator operator) {
+        if (!this.processFixedIndex(operator)) {
+            super.postorder(operator);
+        }
+    }
+
+    @Override
+    public void postorder(DBSPAntiJoinOperator operator) {
+        // The operator reads no value on input 1 and copies the one it reads on input 0, so
+        // only its inputs change
+        if (!this.processFixedIndex(operator)) {
+            super.postorder(operator);
+        }
+    }
+
+    @Override
+    public void postorder(DBSPIndexedTopKOperator operator) {
+        if (!this.processFixedIndex(operator)) {
+            super.postorder(operator);
+        }
+    }
+
+    @Override
+    public void postorder(DBSPLagOperator operator) {
+        if (!this.processFixedIndex(operator)) {
+            super.postorder(operator);
+        }
+    }
+
+    @Override
+    public void postorder(DBSPWindowOperator operator) {
+        // Currently a window's keys are never Tuples, so in 
+        // practice a Window will never share integrals.  This
+        // code is here in care someday this changes.
+        if (!this.processFixedIndex(operator)) {
+            super.postorder(operator);
+        }
+    }
+
+    @Override
+    public void postorder(DBSPSinkOperator operator) {
+        if (!this.processFixedIndex(operator)) {
+            super.postorder(operator);
+        }
+    }
+
+    /** Make an operator that needs a fixed index read its shared index; false if it reads none.
+     * The shared index reproduces the value it read before, so only its inputs change. */
+    boolean processFixedIndex(DBSPSimpleOperator operator) {
+        ConsumerInputs inputs = this.sharedInputs.get(operator);
+        if (inputs == null)
             return false;
 
-        Utilities.enforce(joinInputs.left != null || joinInputs.right != null);
-        OutputPort left = this.mapped(operator.left());
-        OutputPort right = this.mapped(operator.right());
-        if (joinInputs.left != null) {
-            var builder = joinInputs.left.builder();
-            OutputPort leftParent = left.node().inputs.get(0);
-            var mapIndex = builder.build(leftParent);
-            if (!this.getUnderConstruction().contains(mapIndex))
-                this.addOperator(mapIndex);
-            left = mapIndex.outputPort();
-        }
-        if (joinInputs.right != null) {
-            var builder = joinInputs.right.builder();
-            OutputPort rightParent = right.node().inputs.get(0);
-            var mapIndex = builder.build(rightParent);
-            if (!this.getUnderConstruction().contains(mapIndex))
-                this.addOperator(mapIndex);
-            right = mapIndex.outputPort();
-        }
+        List<OutputPort> sources = new ArrayList<>(operator.inputs.size());
+        for (int inputIndex = 0; inputIndex < operator.inputs.size(); inputIndex++)
+            sources.add(this.sharedInput(inputs, inputIndex, operator.inputs.get(inputIndex)));
+        this.map(operator, operator.withInputs(sources, false).to(DBSPSimpleOperator.class));
+        return true;
+    }
 
+    @Override
+    public void postorder(DBSPPartitionedRollingAggregateOperator operator) {
+        if (!this.processRollingAggregate(operator)) {
+            super.postorder(operator);
+        }
+    }
+
+    @Override
+    public void postorder(DBSPAggregateOperator operator) {
+        if (!this.processAggregate(operator)) {
+            super.postorder(operator);
+        }
+    }
+
+    @Override
+    public void postorder(DBSPStreamAggregateOperator operator) {
+        if (!this.processAggregate(operator)) {
+            super.postorder(operator);
+        }
+    }
+
+    /** Make a join or star join read its shared inputs; false if it has none */
+    boolean processJoin(DBSPSimpleOperator operator) {
+        ConsumerInputs inputs = this.sharedInputs.get(operator);
+        if (inputs == null)
+            return false;
+
+        List<OutputPort> sources = new ArrayList<>(operator.inputs.size());
+        for (int inputIndex = 0; inputIndex < operator.inputs.size(); inputIndex++)
+            sources.add(this.sharedInput(inputs, inputIndex, operator.inputs.get(inputIndex)));
         // Must be done after the inputs are created
-        DBSPClosureExpression joinClosure = this.rewriteJoinClosure(operator.getClosureFunction(), joinInputs);
-        var newJoin = operator.withFunctionAndInputs(joinClosure, left, right);
+        DBSPClosureExpression joinClosure = this.rewriteJoinClosure(operator.getClosureFunction(), inputs);
+        DBSPSimpleOperator newJoin = operator.with(joinClosure, operator.outputType, sources, false)
+                .to(DBSPSimpleOperator.class);
         this.map(operator, newJoin);
         return true;
     }
 
-    /** Helper class which combines functions from multiple {@link DBSPMapIndexOperator} to produce a single
-     * {@link DBSPMapIndexOperator} operator */
-    static class WideMapIndexBuilder {
-        final CalciteRelNode node;
-        public final DBSPVariablePath var;
-        final DBSPExpression keyExpression;
-        final EquivalenceContext eqContext;
-        final List<DBSPExpression> outputFields;
-        /** For each function the list of outputs it emits as its value */
-        final List<List<Integer>> outputIndexes;
-        final boolean valueNullable;
-        @Nullable
-        DBSPMapIndexOperator result = null;
+    /** Make a rolling aggregate read its shared index; false if it reads none */
+    boolean processRollingAggregate(DBSPPartitionedRollingAggregateOperator operator) {
+        ConsumerInputs inputs = this.sharedInputs.get(operator);
+        if (inputs == null)
+            return false;
 
-        private WideMapIndexBuilder(CalciteRelNode node, DBSPVariablePath var, DBSPExpression
-                keyExpression, boolean valueNullable) {
-            this.node = node;
-            this.var = var;
-            this.outputFields = new ArrayList<>();
-            this.outputIndexes = new ArrayList<>();
-            this.valueNullable = valueNullable;
-            this.keyExpression = keyExpression;
-            this.eqContext = new EquivalenceContext();
+        OutputPort input = this.sharedInput(inputs, 0, operator.input());
+        // Must be done after the input is created
+        SharedSource source = Objects.requireNonNull(inputs.get(0));
+        ParameterIndexMapSet set = new ParameterIndexMapSet();
+        set.add(operator.partitioningFunction.parameters[0], source.getParameterRemap());
+        ParameterIndexRewriter rewriter = new ParameterIndexRewriter(this.compiler, set);
+        DBSPClosureExpression partitioning = rewriter.apply(operator.partitioningFunction)
+                .to(DBSPClosureExpression.class);
+        DBSPSimpleOperator result = new DBSPPartitionedRollingAggregateOperator(
+                operator.getRelNode(), partitioning, operator.getAggregator(), operator.aggregateList,
+                operator.lower, operator.upper, operator.getOutputIndexedZSetType(), input);
+        this.map(operator, result.copyAnnotations(operator));
+        return true;
+    }
+
+    boolean processAggregate(DBSPAggregateOperatorBase operator) {
+        ConsumerInputs inputs = this.sharedInputs.get(operator);
+        if (inputs == null)
+            return false;
+        if (operator.aggregateList == null)
+            // A lowered aggregator has no list to rewrite; it reads an index this pass kept
+            return this.processFixedIndex(operator);
+
+        OutputPort input = this.sharedInput(inputs, 0, operator.input());
+        // Must be done after the input is created
+        SharedSource source = Objects.requireNonNull(inputs.get(0));
+        DBSPAggregateList list = this.rewriteAggregateList(operator.getAggregateList(), source.getParameterRemap());
+        DBSPTypeIndexedZSet outputType = operator.getOutputIndexedZSetType();
+        DBSPSimpleOperator result;
+        if (operator.is(DBSPAggregateOperator.class))
+            result = new DBSPAggregateOperator(operator.getRelNode(), outputType, null, list, input);
+        else if (operator.is(DBSPStreamAggregateOperator.class))
+            result = new DBSPStreamAggregateOperator(operator.getRelNode(), outputType, null, list, input);
+        else
+            throw new InternalCompilerError("Unexpected aggregate operator " + operator);
+        this.map(operator, result.copyAnnotations(operator));
+        return true;
+    }
+
+    /** The shared sources of one consumer */
+    static class ConsumerInputs {
+        /** Maps the index of a consumer input to the shared source that replaces that input */
+        final Map<Integer, SharedSource> byInput = new HashMap<>();
+
+        void set(int inputIndex, SharedSource source) {
+            Utilities.putNew(this.byInput, inputIndex, source);
+        }
+
+        @Nullable
+        SharedSource get(int inputIndex) {
+            return this.byInput.get(inputIndex);
         }
 
         @Override
         public String toString() {
-            return "WideMapIndexBuilder(" + this.outputIndexes.size() + ")";
-        }
-
-        void addFunction(DBSPCompiler compiler, DBSPClosureExpression function) {
-            Utilities.enforce(function.parameters.length == 1);
-            Utilities.enforce(function.parameters[0].getType().sameType(this.var.type));
-            DBSPTypeRawTuple resultType = function.getResultType().to(DBSPTypeRawTuple.class);
-            Utilities.enforce(resultType.size() == 2);
-            DBSPTypeTuple valueType = resultType.tupFields[1].to(DBSPTypeTuple.class);
-            Utilities.enforce(valueType.mayBeNull == this.valueNullable);
-            List<Integer> currentOutputs = new ArrayList<>(valueType.size());
-            for (int i = 0; i < valueType.size(); i++) {
-                // For a closure of the form clo = (TupX::new(...), Some(TupY::new(a, b, c))
-                // we will need to synthesize in the combined MapIndex a new closure of the
-                // form (TupX::new(...), Some(TupZ::new(a, b, c, ...)).
-                DBSPExpression outputI = function.call(this.var).field(1).field(i);
-                if (!valueType.getFieldType(i).mayBeNull && outputI.getType().mayBeNull)
-                    outputI = outputI.neverFailsUnwrap(outputI.getNode());
-                outputI = outputI.reduce(compiler);
-                boolean found = false;
-                List<DBSPExpression> fields = this.outputFields;
-                for (int j = 0; j < fields.size(); j++) {
-                    DBSPExpression outputJ = fields.get(j);
-                    if (this.eqContext.equivalent(outputI, outputJ)) {
-                        currentOutputs.add(j);
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    currentOutputs.add(this.outputFields.size());
-                    this.outputFields.add(outputI);
-                }
-            }
-            this.outputIndexes.add(currentOutputs);
-        }
-
-        public static WideMapIndexBuilder create(
-                CalciteRelNode node, DBSPCompiler compiler, List<DBSPClosureExpression> closures) {
-            Utilities.enforce(closures.size() > 1);
-            DBSPClosureExpression first = closures.get(0);
-            Utilities.enforce(first.parameters.length == 1);
-            DBSPVariablePath var = first.parameters[0].type.var();
-            boolean valueNullable = first.getResultType().to(DBSPTypeRawTuple.class).tupFields[1].mayBeNull;
-            DBSPExpression keyExpression = first.call(var).field(0).reduce(compiler);
-            WideMapIndexBuilder result = new WideMapIndexBuilder(node, var, keyExpression, valueNullable);
-            for (var clo: closures)
-                result.addFunction(compiler, clo);
-            return result;
-        }
-
-        /** Create the MapIndex operator represented by this builder if it does not exist. */
-        DBSPMapIndexOperator build(OutputPort input) {
-            if (this.result == null) {
-                DBSPClosureExpression closure = new DBSPRawTupleExpression(
-                        this.keyExpression,
-                        new DBSPTupleExpression(this.outputFields, this.valueNullable)).closure(this.var);
-                this.result = new DBSPMapIndexOperator(this.node, closure, input);
-            }
-            return this.result;
-        }
-
-        DBSPMapIndexOperator get() {
-            Utilities.enforce(this.result != null);
-            return this.result;
+            return this.byInput.toString();
         }
     }
 
-    static class JoinInputs {
-        @Nullable
-        JoinSource left = null;
-        @Nullable
-        JoinSource right = null;
-
-        void setLeft(JoinSource left) {
-            Utilities.enforce(this.left == null);
-            this.left = left;
-        }
-
-        void setRight(JoinSource right) {
-            Utilities.enforce(this.right == null);
-            this.right = right;
-        }
-
-        @Override
-        public String toString() {
-            return "L=" + (this.left != null ? this.left.toString() : "-") + " R=" +
-                    (this.right != null ? this.right.toString() : "-");
-        }
-    }
-
-    record JoinSource(WideMapIndexBuilder builder, int consumerIndex) {
+    record SharedSource(WideMapIndexBuilder builder, int consumerIndex) {
+        /** Remaps a parameter that reads the narrow value to a fresh variable that reads the wide value */
         public ParameterIndexMap getParameterRemap() {
-            DBSPMapIndexOperator source = this.builder.get();
-            // This is the new input for this join input
-            var newVar = source.getOutputIndexedZSetType().elementType.ref().var();
+            var newVar = this.builder.valueType().ref().var();
 
-            // This is the list of fields from the value produced by the MapIndex that this join consumes
-            List<Integer> outputIndexes = builder.outputIndexes.get(consumerIndex);
+            // This is the list of fields from the value produced by the MapIndex that this consumer reads
+            List<Integer> outputIndexes = this.builder.outputIndexes.get(this.consumerIndex);
             Map<Integer, Integer> remap = new HashMap<>();
             for (int i = 0; i < outputIndexes.size(); i++) {
                 int index = outputIndexes.get(i);
@@ -335,8 +408,10 @@ class ReplaceSharedIndexes extends CircuitCloneVisitor {
         }
     }
 
+    /** {@code indexRemap} maps a field index of the replaced parameter to the field index of {@code var} */
     record ParameterIndexMap(DBSPVariablePath var, Map<Integer, Integer> indexRemap) {}
 
+    /** {@code map} maps a closure parameter to the variable and field remapping that replace it */
     record ParameterIndexMapSet(Map<DBSPParameter, ParameterIndexMap> map) {
         public ParameterIndexMapSet() {
             this(new HashMap<>());
