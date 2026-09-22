@@ -2558,7 +2558,7 @@ mod test {
     fn extract_sccache_message() {
         // Captured from `cargo build` with RUSTC_WRAPPER=sccache and a config sccache
         // rejects. Cargo echoes the failing subprocess stderr below `--- stderr`.
-        let bad_config = RustCompilationInfo::from_streams(
+        let bad_config = RustCompilationInfo::from_process_output_streams(
             101,
             "".to_string(),
             indoc::indoc! {r#"
@@ -2586,7 +2586,7 @@ mod test {
 
         // Same, with an unreachable S3 endpoint: sccache checks the bucket at startup, so
         // its message continues past a blank line into a context block.
-        let unreachable_bucket = RustCompilationInfo::from_streams(
+        let unreachable_bucket = RustCompilationInfo::from_process_output_streams(
             101,
             "".to_string(),
             indoc::indoc! {r#"
@@ -2612,7 +2612,7 @@ mod test {
 
         // The user's program must stay out of the compiler server log: cargo diagnostics
         // quote its source, and they start where sccache's message ends.
-        let sccache_and_user_error = RustCompilationInfo::from_streams(
+        let sccache_and_user_error = RustCompilationInfo::from_process_output_streams(
             101,
             "".to_string(),
             indoc::indoc! {r#"
@@ -2631,7 +2631,7 @@ mod test {
 
         // Under IRSA, sccache reports the STS request it could not sign, and the query string
         // of that request holds the web identity token.
-        let irsa_failure = RustCompilationInfo::from_streams(
+        let irsa_failure = RustCompilationInfo::from_process_output_streams(
             101,
             "".to_string(),
             indoc::indoc! {"
@@ -2665,7 +2665,7 @@ mod test {
              loading credential to sign http request"
         ));
 
-        let user_error = RustCompilationInfo::from_streams(
+        let user_error = RustCompilationInfo::from_process_output_streams(
             101,
             "".to_string(),
             indoc::indoc! {r#"

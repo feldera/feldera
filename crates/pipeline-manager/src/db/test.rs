@@ -666,7 +666,7 @@ fn limited_sql_compilation_info() -> impl Strategy<Value = SqlCompilationInfo> {
 /// Generates different Rust compilation information.
 fn limited_rust_compilation_info() -> impl Strategy<Value = RustCompilationInfo> {
     any::<(u8, u8, u8)>().prop_map(|v| {
-        RustCompilationInfo::from_streams(
+        RustCompilationInfo::from_process_output_streams(
             (v.0 % 4) as i32,
             format!("stdout-{}", v.1),
             format!("stderr-{}", v.1),
@@ -2598,7 +2598,7 @@ async fn storage_mb_min_edit_restricted_to_cleared_storage() {
             tenant_id,
             pipeline.id,
             Version(1),
-            &RustCompilationInfo::from_streams(0, "".to_string(), "".to_string()),
+            &RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string()),
             "def",
             "123",
             "456",
@@ -2899,7 +2899,7 @@ async fn pipeline_program_compilation() {
             tenant_id,
             pipeline1.id,
             Version(1),
-            &RustCompilationInfo::from_streams(0, "".to_string(), "".to_string()),
+            &RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string()),
             "abc",
             "123",
             "456",
@@ -2997,7 +2997,8 @@ async fn count_pipelines_needing_compilation() {
             exit_code: 0,
             messages: vec![],
         };
-        let rust_compilation = RustCompilationInfo::from_streams(0, "".to_string(), "".to_string());
+        let rust_compilation =
+            RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string());
         for status in statuses {
             match status {
                 ProgramStatus::Pending => db
@@ -3304,7 +3305,7 @@ async fn pipeline_transition_after_quick_stop() {
             tenant_id,
             pipeline1.id,
             Version(1),
-            &RustCompilationInfo::from_streams(0, "".to_string(), "".to_string()),
+            &RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string()),
             "def",
             "123",
             "456",
@@ -3523,7 +3524,7 @@ async fn pipeline_deployment() {
             tenant_id,
             pipeline1.id,
             Version(1),
-            &RustCompilationInfo::from_streams(0, "".to_string(), "".to_string()),
+            &RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string()),
             "def",
             "123",
             "456",
@@ -4354,7 +4355,8 @@ async fn runner_descriptor_uses_runtime_compatibility_not_string_equality() {
         exit_code: 0,
         messages: vec![],
     };
-    let rust_info = RustCompilationInfo::from_streams(0, "".to_string(), "".to_string());
+    let rust_info =
+        RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string());
 
     // Compile the pipeline to Success on platform version "v0", on both sides.
     for db in [&model as &dyn Storage, &handle.db as &dyn Storage] {
@@ -4491,7 +4493,7 @@ async fn pipeline_provision_version_guard() {
             tenant_id,
             pipeline.id,
             Version(1),
-            &RustCompilationInfo::from_streams(0, "".to_string(), "".to_string()),
+            &RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string()),
             "def",
             "123",
             "456",
@@ -4743,7 +4745,7 @@ async fn pipeline_client_metadata_update_while_running() {
             tenant_id,
             pipeline.id,
             Version(1),
-            &RustCompilationInfo::from_streams(0, "".to_string(), "".to_string()),
+            &RustCompilationInfo::from_process_output_streams(0, "".to_string(), "".to_string()),
             "def",
             "123",
             "456",

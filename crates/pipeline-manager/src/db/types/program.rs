@@ -302,20 +302,30 @@ pub struct RustCompilationInfo {
     pub messages: Vec<RustCompilerMessage>,
 }
 
+impl Default for RustCompilationInfo {
+    fn default() -> Self {
+        Self {
+            exit_code: 0,
+            stdout: String::new(),
+            stderr: String::new(),
+            messages: Vec::new(),
+        }
+    }
+}
+
 impl RustCompilationInfo {
     #[cfg(test)]
-    pub(crate) fn from_streams(exit_code: i32, stdout: String, stderr: String) -> Self {
+    pub(crate) fn from_process_output_streams(
+        exit_code: i32,
+        stdout: String,
+        stderr: String,
+    ) -> Self {
         Self {
             exit_code,
             stdout,
             stderr,
-            messages: Vec::new(),
+            ..Self::default()
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn success() -> Self {
-        Self::from_streams(0, "".to_string(), "".to_string())
     }
 }
 
