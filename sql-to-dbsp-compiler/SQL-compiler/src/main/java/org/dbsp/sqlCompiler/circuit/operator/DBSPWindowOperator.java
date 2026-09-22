@@ -41,7 +41,10 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator implements ICon
         DBSPType expectedControlType = new DBSPTypeRawTuple(
                 new DBSPTypeTypedBox(indexedType.keyType, false),
                 new DBSPTypeTypedBox(indexedType.keyType, false));
-        Utilities.enforce(control.outputType().sameType(expectedControlType),
+        // Under --gen2, RemoveTypedBox unboxes the bounds
+        DBSPType unboxedControlType = new DBSPTypeRawTuple(indexedType.keyType, indexedType.keyType);
+        Utilities.enforce(control.outputType().sameType(expectedControlType) ||
+                        control.outputType().sameType(unboxedControlType),
                 () -> "Window bounds must have type " + expectedControlType +
                         ", but have type " + control.outputType());
         this.lowerInclusive = lowerInclusive;
