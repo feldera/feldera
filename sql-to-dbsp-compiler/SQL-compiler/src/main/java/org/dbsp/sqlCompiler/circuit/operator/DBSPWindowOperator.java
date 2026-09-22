@@ -38,12 +38,14 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator implements ICon
         super(node, "window", null, data.outputType(), data.isMultiset(), data, control);
         // Check that the left input and output are indexed ZSets.
         DBSPTypeIndexedZSet indexedType = this.getOutputIndexedZSetType();
-        DBSPType expectedControlType = new DBSPTypeRawTuple(
-                new DBSPTypeTypedBox(indexedType.keyType, false),
-                new DBSPTypeTypedBox(indexedType.keyType, false));
-        Utilities.enforce(control.outputType().sameType(expectedControlType),
-                () -> "Window bounds must have type " + expectedControlType +
-                        ", but have type " + control.outputType());
+        // The Rust backend boxes the bounds for dbsp's type-erased window; RemoveTypedBox unboxes them.
+        DBSPType boxedKeyType = new DBSPTypeTypedBox(indexedType.keyType, false);
+        DBSPType boxedControlType = new DBSPTypeRawTuple(boxedKeyType, boxedKeyType);
+        DBSPType unboxedControlType = new DBSPTypeRawTuple(indexedType.keyType, indexedType.keyType);
+        DBSPType controlType = control.outputType();
+        Utilities.enforce(controlType.sameType(boxedControlType) || controlType.sameType(unboxedControlType),
+                () -> "Window bounds must have type " + boxedControlType + " or " + unboxedControlType +
+                        ", but have type " + controlType);
         this.lowerInclusive = lowerInclusive;
         this.upperInclusive = upperInclusive;
         this.lowerUnbounded = lowerUnbounded;
