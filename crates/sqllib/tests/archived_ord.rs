@@ -2,7 +2,7 @@
 //! with a decoded one, give the same answer as comparing them decoded?
 //!
 //! The engine relies on the ordering of archived values being consistent with
-//! the ordering over thei deserializes representations for correctness.  This
+//! the ordering over their deserialized representations for correctness.  This
 //! test suite validates this requirement for all supported types.  A merge
 //! compares two archived values; a search of a file-backed batch compares an
 //! archived value with the decoded key it is looking for, through `OrdRepr`.
@@ -1848,6 +1848,13 @@ where
 
 /// Checks that a type's archived form claims to be faithful and hashes the
 /// way the decoded form does, over every value given.
+///
+/// The decoded form's own implementation is checked here too.  Nothing reads
+/// it directly -- a caller that holds a decoded value hashes it with
+/// [`Hash`](std::hash::Hash) -- but a composite asks its fields for it, and
+/// asks them whether they are faithful, so a field that answers either
+/// question wrongly makes the composite wrong.  That it answers as `Hash`
+/// does is therefore the same requirement, one level down.
 fn check_hash_all<T>(label: &str, values: &[T])
 where
     T: DBData + HashRepr,
@@ -1857,6 +1864,18 @@ where
         <T::Repr as HashRepr>::FAITHFUL,
         "{label}: the archived form does not claim to hash faithfully"
     );
+    assert!(
+        <T as HashRepr>::FAITHFUL,
+        "{label}: the decoded form does not claim to hash faithfully"
+    );
+    for (i, value) in values.iter().enumerate() {
+        assert_eq!(
+            calls_of(|log| std::hash::Hash::hash(value, log)),
+            calls_of(|log| value.hash_repr(log)),
+            "{label}[{i}]: the decoded form's `hash_repr` asks the hasher for something \
+             different from what its `Hash` asks for\n  value: {value:?}"
+        );
+    }
     check_hash(label, values);
 }
 

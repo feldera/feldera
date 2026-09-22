@@ -73,7 +73,7 @@ impl<S: RkyvSerializer + ?Sized> rkyv::Serialize<S> for ByteArray {
 /// A `ByteArray` derives its hash from the `SmallVec` holding the payload,
 /// and a `SmallVec` hashes as the slice it derefs to: the length, then the
 /// bytes in one write.
-impl crate::__hash_repr::HashRepr for ByteArray {
+impl crate::__HashRepr for ByteArray {
     const FAITHFUL: bool = true;
 
     #[inline]
@@ -84,7 +84,7 @@ impl crate::__hash_repr::HashRepr for ByteArray {
 
 /// The archived form holds the same bytes in an `ArchivedVec`, so hashing the
 /// slice reproduces the decoded answer exactly.
-impl crate::__hash_repr::HashRepr for ArchivedByteArray {
+impl crate::__HashRepr for ArchivedByteArray {
     const FAITHFUL: bool = true;
 
     #[inline]
