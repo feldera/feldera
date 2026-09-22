@@ -200,28 +200,148 @@ describe('extractProgramErrors: structured rustc messages', () => {
   })
 })
 
-describe('extractProgramErrors: leftover stderr when rustc produced no messages', () => {
-  it('reports an sccache failure as one leftover error', () => {
-    const errors = errorsOf({ messages: [], stderr: sccacheStderr })
+const withRustStderr = (
+  stderr: string
+): Pick<ExtendedPipeline, 'name' | 'status' | 'compilerOutput'> => ({
+  name: 'test-pipeline',
+  status: 'Stopped',
+  compilerOutput: {
+    sql: undefined,
+    rust: { exit_code: 101, stdout: '', stderr },
+    systemError: undefined
+  }
+})
+
+const stderrErrorsOf = (stderr: string) => extractProgramErrors(getReport)(withRustStderr(stderr))
+
+describe('extractProgramErrors: stderr when messages are absent', () => {
+  it('links a udf.rs span from an old manager', () => {
+    const errors = stderrErrorsOf(`error[E0433]: cannot find module or crate \`chrnoo\`
+ --> /tmp/compiler/udf.rs:2:5
+  |
+2 |     chrnoo::Utc::now();
+  |     ^^^^^^
+`)
     expect(errors).toHaveLength(1)
-    expect(errors[0].message).toContain('sccache: error: Timed out waiting for server startup')
-    expect(errors[0].cause.tag).toBe('unrecognizedProgramError')
+    expect(errors[0].cause.source).toMatch(/#udf\.rs:2:5$/)
+    expect(errors[0].cause.tag).toBe('programError')
   })
 
-  it('reports leftover stderr that has no trailing newline', () => {
-    const errors = errorsOf({ messages: [], stderr: sccacheStderr.trimEnd() })
+  it('reports a message that is the last paragraph of stderr', () => {
+    const errors = stderrErrorsOf(`error: linking with \`cc\` failed: exit status: 1
+  = note: collect2: error: ld returned 1 exit status
+`)
     expect(errors).toHaveLength(1)
-    expect(errors[0].message).toContain('sccache: error: Timed out waiting for server startup')
+    expect(errors[0].message).toContain('error: linking with `cc` failed')
   })
 
-  it('returns an empty list when a failed compile left no stderr either', () => {
-    const errors = errorsOf({ messages: [], stderr: '' })
+  it('reports a message that ends stderr without a trailing newline', () => {
+    const errors = stderrErrorsOf('error: linking with `cc` failed: exit status: 1')
+    expect(errors).toHaveLength(1)
+    expect(errors[0].message).toBe('error: linking with `cc` failed: exit status: 1')
+  })
+
+  it('keeps the last message when earlier ones are blank-line separated', () => {
+    const errors = stderrErrorsOf(`error[E0425]: cannot find value \`x\` in this scope
+ --> src/lib.rs:1:1
+
+warning: unused import: \`std::fmt\`
+ --> src/lib.rs:2:5
+
+error: aborting due to 1 previous error
+`)
+    expect(errors.map((e) => e.message.split('\n')[0])).toEqual([
+      'error[E0425]: cannot find value `x` in this scope',
+      'warning: unused import: `std::fmt`',
+      'error: aborting due to 1 previous error'
+    ])
+    expect(errors.map((e) => e.cause.warning)).toEqual([false, true, false])
+  })
+
+  it('does not split a message on its own interior line breaks', () => {
+    const errors = stderrErrorsOf(`error: linking with \`cc\` failed: exit status: 1
+  = note: some arguments are omitted
+  = note: collect2: error: ld returned 1 exit status
+`)
+    expect(errors).toHaveLength(1)
+    expect(errors[0].message.split('\n')).toHaveLength(3)
+  })
+
+  it('ignores black-listed warnings', () => {
+    const errors = stderrErrorsOf(
+      `warning: patch for the non root package will be ignored, specify patch at the workspace root
+`
+    )
     expect(errors).toEqual([])
   })
 
-  it('treats missing messages like an empty list (older stored JSON)', () => {
-    const errors = errorsOf({ stderr: sccacheStderr })
+  it('returns an empty list for stderr without messages', () => {
+    const errors = stderrErrorsOf(
+      '   Compiling feldera-sqllib v0.1.0\n    Finished release profile\n'
+    )
+    expect(errors).toEqual([])
+  })
+
+  it('reports the sccache failure without the cargo message that wraps it', () => {
+    const errors = stderrErrorsOf(sccacheStderr)
     expect(errors).toHaveLength(1)
-    expect(errors[0].message).toContain('sccache: error:')
+    expect(errors[0].message).toBe(
+      `sccache: error: Timed out waiting for server startup. Maybe the remote service is unreachable?
+Run with SCCACHE_LOG=debug SCCACHE_NO_DAEMON=1 to get more information`
+    )
+    expect(errors[0].cause.tag).toBe('unrecognizedProgramError')
+  })
+
+  it('reports echoed stderr that ends stderr without a trailing newline', () => {
+    const errors = stderrErrorsOf(sccacheStderr.trimEnd())
+    expect(errors).toHaveLength(1)
+    expect(errors[0].message).toMatch(/^sccache: error: Timed out waiting for server startup/)
+  })
+
+  it('skips echoed stdout preceding the echoed stderr', () => {
+    const errors =
+      stderrErrorsOf(`error: process didn't exit successfully: \`sccache rustc -vV\` (exit status: 2)
+--- stdout
+rustc 1.93.1
+--- stderr
+sccache: error: Timed out waiting for server startup.
+`)
+    expect(errors.map((e) => e.message)).toEqual([
+      'sccache: error: Timed out waiting for server startup.'
+    ])
+  })
+
+  it('classifies a tool-prefixed warning as a warning', () => {
+    const errors = stderrErrorsOf(`error: could not compile \`feldera\` (lib)
+--- stderr
+sccache: warning: reached the local cache size limit
+`)
+    expect(errors).toHaveLength(1)
+    expect(errors[0].cause.warning).toBe(true)
+    expect(errors[0].message).toBe('sccache: warning: reached the local cache size limit')
+  })
+
+  it('drops an ignored cargo message that echoes nothing', () => {
+    const errors =
+      stderrErrorsOf(`error: could not compile \`feldera\` (lib) due to 1 previous error
+`)
+    expect(errors).toEqual([])
+  })
+
+  it('does not start a new message on an indented tool-prefixed line', () => {
+    const errors =
+      stderrErrorsOf(`error[E0433]: failed to resolve: use of undeclared crate \`serde\`
+ --> src/lib.rs:1:5
+  = note: sccache: error: this note is part of the message, not a new message
+`)
+    expect(errors).toHaveLength(1)
+    expect(errors[0].message).toMatch(/^error\[E0433\]: failed to resolve/)
+    expect(errors[0].message).toContain('not a new message')
+  })
+
+  it('treats an empty messages list like a missing one', () => {
+    const errors = errorsOf({ messages: [], stderr: sccacheStderr })
+    expect(errors).toHaveLength(1)
+    expect(errors[0].message).toMatch(/^sccache: error:/)
   })
 })
