@@ -1764,7 +1764,7 @@ impl SerializeWithContext<SqlSerdeConfig> for FlatVariant {
 // Both forms hash the same bytes through the same function, just as both
 // compare through the same one, so the archived hash is the decoded hash by
 // construction rather than by coincidence.  See `crate::hash_repr`.
-impl crate::__hash_repr::HashRepr for FlatVariant {
+impl crate::__HashRepr for FlatVariant {
     const FAITHFUL: bool = true;
 
     #[inline]
@@ -1773,7 +1773,7 @@ impl crate::__hash_repr::HashRepr for FlatVariant {
     }
 }
 
-impl crate::__hash_repr::HashRepr for ArchivedFlatVariant {
+impl crate::__HashRepr for ArchivedFlatVariant {
     const FAITHFUL: bool = true;
 
     #[inline]

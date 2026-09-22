@@ -317,6 +317,7 @@ mod test {
         T::Repr: HashRepr,
     {
         let bytes = to_bytes(value).unwrap();
+        // SAFETY: `bytes` came from `to_bytes::<T>` on the line above.
         let archived = unsafe { rkyv::archived_root::<T>(bytes.as_slice()) };
         assert_eq!(
             archived_hash(archived),
