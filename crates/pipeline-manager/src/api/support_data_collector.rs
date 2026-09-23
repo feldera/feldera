@@ -132,7 +132,7 @@ async fn fetch_pipeline_data(
     pipeline_name: &str,
     endpoint: &str,
     query_string: &str,
-    timeout_duration: Option<Duration>,
+    timeout: Option<Duration>,
     body_size_limit: Option<usize>,
     accept_encoding: Option<&str>,
 ) -> Result<HttpResponse, ManagerError> {
@@ -145,7 +145,7 @@ async fn fetch_pipeline_data(
             Method::GET,
             endpoint,
             query_string,
-            timeout_duration,
+            timeout,
             body_size_limit,
             accept_encoding,
         )

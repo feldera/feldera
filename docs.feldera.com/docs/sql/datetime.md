@@ -397,8 +397,8 @@ is a `TIMESTAMP WITHOUT TIMEZONE` returning the current time in the UTC
 timezone, and thus is guaranteed to always be increasing.
 
 By default, in the absence of new inputs, a step is triggered every
-100 milliseconds.  This behavior is controlled by the
-`clock_resolution_usecs` pipeline configuration setting.
+second.  This behavior is controlled by the
+`clock_resolution` pipeline configuration setting.
 
 ### Clock timezone offset
 
