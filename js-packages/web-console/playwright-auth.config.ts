@@ -11,6 +11,13 @@ const config: PlaywrightTestConfig = {
   // The base setup warms the compilation cache through the API without a
   // token, which an authenticated manager refuses. These tests compile nothing.
   globalSetup: undefined,
+  // Always drive a running manager: the base config's preview server has no
+  // login to test.
+  webServer: undefined,
+  use: {
+    baseURL: process.env.PLAYWRIGHT_APP_ORIGIN ?? 'http://localhost:8080',
+    trace: 'retain-on-failure'
+  },
   testDir: 'tests/auth',
   testIgnore: undefined
 }
