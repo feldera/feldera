@@ -536,7 +536,7 @@ format:
             CreatePipeline,
             ExpectFatalErrorContains {
                 timeout: Duration::from_secs(1),
-                needle: "retry_interval_secs",
+                needle: "`retry_interval`",
             },
         ],
     )

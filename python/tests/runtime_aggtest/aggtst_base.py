@@ -287,7 +287,7 @@ class TstAccumulator:
                     # that retries and recovers, but adds several more minutes.
                     # 180s was too tight and failed real merges (feldera#6650);
                     # 900s leaves real margin over the worst case we've observed.
-                    provisioning_timeout_secs=900,
+                    provisioning_timeout="900s",
                     logging="debug",
                     # Honest request so k8s does not pack aggtest pipelines
                     # onto nodes without headroom and evict them mid-test.
