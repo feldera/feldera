@@ -1162,10 +1162,13 @@ mod tests {
             String::new(),
             String::new(),
             None,
+            None,
         )
         .unwrap();
-        assert!(program_info
-            .input_connectors
-            .contains_key("events.unnamed-0"));
+        assert!(
+            program_info
+                .input_connectors
+                .contains_key("events.unnamed-0")
+        );
     }
 }
