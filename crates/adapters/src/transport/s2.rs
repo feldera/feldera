@@ -1,3 +1,5 @@
+//! Native S2 input and output transports.
+
 mod input;
 mod output;
 #[cfg(test)]
