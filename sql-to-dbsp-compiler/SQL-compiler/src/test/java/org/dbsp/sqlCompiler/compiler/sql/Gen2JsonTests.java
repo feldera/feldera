@@ -18,10 +18,10 @@ import java.util.List;
 import java.util.Objects;
 
 /** The circuit compiled for the Gen-2 engine ({@code --gen2}) carries no Rust-codegen
- * artifacts: it has no {@code TYPEDBOX} and no {@code TypedBox<T, _>}, a constant stays where it
- * is used instead of moving to a {@code static} declaration, and an aggregate operator keeps its
- * per-aggregate list instead of one fold over a tuple accumulator.  The {@code --jit} circuit
- * keeps the Rust forms. */
+ * artifacts: it has no {@code TYPEDBOX}, no {@code TypedBox<T, _>}, and no {@code clone()}, a
+ * constant stays where it is used instead of moving to a {@code static} declaration, and an
+ * aggregate operator keeps its per-aggregate list instead of one fold over a tuple accumulator.
+ * The {@code --jit} circuit keeps the Rust forms. */
 public class Gen2JsonTests extends SqlIoTest {
     /** A temporal filter against NOW(): the Rust backend boxes its window bounds. */
     static final String WINDOW_PROGRAM = """
@@ -105,6 +105,20 @@ public class Gen2JsonTests extends SqlIoTest {
     }
 
     @Test
+    public void jitJsonKeepsClone() {
+        // ARRAY_AGG(tag) clones the VARCHAR it appends.
+        Assert.assertTrue(this.circuitJson(FOLD_PROGRAM, false).contains("\"DBSPCloneExpression\""));
+    }
+
+    @Test
+    public void gen2JsonDropsClone() {
+        String json = this.circuitJson(FOLD_PROGRAM, true);
+        Assert.assertFalse(json.contains("DBSPCloneExpression"));
+        // The cloned field access is still the argument of the step.
+        Assert.assertTrue(json.contains("\"array_aggN\""));
+    }
+
+    @Test
     public void jitJsonPacksTheAggregatesIntoOneFold() {
         String json = this.circuitJson(FOLD_PROGRAM, false);
         Assert.assertEquals(1, occurrences(json, "\"DBSPFold\""));
@@ -131,6 +145,7 @@ public class Gen2JsonTests extends SqlIoTest {
             String json = this.circuitJson(this.compile(program, true, true, true));
             Assert.assertTrue(program, json.contains("\"DBSPAggregateList\""));
             Assert.assertFalse(program, json.contains("\"DBSPFold\""));
+            Assert.assertFalse(program, json.contains("DBSPCloneExpression"));
             Assert.assertFalse(program, json.contains("TYPEDBOX"));
         }
     }
