@@ -19,6 +19,8 @@ public class PostgresCdcReaderConfig implements IValidateConfig {
     @JsonProperty("source_table")
     public String sourceTable = "";
 
+    @Nullable @JsonProperty("run_source_migrations") public Boolean runSourceMigrations = null;
+
     // TLS fields (inlined from PostgresTlsConfig)
     @Nullable @JsonProperty("ssl_ca_pem")                    public String sslCaPem = null;
     @Nullable @JsonProperty("ssl_ca_location")               public String sslCaLocation = null;
