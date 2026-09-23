@@ -130,6 +130,7 @@
     "build-openapi": "cd ../.. && cargo run -p pipeline-manager -- --dump-openapi",
     "build-icons": "bun run scripts/build-webfont.ts -- -s src/assets/icons/feldera-material-icons -d src/assets/fonts/ -n feldera-material-icons -p fd --fix && bun run scripts/build-webfont.ts -- -s src/assets/icons/generic -d src/assets/fonts/ -n generic-icons -p gc && bun run format",
     "test-e2e": "DISPLAY= bun playwright test",
+    "test-e2e-auth": "DISPLAY= bun playwright test -c playwright-auth.config.ts",
     "test-e2e-ui": "PLAYWRIGHT_API_ORIGIN=http://localhost:8080/ PLAYWRIGHT_APP_ORIGIN=http://localhost:8080/ DISPLAY= bun playwright test --ui-host=0.0.0.0",
     "test-ct": "DISPLAY= bun playwright test -c playwright-ct.config.ts",
     "test-ct-ui": "DISPLAY= bun playwright test -c playwright-ct.config.ts --ui-host=0.0.0.0",
