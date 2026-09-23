@@ -19,6 +19,7 @@ INPUT_RECORDS = 500000
 # After restart, the implicit `now` clock connector uses this resolution (see
 # `now_endpoint_config` in the adapters crate). Stats only expose `stream` for
 # the endpoint; the effective resolution is the pipeline runtime setting.
+# Older spelling: the runtime integration platform may predate the rename.
 CLOCK_RESOLUTION_USECS_AFTER_RESTART = 3_000_000
 
 

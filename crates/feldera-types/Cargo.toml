@@ -19,6 +19,7 @@ testing = ["proptest", "proptest-derive", "feldera-ir/testing"]
 arrow-schema = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive", "rc"] }
 serde_json = { workspace = true, features = ["raw_value"] }
+serde_yaml = { workspace = true }
 anyhow = { workspace = true, features = ["backtrace"] }
 libc = { workspace = true }
 log = { workspace = true }
@@ -39,5 +40,5 @@ clap = { workspace = true }
 
 [dev-dependencies]
 csv = { workspace = true }
+proptest = { workspace = true }
 tempfile = { workspace = true }
-serde_yaml = { workspace = true }
