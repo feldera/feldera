@@ -130,7 +130,10 @@ public class CanonicalForm extends InnerRewriteVisitor {
         this.rowVar = list.rowVar.variable;
         this.canonicalRowVar = canonical;
         this.push(list);
-        List<IAggregate> aggregates = Linq.map(list.aggregates, a -> this.transform(a).to(IAggregate.class));
+        // The entries share variable nodes (every step uses the compiler's one weight variable),
+        // and the resolver maps each node to one declaration; a deep copy gives every entry its own.
+        List<IAggregate> aggregates = Linq.map(
+                list.aggregates, a -> this.transform(a.deepCopy()).to(IAggregate.class));
         this.pop(list);
         this.rowVar = null;
         this.canonicalRowVar = null;
