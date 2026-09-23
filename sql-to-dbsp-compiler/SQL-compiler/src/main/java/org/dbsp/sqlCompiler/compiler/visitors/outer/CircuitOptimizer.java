@@ -187,6 +187,9 @@ public class CircuitOptimizer extends Passes {
         this.add(new CircuitRewriter(compiler, new InnerCSE(compiler), true, InnerCSE::process));
         this.add(new CreateRuntimeErrorWrappers(compiler).getCircuitRewriter(true));
         this.add(new OptimizeWithGraph(compiler, g -> new StrayGC(compiler, g)));
+        // Only the Rust backend packs the aggregate lists.  The canonical form names the variables
+        // of the packed fold, so the pass cannot run later.
+        this.add(new Conditional(compiler, new PackAggregateLists(compiler), () -> !options.ioOptions.gen2));
         // The canonical form is needed if we want the Merkle hashes to be "stable".
         this.add(new CanonicalForm(compiler).getCircuitRewriter(false));
         this.add(new ConstantViews(compiler));
