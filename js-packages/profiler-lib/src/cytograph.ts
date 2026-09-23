@@ -15,7 +15,7 @@ import { installNodeShadows, SELECTED_NODE_CLASS } from './nodeShadow.js';
 import { installNodeText } from './nodeText.js';
 import { nodeChips } from './chips.js';
 import { elkNodeLayoutOptions, regionMinWidth } from './regionSize.js';
-import { installChipButtons } from './chipButtons.js';
+import { installChipButtons, refreshChips } from './chipButtons.js';
 import type { DiagramObserver } from './diagramObserver.js';
 import { Viewport } from './viewport.js';
 import { FrozenLayout } from './frozenLayout.js';
@@ -475,6 +475,27 @@ export class CytographRendering {
             () => this.currentGraph?.nodes.find((node) => node.getId() !== this.rootNodeId)?.getId(),
             this.theme);
         this.observers = [this.viewport, new FrozenLayout(this.cy)];
+    }
+
+    /** Redraw the diagram with a different palette. Restyling never moves a node, so this
+     *  costs a restyle and a repaint, not a layout. */
+    setTheme(theme: DiagramTheme) {
+        if (theme === this.theme) {
+            return;
+        }
+        this.theme = theme;
+        this.cy.style(buildGraphStyle(theme));
+        for (const observer of this.observers) {
+            observer.themeChanged?.(theme);
+        }
+        // Chip images carry the palette inside them, so they are the one piece of per-node data
+        // that a theme change has to rewrite. The graph diff keys nodes by id alone, so this
+        // cannot ride along on the next `updateGraph`.
+        this.cy.startBatch();
+        for (const node of this.cy.nodes().toArray()) {
+            refreshChips(node, theme);
+        }
+        this.cy.endBatch();
     }
 
     /** Metric chosen by the user to drive the color of the nodes. */
