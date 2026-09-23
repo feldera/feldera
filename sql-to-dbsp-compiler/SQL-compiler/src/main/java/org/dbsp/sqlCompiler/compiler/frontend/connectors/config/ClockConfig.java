@@ -4,14 +4,22 @@ import org.dbsp.sqlCompiler.compiler.frontend.connectors.ConfigReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.connectors.IValidateConfig;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import javax.annotation.Nullable;
 
 /** Configuration for the clock input connector. */
 @SuppressWarnings("unused")
 public class ClockConfig implements IValidateConfig {
+    /** How often the clock ticks, for example {@code "1s"}. */
+    @Nullable
+    @JsonProperty("clock_resolution")
+    public JsonNode clockResolution = null;
+
+    /** Deprecated; use {@link #clockResolution}. */
+    @Nullable
     @JsonProperty("clock_resolution_usecs")
-    public long clockResolutionUsecs = 0;
+    public JsonNode clockResolutionUsecs = null;
 
     @Nullable
     @JsonProperty("now_offset_ms")
@@ -22,12 +30,11 @@ public class ClockConfig implements IValidateConfig {
 
     @Override
     public boolean validate(ConfigReporter reporter) {
-        boolean ok = true;
-        if (clockResolutionUsecs <= 0) {
-            reporter.warnPath("clock_resolution_usecs", "Invalid configuration",
-                    "\"clock_resolution_usecs\" must be greater than 0");
-            ok = false;
-        }
-        return ok;
+        ConfigDuration.Setting resolution = ConfigDuration.resolve(reporter,
+                "clock_resolution", this.clockResolution,
+                "clock_resolution_usecs", this.clockResolutionUsecs,
+                ConfigDuration.NANOS_PER_MICRO);
+        return ConfigDuration.checkMinimum(reporter, resolution, 1,
+                "greater than 0, for example \"1s\"");
     }
 }

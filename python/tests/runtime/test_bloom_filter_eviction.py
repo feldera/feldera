@@ -119,6 +119,7 @@ def runtime_config(rate: float) -> RuntimeConfig:
     return RuntimeConfig(
         workers=FELDERA_TEST_NUM_WORKERS,
         hosts=FELDERA_TEST_NUM_HOSTS,
+        # Older spelling: the runtime integration platform may predate the rename.
         provisioning_timeout_secs=300,
         storage=storage_config(rate),
         # Make sure roaring bitmaps don't kick in instead of Bloom filters.
