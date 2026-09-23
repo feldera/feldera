@@ -719,6 +719,7 @@ impl LocalRunner {
         &self,
         member_dir: &Path,
         base_config: &PipelineConfig,
+        legacy_duration_spelling: bool,
     ) -> Result<PathBuf, ManagerError> {
         let mut config = base_config.clone();
         if let Some(storage_config) = &mut config.storage_config {
@@ -737,8 +738,7 @@ impl LocalRunner {
 
         // Both the pipeline (adapters) and the coordinator read `config.json`.
         let config_file_path = self.config.member_config_file_path(member_dir, "json");
-        let json_config =
-            serde_json::to_string_pretty(&config).expect("JSON config serialization failed");
+        let json_config = config_json(&config, legacy_duration_spelling);
         fs::write(&config_file_path, &json_config)
             .await
             .map_err(|e| {
@@ -766,6 +766,7 @@ impl LocalRunner {
         program_info_url: &str,
         program_version: Version,
         is_gen2: bool,
+        legacy_duration_spelling: bool,
     ) -> Result<(), ManagerError> {
         // The coordinator binary must be configured.
         let coordinator_binary = self.config.coordinator_binary.clone().ok_or_else(|| {
@@ -911,7 +912,9 @@ impl LocalRunner {
                     e,
                 ))
             })?;
-            let config_file_path = self.write_member_config(&host_dir, &base_config).await?;
+            let config_file_path = self
+                .write_member_config(&host_dir, &base_config, legacy_duration_spelling)
+                .await?;
             let bind_ip = multihost_host_ip(ordinal);
 
             let mut args: Vec<OsString> = vec![
@@ -966,7 +969,7 @@ impl LocalRunner {
                 ))
             })?;
             let config_file_path = self
-                .write_member_config(&coordinator_dir, &base_config)
+                .write_member_config(&coordinator_dir, &base_config, legacy_duration_spelling)
                 .await?;
             let coordinator_ip = multihost_coordinator_ip();
 
@@ -1032,6 +1035,46 @@ impl LocalRunner {
         });
         Ok(())
     }
+}
+
+/// The configuration a pipeline process reads, translated to the older duration
+/// spelling when the pipeline runs a runtime other than the platform's; `None`
+/// when no translation is needed.
+///
+/// Only a translated configuration goes through `serde_json::Value`, whose maps
+/// would reorder the keys of every configuration file.
+fn translated_for_runtime(
+    config: &PipelineConfig,
+    legacy_duration_spelling: bool,
+) -> Option<serde_json::Value> {
+    legacy_duration_spelling.then(|| {
+        let mut value = serde_json::to_value(config).expect("JSON config serialization failed");
+        feldera_types::config::to_legacy_duration_spelling(&mut value);
+        value
+    })
+}
+
+/// The pipeline configuration file in JSON, as the pipeline process reads it.
+fn config_json(config: &PipelineConfig, legacy_duration_spelling: bool) -> String {
+    match translated_for_runtime(config, legacy_duration_spelling) {
+        Some(value) => serde_json::to_string_pretty(&value),
+        None => serde_json::to_string_pretty(config),
+    }
+    .expect("JSON config serialization failed")
+}
+
+/// The pipeline configuration file in YAML, which older pipelines read.
+///
+/// A translated configuration is written from its JSON text, which is valid
+/// YAML: serializing the `serde_json::Value` itself would write each number as
+/// the private map that `serde_json`'s `arbitrary_precision` uses internally.
+fn config_yaml(config: &PipelineConfig, legacy_duration_spelling: bool) -> String {
+    match translated_for_runtime(config, legacy_duration_spelling) {
+        Some(value) => serde_yaml::from_str::<serde_yaml::Value>(&value.to_string())
+            .and_then(|yaml| serde_yaml::to_string(&yaml)),
+        None => serde_yaml::to_string(config),
+    }
+    .expect("YAML config serialization failed")
 }
 
 #[async_trait]
@@ -1100,6 +1143,7 @@ impl PipelineExecutor for LocalRunner {
         program_version: Version,
         _runtime_config: &serde_json::Value,
         is_gen2: bool,
+        legacy_duration_spelling: bool,
     ) -> Result<(), ManagerError> {
         if let Err(e) = validate_pipeline_env(&deployment_config.global.env) {
             return Err(RunnerError::RunnerProvisionError { error: e }.into());
@@ -1119,6 +1163,7 @@ impl PipelineExecutor for LocalRunner {
                     program_info_url,
                     program_version,
                     is_gen2,
+                    legacy_duration_spelling,
                 )
                 .await;
         }
@@ -1201,10 +1246,8 @@ impl PipelineExecutor for LocalRunner {
         // Write config as YAML and JSON
         //
         // Newer pipelines will read the JSON, older ones will read the YAML.
-        let json_config = serde_json::to_string_pretty(&deployment_config)
-            .expect("JSON config serialization failed");
-        let yaml_config =
-            serde_yaml::to_string(&deployment_config).expect("YAML config serialization failed");
+        let json_config = config_json(&deployment_config, legacy_duration_spelling);
+        let yaml_config = config_yaml(&deployment_config, legacy_duration_spelling);
         for (extension, expanded_config) in [("json", json_config), ("yaml", yaml_config)] {
             let config_file_path = self.config.config_file_path(self.pipeline_id, extension);
             fs::write(&config_file_path, &expanded_config)
@@ -1688,5 +1731,56 @@ mod gen2_binary_tests {
             gen2_binary_from(Some(missing.into()), None),
             Err(RunnerError::Gen2BinaryNotFound { path }) if path == missing
         ));
+    }
+}
+
+#[cfg(test)]
+mod runtime_config_tests {
+    use super::{config_json, config_yaml};
+    use feldera_types::config::PipelineConfig;
+
+    fn config() -> PipelineConfig {
+        serde_json::from_value(serde_json::json!({
+            "name": "p", "outputs": {},
+            "inputs": {"t.kafka": {"stream": "t", "transport": {"name": "kafka_input",
+                "config": {"topic": "t", "group_join_timeout": "30s"}}}},
+            "clock_resolution": "250ms",
+            "fault_tolerance": {"model": "at_least_once", "checkpoint_interval": "20s"},
+        }))
+        .unwrap()
+    }
+
+    /// The platform's own runtime reads the current spelling.
+    #[test]
+    fn the_platform_runtime_gets_the_current_spelling() {
+        let text = config_json(&config(), false);
+        // Untranslated, the file is exactly what the configuration serializes to.
+        assert_eq!(text, serde_json::to_string_pretty(&config()).unwrap());
+        let value: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(value["clock_resolution"], "250ms");
+        assert_eq!(value["fault_tolerance"]["checkpoint_interval"], "20s");
+        assert!(value.get("clock_resolution_usecs").is_none());
+    }
+
+    /// A pinned runtime gets the older spelling, in the runtime settings and in
+    /// the connectors alike, and the other fields are left alone.
+    #[test]
+    fn a_pinned_runtime_gets_the_older_spelling() {
+        let value: serde_json::Value = serde_json::from_str(&config_json(&config(), true)).unwrap();
+        // The YAML carries plain numbers, readable by any YAML parser.
+        let yaml_text = config_yaml(&config(), true);
+        assert!(
+            yaml_text.contains("clock_resolution_usecs: 250000"),
+            "{yaml_text}"
+        );
+        assert!(!yaml_text.contains("serde_json"), "{yaml_text}");
+        assert_eq!(value["clock_resolution_usecs"], 250_000);
+        assert_eq!(value["fault_tolerance"]["checkpoint_interval_secs"], 20);
+        assert!(value.get("clock_resolution").is_none());
+        assert_eq!(value["name"], "p");
+        let kafka = &value["inputs"]["t.kafka"]["transport"]["config"];
+        assert_eq!(kafka["group_join_timeout_secs"], 30);
+        assert!(kafka.get("group_join_timeout").is_none());
+        assert_eq!(kafka["topic"], "t");
     }
 }

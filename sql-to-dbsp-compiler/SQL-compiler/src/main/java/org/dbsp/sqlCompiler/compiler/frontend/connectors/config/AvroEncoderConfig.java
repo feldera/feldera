@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.connectors.ConfigReporter;
 import org.dbsp.sqlCompiler.compiler.frontend.connectors.IValidateConfig;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -57,9 +58,15 @@ public class AvroEncoderConfig implements IValidateConfig {
     @JsonProperty("registry_proxy")
     public String registryProxy = null;
 
+    /** Timeout used to connect to the registry, for example {@code "10s"}. */
+    @Nullable
+    @JsonProperty("registry_timeout")
+    public JsonNode registryTimeout = null;
+
+    /** Deprecated; use {@link #registryTimeout}. */
     @Nullable
     @JsonProperty("registry_timeout_secs")
-    public Long registryTimeoutSecs = null;
+    public JsonNode registryTimeoutSecs = null;
 
     /** Mutually exclusive with {@code registry_authorization_token}. */
     @Nullable
@@ -77,7 +84,9 @@ public class AvroEncoderConfig implements IValidateConfig {
 
     @Override
     public boolean validate(ConfigReporter reporter) {
-        boolean ok = true;
+        boolean ok = ConfigDuration.check(reporter,
+                "registry_timeout", this.registryTimeout,
+                "registry_timeout_secs", this.registryTimeoutSecs);
         if (cdcField != null && updateFormat != AvroUpdateFormat.Raw) {
             reporter.warnPath("cdc_field", "Invalid configuration",
                     "\"cdc_field\" is only valid with \"update_format\": \"raw\"");

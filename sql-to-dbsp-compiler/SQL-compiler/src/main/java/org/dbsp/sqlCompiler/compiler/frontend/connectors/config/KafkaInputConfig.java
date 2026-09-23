@@ -25,8 +25,18 @@ public class KafkaInputConfig implements IValidateConfig {
     @JsonProperty("log_level")
     public KafkaLogLevel logLevel = null;
 
+    /**
+     * Maximum time to wait for the endpoint to join the Kafka consumer group during
+     * initialization, for example {@code "10s"}.
+     */
+    @Nullable
+    @JsonProperty("group_join_timeout")
+    public JsonNode groupJoinTimeout = null;
+
+    /** Deprecated; use {@link #groupJoinTimeout}. */
     @JsonProperty("group_join_timeout_secs")
-    public int groupJoinTimeoutSecs = 10;
+    @Nullable
+    public JsonNode groupJoinTimeoutSecs = null;
 
     @Nullable
     @JsonProperty("poller_threads")
@@ -77,7 +87,9 @@ public class KafkaInputConfig implements IValidateConfig {
 
     @Override
     public boolean validate(ConfigReporter reporter) {
-        boolean ok = true;
+        boolean ok = ConfigDuration.check(reporter,
+                "group_join_timeout", this.groupJoinTimeout,
+                "group_join_timeout_secs", this.groupJoinTimeoutSecs);
         List<String> topicList = topics != null ? topics : List.of();
         if (topicList.isEmpty()) {
             if (topic.isBlank()) {

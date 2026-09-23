@@ -201,7 +201,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
             .with_deferred_logging(|| {
                 self.kafka_producer.client().fetch_metadata(
                     Some(&self.config.topic),
-                    Duration::from_secs(self.config.initialization_timeout_secs as u64),
+                    Duration::from(self.config.initialization_timeout()),
                 )
             })
             .map_err(|e| {

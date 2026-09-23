@@ -1,0 +1,13 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc a6766cc5fb49c2583653751f02dd401b999049c9911abd5868e4e8056ebb1f3e # shrinks to nanos = 86400000000000
+cc f35fd280486e31663f7d1efd7d8aae1513df0a83fbc4803354f1d45c843238d6 # shrinks to count = 0
+cc cb16a3ac4cd8dea37366beea11f07c2b04796c0cb012c67f183206cc46573093 # shrinks to terms = [(0, 6)]
+cc 1c4feb74aca8c8a1b3b142e683d41c15f60d3b47ce835d2b0f1e7eb54d0b12e6 # shrinks to nanos = 86400000000000
+cc d6ad7bb59c2711d95e5aa5e9922e8430f555a177e34b5f0624f588bf6731b10a # shrinks to nanos = 86400000000000
+cc 463eb4a9076da3c260031169ba83a55cd7a965b7f90e47d8e25a3fe2b6cbef1f # shrinks to left = 0, right = 18446744073709551615
+cc 44aa0cfa04b4dac19ee17b045a36f2adfbccc156e110d10d814631d3e0c95b46 # shrinks to millis = 131072, fraction = 504

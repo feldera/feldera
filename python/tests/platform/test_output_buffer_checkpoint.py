@@ -1,7 +1,7 @@
 """
 Regression test for issue #6100: a pipeline with enable_output_buffer=true and
-max_output_buffer_time_millis=60000 stalls processing for ~60 seconds on every
-checkpoint when checkpoint_interval_secs=5.
+max_output_buffer_time="60s" stalls processing for ~60 seconds on every
+checkpoint when checkpoint_interval="5s".
 
 The root cause: while a checkpoint is in progress, the circuit skips non-barrier
 inputs (datagen, ad-hoc queries, etc.), so no records are processed until the
@@ -56,7 +56,7 @@ WITH (
         }},
         "format": {{"name": "json"}},
         "enable_output_buffer": true,
-        "max_output_buffer_time_millis": 60000
+        "max_output_buffer_time": "60s"
     }}]'
 ) AS SELECT * FROM t;
 """.strip()
@@ -69,7 +69,7 @@ WITH (
             workers=FELDERA_TEST_NUM_WORKERS,
             hosts=FELDERA_TEST_NUM_HOSTS,
             fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
-            checkpoint_interval_secs=5,
+            checkpoint_interval="5s",
         ),
     ).create_or_replace()
 

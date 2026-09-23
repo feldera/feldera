@@ -840,9 +840,14 @@ def test_runtime_config_edit_restricted_enterprise(pipeline_name):
         pipeline_name,
         pipeline,
         "`runtime_config.fault_tolerance`",
-        {"fault_tolerance": {"model": "exactly_once", "checkpoint_interval_secs": 60}},
+        {
+            "fault_tolerance": {
+                "model": "exactly_once",
+                "checkpoint_interval": "60s",
+            }
+        },
         lambda r: r["fault_tolerance"],
-        {"model": "exactly_once", "checkpoint_interval_secs": 60},
+        {"model": "exactly_once", "checkpoint_interval": "60s"},
     )
 
 
