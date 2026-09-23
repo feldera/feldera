@@ -12,6 +12,11 @@ and pipeline suspend/resume.  Three scenarios:
 * `test_modified_view_re_truncates_on_resume` — changing the view's
   schema on resume forces a rebuild from scratch.
 
+These all run in the default `cdc` update mode.  `merge` mode across a
+suspend and resume is covered by
+`test_delta_output_merge.test_merge_survives_a_suspend_and_resume`, which
+needs that file's keyed-view fixtures.
+
 The delta table backend toggles automatically via `DeltaTestLocation`:
 
 * Local runs use a `file://` URI under `/tmp`.

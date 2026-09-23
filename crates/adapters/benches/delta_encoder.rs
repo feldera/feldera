@@ -25,6 +25,10 @@ fn create_indexed_writer(threads: usize, table_uri: &str) -> DeltaTableWriter {
         checkpoint_interval: None,
         log_retention_duration: None,
         enable_expired_log_cleanup: None,
+        update_mode: Default::default(),
+        lookup_chunk_bytes: 1 << 20,
+        max_concurrent_probes: 4,
+        optimize_interval_secs: None,
     };
     let key_schema = Some(BenchKeyStruct::relation_schema());
     let mut value_schema = BenchTestStruct::relation_schema();
@@ -38,6 +42,7 @@ fn create_indexed_writer(threads: usize, table_uri: &str) -> DeltaTableWriter {
         Weak::new(),
         CancellationToken::new(),
         false,
+        true,
         true,
     )
     .unwrap()

@@ -68,6 +68,7 @@ pub fn create_integrated_output_endpoint(
             shutdown,
             continue_previous_state,
             is_index,
+            connector_config.output_buffer_config.enable_output_buffer,
         )?),
         TransportConfig::PostgresOutput(config) => Box::new(PostgresOutputEndpoint::new(
             endpoint_id,

@@ -4217,6 +4217,7 @@ dependencies = [
  "feldera-iceberg",
  "feldera-ir",
  "feldera-macros",
+ "feldera-modular-bloom",
  "feldera-observability",
  "feldera-samply",
  "feldera-size-of",
@@ -4297,6 +4298,7 @@ dependencies = [
  "uuid",
  "vergen-gitcl",
  "xxhash-rust",
+ "z85",
 ]
 
 [[package]]
@@ -12873,6 +12875,7 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "slab",
  "tokio",
