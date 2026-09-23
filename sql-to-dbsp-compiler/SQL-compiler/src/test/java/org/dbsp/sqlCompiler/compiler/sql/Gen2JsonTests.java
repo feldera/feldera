@@ -11,14 +11,22 @@ import org.junit.Assert;
 import org.junit.Test;
 
 /** The circuit compiled for the Gen-2 engine ({@code --gen2}) carries no Rust-codegen
- * artifacts: it has no {@code TYPEDBOX} and no {@code TypedBox<T, _>}, and a constant stays
- * where it is used instead of moving to a {@code static} declaration.  The {@code --jit}
- * circuit keeps the Rust forms. */
+ * artifacts: it has no {@code TYPEDBOX} and no {@code TypedBox<T, _>}, a constant stays where it
+ * is used instead of moving to a {@code static} declaration, and an aggregate operator keeps its
+ * per-aggregate list instead of one fold over a tuple accumulator.  The {@code --jit} circuit
+ * keeps the Rust forms. */
 public class Gen2JsonTests extends SqlIoTest {
     /** A temporal filter against NOW(): the Rust backend boxes its window bounds. */
     static final String WINDOW_PROGRAM = """
             CREATE TABLE events(ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR, id BIGINT NOT NULL);
             CREATE VIEW recent AS SELECT id FROM events WHERE ts >= NOW() - INTERVAL 1 HOUR;""";
+
+    /** Three aggregates that cannot use the linear form: a floating-point SUM, an ARRAY_AGG
+     * (an in-place step), and a BIT_XOR. */
+    static final String FOLD_PROGRAM = """
+            CREATE TABLE sales(region VARCHAR NOT NULL, qty INT, score DOUBLE, tag VARCHAR);
+            CREATE VIEW fold_agg AS
+            SELECT region, SUM(score), ARRAY_AGG(tag), BIT_XOR(qty) FROM sales GROUP BY region;""";
 
     /** A string and a decimal constant, which the Rust backend hoists into statics. */
     static final String CONSTANT_PROGRAM = """
@@ -43,6 +51,10 @@ public class Gen2JsonTests extends SqlIoTest {
         return visitor.getJsonString();
     }
 
+    static int occurrences(String text, String pattern) {
+        return text.split(java.util.regex.Pattern.quote(pattern), -1).length - 1;
+    }
+
     @Test
     public void jitJsonKeepsTypedBox() {
         String json = this.circuitJson(WINDOW_PROGRAM, false);
@@ -58,6 +70,26 @@ public class Gen2JsonTests extends SqlIoTest {
         // The window and the bound it boxed (NOW() - INTERVAL 1 HOUR) are still there, unwrapped.
         Assert.assertTrue(json.contains("\"DBSPWindowOperator\""));
         Assert.assertTrue(json.contains("\"DBSPTimeAddSub\""));
+    }
+
+    @Test
+    public void jitJsonPacksTheAggregatesIntoOneFold() {
+        String json = this.circuitJson(FOLD_PROGRAM, false);
+        Assert.assertEquals(1, occurrences(json, "\"DBSPFold\""));
+        // The packed step writes the three accumulator fields through a mutable reference.
+        Assert.assertTrue(json.contains("\"DBSPAssignmentExpression\""));
+        Assert.assertFalse(json.contains("\"DBSPAggregateList\""));
+    }
+
+    @Test
+    public void gen2JsonKeepsTheAggregateList() {
+        String json = this.circuitJson(FOLD_PROGRAM, true);
+        Assert.assertEquals(1, occurrences(json, "\"DBSPAggregateList\""));
+        // One entry per SQL aggregate, each with its own zero, step, and post-processing.
+        Assert.assertEquals(3, occurrences(json, "\"NonLinearAggregate\""));
+        Assert.assertFalse(json.contains("\"DBSPFold\""));
+        // A step returns its new accumulator; nothing assigns into a packed tuple.
+        Assert.assertFalse(json.contains("\"DBSPAssignmentExpression\""));
     }
 
     @Test
@@ -80,7 +112,7 @@ public class Gen2JsonTests extends SqlIoTest {
     /** The circuit after every pass, the Gen-2 passes included, decodes from the JSON it writes. */
     @Test
     public void gen2CircuitRoundTripsThroughJson() {
-        for (String program : new String[] { WINDOW_PROGRAM, CONSTANT_PROGRAM })
+        for (String program : new String[] { WINDOW_PROGRAM, FOLD_PROGRAM, CONSTANT_PROGRAM })
             Assert.assertNotNull(this.compile(program, true, true).getFinalCircuit(false));
     }
 

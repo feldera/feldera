@@ -173,6 +173,9 @@ public class CircuitOptimizer extends Passes {
         this.add(new ValidateRecursiveOperators(compiler));
         this.add(new LowerAsof(compiler));
         this.add(new LowerCircuitVisitor(compiler));
+        // The Gen-2 engine reads the aggregate list, which states that the aggregates of a group
+        // are independent reductions
+        this.add(new Conditional(compiler, new PackAggregateLists(compiler), () -> !options.ioOptions.gen2));
         this.add(new AdjustSqlIndex(compiler).circuitRewriter(true));
         this.add(new OptimizeWithGraph(compiler, g -> new BalancedJoins(compiler, g), 1));
         this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
