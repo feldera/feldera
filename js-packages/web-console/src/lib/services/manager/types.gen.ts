@@ -4442,7 +4442,10 @@ export type PostStopPipelineParameters = {
  * Postgres CDC input connector configuration.
  *
  * Uses logical replication to capture ongoing changes from a Postgres database.
- * Requires a pre-created publication and a user with REPLICATION privilege.
+ * Requires a pre-created publication. Automatic source migrations require a
+ * superuser; with administrator-installed source objects and
+ * `run_source_migrations = false`, a replication role with the documented
+ * source-table and etl state-store privileges can be used instead.
  * Tables must have primary keys and `REPLICA IDENTITY FULL` is recommended
  * for UPDATE/DELETE support.
  */
@@ -4492,13 +4495,28 @@ export type PostgresCdcReaderConfig = {
    */
   publication: string
   /**
+   * Whether the connector runs etl's source migrations on startup.
+   *
+   * The source migrations install the schema helper functions and the
+   * `ddl_command_end` event trigger. Creating the event trigger requires a
+   * superuser, so a de-elevated role can set this to `false` and have an
+   * administrator install the source objects out-of-band. Disabling this
+   * does not skip the state-store migrations, which run on every start
+   * regardless.
+   *
+   * Default: `true`.
+   */
+  run_source_migrations?: boolean
+  /**
    * Postgres table to replicate, schema-qualified (e.g. "public.orders").
    * A name given without a schema refers to a table in "public".
    * Must be included in the publication.
    */
   source_table: string
   /**
-   * Postgres connection URI. The user must have REPLICATION privilege.
+   * Postgres connection URI. Automatic source migrations require a superuser.
+   * With `run_source_migrations = false`, the user needs REPLICATION and the
+   * grants described in [Running as a non-superuser](https://docs.feldera.com/connectors/sources/postgresql-cdc#running-as-a-non-superuser).
    * See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>
    */
   uri: string
