@@ -93,7 +93,8 @@ AUTH_PROVIDER=generic-oidc FELDERA_AUTH_CLIENT_ID=feldera \
   cargo run --bin pipeline-manager
 ```
 
-Then, in another shell, from `js-packages/web-console`:
+Then, in another shell, from `js-packages/web-console` (the specs target
+`http://localhost:8080` unless `PLAYWRIGHT_APP_ORIGIN` is set):
 
 ```bash
 bun run test-e2e-auth

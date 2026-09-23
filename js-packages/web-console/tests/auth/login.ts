@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test'
+import { type Page, test } from '@playwright/test'
 
 /** Identities on the login page of `scripts/dummy_oidc.py`. */
 export type DummyOidcIdentity = 'reader' | 'writer' | 'admin' | 'owner'
@@ -9,11 +9,12 @@ export type DummyOidcIdentity = 'reader' | 'writer' | 'admin' | 'owner'
  * callback route exchanges the code and navigates back into the console.
  */
 export async function loginAs(page: Page, identity: DummyOidcIdentity) {
-  const response = await page.goto('/')
-  if (!response) {
-    throw new Error('Opening the console did not start a navigation')
+  const baseURL = test.info().project.use.baseURL
+  if (!baseURL) {
+    throw new Error('loginAs needs a baseURL to tell the console from the provider')
   }
-  const consoleOrigin = new URL(response.url()).origin
+  const consoleOrigin = new URL(baseURL).origin
+  await page.goto('/')
 
   await page.getByRole('link', { name: new RegExp(`^${identity}\\b`, 'i') }).click()
   await page.waitForURL(
