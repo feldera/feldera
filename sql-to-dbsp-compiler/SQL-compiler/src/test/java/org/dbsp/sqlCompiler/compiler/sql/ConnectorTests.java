@@ -912,6 +912,33 @@ public class ConnectorTests extends BaseSQLTests {
     }
 
     @Test
+    public void postgresCdcReaderRunSourceMigrations() {
+        for (String option : new String[]{"", ", \"run_source_migrations\": true",
+                ", \"run_source_migrations\": false"}) {
+            cleanTableConnectorTest("""
+                "transport": {
+                  "name": "postgres_cdc_input",
+                  "config": {
+                    "uri": "postgres://localhost/db",
+                    "publication": "my_pub",
+                    "source_table": "public.orders"%s
+                  }
+                }""".formatted(option));
+        }
+        tableConnectorTest("""
+                "transport": {
+                  "name": "postgres_cdc_input",
+                  "config": {
+                    "uri": "postgres://localhost/db",
+                    "publication": "my_pub",
+                    "source_table": "public.orders",
+                    "run_source_migrations": "no"
+                  }
+                }""",
+                "Cannot deserialize value of type `java.lang.Boolean` from String \"no\"");
+    }
+
+    @Test
     public void postgresWriterCdcMissingOpColumn() {
         viewConnectorTest("""
                 "transport": {

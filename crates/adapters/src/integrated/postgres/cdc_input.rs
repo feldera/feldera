@@ -85,6 +85,50 @@ fn is_shutdown_error(reason: &str) -> bool {
     reason.contains(TERMINATED_BEFORE_BATCH) || reason.contains(RESULT_DROPPED_ON_SHUTDOWN)
 }
 
+/// etl persists table failures as text, so use the same diagnostics for startup
+/// errors and failures reported later by the table monitor. Keep unrelated
+/// errors free of setup advice and retain the original PostgreSQL diagnostic.
+/// Return a single-layer error so the controller's root-cause formatter shows
+/// the complete message and hint without repeating etl's embedded diagnostics.
+fn with_setup_hint(error: anyhow::Error, run_source_migrations: bool) -> anyhow::Error {
+    let message = error.to_string();
+    let diagnostic = message.to_ascii_lowercase();
+    let permission_denied = [
+        "permission denied",
+        "must be superuser",
+        "must be a superuser",
+        "must be owner",
+    ]
+    .iter()
+    .any(|text| diagnostic.contains(text));
+    let missing_helper = diagnostic.contains("does not exist")
+        && ["etl.describe_table_schema(", "etl.describe_table_identity("]
+            .iter()
+            .any(|function| diagnostic.contains(function));
+    if !permission_denied && !missing_helper {
+        return anyhow!(message);
+    }
+
+    let hint = if run_source_migrations {
+        "With run_source_migrations=true, connect as a superuser to install etl's source \
+         objects. To use a non-superuser role instead, have an administrator install the \
+         source objects and apply the required runtime grants before setting \
+         run_source_migrations=false."
+    } else {
+        "With run_source_migrations=false, have an administrator install or update etl's \
+         source objects and grant EXECUTE on its schema helper functions, plus the required \
+         database, schema, and state-table privileges. The runtime role also needs the \
+         REPLICATION attribute."
+    };
+    let message = message.trim_end();
+    let separator = if message.ends_with('.') { " " } else { ". " };
+    anyhow!(
+        "{message}{separator}Hint: {hint} State-store migrations still run regardless of this flag. \
+         See 'Running as a non-superuser': \
+         https://docs.feldera.com/connectors/sources/postgresql-cdc#running-as-a-non-superuser"
+    )
+}
+
 /// Integrated input connector that reads from Postgres via logical replication (CDC).
 pub struct PostgresCdcInputEndpoint {
     inner: Arc<PostgresCdcInputInner>,
@@ -728,9 +772,9 @@ impl PostgresCdcInputInner {
             table_sync_monitor_refresh_interval_ms:
                 PipelineConfig::DEFAULT_TABLE_SYNC_MONITOR_REFRESH_INTERVAL_MS,
             invalidated_slot_behavior: InvalidatedSlotBehavior::default(),
-            // etl reads the source schema through helper functions that its own
-            // source migrations install, so the initial copy needs them.
-            run_source_migrations: true,
+            // The initial copy needs etl's schema helpers. When migrations are
+            // disabled, an administrator must have installed them beforehand.
+            run_source_migrations: self.config.run_source_migrations,
         };
 
         // Use PostgresStore to persist table replication phases across restarts.
@@ -739,10 +783,14 @@ impl PostgresCdcInputInner {
         let store = match PostgresStore::new(self.pipeline_id, pg_conn).await {
             Ok(store) => store,
             Err(e) => {
+                let message = format!("failed to initialize PostgresStore: {e}");
                 let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
                     &self.endpoint_name,
                     true,
-                    anyhow!("failed to initialize PostgresStore: {e}"),
+                    with_setup_hint(
+                        anyhow!(e).context(message),
+                        self.config.run_source_migrations,
+                    ),
                 )));
                 return;
             }
@@ -764,15 +812,19 @@ impl PostgresCdcInputInner {
                 self.copy.set_copy_open(reconciled.copy_outstanding);
             }
             Err(e) => {
+                let message = format!(
+                    "could not reconcile the replication state of table '{}' before \
+                     starting: {e}. The connector keeps its resume position in schema 'etl' \
+                     of the source database and must read and update it at startup; fix the \
+                     reported problem, then restart the pipeline",
+                    self.config.source_table
+                );
                 let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
                     &self.endpoint_name,
                     true,
-                    anyhow!(
-                        "could not reconcile the replication state of table '{}' before \
-                         starting: {e}. The connector keeps its resume position in schema 'etl' \
-                         of the source database and must read and update it at startup; fix the \
-                         reported problem, then restart the pipeline",
-                        self.config.source_table
+                    with_setup_hint(
+                        anyhow!(e).context(message),
+                        self.config.run_source_migrations,
                     ),
                 )));
                 return;
@@ -796,6 +848,7 @@ impl PostgresCdcInputInner {
 
         let table_error_monitor = TableErrorMonitor {
             endpoint_name: self.endpoint_name.clone(),
+            run_source_migrations: self.config.run_source_migrations,
             consumer: self.consumer.clone(),
             store: store.clone(),
             source_table: self.config.source_table.clone(),
@@ -815,10 +868,14 @@ impl PostgresCdcInputInner {
                 let _ = init_status_sender.send(Ok(()));
             }
             Err(e) => {
+                let message = format!("failed to start etl pipeline: {e}");
                 let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
                     &self.endpoint_name,
                     true,
-                    anyhow!("failed to start etl pipeline: {e}"),
+                    with_setup_hint(
+                        anyhow!(e).context(message),
+                        self.config.run_source_migrations,
+                    ),
                 )));
                 self.shutdown_etl_pipeline();
                 return;
@@ -889,7 +946,11 @@ impl PostgresCdcInputInner {
                     "postgres_cdc {}: etl pipeline error: {e}",
                     &self.endpoint_name
                 );
-                self.consumer.error(true, anyhow!(e), None);
+                self.consumer.error(
+                    true,
+                    with_setup_hint(anyhow!(e), self.config.run_source_migrations),
+                    None,
+                );
             } else {
                 debug!(
                     "postgres_cdc {}: etl pipeline stopped during shutdown: {e}",
@@ -977,6 +1038,7 @@ impl Drop for PostgresCdcInputInner {
 /// Monitor that turns etl table-state failures into Feldera connector failures.
 struct TableErrorMonitor {
     endpoint_name: String,
+    run_source_migrations: bool,
     consumer: Box<dyn InputConsumer>,
     store: PostgresStore,
     source_table: String,
@@ -1236,7 +1298,10 @@ impl TableErrorMonitor {
         } else {
             format!("table {table_id}")
         };
-        let error = anyhow!("postgres replication error on {table}: {detail}");
+        let error = with_setup_hint(
+            anyhow!("postgres replication error on {table}: {detail}"),
+            self.run_source_migrations,
+        );
         error!("postgres_cdc {}: {error}", &self.endpoint_name);
         self.consumer.error(true, error, None);
         true
@@ -2767,6 +2832,111 @@ mod tests {
     use serde_json::json;
     use std::str::FromStr;
     use std::sync::atomic::AtomicBool;
+
+    #[test]
+    fn setup_hint_only_for_permission_or_missing_etl_helper_errors() {
+        for run_source_migrations in [false, true] {
+            for diagnostic in [
+                "permission denied for schema etl",
+                "must be superuser to create an event trigger",
+                "must be a superuser to create an event trigger",
+                "must be owner of function emit_schema_change_messages",
+                "function etl.describe_table_schema(integer) does not exist",
+                "function etl.describe_table_identity(oid) does not exist",
+            ] {
+                let error = with_setup_hint(anyhow!(diagnostic), run_source_migrations).to_string();
+                assert!(error.starts_with(diagnostic), "{error}");
+                assert!(
+                    error.contains(&format!(
+                        "With run_source_migrations={run_source_migrations}"
+                    )),
+                    "{error}"
+                );
+                assert!(error.contains("#running-as-a-non-superuser"), "{error}");
+            }
+            for diagnostic in [
+                "connection refused",
+                "password authentication failed",
+                "relation public.orders does not exist",
+                "function public.unrelated(oid) does not exist",
+                "Postgres CDC source table is missing required Feldera columns",
+            ] {
+                assert_eq!(
+                    with_setup_hint(anyhow!(diagnostic), run_source_migrations).to_string(),
+                    diagnostic
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn setup_hint_startup_diagnostic_is_displayed_once() {
+        const DIAGNOSTIC: &str = "permission denied for schema etl";
+        const CONTEXT: &str = "failed to start etl pipeline";
+        for run_source_migrations in [false, true] {
+            let e = etl_error!(
+                ErrorKind::SourceQueryFailed,
+                "Failed to run ETL source migrations"
+            )
+            .with_source(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                DIAGNOSTIC,
+            ));
+            // Match pipeline.start()'s error path, including the etl source
+            // and the startup context that already embeds its diagnostic.
+            let message = format!("{CONTEXT}: {e}");
+            let error = with_setup_hint(anyhow!(e).context(message), run_source_migrations);
+            let controller_error = ControllerError::input_transport_error("cdc", true, error);
+            let displayed = controller_error.to_string();
+            assert_eq!(displayed.matches(DIAGNOSTIC).count(), 1, "{displayed}");
+            assert_eq!(displayed.matches(CONTEXT).count(), 1, "{displayed}");
+            assert_eq!(displayed.matches("Hint:").count(), 1, "{displayed}");
+
+            let serialized = serde_json::to_value(&controller_error).unwrap();
+            let serialized_error = serialized["error"].as_str().unwrap();
+            assert_eq!(
+                serialized_error.matches(DIAGNOSTIC).count(),
+                1,
+                "{serialized_error}"
+            );
+            assert_eq!(
+                serialized_error.matches(CONTEXT).count(),
+                1,
+                "{serialized_error}"
+            );
+            assert_eq!(
+                serialized_error.matches("Hint:").count(),
+                1,
+                "{serialized_error}"
+            );
+        }
+    }
+
+    #[test]
+    fn setup_hint_covers_replication_and_avoids_duplicate_periods() {
+        for diagnostic in [
+            "permission denied to start WAL sender",
+            "permission denied to start WAL sender.",
+            "permission denied to start WAL sender.\n",
+        ] {
+            let error = with_setup_hint(anyhow!(diagnostic), false).to_string();
+            assert!(error.contains("WAL sender. Hint:"), "{error}");
+            assert!(
+                error.contains("runtime role also needs the REPLICATION attribute"),
+                "{error}"
+            );
+        }
+        let error = with_setup_hint(anyhow!("permission denied for schema etl"), true).to_string();
+        assert!(
+            error.contains("connect as a superuser to install etl's source objects."),
+            "{error}"
+        );
+        assert!(
+            error.contains("To use a non-superuser role instead, have an administrator install the source objects and apply the required runtime grants"),
+            "{error}"
+        );
+        assert!(!error.contains("in either case"), "{error}");
+    }
 
     /// The startup rollback recognizes both errors a stop leaves behind: the
     /// one the connector records itself when Feldera stops it mid-batch, and
@@ -4307,6 +4477,7 @@ mod tests {
             uri: "postgres://user@localhost:5432/db".to_string(),
             publication: "pub".to_string(),
             source_table: "public.t".to_string(),
+            run_source_migrations: true,
             tls: PostgresTlsConfig::default(),
         }
     }
