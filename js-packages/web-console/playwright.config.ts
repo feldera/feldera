@@ -19,6 +19,8 @@ const config: PlaywrightTestConfig = {
   workers: 1,
   testDir: 'tests',
   testMatch: /(.+\.)?e2e\.[jt]s/,
+  // These need a manager with authentication enabled; playwright-auth.config.ts runs them.
+  testIgnore: '**/auth/**',
   snapshotDir: 'playwright-snapshots/e2e',
   expect: {
     toHaveScreenshot: {
