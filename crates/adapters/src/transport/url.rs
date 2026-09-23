@@ -363,8 +363,7 @@ impl UrlInputReader {
             } else if deadline.is_none() {
                 // If the pause timeout is so big that it overflows `Instant`,
                 // leave it as `None` and we'll just never timeout.
-                deadline =
-                    Instant::now().checked_add(Duration::from_secs(config.pause_timeout as u64));
+                deadline = Instant::now().checked_add(config.pause_linger().as_std());
             }
             let disconnect: OptionFuture<_> = deadline.map(sleep_until).into();
 

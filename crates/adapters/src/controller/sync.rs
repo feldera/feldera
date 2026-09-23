@@ -301,7 +301,7 @@ where
             // Continue to pull one more time to get the latest checkpoint
         }
 
-        std::thread::sleep(std::time::Duration::from_secs(sync.pull_interval));
+        std::thread::sleep(sync.standby_pull_interval().as_std());
     }
 
     tracing::debug!("creating activation marker file: {}", activation_file);

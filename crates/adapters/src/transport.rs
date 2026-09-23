@@ -100,7 +100,7 @@ pub fn input_transport_config_to_endpoint(
         #[cfg(not(feature = "with-kafka"))]
         TransportConfig::KafkaInput(_) => return Ok(None),
         #[cfg(feature = "with-nats")]
-        TransportConfig::NatsInput(config) => Box::new(NatsInputEndpoint::new(config)?),
+        TransportConfig::NatsInput(config) => Box::new(NatsInputEndpoint::new(*config)?),
         #[cfg(not(feature = "with-nats"))]
         TransportConfig::NatsInput(_) => return Ok(None),
         #[cfg(feature = "with-pubsub")]

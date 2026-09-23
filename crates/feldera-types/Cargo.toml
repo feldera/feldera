@@ -39,5 +39,6 @@ clap = { workspace = true }
 
 [dev-dependencies]
 csv = { workspace = true }
+proptest = { workspace = true }
 tempfile = { workspace = true }
 serde_yaml = { workspace = true }

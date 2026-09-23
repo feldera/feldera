@@ -119,7 +119,7 @@ def runtime_config(rate: float) -> RuntimeConfig:
     return RuntimeConfig(
         workers=FELDERA_TEST_NUM_WORKERS,
         hosts=FELDERA_TEST_NUM_HOSTS,
-        provisioning_timeout_secs=300,
+        provisioning_timeout="300s",
         storage=storage_config(rate),
         # Make sure roaring bitmaps don't kick in instead of Bloom filters.
         dev_tweaks={"enable_roaring": False},

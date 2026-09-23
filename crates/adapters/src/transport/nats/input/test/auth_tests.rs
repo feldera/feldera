@@ -11,8 +11,8 @@ fn connect_options(auth: cfg::Auth) -> cfg::ConnectOptions {
         server_url: String::new(),
         auth,
         tls: Default::default(),
-        connection_timeout_secs: 5,
-        request_timeout_secs: 5,
+        connection_timeout: Some(feldera_types::duration::Duration::from_secs(5)),
+        request_timeout: Some(feldera_types::duration::Duration::from_secs(5)),
     }
 }
 

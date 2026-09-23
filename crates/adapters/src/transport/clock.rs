@@ -5,7 +5,7 @@
 //! `Clock{ now: Timestamp }`, i.e., it's a struct with a single field named `now`
 //! of type `Timestamp`.
 //!
-//! The connector triggers a step every `clock_resolution_usecs`, rounded to the nearest
+//! The connector triggers a step every `clock_resolution`, rounded to the nearest
 //! millisecond boundary, if it's not triggered by some other connector. On every step
 //! it feeds precisely one record to the pipeline, containing the current time rounded
 //! to clock resolution.  The rounding is important, because it prevents the pipeline
@@ -32,8 +32,8 @@ use feldera_adapterlib::{
 };
 use feldera_types::{
     config::{
-        ConnectorConfig, DEFAULT_CLOCK_RESOLUTION_USECS, FormatConfig, FtModel,
-        InputEndpointConfig, PipelineConfig, TransportConfig,
+        ConnectorConfig, FormatConfig, FtModel, InputEndpointConfig, PipelineConfig,
+        TransportConfig,
     },
     format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat},
     program_schema::Relation,
@@ -73,10 +73,7 @@ pub fn now_endpoint_config(config: &PipelineConfig) -> InputEndpointConfig {
         "now",
         ConnectorConfig::new(
             TransportConfig::ClockInput(ClockConfig {
-                clock_resolution_usecs: config
-                    .global
-                    .clock_resolution_usecs
-                    .unwrap_or(DEFAULT_CLOCK_RESOLUTION_USECS),
+                clock_resolution: Some(config.global.clock_resolution()),
                 timezone_offset_ms: config
                     .global
                     .clock_timezone_offset
@@ -725,7 +722,7 @@ mod test {
         let make = |target: chrono::DateTime<Utc>| {
             let target_ms = target.timestamp_millis();
             let cfg = ClockConfig {
-                clock_resolution_usecs: 1_000_000,
+                clock_resolution: Some(feldera_types::duration::Duration::from_secs(1)),
                 timezone_offset_ms: 0,
                 now_offset_ms: Some(target_ms),
                 http_driven: false,
@@ -766,7 +763,7 @@ mod test {
         ] {
             let target_ms = target.timestamp_millis();
             let config = ClockConfig {
-                clock_resolution_usecs: 1_000_000,
+                clock_resolution: Some(feldera_types::duration::Duration::from_secs(1)),
                 timezone_offset_ms: 0,
                 now_offset_ms: Some(target_ms),
                 http_driven: false,
@@ -780,7 +777,7 @@ mod test {
 
         // Exactly epoch round-trips as 0.
         let epoch_config = ClockConfig {
-            clock_resolution_usecs: 1_000_000,
+            clock_resolution: Some(feldera_types::duration::Duration::from_secs(1)),
             timezone_offset_ms: 0,
             now_offset_ms: Some(0),
             http_driven: false,
@@ -896,7 +893,7 @@ mod test {
         let anchor_ms: i64 = wall_ms - 24 * 60 * MINUTE_MS; // one day in the past
 
         let base = ClockConfig {
-            clock_resolution_usecs: 1_000_000,
+            clock_resolution: Some(feldera_types::duration::Duration::from_secs(1)),
             timezone_offset_ms: 0,
             now_offset_ms: None,
             http_driven: false,

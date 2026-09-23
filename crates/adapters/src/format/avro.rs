@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use apache_avro::{Schema as AvroSchema, schema::Name as AvroName};
 use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_types::format::avro::AvroSchemaRegistryConfig;
@@ -72,8 +70,8 @@ fn schema_registry_settings(
             sr_settings_builder.set_proxy(proxy.as_str());
         }
 
-        if let Some(timeout) = config.registry_timeout_secs {
-            sr_settings_builder.set_timeout(Duration::from_secs(timeout));
+        if let Some(timeout) = config.registry_timeout {
+            sr_settings_builder.set_timeout(timeout.as_std());
         }
 
         Ok(Some(sr_settings_builder.build().map_err(|e| {

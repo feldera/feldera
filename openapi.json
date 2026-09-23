@@ -900,14 +900,12 @@
                         "cache_mib": null
                       },
                       "fault_tolerance": {
-                        "model": "none",
-                        "checkpoint_interval_secs": 60
+                        "model": "none"
                       },
                       "cpu_profiler": true,
                       "tracing": false,
                       "tracing_endpoint_jaeger": "",
                       "min_batch_size_records": 0,
-                      "max_buffering_delay_usecs": 0,
                       "resources": {
                         "cpu_cores_min": null,
                         "cpu_cores_max": null,
@@ -918,10 +916,8 @@
                         "service_account_name": null,
                         "namespace": null
                       },
-                      "clock_resolution_usecs": 1000000,
                       "clock_timezone_offset": null,
                       "pin_cpus": [],
-                      "provisioning_timeout_secs": null,
                       "max_parallel_connector_init": null,
                       "init_containers": null,
                       "checkpoint_during_suspend": true,
@@ -995,14 +991,12 @@
                         "cache_mib": null
                       },
                       "fault_tolerance": {
-                        "model": "none",
-                        "checkpoint_interval_secs": 60
+                        "model": "none"
                       },
                       "cpu_profiler": false,
                       "tracing": false,
                       "tracing_endpoint_jaeger": "",
                       "min_batch_size_records": 100000,
-                      "max_buffering_delay_usecs": 0,
                       "resources": {
                         "cpu_cores_min": null,
                         "cpu_cores_max": null,
@@ -1013,10 +1007,10 @@
                         "service_account_name": null,
                         "namespace": null
                       },
-                      "clock_resolution_usecs": 100000,
+                      "clock_resolution": "100ms",
                       "clock_timezone_offset": null,
                       "pin_cpus": [],
-                      "provisioning_timeout_secs": 1200,
+                      "provisioning_timeout": "20m",
                       "max_parallel_connector_init": 10,
                       "init_containers": null,
                       "checkpoint_during_suspend": false,
@@ -1120,14 +1114,12 @@
                     "cache_mib": null
                   },
                   "fault_tolerance": {
-                    "model": "none",
-                    "checkpoint_interval_secs": 60
+                    "model": "none"
                   },
                   "cpu_profiler": true,
                   "tracing": false,
                   "tracing_endpoint_jaeger": "",
                   "min_batch_size_records": 0,
-                  "max_buffering_delay_usecs": 0,
                   "resources": {
                     "cpu_cores_min": null,
                     "cpu_cores_max": null,
@@ -1138,10 +1130,8 @@
                     "service_account_name": null,
                     "namespace": null
                   },
-                  "clock_resolution_usecs": 1000000,
                   "clock_timezone_offset": null,
                   "pin_cpus": [],
-                  "provisioning_timeout_secs": null,
                   "max_parallel_connector_init": null,
                   "init_containers": null,
                   "checkpoint_during_suspend": true,
@@ -1198,14 +1188,12 @@
                       "cache_mib": null
                     },
                     "fault_tolerance": {
-                      "model": "none",
-                      "checkpoint_interval_secs": 60
+                      "model": "none"
                     },
                     "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
                     "min_batch_size_records": 0,
-                    "max_buffering_delay_usecs": 0,
                     "resources": {
                       "cpu_cores_min": null,
                       "cpu_cores_max": null,
@@ -1216,10 +1204,8 @@
                       "service_account_name": null,
                       "namespace": null
                     },
-                    "clock_resolution_usecs": 1000000,
                     "clock_timezone_offset": null,
                     "pin_cpus": [],
-                    "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
@@ -1388,14 +1374,12 @@
                       "cache_mib": null
                     },
                     "fault_tolerance": {
-                      "model": "none",
-                      "checkpoint_interval_secs": 60
+                      "model": "none"
                     },
                     "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
                     "min_batch_size_records": 0,
-                    "max_buffering_delay_usecs": 0,
                     "resources": {
                       "cpu_cores_min": null,
                       "cpu_cores_max": null,
@@ -1406,10 +1390,8 @@
                       "service_account_name": null,
                       "namespace": null
                     },
-                    "clock_resolution_usecs": 1000000,
                     "clock_timezone_offset": null,
                     "pin_cpus": [],
-                    "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
@@ -1540,14 +1522,12 @@
                     "cache_mib": null
                   },
                   "fault_tolerance": {
-                    "model": "none",
-                    "checkpoint_interval_secs": 60
+                    "model": "none"
                   },
                   "cpu_profiler": true,
                   "tracing": false,
                   "tracing_endpoint_jaeger": "",
                   "min_batch_size_records": 0,
-                  "max_buffering_delay_usecs": 0,
                   "resources": {
                     "cpu_cores_min": null,
                     "cpu_cores_max": null,
@@ -1558,10 +1538,8 @@
                     "service_account_name": null,
                     "namespace": null
                   },
-                  "clock_resolution_usecs": 1000000,
                   "clock_timezone_offset": null,
                   "pin_cpus": [],
-                  "provisioning_timeout_secs": null,
                   "max_parallel_connector_init": null,
                   "init_containers": null,
                   "checkpoint_during_suspend": true,
@@ -1618,14 +1596,12 @@
                       "cache_mib": null
                     },
                     "fault_tolerance": {
-                      "model": "none",
-                      "checkpoint_interval_secs": 60
+                      "model": "none"
                     },
                     "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
                     "min_batch_size_records": 0,
-                    "max_buffering_delay_usecs": 0,
                     "resources": {
                       "cpu_cores_min": null,
                       "cpu_cores_max": null,
@@ -1636,10 +1612,8 @@
                       "service_account_name": null,
                       "namespace": null
                     },
-                    "clock_resolution_usecs": 1000000,
                     "clock_timezone_offset": null,
                     "pin_cpus": [],
-                    "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
@@ -1723,14 +1697,12 @@
                       "cache_mib": null
                     },
                     "fault_tolerance": {
-                      "model": "none",
-                      "checkpoint_interval_secs": 60
+                      "model": "none"
                     },
                     "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
                     "min_batch_size_records": 0,
-                    "max_buffering_delay_usecs": 0,
                     "resources": {
                       "cpu_cores_min": null,
                       "cpu_cores_max": null,
@@ -1741,10 +1713,8 @@
                       "service_account_name": null,
                       "namespace": null
                     },
-                    "clock_resolution_usecs": 1000000,
                     "clock_timezone_offset": null,
                     "pin_cpus": [],
-                    "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
@@ -1999,14 +1969,12 @@
                       "cache_mib": null
                     },
                     "fault_tolerance": {
-                      "model": "none",
-                      "checkpoint_interval_secs": 60
+                      "model": "none"
                     },
                     "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
                     "min_batch_size_records": 0,
-                    "max_buffering_delay_usecs": 0,
                     "resources": {
                       "cpu_cores_min": null,
                       "cpu_cores_max": null,
@@ -2017,10 +1985,8 @@
                       "service_account_name": null,
                       "namespace": null
                     },
-                    "clock_resolution_usecs": 1000000,
                     "clock_timezone_offset": null,
                     "pin_cpus": [],
-                    "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
@@ -7189,14 +7155,12 @@
                       "cache_mib": null
                     },
                     "fault_tolerance": {
-                      "model": "none",
-                      "checkpoint_interval_secs": 60
+                      "model": "none"
                     },
                     "cpu_profiler": true,
                     "tracing": false,
                     "tracing_endpoint_jaeger": "",
                     "min_batch_size_records": 0,
-                    "max_buffering_delay_usecs": 0,
                     "resources": {
                       "cpu_cores_min": null,
                       "cpu_cores_max": null,
@@ -7207,10 +7171,8 @@
                       "service_account_name": null,
                       "namespace": null
                     },
-                    "clock_resolution_usecs": 1000000,
                     "clock_timezone_offset": null,
                     "pin_cpus": [],
-                    "provisioning_timeout_secs": null,
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
@@ -9111,14 +9073,11 @@
       },
       "ClockConfig": {
         "type": "object",
-        "required": [
-          "clock_resolution_usecs"
-        ],
         "properties": {
-          "clock_resolution_usecs": {
-            "type": "integer",
-            "format": "int64",
-            "minimum": 0
+          "clock_resolution": {
+            "type": "string",
+            "description": "How often the clock ticks, for example `1s`.",
+            "nullable": true
           },
           "http_driven": {
             "type": "boolean",
@@ -9634,17 +9593,15 @@
           "auth": {
             "$ref": "#/components/schemas/Auth"
           },
-          "connection_timeout_secs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Connection timeout\n\nHow long to wait when establishing the initial connection to the\nNATS server.",
-            "minimum": 0
+          "connection_timeout": {
+            "type": "string",
+            "description": "Connection timeout, for example `10s`.\n\nHow long to wait when establishing the initial connection to the\nNATS server. Defaults to 10 seconds.",
+            "nullable": true
           },
-          "request_timeout_secs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Request timeout in seconds.\n\nHow long to wait for responses to requests.",
-            "minimum": 0
+          "request_timeout": {
+            "type": "string",
+            "description": "Request timeout, for example `10s`.\n\nHow long to wait for responses to requests. Defaults to 10 seconds.",
+            "nullable": true
           },
           "server_url": {
             "type": "string",
@@ -9869,8 +9826,9 @@
             "format": "int64",
             "nullable": true
           },
-          "max_expires": {
+          "max_expiry": {
             "type": "string",
+            "description": "How long a pull request may stay parked on the server before it\nexpires, for example `30s`.\n\nUnset leaves the NATS server's own default in place.",
             "nullable": true
           },
           "max_waiting": {
@@ -10923,13 +10881,11 @@
             "default": null,
             "nullable": true
           },
-          "ioop_delay": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Per-I/O operation sleep duration, in milliseconds.\n\nThis is for simulating slow storage devices.  Do not use this in\nproduction.",
+          "ioop_latency": {
+            "type": "string",
+            "description": "Per-I/O operation sleep duration, for example `5ms`.\n\nThis is for simulating slow storage devices.  Do not use this in\nproduction.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "sync": {
             "allOf": [
@@ -11008,12 +10964,10 @@
         "type": "object",
         "description": "Fault-tolerance configuration.\n\nThe default [FtConfig] (via [FtConfig::default]) disables fault tolerance,\nwhich is the configuration that one gets if [RuntimeConfig] omits fault\ntolerance configuration.\n\nThe default value for [FtConfig::model] enables fault tolerance, as\n`Some(FtModel::default())`.  This is the configuration that one gets if\n[RuntimeConfig] includes a fault tolerance configuration but does not\nspecify a particular model.",
         "properties": {
-          "checkpoint_interval_secs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Interval between automatic checkpoints, in seconds.\n\nThe default is 60 seconds.  Values less than 1 or greater than 3600 will\nbe forced into that range.",
-            "nullable": true,
-            "minimum": 0
+          "checkpoint_interval": {
+            "type": "string",
+            "description": "Interval between automatic checkpoints, for example `60s`.\n\nThe default is 60 seconds; `null` disables periodic checkpointing.\nValues less than 1 second or greater than 1 hour will be forced into\nthat range.",
+            "nullable": true
           },
           "model": {
             "oneOf": [
@@ -11860,11 +11814,10 @@
           "resume_earliest_if_data_expires"
         ],
         "properties": {
-          "group_join_timeout_secs": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Maximum timeout in seconds to wait for the endpoint to join the Kafka\nconsumer group during initialization.",
-            "minimum": 0
+          "group_join_timeout": {
+            "type": "string",
+            "description": "Maximum time to wait for the endpoint to join the Kafka consumer group\nduring initialization, for example `10s`. Defaults to 10 seconds.",
+            "nullable": true
           },
           "header_filter": {
             "allOf": [
@@ -12000,11 +11953,10 @@
             },
             "description": "Kafka headers to be added to each message produced by this connector."
           },
-          "initialization_timeout_secs": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Maximum timeout in seconds to wait for the endpoint to connect to\na Kafka broker.\n\nDefaults to 60.",
-            "minimum": 0
+          "initialization_timeout": {
+            "type": "string",
+            "description": "Maximum time to wait for the endpoint to connect to a Kafka broker, for\nexample `60s`. Defaults to 60 seconds.",
+            "nullable": true
           },
           "kafka_service": {
             "type": "string",
@@ -12353,17 +12305,15 @@
           "consumer_config": {
             "$ref": "#/components/schemas/ConsumerConfig"
           },
-          "inactivity_timeout_secs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Maximum time in seconds to wait for the next message before running\na stream/server health check. Must be at least 1.",
-            "minimum": 0
+          "inactivity_timeout": {
+            "type": "string",
+            "description": "Maximum time to wait for the next message before running a\nstream/server health check, for example `60s`. Must be at least one\nsecond. Defaults to 60 seconds.",
+            "nullable": true
           },
-          "retry_interval_secs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Delay between automatic reconnect attempts while in retry mode.\nMust be at least 1.",
-            "minimum": 0
+          "retry_interval": {
+            "type": "string",
+            "description": "Delay between automatic reconnect attempts while in retry mode, for\nexample `5s`. Must be at least one second. Defaults to 5 seconds.",
+            "nullable": true
           },
           "stream_name": {
             "type": "string"
@@ -12650,7 +12600,7 @@
         "properties": {
           "enable_output_buffer": {
             "type": "boolean",
-            "description": "Enable output buffering.\n\nThe output buffering mechanism allows decoupling the rate at which the pipeline\npushes changes to the output transport from the rate of input changes.\n\nBy default, output updates produced by the pipeline are pushed directly to\nthe output transport. Some destinations may prefer to receive updates in fewer\nbigger batches. For instance, when writing Parquet files, producing\none bigger file every few minutes is usually better than creating\nsmall files every few milliseconds.\n\nTo achieve such input/output decoupling, users can enable output buffering by\nsetting the `enable_output_buffer` flag to `true`.  When buffering is enabled, output\nupdates produced by the pipeline are consolidated in an internal buffer and are\npushed to the output transport when one of several conditions is satisfied:\n\n* data has been accumulated in the buffer for more than `max_output_buffer_time_millis`\nmilliseconds.\n* buffer size exceeds `max_output_buffer_size_records` records.\n\nThis flag is `false` by default.",
+            "description": "Enable output buffering.\n\nThe output buffering mechanism allows decoupling the rate at which the pipeline\npushes changes to the output transport from the rate of input changes.\n\nBy default, output updates produced by the pipeline are pushed directly to\nthe output transport. Some destinations may prefer to receive updates in fewer\nbigger batches. For instance, when writing Parquet files, producing\none bigger file every few minutes is usually better than creating\nsmall files every few milliseconds.\n\nTo achieve such input/output decoupling, users can enable output buffering by\nsetting the `enable_output_buffer` flag to `true`.  When buffering is enabled, output\nupdates produced by the pipeline are consolidated in an internal buffer and are\npushed to the output transport when one of several conditions is satisfied:\n\n* data has been accumulated in the buffer for longer than\n`max_output_buffer_time`.\n* buffer size exceeds `max_output_buffer_size_records` records.\n\nThis flag is `false` by default.",
             "default": false
           },
           "max_output_buffer_size_records": {
@@ -12659,11 +12609,11 @@
             "default": 10000000,
             "minimum": 0
           },
-          "max_output_buffer_time_millis": {
-            "type": "integer",
-            "description": "Maximum time in milliseconds data is kept in the output buffer.\n\nBy default, data is kept in the buffer indefinitely until one of\nthe other output conditions is satisfied.  When this option is\nset the buffer will be flushed at most every\n`max_output_buffer_time_millis` milliseconds.\n\nNOTE: this configuration option requires the `enable_output_buffer` flag\nto be set.",
-            "default": 18446744073709551615,
-            "minimum": 0
+          "max_output_buffer_time": {
+            "type": "string",
+            "description": "Maximum time data is kept in the output buffer, for example `500ms`.\n\nBy default, data is kept in the buffer indefinitely until one of\nthe other output conditions is satisfied.  When this option is\nset the buffer will be flushed at least that often.\n\nNOTE: this configuration option requires the `enable_output_buffer` flag\nto be set.",
+            "default": null,
+            "nullable": true
           }
         }
       },
@@ -12969,13 +12919,11 @@
                 "description": "Deprecated: setting this true or false does not have an effect anymore.",
                 "default": true
               },
-              "clock_resolution_usecs": {
-                "type": "integer",
-                "format": "int64",
-                "description": "Real-time clock resolution in microseconds.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental\nrecomputation at most each `clock_resolution_usecs` microseconds.  If the query does not use\n`NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.\n\nIt is set to 1 second (1,000,000 microseconds) by default.",
-                "default": 1000000,
-                "nullable": true,
-                "minimum": 0
+              "clock_resolution": {
+                "type": "string",
+                "description": "Real-time clock resolution, for example `1s`.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental\nrecomputation at most once per `clock_resolution`.  If the query does not use\n`NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.\n\nIt is set to 1 second by default, and `null` selects that default.",
+                "default": null,
+                "nullable": true
               },
               "clock_timezone_offset": {
                 "type": "string",
@@ -13020,8 +12968,7 @@
                   }
                 ],
                 "default": {
-                  "model": "none",
-                  "checkpoint_interval_secs": 60
+                  "model": "none"
                 }
               },
               "hosts": {
@@ -13056,12 +13003,11 @@
                 "default": null,
                 "nullable": true
               },
-              "max_buffering_delay_usecs": {
-                "type": "integer",
-                "format": "int64",
-                "description": "Maximal delay in microseconds to wait for `min_batch_size_records` to\nget buffered by the controller, defaults to 0.",
-                "default": 0,
-                "minimum": 0
+              "max_buffering_delay": {
+                "type": "string",
+                "description": "Maximal delay to wait for `min_batch_size_records` to get buffered by\nthe controller, for example `10ms`. Defaults to no delay.",
+                "default": null,
+                "nullable": true
               },
               "max_parallel_connector_init": {
                 "type": "integer",
@@ -13082,7 +13028,7 @@
               "min_batch_size_records": {
                 "type": "integer",
                 "format": "int64",
-                "description": "Minimal input batch size.\n\nThe controller delays pushing input records to the circuit until at\nleast `min_batch_size_records` records have been received (total\nacross all endpoints) or `max_buffering_delay_usecs` microseconds\nhave passed since at least one input records has been buffered.\nDefaults to 0.",
+                "description": "Minimal input batch size.\n\nThe controller delays pushing input records to the circuit until at\nleast `min_batch_size_records` records have been received (total\nacross all endpoints) or `max_buffering_delay` has passed\nsince the first input record was buffered.\nDefaults to 0.",
                 "default": 0,
                 "minimum": 0
               },
@@ -13104,13 +13050,11 @@
                 "default": null,
                 "nullable": true
               },
-              "provisioning_timeout_secs": {
-                "type": "integer",
-                "format": "int64",
-                "description": "Timeout in seconds for the `Provisioning` phase of the pipeline.\nSetting this value will override the default of the runner.",
+              "provisioning_timeout": {
+                "type": "string",
+                "description": "Timeout for the `Provisioning` phase of the pipeline, for example `5m`.\nSetting this value will override the default of the runner.",
                 "default": null,
-                "nullable": true,
-                "minimum": 0
+                "nullable": true
               },
               "resources": {
                 "allOf": [
@@ -14518,12 +14462,10 @@
           "subscription"
         ],
         "properties": {
-          "connect_timeout_seconds": {
-            "type": "integer",
-            "format": "int32",
-            "description": "gRPC connection timeout.",
-            "nullable": true,
-            "minimum": 0
+          "connect_timeout": {
+            "type": "string",
+            "description": "gRPC connection timeout, for example `10s`.",
+            "nullable": true
           },
           "credentials": {
             "type": "string",
@@ -14561,12 +14503,10 @@
             "type": "string",
             "description": "Subscription name."
           },
-          "timeout_seconds": {
-            "type": "integer",
-            "format": "int32",
-            "description": "gRPC request timeout.",
-            "nullable": true,
-            "minimum": 0
+          "timeout": {
+            "type": "string",
+            "description": "gRPC request timeout, for example `30s`.",
+            "nullable": true
           },
           "timestamp": {
             "type": "string",
@@ -15014,13 +14954,11 @@
             "description": "Deprecated: setting this true or false does not have an effect anymore.",
             "default": true
           },
-          "clock_resolution_usecs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Real-time clock resolution in microseconds.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental\nrecomputation at most each `clock_resolution_usecs` microseconds.  If the query does not use\n`NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.\n\nIt is set to 1 second (1,000,000 microseconds) by default.",
-            "default": 1000000,
-            "nullable": true,
-            "minimum": 0
+          "clock_resolution": {
+            "type": "string",
+            "description": "Real-time clock resolution, for example `1s`.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental\nrecomputation at most once per `clock_resolution`.  If the query does not use\n`NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.\n\nIt is set to 1 second by default, and `null` selects that default.",
+            "default": null,
+            "nullable": true
           },
           "clock_timezone_offset": {
             "type": "string",
@@ -15065,8 +15003,7 @@
               }
             ],
             "default": {
-              "model": "none",
-              "checkpoint_interval_secs": 60
+              "model": "none"
             }
           },
           "hosts": {
@@ -15101,12 +15038,11 @@
             "default": null,
             "nullable": true
           },
-          "max_buffering_delay_usecs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Maximal delay in microseconds to wait for `min_batch_size_records` to\nget buffered by the controller, defaults to 0.",
-            "default": 0,
-            "minimum": 0
+          "max_buffering_delay": {
+            "type": "string",
+            "description": "Maximal delay to wait for `min_batch_size_records` to get buffered by\nthe controller, for example `10ms`. Defaults to no delay.",
+            "default": null,
+            "nullable": true
           },
           "max_parallel_connector_init": {
             "type": "integer",
@@ -15127,7 +15063,7 @@
           "min_batch_size_records": {
             "type": "integer",
             "format": "int64",
-            "description": "Minimal input batch size.\n\nThe controller delays pushing input records to the circuit until at\nleast `min_batch_size_records` records have been received (total\nacross all endpoints) or `max_buffering_delay_usecs` microseconds\nhave passed since at least one input records has been buffered.\nDefaults to 0.",
+            "description": "Minimal input batch size.\n\nThe controller delays pushing input records to the circuit until at\nleast `min_batch_size_records` records have been received (total\nacross all endpoints) or `max_buffering_delay` has passed\nsince the first input record was buffered.\nDefaults to 0.",
             "default": 0,
             "minimum": 0
           },
@@ -15149,13 +15085,11 @@
             "default": null,
             "nullable": true
           },
-          "provisioning_timeout_secs": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Timeout in seconds for the `Provisioning` phase of the pipeline.\nSetting this value will override the default of the runner.",
+          "provisioning_timeout": {
+            "type": "string",
+            "description": "Timeout for the `Provisioning` phase of the pipeline, for example `5m`.\nSetting this value will override the default of the runner.",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "resources": {
             "allOf": [
@@ -15958,6 +15892,11 @@
             "nullable": true,
             "minimum": 0
           },
+          "checkpoint_push_interval": {
+            "type": "string",
+            "description": "The interval between each push of checkpoints to object store, for\nexample `1h`.\n\nThe default is no periodic push; `null` disables periodic pushes\nexplicitly.",
+            "nullable": true
+          },
           "endpoint": {
             "type": "string",
             "description": "The endpoint URL for the storage service.\n\nThis is typically required for custom or local S3-compatible storage providers like MinIO.\nExample: `http://localhost:9000`\n\nFor a `gs://` bucket this is the Google Cloud Storage JSON API base URL;\na bare host gets `/storage/v1/` appended. Leave empty for the public service.\n\nRelevant rclone config key: [`endpoint`](https://rclone.org/s3/#s3-endpoint)",
@@ -15979,6 +15918,11 @@
           "ignore_checksum": {
             "type": "boolean",
             "description": "Set to skip post copy check of checksums, and only check the file sizes.\nThis can significantly improve the throughput.\nDefualt: false",
+            "nullable": true
+          },
+          "min_retention": {
+            "type": "string",
+            "description": "The minimum age a checkpoint must reach before it becomes eligible for\ndeletion, for example `30d`. All younger checkpoints will be preserved.\n\nDefault: 30 days",
             "nullable": true
           },
           "multi_thread_cutoff": {
@@ -16003,20 +15947,6 @@
             "description": "The name of the cloud storage provider (e.g., `\"AWS\"`, `\"Minio\"`).\n\nUsed for provider-specific behavior in rclone.\nIf omitted, defaults to `\"Other\"`.\n\nSee [rclone S3 provider documentation](https://rclone.org/s3/#s3-provider)",
             "nullable": true
           },
-          "pull_interval": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The interval (in seconds) between each attempt to fetch the latest\ncheckpoint from object store while in standby mode.\n\nApplies only when `start_from_checkpoint` is set to `latest`.\n\nDefault: 10 seconds",
-            "default": 10,
-            "minimum": 0
-          },
-          "push_interval": {
-            "type": "integer",
-            "format": "int64",
-            "description": "The interval (in seconds) between each push of checkpoints to object store.\n\nDefault: disabled (no periodic push).",
-            "nullable": true,
-            "minimum": 0
-          },
           "read_bucket": {
             "type": "string",
             "description": "A read-only bucket used as a fallback checkpoint source.\n\nWhen the pipeline has no local checkpoint and `bucket` contains no\ncheckpoint either, it will attempt to fetch the checkpoint from this\nlocation instead.  All connection settings (`endpoint`, `region`,\n`provider`, `access_key`, `secret_key`) are shared with `bucket`. The\nscheme is not: a `gs://` `bucket` needs a `gs://` `read_bucket` too,\nbecause the prefix alone selects the object store.\n\nThe pipeline **never writes** to `read_bucket`.\n\nMust point to a different location than `bucket`.",
@@ -16026,13 +15956,6 @@
             "type": "string",
             "description": "The region that this bucket is in.\n\nLeave empty for Minio or the default region (`us-east-1` for AWS).",
             "nullable": true
-          },
-          "retention_min_age": {
-            "type": "integer",
-            "format": "int32",
-            "description": "The minimum age (in days) a checkpoint must reach before it becomes\neligible for deletion. All younger checkpoints will be preserved.\n\nDefault: 30",
-            "default": 30,
-            "minimum": 0
           },
           "retention_min_count": {
             "type": "integer",
@@ -16051,6 +15974,11 @@
             "description": "**Deprecated.** Use `initial=standby` when starting the pipeline instead.",
             "default": false,
             "deprecated": true
+          },
+          "standby_pull_interval": {
+            "type": "string",
+            "description": "The interval between each attempt to fetch the latest checkpoint from\nobject store while in standby mode, for example `10s`.\n\nApplies only when `start_from_checkpoint` is set to `latest`.\n\nDefault: 10 seconds",
+            "nullable": true
           },
           "start_from_checkpoint": {
             "allOf": [
@@ -16742,11 +16670,10 @@
             "type": "string",
             "description": "URL."
           },
-          "pause_timeout": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Timeout before disconnection when paused, in seconds.\n\nIf the pipeline is paused, or if the input adapter reads data faster\nthan the pipeline can process it, then the controller will pause the\ninput adapter. If the input adapter stays paused longer than this\ntimeout, it will drop the network connection to the server. It will\nautomatically reconnect when the input adapter starts running again.",
-            "minimum": 0
+          "pause_linger": {
+            "type": "string",
+            "description": "Timeout before disconnection when paused, for example `60s`.\n\nIf the pipeline is paused, or if the input adapter reads data faster\nthan the pipeline can process it, then the controller will pause the\ninput adapter. If the input adapter stays paused longer than this\ntimeout, it will drop the network connection to the server. It will\nautomatically reconnect when the input adapter starts running again.\n\nThe default is 60 seconds.",
+            "nullable": true
           }
         }
       },

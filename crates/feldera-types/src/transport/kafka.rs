@@ -10,6 +10,22 @@ use std::{collections::BTreeMap, env};
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::{
+    duration::{Duration, LegacyUnit},
+    duration_setting,
+};
+
+duration_setting!(
+    duration_group_join_timeout,
+    "group_join_timeout",
+    LegacyUnit::Secs
+);
+duration_setting!(
+    duration_initialization_timeout,
+    "initialization_timeout",
+    LegacyUnit::Secs
+);
+
 /// Configuration for reading data from Kafka topics with `InputTransport`.
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, ToSchema)]
 pub struct KafkaInputConfig {
@@ -37,10 +53,15 @@ pub struct KafkaInputConfig {
     /// log level of the `log` crate.
     pub log_level: Option<KafkaLogLevel>,
 
-    /// Maximum timeout in seconds to wait for the endpoint to join the Kafka
-    /// consumer group during initialization.
-    #[serde(default = "default_group_join_timeout_secs")]
-    pub group_join_timeout_secs: u32,
+    /// Maximum time to wait for the endpoint to join the Kafka consumer group
+    /// during initialization, for example `10s`. Defaults to 10 seconds.
+    #[serde(
+        default,
+        alias = "group_join_timeout_secs",
+        deserialize_with = "duration_group_join_timeout",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub group_join_timeout: Option<Duration>,
 
     /// Set to 1 or more to fix the number of threads used to poll
     /// `rdkafka`. Multiple threads can increase performance with small Kafka
@@ -196,7 +217,7 @@ impl KafkaInputConfig {
             kafka_options,
             topic: topic.into(),
             log_level: None,
-            group_join_timeout_secs: default_group_join_timeout_secs(),
+            group_join_timeout: None,
             poller_threads: None,
             start_from: KafkaStartFromConfig::default(),
             region: None,
@@ -467,8 +488,27 @@ pub enum KafkaOauthProvider {
 
 /// On startup, the endpoint waits to join the consumer group.
 /// This constant defines the default wait timeout.
-pub const fn default_group_join_timeout_secs() -> u32 {
-    10
+pub const DEFAULT_GROUP_JOIN_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Default time to wait for the endpoint to connect to a Kafka broker.
+pub const DEFAULT_INITIALIZATION_TIMEOUT: Duration = Duration::from_secs(60);
+
+impl KafkaInputConfig {
+    /// The consumer-group join timeout in effect, or
+    /// [`DEFAULT_GROUP_JOIN_TIMEOUT`].
+    pub fn group_join_timeout(&self) -> Duration {
+        self.group_join_timeout
+            .unwrap_or(DEFAULT_GROUP_JOIN_TIMEOUT)
+    }
+}
+
+impl KafkaOutputConfig {
+    /// The broker connection timeout in effect, or
+    /// [`DEFAULT_INITIALIZATION_TIMEOUT`].
+    pub fn initialization_timeout(&self) -> Duration {
+        self.initialization_timeout
+            .unwrap_or(DEFAULT_INITIALIZATION_TIMEOUT)
+    }
 }
 
 impl KafkaInputConfig {
@@ -558,10 +598,6 @@ impl KafkaInputConfig {
 
 pub fn default_redpanda_server() -> String {
     env::var("REDPANDA_BROKERS").unwrap_or_else(|_| "localhost".to_string())
-}
-
-const fn default_initialization_timeout_secs() -> u32 {
-    60
 }
 
 /// Kafka header value encoded as a UTF-8 string or a byte array.
@@ -664,12 +700,15 @@ pub struct KafkaOutputConfig {
     /// log level of the `log` crate.
     pub log_level: Option<KafkaLogLevel>,
 
-    /// Maximum timeout in seconds to wait for the endpoint to connect to
-    /// a Kafka broker.
-    ///
-    /// Defaults to 60.
-    #[serde(default = "default_initialization_timeout_secs")]
-    pub initialization_timeout_secs: u32,
+    /// Maximum time to wait for the endpoint to connect to a Kafka broker, for
+    /// example `60s`. Defaults to 60 seconds.
+    #[serde(
+        default,
+        alias = "initialization_timeout_secs",
+        deserialize_with = "duration_initialization_timeout",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub initialization_timeout: Option<Duration>,
 
     /// Optional configuration for fault tolerance.
     pub fault_tolerance: Option<KafkaOutputFtConfig>,
@@ -766,6 +805,7 @@ mod compat {
 
     use serde::Deserialize;
 
+    use crate::duration::Duration;
     use crate::transport::kafka::{KafkaLogLevel, KafkaOauthProvider, KafkaStartFromConfig};
 
     #[derive(Deserialize)]
@@ -773,9 +813,14 @@ mod compat {
         /// Current, long-standing configuration option.
         log_level: Option<KafkaLogLevel>,
 
-        /// Current, long-standing configuration option.
-        #[serde(default = "super::default_group_join_timeout_secs")]
-        group_join_timeout_secs: u32,
+        /// Current, long-standing configuration option, which also accepts the
+        /// bare number of seconds its `group_join_timeout_secs` spelling took.
+        #[serde(
+            default,
+            alias = "group_join_timeout_secs",
+            deserialize_with = "super::duration_group_join_timeout"
+        )]
+        group_join_timeout: Option<Duration>,
 
         /// Current configuration option.
         poller_threads: Option<usize>,
@@ -900,7 +945,7 @@ mod compat {
                 topic,
                 kafka_options: compat.kafka_options,
                 log_level: compat.log_level,
-                group_join_timeout_secs: compat.group_join_timeout_secs,
+                group_join_timeout: compat.group_join_timeout,
                 poller_threads: compat.poller_threads,
                 start_from,
                 region: compat.region,
@@ -925,10 +970,7 @@ mod oauth_provider_tests {
 
     use serde::Deserialize;
 
-    use super::{
-        KafkaInputConfig, KafkaOauthProvider, KafkaOutputConfig,
-        default_initialization_timeout_secs,
-    };
+    use super::{KafkaInputConfig, KafkaOauthProvider, KafkaOutputConfig};
 
     #[test]
     fn oauth_provider_is_optional() {
@@ -965,7 +1007,7 @@ mod oauth_provider_tests {
             topic: "t".into(),
             headers: Vec::new(),
             log_level: None,
-            initialization_timeout_secs: default_initialization_timeout_secs(),
+            initialization_timeout: None,
             fault_tolerance: None,
             kafka_service: None,
             region: None,
@@ -1218,5 +1260,65 @@ mod header_filter_tests {
         // And the config round-trips back through YAML.
         let reparsed: KafkaInputConfig = serde_yaml::from_str(&yaml).unwrap();
         assert_eq!(reparsed.header_filter, config.header_filter);
+    }
+}
+
+#[cfg(test)]
+mod timeout_tests {
+    use super::*;
+
+    /// Wraps the fields under test in the `topic` key both Kafka configs
+    /// require.
+    fn config_json(fields: &str) -> String {
+        let separator = if fields.is_empty() { "" } else { ", " };
+        format!(r#"{{"topic": "test_topic"{separator}{fields}}}"#)
+    }
+
+    /// The consumer-group join timeout reads back from both spellings. They
+    /// reach one field, so writing both is rejected as a duplicate.
+    #[test]
+    fn group_join_timeout_accepts_both_spellings() {
+        for (fields, expected) in [
+            ("", DEFAULT_GROUP_JOIN_TIMEOUT),
+            (
+                r#""group_join_timeout": "1500ms""#,
+                Duration::from_millis(1500),
+            ),
+            (r#""group_join_timeout_secs": 25"#, Duration::from_secs(25)),
+        ] {
+            let json = config_json(fields);
+            let config: KafkaInputConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(config.group_join_timeout(), expected, "parsing {json}");
+        }
+
+        // Both spellings reach one field, so writing both is a duplicate.
+        let json = config_json(r#""group_join_timeout": "1500ms", "group_join_timeout_secs": 25"#);
+        let error = serde_json::from_str::<KafkaInputConfig>(&json)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            error.contains("duplicate field `group_join_timeout`"),
+            "{error}"
+        );
+    }
+
+    /// See [`group_join_timeout_accepts_both_spellings`].
+    #[test]
+    fn initialization_timeout_accepts_both_spellings() {
+        for (fields, expected) in [
+            ("", DEFAULT_INITIALIZATION_TIMEOUT),
+            (
+                r#""initialization_timeout": "2m""#,
+                Duration::from_secs(120),
+            ),
+            (
+                r#""initialization_timeout_secs": 15"#,
+                Duration::from_secs(15),
+            ),
+        ] {
+            let json = config_json(fields);
+            let config: KafkaOutputConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(config.initialization_timeout(), expected, "parsing {json}");
+        }
     }
 }

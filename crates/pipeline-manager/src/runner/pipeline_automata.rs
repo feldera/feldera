@@ -146,8 +146,8 @@ where
     client: reqwest::Client,
 
     /// Set when the pipeline executor `provision()` is called in the `Provisioning` stage.
-    /// Content is the provisioning timeout in seconds.
-    provision_called: Option<u64>,
+    /// Content is the provisioning timeout.
+    provision_called: Option<Duration>,
 
     /// Default maximum time to wait for the pipeline resources to be provisioned.
     /// This can differ significantly between the type of runner.
@@ -1410,11 +1410,15 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             .await
         {
             Ok(()) => {
+                // Keep the configured value whole: truncating to seconds would
+                // turn a sub-second timeout into no timeout at all.
                 self.provision_called = Some(
                     deployment_config
                         .global
-                        .provisioning_timeout_secs
-                        .unwrap_or(self.default_provisioning_timeout.as_secs()),
+                        .provisioning_timeout
+                        .map_or(self.default_provisioning_timeout, |timeout| {
+                            timeout.as_std()
+                        }),
                 );
                 info!(
                     pipeline_id = %pipeline.id,
@@ -1455,10 +1459,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> Action {
         assert!(self.provision_called.is_some());
-        let provisioning_timeout = Duration::from_secs(
-            self.provision_called
-                .expect("Provision must have been called"),
-        );
+        let provisioning_timeout = self
+            .provision_called
+            .expect("Provision must have been called");
 
         // Deployment initial runtime desired state is expected
         let deployment_initial = match &pipeline.deployment_initial {

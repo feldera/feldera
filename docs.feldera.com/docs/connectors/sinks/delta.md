@@ -179,7 +179,7 @@ WITH (
       }
     },
     "enable_output_buffer": true,
-    "max_output_buffer_time_millis": 10000
+    "max_output_buffer_time": "10s"
  }]'
 )
 AS SELECT * FROM my_table;
@@ -214,7 +214,7 @@ WITH (
       }
     },
     "enable_output_buffer": true,
-    "max_output_buffer_time_millis": 10000
+    "max_output_buffer_time": "10s"
  }]'
 )
 AS SELECT * FROM my_table;
@@ -244,7 +244,7 @@ WITH (
       }
     },
     "enable_output_buffer": true,
-    "max_output_buffer_time_millis": 10000
+    "max_output_buffer_time": "10s"
  }]'
 )
 AS SELECT * FROM my_table;

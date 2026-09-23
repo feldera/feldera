@@ -1,12 +1,13 @@
 //! A CLI App for the Feldera REST API.
 
 use chrono::Utc;
-use clap::{CommandFactory, Parser};
+use clap::{CommandFactory, Parser, ValueEnum};
 use clap_complete::CompleteEnv;
 use feldera_rest_api::types::*;
 use feldera_rest_api::*;
 use feldera_types::checkpoint::CheckpointResponse;
 use feldera_types::config::{FtModel, RuntimeConfig, StorageOptions};
+use feldera_types::duration::Duration as ConfigDuration;
 use feldera_types::error::ErrorResponse;
 use feldera_types::transport::clock::ClockAdvanceRequest;
 use futures_util::StreamExt;
@@ -17,10 +18,12 @@ use reqwest::StatusCode;
 use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 use serde_json::json;
 use std::convert::Infallible;
+use std::fmt::Display;
 use std::fmt::Write as _;
 use std::fs::File;
 use std::io::{ErrorKind, Read, Write, stdout};
 use std::path::PathBuf;
+use std::str::FromStr;
 use tabled::builder::Builder;
 use tabled::settings::Style;
 use tempfile::tempfile;
@@ -977,17 +980,41 @@ async fn pipelines(format: OutputFormat, client: Client) {
     }
 }
 
+/// The spelling of `key` that the user types on the command line.
+fn key_name(key: RuntimeConfigKey) -> String {
+    key.to_possible_value()
+        .map(|value| value.get_name().to_string())
+        .unwrap_or_else(|| format!("{key:?}"))
+}
+
+/// Parses `value` for `key`, keeping the reason a rejection happened.
+///
+/// The caller prints that reason, so a bad duration says which unit it wanted
+/// rather than only that the value was refused.
+fn parse_value<T>(key: RuntimeConfigKey, value: &str) -> Result<T, String>
+where
+    T: FromStr,
+    T::Err: Display,
+{
+    value.parse::<T>().map_err(|error| {
+        format!(
+            "`{value}` is not a valid value for `{}`: {error}",
+            key_name(key)
+        )
+    })
+}
+
 fn patch_runtime_config(
     rc: &mut RuntimeConfig,
     key: RuntimeConfigKey,
     value: &str,
-) -> Result<(), ()> {
+) -> Result<(), String> {
     match key {
         RuntimeConfigKey::Workers => {
-            rc.workers = value.parse().map_err(|_| ())?;
+            rc.workers = parse_value(key, value)?;
         }
         RuntimeConfigKey::Storage => {
-            let enable: bool = value.parse().map_err(|_| ())?;
+            let enable: bool = parse_value(key, value)?;
             if enable != rc.storage.is_some() {
                 rc.storage = enable.then(StorageOptions::default);
             }
@@ -996,67 +1023,95 @@ fn patch_runtime_config(
             rc.fault_tolerance.model = match value {
                 "false" | "none" => None,
                 "true" => Some(FtModel::default()),
-                _ => Some(value.parse().map_err(|_| ())?),
+                _ => Some(parse_value(key, value)?),
             }
         }
         RuntimeConfigKey::CheckpointInterval => {
-            rc.fault_tolerance.checkpoint_interval_secs = match value.parse().map_err(|_| ())? {
-                0 => None,
-                interval => Some(interval),
-            };
+            // One key serves both spellings, because a command line carries
+            // everything as text anyway. `none` sends the explicit null that
+            // turns periodic checkpointing off, which the bare number
+            // expressed by accepting 0.
+            rc.fault_tolerance.checkpoint_interval = Some(match value {
+                "none" | "null" => None,
+                _ => match value.parse::<u64>() {
+                    Ok(secs) => {
+                        eprintln!(
+                            "a bare number of seconds is deprecated; write `{secs}s`, \
+                             or `none` to disable periodic checkpoints"
+                        );
+                        (secs != 0).then(|| ConfigDuration::from_secs(secs))
+                    }
+                    Err(_) => Some(parse_value(key, value)?),
+                },
+            });
         }
         RuntimeConfigKey::CpuProfiler => {
-            rc.cpu_profiler = value.parse().map_err(|_| ())?;
+            rc.cpu_profiler = parse_value(key, value)?;
         }
         RuntimeConfigKey::Tracing => {
-            rc.tracing = value.parse().map_err(|_| ())?;
+            rc.tracing = parse_value(key, value)?;
         }
         RuntimeConfigKey::TracingEndpointJaeger => {
-            rc.tracing_endpoint_jaeger = value.parse().map_err(|_| ())?;
+            rc.tracing_endpoint_jaeger = parse_value(key, value)?;
         }
         RuntimeConfigKey::MinBatchSizeRecords => {
-            rc.min_batch_size_records = value.parse().map_err(|_| ())?;
+            rc.min_batch_size_records = parse_value(key, value)?;
         }
         RuntimeConfigKey::MaxBufferingDelayUsecs => {
-            rc.max_buffering_delay_usecs = value.parse().map_err(|_| ())?;
+            eprintln!(
+                "`max_buffering_delay_usecs` is deprecated; use `max_buffering_delay` instead"
+            );
+            rc.max_buffering_delay = Some(ConfigDuration::from_micros(parse_value(key, value)?));
+        }
+        RuntimeConfigKey::MaxBufferingDelay => {
+            rc.max_buffering_delay = Some(parse_value(key, value)?);
         }
         RuntimeConfigKey::CpuCoresMin => {
-            rc.resources.cpu_cores_min = Some(value.parse().map_err(|_| ())?);
+            rc.resources.cpu_cores_min = Some(parse_value(key, value)?);
         }
         RuntimeConfigKey::CpuCoresMax => {
-            rc.resources.cpu_cores_max = Some(value.parse().map_err(|_| ())?);
+            rc.resources.cpu_cores_max = Some(parse_value(key, value)?);
         }
         RuntimeConfigKey::MemoryMbMin => {
-            rc.resources.memory_mb_min = Some(value.parse().map_err(|_| ())?);
+            rc.resources.memory_mb_min = Some(parse_value(key, value)?);
         }
         RuntimeConfigKey::MemoryMbMax => {
-            rc.resources.memory_mb_max = Some(value.parse().map_err(|_| ())?);
+            rc.resources.memory_mb_max = Some(parse_value(key, value)?);
         }
         RuntimeConfigKey::StorageMbMax => {
-            rc.resources.storage_mb_max = Some(value.parse().map_err(|_| ())?);
+            rc.resources.storage_mb_max = Some(parse_value(key, value)?);
         }
         RuntimeConfigKey::StorageClass => {
-            rc.resources.storage_class = Some(value.parse().map_err(|_| ())?);
+            rc.resources.storage_class = Some(parse_value(key, value)?);
         }
         RuntimeConfigKey::MinStorageBytes => {
             if let Some(storage) = rc.storage.as_mut() {
-                storage.min_storage_bytes = Some(value.parse().map_err(|_| ())?);
+                storage.min_storage_bytes = Some(parse_value(key, value)?);
             }
         }
         RuntimeConfigKey::ClockResolutionUsecs => {
-            rc.clock_resolution_usecs = Some(value.parse().map_err(|_| ())?);
+            eprintln!("`clock_resolution_usecs` is deprecated; use `clock_resolution` instead");
+            rc.clock_resolution = Some(ConfigDuration::from_micros(parse_value(key, value)?));
+        }
+        RuntimeConfigKey::ClockResolution => {
+            rc.clock_resolution = Some(parse_value(key, value)?);
         }
         RuntimeConfigKey::Logging => {
-            rc.logging = Some(value.parse().map_err(|_| ())?);
+            rc.logging = Some(parse_value(key, value)?);
         }
         RuntimeConfigKey::HttpWorkers => {
-            rc.http_workers = Some(value.parse().map_err(|_| ())?);
+            rc.http_workers = Some(parse_value(key, value)?);
         }
         RuntimeConfigKey::IoWorkers => {
-            rc.io_workers = Some(value.parse().map_err(|_| ())?);
+            rc.io_workers = Some(parse_value(key, value)?);
         }
         RuntimeConfigKey::DevTweaks => {
-            rc.dev_tweaks = serde_json::from_str(value).map_err(|_| ())?;
+            rc.dev_tweaks = serde_json::from_str(value).map_err(|error| {
+                format!(
+                    "`{value}` is not valid JSON for `{}`: {error}",
+                    key_name(key)
+                )
+            })?;
         }
     };
 
@@ -2220,11 +2275,8 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .unwrap()
                 .unwrap();
 
-            if patch_runtime_config(&mut rc, key, value.as_str()).is_err() {
-                eprintln!(
-                    "Failed to parse value '{}' for updating key {:?}",
-                    value, key
-                );
+            if let Err(error) = patch_runtime_config(&mut rc, key, value.as_str()) {
+                eprintln!("{error}");
                 std::process::exit(1);
             }
 
@@ -4023,13 +4075,108 @@ fn init_logging(default_level: &str) {
 #[cfg(test)]
 mod tests {
     use super::{
-        Client, ClientInfo, ClientOpts, format_program_errors, install_crypto_provider,
-        make_client, read_oidc_token_file,
+        Client, ClientInfo, ClientOpts, RuntimeConfig, RuntimeConfigKey, format_program_errors,
+        install_crypto_provider, make_client, patch_runtime_config, read_oidc_token_file,
     };
     use feldera_rest_api::types::{
         ProgramError, RustCompilationInfo, SqlCompilationInfo, SqlCompilerMessage,
     };
+    use feldera_types::duration::Duration as ConfigDuration;
     use std::io::Write;
+
+    /// A duration key stores what the user typed as a duration. One field
+    /// holds the setting, so nothing is left behind under an older spelling.
+    #[test]
+    fn setting_a_duration_key_stores_a_duration() {
+        let mut config = RuntimeConfig::default();
+
+        patch_runtime_config(&mut config, RuntimeConfigKey::MaxBufferingDelay, "10ms").unwrap();
+        patch_runtime_config(&mut config, RuntimeConfigKey::ClockResolution, "2s").unwrap();
+
+        assert_eq!(
+            config.max_buffering_delay,
+            Some(ConfigDuration::from_millis(10))
+        );
+        assert_eq!(config.clock_resolution, Some(ConfigDuration::from_secs(2)));
+    }
+
+    /// `none` turns periodic checkpointing off. The bare number of seconds
+    /// expressed that by accepting 0, which a duration cannot mean.
+    #[test]
+    fn checkpoint_interval_can_disable_checkpointing() {
+        let mut config = RuntimeConfig::default();
+
+        patch_runtime_config(&mut config, RuntimeConfigKey::CheckpointInterval, "30s").unwrap();
+        assert_eq!(
+            config.fault_tolerance.checkpoint_interval,
+            Some(Some(ConfigDuration::from_secs(30)))
+        );
+
+        for disable in ["none", "null"] {
+            patch_runtime_config(&mut config, RuntimeConfigKey::CheckpointInterval, disable)
+                .unwrap();
+            assert_eq!(
+                config.fault_tolerance.checkpoint_interval,
+                Some(None),
+                "`{disable}` should disable periodic checkpoints"
+            );
+        }
+    }
+
+    /// One `checkpoint_interval` key serves both spellings: the command line
+    /// carries everything as text, so a bare number of seconds keeps working
+    /// where the field it writes now holds a duration.
+    #[test]
+    fn checkpoint_interval_still_accepts_a_bare_number_of_seconds() {
+        let mut config = RuntimeConfig::default();
+
+        patch_runtime_config(&mut config, RuntimeConfigKey::CheckpointInterval, "90").unwrap();
+        assert_eq!(
+            config.fault_tolerance.checkpoint_interval,
+            Some(Some(ConfigDuration::from_secs(90)))
+        );
+
+        // Zero was how the bare-number spelling turned checkpointing off.
+        patch_runtime_config(&mut config, RuntimeConfigKey::CheckpointInterval, "0").unwrap();
+        assert_eq!(config.fault_tolerance.checkpoint_interval, Some(None));
+
+        // A duration of zero is a length of time, not a disable token.
+        patch_runtime_config(&mut config, RuntimeConfigKey::CheckpointInterval, "0s").unwrap();
+        assert_eq!(
+            config.fault_tolerance.checkpoint_interval,
+            Some(Some(ConfigDuration::ZERO))
+        );
+    }
+
+    /// A rejected value reports what was wrong with it and names the key in the
+    /// spelling the user typed, not in Rust's debug spelling.
+    #[test]
+    fn a_rejected_value_explains_itself() {
+        let mut config = RuntimeConfig::default();
+
+        let error =
+            patch_runtime_config(&mut config, RuntimeConfigKey::MaxBufferingDelay, "10 sec")
+                .unwrap_err();
+        assert!(
+            error.contains("max_buffering_delay"),
+            "should name the key as typed, got: {error}"
+        );
+        assert!(
+            error.contains("10 sec"),
+            "should quote the offending value, got: {error}"
+        );
+        assert!(
+            error.contains("unit"),
+            "should say a unit was the problem, got: {error}"
+        );
+
+        let error =
+            patch_runtime_config(&mut config, RuntimeConfigKey::Workers, "many").unwrap_err();
+        assert!(
+            error.contains("workers") && error.contains("many"),
+            "should name the key and the value, got: {error}"
+        );
+    }
 
     // A single self-signed PEM-encoded certificate used only as test data. It
     // is never trusted by the system and never presented as a server

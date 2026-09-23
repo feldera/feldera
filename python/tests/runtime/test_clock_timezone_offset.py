@@ -69,7 +69,7 @@ class TestClockTimezoneOffset(unittest.TestCase):
             runtime_config=RuntimeConfig(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
-                clock_resolution_usecs=CLOCK_RESOLUTION_MS * 1_000,
+                clock_resolution=f"{CLOCK_RESOLUTION_MS}ms",
                 clock_timezone_offset=TZ_OFFSET,
                 dev_tweaks={
                     "now_offset": ANCHOR_RFC,

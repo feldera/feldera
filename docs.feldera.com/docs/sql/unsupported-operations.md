@@ -150,7 +150,7 @@ details.
 
 The `NOW()` function returns the current timestamp and is updated at
 every processing step (every 1 second by default, configurable via
-`clock_resolution_usecs`).
+`clock_resolution`).
 
 - **In filters**: `NOW()` in `WHERE` clauses for temporal filtering
   (e.g., `WHERE ts >= NOW() - INTERVAL 1 DAY`) is efficient and

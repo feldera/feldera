@@ -1464,7 +1464,7 @@ public class ConnectorTests extends BaseSQLTests {
                     "clock_resolution_usecs": 0
                   }
                 }""",
-                "\"clock_resolution_usecs\" must be greater than 0");
+                "\"clock_resolution_usecs\" is '0'; it must be greater than 0");
     }
 
     @Test
@@ -1673,6 +1673,502 @@ public class ConnectorTests extends BaseSQLTests {
                     }
                   }
                 }""",
-                "\"inactivity_timeout_secs\" must be at least 1");
+                "\"inactivity_timeout_secs\" is '0'; it must be at least 1 second");
+    }
+
+    // ---- Human-readable duration fields ----
+
+    @Test
+    public void urlInputDurationField() {
+        cleanTableConnectorTest("""
+                "transport": {
+                  "name": "url_input",
+                  "config": {
+                    "path": "https://example.com/data.csv",
+                    "pause_linger": "1h30m"
+                  }
+                }""");
+    }
+
+    @Test
+    public void urlInputMalformedDuration() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "url_input",
+                  "config": {
+                    "path": "https://example.com/data.csv",
+                    "pause_linger": "30"
+                  }
+                }""",
+                "\"pause_linger\": '30' has no unit");
+    }
+
+    @Test
+    public void kafkaInputDurationField() {
+        cleanTableConnectorTest("""
+                "transport": {
+                  "name": "kafka_input",
+                  "config": {
+                    "topic": "my-topic",
+                    "group_join_timeout": "10s"
+                  }
+                }""");
+    }
+
+    @Test
+    public void kafkaInputLegacyTimeout() {
+        cleanTableConnectorTest("""
+                "transport": {
+                  "name": "kafka_input",
+                  "config": {
+                    "topic": "my-topic",
+                    "group_join_timeout_secs": 10
+                  }
+                }""");
+    }
+
+    @Test
+    public void kafkaInputMalformedDuration() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "kafka_input",
+                  "config": {
+                    "topic": "my-topic",
+                    "group_join_timeout": "10sec"
+                  }
+                }""",
+                "unknown unit 'sec' in duration '10sec'");
+    }
+
+    @Test
+    public void kafkaOutputDurationField() {
+        runCleanConnectorTest("""
+                CREATE TABLE T (x INT);
+                CREATE VIEW V WITH (
+                  'connectors' = '[{
+                    "name": "c",
+                    "transport": {
+                      "name": "kafka_output",
+                      "config": {
+                        "topic": "my-topic",
+                        "initialization_timeout": "90s"
+                      }
+                    }
+                  }]'
+                ) AS SELECT * FROM T;""");
+    }
+
+    @Test
+    public void kafkaOutputMalformedDuration() {
+        viewConnectorTest("""
+                "transport": {
+                  "name": "kafka_output",
+                  "config": {
+                    "topic": "my-topic",
+                    "initialization_timeout": ""
+                  }
+                }""",
+                "\"initialization_timeout\": duration is empty");
+    }
+
+    @Test
+    public void pubSubInputDurationFields() {
+        cleanTableConnectorTest("""
+                "transport": {
+                  "name": "pub_sub_input",
+                  "config": {
+                    "subscription": "my-sub",
+                    "timeout": "30s",
+                    "connect_timeout": "10s"
+                  }
+                }""");
+    }
+
+    @Test
+    public void pubSubInputLegacyTimeouts() {
+        cleanTableConnectorTest("""
+                "transport": {
+                  "name": "pub_sub_input",
+                  "config": {
+                    "subscription": "my-sub",
+                    "timeout_seconds": 30,
+                    "connect_timeout_seconds": 10
+                  }
+                }""");
+    }
+
+    @Test
+    public void pubSubInputMalformedDuration() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "pub_sub_input",
+                  "config": {
+                    "subscription": "my-sub",
+                    "connect_timeout": "-10s"
+                  }
+                }""",
+                "\"connect_timeout\": duration '-10s' cannot be negative");
+    }
+
+    @Test
+    public void avroParserDurationField() {
+        cleanTableConnectorTest("""
+                "format": {
+                  "name": "avro",
+                  "config": {
+                    "registry_urls": ["http://localhost:8081"],
+                    "registry_timeout": "10s"
+                  }
+                }""");
+    }
+
+    @Test
+    public void avroParserLegacyTimeout() {
+        cleanTableConnectorTest("""
+                "format": {
+                  "name": "avro",
+                  "config": {
+                    "registry_urls": ["http://localhost:8081"],
+                    "registry_timeout_secs": 10
+                  }
+                }""");
+    }
+
+    @Test
+    public void avroParserMalformedDuration() {
+        tableConnectorTest("""
+                "format": {
+                  "name": "avro",
+                  "config": {
+                    "registry_urls": ["http://localhost:8081"],
+                    "registry_timeout": "ten seconds"
+                  }
+                }""",
+                "unknown unit 'ten seconds';");
+    }
+
+    @Test
+    public void avroEncoderDurationField() {
+        runCleanConnectorTest("""
+                CREATE TABLE T (x INT);
+                CREATE VIEW V WITH (
+                  'connectors' = '[{
+                    "name": "c",
+                    "format": {
+                      "name": "avro",
+                      "config": {
+                        "registry_urls": ["http://localhost:8081"],
+                        "registry_timeout": "500ms"
+                      }
+                    }
+                  }]'
+                ) AS SELECT * FROM T;""");
+    }
+
+    @Test
+    public void avroEncoderMalformedDuration() {
+        viewConnectorTest("""
+                "format": {
+                  "name": "avro",
+                  "config": {
+                    "registry_timeout": "10y"
+                  }
+                }""",
+                "unknown unit 'y' in duration '10y'");
+    }
+
+    @Test
+    public void clockInputDurationField() {
+        cleanTableConnectorTest("""
+                "transport": {
+                  "name": "clock",
+                  "config": {
+                    "clock_resolution": "1s"
+                  }
+                }""");
+    }
+
+    @Test
+    public void clockInputNoResolution() {
+        cleanTableConnectorTest("""
+                "transport": {
+                  "name": "clock",
+                  "config": {
+                    "http_driven": true
+                  }
+                }""");
+    }
+
+    @Test
+    public void clockInputZeroDuration() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "clock",
+                  "config": {
+                    "clock_resolution": "0"
+                  }
+                }""",
+                "\"clock_resolution\" is '0'; it must be greater than 0");
+    }
+
+    @Test
+    public void clockInputMalformedDuration() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "clock",
+                  "config": {
+                    "clock_resolution": "1000"
+                  }
+                }""",
+                "\"clock_resolution\": '1000' has no unit");
+    }
+
+    @Test
+    public void natsInputDurationFields() {
+        cleanTableConnectorTest("""
+                "transport": {
+                  "name": "nats_input",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "nats://localhost:4222",
+                      "connection_timeout": "30s",
+                      "request_timeout": "10s"
+                    },
+                    "stream_name": "orders",
+                    "inactivity_timeout": "2m",
+                    "retry_interval": "5s",
+                    "consumer_config": {
+                      "deliver_policy": "All",
+                      "max_expiry": "30s"
+                    }
+                  }
+                }""");
+    }
+
+    @Test
+    public void natsInputMalformedConnectionDuration() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "nats_input",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "nats://localhost:4222",
+                      "connection_timeout": "30 s"
+                    },
+                    "stream_name": "orders",
+                    "consumer_config": {
+                      "deliver_policy": "All"
+                    }
+                  }
+                }""",
+                "\"connection_config.connection_timeout\": unknown unit ' s'");
+    }
+
+    @Test
+    public void natsInputMalformedConsumerDuration() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "nats_input",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "nats://localhost:4222"
+                    },
+                    "stream_name": "orders",
+                    "consumer_config": {
+                      "deliver_policy": "All",
+                      "max_expiry": "forever"
+                    }
+                  }
+                }""",
+                "unknown unit 'forever';");
+    }
+
+    @Test
+    public void natsInputInactivityTimeoutBelowMinimum() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "nats_input",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "nats://localhost:4222"
+                    },
+                    "stream_name": "my-stream",
+                    "inactivity_timeout": "500ms",
+                    "consumer_config": {
+                      "deliver_policy": "All"
+                    }
+                  }
+                }""",
+                "\"inactivity_timeout\" is '500ms'; it must be at least 1 second");
+    }
+
+    @Test
+    public void natsInputRetryIntervalBelowMinimum() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "nats_input",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "nats://localhost:4222"
+                    },
+                    "stream_name": "my-stream",
+                    "retry_interval": "0",
+                    "consumer_config": {
+                      "deliver_policy": "All"
+                    }
+                  }
+                }""",
+                "\"retry_interval\" is '0'; it must be at least 1 second");
+    }
+
+    @Test
+    public void natsInputLegacyRetryIntervalBelowMinimum() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "nats_input",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "nats://localhost:4222"
+                    },
+                    "stream_name": "my-stream",
+                    "retry_interval_secs": 0,
+                    "consumer_config": {
+                      "deliver_policy": "All"
+                    }
+                  }
+                }""",
+                "\"retry_interval_secs\" is '0'; it must be at least 1 second");
+    }
+
+    /**
+     * A deprecated spelling takes any whole number up to {@code u64::MAX}, however JSON
+     * writes it.
+     */
+    @Test
+    public void legacyWholeNumbersAccepted() {
+        for (String value : new String[] { "60", "60.0", "6e1", "18446744073709551615" })
+            cleanTableConnectorTest("""
+                    "transport": {
+                      "name": "url_input",
+                      "config": {
+                        "path": "https://example.com/data.csv",
+                        "pause_timeout": %s
+                      }
+                    }""".formatted(value));
+    }
+
+    /** A deprecated spelling rejects a fraction, a negative, and a number past {@code u64::MAX}. */
+    @Test
+    public void legacyNonWholeNumbersRejected() {
+        for (String value : new String[] { "60.5", "-1", "20000000000000000000" })
+            tableConnectorTest("""
+                    "transport": {
+                      "name": "url_input",
+                      "config": {
+                        "path": "https://example.com/data.csv",
+                        "pause_timeout": %s
+                      }
+                    }""".formatted(value),
+                    "expected a duration such as \"30s\"");
+    }
+
+    /**
+     * Writing both spellings of a setting is rejected even when one of them is
+     * {@code null}, because the runtime rejects the pair as a duplicate field.
+     */
+    @Test
+    public void bothSpellingsRejectedEvenWithANull() {
+        for (String pair : new String[] {
+                "\"clock_resolution\": null, \"clock_resolution_usecs\": 5",
+                "\"clock_resolution\": \"1s\", \"clock_resolution_usecs\": null" })
+            tableConnectorTest("""
+                    "transport": {
+                      "name": "clock",
+                      "config": { %s }
+                    }""".formatted(pair),
+                    "\"clock_resolution_usecs\" is another spelling of \"clock_resolution\"");
+    }
+
+    /** Writing both spellings of a setting is rejected, even for one with no minimum. */
+    @Test
+    public void kafkaInputRejectsBothSpellingsOfOneSetting() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "kafka_input",
+                  "config": {
+                    "topic": "my-topic",
+                    "group_join_timeout": "10s",
+                    "group_join_timeout_secs": 25
+                  }
+                }""",
+                "\"group_join_timeout_secs\" is another spelling of "
+                + "\"group_join_timeout\"; write one of the two");
+    }
+
+    /**
+     * The superseded `max_expires` was a `std::time::Duration`, which serde writes
+     * as a `{secs, nanos}` object. The runtime still reads that, so a connector
+     * stored before the rename must still compile clean.
+     */
+    @Test
+    public void natsConsumerAcceptsTheLegacyExpiryObject() {
+        cleanTableConnectorTest("""
+                "transport": {
+                  "name": "nats_input",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "nats://localhost:4222"
+                    },
+                    "stream_name": "my-stream",
+                    "consumer_config": {
+                      "deliver_policy": "All",
+                      "max_expires": { "secs": 45, "nanos": 0 }
+                    }
+                  }
+                }""");
+    }
+
+    /**
+     * The NATS consumer expiry takes a duration string, or the {secs, nanos} object its
+     * deprecated spelling took, but not a bare number.
+     */
+    @Test
+    public void natsConsumerRejectsABareNumberForTheExpiry() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "nats_input",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "nats://localhost:4222"
+                    },
+                    "stream_name": "my-stream",
+                    "consumer_config": {
+                      "deliver_policy": "All",
+                      "max_expiry": 30
+                    }
+                  }
+                }""",
+                "expected a duration such as \"30s\", or a {secs, nanos} object");
+    }
+
+    @Test
+    public void natsInputRejectsBothSpellingsOfOneSetting() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "nats_input",
+                  "config": {
+                    "connection_config": {
+                      "server_url": "nats://localhost:4222"
+                    },
+                    "stream_name": "my-stream",
+                    "inactivity_timeout": "0s",
+                    "inactivity_timeout_secs": 60,
+                    "consumer_config": {
+                      "deliver_policy": "All"
+                    }
+                  }
+                }""",
+                "\"inactivity_timeout_secs\" is another spelling of \"inactivity_timeout\"; "
+                + "write one of the two");
     }
 }

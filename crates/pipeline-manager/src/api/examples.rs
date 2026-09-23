@@ -23,6 +23,7 @@ use crate::runner::interaction::{
     RunnerInteraction, format_disconnected_error_message, format_timeout_error_message,
 };
 use feldera_types::config::{DevTweaks, FtConfig, ResourceConfig, StorageOptions};
+use feldera_types::duration::Duration;
 use feldera_types::runtime_status::{RuntimeStatusDetails, StorageStatusDetails};
 use feldera_types::{config::RuntimeConfig, error::ErrorResponse};
 use uuid::uuid;
@@ -111,7 +112,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
             tracing: false,
             tracing_endpoint_jaeger: "".to_string(),
             min_batch_size_records: 100000,
-            max_buffering_delay_usecs: 0,
+            max_buffering_delay: None,
             resources: ResourceConfig {
                 cpu_cores_min: None,
                 cpu_cores_max: None,
@@ -124,10 +125,10 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
                 service_account_name: None,
                 namespace: None,
             },
-            clock_resolution_usecs: Some(100_000),
+            clock_resolution: Some(Duration::from_millis(100)),
             clock_timezone_offset: None,
             pin_cpus: Vec::new(),
-            provisioning_timeout_secs: Some(1200),
+            provisioning_timeout: Some(Duration::from_secs(1200)),
             max_parallel_connector_init: Some(10),
             init_containers: None,
             checkpoint_during_suspend: false,

@@ -25,16 +25,16 @@ The connector configuration consists of three main sections:
 | `server_url`           | string | Yes      | NATS server URL (e.g., `nats://localhost:4222`) |
 | `auth`                 | object | No       | Authentication configuration (see [Authentication](#authentication)) |
 | `tls`                  | object | No       | TLS configuration (see [TLS](#tls)) |
-| `connection_timeout_secs` | integer | No    | Connection timeout in seconds. How long to wait when establishing the initial connection to the NATS server. Default: 10 |
-| `request_timeout_secs` | integer | No       | Request timeout in seconds. How long to wait for responses to requests. Default: 10 |
+| `connection_timeout` | duration | No | Connection timeout, for example `10s`. How long to wait when establishing the initial connection to the NATS server. Replaces the deprecated `connection_timeout_secs` (integer seconds). Default: `10s` |
+| `request_timeout` | duration | No | Request timeout, for example `10s`. How long to wait for responses to requests. Replaces the deprecated `request_timeout_secs` (integer seconds). Default: `10s` |
 
 ### Stream Configuration
 
 | Property      | Type   | Required | Description |
 |--------------|--------|----------|-------------|
 | `stream_name` | string | Yes      | The name of the NATS JetStream stream to consume from |
-| `inactivity_timeout_secs` | integer | No | Maximum idle time while waiting for the next message before running a stream/server health check. Must be at least 1. Default: 60 |
-| `retry_interval_secs` | integer | No | Delay between automatic retry attempts while the connector is in retry mode. Must be at least 1. Default: 5 |
+| `inactivity_timeout` | duration | No | Maximum idle time while waiting for the next message before running a stream/server health check, for example `60s`. Must be at least one second. Replaces the deprecated `inactivity_timeout_secs` (integer seconds). Default: `60s` |
+| `retry_interval` | duration | No | Delay between automatic retry attempts while the connector is in retry mode, for example `5s`. Must be at least one second. Replaces the deprecated `retry_interval_secs` (integer seconds). Default: `5s` |
 
 ### Consumer Configuration
 
@@ -50,7 +50,7 @@ The connector configuration consists of three main sections:
 | `metadata`        | map (string → string)   | No       | Consumer metadata key-value pairs |
 | `max_batch`       | integer                 | No       | Maximum messages per batch |
 | `max_bytes`       | integer                 | No       | Maximum bytes per batch |
-| `max_expires`     | duration                | No       | Maximum duration for pull requests |
+| `max_expiry` | duration | No | Maximum time a pull request stays parked on the server, for example `30s`. Replaces the deprecated `max_expires` (`{"secs": .., "nanos": ..}` object). |
 
 #### Deliver Policy
 
@@ -79,7 +79,7 @@ If not specified, defaults to `"Instant"`.
 
 The connector distinguishes between **retryable** and **fatal** errors:
 
-- **Retryable errors** (temporary network/server issues, missing stream during startup, transient message-stream failures, and temporary failures while fetching JetStream stream metadata used during startup, resume, or replay validation) move the connector into retry mode. It reports non-fatal endpoint errors and retries automatically every `retry_interval_secs`.
+- **Retryable errors** (temporary network/server issues, missing stream during startup, transient message-stream failures, and temporary failures while fetching JetStream stream metadata used during startup, resume, or replay validation) move the connector into retry mode. It reports non-fatal endpoint errors and retries automatically every `retry_interval`.
 - **Fatal errors** stop the connector and report a fatal endpoint error. This is used when checkpoint/replay metadata is incompatible with the current stream sequence space.
 
 Before reading after startup or resume, the connector validates the checkpoint resume cursor against the stream's available sequence range. During replay, it validates that the requested replay range still exists.
