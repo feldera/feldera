@@ -2,6 +2,7 @@ use crate::circuit::GlobalNodeId;
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::circuit_builder::{CircuitHandle, ConcurrentRestoreOutcome};
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
+use crate::circuit::operator_traits::CheckpointOperator;
 use crate::circuit::schedule::CommitProgress;
 use crate::monitor::visual_graph::Graph;
 use crate::operator::dynamic::balance::{BalancerHint, PartitioningPolicy};
@@ -858,11 +859,8 @@ impl Runtime {
                             return;
                         }
                     }
-                    Ok(Command::Checkpoint(base)) => {
-                        let mut files = Vec::new();
-                        let response = circuit
-                            .checkpoint(&base, &mut files)
-                            .map(|_| Response::CheckpointCreated(files));
+                    Ok(Command::PrepareCheckpoint(base)) => {
+                        let response = circuit.checkpoint().map(Response::CheckpointPrepared);
                         if status_sender.send(response).is_err() {
                             return;
                         }
@@ -1235,7 +1233,7 @@ enum Command {
         runtime_elapsed: Duration,
     },
     GetLir,
-    Checkpoint(StoragePath),
+    PrepareCheckpoint(StoragePath),
     Restore(StoragePath),
     SetBalancerHintsByGlobalId(Vec<(GlobalNodeId, BalancerHint)>),
     SetBalancerHints(Vec<(String, BalancerHint)>),
@@ -1289,7 +1287,7 @@ impl Debug for Command {
                 .field("runtime_elapsed", runtime_elapsed)
                 .finish(),
             Command::GetLir => write!(f, "GetLir"),
-            Command::Checkpoint(path) => f.debug_tuple("Checkpoint").field(path).finish(),
+            Command::PrepareCheckpoint(path) => f.debug_tuple("Checkpoint").field(path).finish(),
             Command::Restore(path) => f.debug_tuple("Restore").field(path).finish(),
             Command::SetBalancerHintsByGlobalId(hints) => f
                 .debug_tuple("SetBalancerHintsByGlobalId")
@@ -1336,7 +1334,7 @@ enum Response {
     CommitProgress(CommitProgress),
     ProfileDump(Graph),
     Profile(WorkerProfile),
-    CheckpointCreated(Vec<Arc<dyn FileCommitter>>),
+    CheckpointPrepared(Vec<Box<dyn CheckpointOperator>>),
     CheckpointRestored(Option<BootstrapInfo>),
     ConcurrentRestore(ConcurrentRestoreOutcome),
     Lir(LirCircuit),
@@ -2662,17 +2660,19 @@ impl<'a> CheckpointBuilder<'a> {
 
         let uuid = Uuid::now_v7();
         let checkpoint_dir = Checkpointer::checkpoint_dir(uuid);
-        let mut readers = Vec::new();
-        self.handle
-            .broadcast_command(Command::Checkpoint(checkpoint_dir), |_worker, resp| {
-                let Response::CheckpointCreated(r) = resp else {
+        let mut prepared_operators = Vec::new();
+        self.handle.broadcast_command(
+            Command::PrepareCheckpoint(checkpoint_dir),
+            |_worker, resp| {
+                let Response::CheckpointPrepared(r) = resp else {
                     panic!("Expected checkpoint response, got {resp:?}");
                 };
-                readers.push(r);
-            })?;
+                prepared_operators.push(r);
+            },
+        )?;
         Ok(CheckpointCommitter {
             checkpointer,
-            readers,
+            prepared_operators,
             uuid,
             fingerprint: self.handle.fingerprint,
             name: self.name,
@@ -2693,7 +2693,7 @@ impl<'a> CheckpointBuilder<'a> {
 pub struct CheckpointCommitter {
     checkpointer: Arc<Mutex<Checkpointer>>,
     uuid: Uuid,
-    readers: Vec<Vec<Arc<dyn FileCommitter>>>,
+    prepared_operators: Vec<Vec<Box<dyn CheckpointOperator>>>,
     fingerprint: u64,
     name: Option<String>,
     steps: Option<u64>,
@@ -2711,13 +2711,11 @@ impl CheckpointCommitter {
     /// wait for output connectors to complete writing the output corresponding
     /// to the checkpoint.
     pub fn commit(self) -> Result<CheckpointPublisher, DbspError> {
-        // One call for every worker's files, so the backend can sync them
-        // together. Committing them one at a time here would keep a single
-        // fsync in flight across the whole checkpoint.
-        let files: Vec<_> = self.readers.into_iter().flatten().collect();
+        let files: Vec<_> = self.prepared_operators.into_iter().flatten().collect();
         // Clone the backend rather than holding the checkpointer lock across
         // the syncs, which are the slowest part of making a checkpoint.
         let backend = self.checkpointer.lock().unwrap().backend().clone();
+        
         backend.commit_all(&files)?;
 
         let metadata = self.checkpointer.lock().unwrap().commit(

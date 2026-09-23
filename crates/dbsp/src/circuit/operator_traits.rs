@@ -8,6 +8,7 @@
 use arc_swap::ArcSwap;
 use feldera_storage::fbuf::FBuf;
 use feldera_storage::{FileCommitter, StoragePath};
+use smallvec::SmallVec;
 
 use crate::{Error, Runtime};
 use crate::{
@@ -17,10 +18,11 @@ use crate::{
     },
     trace::cursor::Position,
 };
-use std::any::Any;
-use std::borrow::Cow;
-use std::fmt::Display;
-use std::sync::Arc;
+use std::{any::Any, borrow::Cow};
+use std::{
+    fmt::{Debug, Display},
+    sync::Arc,
+};
 
 use super::GlobalNodeId;
 
@@ -380,28 +382,22 @@ pub trait Operator: 'static {
     }
 }
 
-pub trait CheckpointOperator {
-    fn checkpoint(
-        self,
-        base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error>;
+pub trait CheckpointOperator: Send + Debug {
+    fn checkpoint(self, base: &StoragePath) -> Result<Vec<Arc<dyn FileCommitter>>, Error>;
 }
 
+#[derive(Debug)]
 pub struct CheckpointOperatorFile {
     pub name: String,
     pub content: FBuf,
 }
 
 impl CheckpointOperator for CheckpointOperatorFile {
-    fn checkpoint(
-        self,
-        base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error> {
+    fn checkpoint(self, base: &StoragePath) -> Result<Vec<Arc<dyn FileCommitter>>, Error> {
         let file_name = base.clone().join(&*self.name);
-        files.push(Runtime::storage_backend()?.write(&file_name, self.content)?);
-        Ok(())
+        Ok(vec![
+            Runtime::storage_backend()?.write(&file_name, self.content)?,
+        ])
     }
 }
 

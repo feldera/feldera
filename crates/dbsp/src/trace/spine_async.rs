@@ -2256,17 +2256,21 @@ pub struct CheckpointOperatorSpine<B> {
     dirty: bool,
 }
 
+impl<B> Debug for CheckpointOperatorSpine<B> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CheckpointOperatorSpine")
+            .field("persistent_id", &self.persistent_id)
+            .finish_non_exhaustive()
+    }
+}
+
 impl<B> CheckpointOperator for CheckpointOperatorSpine<B>
 where
     B: Batch,
 {
-    fn checkpoint(
-        self,
-        base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error> {
+    fn checkpoint(self, base: &StoragePath) -> Result<Vec<Arc<dyn FileCommitter>>, Error> {
         // Persist all the batches and collect their names.
-        let ids = self
+        let (files, paths): (Vec<_>, Vec<_>) = self
             .batches
             .iter()
             .map(|batch| {
@@ -2279,10 +2283,9 @@ where
                         .expect("The persisted batch should be readable")
                 });
                 let path = file.path().to_string();
-                files.push(file);
-                path
+                (file, path)
             })
-            .collect_vec();
+            .unzip();
 
         // Write the spine in the form that we will restore from.
         let backend = Runtime::storage_backend().unwrap();

@@ -64,7 +64,7 @@ use anyhow::Error as AnyError;
 use dyn_clone::{DynClone, clone_box};
 use feldera_ir::{LirCircuit, LirNodeId};
 use feldera_samply::Span;
-use feldera_storage::{FileCommitter, StoragePath};
+use feldera_storage::StoragePath;
 use itertools::Itertools;
 use nix::{
     sys::time::TimeValLike,
@@ -88,7 +88,6 @@ use std::{
     panic::Location,
     pin::Pin,
     rc::Rc,
-    sync::Arc,
     task::{Context, Poll},
     thread::panicking,
     time::{Duration, Instant},
@@ -7765,11 +7764,7 @@ impl CircuitHandle {
             .map_err(DbspError::Scheduler)
     }
 
-    pub fn checkpoint(
-        &mut self,
-        base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), DbspError> {
+    pub fn checkpoint(&mut self) -> Result<Vec<Box<dyn CheckpointOperator>>, DbspError> {
         // if Runtime::worker_index() == 0 {
         //     self.circuit.to_dot_file(
         //         |node| {
@@ -7802,14 +7797,21 @@ impl CircuitHandle {
         //     info!("CircuitHandle::commit: circuit written to commit.dot");
         // }
 
+        let mut checkpoint_operators = Vec::new();
         self.circuit
             .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
                 let _span = Span::new("operator")
                     .with_category("Checkpoint")
                     .with_tooltip(|| format!("{} {}", node.name(), node.global_id()));
-                DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS
-                    .record_callback(|| node.prepare_checkpoint(base, files))
-            })
+                DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS.record_callback(|| {
+                    node.prepare_checkpoint().map(|result| {
+                        if let Some(result) = result {
+                            checkpoint_operators.push(result);
+                        }
+                    })
+                })
+            })?;
+        Ok(checkpoint_operators)
     }
 
     /// Restores the circuit from a checkpoint.
