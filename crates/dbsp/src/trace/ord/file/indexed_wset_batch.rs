@@ -717,6 +717,12 @@ where
         }
     }
 
+    /// Inlined on purpose: this rebuilds the value cursor for the new key,
+    /// and the factories it needs are behind `dyn Any`.  The compiler folds
+    /// those downcasts away where it can see the concrete types through this
+    /// call, and stops where it cannot -- which is worth about a twentieth of
+    /// a merge in `TypeId` comparisons alone.
+    #[inline]
     fn move_key<F>(&mut self, op: F)
     where
         F: Fn(&mut KeyCursor<'s, K, V, R>) -> Result<(), ReaderError>,
@@ -772,6 +778,10 @@ where
     fn take_values(&mut self, n: u64) {
         let to = self.val_cursor.relative_position() + n;
         unsafe { self.val_cursor.move_to_row(to) }.unwrap_storage();
+    }
+
+    fn raw_key(&self) -> Option<(RawItems<'_>, Range<u64>)> {
+        self.key_cursor.raw_item_with_row_group()
     }
 
     fn val(&self) -> &V {
@@ -931,6 +941,32 @@ where
     }
 }
 
+/// The touched-window counter to give a builder over keys of type `K`, or
+/// `None` where one would never record anything.
+///
+/// [`TouchedWindowCounter::push_key`] gives up on the first key of a type
+/// that cannot be roaring-encoded, so a counter for such a type is dead
+/// weight.  Asking the type here rather than waiting for its first key is
+/// what lets a merge that copies its keys, and so decodes none of them, tell
+/// that there is no counter left to feed.
+fn touched_window_counter<K, V, R>(
+    factories: &FileIndexedWSetFactories<K, V, R>,
+) -> Option<TouchedWindowCounter>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    if !collect_roaring_metadata() {
+        return None;
+    }
+    let mut roaring = false;
+    factories
+        .key_factory()
+        .with(&mut |key: &mut K| roaring = key.supports_roaring32());
+    roaring.then(TouchedWindowCounter::default)
+}
+
 /// Values a merge has copied into a file batch as bytes.
 ///
 /// A splice that quietly stopped engaging would leave every test passing and
@@ -940,6 +976,11 @@ where
 /// watches this.
 #[cfg(test)]
 pub(crate) static SPLICED_VALUES: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+/// How many keys went in as bytes, for the same reason.
+#[cfg(test)]
+pub(crate) static SPLICED_KEYS: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
 impl<K, V, R> Builder<FileIndexedWSet<K, V, R>> for FileIndexedWSetBuilder<K, V, R>
@@ -970,7 +1011,7 @@ where
             weight: factories.weight_factory().default_box(),
             num_tuples: 0,
             stats: BatchMetadata::default(),
-            touched_window_counter: collect_roaring_metadata().then(TouchedWindowCounter::default),
+            touched_window_counter: touched_window_counter(factories),
         }
     }
 
@@ -1007,7 +1048,7 @@ where
             weight: factories.weight_factory().default_box(),
             num_tuples: 0,
             stats: BatchMetadata::default(),
-            touched_window_counter: collect_roaring_metadata().then(TouchedWindowCounter::default),
+            touched_window_counter: touched_window_counter(factories),
         }
     }
 
@@ -1033,6 +1074,27 @@ where
     fn push_val(&mut self, val: &V) {
         self.writer.write1((val, &*self.weight)).unwrap_storage();
         self.num_tuples += 1;
+    }
+
+    fn takes_raw_keys(&self) -> bool {
+        // The counter is the one thing this builder needs a key for that a
+        // copy cannot give it; see `push_raw_key`.
+        self.touched_window_counter.is_none()
+    }
+
+    fn push_raw_key(&mut self, item: &RawItems<'_>, row_group: Range<u64>) -> bool {
+        if self.touched_window_counter.is_some() {
+            // The counter reads the key, which this one never decodes into.
+            // Only a key type that can be roaring-encoded still has a counter
+            // by now, and such a batch is the one a roaring filter is built
+            // for, which cannot be fed from bytes either.
+            return false;
+        }
+        let boundaries = [row_group.start, row_group.end];
+        let taken = self.writer.write0_raw(item, &boundaries).unwrap_storage();
+        #[cfg(test)]
+        SPLICED_KEYS.fetch_add(taken, std::sync::atomic::Ordering::Relaxed);
+        taken > 0
     }
 
     fn push_raw_vals(&mut self, items: &RawItems<'_>) -> usize {

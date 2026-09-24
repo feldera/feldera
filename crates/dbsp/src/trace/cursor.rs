@@ -9,7 +9,7 @@ pub mod cursor_with_polarity;
 mod reverse;
 pub mod saturating_cursor;
 
-use std::{fmt::Debug, marker::PhantomData};
+use std::{fmt::Debug, marker::PhantomData, ops::Range};
 
 pub use cursor_empty::CursorEmpty;
 pub use cursor_group::CursorGroup;
@@ -168,6 +168,14 @@ pub trait Cursor<K: ?Sized, V: ?Sized, T, R: ?Sized> {
     fn take_values(&mut self, n: u64) {
         let _ = n;
         unimplemented!("took values from a cursor that offered none")
+    }
+
+    /// The current key as it is stored, with the rows its values occupy, for
+    /// a cursor over a file-backed batch, or `None`.
+    ///
+    /// See [`MergeCursor::raw_key`], which a merge reaches this through.
+    fn raw_key(&self) -> Option<(RawItems<'_>, Range<u64>)> {
+        None
     }
 
     /// Returns a reference to the current key, if valid.
@@ -813,6 +821,19 @@ where
         unimplemented!("took values from a cursor that offered none")
     }
 
+    /// The current key as it is stored, with the rows its values occupy, or
+    /// `None`.
+    ///
+    /// A merge copies this into its output instead of decoding the key and
+    /// encoding it again, which for a key that holds anything on the heap is
+    /// most of what writing it costs.  It may do so only where it wrote this
+    /// key's values by copying them too, and all of them: the rows the key
+    /// names have to be the rows that went in, and a merge that decoded a
+    /// value could have dropped it.
+    fn raw_key(&self) -> Option<(RawItems<'_>, Range<u64>)> {
+        None
+    }
+
     fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R));
     fn weight(&mut self) -> &R
     where
@@ -857,6 +878,10 @@ where
 
     fn take_values(&mut self, n: u64) {
         (**self).take_values(n)
+    }
+
+    fn raw_key(&self) -> Option<(RawItems<'_>, Range<u64>)> {
+        (**self).raw_key()
     }
 
     fn key_valid(&self) -> bool {
@@ -1454,6 +1479,10 @@ where
 
     fn take_values(&mut self, n: u64) {
         self.cursor.take_values(n)
+    }
+
+    fn raw_key(&self) -> Option<(RawItems<'_>, Range<u64>)> {
+        self.cursor.raw_key()
     }
 
     fn key_valid(&self) -> bool {

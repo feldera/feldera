@@ -2156,6 +2156,179 @@ fn a_merge_splices_values_it_does_not_have_to_decode() {
     });
 }
 
+/// A key long enough to hold its text out of line, so that decoding one
+/// allocates: that is what copying a key saves, and a key that fitted inline
+/// would understate it.
+fn long_string_key(k: i32) -> String {
+    format!("key-{k:08}-{}", "y".repeat((k % 19) as usize))
+}
+
+/// A merge of file-backed batches copies keys instead of rewriting them.
+///
+/// The same guard as `a_merge_splices_values_it_does_not_have_to_decode`, for
+/// the key column, and it needs a key type of its own: the keys here are
+/// strings, which is where copying a key pays, since decoding one allocates.
+/// An integer key is the kind a roaring filter is built for, and that filter
+/// is fed the key itself, so an integer-keyed merge writes its keys the
+/// ordinary way and would leave this test green while proving nothing.
+#[test]
+fn a_merge_splices_keys_it_does_not_have_to_decode() {
+    use crate::trace::ord::file::indexed_wset_batch::SPLICED_KEYS;
+    use std::sync::atomic::Ordering;
+
+    type Keys = crate::trace::FallbackIndexedWSet<DynData, DynI32, DynZWeight>;
+    type KeyFactories = crate::trace::FallbackIndexedWSetFactories<DynData, DynI32, DynZWeight>;
+
+    let _temp_dir = tempdir().expect("Can't create temp dir for storage");
+    let mut config = mkconfig(_temp_dir.path());
+    config.storage.as_mut().unwrap().options.min_storage_bytes = Some(0);
+
+    run_in_circuit_with_storage_config(config, move || {
+        let factories = <KeyFactories>::new::<String, i32, ZWeight>();
+        let build = |tuples: Vec<Tup2<Tup2<String, i32>, ZWeight>>| {
+            let mut erased: Box<DynWeightedPairs<DynPair<DynData, DynI32>, DynZWeight>> =
+                Box::new(LeanVec::from(tuples)).erase_box();
+            let initial = Keys::dyn_from_tuples(&factories, (), &mut erased);
+            let builder = <Keys as Batch>::Builder::for_merge(
+                &factories,
+                [&initial],
+                Some(BatchLocation::Storage),
+            );
+            ListMerger::merge(&factories, builder, vec![initial.merge_cursor(None, None)])
+        };
+
+        let key = long_string_key;
+        let inputs: Vec<Keys> = [0, 1]
+            .into_iter()
+            .map(|half| {
+                build(
+                    (0..400i32)
+                        .map(|k| Tup2(Tup2(key(k * 2 + half), k), 1))
+                        .collect(),
+                )
+            })
+            .collect();
+
+        let input_refs: Vec<&Keys> = inputs.iter().collect();
+        let builder = <Keys as Batch>::Builder::for_merge(
+            &factories,
+            input_refs,
+            Some(BatchLocation::Storage),
+        );
+        let cursors: Vec<_> = inputs.iter().map(|b| b.merge_cursor(None, None)).collect();
+
+        let before = SPLICED_KEYS.load(Ordering::Relaxed);
+        let merged: Keys = ListMerger::merge(&factories, builder, cursors);
+        let spliced = SPLICED_KEYS.load(Ordering::Relaxed) - before;
+
+        assert_eq!(merged.key_count(), 800);
+        assert_eq!(merged.len(), 800);
+        assert!(
+            spliced > 0,
+            "the merge decoded and rewrote every key; nothing was copied",
+        );
+
+        // What was written has to be what the inputs held, key for key.
+        let mut cursor = merged.cursor();
+        for k in 0..800i32 {
+            let want = key(k);
+            assert_eq!(
+                unsafe { cursor.key().downcast::<String>() },
+                &want,
+                "key {k} came back changed",
+            );
+            cursor.step_key();
+        }
+    });
+}
+
+/// Two string-keyed batches to merge, overlapping often enough that a key is
+/// as likely to be shared as held alone.
+///
+/// The weights are mostly positive, because a batch holding a negative weight
+/// offers no values to copy -- the count of them is metadata a copy never
+/// reads -- and a generator that reached for negatives often would rarely
+/// exercise the copy at all.  The few that appear are there to make keys
+/// cancel, which is the case where a merge writes values decoded and so must
+/// write its key decoded too.
+fn string_keyed_tuples() -> impl Strategy<Value = Vec<Tup2<Tup2<String, i32>, ZWeight>>> {
+    prop::collection::vec(
+        (
+            0..40i32,
+            0..3i32,
+            prop_oneof![9 => Just(1 as ZWeight), 3 => Just(2), 1 => Just(-1)],
+        ),
+        0..60,
+    )
+    .prop_map(|tuples| {
+        tuples
+            .into_iter()
+            .map(|(k, v, w)| Tup2(Tup2(long_string_key(k), v), w))
+            .collect()
+    })
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(64))]
+
+    /// A merge of string-keyed batches says what summing their tuples says.
+    ///
+    /// The `indexed_wset_storage_merges_*` proptests check the same thing for
+    /// integer keys, which a merge always writes decoded.  A string key is
+    /// one a merge copies, and a copied key names the rows its values
+    /// occupied in the batch it came from: this is what says those are the
+    /// rows that went in, over inputs that mix keys one batch holds alone
+    /// with keys both hold, whose values are summed and written decoded.
+    #[test]
+    fn string_keyed_storage_merges_match_their_tuples(
+        left in string_keyed_tuples(),
+        right in string_keyed_tuples(),
+    ) {
+        type Keys = crate::trace::FallbackIndexedWSet<DynData, DynI32, DynZWeight>;
+        type KeyFactories = crate::trace::FallbackIndexedWSetFactories<DynData, DynI32, DynZWeight>;
+
+        let _temp_dir = tempdir().expect("Can't create temp dir for storage");
+        let mut config = mkconfig(_temp_dir.path());
+        config.storage.as_mut().unwrap().options.min_storage_bytes = Some(0);
+
+        run_in_circuit_with_storage_config(config, move || {
+            let factories = <KeyFactories>::new::<String, i32, ZWeight>();
+            let build = |tuples: Vec<Tup2<Tup2<String, i32>, ZWeight>>| {
+                let mut erased: Box<DynWeightedPairs<DynPair<DynData, DynI32>, DynZWeight>> =
+                    Box::new(LeanVec::from(tuples)).erase_box();
+                let initial = Keys::dyn_from_tuples(&factories, (), &mut erased);
+                let builder = <Keys as Batch>::Builder::for_merge(
+                    &factories,
+                    [&initial],
+                    Some(BatchLocation::Storage),
+                );
+                ListMerger::merge(&factories, builder, vec![initial.merge_cursor(None, None)])
+            };
+
+            let inputs: Vec<Keys> = [left.clone(), right.clone()].into_iter().map(build).collect();
+            let input_refs: Vec<&Keys> = inputs.iter().collect();
+            let builder = <Keys as Batch>::Builder::for_merge(
+                &factories,
+                input_refs,
+                Some(BatchLocation::Storage),
+            );
+            let cursors: Vec<_> = inputs.iter().map(|b| b.merge_cursor(None, None)).collect();
+            let merged: Keys = ListMerger::merge(&factories, builder, cursors);
+
+            let mut union: Vec<Tup2<Tup2<String, i32>, ZWeight>> =
+                left.iter().chain(right.iter()).cloned().collect();
+            let mut expected_erased: Box<
+                DynWeightedPairs<DynPair<DynData, DynI32>, DynZWeight>,
+            > = Box::new(LeanVec::from(std::mem::take(&mut union))).erase_box();
+            let expected: TestBatch<DynData, DynI32, (), DynZWeight> =
+                TestBatch::dyn_from_tuples(&TestBatchFactories::new(), (), &mut expected_erased);
+
+            assert_eq!(merged.location(), BatchLocation::Storage);
+            assert_batch_eq(&merged, &expected);
+        });
+    }
+}
+
 /// Shared body for `indexed_wset_storage_merges_*` proptests. Generates
 /// inputs as a vec/file mix, runs `ListMerger::merge` to file storage, and
 /// validates the merged batch against a `TestBatch` reference. The input

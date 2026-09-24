@@ -38,6 +38,7 @@ use feldera_modular_bloom::{ModuleDensity, ModuleLayout};
 use feldera_storage::StoragePath;
 use feldera_storage::file::FileId;
 use size_of::SizeOf;
+use smallvec::SmallVec;
 use snap::raw::{Decoder, decompress_len};
 use std::cell::{Cell, UnsafeCell};
 use std::mem::replace;
@@ -526,7 +527,11 @@ pub struct RawItems<'a> {
     /// The items, back to back.
     pub bytes: &'a [u8],
     /// Each item's root, as an offset into `bytes`.
-    pub roots: Vec<usize>,
+    ///
+    /// Inline for a short run, because a merge that copies one key at a time
+    /// asks for a run of one, and an allocation an item would cost about
+    /// what decoding the item costs.
+    pub roots: SmallVec<[usize; 8]>,
     /// Where `bytes` started in the block it came from.
     pub phase: usize,
     /// The alignment an item's root needs.
@@ -2712,11 +2717,20 @@ where
     /// Returns `None` when the cursor is not on a row, or when the block was
     /// written in a format this one does not share.
     pub fn raw_run(&self) -> Option<RawItems<'_>> {
+        self.raw_run_upto(u64::MAX)
+    }
+
+    /// The same as [`raw_run`](Self::raw_run), stopping after at most `max`
+    /// rows.
+    fn raw_run_upto(&self, max: u64) -> Option<RawItems<'_>> {
         let Position::Row(path) = &self.position else {
             return None;
         };
         let block_rows = path.data.rows();
-        let end = block_rows.end.min(self.row_group.rows.end);
+        let end = block_rows
+            .end
+            .min(self.row_group.rows.end)
+            .min(path.row.saturating_add(max));
         if path.row < block_rows.start || end <= path.row {
             return None;
         }
@@ -2725,6 +2739,26 @@ where
             (path.row - block_rows.start) as usize,
             (end - 1 - block_rows.start) as usize,
         )
+    }
+
+    /// The row at the cursor as it is stored, with the row group it names.
+    ///
+    /// This is [`raw_run_with_row_groups`](Self::raw_run_with_row_groups) for
+    /// a single row.  A merge takes its keys one at a time rather than in
+    /// runs, because it owns the output only as far as the next key of
+    /// another input, and where that is cannot be known without looking; one
+    /// row at a time it may stop anywhere.
+    ///
+    /// Returns `None` for a column whose rows have no row group, which is the
+    /// last one.
+    pub fn raw_item_with_row_group(&self) -> Option<(RawItems<'_>, Range<u64>)> {
+        let Position::Row(path) = &self.position else {
+            return None;
+        };
+        path.data.row_groups.as_ref()?;
+        let items = self.raw_run_upto(1)?;
+        let index = (path.row - path.data.rows().start) as usize;
+        Some((items, path.data.row_group(index).ok()?))
     }
 
     /// The same as [`raw_run`](Self::raw_run), and with it the row group of

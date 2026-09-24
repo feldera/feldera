@@ -614,9 +614,9 @@ impl DataBlockBuilder {
     /// The bytes are moved verbatim, so every relative pointer inside them
     /// still points where it did; what has to be re-established is alignment,
     /// which the leading pad does by putting the run back in the phase it was
-    /// written in.  Only a column without row groups can be spliced, because a
-    /// row group names rows in the next column by absolute number and those
-    /// numbers change when a run moves.
+    /// written in.  A column whose rows have row groups can be spliced only
+    /// where the caller brings them, since a row group names rows in the next
+    /// column by absolute number and those numbers change when a run moves.
     fn try_add_raw_items<K, A>(
         &mut self,
         items: &RawItems<'_>,
@@ -1358,6 +1358,16 @@ struct Writer {
     cache: fn() -> Option<Arc<BufferCache>>,
     writer: BlockWriter,
     key_filter: Option<BatchKeyFilter>,
+
+    /// Whether an archived key reproduces the hash its decoded form would
+    /// have, asked of the first key a splice offers and remembered.
+    ///
+    /// The answer is a property of the key type, and asking it means taking a
+    /// hash: a filter that recorded every key twice, once to find out and
+    /// once for real, would spend more on the second hash than a splice
+    /// saves on the key.
+    key_hashable: Option<bool>,
+
     cws: Vec<ColumnWriter>,
     finished_columns: Vec<FileTrailerColumn>,
     serializer: SerializerInner,
@@ -1389,6 +1399,7 @@ impl Writer {
                 parameters.compression_level,
             ),
             key_filter,
+            key_hashable: None,
             cws,
             finished_columns,
             serializer: SerializerInner::new(),
@@ -1427,7 +1438,7 @@ impl Writer {
     /// look settles the whole run: a filter that wants the key itself rather
     /// than a hash of it can never be fed this way, and whether an archived
     /// key reproduces the decoded key's hash is a property of the key type.
-    fn can_hash_run<K>(&self, column: usize, items: &RawItems<'_>) -> bool
+    fn can_hash_run<K>(&mut self, column: usize, items: &RawItems<'_>) -> bool
     where
         K: DataTrait + ?Sized,
     {
@@ -1437,14 +1448,22 @@ impl Writer {
         if !filter.takes_hashes() {
             return false;
         }
+        if let Some(known) = self.key_hashable {
+            return known;
+        }
+        let Some(&root) = items.roots.first() else {
+            // Nothing to answer for, and nothing to remember: an empty run
+            // says nothing about the key type.
+            return true;
+        };
         let key_factory = self.cws[column].factories.key_factory::<K>();
-        items.roots.first().is_none_or(|&root| {
-            // SAFETY: `root` is where the source block put this item, and
-            // `items.bytes` is that block's bytes; `raw_items` produced the
-            // two together.
-            let archived = unsafe { key_factory.archived_value(items.bytes, root) };
-            archived.archived_hash().is_some()
-        })
+        // SAFETY: `root` is where the source block put this item, and
+        // `items.bytes` is that block's bytes; `raw_items` produced the two
+        // together.
+        let archived = unsafe { key_factory.archived_value(items.bytes, root) };
+        let hashable = archived.archived_hash().is_some();
+        self.key_hashable = Some(hashable);
+        hashable
     }
 
     /// Appends a run of already-encoded items to `column`, returning how many
@@ -2004,6 +2023,15 @@ where
         items: &RawItems<'_>,
         boundaries: &[u64],
     ) -> Result<usize, StorageError> {
+        // Column 1's order restarts under each key, which is why
+        // [`write0`](Self::write0) forgets the last value it saw.  A key that
+        // goes in this way is never decoded, so there is no key to remember
+        // either; both checks resume with the next decoded item.
+        #[cfg(debug_assertions)]
+        {
+            self.prev0 = None;
+            self.prev1 = None;
+        }
         self.inner.write_raw::<K0, A0>(0, items, Some(boundaries))
     }
 

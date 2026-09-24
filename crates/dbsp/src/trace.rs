@@ -49,6 +49,7 @@ use rkyv::with::{CopyOptimize, With};
 use size_of::SizeOf;
 use std::any::TypeId;
 use std::future::Future;
+use std::ops::Range;
 use std::sync::Arc;
 use std::{fmt::Debug, hash::Hash};
 
@@ -1212,6 +1213,31 @@ where
 
     /// Adds key `key`.
     fn push_key(&mut self, key: &Output::Key);
+
+    /// Whether [`push_raw_key`](Self::push_raw_key) could take anything at
+    /// all, asked before a caller goes looking for the bytes of a key.
+    ///
+    /// A builder that will refuse every key -- one writing in memory, or one
+    /// whose file still owes something the key itself -- says so here, so
+    /// that the caller does not read a key out of its input only to throw the
+    /// reading away.
+    fn takes_raw_keys(&self) -> bool {
+        false
+    }
+
+    /// Adds the key `item` encodes, without decoding it, and says whether it
+    /// did.
+    ///
+    /// `row_group` is where the key's values sat in the batch it came from,
+    /// which this renumbers to where they sit here; the caller must already
+    /// have written exactly those values, and nothing else, since its last
+    /// key.  `false` means this builder cannot take the key that way and the
+    /// caller pushes it with [`push_key`](Self::push_key), which is always
+    /// still open: nothing has been written either way.
+    fn push_raw_key(&mut self, item: &RawItems<'_>, row_group: Range<u64>) -> bool {
+        let _ = (item, row_group);
+        false
+    }
 
     /// Adds key `key`.
     fn push_key_mut(&mut self, key: &mut Output::Key) {
