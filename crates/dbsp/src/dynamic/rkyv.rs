@@ -1,4 +1,4 @@
-use super::{AsAny, Comparable, DowncastTrait, OrdRepr};
+use super::{AsAny, Comparable, DowncastTrait, HashRepr, OrdRepr};
 use crate::{
     derive_comparison_traits,
     storage::file::{DbspSerializer, Deserializer},
@@ -15,17 +15,25 @@ use std::{cmp::Ordering, marker::PhantomData, mem::transmute};
 /// `Repr: OrdRepr<Self>` is what lets storage order an archived value
 /// against an unarchived one without deserializing it; see [`OrdRepr`] for
 /// the contract that the implementation must meet.
+///
+/// `Repr: HashRepr` is the same arrangement for hashing, and is what lets
+/// [`DeserializeDyn::archived_hash`] exist: a merge that copies a key
+/// without decoding it must still hash it into the batch's membership
+/// filter, and that hash has to be the one a decoded key would produce.  An
+/// archived form that cannot promise this says so rather than going
+/// unimplemented, so that the bound holds for every type and the caller
+/// decodes instead.
 pub trait ArchivedDBData:
     for<'a> Serialize<DbspSerializer<'a>> + Archive<Archived = Self::Repr> + Sized
 {
-    type Repr: Deserialize<Self, Deserializer> + Ord + OrdRepr<Self>;
+    type Repr: Deserialize<Self, Deserializer> + Ord + OrdRepr<Self> + HashRepr;
 }
 
 /// We also automatically implement this bound for everything that satisfies it.
 impl<T> ArchivedDBData for T
 where
     T: Archive + for<'a> Serialize<DbspSerializer<'a>>,
-    Archived<T>: Deserialize<T, Deserializer> + Ord + OrdRepr<T>,
+    Archived<T>: Deserialize<T, Deserializer> + Ord + OrdRepr<T> + HashRepr,
 {
     type Repr = Archived<T>;
 }
@@ -109,6 +117,17 @@ pub trait DeserializeDyn<Trait: ?Sized>: AsAny + Comparable {
     /// Orders the archived value against `target`, as [`Ord`] on the
     /// unarchived value would.
     fn cmp_target(&self, target: &Trait) -> Ordering;
+
+    /// The hash the unarchived value would have, without unarchiving it, or
+    /// `None` if this type cannot answer.
+    ///
+    /// A merge that copies a key rather than rewriting it still owes the
+    /// batch's membership filter a hash of that key, and the filter is
+    /// queried later from a decoded one: the two must agree or the lookup
+    /// misses a key that is there.  `None` says this type cannot promise
+    /// that, and the caller decodes and hashes instead -- slower, never
+    /// wrong.
+    fn archived_hash(&self) -> Option<u64>;
 }
 
 #[repr(transparent)]
@@ -181,6 +200,13 @@ where
 
     fn eq_target(&self, other: &Trait) -> bool {
         self.cmp_target(other) == Ordering::Equal
+    }
+
+    fn archived_hash(&self) -> Option<u64> {
+        // `T::Repr: HashRepr` comes from `ArchivedDBData`, so every type
+        // reaches this; the ones that cannot reproduce their decoded hash
+        // answer `None` from inside.
+        crate::dynamic::archived_hash(&self.archived)
     }
 
     fn cmp_target(&self, other: &Trait) -> Ordering {

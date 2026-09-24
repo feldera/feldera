@@ -928,6 +928,15 @@ public class MetadataTests extends BaseSQLTests {
                         }
                     }
 
+                    // A type whose archived form cannot reproduce the hash the
+                    // decoded form writes says so, and its caller deserializes
+                    // and hashes that instead.
+                    impl dbsp::dynamic::HashRepr for ArchivedI256Wrapper {
+                        const FAITHFUL: bool = false;
+
+                        fn hash_repr<H: std::hash::Hasher>(&self, _state: &mut H) {}
+                    }
+
                     pub type i128_sum_accumulator_type = I256Wrapper;
 
                     pub fn i128_sum_map(val: ByteArray) -> i128_sum_accumulator_type {

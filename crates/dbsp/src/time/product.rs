@@ -146,3 +146,19 @@ where
         }
     }
 }
+
+// Declines: nothing hashes one of these from its archived form.  The trait is
+// implemented all the same, because `ArchivedDBData` requires it of every
+// type, and declining costs a caller a decode rather than an answer.
+impl<TOuter, TInner> crate::dynamic::HashRepr for ArchivedProduct<TOuter, TInner>
+where
+    TOuter: rkyv::Archive,
+    TInner: rkyv::Archive,
+    <TOuter as rkyv::Archive>::Archived: Ord,
+    <TInner as rkyv::Archive>::Archived: Ord,
+{
+    const FAITHFUL: bool = false;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
+}

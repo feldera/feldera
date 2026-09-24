@@ -174,6 +174,19 @@ where
 
 pub type DynPrefix<TS> = DynDataTyped<Prefix<TS>>;
 
+// Declines: nothing hashes one of these from its archived form.  The trait is
+// implemented all the same, because `ArchivedDBData` requires it of every
+// type, and declining costs a caller a decode rather than an answer.
+impl<TS> crate::dynamic::HashRepr for ArchivedPrefix<TS>
+where
+    TS: crate::DBData,
+{
+    const FAITHFUL: bool = false;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
+}
+
 #[cfg(test)]
 mod test {
     use rkyv::{Deserialize, Infallible, archived_root, to_bytes};

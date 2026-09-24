@@ -23,7 +23,7 @@ use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::format::{BufferSize, flatten_nested};
 use feldera_adapterlib::transport::{OutputBatchType, Resume, Watermark};
-use feldera_macros::{IsNone, OrdRepr};
+use feldera_macros::{HashRepr, IsNone, OrdRepr};
 use feldera_sqllib::{ByteArray, SqlString, Variant};
 use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::config::{
@@ -2976,6 +2976,7 @@ fn test_kafka_metadata_json() {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]

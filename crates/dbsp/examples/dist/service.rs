@@ -1,6 +1,6 @@
 use dbsp::circuit::Layout;
 use dbsp::utils::Tup2;
-use feldera_macros::{IsNone, OrdRepr};
+use feldera_macros::{HashRepr, IsNone, OrdRepr};
 use rkyv::Archive;
 use size_of::SizeOf;
 
@@ -19,6 +19,7 @@ use size_of::SizeOf;
     Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    HashRepr,
     IsNone,
     OrdRepr,
 )]
@@ -44,6 +45,7 @@ pub struct Record {
     Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    HashRepr,
     IsNone,
     OrdRepr,
 )]

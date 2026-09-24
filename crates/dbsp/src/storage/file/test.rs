@@ -2377,6 +2377,7 @@ mod splice_layer_file {
             backend::StorageBackend,
             file::{
                 Factories,
+                filter::FilterKind,
                 format::{BatchMetadata, Compression},
                 reader::Reader,
                 writer::{Parameters, Writer2},
@@ -2554,6 +2555,12 @@ mod splice_layer_file {
 
     /// Copies the file by splicing both columns, which is what a merge that
     /// found a run of keys to itself would do.
+    ///
+    /// The copy carries a membership filter, which is the ordinary case: a
+    /// merge builds one for whatever it writes.  The filter is fed from the
+    /// archived keys as they go by, since a splice never decodes one, and the
+    /// check at the end is the one that matters -- a key that went in has to
+    /// be found again, or a query that looks for it is silently wrong.
     #[test]
     fn a_two_column_spliced_copy_matches_the_original() {
         for compression in [None, Some(Compression::Snappy)] {
@@ -2578,11 +2585,7 @@ mod splice_layer_file {
                 test_buffer_cache,
                 &*backend,
                 parameters(compression),
-                // A membership filter hashes the decoded key, which a splice
-                // on its own never produces, so this file goes without one.
-                // A merger splicing keys would have them already, for the
-                // comparisons it makes anyway.
-                None,
+                crate::storage::file::filter::FilterPlan::<DynData>::decide_filter(None, n),
             )
             .unwrap();
 
@@ -2626,9 +2629,24 @@ mod splice_layer_file {
             }
             assert_eq!(at, n as u64);
 
-            let copy = writer.into_reader(BatchMetadata::default()).unwrap().0;
+            let (copy, filters) = writer.into_reader(BatchMetadata::default()).unwrap();
             copy.evict();
             assert_eq!(copy.rows().len(), n as u64);
+
+            // Every key the splice copied has to be in the filter.  A filter
+            // fed from decoded keys would pass this too, so the assertion
+            // above it is what says the filter came from the spliced bytes:
+            // the splice could not have run at all had it refused, and the
+            // rows would not be here.
+            assert_ne!(filters.membership_filter_kind(), FilterKind::None);
+            for row in 0..n {
+                let mut key = key0(row);
+                assert!(
+                    filters.maybe_contains_key(key.erase_mut(), None),
+                    "row {row} is missing from the membership filter"
+                );
+            }
+
             let copy0 = copy.rows();
             for row in 0..n {
                 let cursor = copy0.nth(row as u64).unwrap();

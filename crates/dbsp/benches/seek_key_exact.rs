@@ -28,7 +28,7 @@ use dbsp::{
     trace::{BatchReader, Cursor},
     utils::Tup2,
 };
-use feldera_macros::{IsNone, OrdRepr};
+use feldera_macros::{HashRepr, IsNone, OrdRepr};
 use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use rand::{Rng, SeedableRng};
 use rand_xoshiro::Xoshiro256StarStar;
@@ -148,6 +148,7 @@ impl BenchKey for String {
     Archive,
     Serialize,
     Deserialize,
+    HashRepr,
     IsNone,
     OrdRepr,
 )]

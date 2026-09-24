@@ -188,3 +188,17 @@ where
         self.iter.next().map(|x| x.erase())
     }
 }
+
+// Declines: nothing hashes one of these from its archived form.  The trait is
+// implemented all the same, because `ArchivedDBData` requires it of every
+// type, and declining costs a caller a decode rather than an answer.
+impl<T> crate::dynamic::HashRepr for ArchivedBSet<T>
+where
+    T: rkyv::Archive + Ord,
+    <T as rkyv::Archive>::Archived: Ord,
+{
+    const FAITHFUL: bool = false;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
+}

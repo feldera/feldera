@@ -4,7 +4,7 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use dbsp::utils::Tup2;
-use feldera_macros::{IsNone, OrdRepr};
+use feldera_macros::{HashRepr, IsNone, OrdRepr};
 use feldera_sqllib::{
     ByteArray, Date, F32, F64, SqlDecimal, SqlString, Time, Timestamp, TimestampTz, Uuid, Variant,
 };
@@ -39,6 +39,7 @@ use std::sync::Arc;
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -136,6 +137,7 @@ serialize_struct!(TestStruct()[4]{
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -206,6 +208,7 @@ serialize_struct!(KeyStruct()[1]{
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -323,6 +326,7 @@ pub fn generate_test_batches_with_weights(
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -385,6 +389,7 @@ impl TestStructMetadata {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -472,6 +477,7 @@ impl TestStructSoftDelete {
     rkyv::Deserialize,
     Arbitrary,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
@@ -506,6 +512,7 @@ deserialize_table_record!(EmbeddedStruct["EmbeddedStruct", Variant, 1] {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -840,6 +847,7 @@ deserialize_table_record!(TestStruct2["TestStruct2", Variant, 8] {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -907,6 +915,7 @@ deserialize_table_record!(DatabricksPeople["DatabricksPeople", Variant, 8] {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -1126,6 +1135,7 @@ deserialize_table_record!(IcebergTestStruct["IcebergTestStruct", Variant, 13] {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -1178,6 +1188,7 @@ deserialize_table_record!(S3TablesTestStruct["S3TablesTestStruct", Variant, 3] {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -1224,6 +1235,7 @@ deserialize_table_record!(IcebergSubsetTestStruct["IcebergSubsetTestStruct", Var
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -1578,6 +1590,7 @@ deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", Variant, 20] {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]

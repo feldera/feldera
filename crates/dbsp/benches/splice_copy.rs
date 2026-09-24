@@ -132,23 +132,6 @@ fn writer(
     .unwrap()
 }
 
-/// A writer with no membership filter, which splicing keys needs: the filter
-/// hashes a decoded key and a splice never decodes one.
-fn writer_unfiltered(
-    backend: &dyn StorageBackend,
-    args: &Args,
-) -> Writer2<DynData, DynData, DynData, DynWeight> {
-    Writer2::new(
-        &Factories::<DynData, DynData>::new::<K0, A0>(),
-        &Factories::<DynData, DynWeight>::new::<K1, A1>(),
-        buffer_cache,
-        backend,
-        parameters(args.compression),
-        None,
-    )
-    .unwrap()
-}
-
 fn build(backend: &dyn StorageBackend, args: &Args) -> Reader<Cols> {
     let mut w = writer(backend, args);
     for row in 0..args.keys {
@@ -170,7 +153,7 @@ fn build(backend: &dyn StorageBackend, args: &Args) -> Reader<Cols> {
 /// the descent, not for the encoding, and would flatter the splice.
 fn copy_decoded(source: &Reader<Cols>, backend: &dyn StorageBackend, args: &Args) -> Duration {
     let start = Instant::now();
-    let mut w = writer_unfiltered(backend, args);
+    let mut w = writer(backend, args);
     let rows0 = source.rows();
     let rows1 = source.all_value_rows();
     let mut value_cursor = unsafe { rows1.first() }.unwrap();
@@ -199,10 +182,12 @@ fn copy_decoded(source: &Reader<Cols>, backend: &dyn StorageBackend, args: &Args
 ///
 /// A run stops at a key block's edge, so this is the shape of a merge whose
 /// inputs hold long disjoint stretches of the key space, not of one whose
-/// inputs interleave.
+/// inputs interleave.  Every arm here writes the membership filter a merge
+/// would write, the spliced ones feeding it from the archived keys, so the
+/// three differ only in how the items get written.
 fn copy_spliced_both(source: &Reader<Cols>, backend: &dyn StorageBackend, args: &Args) -> Duration {
     let start = Instant::now();
-    let mut w = writer_unfiltered(backend, args);
+    let mut w = writer(backend, args);
     let rows0 = source.rows();
     // One cursor over the whole value column, so a run of values spanning many
     // keys goes in one call instead of one call a key.

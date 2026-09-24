@@ -109,6 +109,29 @@ impl BatchKeyFilter {
             }
         }
     }
+
+    /// Records a key by the hash it would have had, for a caller holding the
+    /// key only in its archived form.
+    ///
+    /// Answers `false` for a filter that needs the key itself rather than a
+    /// hash of it, which the roaring one does: it maps keys to bit offsets.
+    /// A caller that gets `false` has to decode.
+    pub(crate) fn push_hash(&mut self, hash: u64) -> bool {
+        match self {
+            Self::Bloom(filter) => {
+                filter.insert_hash(hash);
+                true
+            }
+            Self::RoaringU32(_) => false,
+        }
+    }
+
+    /// Whether [`push_hash`](Self::push_hash) can record a key for this
+    /// filter, asked before anything is written.
+    pub(crate) fn takes_hashes(&self) -> bool {
+        matches!(self, Self::Bloom(_))
+    }
+
     pub(crate) fn finalize(&mut self) {
         match self {
             Self::Bloom(filter) => filter.finalize(),

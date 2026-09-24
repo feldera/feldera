@@ -1420,6 +1420,33 @@ impl Writer {
         self.cws[column].add_item(&mut self.writer, item, &row_group, &mut self.serializer)
     }
 
+    /// Whether the keys of `items` can be recorded in this file's membership
+    /// filter without decoding them.
+    ///
+    /// Neither half of the answer varies from one item to the next, so one
+    /// look settles the whole run: a filter that wants the key itself rather
+    /// than a hash of it can never be fed this way, and whether an archived
+    /// key reproduces the decoded key's hash is a property of the key type.
+    fn can_hash_run<K>(&self, column: usize, items: &RawItems<'_>) -> bool
+    where
+        K: DataTrait + ?Sized,
+    {
+        let Some(filter) = &self.key_filter else {
+            return true;
+        };
+        if !filter.takes_hashes() {
+            return false;
+        }
+        let key_factory = self.cws[column].factories.key_factory::<K>();
+        items.roots.first().is_none_or(|&root| {
+            // SAFETY: `root` is where the source block put this item, and
+            // `items.bytes` is that block's bytes; `raw_items` produced the
+            // two together.
+            let archived = unsafe { key_factory.archived_value(items.bytes, root) };
+            archived.archived_hash().is_some()
+        })
+    }
+
     /// Appends a run of already-encoded items to `column`, returning how many
     /// were taken.  A short return leaves the rest for another call.
     ///
@@ -1436,13 +1463,15 @@ impl Writer {
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
     {
-        if column == 0 && self.key_filter.is_some() {
-            // A membership filter hashes the decoded key, and a splice never
-            // decodes one, so this path cannot feed the filter and refuses
-            // rather than write a file whose filter is missing keys.  A caller
-            // that holds the keys anyway, as a merger does for the comparisons
-            // it makes, could push them itself and then splice; there is no
-            // API for that yet.
+        // A membership filter has to record every key, and a splice never
+        // decodes one.  The keys are here all the same, as the bytes about to
+        // be copied, and `HashRepr` promises that a hash taken from an
+        // archived key is the one the decoded key would have had, which is
+        // what the filter is queried with later.  Where the promise is not
+        // available this refuses, and the caller rewrites the run instead: a
+        // file whose filter is missing a key answers a query for it wrongly.
+        let feeds_filter = column == 0 && self.key_filter.is_some();
+        if feeds_filter && !self.can_hash_run::<K>(column, items) {
             return Ok(0);
         }
         let last = column + 1 == self.n_columns();
@@ -1474,6 +1503,26 @@ impl Writer {
             &mut self.serializer,
         )?;
         self.cws[column].rows.end += taken as u64;
+        if feeds_filter {
+            // Only what was taken: the rest is offered again next call, and
+            // is hashed then rather than now.
+            let key_factory = self.cws[column].factories.key_factory::<K>();
+            let filter = self.key_filter.as_mut().expect("the file has a filter");
+            for &root in &items.roots[..taken] {
+                // SAFETY: `root` is where the source block put this item, and
+                // `items.bytes` is that block's bytes; `raw_items` produced
+                // the two together.
+                let archived = unsafe { key_factory.archived_value(items.bytes, root) };
+                let hash = archived
+                    .archived_hash()
+                    .expect("the key type answered before the run was written");
+                let recorded = filter.push_hash(hash);
+                debug_assert!(
+                    recorded,
+                    "the filter took hashes before the run was written"
+                );
+            }
+        }
         if let (Some(boundaries), Some(pending)) = (boundaries, pending) {
             // What the run did not claim stays pending for the next call,
             // counted in this file's rows rather than the source's.  That is
@@ -1942,9 +1991,14 @@ where
     /// must already have been written, and returns how many were taken.
     ///
     /// `boundaries` are the run's row groups as the `n + 1` rows between them,
-    /// straight from [`Cursor::raw_run_with_row_groups`].  Returns zero for a
-    /// file that is building a key filter, because a spliced key is never
-    /// decoded and so could never be hashed into one.
+    /// straight from
+    /// [`Cursor::raw_run_with_row_groups`](super::reader::Cursor::raw_run_with_row_groups).
+    ///
+    /// Returns zero for a file whose key filter needs the keys themselves
+    /// rather than hashes of them, or whose key type cannot be hashed from
+    /// its archived form: such a filter cannot be fed from a run that is
+    /// never decoded, and a file whose filter is missing keys answers a query
+    /// wrongly.  The caller rewrites the run instead.
     pub fn write0_raw(
         &mut self,
         items: &RawItems<'_>,

@@ -1631,7 +1631,7 @@ mod tests {
         use dbsp::OrdIndexedZSet;
         use dbsp::utils::Tup2;
         use feldera_adapterlib::transport::OutputEndpoint;
-        use feldera_macros::{IsNone, OrdRepr};
+        use feldera_macros::{HashRepr, IsNone, OrdRepr};
         use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
         use feldera_types::{deserialize_without_context, serialize_struct};
         use postgres::NoTls;
@@ -1666,6 +1666,7 @@ mod tests {
             rkyv::Serialize,
             rkyv::Deserialize,
             IsNone,
+            HashRepr,
             OrdRepr,
         )]
         #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -1701,6 +1702,7 @@ mod tests {
             rkyv::Serialize,
             rkyv::Deserialize,
             IsNone,
+            HashRepr,
             OrdRepr,
         )]
         #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]

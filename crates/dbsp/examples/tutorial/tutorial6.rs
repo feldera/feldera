@@ -7,7 +7,7 @@ use dbsp::{
     operator::time_series::{RelOffset, RelRange},
     utils::{Tup2, Tup3},
 };
-use feldera_macros::{IsNone, OrdRepr};
+use feldera_macros::{HashRepr, IsNone, OrdRepr};
 use rkyv::{Archive, Serialize};
 use size_of::SizeOf;
 
@@ -25,6 +25,7 @@ use size_of::SizeOf;
     Serialize,
     rkyv::Deserialize,
     serde::Deserialize,
+    HashRepr,
     IsNone,
     OrdRepr,
 )]

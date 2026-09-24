@@ -387,6 +387,22 @@ where
 // lower_bound) },     }
 // }
 
+// Declines: nothing hashes one of these from its archived form.  The trait is
+// implemented all the same, because `ArchivedDBData` requires it of every
+// type, and declining costs a caller a decode rather than an answer.
+impl<T, R> crate::dynamic::HashRepr for ArchivedAvg<T, R>
+where
+    T: rkyv::Archive,
+    R: rkyv::Archive,
+    <T as rkyv::Archive>::Archived: Ord,
+    <R as rkyv::Archive>::Archived: Ord,
+{
+    const FAITHFUL: bool = false;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
+}
+
 #[cfg(test)]
 mod tests {
     use rkyv::Deserialize;

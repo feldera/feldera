@@ -1010,3 +1010,17 @@ where
         )
     }
 }
+
+// Declines: nothing hashes one of these from its archived form.  The trait is
+// implemented all the same, because `ArchivedDBData` requires it of every
+// type, and declining costs a caller a decode rather than an answer.
+impl<V, U> crate::dynamic::HashRepr for ArchivedUpdate<V, U>
+where
+    V: crate::DBData,
+    U: crate::DBData,
+{
+    const FAITHFUL: bool = false;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
+}

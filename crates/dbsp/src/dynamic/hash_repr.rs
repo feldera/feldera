@@ -29,12 +29,13 @@
 //! hash by the tests in `sqllib/tests/archived_ord.rs`, over hand-picked
 //! values and generated ones.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 use std::sync::Arc;
 
 use rkyv::collections::btree_map::ArchivedBTreeMap;
+use rkyv::collections::btree_set::ArchivedBTreeSet;
 use rkyv::option::ArchivedOption;
 use rkyv::rc::ArchivedRc;
 use rkyv::string::ArchivedString;
@@ -231,6 +232,22 @@ where
     }
 }
 
+impl<T, const N: usize> HashRepr for [T; N]
+where
+    T: HashRepr,
+{
+    const FAITHFUL: bool = T::FAITHFUL;
+
+    fn hash_repr<H: Hasher>(&self, state: &mut H) {
+        // An array hashes as the slice of its elements, which writes the
+        // length before them.  `rkyv` archives `[T; N]` to `[T::Archived; N]`,
+        // so this one implementation covers the archived form and the decoded
+        // one alike.
+        write_length_prefix(state, N);
+        T::hash_slice_repr(self, state);
+    }
+}
+
 impl<K, V> HashRepr for ArchivedBTreeMap<K, V>
 where
     K: HashRepr,
@@ -246,6 +263,23 @@ where
         for (key, value) in self.iter() {
             key.hash_repr(state);
             value.hash_repr(state);
+        }
+    }
+}
+
+impl<K> HashRepr for ArchivedBTreeSet<K>
+where
+    K: HashRepr,
+{
+    const FAITHFUL: bool = K::FAITHFUL;
+
+    fn hash_repr<H: Hasher>(&self, state: &mut H) {
+        // A set hashes as the map of its elements to `()`, whose entries are
+        // pairs whose second half writes nothing.  The length prefix is again
+        // the one `rkyv`'s own implementation leaves out.
+        write_length_prefix(state, self.len());
+        for key in self.iter() {
+            key.hash_repr(state);
         }
     }
 }
@@ -291,9 +325,60 @@ decoded_hash_repr!(
     [T] Vec<T>,
     [T] Option<T>,
     [K, V] BTreeMap<K, V>,
+    [T] BTreeSet<T>,
     [T: ?Sized] Arc<T>,
     [T: ?Sized] Rc<T>,
 );
+
+/// A tuple hashes its fields in order and writes nothing else, and `rkyv`
+/// archives one to the tuple of its fields' archived forms, so the archived
+/// tuple reproduces the decoded hash by hashing each field the same way.
+///
+/// This is the same argument the narrow tuple layout in `feldera-macros`
+/// makes for `TupN`; these are Rust's own tuples, which `DBData` also
+/// covers.
+macro_rules! tuple_hash_repr {
+    ($(($($name:ident $idx:tt),+))*) => {$(
+        impl<$($name),+> HashRepr for ($($name,)+)
+        where
+            $($name: HashRepr,)+
+        {
+            const FAITHFUL: bool = true $(&& $name::FAITHFUL)+;
+
+            #[inline]
+            fn hash_repr<H: Hasher>(&self, state: &mut H) {
+                $(self.$idx.hash_repr(state);)+
+            }
+        }
+    )*};
+}
+
+tuple_hash_repr! {
+    (A 0)
+    (A 0, B 1)
+    (A 0, B 1, C 2)
+    (A 0, B 1, C 2, D 3)
+    (A 0, B 1, C 2, D 3, E 4)
+    (A 0, B 1, C 2, D 3, E 4, F 5)
+    (A 0, B 1, C 2, D 3, E 4, F 5, G 6)
+    (A 0, B 1, C 2, D 3, E 4, F 5, G 6, I 7)
+}
+
+/// `rkyv`'s box declines, the one archived form here that is not dbsp's own.
+///
+/// It could forward to what it points at and be faithful the day something
+/// needs it; nothing does, and declining is slow rather than wrong. The
+/// impls for dbsp's own containers, its unit weight and its times sit beside
+/// those types, for the same reason and with the same note.
+impl<T> HashRepr for rkyv::boxed::ArchivedBox<T>
+where
+    T: rkyv::ArchivePointee + ?Sized,
+{
+    const FAITHFUL: bool = false;
+
+    #[inline]
+    fn hash_repr<H: Hasher>(&self, _state: &mut H) {}
+}
 
 #[cfg(test)]
 mod test {
@@ -303,17 +388,24 @@ mod test {
     //! sqllib types are reachable.  These check the pieces defined here, and
     //! in particular the two that `rkyv`'s own `Hash` gets wrong.
 
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use feldera_macros::{IsNone, OrdRepr};
+    use rkyv::{Archive, Deserialize, Serialize};
+    use size_of::SizeOf;
+
+    use std::fmt::Debug;
+    use std::hash::Hash;
 
     use super::{HashRepr, archived_hash};
-    use crate::DBData;
+    use crate::dynamic::ArchivedDBData;
     use crate::hash::default_hash;
     use crate::storage::file::to_bytes;
 
     /// Archives `value`, hashes both forms, and insists they agree.
-    fn check<T>(value: &T)
+    fn check_archived<T>(value: &T)
     where
-        T: DBData + HashRepr,
+        T: ArchivedDBData + Hash + Debug,
         T::Repr: HashRepr,
     {
         let bytes = to_bytes(value).unwrap();
@@ -324,8 +416,17 @@ mod test {
             Some(default_hash(value)),
             "the archived form of {value:?} hashes differently from the decoded one",
         );
-        // The decoded implementation has to agree with `Hash` as well, since
-        // it stands in for the same value.
+    }
+
+    /// The same, for a type that also implements the trait undecoded, where
+    /// that implementation has to agree with `Hash` as well, since it stands
+    /// in for the same value.
+    fn check<T>(value: &T)
+    where
+        T: ArchivedDBData + HashRepr + Hash + Debug,
+        T::Repr: HashRepr,
+    {
+        check_archived(value);
         assert_eq!(archived_hash(value), Some(default_hash(value)));
     }
 
@@ -355,7 +456,7 @@ mod test {
     /// things, in the same order, as hashing the decoded one.
     fn check_calls<T>(value: &T)
     where
-        T: DBData + std::hash::Hash,
+        T: ArchivedDBData + Hash + Debug,
         T::Repr: HashRepr,
     {
         let bytes = to_bytes(value).unwrap();
@@ -363,7 +464,7 @@ mod test {
         let archived = unsafe { rkyv::archived_root::<T>(bytes.as_slice()) };
 
         let mut decoded = CallLog::default();
-        std::hash::Hash::hash(value, &mut decoded);
+        Hash::hash(value, &mut decoded);
         let mut archived_calls = CallLog::default();
         archived.hash_repr(&mut archived_calls);
 
@@ -427,6 +528,36 @@ mod test {
         check(&BTreeMap::from([(1i64, 2i64), (3, 4)]));
         check(&BTreeMap::from([(String::from("a"), vec![1i64])]));
         check(&BTreeMap::from([(1i64, BTreeMap::from([(2i64, 3i64)]))]));
+    }
+
+    /// A set hashes as the map it wraps, so the length prefix is again the
+    /// thing `rkyv`'s own `Hash` leaves out.
+    #[test]
+    fn sets_carry_their_length_prefix() {
+        check(&BTreeSet::<i64>::new());
+        check(&BTreeSet::from([1i64]));
+        check(&BTreeSet::from([1i64, 2, 3]));
+        check(&BTreeSet::from([String::from("a"), String::from("b")]));
+        check_calls(&BTreeSet::from([1i64, 2, 3]));
+
+        // A set large enough to fill more than one node, since that is where
+        // the archived layout changes and the iteration order could not be
+        // taken for granted.
+        check(&(0i64..1000).collect::<BTreeSet<_>>());
+    }
+
+    /// An array hashes as the slice of its elements, bulk write and all.
+    #[test]
+    fn arrays_hash_as_the_slice_of_their_elements() {
+        check(&[1i64, 2, 3]);
+        check(&[0u8; 0]);
+        check(&[Some(1i64), None]);
+        check(&[String::from("a"), String::new()]);
+
+        // The length prefix and the one bulk write a slice of integers asks
+        // for, which the hasher `check` uses cannot tell from three writes.
+        check_calls(&[1i64, 2, 3]);
+        check_calls(&[0u8; 0]);
     }
 
     /// A tuple hashes its fields in order, and the archived form has to do
@@ -503,5 +634,173 @@ mod test {
         const { assert!(!<ArchivedBTreeMap<Opaque, i64> as HashRepr>::FAITHFUL) };
         // And a faithful one is not dragged down by its neighbours.
         const { assert!(<ArchivedVec<i64> as HashRepr>::FAITHFUL) };
+    }
+
+    // The shapes `#[derive(HashRepr)]` sees: a struct with named fields, a
+    // tuple struct, a struct with no fields, an enum, and a struct that
+    // holds the enum.
+    #[derive(
+        Clone,
+        Debug,
+        Default,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        SizeOf,
+        Archive,
+        Serialize,
+        Deserialize,
+        feldera_macros::HashRepr,
+        IsNone,
+        OrdRepr,
+    )]
+    #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    struct Named {
+        id: u32,
+        label: String,
+        tags: Vec<Option<i16>>,
+    }
+
+    #[derive(
+        Clone,
+        Debug,
+        Default,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        SizeOf,
+        Archive,
+        Serialize,
+        Deserialize,
+        feldera_macros::HashRepr,
+        IsNone,
+        OrdRepr,
+    )]
+    #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    struct Pair(u32, Option<String>);
+
+    #[derive(
+        Clone,
+        Debug,
+        Default,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        SizeOf,
+        Archive,
+        Serialize,
+        Deserialize,
+        feldera_macros::HashRepr,
+        IsNone,
+        OrdRepr,
+    )]
+    #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    struct NoFields();
+
+    #[derive(
+        Clone,
+        Debug,
+        Default,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        SizeOf,
+        Archive,
+        Serialize,
+        Deserialize,
+        feldera_macros::HashRepr,
+        IsNone,
+        OrdRepr,
+    )]
+    #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    enum Kind {
+        #[default]
+        Unit,
+        Tuple(i32),
+        Named {
+            label: String,
+        },
+    }
+
+    #[derive(
+        Clone,
+        Debug,
+        Default,
+        PartialEq,
+        Eq,
+        PartialOrd,
+        Ord,
+        Hash,
+        SizeOf,
+        Archive,
+        Serialize,
+        Deserialize,
+        feldera_macros::HashRepr,
+        IsNone,
+        OrdRepr,
+    )]
+    #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+    struct Holder {
+        id: u32,
+        kind: Kind,
+    }
+
+    /// A derived implementation hashes the fields in declaration order, which
+    /// is what `#[derive(Hash)]` does.
+    #[test]
+    fn a_derived_struct_hashes_its_fields_in_order() {
+        let named = Named {
+            id: 7,
+            label: String::from("label"),
+            tags: vec![Some(1), None],
+        };
+        check_archived(&named);
+        check_archived(&Named::default());
+        check_archived(&Pair(1, Some(String::from("a"))));
+        check_archived(&Pair(u32::MAX, None));
+        check_archived(&NoFields());
+
+        // A struct writes its fields and nothing else, in the same calls.
+        check_calls(&named);
+        check_calls(&NoFields());
+
+        const { assert!(<ArchivedNamed as HashRepr>::FAITHFUL) };
+        const { assert!(<ArchivedPair as HashRepr>::FAITHFUL) };
+        const { assert!(<ArchivedNoFields as HashRepr>::FAITHFUL) };
+    }
+
+    /// An archived enum writes a narrower discriminant than the decoded one,
+    /// so the derive declines for an enum, and for whatever holds one.
+    #[test]
+    fn a_derived_enum_declines_and_takes_its_holder_with_it() {
+        const { assert!(!<ArchivedKind as HashRepr>::FAITHFUL) };
+        const { assert!(!<ArchivedHolder as HashRepr>::FAITHFUL) };
+
+        for value in [
+            Holder::default(),
+            Holder {
+                id: 1,
+                kind: Kind::Tuple(2),
+            },
+            Holder {
+                id: 1,
+                kind: Kind::Named {
+                    label: String::from("a"),
+                },
+            },
+        ] {
+            let bytes = to_bytes(&value).unwrap();
+            // SAFETY: `bytes` came from `to_bytes::<Holder>` on the line above.
+            let archived = unsafe { rkyv::archived_root::<Holder>(bytes.as_slice()) };
+            assert_eq!(archived_hash(archived), None);
+        }
     }
 }

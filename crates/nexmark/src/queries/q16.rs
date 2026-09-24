@@ -5,7 +5,7 @@ use dbsp::{
     operator::Max,
     utils::{Tup2, Tup3, Tup4, Tup5, Tup6, Tup7, Tup8, Tup9, Tup10},
 };
-use feldera_macros::{IsNone, OrdRepr};
+use feldera_macros::{HashRepr, IsNone, OrdRepr};
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
@@ -84,6 +84,7 @@ use time::{
     Serialize,
     Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -122,6 +123,7 @@ type Q16Stream = Stream<RootCircuit, OrdZSet<Q16Output>>;
     Serialize,
     Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -153,6 +155,7 @@ pub struct Q16Intermediate1(
     Serialize,
     Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
