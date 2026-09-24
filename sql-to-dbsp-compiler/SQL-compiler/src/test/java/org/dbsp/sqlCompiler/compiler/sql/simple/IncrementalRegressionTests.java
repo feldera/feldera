@@ -46,8 +46,10 @@ import org.junit.Test;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /** Regression tests that executed in incremental mode */
 public class IncrementalRegressionTests extends SqlIoTest {
@@ -2441,5 +2443,296 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 Assert.assertEquals(1, this.errorPortsRead.size());
             }
         });
+    }
+
+    /** Run the same steps on the program with and without its LATENESS clause.
+     * No input row is late, so both programs must produce the same outputs. */
+    void runWithAndWithoutLateness(String sql, Consumer<CompilerCircuitStream> steps) {
+        Assert.assertTrue(sql.contains(" LATENESS 10"));
+        for (String program : List.of(sql, sql.replace(" LATENESS 10", ""))) {
+            CompilerCircuitStream ccs = this.getCCS(program).compactAfterEachStep();
+            steps.accept(ccs);
+        }
+    }
+
+    /** A row inserted above the waterline changes the LEAD of its predecessor,
+     * which can be below the waterline.  Expected outputs validated with Postgres. */
+    void checkLeadBelowWaterline(String lead) {
+        String sql = """
+                CREATE TABLE t (ts BIGINT NOT NULL LATENESS 10, v BIGINT NOT NULL);
+                CREATE LOCAL VIEW V AS SELECT ts, LEAD_CALL AS nv FROM t;
+                CREATE VIEW C AS SELECT ts, MAX(nv) AS m FROM V GROUP BY ts;"""
+                .replace("LEAD_CALL", lead);
+        // Comments show V
+        this.runWithAndWithoutLateness(sql, ccs -> {
+            ccs.step("INSERT INTO t VALUES(10, 1);",
+                    //  ts  | nv
+                    // ----------
+                    //  10  | 0
+                    """
+                     ts | m | weight
+                    -----------------
+                     10 | 0 | 1""");
+            ccs.step("INSERT INTO t VALUES(50, 2);",
+                    //  ts  | nv
+                    // ----------
+                    //  10  | 2
+                    //  50  | 0
+                    """
+                     ts | m | weight
+                    -----------------
+                     10 | 0 | -1
+                     10 | 2 | 1
+                     50 | 0 | 1""");
+            ccs.step("INSERT INTO t VALUES(45, 3);",
+                    //  ts  | nv
+                    // ----------
+                    //  10  | 3
+                    //  45  | 2
+                    //  50  | 0
+                    """
+                     ts | m | weight
+                    -----------------
+                     10 | 2 | -1
+                     10 | 3 | 1
+                     45 | 2 | 1""");
+        });
+    }
+
+    @Test
+    public void issue7236() {
+        // LEAD with ASC and LAG with DESC produce the same result
+        this.checkLeadBelowWaterline("LEAD(v, 1, 0) OVER (ORDER BY ts)");
+        this.checkLeadBelowWaterline("LAG(v, 1, 0) OVER (ORDER BY ts DESC)");
+    }
+
+    /** A row with a NULL sort column is never late.  With LAG and NULLS FIRST, or LEAD and
+     * NULLS LAST, the rows that such a row changes are non-NULL rows, which can be below
+     * the waterline.  Expected outputs validated with Postgres. */
+    void checkNullBelowWaterline(String lag) {
+        String sql = """
+                CREATE TABLE t (ts BIGINT LATENESS 10, v BIGINT NOT NULL);
+                CREATE LOCAL VIEW V AS SELECT ts, LAG_CALL AS nv FROM t;
+                CREATE VIEW C AS SELECT ts, MAX(nv) AS m FROM V GROUP BY ts;"""
+                .replace("LAG_CALL", lag);
+        // Comments show V
+        this.runWithAndWithoutLateness(sql, ccs -> {
+            ccs.step("INSERT INTO t VALUES(10, 1);",
+                    //  ts  | nv
+                    // ----------
+                    //  10  | 0
+                    """
+                     ts | m | weight
+                    -----------------
+                     10 | 0 | 1""");
+            ccs.step("INSERT INTO t VALUES(50, 2);",
+                    //  ts  | nv
+                    // ----------
+                    //  10  | 0
+                    //  50  | 1
+                    """
+                     ts | m | weight
+                    -----------------
+                     50 | 1 | 1""");
+            // The NULL row becomes the neighbor of 10, which is below the waterline 40
+            ccs.step("INSERT INTO t VALUES(NULL, 3);",
+                    //  ts  | nv
+                    // ----------
+                    //  NULL| 0
+                    //  10  | 3
+                    //  50  | 1
+                    """
+                     ts  | m | weight
+                    ------------------
+                     10  | 0 | -1
+                     10  | 3 | 1
+                     NULL| 0 | 1""");
+        });
+    }
+
+    @Test
+    public void issue7236NullsFirst() {
+        this.checkNullBelowWaterline("LAG(v, 1, 0) OVER (ORDER BY ts NULLS FIRST)");
+        this.checkNullBelowWaterline("LEAD(v, 1, 0) OVER (ORDER BY ts DESC NULLS LAST)");
+    }
+
+    /** A LAG sorted on a column without LATENESS changes rows with any timestamp.
+     * Expected outputs validated with Postgres. */
+    @Test
+    public void issue7236OtherSortColumn() {
+        String sql = """
+                CREATE TABLE t (ts BIGINT NOT NULL LATENESS 10, v BIGINT NOT NULL);
+                CREATE LOCAL VIEW V AS SELECT ts, LAG(v, 1, 0) OVER (ORDER BY v) AS nv FROM t;
+                CREATE VIEW C AS SELECT ts, MAX(nv) AS m FROM V GROUP BY ts;""";
+        // Comments show V
+        this.runWithAndWithoutLateness(sql, ccs -> {
+            ccs.step("INSERT INTO t VALUES(10, 5);",
+                    //  ts  | nv
+                    // ----------
+                    //  10  | 0
+                    """
+                     ts | m | weight
+                    -----------------
+                     10 | 0 | 1""");
+            ccs.step("INSERT INTO t VALUES(50, 1);",
+                    //  ts  | nv
+                    // ----------
+                    //  10  | 1
+                    //  50  | 0
+                    """
+                     ts | m | weight
+                    -----------------
+                     10 | 0 | -1
+                     10 | 1 | 1
+                     50 | 0 | 1""");
+            // 45 is not late; in the order of v it becomes the predecessor of 10
+            ccs.step("INSERT INTO t VALUES(45, 3);",
+                    //  ts  | nv
+                    // ----------
+                    //  10  | 3
+                    //  45  | 1
+                    //  50  | 0
+                    """
+                     ts | m | weight
+                    -----------------
+                     10 | 1 | -1
+                     10 | 3 | 1
+                     45 | 1 | 1""");
+        });
+    }
+
+    /** Only the first sort column can keep its waterline; here it is v DESC, so ts has none.
+     * Expected outputs validated with Postgres. */
+    @Test
+    public void issue7236MultiColumnSort() {
+        String sql = """
+                CREATE TABLE t (ts BIGINT NOT NULL LATENESS 10, v BIGINT NOT NULL, w BIGINT NOT NULL);
+                CREATE LOCAL VIEW V AS SELECT ts, LAG(w, 1, 0) OVER (ORDER BY v DESC, ts) AS nv FROM t;
+                CREATE VIEW C AS SELECT ts, MAX(nv) AS m FROM V GROUP BY ts;""";
+        // Comments show V
+        this.runWithAndWithoutLateness(sql, ccs -> {
+            ccs.step("INSERT INTO t VALUES(10, 5, 1);",
+                    //  ts  | nv
+                    // ----------
+                    //  10  | 0
+                    """
+                     ts | m | weight
+                    -----------------
+                     10 | 0 | 1""");
+            ccs.step("INSERT INTO t VALUES(50, 9, 2);",
+                    //  ts  | nv
+                    // ----------
+                    //  10  | 2
+                    //  50  | 0
+                    """
+                     ts | m | weight
+                    -----------------
+                     10 | 0 | -1
+                     10 | 2 | 1
+                     50 | 0 | 1""");
+            // 45 is not late; in the order of v DESC it becomes the predecessor of 10
+            ccs.step("INSERT INTO t VALUES(45, 7, 3);",
+                    //  ts  | nv
+                    // ----------
+                    //  10  | 3
+                    //  45  | 2
+                    //  50  | 0
+                    """
+                     ts | m | weight
+                    -----------------
+                     10 | 2 | -1
+                     10 | 3 | 1
+                     45 | 2 | 1""");
+        });
+    }
+
+    /** LEAD within a partition changes the predecessor in the same partition.
+     * Expected outputs validated with Postgres. */
+    @Test
+    public void issue7236Partitioned() {
+        String sql = """
+                CREATE TABLE t (ts BIGINT NOT NULL LATENESS 10, k BIGINT NOT NULL, v BIGINT NOT NULL);
+                CREATE LOCAL VIEW V AS SELECT ts, LEAD(v, 1, 0) OVER (PARTITION BY k ORDER BY ts) AS nv FROM t;
+                CREATE VIEW C AS SELECT ts, MAX(nv) AS m FROM V GROUP BY ts;""";
+        // Comments show V
+        this.runWithAndWithoutLateness(sql, ccs -> {
+            ccs.step("INSERT INTO t VALUES(10, 1, 1);",
+                    //  ts  | nv
+                    // ----------
+                    //  10  | 0
+                    """
+                     ts | m | weight
+                    -----------------
+                     10 | 0 | 1""");
+            ccs.step("INSERT INTO t VALUES(20, 2, 5);",
+                    //  ts  | nv
+                    // ----------
+                    //  10  | 0
+                    //  20  | 0
+                    """
+                     ts | m | weight
+                    -----------------
+                     20 | 0 | 1""");
+            ccs.step("INSERT INTO t VALUES(50, 1, 2);",
+                    //  ts  | nv
+                    // ----------
+                    //  10  | 2
+                    //  20  | 0
+                    //  50  | 0
+                    """
+                     ts | m | weight
+                    -----------------
+                     10 | 0 | -1
+                     10 | 2 | 1
+                     50 | 0 | 1""");
+            // 45 is not late; in partition 1 it becomes the successor of 10
+            ccs.step("INSERT INTO t VALUES(45, 1, 3);",
+                    //  ts  | nv
+                    // ----------
+                    //  10  | 3
+                    //  20  | 0
+                    //  45  | 2
+                    //  50  | 0
+                    """
+                     ts | m | weight
+                    -----------------
+                     10 | 2 | -1
+                     10 | 3 | 1
+                     45 | 2 | 1""");
+        });
+    }
+
+    /** LAG and LEAD that change rows on the ascending side of the sort column keep its waterline. */
+    @Test
+    public void issue7236KeepsWaterline() {
+        String[][] cases = {
+                { "NOT NULL", "LAG(v, 1, 0) OVER (ORDER BY ts)" },
+                { "NOT NULL", "LEAD(v, 1, 0) OVER (ORDER BY ts DESC)" },
+                { "", "LAG(v, 1, 0) OVER (ORDER BY ts NULLS LAST)" },
+                { "", "LEAD(v, 1, 0) OVER (ORDER BY ts DESC NULLS FIRST)" },
+        };
+        for (String[] c : cases) {
+            String sql = """
+                    CREATE TABLE t (ts BIGINT NULLABILITY LATENESS 10, v BIGINT NOT NULL);
+                    CREATE LOCAL VIEW V AS SELECT ts, LAG_CALL AS nv FROM t;
+                    CREATE VIEW C AS SELECT ts, MAX(nv) AS m FROM V GROUP BY ts;"""
+                    .replace("NULLABILITY", c[0])
+                    .replace("LAG_CALL", c[1]);
+            CompilerCircuit cc = this.getCC(sql);
+            cc.visit(new CircuitVisitor(cc.compiler) {
+                int retainKeys = 0;
+
+                @Override
+                public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                    this.retainKeys++;
+                }
+
+                @Override
+                public void endVisit() {
+                    // The LAG input and the GROUP BY integral
+                    Assert.assertEquals(c[1], 2, this.retainKeys);
+                }
+            });
+        }
     }
 }
