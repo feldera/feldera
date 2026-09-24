@@ -27,6 +27,7 @@ from feldera.testutils import (
     unique_pipeline_name,
 )
 from tests import TEST_CLIENT
+from tests.utils import advance_clock_and_wait_for_view
 
 # `2030-01-01T00:00:00Z` in milliseconds since epoch.  A fixed anchor, so
 # every assertion in this test can use literal values.
@@ -40,13 +41,6 @@ TZ_OFFSET_MS = (5 * 60 + 30) * ONE_MINUTE_MS
 
 # Clock resolution configured below; `advance()` values round to this.
 CLOCK_RESOLUTION_MS = 1_000
-
-
-def _advance_and_settle(pipeline, delta_ms: int | None) -> dict:
-    """`advance_clock(delta_ms)` followed by `wait_for_idle` so the view sees the new tick."""
-    resp = pipeline.advance_clock(delta_ms)
-    pipeline.wait_for_idle(idle_interval_s=0.5, timeout_s=10.0, poll_interval_s=0.05)
-    return resp
 
 
 def _view_now(pipeline) -> str:
@@ -84,7 +78,7 @@ class TestClockTimezoneOffset(unittest.TestCase):
                 self.assertEqual(pipeline.status(), PipelineStatus.RUNNING)
 
                 # NOW() is the anchor shifted by the timezone offset.
-                resp = _advance_and_settle(pipeline, 0)
+                resp = advance_clock_and_wait_for_view(pipeline, 0)
                 self.assertEqual(resp["now_ms"], ANCHOR_MS + TZ_OFFSET_MS)
                 view_now = _view_now(pipeline)
                 self.assertTrue(
@@ -94,7 +88,7 @@ class TestClockTimezoneOffset(unittest.TestCase):
                 )
 
                 # Advances compound on the shifted value.
-                resp = _advance_and_settle(pipeline, ONE_MINUTE_MS)
+                resp = advance_clock_and_wait_for_view(pipeline, ONE_MINUTE_MS)
                 self.assertEqual(
                     resp["now_ms"], ANCHOR_MS + TZ_OFFSET_MS + ONE_MINUTE_MS
                 )

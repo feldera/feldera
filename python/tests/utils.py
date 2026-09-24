@@ -11,6 +11,7 @@ import time
 import uuid
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -942,3 +943,67 @@ def wait_for_records(
         timeout_s,
         poll_interval_s,
     )
+
+
+def advance_clock_and_wait_for_view(
+    pipeline,
+    delta_ms: int | None,
+    view_name: str = "v",
+    time_column: str = "t",
+    timeout_s: float = 10.0,
+    poll_interval_s: float = 0.05,
+) -> dict:
+    """Advance the pipeline clock and wait until the materialized view reflects the new tick.
+
+    The HTTP clock advance endpoint updates the pipeline clock state immediately,
+    but the materialized view updates asynchronously as DBSP processes the clock tick.
+    To avoid race conditions, this helper polls the materialized view until its timestamp
+    reflects the clock value returned by the advance API.
+
+    Timestamp normalization:
+    The API returns an RFC 3339 string (e.g., '2030-01-01T00:00:00Z' or with a timezone
+    offset such as '2030-01-01T05:30:00+05:30'), while the SQL materialized view returns a
+    wall-clock TIMESTAMP without timezone. We parse both values into typed `datetime` objects
+    and normalize them to second precision (ignoring timezone envelope and microseconds) for a
+    robust, type-safe comparison without magic character slicing.
+
+    :param pipeline: The Feldera pipeline instance.
+    :param delta_ms: Milliseconds to advance the clock, 0 for read-only, or None for one resolution tick.
+    :param view_name: Name of the materialized view containing the clock value (default 'v').
+    :param time_column: Name of the timestamp column in the view (default 't').
+    :param timeout_s: Maximum wait timeout in seconds (default 10.0).
+    :param poll_interval_s: Interval between poll attempts in seconds (default 0.05).
+    :returns: The dictionary response from `pipeline.advance_clock`.
+    """
+    resp = pipeline.advance_clock(delta_ms)
+    expected_dt = datetime.fromisoformat(
+        str(resp["now"]).replace("Z", "+00:00")
+    ).replace(tzinfo=None, microsecond=0)
+
+    def _parse_timestamp(val) -> datetime:
+        if isinstance(val, datetime):
+            return val
+        s = str(val).strip()
+        if " " in s and "T" not in s:
+            s = s.replace(" ", "T", 1)
+        return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+    def view_caught_up() -> bool:
+        rows = list(pipeline.query(f"SELECT {time_column} FROM {view_name};"))
+        if not rows or rows[0].get(time_column) is None:
+            return False
+        try:
+            view_dt = _parse_timestamp(rows[0][time_column]).replace(
+                tzinfo=None, microsecond=0
+            )
+            return view_dt == expected_dt
+        except (ValueError, TypeError):
+            return False
+
+    wait_for_condition(
+        f"materialized view '{view_name}' reflects advanced NOW() ({resp.get('now')})",
+        view_caught_up,
+        timeout_s=timeout_s,
+        poll_interval_s=poll_interval_s,
+    )
+    return resp

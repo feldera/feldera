@@ -553,6 +553,19 @@ class Pipeline:
         """
         Wait for the pipeline to become idle and then returns.
 
+        .. deprecated::
+           `wait_for_idle` is deprecated because it is racy. Do not use it
+           in new code. Replace call sites with a deterministic wait:
+
+           - :meth:`.Pipeline.input_json` (``wait=True``, the default) or
+             :meth:`.Pipeline.wait_for_token` for HTTP ingress / a specific
+             input connector
+           - :meth:`.Pipeline.execute` with ``wait=True`` for ad-hoc writes
+           - :meth:`.Pipeline.wait_for_completion` only when every input
+             connector is bounded and issues end-of-input
+
+           See https://docs.feldera.com/connectors/completion-tokens/
+
         Idle is defined as a sufficiently long interval in which the number of
         input and processed records reported by the pipeline do not change, and
         they equal each other (thus, all input records present at the pipeline
@@ -567,6 +580,13 @@ class Pipeline:
         :raises RuntimeError: If the metrics are missing or the timeout was
             reached.
         """
+        warnings.warn(
+            "Pipeline.wait_for_idle() is deprecated and racy. Use "
+            "completion tokens (input_json wait=True, execute wait=True, "
+            "or wait_for_token) or wait_for_completion for bounded inputs.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if timeout_s is not None and idle_interval_s > timeout_s:
             raise ValueError(
                 f"idle interval ({idle_interval_s}s) cannot be larger than"

@@ -77,8 +77,7 @@ def _create(pipeline_name: str, sql: str):
 def _insert_range(pipeline, table: str, lo: int, hi: int) -> None:
     """Insert x = lo, lo+1, ..., hi-1 into `table` and wait for it to land."""
     values = ",".join(f"({x})" for x in range(lo, hi))
-    pipeline.execute(f"INSERT INTO {table} VALUES {values};")
-    pipeline.wait_for_idle()
+    pipeline.execute(f"INSERT INTO {table} VALUES {values};", wait=True)
 
 
 def _scalar(pipeline, sql: str, column: str):
