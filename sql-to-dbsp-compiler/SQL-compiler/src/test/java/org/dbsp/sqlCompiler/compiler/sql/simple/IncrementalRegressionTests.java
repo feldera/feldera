@@ -842,8 +842,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 CREATE VIEW V AS SELECT T.x FROM T WHERE T.x < NOW();""");
         ccs.visit(new CircuitVisitor(ccs.compiler) {
             @Override public void postorder(DBSPWindowOperator window) {
-                // only 1 field used by the window
-                Assert.assertEquals(1,
+                // The only field used is the window's key, which is not repeated in the value
+                Assert.assertEquals(0,
                         window.left().getOutputIndexedZSetType().elementType.getToplevelFieldCount());
             }
         });
