@@ -1113,6 +1113,43 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void issue7227() {
+        // A new left row can match an arbitrarily old right row, so the
+        // output's right timestamp has no lower bound.
+        String sql = """
+                CREATE TABLE L (k BIGINT NOT NULL, ts BIGINT NOT NULL LATENESS 0);
+                CREATE TABLE R (k BIGINT NOT NULL, ts BIGINT NOT NULL LATENESS 0);
+                CREATE LOCAL VIEW V AS
+                SELECT L.k, L.ts AS lts, R.ts AS rts
+                FROM L LEFT ASOF JOIN R
+                MATCH_CONDITION(L.ts >= R.ts)
+                ON L.k = R.k;
+                CREATE VIEW C AS SELECT rts, COUNT(*) AS c FROM V GROUP BY rts;""";
+        CompilerCircuitStream ccs = this.getCCS(sql).compactAfterEachStep();
+        ccs.step("""
+                INSERT INTO R VALUES(1, 0);
+                INSERT INTO L VALUES(1, 0);""", """
+                 rts | c | weight
+                ------------------
+                 0   | 1 | 1""");
+        // Both waterlines move to 100
+        ccs.step("""
+                INSERT INTO R VALUES(2, 100);
+                INSERT INTO L VALUES(2, 100);""", """
+                 rts | c | weight
+                ------------------
+                 100 | 1 | 1""");
+        // L(1, 200) is not late and matches R(1, 0)
+        ccs.step("""
+                INSERT INTO R VALUES(2, 200);
+                INSERT INTO L VALUES(1, 200);""", """
+                 rts | c | weight
+                ------------------
+                 0   | 1 | -1
+                 0   | 2 | 1""");
+    }
+
+    @Test
     public void sessionGc() {
         // LATENESS on the SESSION timestamp column with SESSION windows.
         // The RetainNValues operator attaches to the JoinIndex of the LAG;
