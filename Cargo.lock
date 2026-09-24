@@ -5117,7 +5117,7 @@ dependencies = [
 [[package]]
 name = "etl"
 version = "0.1.0"
-source = "git+https://github.com/feldera/etl?rev=248fa4077c5b0f3e7bc2918a9709be2a03efea73#248fa4077c5b0f3e7bc2918a9709be2a03efea73"
+source = "git+https://github.com/feldera/etl?rev=cdfb3c7e6581b63d8876c3c1b335b3a99e676c55#cdfb3c7e6581b63d8876c3c1b335b3a99e676c55"
 dependencies = [
  "bytes",
  "chrono",
@@ -5147,7 +5147,7 @@ dependencies = [
 [[package]]
 name = "etl-config"
 version = "0.1.0"
-source = "git+https://github.com/feldera/etl?rev=248fa4077c5b0f3e7bc2918a9709be2a03efea73#248fa4077c5b0f3e7bc2918a9709be2a03efea73"
+source = "git+https://github.com/feldera/etl?rev=cdfb3c7e6581b63d8876c3c1b335b3a99e676c55#cdfb3c7e6581b63d8876c3c1b335b3a99e676c55"
 dependencies = [
  "config",
  "secrecy",
@@ -5161,7 +5161,7 @@ dependencies = [
 [[package]]
 name = "etl-postgres"
 version = "0.1.0"
-source = "git+https://github.com/feldera/etl?rev=248fa4077c5b0f3e7bc2918a9709be2a03efea73#248fa4077c5b0f3e7bc2918a9709be2a03efea73"
+source = "git+https://github.com/feldera/etl?rev=cdfb3c7e6581b63d8876c3c1b335b3a99e676c55#cdfb3c7e6581b63d8876c3c1b335b3a99e676c55"
 dependencies = [
  "aws-lc-rs",
  "byteorder",
