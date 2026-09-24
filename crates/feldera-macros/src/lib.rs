@@ -7,6 +7,8 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
 
+mod archive_attrs;
+mod hash_repr;
 mod ord_repr;
 mod tuples;
 
@@ -46,6 +48,34 @@ pub fn declare_tuple(input: TokenStream) -> TokenStream {
 pub fn derive_ord_repr(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
     match ord_repr::derive_ord_repr_impl(input) {
+        Ok(expanded) => expanded.into(),
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
+/// Derives `HashRepr` for the rkyv archived form of a struct or enum, so
+/// that `ArchivedFoo` can be hashed without deserializing it into a `Foo`.
+/// Like `OrdRepr`, it applies to types whose archived form comes from
+/// `#[derive(Archive)]`, and therefore is named `ArchivedFoo` and mirrors
+/// `Foo`'s fields.
+///
+/// The generated implementation follows `#[derive(Hash)]`, which hashes a
+/// struct's fields in declaration order and writes nothing else. It therefore
+/// agrees with `Hash` on the original whenever `Hash` is derived; a type with
+/// a hand-written `Hash` must hand-write `HashRepr` to match it.
+///
+/// An enum, a field with a `#[with]` wrapper, and a field with
+/// `#[omit_bounds]` have no faithful answer, and the derive generates an
+/// implementation that declines: it reports `FAITHFUL = false`, and its
+/// caller deserializes and hashes that instead. See the `HashRepr` trait for
+/// why an archived enum cannot reproduce the decoded hash.
+///
+/// Every field type `T` gets the bound `<T as Archive>::Archived: HashRepr`,
+/// in the same way that rkyv's derive bounds field types.
+#[proc_macro_derive(HashRepr)]
+pub fn derive_hash_repr(item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as DeriveInput);
+    match hash_repr::derive_hash_repr_impl(input) {
         Ok(expanded) => expanded.into(),
         Err(error) => error.to_compile_error().into(),
     }
