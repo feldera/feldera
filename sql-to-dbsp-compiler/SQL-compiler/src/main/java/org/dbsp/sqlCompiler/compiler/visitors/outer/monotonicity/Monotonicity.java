@@ -65,6 +65,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalIncrementExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -554,6 +555,51 @@ public class Monotonicity extends CircuitVisitor {
         this.set(node, output);
     }
 
+    /** Returns the index of the value field of the LAG input whose waterline also holds
+     * for the LAG output, or -1 if there is none.
+     *
+     * <p>Inserting or deleting a row n also changes the output of other rows:
+     * the rows after n in the sort order for LAG, the rows before n for LEAD.
+     * Let C be the first column of the sort order.  The values of those rows
+     * in column C may be bounded by n.C; the checks below decide when they are.
+     * No other value field of those rows depends on n. */
+    static int lagPreservedField(DBSPLagOperator node) {
+        DBSPFieldComparatorExpression firstColumnCompared = null;
+        DBSPExpression comparator = node.comparator;
+        while (comparator.is(DBSPFieldComparatorExpression.class)) {
+            firstColumnCompared = comparator.to(DBSPFieldComparatorExpression.class);
+            comparator = firstColumnCompared.source;
+        }
+        if (firstColumnCompared == null)
+            return -1;
+        final int c = firstColumnCompared.fieldNo;
+        // LAG or LEAD?
+        boolean isLag = node.offset >= 0;
+        // LAG changes the rows after n, whose sort column is at least n's only in ascending order
+        if (isLag && !firstColumnCompared.ascending)
+            return -1;
+        // LEAD changes the rows before n, whose sort column is at least n's only in descending order
+        if (!isLag && firstColumnCompared.ascending)
+            return -1;
+
+        DBSPTypeTupleBase valueType = node.input().getOutputIndexedZSetType()
+                .elementType.to(DBSPTypeTupleBase.class);
+        if (!valueType.getFieldType(firstColumnCompared.fieldNo).mayBeNull)
+            // Column C is not nullable:
+            return c;
+        // A row n with a NULL sort column is never late.  With NULLS FIRST, LAG changes
+        // the rows after n, which may have any non-NULL value
+        if (isLag && firstColumnCompared.nullsFirst)
+            return -1;
+        // With NULLS LAST, LEAD changes the rows before n, which may have any non-NULL value
+        if (!isLag && !firstColumnCompared.nullsFirst)
+            return -1;
+        // In the remaining cases the changed rows have C at least n.C, or a NULL C.
+        // A NULL is never below a waterline: filters and retain operators keep NULL
+        // values.
+        return c;
+    }
+
     @Override
     public void postorder(DBSPLagOperator node) {
         MonotoneExpression input = this.getMonotoneExpression(node.input());
@@ -567,14 +613,26 @@ public class Monotonicity extends CircuitVisitor {
         // Z-sets, but the function's input is just the Z-set part.
         //
         // Let's say the function of lag is |x, y| f(x, y).
-        // We build a new function transfer = |kx| (*kx.0, f(kx.1, No)) and analyze this one.
+        // We build a new function transfer = |kx| (*kx.0, f(r, No)) and analyze this one,
+        // where r keeps only the field of kx.1 returned by lagPreservedField.
+        // The key kx.0 keeps its waterline: all rows changed by an input row are in its partition.
         DBSPClosureExpression function = node.getClosureFunction();
         Utilities.enforce(function.parameters.length == 2);
 
         DBSPTypeIndexedZSet inputType = node.input().getOutputIndexedZSetType();
         DBSPVariablePath kx = new DBSPTypeRawTuple(inputType.keyType.ref(), inputType.elementType.ref()).var();
         DBSPExpression noExpression = new NoExpression(function.parameters[1].type);
-        DBSPExpression dataPart = function.call(kx.field(1), noExpression);
+        DBSPTypeTupleBase valueType = inputType.elementType.to(DBSPTypeTupleBase.class);
+        int preservedField = lagPreservedField(node);
+        List<DBSPExpression> currentRow = new ArrayList<>();
+        for (int i = 0; i < valueType.size(); i++) {
+            if (i == preservedField)
+                currentRow.add(kx.field(1).deref().field(i));
+            else
+                currentRow.add(new NoExpression(valueType.getFieldType(i)));
+        }
+        DBSPExpression current = new DBSPTupleExpression(currentRow, valueType.mayBeNull).borrow();
+        DBSPExpression dataPart = function.call(current, noExpression);
         DBSPExpression transfer = new DBSPRawTupleExpression(
                 kx.field(0).deref(), dataPart).closure(kx).reduce(this.compiler())
                 .ensureTree(this.compiler());
