@@ -83,6 +83,10 @@ const THRESHOLD_COMPILATION_TARGET_WARNING: f64 = 0.7;
 const THRESHOLD_COMPILATION_TARGET_CLEAR: f64 = 0.9;
 
 /// Rust compilation task that wakes up periodically.
+///
+/// Each tick claims work before cleaning the target directory. Cleanup of a
+/// large or full volume can take minutes or hang; running it first left
+/// `SqlCompiled` pipelines sitting while SQL kept finishing (#6496).
 /// Sleeps inbetween ticks which affects the response time of Rust compilation.
 /// This task only returns if the Rust compiler wants to be restarted to have any precompilation
 /// reapplied because it cleared the target directory. Otherwise, this task cannot fail, and any
@@ -99,40 +103,9 @@ pub async fn rust_compiler_task(
     loop {
         let mut unexpected_error = false;
 
-        // Clean up
-        if last_cleanup.is_none_or(|ts| ts.elapsed() >= CLEANUP_INTERVAL) {
-            if let Err(e) = cleanup_rust_compilation(&config, db.clone()).await {
-                match e {
-                    RustCompilationCleanupError::Database(e) => {
-                        error!(
-                            "Rust worker {worker_id}: compilation cleanup failed: database error occurred: {e}"
-                        );
-                    }
-                    RustCompilationCleanupError::Utility(e) => {
-                        error!(
-                            "Rust worker {worker_id}: compilation cleanup failed: utility error occurred: {e}"
-                        );
-                    }
-                    RustCompilationCleanupError::TargetCleared => {
-                        if allow_exit_upon_target_cleared {
-                            // This restart behavior only occurs for a standalone compiler server
-                            warn!(
-                                "Rust worker {worker_id}: target directory has been cleared due to lack of space -- restarting to have any precompilation re-applied"
-                            );
-                            return Err(());
-                        } else {
-                            warn!(
-                                "Rust worker {worker_id}: target directory has been cleared due to lack of space -- the next compilation will be slow"
-                            );
-                        }
-                    }
-                }
-                unexpected_error = true;
-            }
-            last_cleanup = Some(Instant::now());
-        }
-
-        // Compile
+        // Compile before cleanup. A large or full target directory can make
+        // cleanup take minutes or hang (#6742); doing it first left
+        // SqlCompiled pipelines untouched while SQL kept finishing work (#6496).
         let result = attempt_end_to_end_rust_compilation(
             worker_id,
             total_workers,
@@ -167,6 +140,38 @@ pub async fn rust_compiler_task(
             }
         }
 
+        if last_cleanup.is_none_or(|ts| ts.elapsed() >= CLEANUP_INTERVAL) {
+            if let Err(e) = cleanup_rust_compilation(&config, db.clone()).await {
+                match e {
+                    RustCompilationCleanupError::Database(e) => {
+                        error!(
+                            "Rust worker {worker_id}: compilation cleanup failed: database error occurred: {e}"
+                        );
+                    }
+                    RustCompilationCleanupError::Utility(e) => {
+                        error!(
+                            "Rust worker {worker_id}: compilation cleanup failed: utility error occurred: {e}"
+                        );
+                    }
+                    RustCompilationCleanupError::TargetCleared => {
+                        if allow_exit_upon_target_cleared {
+                            // This restart behavior only occurs for a standalone compiler server
+                            warn!(
+                                "Rust worker {worker_id}: target directory has been cleared due to lack of space -- restarting to have any precompilation re-applied"
+                            );
+                            return Err(());
+                        } else {
+                            warn!(
+                                "Rust worker {worker_id}: target directory has been cleared due to lack of space -- the next compilation will be slow"
+                            );
+                        }
+                    }
+                }
+                unexpected_error = true;
+            }
+            last_cleanup = Some(Instant::now());
+        }
+
         // Wait
         if unexpected_error {
             // Unexpected error occurred
@@ -187,8 +192,8 @@ pub async fn rust_compiler_task(
 ///    `SqlCompiled` if they are of the current `platform_version`. Any pipeline with
 ///    `program_status` of `SqlCompiled` or `CompilingRust` with a non-current `platform_version`
 ///    will have it updated to current and its `program_status` set back to `Pending`.
-/// 2. Queries the database for a pipeline which has `program_status` of `SqlCompiled` the longest
-/// 3. Updates pipeline database `program_status` to `CompilingRust`
+/// 2. Claims the pipeline that has been `SqlCompiled` the longest
+/// 3. Marks it `CompilingRust` in the same transaction as the claim
 /// 4. Performs Rust compilation on `program_info.main`, `udf_rust` and `udf_toml`, configured
 ///    with `program_config`
 /// 5. Upon completion, the compilation status is set to `Success`
@@ -226,23 +231,18 @@ async fn attempt_end_to_end_rust_compilation(
         )
         .await?;
 
-    // (2) Find pipeline which needs Rust compilation
-    // Atomically claim the next pipeline for Rust compilation using modulo sharding
+    // (2)+(3) Claim the next SqlCompiled pipeline and mark CompilingRust in
+    // one transaction. A separate select then update let a second compiler
+    // server miss the row or reset it mid-compile (#6496).
     let Some((tenant_id, pipeline)) = db
         .lock()
         .await
-        .get_next_rust_compilation(&common_config.platform_version, worker_id, total_workers)
+        .claim_next_rust_compilation(&common_config.platform_version, worker_id, total_workers)
         .await?
     else {
         trace!("No pipeline found which needs Rust compilation");
         return Ok(false);
     };
-
-    // (3) Update database that Rust compilation is ongoing
-    db.lock()
-        .await
-        .transit_program_status_to_compiling_rust(tenant_id, pipeline.id, pipeline.program_version)
-        .await?;
 
     // (4) Perform Rust compilation
     let compilation_result = perform_rust_compilation(
