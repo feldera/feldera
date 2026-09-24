@@ -2361,6 +2361,23 @@ where
         }
     }
 
+    /// Row group over a different range of rows of the same reader and column.
+    ///
+    /// A column's factories are the same whichever of its rows are in view,
+    /// and resolving them costs four `dyn Any` downcasts.  A merge stepping
+    /// from one key to the next already holds a row group for that column, so
+    /// it calls this rather than `new` and clones the factories instead of
+    /// resolving them again.
+    fn with_rows(&self, rows: Range<u64>) -> Self {
+        Self {
+            reader: self.reader,
+            factories: self.factories.clone(),
+            column: self.column,
+            rows,
+            _phantom: PhantomData,
+        }
+    }
+
     /// # Safety
     ///
     /// Unsafe because the cursor reads archived values, and does so from safe
@@ -2714,6 +2731,12 @@ where
         }
         self.decoded.set(false);
         Ok(())
+    }
+
+    /// The row group this cursor reads, for
+    /// [`next_column_like`](Self::next_column_like).
+    pub fn row_group(&self) -> &RowGroup<'a, K, A, N, T> {
+        &self.row_group
     }
 
     /// The rows from this cursor's position to the end of the data block it
@@ -3070,6 +3093,21 @@ where
             self.row_group.column + 1,
             self.position.row_group()?,
         ))
+    }
+
+    /// The same as [`next_column`](Self::next_column), taking the column's
+    /// factories from `like` rather than resolving them again.
+    ///
+    /// `like` must be a row group over the next column, which is what a
+    /// cursor already reading that column carries.  This is the form a merge
+    /// wants: it crosses to the next column once a key, and the factories it
+    /// needs are the ones it used for the key before.
+    pub fn next_column_like<'b>(
+        &'b self,
+        like: &RowGroup<'a, NK, NA, NN, T>,
+    ) -> Result<RowGroup<'a, NK, NA, NN, T>, Error> {
+        debug_assert_eq!(like.column, self.row_group.column + 1);
+        Ok(like.with_rows(self.position.row_group()?))
     }
 }
 

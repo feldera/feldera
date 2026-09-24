@@ -717,20 +717,20 @@ where
         }
     }
 
-    /// Inlined on purpose: this rebuilds the value cursor for the new key,
-    /// and the factories it needs are behind `dyn Any`.  The compiler folds
-    /// those downcasts away where it can see the concrete types through this
-    /// call, and stops where it cannot -- which is worth about a twentieth of
-    /// a merge in `TypeId` comparisons alone.
+    /// Inlined on purpose.  This speeds up the merger's hot path.
     #[inline]
     fn move_key<F>(&mut self, op: F)
     where
         F: Fn(&mut KeyCursor<'s, K, V, R>) -> Result<(), ReaderError>,
     {
         op(&mut self.key_cursor).unwrap_storage();
+        // The value column's factories are the ones the cursor being replaced
+        // is already holding, so this asks for the new key's rows and keeps
+        // the rest.  Resolving them afresh means four `dyn Any` downcasts a
+        // key, which a merge does once for every key it reads.
         self.val_cursor = unsafe {
             self.key_cursor
-                .next_column()
+                .next_column_like(self.val_cursor.row_group())
                 .unwrap_storage()
                 .first_with_hint(&self.val_cursor)
                 .unwrap_storage()
