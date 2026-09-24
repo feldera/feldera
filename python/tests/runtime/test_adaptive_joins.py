@@ -107,7 +107,7 @@ def _push_chunked_json(
     pipeline, table: str, rows: list[dict], chunk_size: int = 4000
 ) -> None:
     for i in range(0, len(rows), chunk_size):
-        pipeline.input_json(table, rows[i : i + chunk_size])
+        pipeline.input_json(table, rows[i : i + chunk_size], wait=True)
 
 
 class TestAdaptiveJoins(unittest.TestCase):

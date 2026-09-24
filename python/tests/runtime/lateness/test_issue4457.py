@@ -55,11 +55,11 @@ class TestIssue_4457(PipelineTestCase):
         pipeline.input_json(
             "test_events",
             [{"id": "a", "a": "test5", "t": "2025-03-20 21:00:17.920"}],
+            wait=True,
         )
-        # The late record is dropped, so the listener will not see a new row.
-        # `input_json(..., wait=True)` still waits until that input has been
-        # processed (and discarded).
-
+        # The late record is dropped, so no listener row is emitted.
+        # Explicit wait=True blocks on the ingress completion token, guaranteeing
+        # the circuit has finished processing (and discarding) the input before checking.
         output = out.to_dict()
         assert output == []
 

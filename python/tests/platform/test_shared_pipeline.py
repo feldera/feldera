@@ -4,6 +4,7 @@ import json
 import os
 import pathlib
 import tempfile
+import threading
 import time
 import unittest
 import zipfile
@@ -345,11 +346,17 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.stop(force=True)
 
     def test_foreach_chunk(self):
-        received = {"n": 0}
+        received_rows = 0
+        lock = threading.Lock()
+        done = threading.Event()
 
         def callback(df: pd.DataFrame, seq_no: int):
-            received["n"] += len(df)
+            nonlocal received_rows
             print(f"\nSeq No: {seq_no}, DF size: {df.shape[0]}\n")
+            with lock:
+                received_rows += len(df)
+                if received_rows >= 100:
+                    done.set()
 
         df_students = pd.read_csv("tests/assets/students.csv")
         df_grades = pd.read_csv("tests/assets/grades.csv")
@@ -358,11 +365,9 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.resume()
         self.pipeline.input_pandas("students", df_students)
         self.pipeline.input_pandas("grades", df_grades)
-        wait_for_condition(
-            "foreach_chunk received average_scores rows",
-            lambda: received["n"] >= 100,
-            timeout_s=60.0,
-            poll_interval_s=0.1,
+        self.assertTrue(
+            done.wait(timeout=60.0),
+            f"timed out waiting for 100 average_scores rows in foreach_chunk; received {received_rows}",
         )
         self.pipeline.stop(force=True)
 

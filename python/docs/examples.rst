@@ -325,7 +325,6 @@ This example shows creating and running a pipeline with Feldera's internal data 
 
 .. code-block:: python
 
-    import time
     from feldera import FelderaClient, PipelineBuilder
 
     client = FelderaClient('http://localhost:8080')
@@ -337,7 +336,6 @@ This example shows creating and running a pipeline with Feldera's internal data 
             price DECIMAL(38, 2) NOT NULL
             ) with (
               'connectors' = '[{
-                "name": "datagen",
                 "transport": {
                   "name": "datagen",
                   "config": {
@@ -388,19 +386,7 @@ This example shows creating and running a pipeline with Feldera's internal data 
     out = pipeline.listen("googl_stocks")
     pipeline.resume()
 
-    # `wait_for_completion` is not used here: this pipeline's connectors
-    # do not all report end-of-input, so it can block forever. Wait until
-    # the bounded datagen source has produced its rows, then wait on a
-    # completion token so those inputs are fully processed and written
-    # to sinks.
-    deadline = time.time() + 30
-    while pipeline.stats().global_metrics.total_input_records < 5:
-        if time.time() > deadline:
-            raise TimeoutError("datagen did not ingest 5 records")
-        time.sleep(0.2)
-    token = pipeline.generate_completion_token("Stocks", "datagen")
-    pipeline.wait_for_token(token)
-    pipeline.stop(force=True)
+    pipeline.wait_for_completion(force_stop=True)
     df = out.to_pandas()
     assert df.shape[0] != 0
 

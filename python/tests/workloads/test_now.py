@@ -31,6 +31,22 @@ def _clock_input_endpoint(pipeline: Pipeline):
     raise AssertionError(f"clock input endpoint 'now' not found; have {names!r}")
 
 
+def _wait_datagen_end_of_input(pipeline: Pipeline, *, timeout_s: float) -> None:
+    """Wait for this test's bounded datagen input to read its final record."""
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        for inp in pipeline.stats().inputs:
+            if inp.endpoint_name == "datagen":
+                if inp.metrics.end_of_input:
+                    return
+                break
+        else:
+            names = [inp.endpoint_name for inp in pipeline.stats().inputs]
+            raise AssertionError(f"datagen input endpoint not found; have {names!r}")
+        time.sleep(1)
+    raise TimeoutError(f"datagen did not reach end of input within {timeout_s}s")
+
+
 def _wait_clock_record_ticks(
     pipeline: Pipeline, count: int, *, timeout_s: float
 ) -> None:
@@ -119,36 +135,14 @@ class TestNow(unittest.TestCase):
 
         pipeline.start_transaction()
 
-        while (
-            pipeline.stats().global_metrics.total_input_records < INPUT_RECORDS
-            or pipeline.stats().global_metrics.buffered_input_records > 0
-        ):
-            log(f"Waiting for {INPUT_RECORDS} records to be ingested...")
-            time.sleep(1)
+        _wait_datagen_end_of_input(pipeline, timeout_s=600)
 
         elapsed = time.monotonic() - start_time
-        log(f"Data ingested in {elapsed}")
+        log(f"Datagen reached end of input in {elapsed}")
 
-        # Freeze the value of now(). The `now` clock is a streaming connector,
-        # so wait_for_completion would hang. An open transaction also means
-        # completion tokens / completed-record counts may not advance until
-        # commit. After pause(), wait until the circuit has processed every
-        # record already ingested.
+        # Freeze the streaming NOW() input. The bounded datagen source has
+        # reached EOI, and commit(wait=True) is the barrier for its transaction.
         pipeline.pause()
-        target = pipeline.stats().global_metrics.total_input_records
-        deadline = time.monotonic() + 600
-        while time.monotonic() < deadline:
-            metrics = pipeline.stats().global_metrics
-            if (
-                metrics.buffered_input_records == 0
-                and metrics.total_processed_records >= target
-            ):
-                break
-            time.sleep(0.25)
-        else:
-            raise TimeoutError(
-                "timed out waiting for ingested records to be processed after pause"
-            )
 
         start_time = time.monotonic()
         pipeline.commit_transaction(transaction_id=None, wait=True, timeout_s=600)
