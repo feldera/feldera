@@ -4,7 +4,7 @@ use crate::{
     trace::DbspSerializer,
 };
 use rkyv::{Archive, Fallible, Serialize, archived_value, with::Inline};
-use std::{marker::PhantomData, mem::transmute};
+use std::{alloc::Layout, marker::PhantomData, mem::transmute};
 
 /// An object-safe interface to types that represent (key, auxiliary data) pair.
 ///
@@ -95,6 +95,17 @@ where
         bytes: &'a [u8],
         pos: usize,
     ) -> &'a dyn ArchivedItem<'a, K, A>;
+
+    /// The layout of one archived item's root.
+    ///
+    /// Every item in a data block archives to the same root type, so the root
+    /// has the same size in all of them, and an item's bytes therefore run
+    /// from the end of the previous item's root to the end of its own.  That
+    /// is what lets a run of items be copied from one block to another without
+    /// being decoded: [`Layout::size`] finds the run's bounds, and
+    /// [`Layout::align`] says how far the copy may be shifted, which is not at
+    /// all, so the destination has to pad itself into the same phase.
+    fn archived_layout(&self) -> Layout;
 }
 
 /// Struct that implements the [`Item`] trait.
@@ -270,6 +281,9 @@ where
                 archived_value::<RefTup2<'a, K, A>>(bytes, pos);
             Tup2Deserialize::new(archived)
         }
+    }
+    fn archived_layout(&self) -> Layout {
+        Layout::new::<ArchivedRefTup2<'static, K, A>>()
     }
 }
 

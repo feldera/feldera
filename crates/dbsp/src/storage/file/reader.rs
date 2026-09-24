@@ -14,9 +14,9 @@ use crate::storage::{
     backend::StorageError,
     buffer_cache::{BufferCache, FBuf},
     file::format::{
-        BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, DataBlockHeader, FileTrailerColumn,
+        BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, DataBlockHeader, FileTrailerColumn, FixedLen,
         IndexBlockHeader, MIN_SUPPORTED_VERSION, NodeType, ROARING_BITMAP_FILTER_BLOCK_MAGIC,
-        Varint,
+        VERSION_NUMBER, Varint,
     },
     file::item::ArchivedItem,
 };
@@ -512,6 +512,27 @@ impl ValueMapReader {
     }
 }
 
+/// A run of items from one data block, as raw bytes.
+///
+/// Copying these bytes into another block rewrites nothing inside them, so
+/// every relative pointer they contain keeps pointing where it did.  What the
+/// copy must preserve is alignment: the archived types are aligned where they
+/// were written, and a relative pointer cannot fix a root that lands on the
+/// wrong boundary.  The destination therefore has to pad itself until its
+/// length is congruent to [`phase`](Self::phase) modulo
+/// [`align`](Self::align), after which the run's roots sit at
+/// [`roots`](Self::roots) past wherever the bytes went.
+pub struct RawItems<'a> {
+    /// The items, back to back.
+    pub bytes: &'a [u8],
+    /// Each item's root, as an offset into `bytes`.
+    pub roots: Vec<usize>,
+    /// Where `bytes` started in the block it came from.
+    pub phase: usize,
+    /// The alignment an item's root needs.
+    pub align: usize,
+}
+
 /// Reader for a data block in a storage file.
 pub(super) struct DataBlock<K, A>
 where
@@ -668,6 +689,69 @@ where
         self.row_group(index)
     }
 
+    /// The encoded bytes of items `first..=last` of this block, if they can be
+    /// copied into another block as they stand.
+    ///
+    /// rkyv writes an item's out-of-line data ahead of its root and points
+    /// back at it with relative offsets, and the serializer keeps no state
+    /// between items, so consecutive items occupy one contiguous,
+    /// self-contained stretch of the block.  Item `i` therefore runs from the
+    /// end of item `i - 1`'s root to the end of its own, and a run of items is
+    /// the concatenation of those stretches.
+    ///
+    /// # Arguments
+    ///
+    /// * `factories` - supplies the archived item layout, whose size marks
+    ///   where each item's root ends and whose alignment the copied bytes must
+    ///   keep.
+    /// * `first` - index of the run's first item, counted from the start of
+    ///   this block.
+    /// * `last` - index of the run's last item, inclusive.
+    ///
+    /// # Returns
+    ///
+    /// `Some` holding the run's bytes, each item's root as an offset into
+    /// them, the offset the run starts at within this block, and the alignment
+    /// a copy must preserve.
+    ///
+    /// `None` in exactly these cases:
+    ///
+    /// * The block's format version is not [`VERSION_NUMBER`], so this build
+    ///   may not encode items the way the block does.
+    /// * `first` is greater than `last`, which names no item.
+    /// * `last` is at or past the number of items in the block.
+    /// * The item offsets stored in the block put the run's end before its
+    ///   start, or past the end of the block.  Those offsets come from the
+    ///   block itself, so an inconsistent block is declined rather than
+    ///   copied.
+    pub(super) fn raw_items(
+        &self,
+        factories: &Factories<K, A>,
+        first: usize,
+        last: usize,
+    ) -> Option<RawItems<'_>> {
+        if self.version != VERSION_NUMBER || first > last || last >= self.n_values() {
+            return None;
+        }
+        let root = factories.item_factory.archived_layout();
+        let start = match first.checked_sub(1) {
+            None => DataBlockHeader::LEN,
+            Some(previous) => self.value_map.get(&self.raw, previous) + root.size(),
+        };
+        let end = self.value_map.get(&self.raw, last) + root.size();
+        if start > end || end > self.raw.len() {
+            return None;
+        }
+        Some(RawItems {
+            bytes: &self.raw[start..end],
+            roots: (first..=last)
+                .map(|index| self.value_map.get(&self.raw, index) - start)
+                .collect(),
+            phase: start,
+            align: root.align(),
+        })
+    }
+
     unsafe fn archived_item(
         &self,
         factories: &Factories<K, A>,
@@ -691,7 +775,12 @@ where
         }
     }
 
-    unsafe fn item(&self, factories: &Factories<K, A>, index: usize, item: (&mut K, &mut A)) {
+    pub(super) unsafe fn item(
+        &self,
+        factories: &Factories<K, A>,
+        index: usize,
+        item: (&mut K, &mut A),
+    ) {
         unsafe {
             let archived_item = self.archived_item(factories, index);
             let mut deserializer = Deserializer::new(self.version);
@@ -2620,6 +2709,34 @@ where
         }
         self.decoded.set(false);
         Ok(())
+    }
+
+    /// The rows from this cursor's position to the end of the data block it
+    /// sits in, or to the end of the row group, whichever comes first, as raw
+    /// bytes.
+    ///
+    /// Every other way of reading a row decodes it; this hands back the
+    /// encoding instead, which a writer can append to its last column as it
+    /// stands -- see [`RawItems`].  The run stops at a block boundary because
+    /// a block is the unit the reader holds, so a caller that wants more asks
+    /// again after moving past what it took.
+    ///
+    /// Returns `None` when the cursor is not on a row, or when the block was
+    /// written in a format this one does not share.
+    pub fn raw_run(&self) -> Option<RawItems<'_>> {
+        let Position::Row(path) = &self.position else {
+            return None;
+        };
+        let block_rows = path.data.rows();
+        let end = block_rows.end.min(self.row_group.rows.end);
+        if path.row < block_rows.start || end <= path.row {
+            return None;
+        }
+        path.data.raw_items(
+            &self.row_group.factories,
+            (path.row - block_rows.start) as usize,
+            (end - 1 - block_rows.start) as usize,
+        )
     }
 
     /// Returns the key in the current row, or `None` if the cursor is before or

@@ -2360,3 +2360,169 @@ fn a_legacy_filter_has_no_ladder_to_descend() {
         }
     });
 }
+
+/// Copying a layer file by splicing its values, rather than rewriting them.
+///
+/// This is the whole point of [`Cursor::raw_run`] and [`Writer2::write1_raw`]:
+/// a merge that finds one input holding a stretch of the output to itself can
+/// move those bytes instead of decoding and re-encoding them.  The copy here
+/// is the simplest case of that, one input and no merging at all, so anything
+/// that comes back different is the splice's fault and nothing else's.
+mod splice_layer_file {
+    use feldera_types::config::{StorageConfig, StorageOptions};
+
+    use crate::{
+        dynamic::{DynData, DynWeight, Erase},
+        storage::{
+            backend::StorageBackend,
+            file::{
+                Factories,
+                format::{BatchMetadata, Compression},
+                reader::Reader,
+                writer::{Parameters, Writer2},
+            },
+        },
+    };
+
+    use super::test_buffer_cache;
+    use tempfile::tempdir;
+
+    type K0 = String;
+    type A0 = ();
+    type K1 = u64;
+    type A1 = i64;
+
+    /// Keys of uneven length, so items do not all encode to the same size and
+    /// the runs being copied are not a uniform stride.
+    fn key0(row: usize) -> K0 {
+        format!("key-{row:05}-{}", "y".repeat(row % 23))
+    }
+
+    fn values(row: usize) -> Vec<(K1, A1)> {
+        (0..1 + row % 5)
+            .map(|i| ((row * 10 + i) as u64, (row as i64) - (i as i64) * 3))
+            .collect()
+    }
+
+    fn parameters(compression: Option<Compression>) -> Parameters {
+        Parameters {
+            // Small blocks so a run runs off the end of one and the splice has
+            // to carry on into the next, which is the case that gets the row
+            // numbering wrong if anything does.
+            min_data_block: 4096,
+            min_index_block: 4096,
+            compression,
+            ..Parameters::default()
+        }
+    }
+
+    fn build(
+        n: usize,
+        backend: &dyn StorageBackend,
+        compression: Option<Compression>,
+    ) -> Reader<(
+        &'static DynData,
+        &'static DynData,
+        (&'static DynData, &'static DynWeight, ()),
+    )> {
+        let factories0 = Factories::<DynData, DynData>::new::<K0, A0>();
+        let factories1 = Factories::<DynData, DynWeight>::new::<K1, A1>();
+        let mut writer = Writer2::new(
+            &factories0,
+            &factories1,
+            test_buffer_cache,
+            backend,
+            parameters(compression),
+            crate::storage::file::filter::FilterPlan::<DynData>::decide_filter(None, n),
+        )
+        .unwrap();
+        for row in 0..n {
+            for (mut k, mut a) in values(row) {
+                writer.write1((k.erase_mut(), a.erase_mut())).unwrap();
+            }
+            let (mut k, mut a) = (key0(row), ());
+            writer.write0((k.erase_mut(), a.erase_mut())).unwrap();
+        }
+        writer.into_reader(BatchMetadata::default()).unwrap().0
+    }
+
+    #[test]
+    fn a_spliced_copy_matches_the_original() {
+        for compression in [None, Some(Compression::Snappy)] {
+            let n = 400;
+            let tempdir = tempdir().unwrap();
+            let backend = <dyn StorageBackend>::new(
+                &StorageConfig {
+                    path: tempdir.path().to_string_lossy().to_string(),
+                    cache: Default::default(),
+                },
+                &StorageOptions::default(),
+            )
+            .unwrap();
+            let source = build(n, &*backend, compression);
+            source.evict();
+
+            let factories0 = Factories::<DynData, DynData>::new::<K0, A0>();
+            let factories1 = Factories::<DynData, DynWeight>::new::<K1, A1>();
+            let mut writer = Writer2::new(
+                &factories0,
+                &factories1,
+                test_buffer_cache,
+                &*backend,
+                parameters(compression),
+                crate::storage::file::filter::FilterPlan::<DynData>::decide_filter(None, n),
+            )
+            .unwrap();
+
+            let rows0 = source.rows();
+            let mut spliced = 0usize;
+            for row in 0..n {
+                let keys = rows0.nth(row as u64).unwrap();
+                let rows1 = keys.next_column().unwrap();
+                let mut cursor = unsafe { rows1.first() }.unwrap();
+                let mut taken = 0u64;
+                while cursor.has_value() {
+                    let run = cursor
+                        .raw_run()
+                        .expect("a block this writer just wrote can be spliced");
+                    let n_run = run.roots.len();
+                    let took = writer.write1_raw(&run).unwrap();
+                    assert!(took > 0, "the splice stalled at row {row}");
+                    spliced += took;
+                    taken += took as u64;
+                    assert!(took <= n_run);
+                    unsafe { cursor.move_to_row(taken) }.unwrap();
+                }
+                let mut k = key0(row);
+                let mut a = ();
+                writer.write0((k.erase_mut(), a.erase_mut())).unwrap();
+            }
+            let total: usize = (0..n).map(|row| values(row).len()).sum();
+            assert_eq!(spliced, total, "not every value was spliced");
+
+            let copy = writer.into_reader(BatchMetadata::default()).unwrap().0;
+            copy.evict();
+            assert_eq!(copy.rows().len(), n as u64);
+            let copy0 = copy.rows();
+            for row in 0..n {
+                let cursor = copy0.nth(row as u64).unwrap();
+                let mut want0 = key0(row);
+                assert_eq!(cursor.key(), Some(want0.erase_mut() as &_), "row {row} key");
+                let rows1 = cursor.next_column().unwrap();
+                let expected = values(row);
+                assert_eq!(rows1.len(), expected.len() as u64, "row {row} value count");
+                let mut c1 = unsafe { rows1.first() }.unwrap();
+                let (mut got_k, mut got_a) = (K1::default(), A1::default());
+                for (i, (k, a)) in expected.iter().enumerate() {
+                    let (mut want_k, mut want_a) = (*k, *a);
+                    assert_eq!(
+                        unsafe { c1.item((got_k.erase_mut(), got_a.erase_mut())) },
+                        Some((want_k.erase_mut() as &mut _, want_a.erase_mut() as &mut _)),
+                        "row {row} value {i} came back changed"
+                    );
+                    unsafe { c1.move_next() }.unwrap();
+                }
+            }
+        }
+    }
+}
