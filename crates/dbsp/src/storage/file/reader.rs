@@ -14,9 +14,9 @@ use crate::storage::{
     backend::StorageError,
     buffer_cache::{BufferCache, FBuf},
     file::format::{
-        BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, DataBlockHeader, FileTrailerColumn,
+        BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, DataBlockHeader, FileTrailerColumn, FixedLen,
         IndexBlockHeader, MIN_SUPPORTED_VERSION, NodeType, ROARING_BITMAP_FILTER_BLOCK_MAGIC,
-        Varint,
+        VERSION_NUMBER, Varint,
     },
     file::item::ArchivedItem,
 };
@@ -512,6 +512,27 @@ impl ValueMapReader {
     }
 }
 
+/// A run of items from one data block, as the bytes that hold them.
+///
+/// Copying these bytes into another block rewrites nothing inside them, so
+/// every relative pointer they contain keeps pointing where it did.  What the
+/// copy must preserve is alignment: the archived types are aligned where they
+/// were written, and a relative pointer cannot fix a root that lands on the
+/// wrong boundary.  The destination therefore has to pad itself until its
+/// length is congruent to [`phase`](Self::phase) modulo
+/// [`align`](Self::align), after which the run's roots sit at
+/// [`roots`](Self::roots) past wherever the bytes went.
+pub struct RawItems<'a> {
+    /// The items, back to back.
+    pub bytes: &'a [u8],
+    /// Each item's root, as an offset into `bytes`.
+    pub roots: Vec<usize>,
+    /// Where `bytes` started in the block it came from.
+    pub phase: usize,
+    /// The alignment an item's root needs.
+    pub align: usize,
+}
+
 /// Reader for a data block in a storage file.
 pub(super) struct DataBlock<K, A>
 where
@@ -668,6 +689,46 @@ where
         self.row_group(index)
     }
 
+    /// The encoded bytes of rows `first..=last` of this block, if they can be
+    /// copied into another block as they stand.
+    ///
+    /// rkyv writes an item's out-of-line data ahead of its root and points
+    /// back at it with relative offsets, and the serializer keeps no state
+    /// between items, so consecutive items occupy one contiguous,
+    /// self-contained stretch of the block.  Item `i` therefore runs from the
+    /// end of item `i - 1`'s root to the end of its own, and a run of items is
+    /// the concatenation of those stretches.
+    ///
+    /// Returns `None` for a block written by an older format version, whose
+    /// encoding this one may not share.
+    pub(super) fn raw_items(
+        &self,
+        factories: &Factories<K, A>,
+        first: usize,
+        last: usize,
+    ) -> Option<RawItems<'_>> {
+        if self.version != VERSION_NUMBER || first > last || last >= self.n_values() {
+            return None;
+        }
+        let root = factories.item_factory.archived_layout();
+        let start = match first.checked_sub(1) {
+            None => DataBlockHeader::LEN,
+            Some(previous) => self.value_map.get(&self.raw, previous) + root.size(),
+        };
+        let end = self.value_map.get(&self.raw, last) + root.size();
+        if start > end || end > self.raw.len() {
+            return None;
+        }
+        Some(RawItems {
+            bytes: &self.raw[start..end],
+            roots: (first..=last)
+                .map(|index| self.value_map.get(&self.raw, index) - start)
+                .collect(),
+            phase: start,
+            align: root.align(),
+        })
+    }
+
     unsafe fn archived_item(
         &self,
         factories: &Factories<K, A>,
@@ -691,7 +752,12 @@ where
         }
     }
 
-    unsafe fn item(&self, factories: &Factories<K, A>, index: usize, item: (&mut K, &mut A)) {
+    pub(super) unsafe fn item(
+        &self,
+        factories: &Factories<K, A>,
+        index: usize,
+        item: (&mut K, &mut A),
+    ) {
         unsafe {
             let archived_item = self.archived_item(factories, index);
             let mut deserializer = Deserializer::new(self.version);
@@ -2136,6 +2202,20 @@ where
     K1: DataTrait + ?Sized,
     A1: WeightTrait + ?Sized,
 {
+    /// Every row of column 1, as one row group, ignoring which key each
+    /// belongs to.
+    ///
+    /// The rows of consecutive keys are consecutive here, so a cursor over
+    /// this walks the whole value column without returning to column 0.  That
+    /// is what lets a run of values spanning many keys be spliced in one go,
+    /// which is the only way splicing pays for a table that holds one value
+    /// per key.
+    pub fn all_value_rows(
+        &self,
+    ) -> RowGroup<'_, K1, A1, (), (&'static K0, &'static A0, (&'static K1, &'static A1, ()))> {
+        RowGroup::new(self, 1, 0..self.columns[1].n_rows)
+    }
+
     /// Returns a [`FetchIndexedZSet`], which will build an indexed Z-set from
     /// this reader containing just the rows whose keys are in `keys` (which
     /// must be sorted).
@@ -2617,6 +2697,67 @@ where
         }
         self.decoded.set(false);
         Ok(())
+    }
+
+    /// The rows from this cursor's position to the end of the data block it
+    /// sits in, or to the end of the row group, whichever comes first, as
+    /// the bytes that hold them.
+    ///
+    /// Every other way of reading a row decodes it; this hands back the
+    /// encoding instead, which a writer can append to its last column as it
+    /// stands -- see [`RawItems`].  The run stops at a block boundary because
+    /// a block is the unit the reader holds, so a caller that wants more asks
+    /// again after moving past what it took.
+    ///
+    /// Returns `None` when the cursor is not on a row, or when the block was
+    /// written in a format this one does not share.
+    pub fn raw_run(&self) -> Option<RawItems<'_>> {
+        let Position::Row(path) = &self.position else {
+            return None;
+        };
+        let block_rows = path.data.rows();
+        let end = block_rows.end.min(self.row_group.rows.end);
+        if path.row < block_rows.start || end <= path.row {
+            return None;
+        }
+        path.data.raw_items(
+            &self.row_group.factories,
+            (path.row - block_rows.start) as usize,
+            (end - 1 - block_rows.start) as usize,
+        )
+    }
+
+    /// The same as [`raw_run`](Self::raw_run), and with it the row group of
+    /// every row in the run: the range of rows in the next column that belongs
+    /// to each.
+    ///
+    /// The ranges are returned as the `n + 1` boundaries between them, which
+    /// is how a run's row groups can be moved without being understood.  The
+    /// boundaries are consecutive, so shifting them all by the distance
+    /// between where the run's rows sat and where they now sit gives the
+    /// destination's row groups exactly.
+    ///
+    /// Returns `None` for a column whose rows have no row group, which is the
+    /// last one; use [`raw_run`](Self::raw_run) for that.
+    pub fn raw_run_with_row_groups(&self) -> Option<(RawItems<'_>, Vec<u64>)> {
+        let Position::Row(path) = &self.position else {
+            return None;
+        };
+        path.data.row_groups.as_ref()?;
+        let items = self.raw_run()?;
+        let first = (path.row - path.data.rows().start) as usize;
+        let mut boundaries = Vec::with_capacity(items.roots.len() + 1);
+        for index in first..first + items.roots.len() {
+            let group = path.data.row_group(index).ok()?;
+            if boundaries.last().is_some_and(|&last| last != group.start) {
+                return None;
+            }
+            if boundaries.is_empty() {
+                boundaries.push(group.start);
+            }
+            boundaries.push(group.end);
+        }
+        Some((items, boundaries))
     }
 
     /// Returns the key in the current row, or `None` if the cursor is before or
