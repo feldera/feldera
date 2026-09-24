@@ -2839,6 +2839,11 @@ where
         self.position.absolute_position(&self.row_group)
     }
 
+    /// Returns the cursor's position within its row group.
+    pub fn relative_position(&self) -> u64 {
+        self.absolute_position() - self.row_group.rows.start
+    }
+
     /// Returns the number of times [`move_next`](Self::move_next) may be called
     /// before the cursor is after the row group.
     pub fn remaining_rows(&self) -> u64 {

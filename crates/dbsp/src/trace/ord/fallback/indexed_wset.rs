@@ -1,5 +1,6 @@
 use super::utils::{copy_to_builder, pick_merge_destination};
 use crate::storage::file::SerializerInner;
+use crate::storage::file::reader::RawItems;
 use crate::storage::file::{FilterKind, FilterStats, TouchedWindowCount};
 use crate::{
     DBWeight, Error, NumEntries,
@@ -590,6 +591,24 @@ where
                 if *size >= *threshold {
                     self.inner = Self::spill(&self.factories, vec);
                 }
+            }
+        }
+    }
+
+    fn takes_raw_vals(&self) -> bool {
+        match &self.inner {
+            BuilderInner::File(file) => file.takes_raw_vals(),
+            BuilderInner::Vec(_) | BuilderInner::Threshold { .. } => false,
+        }
+    }
+
+    fn push_raw_vals(&mut self, items: &RawItems<'_>) -> usize {
+        match &mut self.inner {
+            // Only a file builder can take bytes; the other two hold decoded
+            // values, which is what `takes_raw_vals` reports.
+            BuilderInner::File(file) => file.push_raw_vals(items),
+            BuilderInner::Vec(_) | BuilderInner::Threshold { .. } => {
+                panic!("push_raw_vals on a builder writing in memory: ask takes_raw_vals first")
             }
         }
     }

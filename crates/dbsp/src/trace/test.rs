@@ -2300,6 +2300,149 @@ fn a_merge_orders_keys_of_every_shape_across_mixed_tiers() {
         }
     });
 }
+
+/// A merge of file-backed batches copies values instead of rewriting them.
+///
+/// The correctness of what it writes is the business of the
+/// `indexed_wset_storage_merges_*` proptests, which pass either way. This
+/// says the fast path is the one taken, which they cannot: a splice that
+/// stopped engaging would leave them green and every merge slow.
+#[test]
+fn a_merge_splices_values_it_does_not_have_to_decode() {
+    use crate::trace::ord::file::indexed_wset_batch::SPLICED_VALUES;
+    use std::sync::atomic::Ordering;
+
+    let _temp_dir = tempdir().expect("Can't create temp dir for storage");
+    let mut config = mkconfig(_temp_dir.path());
+    config.storage.as_mut().unwrap().options.min_storage_bytes = Some(0);
+
+    run_in_circuit_with_storage_config(config, move || {
+        // One value a key, which is what a table with a primary key has and
+        // the shape a merge sees most.  A run of one is also where copying
+        // values has the least to save, so it is the case worth guarding.
+        let left: Vec<Tup2<Tup2<i32, i32>, ZWeight>> =
+            (0..400i32).map(|k| Tup2(Tup2(k * 2, k), 1)).collect();
+        let right: Vec<Tup2<Tup2<i32, i32>, ZWeight>> =
+            (0..400i32).map(|k| Tup2(Tup2(k * 2 + 1, k), 1)).collect();
+
+        let factories =
+            <crate::trace::FallbackIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+        let inputs: Vec<_> = [left, right]
+            .into_iter()
+            .map(|t| build_fallback_indexed_wset_i32_at(t, BatchLocation::Storage))
+            .collect();
+        let input_refs: Vec<&_> = inputs.iter().collect();
+        let builder = <crate::trace::FallbackIndexedWSet<DynI32, DynI32, DynZWeight> as Batch>::Builder::for_merge(
+            &factories,
+            input_refs,
+            Some(BatchLocation::Storage),
+        );
+        let cursors: Vec<_> = inputs.iter().map(|b| b.merge_cursor(None, None)).collect();
+
+        let before = SPLICED_VALUES.load(Ordering::Relaxed);
+        let merged: crate::trace::FallbackIndexedWSet<DynI32, DynI32, DynZWeight> =
+            ListMerger::merge(&factories, builder, cursors);
+        let spliced = SPLICED_VALUES.load(Ordering::Relaxed) - before;
+
+        assert_eq!(merged.key_count(), 800);
+        assert_eq!(merged.len(), 800);
+        assert!(
+            spliced > 0,
+            "the merge decoded and rewrote every value; nothing was copied",
+        );
+    });
+}
+
+/// A value run too long for one block goes in over several calls, and the
+/// cursor advances by exactly what each call took.
+///
+/// `splice_values` loops on `push_raw_vals`, stepping its cursor by the count
+/// it is handed back; a block fills long before a big key's values run out,
+/// so the loop runs many times here.  Miscounting would drop values or repeat
+/// them, which one key carrying thousands of large values makes plain.
+#[test]
+fn a_long_value_run_splices_over_several_blocks() {
+    use crate::trace::ord::file::indexed_wset_batch::SPLICED_VALUES;
+    use std::sync::atomic::Ordering;
+
+    type Wide = crate::trace::FallbackIndexedWSet<DynData, DynData, DynZWeight>;
+    type WideFactories = crate::trace::FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>;
+
+    // Enough values, each big enough, that they cannot share one data block.
+    const VALUES: i32 = 3_000;
+    let value = |v: i32| format!("{v:06}-{}", "z".repeat(160 + (v as usize % 61)));
+
+    let _temp_dir = tempdir().expect("Can't create temp dir for storage");
+    let mut config = mkconfig(_temp_dir.path());
+    config.storage.as_mut().unwrap().options.min_storage_bytes = Some(0);
+
+    run_in_circuit_with_storage_config(config, move || {
+        let factories = <WideFactories>::new::<i32, String, ZWeight>();
+        let build = |tuples: Vec<Tup2<Tup2<i32, String>, ZWeight>>| {
+            let mut erased: Box<DynWeightedPairs<DynPair<DynData, DynData>, DynZWeight>> =
+                Box::new(LeanVec::from(tuples)).erase_box();
+            let initial = Wide::dyn_from_tuples(&factories, (), &mut erased);
+            let builder = <Wide as Batch>::Builder::for_merge(
+                &factories,
+                [&initial],
+                Some(BatchLocation::Storage),
+            );
+            ListMerger::merge(&factories, builder, vec![initial.merge_cursor(None, None)])
+        };
+
+        // Two keys, so the merge crosses from one key's run to the next, and
+        // every value under a key comes from one input: the case a copy is
+        // allowed to take.
+        let inputs: Vec<Wide> = [0i32, 1]
+            .into_iter()
+            .map(|key| build((0..VALUES).map(|v| Tup2(Tup2(key, value(v)), 1)).collect()))
+            .collect();
+
+        let builder = <Wide as Batch>::Builder::for_merge(
+            &factories,
+            inputs.iter().collect::<Vec<_>>(),
+            Some(BatchLocation::Storage),
+        );
+        let cursors: Vec<_> = inputs.iter().map(|b| b.merge_cursor(None, None)).collect();
+
+        let before = SPLICED_VALUES.load(Ordering::Relaxed);
+        let merged: Wide = ListMerger::merge(&factories, builder, cursors);
+        let spliced = SPLICED_VALUES.load(Ordering::Relaxed) - before;
+
+        assert!(
+            spliced > 0,
+            "the merge rewrote every value; nothing was copied",
+        );
+
+        // Every value of every key, once, unchanged and in order.
+        let mut cursor = merged.cursor();
+        for key in 0..2i32 {
+            assert!(cursor.key_valid(), "key {key} is missing");
+            assert_eq!(unsafe { cursor.key().downcast::<i32>() }, &key);
+            for v in 0..VALUES {
+                assert!(cursor.val_valid(), "key {key}: value {v} is missing");
+                assert_eq!(
+                    unsafe { cursor.val().downcast::<String>() },
+                    &value(v),
+                    "key {key}: value {v} came back changed",
+                );
+                assert_eq!(
+                    **cursor.weight(),
+                    1,
+                    "key {key}: value {v} has a bad weight"
+                );
+                cursor.step_val();
+            }
+            assert!(!cursor.val_valid(), "key {key} grew extra values");
+            cursor.step_key();
+        }
+        assert!(!cursor.key_valid(), "the merge produced extra keys");
+    });
+}
 /// Shared body for `indexed_wset_storage_merges_*` proptests. Generates
 /// inputs as a vec/file mix, runs `ListMerger::merge` to file storage, and
 /// validates the merged batch against a `TestBatch` reference. The input

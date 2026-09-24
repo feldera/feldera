@@ -31,6 +31,7 @@ use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 use crate::storage::buffer_cache::CacheStats;
 use crate::storage::file::SerializerInner;
 use crate::storage::file::TouchedWindowCount;
+use crate::storage::file::reader::RawItems;
 pub use crate::storage::file::{DbspSerializer, Deserializable, Deserializer, Rkyv};
 use crate::storage::file::{FilterKind, FilterStats};
 use crate::trace::cursor::{
@@ -1189,6 +1190,47 @@ where
 
     /// Adds value `val`.
     fn push_val(&mut self, val: &Output::Val);
+
+    /// Whether this builder can accept raw values via
+    /// [`push_raw_vals`](Self::push_raw_vals).
+    ///
+    /// A builder writing in memory holds decoded values and can never take
+    /// bytes.
+    fn takes_raw_vals(&self) -> bool {
+        false
+    }
+
+    /// Adds a run of already-encoded values for the key being built, without
+    /// decoding them.
+    ///
+    /// The builder counts what it took exactly as [`push_val`](Self::push_val)
+    /// would, except for the negative-weight count, which needs a decoded
+    /// weight: the caller reports that through
+    /// [`add_negative_weights`](Self::add_negative_weights).
+    ///
+    /// # Arguments
+    ///
+    /// * `items` - the encoded values, as the batch they came from stored them.
+    ///
+    /// # Returns
+    ///
+    /// How many values were added, counting from the front of `items`:
+    ///
+    /// * All of them, when they fit in the data block the builder has open.
+    /// * Fewer, when that block filled up.  The builder writes it out and
+    ///   opens an empty one, so a call with the rest makes progress.
+    /// * None, when the first value would not fit even in an empty block.
+    ///   The caller decodes the run and pushes it with
+    ///   [`push_val`](Self::push_val) instead.
+    ///
+    /// # Panics
+    ///
+    /// Panics on a builder whose [`takes_raw_vals`](Self::takes_raw_vals) is
+    /// false.
+    fn push_raw_vals(&mut self, items: &RawItems<'_>) -> usize {
+        let _ = items;
+        panic!("push_raw_vals on a builder that does not take raw values: ask takes_raw_vals first")
+    }
 
     /// Adds value `val`.
     fn push_val_mut(&mut self, val: &mut Output::Val) {
