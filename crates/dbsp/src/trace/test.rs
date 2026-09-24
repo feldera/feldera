@@ -2046,6 +2046,58 @@ fn assert_seek_key_exact_matches<B>(
     }
 }
 
+/// A cursor over a file-backed batch offers its key as it is stored, and one
+/// over a vec-backed batch does not.
+///
+/// This is what lets a merge compare and copy keys without decoding them, so
+/// the archived key has to be the same key: the merge would otherwise order
+/// its output by something other than what it wrote.
+#[test]
+fn a_file_cursor_offers_the_same_key_archived() {
+    use std::cmp::Ordering;
+
+    let _temp_dir = tempdir().expect("Can't create temp dir for storage");
+    let mut config = mkconfig(_temp_dir.path());
+    config.storage.as_mut().unwrap().options.min_storage_bytes = Some(0);
+
+    run_in_circuit_with_storage_config(config, move || {
+        // Keys that share bytes and differ in length once archived, so that a
+        // comparison has to read past the first of them.
+        let tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>> =
+            (0..400i32).map(|i| Tup2(Tup2(i, i * 3), 1)).collect();
+
+        for location in [BatchLocation::Memory, BatchLocation::Storage] {
+            let batch = build_fallback_indexed_wset_i32_at(tuples.clone(), location);
+            let mut cursor = batch.merge_cursor(None, None);
+            let mut keys = 0;
+            while cursor.key_valid() {
+                match cursor.archived_key() {
+                    Some(archived) => {
+                        assert_eq!(
+                            location,
+                            BatchLocation::Storage,
+                            "a vec-backed batch has nothing archived to offer",
+                        );
+                        assert_eq!(
+                            archived.cmp_target(cursor.key()),
+                            Ordering::Equal,
+                            "key {keys}: the archived key is a different key from the decoded one",
+                        );
+                    }
+                    None => assert_eq!(
+                        location,
+                        BatchLocation::Memory,
+                        "a file-backed batch should offer its key archived",
+                    ),
+                }
+                keys += 1;
+                cursor.step_key();
+            }
+            assert_eq!(keys, tuples.len(), "at {location:?}");
+        }
+    });
+}
+
 /// Shared body for `indexed_wset_storage_merges_*` proptests. Generates
 /// inputs as a vec/file mix, runs `ListMerger::merge` to file storage, and
 /// validates the merged batch against a `TestBatch` reference. The input

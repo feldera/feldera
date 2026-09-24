@@ -532,6 +532,10 @@ where
         self.key_cursor.key().unwrap()
     }
 
+    fn archived_key(&self) -> Option<&K::Archived> {
+        self.key_cursor.archived_key()
+    }
+
     fn val(&self) -> &V {
         self.val_cursor.key().unwrap()
     }
