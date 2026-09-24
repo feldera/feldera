@@ -225,13 +225,14 @@ pub enum StepInputs {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CheckpointCoordination {
-    /// This pipeline can't checkpoint yet for the given reasons.  The
-    /// coordinator can't do anything to help.
+    /// This pipeline can't checkpoint yet for the given reasons.  The problem
+    /// is something other than the coordinator needing to step past a barrier
+    /// or a transaction commit.
     Delayed(Vec<TemporarySuspendError>),
 
     /// This pipeline can't checkpoint yet for the given reasons.  The
     /// coordinator must run the pipeline for another step to help clear up the
-    /// issue.
+    /// issue, to step past a barrier or a transaction commit.
     Barriers(Vec<TemporarySuspendError>),
 
     /// This pipeline is ready to write a checkpoint.
