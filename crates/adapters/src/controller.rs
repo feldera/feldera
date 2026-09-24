@@ -4185,19 +4185,42 @@ impl CircuitThread {
                 });
 
             // Let the coordinator know what's going on.
-            let barrier = reasons
-                .iter()
-                .any(|r| matches!(r, TemporarySuspendError::InputEndpointBarrier(_)));
-            let other = reasons.iter().any(|r| {
-                !matches!(
-                    r,
-                    TemporarySuspendError::InputEndpointBarrier(_)
-                        | TemporarySuspendError::Coordination,
-                )
-            });
-            let checkpoint_coordination = Some(if other {
+            let mut delayed = false;
+            let mut barriers = false;
+            for reason in &reasons {
+                match reason {
+                    TemporarySuspendError::Replaying | TemporarySuspendError::Bootstrapping => {
+                        delayed = true
+                    }
+                    TemporarySuspendError::TransactionInProgress => {
+                        // An ongoing transaction means different things
+                        // depending on the transaction state:
+                        //
+                        // - If the transaction hasn't started committing, then
+                        //   the coordinator needs to commit the transaction
+                        //   before it can consider checkpointing.
+                        //
+                        // - If the transaction is committing, then the
+                        //   coordinator needs to step the pipeline until commit
+                        //   is complete.
+                        match self.controller.get_transaction_state() {
+                            TransactionState::None => {
+                                warn!("Reached unreachable code in checkpoint()");
+
+                                // Seems like the best of some bad choices.
+                                delayed = true;
+                            }
+                            TransactionState::Started { .. } => delayed = true,
+                            TransactionState::Committing { .. } => barriers = true,
+                        }
+                    }
+                    TemporarySuspendError::InputEndpointBarrier(_) => barriers = true,
+                    TemporarySuspendError::Coordination => (),
+                }
+            }
+            let checkpoint_coordination = Some(if delayed {
                 CheckpointCoordination::Delayed(reasons)
-            } else if barrier {
+            } else if barriers {
                 CheckpointCoordination::Barriers(reasons)
             } else {
                 // [TemporarySuspendError::Coordination] must be the holdup.
