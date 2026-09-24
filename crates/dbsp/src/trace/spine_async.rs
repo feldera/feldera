@@ -2177,9 +2177,10 @@ where
     }
 
     async fn insert(&mut self, batch: impl Into<Arc<Self::Batch>>) {
-        let batch = Self::maybe_flush_batch(batch, &self.factories, || {
-            self.merger.state.lock().unwrap().get_filters()
-        });
+        let batch =
+            Self::maybe_flush_batch(Runtime::runtime().as_ref(), batch, &self.factories, || {
+                self.merger.state.lock().unwrap().get_filters()
+            });
         if !batch.is_empty() {
             self.dirty = true;
             if self
@@ -2451,6 +2452,7 @@ where
     /// user-configured `min_storage_bytes` or if we're under high memory
     /// pressure.
     pub fn maybe_flush_batch<F>(
+        runtime: Option<&Runtime>,
         batch: impl Into<Arc<B>>,
         factories: &B::Factories,
         filters: F,
@@ -2460,7 +2462,7 @@ where
     {
         let batch = batch.into();
         if batch.location() == BatchLocation::Memory
-            && pick_insert_destination(&batch) == BatchLocation::Storage
+            && pick_insert_destination(runtime, &batch) == BatchLocation::Storage
         {
             let _span = Span::new("eager spill")
                 .with_category("Spine")
