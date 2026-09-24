@@ -2,8 +2,11 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.temporal;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -46,6 +49,20 @@ record WindowBounds(
                 DBSPTypeTypedBox.wrapTypedBox(lowerBound, false),
                 DBSPTypeTypedBox.wrapTypedBox(upperBound, false))
                 .closure(node, var);
+    }
+
+    /** If {@code common} has the shape {@code (*row).field}, returns {@code field}; otherwise returns -1. */
+    int keyColumn(DBSPParameter row) {
+        DBSPFieldExpression field = this.common.as(DBSPFieldExpression.class);
+        if (field == null)
+            return -1;
+        DBSPDerefExpression deref = field.expression.as(DBSPDerefExpression.class);
+        if (deref == null)
+            return -1;
+        DBSPVariablePath variable = deref.expression.as(DBSPVariablePath.class);
+        if (variable == null || !variable.variable.equals(row.name))
+            return -1;
+        return field.fieldNo;
     }
 
     @Override
