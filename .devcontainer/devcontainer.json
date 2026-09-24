@@ -58,8 +58,5 @@
 		}
 	},
 	"remoteUser": "user",
-	"mounts": [
-		"source=${localWorkspaceFolder},target=${containerWorkspaceFolder},type=bind"
-	],
 	"postCreateCommand": "bash /workspaces/feldera/.devcontainer/postCreate.sh"
 }
