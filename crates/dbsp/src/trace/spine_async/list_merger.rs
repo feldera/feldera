@@ -1,4 +1,7 @@
+use std::cmp::Ordering;
 use std::sync::Arc;
+
+use crate::dynamic::{DataTrait, DeserializeDyn};
 
 use ouroboros::self_referencing;
 
@@ -103,6 +106,31 @@ where
     scratch: Vec<usize>,
 }
 
+/// Orders the current keys of two cursors, decoding neither where it can.
+///
+/// A cursor over a file-backed batch offers its key as it is stored; one over
+/// an in-memory batch offers it decoded.  Two archived keys compare with
+/// [`Ord`], and an archived key against a decoded one with `cmp_target`, so
+/// the only pair that needs decoding is the one where neither side has
+/// anything archived -- and there the keys were never encoded to begin with.
+///
+/// A merge of file-backed batches, which is what a spine spends its time on,
+/// therefore decodes no key at all.
+fn cmp_cursor_keys<C, K, V, T, R>(left: &C, right: &C) -> Ordering
+where
+    C: MergeCursor<K, V, T, R>,
+    K: DataTrait + ?Sized,
+    V: ?Sized,
+    R: ?Sized,
+{
+    match (left.archived_key(), right.archived_key()) {
+        (Some(left), Some(right)) => left.cmp(right),
+        (Some(left), None) => left.cmp_target(right.key()),
+        (None, Some(right)) => right.cmp_target(left.key()).reverse(),
+        (None, None) => left.key().cmp(right.key()),
+    }
+}
+
 impl<C, B> ListMerger<C, B>
 where
     C: MergeCursor<B::Key, B::Val, B::Time, B::R>,
@@ -144,7 +172,7 @@ where
     fn init_key_heap(&mut self) {
         self.key_heap.clear();
 
-        let cmp = |a: &usize, b: &usize| self.cursors[*b].key().cmp(self.cursors[*a].key());
+        let cmp = |a: &usize, b: &usize| cmp_cursor_keys(&self.cursors[*b], &self.cursors[*a]);
         for (index, cursor) in self.cursors.iter().enumerate() {
             if cursor.key_valid() {
                 self.key_heap.push(index);
@@ -164,7 +192,7 @@ where
     /// Update the position of cursors in `current_key` by either sifting them down or removing them from the heap if the
     /// cursor is exhausted. Determines the new set of cursors with minimum keys and updates `current_key` accordingly.
     fn update_key_heap(&mut self) {
-        let cmp = |a: &usize, b: &usize| self.cursors[*b].key().cmp(self.cursors[*a].key());
+        let cmp = |a: &usize, b: &usize| cmp_cursor_keys(&self.cursors[*b], &self.cursors[*a]);
 
         let mut heap =
             unsafe { BinaryHeap::from_vec_unchecked(std::mem::take(&mut self.key_heap), cmp) };
