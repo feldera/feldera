@@ -2098,6 +2098,64 @@ fn a_file_cursor_offers_the_same_key_archived() {
     });
 }
 
+/// A merge of file-backed batches copies values instead of rewriting them.
+///
+/// The correctness of what it writes is the business of the
+/// `indexed_wset_storage_merges_*` proptests, which pass either way. This
+/// says the fast path is the one taken, which they cannot: a splice that
+/// stopped engaging would leave them green and every merge slow.
+#[test]
+fn a_merge_splices_values_it_does_not_have_to_decode() {
+    use crate::trace::ord::file::indexed_wset_batch::SPLICED_VALUES;
+    use std::sync::atomic::Ordering;
+
+    let _temp_dir = tempdir().expect("Can't create temp dir for storage");
+    let mut config = mkconfig(_temp_dir.path());
+    config.storage.as_mut().unwrap().options.min_storage_bytes = Some(0);
+
+    run_in_circuit_with_storage_config(config, move || {
+        // Several values a key, since a run of one is the case where copying
+        // has the least to save and the most to prove.
+        // One value a key, which is what a table with a primary key has and
+        // the shape a merge sees most. `splice_copy` measures copying at 24%
+        // ahead of rewriting even here, so this is the case worth guarding.
+        let left: Vec<Tup2<Tup2<i32, i32>, ZWeight>> =
+            (0..400i32).map(|k| Tup2(Tup2(k * 2, k), 1)).collect();
+        let right: Vec<Tup2<Tup2<i32, i32>, ZWeight>> =
+            (0..400i32).map(|k| Tup2(Tup2(k * 2 + 1, k), 1)).collect();
+
+        let factories =
+            <crate::trace::FallbackIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+        let inputs: Vec<_> = [left, right]
+            .into_iter()
+            .map(|t| build_fallback_indexed_wset_i32_at(t, BatchLocation::Storage))
+            .collect();
+        let input_refs: Vec<&_> = inputs.iter().collect();
+        let builder = <crate::trace::FallbackIndexedWSet<DynI32, DynI32, DynZWeight> as Batch>::Builder::for_merge(
+            &factories,
+            input_refs,
+            Some(BatchLocation::Storage),
+        );
+        let cursors: Vec<_> = inputs.iter().map(|b| b.merge_cursor(None, None)).collect();
+
+        let before = SPLICED_VALUES.load(Ordering::Relaxed);
+        let merged: crate::trace::FallbackIndexedWSet<DynI32, DynI32, DynZWeight> =
+            ListMerger::merge(&factories, builder, cursors);
+        let spliced = SPLICED_VALUES.load(Ordering::Relaxed) - before;
+
+        assert_eq!(merged.key_count(), 800);
+        assert_eq!(merged.len(), 800);
+        assert!(
+            spliced > 0,
+            "the merge decoded and rewrote every value; nothing was copied",
+        );
+    });
+}
+
 /// Shared body for `indexed_wset_storage_merges_*` proptests. Generates
 /// inputs as a vec/file mix, runs `ListMerger::merge` to file storage, and
 /// validates the merged batch against a `TestBatch` reference. The input

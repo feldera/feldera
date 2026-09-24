@@ -316,18 +316,26 @@ where
             // values into the output.
             if let Some(&index) = self.val_heap.first() {
                 debug_assert_eq!(self.current_val.len(), 1);
-                loop {
-                    self.any_values =
-                        self.copy_times(builder, time_map_func, fuel) || self.any_values;
-                    self.cursors[index].step_val();
-                    if !self.cursors[index].val_valid() {
-                        self.val_heap.clear();
-                        self.current_val.clear();
-                        break;
-                    }
+                if self.can_splice_values(time_map_func) {
+                    self.any_values = self.splice_values(builder, index, fuel) || self.any_values;
+                }
+                if !self.cursors[index].val_valid() {
+                    self.val_heap.clear();
+                    self.current_val.clear();
+                } else {
+                    loop {
+                        self.any_values =
+                            self.copy_times(builder, time_map_func, fuel) || self.any_values;
+                        self.cursors[index].step_val();
+                        if !self.cursors[index].val_valid() {
+                            self.val_heap.clear();
+                            self.current_val.clear();
+                            break;
+                        }
 
-                    if *fuel <= 0 {
-                        return;
+                        if *fuel <= 0 {
+                            return;
+                        }
                     }
                 }
             }
@@ -357,6 +365,9 @@ where
             while *fuel > 0 {
                 debug_assert_eq!(self.current_key.len(), 1);
                 debug_assert_eq!(self.current_val.len(), 1);
+                if self.can_splice_values(time_map_func) {
+                    self.any_values = self.splice_values(builder, index, fuel) || self.any_values;
+                }
                 while self.cursors[index].val_valid() {
                     self.any_values =
                         self.copy_times(builder, time_map_func, fuel) || self.any_values;
@@ -385,6 +396,46 @@ where
                 }
             }
         }
+    }
+
+    /// Whether a run of values may be copied rather than rewritten.
+    ///
+    /// Not when a time map is in play, which rewrites every time as it goes,
+    /// and not for a timed batch, whose values a merge consolidates. Both
+    /// need each weight in hand; a copy never has one.
+    fn can_splice_values(
+        &self,
+        time_map_func: Option<&dyn Fn(&mut DynDataTyped<B::Time>)>,
+    ) -> bool {
+        time_map_func.is_none() && self.time_diffs.is_none()
+    }
+
+    /// Copies the current key's values from cursor `index` into the output as
+    /// bytes, and returns whether it wrote any.
+    ///
+    /// The caller must have established that this cursor is the only source
+    /// of the current key: the bytes carry the weights as they were written,
+    /// so a merge that owed anyone an addition would be dropping it. Stops
+    /// early where the cursor has nothing to offer -- an in-memory batch, a
+    /// filtered one, a source holding negative weights -- and the caller
+    /// finishes the key the slow way.
+    fn splice_values(&mut self, builder: &mut B::Builder, index: usize, fuel: &mut isize) -> bool {
+        let mut wrote = false;
+        while self.cursors[index].val_valid() && *fuel > 0 {
+            let taken = {
+                let Some(items) = self.cursors[index].raw_values() else {
+                    break;
+                };
+                builder.push_raw_vals(&items)
+            };
+            if taken == 0 {
+                break;
+            }
+            self.cursors[index].take_values(taken as u64);
+            *fuel -= taken as isize;
+            wrote = true;
+        }
+        wrote
     }
 
     fn copy_times(

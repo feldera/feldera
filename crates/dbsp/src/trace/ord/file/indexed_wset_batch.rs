@@ -13,7 +13,7 @@ use crate::{
         buffer_cache::CacheStats,
         file::{
             Factories as FileFactories, FilterPlan,
-            reader::{BulkRows, Cursor as FileCursor, Error as ReaderError, Reader},
+            reader::{BulkRows, Cursor as FileCursor, Error as ReaderError, RawItems, Reader},
             writer::Writer2,
         },
     },
@@ -757,6 +757,23 @@ where
         self.key_cursor.archived_key()
     }
 
+    fn raw_values(&self) -> Option<RawItems<'_>> {
+        // A copy never decodes the weights it moves, so it cannot count the
+        // negative ones, and the batch it builds reports that count. Where
+        // the source has none, neither has any run of it, and the count comes
+        // out right without anyone looking. Where it has some, this declines
+        // and the merge decodes them as it always did.
+        if self.wset.metadata().negative_weight_count != 0 {
+            return None;
+        }
+        self.val_cursor.raw_run()
+    }
+
+    fn take_values(&mut self, n: u64) {
+        let to = self.val_cursor.relative_position() + n;
+        unsafe { self.val_cursor.move_to_row(to) }.unwrap_storage();
+    }
+
     fn val(&self) -> &V {
         debug_assert!(self.val_valid());
         self.val_cursor.key().unwrap()
@@ -914,6 +931,17 @@ where
     }
 }
 
+/// Values a merge has copied into a file batch as bytes.
+///
+/// A splice that quietly stopped engaging would leave every test passing and
+/// every merge slow, which is how the plumbing for it was wrong the first
+/// time: the fallback builder took the values and pushed them one at a time
+/// without saying so. `a_merge_splices_values_it_does_not_have_to_decode`
+/// watches this.
+#[cfg(test)]
+pub(crate) static SPLICED_VALUES: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
 impl<K, V, R> Builder<FileIndexedWSet<K, V, R>> for FileIndexedWSetBuilder<K, V, R>
 where
     Self: SizeOf,
@@ -1005,6 +1033,17 @@ where
     fn push_val(&mut self, val: &V) {
         self.writer.write1((val, &*self.weight)).unwrap_storage();
         self.num_tuples += 1;
+    }
+
+    fn push_raw_vals(&mut self, items: &RawItems<'_>) -> usize {
+        // The weights ride along in the bytes, so nothing here calls
+        // `update_stats`: the cursor offers a run only from a batch with no
+        // negative weights, which is the only thing `update_stats` counts.
+        let taken = self.writer.write1_raw(items).unwrap_storage();
+        self.num_tuples += taken;
+        #[cfg(test)]
+        SPLICED_VALUES.fetch_add(taken, std::sync::atomic::Ordering::Relaxed);
+        taken
     }
 
     fn push_time_diff(&mut self, _time: &(), weight: &R) {

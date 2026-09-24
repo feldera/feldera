@@ -31,6 +31,7 @@ use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 use crate::storage::buffer_cache::CacheStats;
 use crate::storage::file::SerializerInner;
 use crate::storage::file::TouchedWindowCount;
+use crate::storage::file::reader::RawItems;
 pub use crate::storage::file::{DbspSerializer, Deserializable, Deserializer, Rkyv};
 use crate::storage::file::{FilterKind, FilterStats};
 use crate::trace::cursor::{
@@ -1189,6 +1190,20 @@ where
 
     /// Adds value `val`.
     fn push_val(&mut self, val: &Output::Val);
+
+    /// Adds a run of already-encoded values for the key being built, without
+    /// decoding them, and returns how many it took -- which may be fewer than
+    /// offered, so the caller asks again with the rest.
+    ///
+    /// Zero means this builder cannot take them at all, and the caller pushes
+    /// them one at a time as before. A builder that can must account for them
+    /// exactly as [`push_val`](Self::push_val) would, except for anything that
+    /// needs the values decoded: the caller is responsible for offering only
+    /// runs where that makes no difference.
+    fn push_raw_vals(&mut self, items: &RawItems<'_>) -> usize {
+        let _ = items;
+        0
+    }
 
     /// Adds value `val`.
     fn push_val_mut(&mut self, val: &mut Output::Val) {

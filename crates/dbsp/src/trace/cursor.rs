@@ -22,6 +22,7 @@ pub use reverse::ReverseKeyCursor;
 use size_of::SizeOf;
 
 use crate::dynamic::{ArchiveTrait, DataTrait, Factory};
+use crate::storage::file::reader::RawItems;
 
 use super::BatchReader;
 use super::{Filter, GroupFilter};
@@ -149,6 +150,25 @@ pub trait Cursor<K: ?Sized, V: ?Sized, T, R: ?Sized> {
 
     /// A reference to the current value. Panics if invalid.
     fn val(&self) -> &V;
+
+    /// The current key's remaining values as they are stored, for a cursor
+    /// over a file-backed batch whose weights a copy would carry correctly,
+    /// or `None`.
+    ///
+    /// The bytes hold the weights as they are, and nothing consolidates them,
+    /// so a caller may only copy them where it is the one and only source of
+    /// this key.  See [`MergeCursor::raw_values`], which a merge uses this
+    /// through.
+    fn raw_values(&self) -> Option<RawItems<'_>> {
+        None
+    }
+
+    /// Moves past `n` values of the current key, which a caller took from
+    /// [`raw_values`](Self::raw_values).
+    fn take_values(&mut self, n: u64) {
+        let _ = n;
+        unimplemented!("took values from a cursor that offered none")
+    }
 
     /// Returns a reference to the current key, if valid.
     fn get_key(&self) -> Option<&K> {
@@ -773,6 +793,26 @@ where
     }
 
     fn val(&self) -> &V;
+
+    /// The current key's remaining values as they are stored, or `None`.
+    ///
+    /// A merge copies these into its output instead of decoding each value
+    /// and re-encoding it, but only where this cursor is the single source of
+    /// the current key: the bytes carry the weights as they were written, and
+    /// a merge that had to add two weights together would be throwing one
+    /// away.  A filtered cursor offers nothing, because deciding what to drop
+    /// means decoding it.
+    fn raw_values(&self) -> Option<RawItems<'_>> {
+        None
+    }
+
+    /// Moves past `n` values of the current key, which a merge took from
+    /// [`raw_values`](Self::raw_values).
+    fn take_values(&mut self, n: u64) {
+        let _ = n;
+        unimplemented!("took values from a cursor that offered none")
+    }
+
     fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R));
     fn weight(&mut self) -> &R
     where
@@ -809,6 +849,14 @@ where
         K: ArchiveTrait,
     {
         (**self).archived_key()
+    }
+
+    fn raw_values(&self) -> Option<RawItems<'_>> {
+        (**self).raw_values()
+    }
+
+    fn take_values(&mut self, n: u64) {
+        (**self).take_values(n)
     }
 
     fn key_valid(&self) -> bool {
@@ -1398,6 +1446,14 @@ where
         K: ArchiveTrait,
     {
         self.cursor.archived_key()
+    }
+
+    fn raw_values(&self) -> Option<RawItems<'_>> {
+        self.cursor.raw_values()
+    }
+
+    fn take_values(&mut self, n: u64) {
+        self.cursor.take_values(n)
     }
 
     fn key_valid(&self) -> bool {
