@@ -63,10 +63,11 @@ impl BackoffError {
 
     /// Byte length of the formatted error chain, so a caller embedding a
     /// payload in its context can size it to what [`Self::inner`] leaves over.
+    /// Formats with `{:#}` for the same reason [`Self::inner`] does.
     pub fn message_len(&self) -> usize {
         match self {
             BackoffError::Permanent(error) | BackoffError::Temporary(error) => {
-                format!("{error:?}").len()
+                format!("{error:#}").len()
             }
         }
     }
