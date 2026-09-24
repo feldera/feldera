@@ -629,7 +629,9 @@ public class Monotonicity extends CircuitVisitor {
         //   (the parameter fields may be nullable)
         DBSPVariablePath k = keyType.ref().var();
         DBSPVariablePath l = function.parameters[1].getType().var();
-        DBSPVariablePath r = node.right().getOutputIndexedZSetType().elementType.ref().var();
+        DBSPTypeTupleBase rightValueType = node.right().getOutputIndexedZSetType().elementType
+                .to(DBSPTypeTupleBase.class);
+        DBSPVariablePath r = rightValueType.ref().var();
 
         DBSPExpression leftTsField = l.deepCopy().deref().field(node.leftTimestampIndex);
         DBSPExpression rightTsField = r.deepCopy().deref().field(node.rightTimestampIndex);
@@ -663,14 +665,10 @@ public class Monotonicity extends CircuitVisitor {
                     }
                     break;
                 case 2:
-                    expr = r.deepCopy().deref().field(index).castToNullable();
-                    if (index != node.rightTimestampIndex) {
-                        // Since this is not a streaming join, we can't say anything about
-                        // non-timestamp fields
-                        expr = new NoExpression(expr.getType());
-                    } else {
-                        expr = min.deepCopy().castToNullable();
-                    }
+                    // A new left row can match an arbitrarily old right row,
+                    // so no right field has a lower bound, not even the timestamp.
+                    DBSPType rightFieldType = rightValueType.getFieldType(index).withMayBeNull(true);
+                    expr = new NoExpression(rightFieldType);
                     break;
                 default:
                     throw new InternalCompilerError("Unexpected input index " + input);
