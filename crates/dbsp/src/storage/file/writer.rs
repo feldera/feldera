@@ -617,9 +617,9 @@ impl DataBlockBuilder {
     /// The bytes are moved verbatim, so every relative pointer inside them
     /// still points where it did; what has to be re-established is alignment,
     /// which the leading pad does by putting the run back in the phase it was
-    /// written in.  Only a column without row groups can be spliced, because a
-    /// row group names rows in the next column by absolute number and those
-    /// numbers change when a run moves.
+    /// written in.  A column whose rows have row groups can be spliced only
+    /// where the caller brings them, since a row group names rows in the next
+    /// column by absolute number and those numbers change when a run moves.
     fn try_add_raw_items<K, A>(
         &mut self,
         items: &RawItems<'_>,
@@ -1361,6 +1361,7 @@ struct Writer {
     cache: fn() -> Option<Arc<BufferCache>>,
     writer: BlockWriter,
     key_filter: Option<BatchKeyFilter>,
+
     cws: Vec<ColumnWriter>,
     finished_columns: Vec<FileTrailerColumn>,
     serializer: SerializerInner,
@@ -2013,6 +2014,15 @@ where
         items: &RawItems<'_>,
         boundaries: &[u64],
     ) -> Result<usize, StorageError> {
+        // Column 1's order restarts under each key, which is why
+        // [`write0`](Self::write0) forgets the last value it saw.  A key that
+        // goes in this way is never decoded, so there is no key to remember
+        // either; both checks resume with the next decoded item.
+        #[cfg(debug_assertions)]
+        {
+            self.prev0 = None;
+            self.prev1 = None;
+        }
         self.inner.write_raw::<K0, A0>(0, items, Some(boundaries))
     }
 

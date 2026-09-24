@@ -717,6 +717,12 @@ where
         }
     }
 
+    /// Inlined on purpose: this rebuilds the value cursor for the new key,
+    /// and the factories it needs are behind `dyn Any`.  The compiler folds
+    /// those downcasts away where it can see the concrete types through this
+    /// call, and stops where it cannot -- which is worth about a twentieth of
+    /// a merge in `TypeId` comparisons alone.
+    #[inline]
     fn move_key<F>(&mut self, op: F)
     where
         F: Fn(&mut KeyCursor<'s, K, V, R>) -> Result<(), ReaderError>,
@@ -773,6 +779,10 @@ where
     fn take_values(&mut self, n: u64) {
         let to = self.val_cursor.relative_position() + n;
         unsafe { self.val_cursor.move_to_row(to) }.unwrap_storage();
+    }
+
+    fn raw_key(&self) -> Option<(RawItems<'_>, Range<u64>)> {
+        self.key_cursor.raw_item_with_row_group()
     }
 
     fn val(&self) -> &V {
@@ -932,16 +942,54 @@ where
     }
 }
 
-/// Values a merge has copied into a file batch as bytes.
+/// The touched-window counter to give a builder over keys of type `K`, or
+/// `None` where one would never record anything.
 ///
-/// A splice that quietly stopped engaging would leave every test passing and
-/// every merge slow, which is how the plumbing for it was wrong the first
-/// time: the fallback builder took the values and pushed them one at a time
-/// without saying so. `a_merge_splices_values_it_does_not_have_to_decode`
-/// watches this.
+/// [`TouchedWindowCounter::push_key`] gives up on the first key of a type
+/// that cannot be roaring-encoded, so a counter for such a type is dead
+/// weight.  Asking the type here rather than waiting for its first key is
+/// what lets a merge that copies its keys, and so decodes none of them, tell
+/// that there is no counter left to feed.
+fn touched_window_counter<K, V, R>(
+    factories: &FileIndexedWSetFactories<K, V, R>,
+) -> Option<TouchedWindowCounter>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    if !collect_roaring_metadata() {
+        return None;
+    }
+    let mut roaring = false;
+    factories
+        .key_factory()
+        .with(&mut |key: &mut K| roaring = key.supports_roaring32());
+    roaring.then(TouchedWindowCounter::default)
+}
+
 #[cfg(test)]
-pub(crate) static SPLICED_VALUES: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
+thread_local! {
+    /// Values a merge has copied into a file batch as bytes.
+    ///
+    /// A splice that quietly stopped engaging would leave every test passing and
+    /// every merge slow, which is how the plumbing for it was wrong the first
+    /// time: the fallback builder took the values and pushed them one at a time
+    /// without saying so. `a_merge_splices_values_it_does_not_have_to_decode`
+    /// watches this.
+    pub(crate) static SPLICED_VALUES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many keys went in as bytes, for the same reason.
+    ///
+    /// Per thread, not global: the suite runs its tests in parallel, and a
+    /// test that asserts a merge copied *nothing* can only do so against a
+    /// count no other test contributes to.  A merge runs on the thread that
+    /// drives it, which is the thread that reads this.
+    pub(crate) static SPLICED_KEYS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
 
 impl<K, V, R> Builder<FileIndexedWSet<K, V, R>> for FileIndexedWSetBuilder<K, V, R>
 where
@@ -971,7 +1019,7 @@ where
             weight: factories.weight_factory().default_box(),
             num_tuples: 0,
             stats: BatchMetadata::default(),
-            touched_window_counter: collect_roaring_metadata().then(TouchedWindowCounter::default),
+            touched_window_counter: touched_window_counter(factories),
         }
     }
 
@@ -1008,7 +1056,7 @@ where
             weight: factories.weight_factory().default_box(),
             num_tuples: 0,
             stats: BatchMetadata::default(),
-            touched_window_counter: collect_roaring_metadata().then(TouchedWindowCounter::default),
+            touched_window_counter: touched_window_counter(factories),
         }
     }
 
@@ -1040,6 +1088,25 @@ where
         true
     }
 
+    fn takes_raw_keys(&self) -> bool {
+        // The counter is the one thing this builder needs a key for that a
+        // copy cannot give it; see `push_raw_key`.
+        self.touched_window_counter.is_none()
+    }
+
+    fn push_raw_key(&mut self, item: &RawItems<'_>, row_group: Range<u64>) -> bool {
+        assert!(
+            self.touched_window_counter.is_none(),
+            "push_raw_key on a builder whose touched-window counter needs the key itself: \
+             ask takes_raw_keys first"
+        );
+        let boundaries = [row_group.start, row_group.end];
+        let taken = self.writer.write0_raw(item, &boundaries).unwrap_storage();
+        #[cfg(test)]
+        SPLICED_KEYS.with(|count| count.set(count.get() + taken));
+        taken > 0
+    }
+
     fn push_raw_vals(&mut self, items: &RawItems<'_>) -> usize {
         // The weights ride along in the bytes, so nothing here calls
         // `update_stats`: the cursor offers a run only from a batch with no
@@ -1047,7 +1114,7 @@ where
         let taken = self.writer.write1_raw(items).unwrap_storage();
         self.num_tuples += taken;
         #[cfg(test)]
-        SPLICED_VALUES.fetch_add(taken, std::sync::atomic::Ordering::Relaxed);
+        SPLICED_VALUES.with(|count| count.set(count.get() + taken));
         taken
     }
 

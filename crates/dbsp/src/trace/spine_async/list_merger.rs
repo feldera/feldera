@@ -99,11 +99,35 @@ where
     val_heap: Vec<usize>,
 
     any_values: bool,
+
+    /// What has been written for the key being built.
+    spliced_values: Written,
+
     has_mut: Vec<bool>,
     tmp_weight: Box<B::R>,
     time_diffs: Option<Box<DynWeightedPairs<DynDataTyped<B::Time>, B::R>>>,
 
     scratch: Vec<usize>,
+}
+
+/// What a merge has written for the key it is building.
+///
+/// A layer file keeps keys in one column and values in another, and a key's
+/// record carries the range of value rows that belong to it: its row group.
+/// Copying a key copies that range, so the bytes are right only where the
+/// key's values ended up at exactly those rows -- every value of the key
+/// copied out of one batch, and nothing else written under it.  A value that
+/// came through decoded may have been summed with another or dropped for
+/// cancelling out, which shifts the rows and leaves the range describing
+/// something else.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Written {
+    /// Nothing yet.
+    Nothing,
+    /// Every value so far, copied from this cursor.
+    From(usize),
+    /// Something came through decoded.
+    Decoded,
 }
 
 /// Orders the current keys of two cursors, decoding neither where it can.
@@ -157,6 +181,7 @@ where
             current_val: Vec::new(),
             val_heap: Vec::new(),
             any_values: false,
+            spliced_values: Written::Nothing,
             has_mut,
             tmp_weight: factories.weight_factory().default_box(),
             time_diffs,
@@ -343,10 +368,12 @@ where
             // If we wrote any values for these minimum keys, write the key.
             if self.any_values {
                 let index = self.current_key.first().unwrap().0;
-                if self.has_mut[index] {
-                    builder.push_key_mut(self.cursors[index].key_mut());
-                } else {
-                    builder.push_key(self.cursors[index].key());
+                if !self.splice_key(builder) {
+                    if self.has_mut[index] {
+                        builder.push_key_mut(self.cursors[index].key_mut());
+                    } else {
+                        builder.push_key(self.cursors[index].key());
+                    }
                 }
                 self.any_values = false;
             }
@@ -356,6 +383,7 @@ where
             for (index, _pos) in self.current_key.iter() {
                 self.cursors[*index].step_key();
             }
+            self.spliced_values = Written::Nothing;
             self.update_key_heap();
         }
 
@@ -382,12 +410,15 @@ where
                 );
                 if self.any_values {
                     self.any_values = false;
-                    if self.has_mut[index] {
-                        builder.push_key_mut(self.cursors[index].key_mut());
-                    } else {
-                        builder.push_key(self.cursors[index].key());
+                    if !self.splice_key(builder) {
+                        if self.has_mut[index] {
+                            builder.push_key_mut(self.cursors[index].key_mut());
+                        } else {
+                            builder.push_key(self.cursors[index].key());
+                        }
                     }
                 }
+                self.spliced_values = Written::Nothing;
                 self.cursors[index].step_key();
                 if !self.cursors[index].key_valid() {
                     self.current_key.clear();
@@ -420,9 +451,8 @@ where
     /// caller finishes the key the slow way.
     fn splice_values(&mut self, builder: &mut B::Builder, index: usize, fuel: &mut isize) -> bool {
         if !builder.takes_raw_vals() {
-            // Asked before the cursor is, so that a builder that can never
-            // take bytes -- one writing in memory -- costs nothing but the
-            // question.
+            // Required, not an optimization: `push_raw_vals` panics on a
+            // builder that does not take bytes, such as one writing in memory.
             return false;
         }
         let mut wrote = false;
@@ -439,8 +469,44 @@ where
             self.cursors[index].take_values(taken as u64);
             *fuel -= taken as isize;
             wrote = true;
+            // Once something has come through decoded the key is committed to
+            // going in decoded too, however much of it is copied after that.
+            if self.spliced_values != Written::Decoded {
+                self.spliced_values = Written::From(index);
+            }
         }
         wrote
+    }
+
+    /// Copies the key being built into the output as bytes, and returns
+    /// whether it did.
+    ///
+    /// A copied key carries the row group it had in the batch it came from
+    /// (see [`Written`]), so it can be copied only where those are the rows
+    /// its values went to: every value of the key copied from one cursor, and
+    /// nothing else.  That is what
+    /// [`Written::From`] records, and it names the cursor to take the key
+    /// from -- the same key as any other cursor holding it, but with the row
+    /// group of the batch whose values these are.
+    ///
+    /// Answers `false` where anything came through decoded, where the cursor
+    /// holds no bytes to offer, or where the builder cannot take them.  The
+    /// caller then writes the key the way it always did: nothing has been
+    /// written either way.
+    fn splice_key(&self, builder: &mut B::Builder) -> bool {
+        let Written::From(source) = self.spliced_values else {
+            return false;
+        };
+        if !builder.takes_raw_keys() {
+            // Required, not an optimization: `push_raw_key` panics on a
+            // builder that refuses keys, such as one writing in memory or a
+            // file builder whose touched-window counter needs the key itself.
+            return false;
+        }
+        let Some((item, row_group)) = self.cursors[source].raw_key() else {
+            return false;
+        };
+        builder.push_raw_key(&item, row_group)
     }
 
     fn copy_times(
@@ -449,6 +515,11 @@ where
         map_func: Option<&dyn Fn(&mut DynDataTyped<B::Time>)>,
         fuel: &mut isize,
     ) -> bool {
+        // Whatever this writes -- or drops, where the weights cancel -- the
+        // key's values no longer sit at the rows its row group names, so the
+        // key has to go in decoded.
+        self.spliced_values = Written::Decoded;
+
         // If this is a timed batch, we must consolidate the (time, weight) array; otherwise we
         // simply compute the total weight of the current value.
         if let Some(time_diffs) = &mut self.time_diffs {

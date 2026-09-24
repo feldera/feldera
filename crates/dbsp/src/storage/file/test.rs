@@ -2377,6 +2377,7 @@ mod splice_layer_file {
             backend::StorageBackend,
             file::{
                 Factories,
+                filter::FilterKind,
                 format::{BatchMetadata, Compression},
                 reader::Reader,
                 writer::{Parameters, Writer2},
@@ -2444,6 +2445,216 @@ mod splice_layer_file {
             writer.write0((k.erase_mut(), a.erase_mut())).unwrap();
         }
         writer.into_reader(BatchMetadata::default()).unwrap().0
+    }
+
+    /// A splice onto a file that already holds rows has to move every row
+    /// group by the distance between where the run sat and where it now sits.
+    ///
+    /// A straight copy cannot show this: there the two coincide and a shift of
+    /// zero is correct.  Here the destination is given a few keys of its own
+    /// first, so the distance is not zero and getting it wrong is visible.
+    #[test]
+    fn a_splice_onto_a_non_empty_file_shifts_row_groups() {
+        let n = 200;
+        let head = 3; // keys written the ordinary way before any splicing
+        let tempdir = tempdir().unwrap();
+        let backend = <dyn StorageBackend>::new(
+            &StorageConfig {
+                path: tempdir.path().to_string_lossy().to_string(),
+                cache: Default::default(),
+            },
+            &StorageOptions::default(),
+        )
+        .unwrap();
+        let source = build(n, &*backend, None);
+        source.evict();
+
+        let factories0 = Factories::<DynData, DynData>::new::<K0, A0>();
+        let factories1 = Factories::<DynData, DynWeight>::new::<K1, A1>();
+        let mut writer = Writer2::new(
+            &factories0,
+            &factories1,
+            test_buffer_cache,
+            &*backend,
+            parameters(None),
+            None,
+        )
+        .unwrap();
+
+        // Keys of the destination's own, sorting before every key of the
+        // source and carrying a different number of values each, so that the
+        // source's rows land somewhere they have never been.
+        let mut shift = 0u64;
+        for i in 0..head {
+            for j in 0..(2 + i) {
+                let (mut k, mut a) = ((900 + 10 * i + j) as K1, -(j as A1) - 1);
+                writer.write1((k.erase_mut(), a.erase_mut())).unwrap();
+                shift += 1;
+            }
+            let (mut k, mut a) = (format!("aaa-{i}"), ());
+            writer.write0((k.erase_mut(), a.erase_mut())).unwrap();
+        }
+        assert!(shift > 0, "the destination has to start somewhere else");
+
+        // Now the whole source, spliced, landing `shift` rows further along.
+        let rows0 = source.rows();
+        let mut keys = unsafe { rows0.first() }.unwrap();
+        let mut at = 0u64;
+        while keys.has_value() {
+            // One key at a time, which is the granularity a merge splices at: it
+            // owns the output only as far as the next key of another input.  A
+            // key's record carries the range of value rows it owns, so those
+            // values have to be written before it is.
+            let value_rows = keys.next_column().unwrap();
+            let mut value_cursor = unsafe { value_rows.first() }.unwrap();
+            let mut values_at = 0u64;
+            while values_at < value_rows.len() {
+                let run = value_cursor.raw_run().unwrap();
+                let took = writer.write1_raw(&run).unwrap() as u64;
+                assert!(took > 0, "the value splice stalled at {values_at}");
+                values_at += took;
+                unsafe { value_cursor.move_to_row(values_at) }.unwrap();
+            }
+            let took = {
+                let (item, row_group) = keys.raw_item_with_row_group().unwrap();
+                writer
+                    .write0_raw(&item, &[row_group.start, row_group.end])
+                    .unwrap()
+            };
+            assert_eq!(took, 1, "the key splice stalled at {at}");
+            at += 1;
+            unsafe { keys.move_next() }.unwrap();
+        }
+        assert_eq!(at, n as u64);
+
+        let copy = writer.into_reader(BatchMetadata::default()).unwrap().0;
+        copy.evict();
+        let copy0 = copy.rows();
+        assert_eq!(copy0.len(), (n + head) as u64);
+        for row in 0..n {
+            let cursor = copy0.nth((row + head) as u64).unwrap();
+            let rows1 = cursor.next_column().unwrap();
+            let expected = values(row);
+            assert_eq!(rows1.len(), expected.len() as u64, "row {row} value count");
+            let mut c1 = unsafe { rows1.first() }.unwrap();
+            let (mut got_k, mut got_a) = (K1::default(), A1::default());
+            for (i, (k, a)) in expected.iter().enumerate() {
+                let (mut want_k, mut want_a) = (*k, *a);
+                assert_eq!(
+                    unsafe { c1.item((got_k.erase_mut(), got_a.erase_mut())) },
+                    Some((want_k.erase_mut() as &mut _, want_a.erase_mut() as &mut _)),
+                    "row {row} value {i} came back changed"
+                );
+                unsafe { c1.move_next() }.unwrap();
+            }
+        }
+    }
+
+    /// Copies the file by splicing both columns, which is what a merge that
+    /// found a run of keys to itself would do.
+    ///
+    /// The copy carries a membership filter, which is the ordinary case: a
+    /// merge builds one for whatever it writes.  The filter is fed from the
+    /// archived keys as they go by, since a splice never decodes one, and the
+    /// check at the end is the one that matters -- a key that went in has to
+    /// be found again, or a query that looks for it is silently wrong.
+    #[test]
+    fn a_two_column_spliced_copy_matches_the_original() {
+        for compression in [None, Some(Compression::Snappy)] {
+            let n = 400;
+            let tempdir = tempdir().unwrap();
+            let backend = <dyn StorageBackend>::new(
+                &StorageConfig {
+                    path: tempdir.path().to_string_lossy().to_string(),
+                    cache: Default::default(),
+                },
+                &StorageOptions::default(),
+            )
+            .unwrap();
+            let source = build(n, &*backend, compression);
+            source.evict();
+
+            let factories0 = Factories::<DynData, DynData>::new::<K0, A0>();
+            let factories1 = Factories::<DynData, DynWeight>::new::<K1, A1>();
+            let mut writer = Writer2::new(
+                &factories0,
+                &factories1,
+                test_buffer_cache,
+                &*backend,
+                parameters(compression),
+                crate::storage::file::filter::FilterPlan::<DynData>::decide_filter(None, n),
+            )
+            .unwrap();
+
+            let rows0 = source.rows();
+            let mut keys = unsafe { rows0.first() }.unwrap();
+            let mut at = 0u64;
+            while keys.has_value() {
+                // One key at a time, which is the granularity a merge splices at: it
+                // owns the output only as far as the next key of another input.  A
+                // key's record carries the range of value rows it owns, so those
+                // values have to be written before it is.
+                let value_rows = keys.next_column().unwrap();
+                let mut value_cursor = unsafe { value_rows.first() }.unwrap();
+                let mut values_at = 0u64;
+                while values_at < value_rows.len() {
+                    let run = value_cursor.raw_run().unwrap();
+                    let took = writer.write1_raw(&run).unwrap() as u64;
+                    assert!(took > 0, "the value splice stalled at {values_at}");
+                    values_at += took;
+                    unsafe { value_cursor.move_to_row(values_at) }.unwrap();
+                }
+                let took = {
+                    let (item, row_group) = keys.raw_item_with_row_group().unwrap();
+                    writer
+                        .write0_raw(&item, &[row_group.start, row_group.end])
+                        .unwrap()
+                };
+                assert_eq!(took, 1, "the key splice stalled at {at}");
+                at += 1;
+                unsafe { keys.move_next() }.unwrap();
+            }
+            assert_eq!(at, n as u64);
+
+            let (copy, filters) = writer.into_reader(BatchMetadata::default()).unwrap();
+            copy.evict();
+            assert_eq!(copy.rows().len(), n as u64);
+
+            // Every key the splice copied has to be in the filter.  A filter
+            // fed from decoded keys would pass this too, so the assertion
+            // above it is what says the filter came from the spliced bytes:
+            // the splice could not have run at all had it refused, and the
+            // rows would not be here.
+            assert_ne!(filters.membership_filter_kind(), FilterKind::None);
+            for row in 0..n {
+                let mut key = key0(row);
+                assert!(
+                    filters.maybe_contains_key(key.erase_mut(), None),
+                    "row {row} is missing from the membership filter"
+                );
+            }
+
+            let copy0 = copy.rows();
+            for row in 0..n {
+                let cursor = copy0.nth(row as u64).unwrap();
+                let mut want0 = key0(row);
+                assert_eq!(cursor.key(), Some(want0.erase_mut() as &_), "row {row} key");
+                let rows1 = cursor.next_column().unwrap();
+                let expected = values(row);
+                assert_eq!(rows1.len(), expected.len() as u64, "row {row} value count");
+                let mut c1 = unsafe { rows1.first() }.unwrap();
+                let (mut got_k, mut got_a) = (K1::default(), A1::default());
+                for (i, (k, a)) in expected.iter().enumerate() {
+                    let (mut want_k, mut want_a) = (*k, *a);
+                    assert_eq!(
+                        unsafe { c1.item((got_k.erase_mut(), got_a.erase_mut())) },
+                        Some((want_k.erase_mut() as &mut _, want_a.erase_mut() as &mut _)),
+                        "row {row} value {i} came back changed"
+                    );
+                    unsafe { c1.move_next() }.unwrap();
+                }
+            }
+        }
     }
 
     #[test]

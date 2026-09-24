@@ -49,6 +49,7 @@ use rkyv::with::{CopyOptimize, With};
 use size_of::SizeOf;
 use std::any::TypeId;
 use std::future::Future;
+use std::ops::Range;
 use std::sync::Arc;
 use std::{fmt::Debug, hash::Hash};
 
@@ -1239,6 +1240,44 @@ where
 
     /// Adds key `key`.
     fn push_key(&mut self, key: &Output::Key);
+
+    /// Whether this builder can accept raw keys via
+    /// [`push_raw_key`](Self::push_raw_key).
+    ///
+    /// A builder writing in memory can never take bytes, and neither can one
+    /// that keeps a touched-window counter, which needs the key itself.
+    fn takes_raw_keys(&self) -> bool {
+        false
+    }
+
+    /// Adds the key `item` encodes, without decoding it.
+    ///
+    /// The builder records the key exactly as [`push_key`](Self::push_key)
+    /// would, including in the file's membership filter, which it feeds with
+    /// a hash taken from the encoded key.
+    ///
+    /// # Arguments
+    ///
+    /// * `item` - the encoded key, as the batch it came from stored it.
+    /// * `row_group` - where the key's values sat in that batch, which this
+    ///   renumbers to where they sit here.  The caller must already have
+    ///   written exactly those values, and nothing else, since its last key.
+    ///
+    /// # Returns
+    ///
+    /// Whether the key went in.  `false` means it would not fit in an empty
+    /// data block, or its archived form cannot be hashed for the file's
+    /// membership filter.  No key was recorded either way, so the caller
+    /// pushes it with [`push_key`](Self::push_key) instead.
+    ///
+    /// # Panics
+    ///
+    /// Panics on a builder whose [`takes_raw_keys`](Self::takes_raw_keys) is
+    /// false.
+    fn push_raw_key(&mut self, item: &RawItems<'_>, row_group: Range<u64>) -> bool {
+        let _ = (item, row_group);
+        panic!("push_raw_key on a builder that does not take raw keys: ask takes_raw_keys first")
+    }
 
     /// Adds key `key`.
     fn push_key_mut(&mut self, key: &mut Output::Key) {

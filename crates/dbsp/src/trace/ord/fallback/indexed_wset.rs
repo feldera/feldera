@@ -26,7 +26,7 @@ use feldera_storage::{FileReader, StoragePath};
 use rand::Rng;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::SizeOf;
-use std::ops::Neg;
+use std::ops::{Neg, Range};
 use std::{
     fmt::{self, Debug},
     sync::Arc,
@@ -609,6 +609,24 @@ where
             BuilderInner::File(file) => file.push_raw_vals(items),
             BuilderInner::Vec(_) | BuilderInner::Threshold { .. } => {
                 panic!("push_raw_vals on a builder writing in memory: ask takes_raw_vals first")
+            }
+        }
+    }
+
+    fn takes_raw_keys(&self) -> bool {
+        match &self.inner {
+            BuilderInner::File(file) => file.takes_raw_keys(),
+            BuilderInner::Vec(_) | BuilderInner::Threshold { .. } => false,
+        }
+    }
+
+    fn push_raw_key(&mut self, item: &RawItems<'_>, row_group: Range<u64>) -> bool {
+        match &mut self.inner {
+            // As with the values: only a file builder can take bytes, which
+            // is what `takes_raw_keys` reports.
+            BuilderInner::File(file) => file.push_raw_key(item, row_group),
+            BuilderInner::Vec(_) | BuilderInner::Threshold { .. } => {
+                panic!("push_raw_key on a builder writing in memory: ask takes_raw_keys first")
             }
         }
     }
