@@ -215,7 +215,7 @@ jobs:
       # behind the triage gate)
       - name: Debug the failure and report it
         timeout-minutes: 75
-        uses: anthropics/claude-code-action@239e3a730883eeb5c53db12b0fc9573b3024b126 # v1
+        uses: anthropics/claude-code-action@8cf3482550831fb35a4fc3fbf7ca139cf8028b4c # v1.0.233
         with:
           settings: ${{ vars.CLAUDE_SETTINGS_JSON }}
           anthropic_federation_rule_id: fdrl_012Ldki1r2iLWz2gPUGJScLL
@@ -236,8 +236,9 @@ jobs:
 
             ${{ vars.FRED_OBSERVE_PROMPT }}
 
+          # an unset FRED_OBSERVE_MODEL falls back to the org-wide FRED_BASE_MODEL
           claude_args: |
-            --model ${{ vars.FRED_OBSERVE_MODEL || 'claude-sonnet-5' }}
+            --model ${{ vars.FRED_OBSERVE_MODEL || vars.FRED_BASE_MODEL }}
             --allowedTools "Bash,Read,Glob,Grep,Edit,Write"
             --disallowedTools "Bash(git push --force:*),Bash(git push -f:*),Bash(gh pr create:*),Bash(gh pr edit:*),Bash(gh pr merge:*),Bash(gh pr close:*),Bash(gh pr review:*),Bash(gh issue close:*),Bash(gh run rerun:*),Bash(gh run cancel:*),Bash(gh workflow:*),Bash(cargo build --release:*),Bash(docker:*)"
             --max-turns 250
