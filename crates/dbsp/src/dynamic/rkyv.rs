@@ -1,4 +1,4 @@
-use super::{AsAny, Comparable, DowncastTrait, OrdRepr};
+use super::{AsAny, Comparable, DowncastTrait, HashRepr, OrdRepr};
 use crate::{
     derive_comparison_traits,
     storage::file::{DbspSerializer, Deserializer},
@@ -12,20 +12,23 @@ use std::{cmp::Ordering, marker::PhantomData, mem::transmute};
 /// seems to be the key for rust to know the bounds exist globally in the code
 /// without having to specify the bounds everywhere.
 ///
-/// `Repr: OrdRepr<Self>` is what lets storage order an archived value
-/// against an unarchived one without deserializing it; see [`OrdRepr`] for
-/// the contract that the implementation must meet.
+/// `Repr: OrdRepr<Self>` lets storage order an archived value against an
+/// unarchived one without deserializing it; see [`OrdRepr`] for the contract
+/// that the implementation must meet.
+///
+/// `Repr: HashRepr` hashes an archived value, producing the exact same result
+/// as the decoded value would.
 pub trait ArchivedDBData:
     for<'a> Serialize<DbspSerializer<'a>> + Archive<Archived = Self::Repr> + Sized
 {
-    type Repr: Deserialize<Self, Deserializer> + Ord + OrdRepr<Self>;
+    type Repr: Deserialize<Self, Deserializer> + Ord + OrdRepr<Self> + HashRepr;
 }
 
 /// We also automatically implement this bound for everything that satisfies it.
 impl<T> ArchivedDBData for T
 where
     T: Archive + for<'a> Serialize<DbspSerializer<'a>>,
-    Archived<T>: Deserialize<T, Deserializer> + Ord + OrdRepr<T>,
+    Archived<T>: Deserialize<T, Deserializer> + Ord + OrdRepr<T> + HashRepr,
 {
     type Repr = Archived<T>;
 }
@@ -109,6 +112,13 @@ pub trait DeserializeDyn<Trait: ?Sized>: AsAny + Comparable {
     /// Orders the archived value against `target`, as [`Ord`] on the
     /// unarchived value would.
     fn cmp_target(&self, target: &Trait) -> Ordering;
+
+    /// The hash the unarchived value would have, without unarchiving it, or
+    /// `None` if this type cannot answer.
+    ///
+    /// Used to construct a Bloom filter without deserializing keys, by
+    /// computing the hash directly on the serialized key.
+    fn archived_hash(&self) -> Option<u64>;
 }
 
 #[repr(transparent)]
@@ -181,6 +191,10 @@ where
 
     fn eq_target(&self, other: &Trait) -> bool {
         self.cmp_target(other) == Ordering::Equal
+    }
+
+    fn archived_hash(&self) -> Option<u64> {
+        crate::dynamic::archived_hash(&self.archived)
     }
 
     fn cmp_target(&self, other: &Trait) -> Ordering {

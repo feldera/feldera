@@ -1423,6 +1423,27 @@ impl Writer {
         self.cws[column].add_item(&mut self.writer, item, &row_group, &mut self.serializer)
     }
 
+    /// Whether keys written to `column` can be recorded in this file's
+    /// membership filter without decoding them.
+    ///
+    /// Both halves of the answer are properties of the file and the key type,
+    /// not of any key: a filter that wants the key itself rather than a hash
+    /// of it can never be fed this way, and whether an archived key
+    /// reproduces the decoded key's hash is fixed for the type.
+    fn can_hash_keys<K>(&self, column: usize) -> bool
+    where
+        K: DataTrait + ?Sized,
+    {
+        let Some(filter) = &self.key_filter else {
+            return true;
+        };
+        filter.takes_hashes()
+            && self.cws[column]
+                .factories
+                .key_factory::<K>()
+                .supports_archived_hash()
+    }
+
     /// Appends a run of already-encoded items to `column`, returning how many
     /// were appended.
     ///
@@ -1456,13 +1477,10 @@ impl Writer {
         K: DataTrait + ?Sized,
         A: DataTrait + ?Sized,
     {
-        if column == 0 && self.key_filter.is_some() {
-            // A membership filter hashes the decoded key, and a splice never
-            // decodes one, so this path cannot feed the filter and refuses
-            // rather than write a file whose filter is missing keys.  A caller
-            // that holds the keys anyway, as a merger does for the comparisons
-            // it makes, could push them itself and then splice; there is no
-            // API for that yet.
+        // The filter must record every key, so refuse a run whose keys cannot
+        // be hashed without decoding.
+        let feeds_filter = column == 0 && self.key_filter.is_some();
+        if feeds_filter && !self.can_hash_keys::<K>(column) {
             return Ok(0);
         }
         let last = column + 1 == self.n_columns();
@@ -1494,6 +1512,26 @@ impl Writer {
             &mut self.serializer,
         )?;
         self.cws[column].rows.end += taken as u64;
+        if feeds_filter {
+            // Only what was taken: the rest is offered again next call, and
+            // is hashed then rather than now.
+            let key_factory = self.cws[column].factories.key_factory::<K>();
+            let filter = self.key_filter.as_mut().expect("the file has a filter");
+            for &root in &items.roots[..taken] {
+                // SAFETY: `root` is where the source block put this item, and
+                // `items.bytes` is that block's bytes; `raw_items` produced
+                // the two together.
+                let archived = unsafe { key_factory.archived_value(items.bytes, root) };
+                let hash = archived
+                    .archived_hash()
+                    .expect("the key type answered before the run was written");
+                let recorded = filter.push_hash(hash);
+                debug_assert!(
+                    recorded,
+                    "the filter took hashes before the run was written"
+                );
+            }
+        }
         if let (Some(boundaries), Some(pending)) = (boundaries, pending) {
             // What the run did not claim stays pending for the next call,
             // counted in this file's rows rather than the source's.  That is
@@ -1963,9 +2001,13 @@ where
     ///
     /// `boundaries` are the run's row groups as the `n + 1` rows between them,
     /// which for the single key a merge writes at a time is the two ends of
-    /// the row group that key names.  Returns zero for a file that is building
-    /// a key filter, because a spliced key is never decoded and so could never
-    /// be hashed into one.
+    /// the row group that key names.
+    ///
+    /// Returns zero for a file whose key filter needs the keys themselves
+    /// rather than hashes of them, or whose key type cannot be hashed from
+    /// its archived form: such a filter cannot be fed from a run that is
+    /// never decoded, and a file whose filter is missing keys answers a query
+    /// wrongly.  The caller rewrites the run instead.
     pub fn write0_raw(
         &mut self,
         items: &RawItems<'_>,

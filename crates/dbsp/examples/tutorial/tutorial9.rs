@@ -6,7 +6,7 @@ use dbsp::{
     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
     utils::{Tup2, Tup3},
 };
-use feldera_macros::{IsNone, OrdRepr};
+use feldera_macros::{HashRepr, IsNone, OrdRepr};
 use rkyv::{Archive, Serialize};
 use size_of::SizeOf;
 
@@ -24,6 +24,7 @@ use size_of::SizeOf;
     Serialize,
     rkyv::Deserialize,
     serde::Deserialize,
+    HashRepr,
     IsNone,
     OrdRepr,
 )]
@@ -48,6 +49,7 @@ struct Record {
     Serialize,
     rkyv::Deserialize,
     serde::Deserialize,
+    HashRepr,
     IsNone,
     OrdRepr,
 )]

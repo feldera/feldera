@@ -577,6 +577,21 @@ where
     }
 }
 
+// Hashing one of these from its archived form is not implemented: `FAITHFUL`
+// is false, so `archived_hash` answers `None` and the caller deserializes and
+// hashes that instead.  The trait is implemented all the same, because
+// `ArchivedDBData` requires it of every type.
+impl<K, V> crate::dynamic::HashRepr for ArchivedNeighborhoodDescr<K, V>
+where
+    K: crate::DBData,
+    V: crate::DBData,
+{
+    const FAITHFUL: bool = false;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
+}
+
 #[cfg(test)]
 #[allow(clippy::type_complexity)]
 mod test {
