@@ -10,6 +10,13 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Bug fix (SQL): `DATEDIFF(QUARTER, left, right)` mixed whole years with
+  calendar quarters and often returned wrong values; for example,
+  `DATEDIFF(QUARTER, DATE '2020-06-15', DATE '2021-01-01')` returned -1
+  instead of 2. It now divides the elapsed months by 3, as
+  `TIMESTAMPDIFF(QUARTER, left, right)` does, so views using it may produce
+  different results after they are recompiled.
+
 - Incompatible change (user-defined aggregates): the accumulator type of a
   user-defined aggregate written in Rust must now implement
   `dbsp::dynamic::OrdRepr` for its rkyv archived form, so that an archived
