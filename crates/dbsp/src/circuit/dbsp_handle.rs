@@ -12,7 +12,7 @@ use crate::{
     profile::Profiler,
 };
 use anyhow::Error as AnyError;
-use crossbeam::channel::{Receiver, Select, Sender, TryRecvError, bounded};
+use crossbeam::channel::{Receiver, RecvTimeoutError, Select, Sender, TryRecvError, bounded};
 use feldera_buffer_cache::ThreadType;
 use feldera_ir::LirCircuit;
 use feldera_storage::{FileCommitter, StorageBackend, StoragePath};
@@ -1549,6 +1549,13 @@ impl DBSPHandle {
             .is_some_and(|runtime| runtime.panicked())
     }
 
+    /// How often to check for a panic while waiting for a worker's reply.
+    ///
+    /// A worker waiting on a background thread that panicked, e.g. a merger
+    /// that ran out of storage, never replies and never exits, so waiting on
+    /// the reply channels alone would block forever.
+    const PANIC_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
     fn broadcast_command<F>(&mut self, command: Command, mut handler: F) -> Result<(), DbspError>
     where
         F: FnMut(usize, Response),
@@ -1589,7 +1596,14 @@ impl DBSPHandle {
 
         // Receive responses.
         for _ in 0..self.status_receivers.len() {
-            let ready = select.select();
+            let ready = loop {
+                if let Ok(ready) = select.select_timeout(Self::PANIC_POLL_INTERVAL) {
+                    break ready;
+                }
+                if self.panicked() {
+                    return handle_panic(self);
+                }
+            };
             let worker = ready.index();
 
             match ready.recv(&self.status_receivers[worker]) {
@@ -1624,7 +1638,13 @@ impl DBSPHandle {
         }
         self.runtime.as_ref().unwrap().unpark_worker(worker);
 
-        let reply = match self.status_receivers[worker].recv() {
+        let reply = loop {
+            match self.status_receivers[worker].recv_timeout(Self::PANIC_POLL_INTERVAL) {
+                Err(RecvTimeoutError::Timeout) if !self.panicked() => (),
+                result => break result,
+            }
+        };
+        let reply = match reply {
             Err(_) => return handle_panic(self),
             Ok(Err(e)) => {
                 let _ = self.kill_inner();
