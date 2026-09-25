@@ -546,13 +546,35 @@ public class Monotonicity extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPWindowOperator node) {
-        // Identity just for the left input
-        MonotoneExpression input = this.getMonotoneExpression(node.left());
-        if (input == null)
-            return;
-        boolean pairOfReferences = node.getType().is(DBSPTypeIndexedZSet.class);
-        MonotoneExpression output = this.identity(node, getBodyType(input), pairOfReferences);
-        this.set(node, output);
+        // The only field which could have a waterline is the key (timestamp)
+        // field of the window.  None of the value fields of the window's
+        // output has a waterline, even if they have a waterline as inputs.
+        // The rest of this computation only looks at key fields.
+
+        // When its bounds move, a window retracts the rows that leave it and inserts
+        // the rows that enter it.
+        if (node.lowerUnbounded) {
+            // Unbounded windows
+            // Rows enter the window only through its upper bound, or as new input rows;
+            MonotoneExpression input = this.getMonotoneExpression(node.left());
+            if (input == null)
+                return;
+            // The output key will have a waterline only if the input key does.
+            // Without a lower bound, the window admits new input rows with arbitrarily
+            // small keys, which are immediately emitted to the output.
+            IMaybeMonotoneType inputKey = getBodyType(input).to(PartiallyMonotoneTuple.class).getFieldType(0);
+            if (!inputKey.mayBeMonotone())
+                return;
+        }
+
+        // All rows the window emits have keys larger than the lower bound of
+        // the previous step, so the key is monotone.
+        DBSPTypeIndexedZSet type = node.getOutputIndexedZSetType();
+        PartiallyMonotoneTuple value = PartiallyMonotoneTuple.noMonotoneFields(
+                type.elementType.to(DBSPTypeTupleBase.class));
+        PartiallyMonotoneTuple output = new PartiallyMonotoneTuple(
+                Linq.list(new MonotoneType(type.keyType), value), true, false);
+        this.set(node, this.identity(node, output, true));
     }
 
     /** Returns the index of the value field of the LAG input whose waterline also holds

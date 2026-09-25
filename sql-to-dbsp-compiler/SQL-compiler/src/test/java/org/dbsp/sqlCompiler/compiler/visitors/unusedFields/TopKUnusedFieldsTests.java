@@ -338,15 +338,15 @@ public class TopKUnusedFieldsTests extends SqlIoTest {
         // Stored: ts, deleted, name, qty, kind; k survives only in the key.
         // Emitted: deleted, name, qty, kind.
         Assert.assertEquals(new Shape(5, 4, false), shape(ccs));
-        // The window passes k, ts, deleted, name, qty, kind; the four columns nobody
-        // reads (note, owner, price, created) are gone before it.
+        // The window passes k, deleted, name, qty, kind; ts is the window key, and the four
+        // columns nobody reads (note, owner, price, created) are gone before it.
         ccs.visit(new CircuitVisitor(ccs.compiler) {
             boolean seen = false;
 
             @Override
             public void postorder(DBSPWindowOperator operator) {
                 int fields = operator.left().getOutputIndexedZSetType().getElementTypeTuple().size();
-                Assert.assertEquals(6, fields);
+                Assert.assertEquals(5, fields);
                 this.seen = true;
             }
 
