@@ -775,6 +775,14 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         this.set(expression, result);
     }
 
+    /** True if every argument of {@code expression} after the first is a constant. */
+    boolean constantAfterFirst(DBSPApplyExpression expression) {
+        for (int i = 1; i < expression.arguments.length; i++)
+            if (!this.constantExpressions.contains(expression.arguments[i]))
+                return false;
+        return true;
+    }
+
     @Override
     public void postorder(DBSPApplyExpression expression) {
         // Monotone functions applied to monotone arguments.
@@ -790,12 +798,19 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             String name = expression.getFunctionName();
             if (name != null) {
                 isDeterministic = !name.equals("now");
+                // Monotone in the first argument only; the others, such as the digits of ROUND
+                // or the sizes of a HOP window, must be constant
+                if ((name.startsWith("round_") ||
+                        name.startsWith("truncate_") ||
+                        name.equals("hop_start_timestamp")) &&
+                        this.constantAfterFirst(expression)) {
+                    resultType = new MonotoneType(expression.getType());
+                    reduced = expression.replaceArguments(reducedArgs);
+                }
                 if (name.startsWith("log10_") ||
                         name.startsWith("ln_") ||
                         name.startsWith("ceil_") ||
                         name.startsWith("sqrt_") ||
-                        name.startsWith("round_") ||
-                        name.startsWith("truncate_") ||
                         name.startsWith("floor_") ||
                         name.startsWith("sign_") ||
                         name.startsWith("numeric_inc") ||
@@ -804,8 +819,6 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                         name.startsWith("extract_century_") ||
                         name.startsWith("extract_epoch_") ||
                         name.startsWith("extract_hour_Time_") ||
-                        name.startsWith("dateadd_") ||
-                        name.equals("hop_start_timestamp") ||
                         name.startsWith("to_bound_") ||
                         name.startsWith("date_trunc_") ||
                         name.startsWith("time_trunc_") ||
