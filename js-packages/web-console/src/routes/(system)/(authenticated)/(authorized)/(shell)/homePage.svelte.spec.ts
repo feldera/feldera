@@ -34,17 +34,6 @@ const thumb = (name: string): PipelineThumb =>
     connectors: { numErrors: 0 }
   }) as unknown as PipelineThumb
 
-// The page reads `pipelines` on every reactive pass. Returning the same array for the
-// same names keeps the table from rebuilding its rows on each read, which leaves fewer
-// of `TableHandler`'s deferred scroll writes pending at teardown.
-let cachedThumbs: { names: string[]; thumbs: PipelineThumb[] } | undefined
-const thumbsFor = (names: string[]) => {
-  if (cachedThumbs?.names !== names) {
-    cachedThumbs = { names, thumbs: names.map(thumb) }
-  }
-  return cachedThumbs.thumbs
-}
-
 // The mocked composition below reads `list.names`. A test sets it before rendering to
 // control how tall the table is.
 const { list, demos } = vi.hoisted(() => ({
@@ -98,7 +87,7 @@ vi.mock('$lib/components/other/OidcTrustMenu.svelte', () => ({ default: () => {}
 vi.mock('$lib/compositions/pipelines/usePipelineList.svelte', () => ({
   usePipelineList: () => ({
     get pipelines() {
-      return thumbsFor(list.names)
+      return list.names.map(thumb)
     }
   }),
   useUpdatePipelineList: () => ({
