@@ -6278,6 +6278,34 @@ export type SyncConfig = {
   standby?: boolean
   start_from_checkpoint?: StartFromCheckpoint | null
   /**
+   * Take ownership of `bucket` when the pipeline starts, even if another
+   * pipeline owns it.
+   *
+   * A pipeline records its ownership of `bucket` in an `owner.json` file
+   * at the root of `bucket`, and a push fails without writing anything if
+   * that file names a different pipeline.  When this is `true`, the
+   * pipeline takes ownership as it starts (a standby pipeline, when it is
+   * activated): it logs a warning naming the previous and new owners and
+   * overwrites `owner.json`.  The previous owner's later pushes to
+   * `bucket` then fail.
+   *
+   * This only applies at startup.  If another pipeline takes ownership of
+   * `bucket` while this pipeline is running, this pipeline's pushes fail.
+   *
+   * Ownership changes before the pipeline opens its checkpoint, so it
+   * sticks even if the pipeline then fails to start: the previous owner's
+   * pushes keep failing.  To give `bucket` back, start the previous owner
+   * with `take_bucket_ownership` set.
+   *
+   * Use this to hand a checkpoint location over to a pipeline that
+   * replaces another one, e.g., after deleting and recreating a pipeline.
+   * Stop the previous owner first, and set this on only one of the
+   * pipelines that share a `bucket`.
+   *
+   * Default: false
+   */
+  take_bucket_ownership?: boolean
+  /**
    * The number of file transfers to run in parallel.
    * Default: 20
    */
