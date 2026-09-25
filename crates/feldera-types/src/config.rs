@@ -2335,8 +2335,9 @@ pub struct StorageAutoscalingConfig {
     )]
     pub scale_threshold: Option<f64>,
 
-    /// Available storage in Megabytes below which expansion triggers, whatever
-    /// the usage fraction. Unset by default.
+    /// Expand storage when available space falls below this many MB, even if
+    /// usage is still under `scale_threshold`. Either condition triggers
+    /// expansion. Unset by default.
     #[serde(
         deserialize_with = "crate::serde_via_value::deserialize",
         skip_serializing_if = "Option::is_none"
