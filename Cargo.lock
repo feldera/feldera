@@ -1966,7 +1966,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "regex",
@@ -1984,7 +1984,7 @@ dependencies = [
  "bitflags 2.10.0",
  "cexpr",
  "clang-sys",
- "itertools 0.11.0",
+ "itertools 0.13.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -5386,9 +5386,9 @@ dependencies = [
 
 [[package]]
 name = "feldera-cloud1-client"
-version = "0.1.3"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3bbbc99187b0e2afa72198abf5fa523a9bfc9ff3d8615d5bc3b408800534a01"
+checksum = "93cbbe3f1905f66cb3304f1aca0deb2d60b9dfc95e5c121fa380448c78069d81"
 dependencies = [
  "chrono",
  "reqwest 0.13.4",
@@ -5396,6 +5396,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "utoipa",
+ "uuid",
 ]
 
 [[package]]
@@ -6615,7 +6616,7 @@ dependencies = [
  "js-sys",
  "log",
  "wasm-bindgen",
- "windows-core 0.58.0",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -9648,7 +9649,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.11.0",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",
@@ -9661,7 +9662,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27c6023962132f4b30eb4c172c91ce92d933da334c59c23cddee82358ddafb0b"
 dependencies = [
  "anyhow",
- "itertools 0.11.0",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.117",

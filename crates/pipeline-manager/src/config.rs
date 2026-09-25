@@ -38,15 +38,22 @@ use tracing::warn;
 /// - `FELDERA_PLATFORM_VERSION_SUFFIX` set by the custom `build.rs` script,
 ///   which is determined using the similarly named environment variable
 ///
-/// ... and whether the `feldera-enterprise` feature is enabled.
+/// ... and whether the `feldera-enterprise` or `feldera-enterprise-dev` feature is enabled.
 fn default_platform_version() -> String {
     let suffix = env!("FELDERA_PLATFORM_VERSION_SUFFIX").to_string();
     let version = env!("CARGO_PKG_VERSION").to_string();
-    if cfg!(feature = "feldera-enterprise") {
+    let enterprise_build = if cfg!(feature = "feldera-enterprise-dev") {
+        Some("enterprise-dev")
+    } else if cfg!(feature = "feldera-enterprise") {
+        Some("enterprise")
+    } else {
+        None
+    };
+    if let Some(enterprise_build) = enterprise_build {
         if suffix.is_empty() {
-            format!("{version}+enterprise")
+            format!("{version}+{enterprise_build}")
         } else {
-            format!("{version}+enterprise.{suffix}")
+            format!("{version}+{enterprise_build}.{suffix}")
         }
     } else if suffix.is_empty() {
         version
@@ -1797,5 +1804,26 @@ mod tests {
         config.owners.clear();
         config.auth_provider = AuthProviderType::None;
         assert!(config.validate_authorization().is_ok());
+    }
+
+    /// The platform version suffix matches the edition of the build.
+    #[test]
+    fn platform_version_matches_edition() {
+        let platform_version = default_platform_version();
+        match crate::edition() {
+            "EnterpriseDev" => assert!(
+                platform_version.contains("+enterprise-dev"),
+                "{platform_version}"
+            ),
+            "Enterprise" => assert!(
+                platform_version.contains("+enterprise") && !platform_version.contains("-dev"),
+                "{platform_version}"
+            ),
+            "Open source" => assert!(
+                !platform_version.contains("enterprise"),
+                "{platform_version}"
+            ),
+            edition => panic!("unexpected edition {edition}"),
+        }
     }
 }

@@ -11,7 +11,27 @@ export const displayScheduleToDismissable = (schedule: DisplaySchedule) =>
     .with('Always', () => 'never' as const)
     .exhaustive()
 
+const DEV_LICENSE_TEXT =
+  'This Feldera instance runs on a development license and is for development purposes only'
+
 export const getLicenseMessage = (config: Configuration, now: Date): SystemMessage | null => {
+  const statusMessage = getLicenseStatusMessage(config, now)
+  const isDevLicense =
+    config.license_validity && 'Exists' in config.license_validity
+      ? config.license_validity.Exists.is_dev === true
+      : false
+  if (!isDevLicense) {
+    return statusMessage
+  }
+  return {
+    id: `license_${config.edition}_dev`,
+    dismissable: 'never',
+    text: statusMessage ? `${DEV_LICENSE_TEXT}. ${statusMessage.text}` : DEV_LICENSE_TEXT,
+    action: statusMessage?.action
+  }
+}
+
+const getLicenseStatusMessage = (config: Configuration, now: Date): SystemMessage | null => {
   {
     const license =
       config.license_validity && 'Exists' in config.license_validity
