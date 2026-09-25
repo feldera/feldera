@@ -52,6 +52,7 @@ use feldera_types::config::{
     AutoscalingConfig, DevTweaks, FtConfig, PipelineConfig, ProgramIr, ResourceConfig,
     RuntimeConfig, StorageAutoscalingConfig,
 };
+use feldera_types::duration::Duration as ConfigDuration;
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{
@@ -434,7 +435,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
             hosts: val.val20,
             cpu_profiler: val.val1,
             min_batch_size_records: val.val2,
-            max_buffering_delay_usecs: val.val3,
+            max_buffering_delay: Some(ConfigDuration::from_micros(val.val3)),
             storage: val.val4.then(Default::default),
             fault_tolerance: FtConfig::default(),
             tracing: val.val5,
@@ -456,7 +457,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
                 service_account_name: val.val13,
                 namespace: val.val14,
             },
-            clock_resolution_usecs: val.val15,
+            clock_resolution: val.val15.map(ConfigDuration::from_micros),
             // Varies so the proptest exercises the "cannot edit unless
             // storage is cleared" restriction on this field.
             clock_timezone_offset: match val.val0 % 3 {
@@ -465,7 +466,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
                 _ => Some("-08:00".parse().unwrap()),
             },
             pin_cpus: Vec::new(),
-            provisioning_timeout_secs: val.val16,
+            provisioning_timeout: val.val16.map(ConfigDuration::from_secs),
             max_parallel_connector_init: None,
             init_containers: None,
             checkpoint_during_suspend: val.val17,
@@ -2472,7 +2473,7 @@ async fn pipeline_versioning() {
         tracing: false,
         tracing_endpoint_jaeger: "".to_string(),
         min_batch_size_records: 0,
-        max_buffering_delay_usecs: 0,
+        max_buffering_delay: None,
         resources: ResourceConfig {
             cpu_cores_min: None,
             cpu_cores_max: None,
@@ -2485,10 +2486,10 @@ async fn pipeline_versioning() {
             service_account_name: None,
             namespace: None,
         },
-        clock_resolution_usecs: None,
+        clock_resolution: None,
         clock_timezone_offset: None,
         pin_cpus: Vec::new(),
-        provisioning_timeout_secs: None,
+        provisioning_timeout: None,
         max_parallel_connector_init: None,
         init_containers: None,
         checkpoint_during_suspend: true,
@@ -4555,8 +4556,8 @@ async fn pipeline_provision_version_guard() {
             &PatchClientMetadata::default(),
             "v0",
             false,
-            &Some(
-                serde_json::to_value(RuntimeConfig {
+            &Some({
+                let config = RuntimeConfig {
                     workers: 10,
                     max_rss_mb: None,
                     datafusion_memory_mb: None,
@@ -4567,12 +4568,12 @@ async fn pipeline_provision_version_guard() {
                     tracing: false,
                     tracing_endpoint_jaeger: "".to_string(),
                     min_batch_size_records: 0,
-                    max_buffering_delay_usecs: 0,
+                    max_buffering_delay: None,
                     resources: Default::default(),
-                    clock_resolution_usecs: None,
+                    clock_resolution: None,
                     clock_timezone_offset: None,
                     pin_cpus: Vec::new(),
-                    provisioning_timeout_secs: None,
+                    provisioning_timeout: None,
                     max_parallel_connector_init: None,
                     init_containers: None,
                     checkpoint_during_suspend: false,
@@ -4582,9 +4583,9 @@ async fn pipeline_provision_version_guard() {
                     env: BTreeMap::new(),
                     logging: None,
                     pipeline_template_configmap: None,
-                })
-                .unwrap(),
-            ),
+                };
+                serde_json::to_value(config).unwrap()
+            }),
             &None,
             &None,
             &None,

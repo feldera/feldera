@@ -14,11 +14,7 @@ use google_cloud_pubsub::{
     client::{Client, ClientConfig, google_cloud_auth::credentials::CredentialsFile},
     subscription::{SeekTo, Subscription},
 };
-use std::{
-    sync::Arc,
-    thread,
-    time::{Duration, SystemTime},
-};
+use std::{sync::Arc, thread, time::SystemTime};
 use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     task::JoinHandle,
@@ -226,13 +222,12 @@ async fn pubsub_config(config: &PubSubInputConfig) -> Result<ClientConfig, AnyEr
         client_config.endpoint = endpoint.to_string();
     }
 
-    if let Some(connect_timeout_seconds) = config.connect_timeout_seconds {
-        client_config.connection_option.connect_timeout =
-            Some(Duration::from_secs(connect_timeout_seconds as u64));
+    if let Some(connect_timeout) = config.connect_timeout {
+        client_config.connection_option.connect_timeout = Some(connect_timeout.as_std());
     }
 
-    if let Some(timeout_seconds) = config.timeout_seconds {
-        client_config.connection_option.timeout = Some(Duration::from_secs(timeout_seconds as u64));
+    if let Some(timeout) = config.timeout {
+        client_config.connection_option.timeout = Some(timeout.as_std());
     }
 
     // Use credentials file if specified.

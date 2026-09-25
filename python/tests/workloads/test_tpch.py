@@ -486,7 +486,7 @@ def tpch_views(q_dirs: List[str]) -> List[ViewSpec]:
             }}
         }},
         "enable_output_buffer": true,
-        "max_output_buffer_time_millis": 2000
+        "max_output_buffer_time": "2s"
     }}]""",
             indexes=[IndexSpec("q1_idx", ["l_returnflag", "l_linestatus"])],
         ),
@@ -574,7 +574,7 @@ LIMIT 10""",
             }}
         }},
         "enable_output_buffer": true,
-        "max_output_buffer_time_millis": 2000
+        "max_output_buffer_time": "2s"
     }}]""",
             indexes=[
                 IndexSpec("q3_idx", ["l_orderkey", "o_orderdate", "o_shippriority"])
@@ -614,7 +614,7 @@ order by
             }}
         }},
         "enable_output_buffer": true,
-        "max_output_buffer_time_millis": 2000
+        "max_output_buffer_time": "2s"
     }}]""",
             indexes=[IndexSpec("q4_idx", ["o_orderpriority"])],
         ),
@@ -655,7 +655,7 @@ order by
             }}
         }},
         "enable_output_buffer": true,
-        "max_output_buffer_time_millis": 2000
+        "max_output_buffer_time": "2s"
     }}]""",
             indexes=[IndexSpec("q5_idx", ["n_name"])],
         ),
@@ -680,7 +680,7 @@ where
             }}
         }},
         "enable_output_buffer": true,
-        "max_output_buffer_time_millis": 2000
+        "max_output_buffer_time": "2s"
     }}]""",
         ),
         #     ViewSpec("q7", """
@@ -733,7 +733,7 @@ where
         #             }}
         #         }},
         #         "enable_output_buffer": true,
-        #         "max_output_buffer_time_millis": 2000
+        #         "max_output_buffer_time": "2s"
         #     }}]""",
         #     indexes=[IndexSpec("q7_idx", ["supp_nation", "cust_nation", "l_year"])]
         # ),
@@ -787,7 +787,7 @@ order by
             }}
         }},
         "enable_output_buffer": true,
-        "max_output_buffer_time_millis": 2000
+        "max_output_buffer_time": "2s"
     }}]""",
             indexes=[IndexSpec("q8_idx", ["o_year"])],
         ),
@@ -836,7 +836,7 @@ nation,
             }}
         }},
         "enable_output_buffer": true,
-        "max_output_buffer_time_millis": 2000
+        "max_output_buffer_time": "2s"
     }}]""",
             indexes=[IndexSpec("q9_idx", ["nation", "o_year"])],
         ),
@@ -885,7 +885,7 @@ LIMIT 20""",
             }}
         }},
         "enable_output_buffer": true,
-        "max_output_buffer_time_millis": 2000
+        "max_output_buffer_time": "2s"
     }}]""",
             indexes=[IndexSpec("q10_idx", ["c_custkey"])],
         ),
@@ -930,7 +930,7 @@ order by
             }}
         }},
         "enable_output_buffer": true,
-        "max_output_buffer_time_millis": 2000
+        "max_output_buffer_time": "2s"
     }}]""",
             indexes=[IndexSpec("q11_idx", ["ps_partkey"])],
         ),
@@ -975,7 +975,7 @@ order by
             }}
         }},
         "enable_output_buffer": true,
-        "max_output_buffer_time_millis": 2000
+        "max_output_buffer_time": "2s"
     }}]""",
             indexes=[IndexSpec("q12_idx", ["l_shipmode"])],
         ),
@@ -1012,7 +1012,7 @@ order by
             }}
         }},
         "enable_output_buffer": true,
-        "max_output_buffer_time_millis": 2000
+        "max_output_buffer_time": "2s"
     }}]""",
             indexes=[IndexSpec("q13_idx", ["c_count"])],
         ),
@@ -1108,7 +1108,7 @@ order by
             }}
         }},
         "enable_output_buffer": true,
-        "max_output_buffer_time_millis": 2000
+        "max_output_buffer_time": "2s"
     }}]""",
         ),
         ViewSpec(
@@ -1178,7 +1178,7 @@ LIMIT 100""",
             }}
         }},
         "enable_output_buffer": true,
-        "max_output_buffer_time_millis": 2000
+        "max_output_buffer_time": "2s"
     }}]""",
             indexes=[IndexSpec("q18_idx", ["c_custkey", "o_orderkey"])],
         ),
@@ -1316,7 +1316,7 @@ LIMIT 100
             }}
         }},
         "enable_output_buffer": true,
-        "max_output_buffer_time_millis": 2000
+        "max_output_buffer_time": "2s"
     }}]""",
             indexes=[IndexSpec("q21_idx", ["s_name"])],
         ),
@@ -1370,7 +1370,7 @@ order by
             }}
         }},
         "enable_output_buffer": true,
-        "max_output_buffer_time_millis": 2000
+        "max_output_buffer_time": "2s"
     }}]""",
             indexes=[IndexSpec("q22_idx", ["cntrycode"])],
         ),

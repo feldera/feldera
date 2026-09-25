@@ -2,6 +2,17 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, fmt::Display};
 use utoipa::ToSchema;
 
+use crate::{
+    duration::{Duration, LegacyUnit},
+    duration_setting,
+};
+
+duration_setting!(
+    duration_registry_timeout,
+    "registry_timeout",
+    LegacyUnit::Secs
+);
+
 /// Supported Avro data change event formats.
 #[derive(Deserialize, Serialize, Clone, Debug, PartialEq, Eq, ToSchema, Default)]
 pub enum AvroUpdateFormat {
@@ -100,10 +111,17 @@ pub struct AvroSchemaRegistryConfig {
     /// Requires `registry_urls` to be set.
     pub registry_proxy: Option<String>,
 
-    /// Timeout in seconds used to connect to the registry.
+    /// Timeout used to connect to the registry, for example `10s`.
     ///
-    /// Requires `registry_urls` to be set.
-    pub registry_timeout_secs: Option<u64>,
+    /// Requires `registry_urls` to be set. Unset leaves the HTTP client's own
+    /// timeout in place.
+    #[serde(
+        default,
+        alias = "registry_timeout_secs",
+        deserialize_with = "duration_registry_timeout",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub registry_timeout: Option<Duration>,
 
     /// Username used to authenticate with the registry.
     ///
@@ -122,6 +140,8 @@ pub struct AvroSchemaRegistryConfig {
     /// password-based authentication (see `registry_username` and `registry_password`).
     pub registry_authorization_token: Option<String>,
 }
+
+impl AvroSchemaRegistryConfig {}
 
 /// Avro output format configuration.
 #[derive(Clone, Serialize, Deserialize, Debug, Default, ToSchema)]
@@ -307,4 +327,42 @@ impl Default for AvroEncoderConfig {
 
 fn default_encoder_threads() -> usize {
     4
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The schema registry timeout has no default of its own: with neither
+    /// field set the accessor yields `None`, which leaves the HTTP client's own
+    /// timeout in place.  Both spellings reach one field, so writing both is
+    /// rejected as a duplicate.
+    #[test]
+    fn registry_timeout_accepts_both_spellings() {
+        for (json, expected) in [
+            (r#"{}"#, None),
+            (
+                r#"{"registry_timeout": "100ms"}"#,
+                Some(Duration::from_millis(100)),
+            ),
+            (
+                r#"{"registry_timeout_secs": 10}"#,
+                Some(Duration::from_secs(10)),
+            ),
+        ] {
+            let config: AvroSchemaRegistryConfig = serde_json::from_str(json).unwrap();
+            assert_eq!(config.registry_timeout, expected, "parsing {json}");
+        }
+
+        // Both spellings reach one field, so writing both is a duplicate.
+        let error = serde_json::from_str::<AvroSchemaRegistryConfig>(
+            r#"{"registry_timeout": "100ms", "registry_timeout_secs": 10}"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("duplicate field `registry_timeout`"),
+            "{error}"
+        );
+    }
 }

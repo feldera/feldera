@@ -158,14 +158,16 @@ pub struct NatsInputEndpoint {
 
 impl NatsInputEndpoint {
     pub fn new(config: NatsInputConfig) -> Result<Self, AnyError> {
-        if config.inactivity_timeout_secs == 0 {
+        if config.inactivity_timeout() < Duration::from_secs(1) {
             return Err(anyhow!(
-                "Invalid NATS input configuration: inactivity_timeout_secs must be at least 1 second"
+                "Invalid NATS input configuration: `inactivity_timeout` is {}, but it must be at least 1 second; raise it, for example to `30s`",
+                config.inactivity_timeout()
             ));
         }
-        if config.retry_interval_secs == 0 {
+        if config.retry_interval() < Duration::from_secs(1) {
             return Err(anyhow!(
-                "Invalid NATS input configuration: retry_interval_secs must be at least 1 second"
+                "Invalid NATS input configuration: `retry_interval` is {}, but it must be at least 1 second; raise it, for example to `1s`",
+                config.retry_interval()
             ));
         }
         Ok(Self {
@@ -287,9 +289,8 @@ impl NatsReader {
         connection_config: &cfg::ConnectOptions,
         stream_name: &str,
     ) -> AnyResult<jetstream::Context> {
-        let init_deadline = Duration::from_secs(
-            connection_config.connection_timeout_secs + connection_config.request_timeout_secs,
-        );
+        let init_deadline = connection_config.connection_timeout().as_std()
+            + connection_config.request_timeout().as_std();
         tokio::time::timeout(init_deadline, async {
             let client = Self::connect_nats(connection_config).await?;
             let js = jetstream::new(client);
@@ -313,11 +314,11 @@ impl NatsReader {
                 .with_context(|| {
                     format!(
                         "NATS initialization failed for stream '{}' at server '{}' \
-                    (connection_timeout={}s, request_timeout={}s)",
+                    (connection_timeout={}, request_timeout={})",
                         stream_ctx.stream_name,
                         stream_ctx.connection_config.server_url,
-                        stream_ctx.connection_config.connection_timeout_secs,
-                        stream_ctx.connection_config.request_timeout_secs,
+                        stream_ctx.connection_config.connection_timeout(),
+                        stream_ctx.connection_config.request_timeout(),
                     )
                 })
                 .map_err(ConnectorError::Retryable)?;
@@ -366,8 +367,8 @@ impl NatsReader {
         let queue = Arc::new(InputQueue::<u64>::new(consumer.clone()));
         let next_sequence = Arc::new(AtomicU64::new(resume_info.sequence_numbers.end));
         let nats_consumer_config = translate_consumer_options(&config.consumer_config);
-        let inactivity_timeout = Duration::from_secs(config.inactivity_timeout_secs);
-        let retry_interval = Duration::from_secs(config.retry_interval_secs);
+        let inactivity_timeout = config.inactivity_timeout().as_std();
+        let retry_interval = config.retry_interval().as_std();
         let stream_ctx = StreamContext {
             connection_config: config.connection_config.clone(),
             stream_name: config.stream_name.clone(),

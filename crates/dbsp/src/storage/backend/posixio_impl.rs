@@ -826,7 +826,7 @@ impl PosixBackend {
             cache,
             usage: Arc::new(AtomicI64::new(0)),
             async_threads: options.async_threads.unwrap_or(true),
-            ioop_delay: Duration::from_millis(options.ioop_delay.unwrap_or_default()),
+            ioop_delay: options.ioop_latency.unwrap_or_default().as_std(),
             sync_strategy,
         }
     }

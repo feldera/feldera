@@ -1,3 +1,4 @@
+import warnings
 from typing import Any, Mapping, Optional
 
 from feldera.enums import FaultToleranceModel
@@ -57,11 +58,50 @@ class Storage:
         self.__dict__.update(config)
 
 
+def _duration_setting(
+    new_name: str,
+    new_value: Optional[str],
+    old_name: str,
+    old_value: Optional[int],
+    unit: str,
+) -> Optional[str]:
+    """Resolves a duration setting given through either its current name or the
+    deprecated integer field it replaces.
+
+    The current name wins. Either use of the deprecated field warns, so that a
+    caller who passes both learns that only one of the two took effect.
+    """
+    if old_value is None:
+        return new_value
+    equivalent = f"{old_value}{unit}"
+    if new_value is None:
+        warnings.warn(
+            f"'{old_name}' is deprecated; use {new_name}='{equivalent}' instead",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return equivalent
+    warnings.warn(
+        f"'{old_name}' is deprecated and was ignored because "
+        f"{new_name}='{new_value}' is also set; drop "
+        f"{old_name}={old_value} (it would mean '{equivalent}')",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    return new_value
+
+
 class RuntimeConfig:
     """
     Runtime configuration class to define the configuration for a pipeline.
     To create runtime config from a dictionary, use
     :meth:`.RuntimeConfig.from_dict`.
+
+    Duration settings take a string made of a number and a unit, such as
+    ``"500ms"``, ``"30s"``, ``"1h30m"`` or ``"30d"``. The integer fields they
+    replace (``max_buffering_delay_usecs``, ``clock_resolution_usecs``,
+    ``provisioning_timeout_secs`` and ``checkpoint_interval_secs``) still work
+    but emit a :class:`DeprecationWarning`.
 
     Documentation:
         https://docs.feldera.com/pipelines/configuration/#runtime-configuration
@@ -75,7 +115,7 @@ class RuntimeConfig:
         tracing: Optional[bool] = False,
         tracing_endpoint_jaeger: Optional[str] = "",
         cpu_profiler: bool = True,
-        max_buffering_delay_usecs: int = 0,
+        max_buffering_delay_usecs: Optional[int] = None,
         min_batch_size_records: int = 0,
         clock_resolution_usecs: Optional[int] = None,
         clock_timezone_offset: Optional[str] = None,
@@ -88,6 +128,10 @@ class RuntimeConfig:
         logging: Optional[str] = None,
         datafusion_memory_mb: Optional[int] = None,
         max_rss_mb: Optional[int] = None,
+        max_buffering_delay: Optional[str] = None,
+        clock_resolution: Optional[str] = None,
+        provisioning_timeout: Optional[str] = None,
+        checkpoint_interval: Optional[str] = None,
     ):
         self.workers = workers
         self.hosts = hosts
@@ -96,15 +140,41 @@ class RuntimeConfig:
         self.tracing = tracing
         self.tracing_endpoint_jaeger = tracing_endpoint_jaeger
         self.cpu_profiler = cpu_profiler
-        self.max_buffering_delay_usecs = max_buffering_delay_usecs
+        self.max_buffering_delay = _duration_setting(
+            "max_buffering_delay",
+            max_buffering_delay,
+            "max_buffering_delay_usecs",
+            max_buffering_delay_usecs,
+            "us",
+        )
         self.min_batch_size_records = min_batch_size_records
-        self.clock_resolution_usecs = clock_resolution_usecs
+        self.clock_resolution = _duration_setting(
+            "clock_resolution",
+            clock_resolution,
+            "clock_resolution_usecs",
+            clock_resolution_usecs,
+            "us",
+        )
         self.clock_timezone_offset = clock_timezone_offset
-        self.provisioning_timeout_secs = provisioning_timeout_secs
+        self.provisioning_timeout = _duration_setting(
+            "provisioning_timeout",
+            provisioning_timeout,
+            "provisioning_timeout_secs",
+            provisioning_timeout_secs,
+            "s",
+        )
         if fault_tolerance_model is not None:
+            # An explicit null interval disables periodic checkpoints, so the
+            # key is always sent when a model is chosen.
             self.fault_tolerance = {
                 "model": str(fault_tolerance_model),
-                "checkpoint_interval_secs": checkpoint_interval_secs,
+                "checkpoint_interval": _duration_setting(
+                    "checkpoint_interval",
+                    checkpoint_interval,
+                    "checkpoint_interval_secs",
+                    checkpoint_interval_secs,
+                    "s",
+                ),
             }
         if resources is not None:
             self.resources = resources.__dict__

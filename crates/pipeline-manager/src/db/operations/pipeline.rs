@@ -30,6 +30,7 @@ use crate::db::types::utils::{
 };
 use crate::db::types::version::Version;
 use deadpool_postgres::Transaction;
+use feldera_types::config::FtConfig;
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus, RuntimeStatus};
 use rmp_serde::{from_slice, to_vec};
@@ -37,6 +38,33 @@ use serde_json::json;
 use tokio_postgres::Row;
 use tracing::warn;
 use uuid::Uuid;
+
+/// Reports whether two `fault_tolerance` values describe different pipelines.
+///
+/// The comparison is on meaning rather than on text, because one settings
+/// carries two spellings: `checkpoint_interval_secs` and the duration field
+/// that supersedes it. A user who rewrites the deprecated spelling as the
+/// current one changes nothing about the pipeline, so the edit must not be
+/// refused as a fault tolerance change. Values that do not deserialize fall
+/// back to comparing the raw JSON, which is what the caller did before.
+fn fault_tolerance_differs(
+    new: Option<&serde_json::Value>,
+    current: Option<&serde_json::Value>,
+) -> bool {
+    fn parse(value: Option<&serde_json::Value>) -> Option<FtConfig> {
+        match value {
+            None => Some(FtConfig::default()),
+            Some(value) => serde_json::from_value(value.clone()).ok(),
+        }
+    }
+
+    match (parse(new), parse(current)) {
+        (Some(new), Some(current)) => {
+            new.model != current.model || new.checkpoint_interval() != current.checkpoint_interval()
+        }
+        _ => new != current,
+    }
+}
 
 /// This expression converts the first 8 bytes of the pipeline UUID to a BIGINT,
 /// and takes its absolute value. It is used to determine which compiler server
@@ -574,9 +602,10 @@ pub(crate) async fn update_pipeline(
             {
                 not_allowed.push("`runtime_config.hosts`");
             }
-            if runtime_config.get("fault_tolerance")
-                != current.runtime_config.get("fault_tolerance")
-            {
+            if fault_tolerance_differs(
+                runtime_config.get("fault_tolerance"),
+                current.runtime_config.get("fault_tolerance"),
+            ) {
                 not_allowed.push("`runtime_config.fault_tolerance`");
             }
             if runtime_config
@@ -2210,4 +2239,58 @@ pub(crate) async fn get_support_bundle_data(
     }
 
     Ok(bundles)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fault_tolerance_differs;
+    use serde_json::json;
+
+    /// Rewriting the deprecated `checkpoint_interval_secs` as the duration
+    /// field that replaces it describes the same pipeline, so the edit must not
+    /// be refused as a fault tolerance change.
+    #[test]
+    fn rewriting_a_deprecated_checkpoint_interval_is_not_a_change() {
+        let deprecated = json!({"model": "at_least_once", "checkpoint_interval_secs": 60});
+        let current = json!({"model": "at_least_once", "checkpoint_interval": "60s"});
+        assert!(!fault_tolerance_differs(Some(&current), Some(&deprecated)));
+        assert!(!fault_tolerance_differs(Some(&deprecated), Some(&current)));
+    }
+
+    /// A different interval, a different model, or disabling the periodic
+    /// checkpoint are all real changes.
+    #[test]
+    fn a_different_setting_is_a_change() {
+        let base = json!({"model": "at_least_once", "checkpoint_interval": "60s"});
+        for other in [
+            json!({"model": "at_least_once", "checkpoint_interval": "90s"}),
+            json!({"model": "exactly_once", "checkpoint_interval": "60s"}),
+            json!({"model": "at_least_once", "checkpoint_interval": null}),
+            json!({"model": null, "checkpoint_interval": "60s"}),
+        ] {
+            assert!(
+                fault_tolerance_differs(Some(&base), Some(&other)),
+                "{other} should differ from {base}"
+            );
+        }
+    }
+
+    /// An absent section means the default, so adding the default explicitly is
+    /// not a change either.
+    #[test]
+    fn an_absent_section_equals_the_default() {
+        let default = serde_json::to_value(feldera_types::config::FtConfig::default()).unwrap();
+        assert!(!fault_tolerance_differs(None, Some(&default)));
+        assert!(!fault_tolerance_differs(None, None));
+    }
+
+    /// A value that does not deserialize falls back to comparing the text, so a
+    /// malformed section is never waved through as unchanged.
+    #[test]
+    fn unparsable_values_fall_back_to_comparing_the_text() {
+        let malformed = json!("not an object");
+        let other = json!("also not an object");
+        assert!(fault_tolerance_differs(Some(&malformed), Some(&other)));
+        assert!(!fault_tolerance_differs(Some(&malformed), Some(&malformed)));
+    }
 }

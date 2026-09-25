@@ -35,6 +35,59 @@ Source edition can be found on github.
   `the trait bound ... OrdRepr<...> is not satisfied`. See
   [User-defined aggregates](/sql/udf#user-defined-aggregates).
 
+- Deprecation (pipeline and connector configuration): every duration setting
+  now takes a string with a unit, such as `"500ms"`, `"30s"`, `"1h30m"` or
+  `"30d"`. Accepted units are `ns`, `us` (or `µs`), `ms`, `s`, `m`, `h`, and
+  `d`, and several terms in a row are summed; a bare `0` is also accepted.
+  Most settings keep their name with the unit dropped, so
+  `clock_resolution_usecs` becomes `clock_resolution`; the six whose old name
+  carried no unit take a new name instead. The old key remains an alias of the
+  new one, so an existing configuration keeps working, and a bare number is
+  still read in the unit it always meant. The pipeline logs a warning naming
+  the equivalent duration to write instead, and a later release stops accepting
+  the bare number. Because both keys reach one setting, writing both is an
+  error rather than a contest one of them wins.
+
+  The Delta connector's `log_retention_duration` is not part of this scheme:
+  it passes a `"interval 30 days"` string through to Delta Lake and keeps its
+  own syntax.
+
+  | Old field (unit)                        | New field                            |
+  |-----------------------------------------|--------------------------------------|
+  | `max_buffering_delay_usecs` (µs)        | `max_buffering_delay`       |
+  | `clock_resolution_usecs` (µs)           | `clock_resolution`          |
+  | `provisioning_timeout_secs` (s)         | `provisioning_timeout`      |
+  | `fault_tolerance.checkpoint_interval_secs` (s) | `fault_tolerance.checkpoint_interval` |
+  | `storage.backend.config.ioop_delay` (ms) | `storage.backend.config.ioop_latency` |
+  | `storage.backend.config.sync.pull_interval` (s) | `storage.backend.config.sync.standby_pull_interval` |
+  | `storage.backend.config.sync.push_interval` (s) | `storage.backend.config.sync.checkpoint_push_interval` |
+  | `storage.backend.config.sync.retention_min_age` (days) | `storage.backend.config.sync.min_retention` |
+  | `max_output_buffer_time_millis` (ms)    | `max_output_buffer_time`    |
+  | URL input `pause_timeout` (s)           | `pause_linger`             |
+  | Kafka input `group_join_timeout_secs` (s) | `group_join_timeout`      |
+  | Kafka output `initialization_timeout_secs` (s) | `initialization_timeout` |
+  | NATS `connection_timeout_secs`, `request_timeout_secs`, `inactivity_timeout_secs`, `retry_interval_secs` (s) | the same names without `_secs` |
+  | NATS consumer `max_expires` (`{secs, nanos}` object) | `max_expiry`  |
+  | Pub/Sub `timeout_seconds`, `connect_timeout_seconds` (s) | `timeout`, `connect_timeout` |
+  | Avro `registry_timeout_secs` (s)        | `registry_timeout`          |
+
+  Three things change for anyone reading the configuration back rather than
+  only writing it. The Python SDK's `RuntimeConfig` no longer carries the old
+  attributes, so `RuntimeConfig(clock_resolution_usecs=1000).clock_resolution_usecs`
+  raises `AttributeError` and `.clock_resolution` holds `"1ms"` rather than a
+  number; the constructor arguments are unchanged. The OpenAPI schema lists
+  only the current names, so the generated clients no longer offer the older
+  ones and a validator built from the schema rejects a configuration the
+  pipeline still accepts. And a stored configuration is rewritten under the
+  current names the next time it is saved, so a tool asserting on the JSON the
+  API returns sees those names.
+
+  `fda set-config` takes `max_buffering_delay` and `clock_resolution` as
+  durations, and its `checkpoint_interval` key now accepts a duration such as
+  `5m` alongside the bare number of seconds it took before. The Python SDK's
+  `RuntimeConfig` gains the matching duration arguments and warns when the old
+  ones are used.
+
 ## v0.352.0
 
 - Cluster monitoring data that has gone stale is now reported as such

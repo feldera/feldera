@@ -32,7 +32,7 @@ Here is a minimal configuration to sync checkpoints to S3:
         "access_key": "ACCESS_KEY",
         "secret_key": "SECRET_KEY",
         "start_from_checkpoint": "latest",
-        "push_interval": 120
+        "checkpoint_push_interval": "120s"
       }
     }
   }
@@ -67,7 +67,7 @@ logs a warning but does not fail the pull.
 Pipelines can start in **standby** mode by passing `initial=standby` to the
 [start pipeline](/api/start-pipeline) endpoint. A standby
 pipeline does not process data. Instead, it continuously pulls the latest
-checkpoint from object store at the interval specified by `pull_interval`,
+checkpoint from object store at the interval specified by `standby_pull_interval`,
 staying ready for immediate activation.
 
 To activate a standby pipeline:
@@ -146,8 +146,8 @@ On its first start **B** pulls from `bucket-a/pipeline-a` (because
 | `start_from_checkpoint` | `string`        |             | Checkpoint UUID to resume from, or `latest` to restore from the latest checkpoint.                                                                                                                                                                                                                                                                                                  |
 | `fail_if_no_checkpoint` | `boolean`       | `false`     | When `true`, the pipeline fails to start if no checkpoint is found in any source (local storage, `bucket`, or `read_bucket`). When `false`, the pipeline starts from scratch instead.                                                                                                                                                                                               |
 | `standby`               | `boolean`       | `false`     | **Deprecated.** Use `initial=standby` when starting the pipeline instead. See [Standby mode](#standby-mode).                                                                                                                                                                                                                                                                        |
-| `pull_interval`         | `integer(u64)`  | `10`        | Interval (in seconds) between fetch attempts for the latest checkpoint while in standby.                                                                                                                                                                                                                                                                                            |
-| `push_interval`         | `integer(u64)`  |             | Interval (in seconds) between automatic syncs of a local checkpoint to object store, measured from the completion of the previous sync. Disabled by default. See [Automatic checkpoint synchronization](#automatic-checkpoint-synchronization).                                                                                                                                     |
+| `standby_pull_interval` | duration       | `10s`       | Interval between fetch attempts for the latest checkpoint while in standby, for example `10s`. Replaces the deprecated `pull_interval` (integer seconds).                                                                                                                                                                                                                                                                                            |
+| `checkpoint_push_interval` | duration       |             | Interval between automatic syncs of a local checkpoint to object store, measured from the completion of the previous sync, for example `2m`. Disabled by default; `null` disables periodic syncs explicitly. Replaces the deprecated `push_interval` (integer seconds). See [Automatic checkpoint synchronization](#automatic-checkpoint-synchronization).                                                                                                                                     |
 | `transfers`             | `integer (u8)`  | `20`        | Number of concurrent file transfers.                                                                                                                                                                                                                                                                                                                                                |
 | `checkers`              | `integer (u8)`  | `20`        | Number of parallel checkers for verification.                                                                                                                                                                                                                                                                                                                                       |
 | `optimize_download_resources` | `boolean`  | `true`      | When `true`, a checkpoint download scales `transfers` and `checkers` to the number of CPUs and allows the download buffer to use most of the available memory, maximizing throughput at the cost of CPU and memory during the pull. When `false`, the download uses the configured `transfers` and `checkers` and the rclone defaults. |
@@ -157,7 +157,7 @@ On its first start **B** pulls from `bucket-a/pipeline-a` (because
 | `upload_concurrency`    | `integer (u8)`  | `10`        | Number of concurrent chunks to upload during multipart uploads.                                                                                                                                                                                                                                                                                                                     |
 | `flags`                 | `array[string]` |             | Extra flags to pass to `rclone`. Incorrect or conflicting flags may break behavior. See [rclone flags](https://rclone.org/flags/) and [S3 flags](https://rclone.org/s3/).                                                                                                                                                                                                           |
 | `retention_min_count`   | `integer (u32)` | `10`        | The minimum number of checkpoints to retain in object store. No checkpoints will be deleted if the total count is below this threshold.                                                                                                                                                                                                                                             |
-| `retention_min_age`     | `integer (u32)` | `30`        | The minimum age (in days) a checkpoint must reach before it becomes eligible for deletion. All younger checkpoints will be preserved.                                                                                                                                                                                                                                               |
+| `min_retention` | duration   | `30d`       | The minimum age a checkpoint must reach before it becomes eligible for deletion, for example `30d`. All younger checkpoints will be preserved. Replaces the deprecated `retention_min_age` (integer days).                                                                                                                                                                                                                                               |
 
 \*Fields marked with an asterisk are required.
 
@@ -246,11 +246,11 @@ and `secret_key` fields. This loads credentials from the environment.
 ## Automatic checkpoint synchronization
 
 Feldera can automatically synchronize checkpoints to the configured object store
-at regular intervals by setting the `push_interval` field in the `sync`
+at regular intervals by setting the `checkpoint_push_interval` field in the `sync`
 configuration.
 
 When enabled, Feldera periodically pushes the latest local checkpoint to the
-object store every `push_interval` seconds after the previous sync operation
+object store every `checkpoint_push_interval` after the previous sync operation
 completes.
 
 Automatic sync is **disabled by default**.
@@ -261,8 +261,8 @@ The status of the most recent automatic sync operation can be queried with:
 curl 'http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status' | jq '.periodic'
 ```
 
-It is recommended to set `push_interval` greater than
-`fault_tolerance.checkpoint_interval_secs` to avoid syncing more frequently
+It is recommended to set `checkpoint_push_interval` greater than
+`fault_tolerance.checkpoint_interval` to avoid syncing more frequently
 than checkpoints are created.
 
 ### Trigger conditions
@@ -270,7 +270,7 @@ than checkpoints are created.
 An automatic checkpoint synchronization is triggered only when all of the
 following conditions are met:
 
-- The configured `push_interval` has elapsed.
+- The configured `checkpoint_push_interval` has elapsed.
 - No checkpoint sync is currently in progress.
 - Checkpoint sync has not been manually requested.
 - A valid checkpoint exists.
@@ -317,13 +317,13 @@ curl 'http://localhost/v0/pipelines/{PIPELINE_NAME}/checkpoint/sync_status'
 | ---------- | ---------------- | ----------------------------------------------------------------------------------------------------------- |
 | `success`  | `uuid \| null`   | UUID of the most recently successful manually triggered checkpoint sync (`POST /checkpoint/sync`).          |
 | `failure`  | `object \| null` | Details of the most recently failed manually triggered checkpoint sync. Contains `uuid` and `error` fields. |
-| `periodic` | `uuid \| null`   | UUID of the most recently successful automatic periodic checkpoint sync (configured via `push_interval`).   |
+| `periodic` | `uuid \| null`   | UUID of the most recently successful automatic periodic checkpoint sync (configured via `checkpoint_push_interval`).   |
 | `running`  | `uuid[]`         | UUIDs of the checkpoint syncs running right now.  Empty when none is in progress.                           |
 
 `success` and `periodic` track different sync mechanisms:
 
 - `success` is updated only by manual syncs triggered via `POST /checkpoint/sync`.
-- `periodic` is updated only by automatic syncs configured via `push_interval`.
+- `periodic` is updated only by automatic syncs configured via `checkpoint_push_interval`.
 
 `success`, `failure` and `periodic` are sticky: each keeps naming the last sync
 to reach that outcome, long after it finished.  `running` is the field that says

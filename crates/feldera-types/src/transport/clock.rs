@@ -6,6 +6,17 @@ use chrono::FixedOffset;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use utoipa::ToSchema;
 
+use crate::{
+    duration::{Duration, LegacyUnit},
+    duration_setting,
+};
+
+duration_setting!(
+    duration_clock_resolution,
+    "clock_resolution",
+    LegacyUnit::Micros
+);
+
 /// Fixed timezone offset for the pipeline clock.
 ///
 /// Parsed from an ISO-8601 UTC offset string such as `"+05:30"` or
@@ -59,7 +70,14 @@ fn is_zero(value: &i64) -> bool {
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, ToSchema)]
 pub struct ClockConfig {
-    pub clock_resolution_usecs: u64,
+    /// How often the clock ticks, for example `1s`.
+    #[serde(
+        default,
+        alias = "clock_resolution_usecs",
+        deserialize_with = "duration_clock_resolution",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub clock_resolution: Option<Duration>,
 
     /// Constant offset added to every emitted `NOW()` value, in milliseconds
     /// east of UTC.  Populated from the `clock_timezone_offset` pipeline
@@ -87,9 +105,19 @@ pub struct ClockConfig {
 }
 
 impl ClockConfig {
+    /// The resolution in effect: `clock_resolution`, falling back to
+    /// the deprecated `clock_resolution_usecs` and then to one second.
+    pub fn clock_resolution(&self) -> Duration {
+        self.clock_resolution
+            .unwrap_or(crate::config::DEFAULT_CLOCK_RESOLUTION)
+    }
+
     pub fn clock_resolution_ms(&self) -> u64 {
         // Refuse to set 0 clock resolution.
-        max((self.clock_resolution_usecs + 500) / 1_000, 1)
+        max(
+            (self.clock_resolution().as_micros() as u64 + 500) / 1_000,
+            1,
+        )
     }
 }
 
@@ -118,7 +146,40 @@ pub struct ClockAdvanceResponse {
 
 #[cfg(test)]
 mod test {
-    use super::ClockTimezoneOffset;
+    use super::{ClockConfig, ClockTimezoneOffset};
+    use crate::config::DEFAULT_CLOCK_RESOLUTION;
+    use crate::duration::Duration;
+
+    /// The clock resolution reads back from both spellings. They reach one
+    /// field, so writing both is rejected as a duplicate.
+    #[test]
+    fn clock_resolution_accepts_both_spellings() {
+        for (json, expected) in [
+            (r#"{}"#, DEFAULT_CLOCK_RESOLUTION),
+            (
+                r#"{"clock_resolution": "250ms"}"#,
+                Duration::from_millis(250),
+            ),
+            (
+                r#"{"clock_resolution_usecs": 100000}"#,
+                Duration::from_millis(100),
+            ),
+        ] {
+            let config: ClockConfig = serde_json::from_str(json).unwrap();
+            assert_eq!(config.clock_resolution(), expected, "parsing {json}");
+        }
+
+        // Both spellings reach one field, so writing both is a duplicate.
+        let error = serde_json::from_str::<ClockConfig>(
+            r#"{"clock_resolution": "250ms", "clock_resolution_usecs": 100000}"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(
+            error.contains("duplicate field `clock_resolution`"),
+            "{error}"
+        );
+    }
 
     #[test]
     fn timezone_offset_parses_and_round_trips() {

@@ -16,7 +16,7 @@ use rdkafka::{
 };
 use std::error::Error;
 use std::sync::Mutex;
-use std::{sync::RwLock, time::Duration};
+use std::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::span::EnteredSpan;
 use tracing::{debug, info_span};
@@ -201,7 +201,7 @@ impl OutputEndpoint for KafkaOutputEndpoint {
             .with_deferred_logging(|| {
                 self.kafka_producer.client().fetch_metadata(
                     Some(&self.config.topic),
-                    Duration::from_secs(self.config.initialization_timeout_secs as u64),
+                    self.config.initialization_timeout().as_std(),
                 )
             })
             .map_err(|e| {

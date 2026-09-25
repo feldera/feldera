@@ -19,7 +19,7 @@ INPUT_RECORDS = 500000
 # After restart, the implicit `now` clock connector uses this resolution (see
 # `now_endpoint_config` in the adapters crate). Stats only expose `stream` for
 # the endpoint; the effective resolution is the pipeline runtime setting.
-CLOCK_RESOLUTION_USECS_AFTER_RESTART = 3_000_000
+CLOCK_RESOLUTION_DURATION_AFTER_RESTART = "3s"
 
 
 def _clock_input_endpoint(pipeline: Pipeline):
@@ -147,14 +147,14 @@ class TestNow(unittest.TestCase):
         # then wait for two more clock ticks before validating again.
         pipeline.stop(force=False)
         runtime_cfg = pipeline.runtime_config()
-        runtime_cfg.clock_resolution_usecs = CLOCK_RESOLUTION_USECS_AFTER_RESTART
+        runtime_cfg.clock_resolution = CLOCK_RESOLUTION_DURATION_AFTER_RESTART
         pipeline.set_runtime_config(runtime_cfg)
         pipeline.start()
         pipeline.wait_for_status(PipelineStatus.RUNNING, timeout=300)
 
         assert (
-            pipeline.runtime_config().clock_resolution_usecs
-            == CLOCK_RESOLUTION_USECS_AFTER_RESTART
+            pipeline.runtime_config().clock_resolution
+            == CLOCK_RESOLUTION_DURATION_AFTER_RESTART
         )
         clock_status = _clock_input_endpoint(pipeline)
         assert clock_status.config is not None

@@ -3,7 +3,6 @@ use async_nats::jetstream::consumer as nats;
 use aws_lc_rs::signature::Ed25519KeyPair;
 use feldera_types::transport::nats as cfg;
 use std::sync::Arc;
-use std::time::Duration;
 
 /// Decodes a NATS seed ("SU..." for users) to the raw 32-byte Ed25519 seed.
 ///
@@ -55,8 +54,8 @@ fn crc16_xmodem(data: &[u8]) -> u16 {
 pub async fn translate_connect_options(
     config: &cfg::ConnectOptions,
 ) -> AnyResult<async_nats::ConnectOptions> {
-    let connection_timeout = Duration::from_secs(config.connection_timeout_secs);
-    let request_timeout = Duration::from_secs(config.request_timeout_secs);
+    let connection_timeout = config.connection_timeout().as_std();
+    let request_timeout = config.request_timeout().as_std();
 
     let mut options = async_nats::ConnectOptions::new()
         .connection_timeout(connection_timeout)
@@ -163,7 +162,7 @@ pub fn translate_consumer_options(config: &cfg::ConsumerConfig) -> nats::pull::O
         metadata: config.metadata.clone(),
         max_batch: config.max_batch.unwrap_or_default(),
         max_bytes: config.max_bytes.unwrap_or_default(),
-        max_expires: config.max_expires.unwrap_or_default(),
+        max_expires: config.max_expiry.map(|d| d.as_std()).unwrap_or_default(),
     }
 }
 

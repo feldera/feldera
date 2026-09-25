@@ -36,7 +36,7 @@ You can edit all pipeline settings when the pipeline is `Stopped` with storage c
   <TabItem value="api">
     Include only `runtime_config` or `program_config` fields in the body of a [PATCH `/v0/pipelines/{pipeline_name}`](/api/patch-pipeline), e.g. :
     ```bash
-      curl -X PATCH "http://localhost:8080/v0/pipelines/feature-engineering" -H "Content-Type: application/json" -d '{"runtime_config":{"workers":8,"fault_tolerance":{"model":"none","checkpoint_interval_secs":60},"resources":{"memory_mb_max":16000}},"program_config":{"profile":"dev"}}' -s -o /dev/null
+      curl -X PATCH "http://localhost:8080/v0/pipelines/feature-engineering" -H "Content-Type: application/json" -d '{"runtime_config":{"workers":8,"fault_tolerance":{"model":"none","checkpoint_interval":"60s"},"resources":{"memory_mb_max":16000}},"program_config":{"profile":"dev"}}' -s -o /dev/null
     ```
   </TabItem>
 </Tabs>
@@ -50,6 +50,28 @@ Make sure to appropriately size resource limits (memory and storage), the number
 <div className='theme-api-markdown' >
 <ApiSchema pointer="#/components/schemas/RuntimeConfig"/>
 </div>
+
+#### Durations
+
+Every setting that holds a length of time, such as
+`fault_tolerance.checkpoint_interval` or `clock_resolution`,
+takes a string made of a number and a unit: `"500ms"`, `"30s"`, `"1h30m"`,
+`"30d"`. The units are `ns`, `us`, `ms`, `s`, `m`, `h`, and `d`; several terms
+in a row are summed. The older spelling of each setting, such as
+`checkpoint_interval_secs`, is an alias of the current one and still works,
+as does a bare number.
+
+A bare number is read in the unit the older spelling implied, **whichever of
+the two names it is written under**: `clock_resolution_usecs: 1` and
+`clock_resolution: 1` both mean one microsecond, because the setting they
+reach is the same one. The current names carry no unit, so write the unit:
+`clock_resolution: "1s"`. Either bare form makes the pipeline log a warning
+quoting the duration to write instead, and a later release stops accepting
+them. Writing both spellings of one setting is an error.
+
+The Delta connector's `log_retention_duration` is the one exception: it passes
+its value through to Delta Lake, which has its own `"interval 30 days"`
+syntax.
 
 #### Runtime configuration edit restrictions
 

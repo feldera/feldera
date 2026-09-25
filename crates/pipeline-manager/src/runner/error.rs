@@ -294,7 +294,7 @@ impl Display for RunnerError {
                     Pipeline could not be provisioned within the timeout of {}s. Possible reasons:
 
                     1) It takes too long to bring up the pipeline (e.g., cloud resources) compared to the timeout.
-                       If so, try increasing `provisioning_timeout_secs` in the Pipeline settings.
+                       If so, try increasing `provisioning_timeout` (for example `20m`) in the Pipeline settings.
 
                     2) Your cloud environment could not provision some required resources like volumes or containers.
                        The pipeline logs might provide more insight if this is the case.

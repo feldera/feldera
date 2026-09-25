@@ -1,6 +1,18 @@
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+use crate::{
+    duration::{Duration, LegacyUnit},
+    duration_setting,
+};
+
+duration_setting!(duration_timeout, "timeout", LegacyUnit::Secs);
+duration_setting!(
+    duration_connect_timeout,
+    "connect_timeout",
+    LegacyUnit::Secs
+);
+
 // Subscription options docs: https://cloud.google.com/pubsub/docs/subscription-properties
 
 /// Google Pub/Sub input connector configuration.
@@ -32,11 +44,23 @@ pub struct PubSubInputConfig {
     /// gRPC channel pool size.
     pub pool_size: Option<u32>,
 
-    /// gRPC request timeout.
-    pub timeout_seconds: Option<u32>,
+    /// gRPC request timeout, for example `30s`.
+    #[serde(
+        default,
+        alias = "timeout_seconds",
+        deserialize_with = "duration_timeout",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub timeout: Option<Duration>,
 
-    /// gRPC connection timeout.
-    pub connect_timeout_seconds: Option<u32>,
+    /// gRPC connection timeout, for example `10s`.
+    #[serde(
+        default,
+        alias = "connect_timeout_seconds",
+        deserialize_with = "duration_connect_timeout",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub connect_timeout: Option<Duration>,
 
     /// Google Cloud project_id.
     ///
@@ -60,4 +84,52 @@ pub struct PubSubInputConfig {
     ///
     /// This option is mutually exclusive with the `snapshot` option.
     pub timestamp: Option<String>,
+}
+
+impl PubSubInputConfig {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Wraps the fields under test in the `subscription` key the config
+    /// requires.
+    fn config_json(fields: &str) -> String {
+        let separator = if fields.is_empty() { "" } else { ", " };
+        format!(r#"{{"subscription": "test_subscription"{separator}{fields}}}"#)
+    }
+
+    /// The gRPC request timeout has no default of its own: with neither field
+    /// set the accessor yields `None`, which leaves the Pub/Sub client's own
+    /// timeout in place.  Both spellings reach one field, so writing both is
+    /// rejected as a duplicate.
+    #[test]
+    fn timeout_accepts_both_spellings() {
+        for (fields, expected) in [
+            ("", None),
+            (r#""timeout": "750ms""#, Some(Duration::from_millis(750))),
+            (r#""timeout_seconds": 20"#, Some(Duration::from_secs(20))),
+        ] {
+            let json = config_json(fields);
+            let config: PubSubInputConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(config.timeout, expected, "parsing {json}");
+        }
+    }
+
+    /// See [`timeout_accepts_both_spellings`].
+    #[test]
+    fn connect_timeout_accepts_both_spellings() {
+        for (fields, expected) in [
+            ("", None),
+            (r#""connect_timeout": "5s""#, Some(Duration::from_secs(5))),
+            (
+                r#""connect_timeout_seconds": 30"#,
+                Some(Duration::from_secs(30)),
+            ),
+        ] {
+            let json = config_json(fields);
+            let config: PubSubInputConfig = serde_json::from_str(&json).unwrap();
+            assert_eq!(config.connect_timeout, expected, "parsing {json}");
+        }
+    }
 }

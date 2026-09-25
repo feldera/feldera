@@ -21,7 +21,7 @@ use rdkafka::{
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::sync::Mutex;
-use std::{cmp::max, sync::RwLock, time::Duration};
+use std::{cmp::max, sync::RwLock};
 use tokio_util::sync::CancellationToken;
 use tracing::span::EnteredSpan;
 use tracing::{debug, info, info_span, warn};
@@ -152,9 +152,7 @@ impl KafkaOutputEndpoint {
             .context()
             .deferred_logging
             .with_deferred_logging(|| {
-                kafka_producer.init_transactions(Duration::from_secs(
-                    config.initialization_timeout_secs.into(),
-                ))
+                kafka_producer.init_transactions(config.initialization_timeout().as_std())
             })?;
 
         // Read the number of partitions and the next step number.  We do this

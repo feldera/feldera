@@ -320,7 +320,7 @@ takes checkpoints (see [fault tolerance](/pipelines/fault-tolerance)). Without
 fault tolerance the pipeline takes a checkpoint only when the user requests one
 or suspends the pipeline. With fault tolerance the pipeline also takes
 checkpoints on its own, by default every 60 seconds; the
-`checkpoint_interval_secs` setting described on the
+`checkpoint_interval` setting described on the
 [fault tolerance](/pipelines/fault-tolerance) page changes the interval, and
 `null` disables automatic checkpoints.
 
