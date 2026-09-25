@@ -420,13 +420,38 @@ def build_pipeline(
     resources: Optional[Resources] = None,
     dev_tweaks: Optional[dict] = None,
     datafusion_memory_mb: Optional[int] = None,
+    udf_rust: str = "",
+    udf_toml: str = "",
 ) -> Pipeline:
+    """Create or replace a workload test pipeline from its tables and views.
+
+    Workload tests build their pipelines here instead of calling
+    `PipelineBuilder` directly, so that the CI settings it applies, such as
+    the provisioning timeout, reach every one of them.
+
+    :param pipeline_name: Name of the pipeline to create or replace.
+    :param tables: SQL fragments that precede the views, keyed by name; see
+        `generate_program`.
+    :param views: Views to define after the tables.
+    :param resources: Resource requests and limits, or None for the
+        instance's defaults.
+    :param dev_tweaks: Developer tweaks for the runtime, or None.
+    :param datafusion_memory_mb: Size of the pool for ad hoc queries, or None
+        for the default share of the memory budget.
+    :param udf_rust: Rust source of the program's user-defined functions, or
+        "" if it has none.
+    :param udf_toml: Cargo dependencies of those functions, or "" if they
+        need none.
+    :return: The pipeline, created but not yet started.
+    """
     sql = generate_program(tables, views)
 
     pipeline = PipelineBuilder(
         TEST_CLIENT,
         pipeline_name,
         sql=sql,
+        udf_rust=udf_rust,
+        udf_toml=udf_toml,
         compilation_profile=CompilationProfile.OPTIMIZED,
         runtime_config=RuntimeConfig(
             # Covers node auto-provisioning: a pipeline that needs a fresh
