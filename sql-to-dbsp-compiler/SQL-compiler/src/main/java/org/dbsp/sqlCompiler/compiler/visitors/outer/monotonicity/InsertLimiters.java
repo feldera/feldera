@@ -250,7 +250,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
         List<DBSPVariablePath> vars = Linq.map(inputs, i -> i.outputType().ref().var());
         List<DBSPExpression> v0 = Linq.map(vars, v -> v.deref().field(0));
         List<DBSPExpression> v1 = Linq.map(vars, v -> v.deref().field(1).borrow());
-        DBSPExpression and = ExpressionCompiler.makeBinaryExpressions(relNode, v0.get(0).getType(), DBSPOpcode.AND, v0);
+        DBSPExpression and = v0.get(0);
+        if (v0.size() > 1)
+            and = ExpressionCompiler.makeBinaryExpressions(relNode, v0.get(0).getType(), DBSPOpcode.AND, v0);
         DBSPExpression min = function.getResultType().minimumValue();
         DBSPExpression cond = new DBSPTupleExpression(and,
                 new DBSPIfExpression(relNode, and, function.call(v1), min).reduce(compiler));
@@ -325,7 +327,14 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPAntiJoinOperator operator) {
-        this.addBoundsForNonExpandedOperator(operator);
+        ReplacementDeltaExpansion expanded = this.getReplacement(operator);
+        OutputPort bound = null;
+        if (expanded != null)
+            bound = this.antiJoinBound(expanded.replacement.to(DBSPAntiJoinOperator.class));
+        if (bound != null)
+            this.markBound(operator.outputPort(), bound);
+        else
+            this.nonMonotone(operator);
         super.postorder(operator);
     }
 
@@ -932,6 +941,44 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
     }
 
+    /** Add the bound min(WL(left[key]), WL(right[key])) to an antijoin.
+     * @param antiJoin  Antijoin from the expanded circuit. */
+    @Nullable
+    OutputPort antiJoinBound(DBSPAntiJoinOperator antiJoin) {
+        MonotoneExpression monotone = this.expansionMonotoneValues.get(antiJoin);
+        if (monotone == null)
+            return null;
+        IMaybeMonotoneType output = Monotonicity.getBodyType(monotone);
+        List<OutputPort> keyBounds = new ArrayList<>();
+        for (OutputPort input: antiJoin.inputs) {
+            IMaybeMonotoneType inputProjection = Monotonicity.getBodyType(
+                    Objects.requireNonNull(this.expansionMonotoneValues.get(input)));
+            keyBounds.add(this.project(this.boundOf(antiJoin, input), inputProjection, output));
+        }
+        OutputPort bound = createMinBound(this.compiler, keyBounds);
+        this.addOperator(bound.node());
+        this.markBound(antiJoin.outputPort(), bound);
+        return bound;
+    }
+
+    /** Retain the right input of a left join.  The right trace is read with the keys of left
+     * changes, and, to add or retract the (l, NULL) rows, with the keys of the antijoin changes;
+     * so a right key may be GCed only when it is below WL(antijoin[key]).
+     * @param antiJoinBound  Bound of the antijoin of the expansion. */
+    void retainLeftJoinRight(DBSPLeftJoinOperator join, LeftJoinDeltaExpansion expansion,
+                             OutputPort antiJoinBound) {
+        DBSPAntiJoinOperator antiJoin = expansion.antiJoin;
+        IMaybeMonotoneType antiJoinProjection = Monotonicity.getBodyType(
+                Objects.requireNonNull(this.expansionMonotoneValues.get(antiJoin)));
+        IMaybeMonotoneType leftProjection = Monotonicity.getBodyType(
+                Objects.requireNonNull(this.expansionMonotoneValues.get(antiJoin.left())));
+        IMaybeMonotoneType rightProjection = Monotonicity.getBodyType(
+                Objects.requireNonNull(this.expansionMonotoneValues.get(antiJoin.right())));
+        PartiallyMonotoneTuple rightTarget = Monotonicity.commonKey(rightProjection, leftProjection);
+        OutputPort bound = this.project(antiJoinBound, antiJoinProjection, rightTarget);
+        this.createRetainKeys(join.getRelNode(), this.mapped(join.right()), rightTarget, bound);
+    }
+
     @Nullable
     DBSPSimpleOperator gcJoin(DBSPJoinBaseOperator join, CommonJoinDeltaExpansion expansion) {
         OutputPort leftLimiter = this.bound.get(join.left());
@@ -944,7 +991,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
         OutputPort right = this.mapped(join.right());
         DBSPJoinBaseOperator result = join.withInputs(Linq.list(left, right), false)
                 .to(DBSPJoinBaseOperator.class);
-        if (leftLimiter != null) {
+        // A left join retains its right input with the bound of its antijoin
+        if (leftLimiter != null && !join.is(DBSPLeftJoinOperator.class)) {
             MonotoneExpression leftMonotone = this.expansionMonotoneValues.get(
                     expansion.getLeftIntegrator().input());
             // Yes, the limit of the left input is applied to the right one.
@@ -990,7 +1038,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.processJoin(expansion.leftDelta);
         this.processJoin(expansion.rightDelta);
         this.processJoin(expansion.join);
-        this.addBounds(null, expansion.antiJoin, 0);
+        OutputPort antiJoinBound = this.antiJoinBound(expansion.antiJoin);
+        if (antiJoinBound != null)
+            this.retainLeftJoinRight(join, expansion, antiJoinBound);
         this.addBounds(null, expansion.map, 0);
         OutputPort limiter = this.processSumOrDiff(expansion.sum);
         if (limiter != null)
@@ -2019,12 +2069,16 @@ public class InsertLimiters extends CircuitCloneVisitor {
             List<DBSPExpression> fields = new ArrayList<>();
             int currentIndex = 0;
             for (int i = 0; i < dest.size(); i++) {
-                if (dest.getFieldType(i).mayBeMonotone()) {
+                IMaybeMonotoneType destField = dest.getFieldType(i);
+                if (destField.mayBeMonotone() && !src.getFieldType(i).mayBeMonotone() && isEmptyTuple(destField)) {
+                    // The bound of an empty tuple is the empty tuple
+                    fields.add(destField.getType().to(DBSPTypeTupleBase.class).makeTuple());
+                } else if (destField.mayBeMonotone()) {
                     final int field = i;
                     Utilities.enforce(src.getFieldType(i).mayBeMonotone(),
                             () -> "Destination field " + field + " is monotone but source field is not: " +
                                     sourceProjection + " -> " + destinationProjection);
-                    fields.add(this.project(source.field(currentIndex), src.getFieldType(i), dest.getFieldType(i)));
+                    fields.add(this.project(source.field(currentIndex), src.getFieldType(i), destField));
                 }
                 if (src.getFieldType(i).mayBeMonotone()) {
                     currentIndex++;
@@ -2069,6 +2123,23 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPVariablePath var = this.getLimiterDataOutputType(limit).ref().var();
         DBSPExpression proj = this.project(var.deref(), source, destination);
         return this.createApply(limit, proj.closure(var));
+    }
+
+    /** True if {@code type} describes an empty tuple. */
+    static boolean isEmptyTuple(IMaybeMonotoneType type) {
+        return type.is(PartiallyMonotoneTuple.class) && type.to(PartiallyMonotoneTuple.class).size() == 0;
+    }
+
+    /** Create an operator computing the pointwise minimum of bounds that have the same type.
+     * The operator is not inserted in the circuit.
+     * @param bounds  Bounds to combine. */
+    public static OutputPort createMinBound(DBSPCompiler compiler, List<OutputPort> bounds) {
+        DBSPType type = bounds.get(0).outputType().to(DBSPTypeTupleBase.class).getFieldType(1);
+        List<DBSPVariablePath> variables = Linq.map(bounds, b -> type.ref().var());
+        List<DBSPExpression> values = Linq.map(variables, DBSPExpression::deref);
+        DBSPVariablePath[] vars = variables.toArray(new DBSPVariablePath[0]);
+        DBSPClosureExpression min = combineMin(values).closure(vars);
+        return createApplyN(compiler, bounds, min);
     }
 
     /** Given a list of expressions, combine them by applying this.min() to them pairwise */
@@ -2117,18 +2188,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPType outputType = out.getProjectedType();
         Utilities.enforce(outputType != null);
 
-        List<DBSPVariablePath> variables = new ArrayList<>();
         List<OutputPort> projected = new ArrayList<>();
-        for (int i = 0; i < expanded.inputs.size(); i++) {
-            variables.add(outputType.ref().var());
+        for (int i = 0; i < expanded.inputs.size(); i++)
             projected.add(this.project(limiters.get(i), mono.get(i), out));
-        }
-
-        List<DBSPExpression> inputs = Linq.map(variables, DBSPExpression::deref);
-        DBSPVariablePath[] vars = variables.toArray(new DBSPVariablePath[0]);
-        DBSPClosureExpression min = combineMin(inputs).closure(vars);
-
-        OutputPort apply = createApplyN(compiler, projected, min);
+        OutputPort apply = createMinBound(this.compiler, projected);
         this.addOperator(apply.node());
         this.markBound(expanded.outputPort(), apply);
         return apply;
