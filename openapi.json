@@ -15712,6 +15712,14 @@
             "description": "Usage fraction that triggers expansion. Defaults to 0.8.",
             "default": null,
             "nullable": true
+          },
+          "scale_threshold_available_mb": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Available storage in Megabytes below which expansion triggers, whatever\nthe usage fraction. Unset by default.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
           }
         }
       },
