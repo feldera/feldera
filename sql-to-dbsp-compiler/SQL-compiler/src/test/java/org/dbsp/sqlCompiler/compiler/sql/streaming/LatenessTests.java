@@ -281,9 +281,9 @@ public class LatenessTests  extends StreamingTestBase {
 
             @Override
             public void endVisit() {
-                // MIN and ARG_MIN need the same end of the range, and so do MAX and ARG_MAX,
-                // so two retains cover the four aggregates.
-                Assert.assertEquals(2, this.retain);
+                // MIN and MAX read the same input but keep opposite ends of the range below the
+                // waterline, and so do ARG_MIN and ARG_MAX; each aggregate keeps its own retain.
+                Assert.assertEquals(4, this.retain);
             }
         });
         ccs.step("INSERT INTO T VALUES (1, 'a', 20), (1, 'b', 21);", """
@@ -323,9 +323,9 @@ public class LatenessTests  extends StreamingTestBase {
 
             @Override
             public void endVisit() {
-                // MIN and ARG_MIN need the same end of the range, and so do MAX and ARG_MAX,
-                // so two retains cover the four aggregates.
-                Assert.assertEquals(2, this.retain);
+                // MIN and MAX read the same input but keep opposite ends of the range below the
+                // waterline, and so do ARG_MIN and ARG_MAX; each aggregate keeps its own retain.
+                Assert.assertEquals(4, this.retain);
             }
         });
         // The aggregate of the empty table is a row of nulls
