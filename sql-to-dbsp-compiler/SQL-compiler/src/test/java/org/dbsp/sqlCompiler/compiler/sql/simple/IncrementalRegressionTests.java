@@ -2735,4 +2735,64 @@ public class IncrementalRegressionTests extends SqlIoTest {
             });
         }
     }
+
+    /** DATEDIFF(DAY, d, literal) decreases as d grows, so it has no waterline.
+     * The program runs with and without LATENESS; no input row is late. */
+    @Test
+    public void datediffLiteralSecond() {
+        String sql = """
+                CREATE TABLE T (ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR);
+                CREATE VIEW V AS SELECT DATEDIFF(DAY, CAST(ts AS DATE), DATE '2030-01-01') AS d, COUNT(*) AS c
+                FROM T GROUP BY DATEDIFF(DAY, CAST(ts AS DATE), DATE '2030-01-01');""";
+        for (String program : new String[] { sql, sql.replace(" LATENESS INTERVAL 1 HOUR", "") }) {
+            var ccs = this.getCCS(program).compactAfterEachStep();
+            ccs.step("INSERT INTO T VALUES('2024-01-10 12:00:00');", """
+                     d    | c | weight
+                    ---------------------
+                     2183 | 1 | 1""");
+            ccs.step("INSERT INTO T VALUES('2024-01-20 12:00:00');", """
+                     d    | c | weight
+                    ---------------------
+                     2173 | 1 | 1""");
+            ccs.step("INSERT INTO T VALUES('2024-01-20 13:00:00');", """
+                     d    | c | weight
+                    ---------------------
+                     2173 | 1 | -1
+                     2173 | 2 | 1""");
+        }
+    }
+
+    /** DATEDIFF(unit, constant, d) grows with d, so the GROUP BY keeps a waterline. */
+    @Test
+    public void datediffConstantFirst() {
+        String[][] cases = {
+                { "DAY", "DATE '2000-01-01'" },
+                { "MONTH", "DATE '2000-01-01'" },
+                { "QUARTER", "DATE '2000-01-01'" },
+                { "DAY", "CAST(TIMESTAMP '2000-01-01 00:00:00' AS DATE)" },
+        };
+        for (String[] c : cases) {
+            String unit = c[0] + " " + c[1];
+            String sql = """
+                    CREATE TABLE T (ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR);
+                    CREATE VIEW V AS SELECT COUNT(*) AS c FROM T
+                    GROUP BY DATEDIFF(UNIT, FIRST, CAST(ts AS DATE));"""
+                    .replace("UNIT", c[0])
+                    .replace("FIRST", c[1]);
+            CompilerCircuit cc = this.getCC(sql);
+            cc.visit(new CircuitVisitor(cc.compiler) {
+                int retainKeys = 0;
+
+                @Override
+                public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                    this.retainKeys++;
+                }
+
+                @Override
+                public void endVisit() {
+                    Assert.assertEquals(unit, 1, this.retainKeys);
+                }
+            });
+        }
+    }
 }
