@@ -12,7 +12,7 @@ use crate::{
     profile::Profiler,
 };
 use anyhow::Error as AnyError;
-use crossbeam::channel::{Receiver, RecvTimeoutError, Select, Sender, TryRecvError, bounded};
+use crossbeam::channel::{Receiver, Select, Sender, TryRecvError, bounded};
 use feldera_buffer_cache::ThreadType;
 use feldera_ir::LirCircuit;
 use feldera_storage::{FileCommitter, StorageBackend, StoragePath};
@@ -1549,13 +1549,6 @@ impl DBSPHandle {
             .is_some_and(|runtime| runtime.panicked())
     }
 
-    /// How often to check for a panic while waiting for a worker's reply.
-    ///
-    /// A worker waiting on a background thread that panicked, e.g. a merger
-    /// that ran out of storage, never replies and never exits, so waiting on
-    /// the reply channels alone would block forever.
-    const PANIC_POLL_INTERVAL: Duration = Duration::from_millis(100);
-
     fn broadcast_command<F>(&mut self, command: Command, mut handler: F) -> Result<(), DbspError>
     where
         F: FnMut(usize, Response),
@@ -1580,11 +1573,14 @@ impl DBSPHandle {
         // Use `Select` to wait for responses from all workers simultaneously.
         // This way if one of the workers panics, leaving other workers waiting
         // for it in exchange operators, we won't deadlock waiting for these
-        // workers.
+        // workers.  The panic receiver covers a worker that never replies
+        // because it is blocked on a background thread that panicked.
+        let panic_receiver = self.runtime.as_ref().unwrap().panic_receiver();
         let mut select = Select::new();
         for receiver in self.status_receivers.iter() {
             select.recv(receiver);
         }
+        let panic_index = select.recv(&panic_receiver);
 
         fn handle_panic(this: &mut DBSPHandle) -> Result<(), DbspError> {
             // Retrieve panic info before killing the circuit.
@@ -1596,15 +1592,13 @@ impl DBSPHandle {
 
         // Receive responses.
         for _ in 0..self.status_receivers.len() {
-            let ready = loop {
-                if let Ok(ready) = select.select_timeout(Self::PANIC_POLL_INTERVAL) {
-                    break ready;
-                }
-                if self.panicked() {
-                    return handle_panic(self);
-                }
-            };
+            let ready = select.select();
             let worker = ready.index();
+            // A panic may preempt pending replies; the command fails either way.
+            if worker == panic_index {
+                let _ = ready.recv(&panic_receiver);
+                return handle_panic(self);
+            }
 
             match ready.recv(&self.status_receivers[worker]) {
                 Err(_) => return handle_panic(self),
@@ -1638,13 +1632,18 @@ impl DBSPHandle {
         }
         self.runtime.as_ref().unwrap().unpark_worker(worker);
 
-        let reply = loop {
-            match self.status_receivers[worker].recv_timeout(Self::PANIC_POLL_INTERVAL) {
-                Err(RecvTimeoutError::Timeout) if !self.panicked() => (),
-                result => break result,
-            }
-        };
-        let reply = match reply {
+        // The worker never replies if it is blocked on a background thread
+        // that panicked.
+        let panic_receiver = self.runtime.as_ref().unwrap().panic_receiver();
+        let mut select = Select::new();
+        let reply_index = select.recv(&self.status_receivers[worker]);
+        select.recv(&panic_receiver);
+        let ready = select.select();
+        if ready.index() != reply_index {
+            let _ = ready.recv(&panic_receiver);
+            return handle_panic(self);
+        }
+        let reply = match ready.recv(&self.status_receivers[worker]) {
             Err(_) => return handle_panic(self),
             Ok(Err(e)) => {
                 let _ = self.kill_inner();
@@ -3030,6 +3029,54 @@ pub(crate) mod tests {
         }
     }
 
+    /// A background panic must fail a later `unicast_command`, not just the
+    /// command that was waiting when it happened.
+    #[test]
+    fn test_unicast_command_after_background_panic() {
+        let (panic_tx, panic_rx) = std::sync::mpsc::channel();
+        let (mut handle, _) = Runtime::init_circuit(1, move |circuit| {
+            let (_stream, _input_handle) = circuit.add_input_map::<u64, u64, i64, _>(|v, u| {
+                *v = ((*v as i64) + *u) as u64;
+            });
+            if Runtime::worker_index() == 0 {
+                let runtime = Runtime::runtime().unwrap();
+                let panic_tx = panic_tx.clone();
+                runtime.tokio_merger_runtime().unwrap().spawn(async move {
+                    TOKIO_WORKER_INDEX
+                        .scope(0, async move {
+                            let _ =
+                                std::panic::catch_unwind(|| panic!("injected background panic"));
+                            let _ = panic_tx.send(());
+                        })
+                        .await;
+                });
+            }
+            Ok(())
+        })
+        .unwrap();
+
+        panic_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("timed out waiting for panic task to complete");
+
+        // Call on another thread, so that a hang fails the test instead of
+        // stalling it forever.
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(handle.get_current_balancer_policies());
+        });
+        let result = rx
+            .recv_timeout(Duration::from_secs(30))
+            .expect("unicast_command hung after a background panic");
+        assert!(
+            matches!(
+                result,
+                Err(DbspError::Runtime(RuntimeError::WorkerPanic { .. }))
+            ),
+            "expected WorkerPanic, got {result:?}"
+        );
+    }
+
     /// Check that a panic in the tokio merger runtime is propagated to the client.
     #[test]
     fn test_panic_in_tokio_merger_runtime() {
@@ -3088,7 +3135,7 @@ pub(crate) mod tests {
     /// merger in the middle of a merge.  Within the same step, the worker
     /// keeps inserting batches into the spine until backpressure blocks it on
     /// merges that will never happen, so the worker never replies.  Only the
-    /// flag that the merger's panic raises can end the wait.
+    /// runtime's panic signal can end the wait.
     #[test]
     fn test_merger_panic_while_worker_waits_for_merges() {
         const MERGER_PANIC: &str = "injected merger panic";
