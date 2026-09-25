@@ -449,6 +449,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
                 autoscaling: val.val23.then_some(AutoscalingConfig {
                     storage: Some(StorageAutoscalingConfig {
                         scale_threshold: Some(0.8),
+                        scale_threshold_available_mb: Some(10000),
                         scale_factor: Some(2.0),
                     }),
                 }),
@@ -2703,7 +2704,13 @@ async fn storage_mb_min_edit_restricted_to_cleared_storage() {
     );
 
     // Changing the autoscaling policy is allowed.
-    let policy = json!({ "storage": { "scale_threshold": 0.9, "scale_factor": 3.0 } });
+    let policy = json!({
+        "storage": {
+            "scale_threshold": 0.9,
+            "scale_threshold_available_mb": 20000,
+            "scale_factor": 3.0
+        }
+    });
     update(json!({
         "resources": {
             "storage_mb_min": 1000,

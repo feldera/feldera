@@ -5928,6 +5928,11 @@ export type StorageAutoscalingConfig = {
    * Usage fraction that triggers expansion. Defaults to 0.8.
    */
   scale_threshold?: number | null
+  /**
+   * Available storage in Megabytes below which expansion triggers, whatever
+   * the usage fraction. Unset by default.
+   */
+  scale_threshold_available_mb?: number | null
 }
 
 /**
