@@ -78,6 +78,10 @@ down`.
   or local builds drift from the pre-commit hook and the release images.
 - `docker compose` works too, but it names the container
   `devcontainer-workspace-1` with hyphens.
+- Rust links with mold, configured in `~/.cargo/config.toml` inside the image.
+  It applies to the workspace and to the crates the manager compiles per
+  pipeline. To compare against GNU ld, run `cargo build` with
+  `-C link-arg=-fuse-ld=bfd` instead.
 - The Kafka connector tests need Redpanda, which sits behind the `redpanda`
   profile in `deploy/docker-compose.yml` and stays off otherwise. `--profile`
   is a global option, so it goes before the subcommand:
