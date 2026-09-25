@@ -1,4 +1,7 @@
+import logging
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 
 class FelderaEdition(Enum):
@@ -12,9 +15,19 @@ class FelderaEdition(Enum):
     The Enterprise version of Feldera.
     """
 
+    ENTERPRISE_DEV = "EnterpriseDev"
+    """
+    The Enterprise edition for development use.
+    """
+
     OPEN_SOURCE = "Open source"
     """
     The open source version of Feldera.
+    """
+
+    UNKNOWN = "Unknown"
+    """
+    An edition this client does not recognize, reported by a newer server.
     """
 
     @staticmethod
@@ -28,10 +41,12 @@ class FelderaEdition(Enum):
             if member.value.lower() == value.lower():
                 member.error = error
                 return member
-        raise ValueError(f"Unknown value '{value}' for enum {FelderaEdition.__name__}")
+        # A newer server may report an edition this client predates; connecting must still work.
+        logger.warning(f"Unknown Feldera edition '{value}'")
+        return FelderaEdition.UNKNOWN
 
     def is_enterprise(self):
-        return self == FelderaEdition.ENTERPRISE
+        return self in (FelderaEdition.ENTERPRISE, FelderaEdition.ENTERPRISE_DEV)
 
 
 class FelderaConfig:

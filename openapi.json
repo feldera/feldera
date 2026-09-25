@@ -9479,7 +9479,7 @@
           },
           "edition": {
             "type": "string",
-            "description": "Feldera edition: \"Open source\" or \"Enterprise\""
+            "description": "Feldera edition: \"Open source\", \"Enterprise\" or \"EnterpriseDev\""
           },
           "license_validity": {
             "allOf": [
@@ -12078,6 +12078,10 @@
             "type": "string",
             "description": "URL that navigates the user to extend / upgrade their license",
             "nullable": true
+          },
+          "is_dev": {
+            "type": "boolean",
+            "description": "Whether the license only permits development use."
           },
           "is_trial": {
             "type": "boolean",

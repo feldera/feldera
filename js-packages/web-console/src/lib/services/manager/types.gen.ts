@@ -734,7 +734,7 @@ export type Configuration = {
    */
   conceptualhq: string
   /**
-   * Feldera edition: "Open source" or "Enterprise"
+   * Feldera edition: "Open source", "Enterprise" or "EnterpriseDev"
    */
   edition: string
   license_validity?: LicenseValidity | null
@@ -3384,6 +3384,10 @@ export type LicenseInformation = {
    * URL that navigates the user to extend / upgrade their license
    */
   extension_url?: string | null
+  /**
+   * Whether the license only permits development use.
+   */
+  is_dev?: boolean
   /**
    * Whether the license is a trial
    */
