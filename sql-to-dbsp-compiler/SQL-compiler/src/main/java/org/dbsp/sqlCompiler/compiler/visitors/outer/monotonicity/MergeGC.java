@@ -14,10 +14,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitWithGraphsVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -183,15 +179,7 @@ public class MergeGC extends Passes {
             DBSPIntegrateTraceRetainKeysOperator first = operators.get(0);
             OutputPort left = this.mapped(first.left());
             List<OutputPort> rights = Linq.map(operators, o -> this.mapped(o.right()));
-
-            List<DBSPVariablePath> variables = new ArrayList<>();
-            for (var r: rights)
-                variables.add(r.outputType().to(DBSPTypeTuple.class).getFieldType(1).ref().var());
-
-            List<DBSPExpression> dataFields = Linq.map(variables, DBSPExpression::deref);
-            DBSPVariablePath[] vars = variables.toArray(new DBSPVariablePath[0]);
-            DBSPClosureExpression min = InsertLimiters.combineMin(dataFields).closure(vars);
-            OutputPort apply = InsertLimiters.createApplyN(this.compiler, rights, min);
+            OutputPort apply = InsertLimiters.createMinBound(this.compiler, rights);
             this.addOperator(apply.node());
             return new DBSPIntegrateTraceRetainKeysOperator(
                     first.getRelNode(), first.getClosureFunction(), left, apply, first.accumulate);
