@@ -816,13 +816,15 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                     reduced = expression.replaceArguments(reducedArgs);
                 }
 
-                if (name.startsWith("tumble_")
-                        || name.startsWith("datediff_")
-                        || name.startsWith("timestamp_diff_")) {
-                    if (expression.arguments[1].is(DBSPLiteral.class)) {
-                        resultType = new MonotoneType(expression.getType());
-                        reduced = expression.replaceArguments(reducedArgs);
-                    }
+                // tumble_(ts, interval) is monotone in ts for a constant interval
+                if (name.startsWith("tumble_") && this.constantExpressions.contains(expression.arguments[1])) {
+                    resultType = new MonotoneType(expression.getType());
+                    reduced = expression.replaceArguments(reducedArgs);
+                }
+                // datediff_(left, right) computes right - left: monotone in right for a constant left
+                if (name.startsWith("datediff_") && this.constantExpressions.contains(expression.arguments[0])) {
+                    resultType = new MonotoneType(expression.getType());
+                    reduced = expression.replaceArguments(reducedArgs);
                 }
             }
             if (allArgsConstant && isDeterministic) {
