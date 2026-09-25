@@ -2735,4 +2735,195 @@ public class IncrementalRegressionTests extends SqlIoTest {
             });
         }
     }
+
+    /** When NOW advances, a temporal filter retracts rows below the data waterline.
+     * No input row is late.
+     * Expected outputs validated with Postgres, with NOW() replaced by each step's value. */
+    @Test
+    public void issue7238() {
+        String sql = """
+                CREATE TABLE T (ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE);
+                CREATE LOCAL VIEW V AS SELECT ts FROM T WHERE ts >= NOW() - INTERVAL 20 MINUTES;
+                CREATE VIEW C AS SELECT ts, COUNT(*) AS c FROM V GROUP BY ts;""";
+        String[] programs = {
+                // As written
+                sql,
+                // Without LATENESS
+                sql.replace(" LATENESS INTERVAL 1 MINUTE", ""),
+                // With a nullable timestamp
+                sql.replace(" NOT NULL", "")
+        };
+        for (String program : programs) {
+            var ccs = this.getCCS(program).compactAfterEachStep();
+            ccs.step("""
+                    INSERT INTO now VALUES('2024-01-01 12:00:00');
+                    INSERT INTO T VALUES('2024-01-01 11:45:00');
+                    INSERT INTO T VALUES('2024-01-01 11:50:00');""",
+                    """
+                     ts                  | c | weight
+                    ---------------------------------
+                     2024-01-01 11:45:00 | 1 | 1
+                     2024-01-01 11:50:00 | 1 | 1""");
+            ccs.step("INSERT INTO T VALUES('2024-01-01 11:58:00');",
+                    """
+                     ts                  | c | weight
+                    ---------------------------------
+                     2024-01-01 11:58:00 | 1 | 1""");
+            // The data waterline is 11:57; the window's lower edge moves to 11:50
+            ccs.step("INSERT INTO now VALUES('2024-01-01 12:10:00');",
+                    """
+                     ts                  | c | weight
+                    ---------------------------------
+                     2024-01-01 11:45:00 | 1 | -1""");
+        }
+    }
+
+    /** A row that leaves a temporal filter's window keeps the value it had in every other
+     * column, which can be below that column's waterline.  The program runs with and without
+     * LATENESS; no input row is late.
+     * Expected outputs validated with Postgres, with NOW() replaced by each step's value. */
+    @Test
+    public void issue7238OtherColumn() {
+        String sql = """
+                CREATE TABLE T (ts TIMESTAMP NOT NULL, x INT NOT NULL LATENESS 5);
+                CREATE LOCAL VIEW V AS SELECT x FROM T WHERE ts >= NOW() - INTERVAL 20 MINUTES;
+                CREATE VIEW C AS SELECT x, COUNT(*) AS c FROM V GROUP BY x;""";
+        for (String program : new String[] { sql, sql.replace(" LATENESS 5", "") }) {
+            var ccs = this.getCCS(program).compactAfterEachStep();
+            ccs.step("""
+                    INSERT INTO now VALUES('2024-01-01 12:00:00');
+                    INSERT INTO T VALUES('2024-01-01 11:45:00', 1);
+                    INSERT INTO T VALUES('2024-01-01 11:50:00', 100);""",
+                    """
+                     x   | c | weight
+                    -----------------
+                     1   | 1 | 1
+                     100 | 1 | 1""");
+            // The waterline of x is 95; the row with x = 1 leaves the window
+            ccs.step("INSERT INTO now VALUES('2024-01-01 12:10:00');",
+                    """
+                     x   | c | weight
+                    -----------------
+                     1   | 1 | -1""");
+        }
+    }
+
+    /** A temporal filter without a lower bound inserts the rows that enter its window,
+     * which can be below the data waterline.  The program runs with and without LATENESS;
+     * no input row is late.
+     * Expected outputs validated with Postgres, with NOW() replaced by each step's value. */
+    @Test
+    public void issue7238UpperBound() {
+        String sql = """
+                CREATE TABLE T (ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE);
+                CREATE LOCAL VIEW V AS SELECT ts FROM T WHERE ts <= NOW();
+                CREATE VIEW C AS SELECT ts, COUNT(*) AS c FROM V GROUP BY ts;""";
+        for (String program : new String[] { sql, sql.replace(" LATENESS INTERVAL 1 MINUTE", "") }) {
+            var ccs = this.getCCS(program).compactAfterEachStep();
+            ccs.step("""
+                    INSERT INTO now VALUES('2024-01-01 12:00:00');
+                    INSERT INTO T VALUES('2024-01-01 12:30:00');
+                    INSERT INTO T VALUES('2024-01-01 14:00:00');""",
+                    """
+                     ts | c | weight
+                    -----------------""");
+            // The data waterline is 13:59; 12:30 enters the window
+            ccs.step("INSERT INTO now VALUES('2024-01-01 12:45:00');",
+                    """
+                     ts                  | c | weight
+                    ---------------------------------
+                     2024-01-01 12:30:00 | 1 | 1""");
+        }
+    }
+
+    /** Temporal filters bound their output by the window's bounds. */
+    @Test
+    public void issue7238KeepsWaterline() {
+        String[][] cases = {
+                { "NOT NULL LATENESS INTERVAL 1 MINUTE", "ts >= NOW() - INTERVAL 20 MINUTES" },
+                { "NOT NULL", "ts >= NOW() - INTERVAL 20 MINUTES" },
+                { "LATENESS INTERVAL 1 MINUTE", "ts >= NOW() - INTERVAL 20 MINUTES" },
+                { "NOT NULL LATENESS INTERVAL 1 MINUTE", "ts <= NOW()" },
+        };
+        for (String[] c : cases) {
+            String sql = """
+                    CREATE TABLE T (ts TIMESTAMP COLUMN);
+                    CREATE LOCAL VIEW V AS SELECT ts FROM T WHERE CONDITION;
+                    CREATE VIEW C AS SELECT ts, COUNT(*) AS c FROM V GROUP BY ts;"""
+                    .replace("COLUMN", c[0])
+                    .replace("CONDITION", c[1]);
+            CompilerCircuit cc = this.getCC(sql);
+            cc.visit(new CircuitVisitor(cc.compiler) {
+                int retainKeys = 0;
+
+                @Override
+                public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
+                    this.retainKeys++;
+                }
+
+                @Override
+                public void endVisit() {
+                    // The GROUP BY integral
+                    Assert.assertEquals(c[0] + " " + c[1], 1, this.retainKeys);
+                }
+            });
+        }
+    }
+
+    /** The window key is a column in the middle of the row, which RewriteNow rebuilds
+     * after the window.  The program runs with and without LATENESS; no input row is late.
+     * Expected outputs validated with Postgres, with NOW() replaced by each step's value. */
+    @Test
+    public void issue7238MiddleKeyColumn() {
+        String sql = """
+                CREATE TABLE T (a INT NOT NULL, ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE, b INT);
+                CREATE VIEW V AS SELECT a, ts, b FROM T WHERE ts >= NOW() - INTERVAL 20 MINUTES;""";
+        for (String program : new String[] { sql, sql.replace(" LATENESS INTERVAL 1 MINUTE", "") }) {
+            var ccs = this.getCCS(program).compactAfterEachStep();
+            ccs.step("""
+                    INSERT INTO now VALUES('2024-01-01 12:00:00');
+                    INSERT INTO T VALUES(1, '2024-01-01 11:45:00', 7);
+                    INSERT INTO T VALUES(2, '2024-01-01 11:50:00', NULL);""",
+                    """
+                     a | ts                  | b    | weight
+                    -----------------------------------------
+                     1 | 2024-01-01 11:45:00 | 7    | 1
+                     2 | 2024-01-01 11:50:00 | NULL | 1""");
+            ccs.step("INSERT INTO now VALUES('2024-01-01 12:10:00');",
+                    """
+                     a | ts                  | b | weight
+                    -------------------------------------
+                     1 | 2024-01-01 11:45:00 | 7 | -1""");
+        }
+    }
+
+    /** A window bounded on both sides: rows leave at the lower edge and enter at the upper edge.
+     * The program runs with and without LATENESS; no input row is late.
+     * Expected outputs validated with Postgres, with NOW() replaced by each step's value. */
+    @Test
+    public void issue7238BothBounds() {
+        String sql = """
+                CREATE TABLE T (ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE);
+                CREATE LOCAL VIEW V AS SELECT ts FROM T
+                WHERE ts >= NOW() - INTERVAL 20 MINUTES AND ts <= NOW() + INTERVAL 20 MINUTES;
+                CREATE VIEW C AS SELECT ts, COUNT(*) AS c FROM V GROUP BY ts;""";
+        for (String program : new String[] { sql, sql.replace(" LATENESS INTERVAL 1 MINUTE", "") }) {
+            var ccs = this.getCCS(program).compactAfterEachStep();
+            ccs.step("""
+                    INSERT INTO now VALUES('2024-01-01 12:00:00');
+                    INSERT INTO T VALUES('2024-01-01 11:45:00');
+                    INSERT INTO T VALUES('2024-01-01 12:30:00');""",
+                    """
+                     ts                  | c | weight
+                    ---------------------------------
+                     2024-01-01 11:45:00 | 1 | 1""");
+            // The data waterline is 12:29; the window moves to [11:50, 12:30]
+            ccs.step("INSERT INTO now VALUES('2024-01-01 12:10:00');",
+                    """
+                     ts                  | c | weight
+                    ---------------------------------
+                     2024-01-01 11:45:00 | 1 | -1
+                     2024-01-01 12:30:00 | 1 | 1""");
+        }
+    }
 }
