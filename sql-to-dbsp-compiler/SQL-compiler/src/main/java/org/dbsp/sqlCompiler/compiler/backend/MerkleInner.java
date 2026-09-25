@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.util.HashString;
 import org.dbsp.util.JsonStream;
 import org.dbsp.util.Logger;
@@ -27,6 +28,13 @@ public class MerkleInner extends ToJsonInnerVisitor {
                 .append(result)
                 .newline();
         return new HashString(result);
+    }
+
+    /** Under {@code --gen2} an aggregate operator keeps its per-aggregate list, which has no
+     * Rust form; hash the fold the Rust backend packs such a list into. */
+    @Override
+    public VisitDecision preorder(DBSPAggregateList list) {
+        return this.preorder((IDBSPInnerNode) list.asFold(this.compiler));
     }
 
     @Override

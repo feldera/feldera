@@ -175,6 +175,9 @@ public class CircuitOptimizer extends Passes {
         this.add(new ValidateRecursiveOperators(compiler));
         this.add(new LowerAsof(compiler));
         this.add(new LowerCircuitVisitor(compiler));
+        // The Gen-2 engine reads the aggregate list, which states that the aggregates of a group
+        // are independent reductions
+        this.add(new Conditional(compiler, new PackAggregateLists(compiler), () -> !options.ioOptions.gen2));
         this.add(new AdjustSqlIndex(compiler).circuitRewriter(true));
         this.add(new OptimizeWithGraph(compiler, g -> new BalancedJoins(compiler, g), 1));
         this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
@@ -192,12 +195,19 @@ public class CircuitOptimizer extends Passes {
         // The canonical form is needed if we want the Merkle hashes to be "stable".
         this.add(new CanonicalForm(compiler).getCircuitRewriter(false));
         this.add(new ConstantViews(compiler));
-        this.add(new StaticDeclarations(compiler, new ImplementStatics(compiler, !compiler.options.ioOptions.multiCrates())));
+        // A static spares the Rust code from rebuilding a constant on every call; the Gen-2 engine
+        // evaluates a closure over a whole batch, and a constant kept inline leaves the closure
+        // self-contained.
+        this.add(new Conditional(compiler,
+                new StaticDeclarations(compiler, new ImplementStatics(compiler, !options.ioOptions.multiCrates())),
+                () -> !options.ioOptions.gen2));
         // From now on we cannot really change the graph anymore.
 
         // this.add(new TestSerialize(compiler));
         this.add(new CheckHints(compiler));
         this.add(new ComparatorDeclarations(compiler, new DeclareComparators(compiler)));
+        // Before the Merkle hashes, so that they hash the circuit the Gen-2 engine reads
+        this.add(new Conditional(compiler, new Gen2Passes(compiler), () -> options.ioOptions.gen2));
         this.add(new CompactNames(compiler));
         this.add(new MerkleOuter(compiler, true));
         this.add(new MerkleOuter(compiler, false));
