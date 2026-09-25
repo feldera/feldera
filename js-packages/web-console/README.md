@@ -81,6 +81,25 @@ bun playwright test tests/pipelineDeleted.e2e.ts --headed
 bun playwright test tests/pipelineDeleted.e2e.ts --debug
 ```
 
+Specs under `tests/auth/` need a manager that requires a login, so
+`bun run test-e2e` skips them. They sign in through `scripts/dummy_oidc.py`,
+a development-only provider whose login page grants any identity on click.
+From the repository root:
+
+```bash
+uv run scripts/dummy_oidc.py &   # issuer http://localhost:9876
+AUTH_PROVIDER=generic-oidc FELDERA_AUTH_CLIENT_ID=feldera \
+  FELDERA_AUTH_ISSUER=http://localhost:9876 FELDERA_AUTH_AUDIENCE=feldera-api \
+  cargo run --bin pipeline-manager
+```
+
+Then, in another shell, from `js-packages/web-console` (the specs target
+`http://localhost:8080` unless `PLAYWRIGHT_APP_ORIGIN` is set):
+
+```bash
+bun run test-e2e-auth
+```
+
 ### Build issues
 
 If you experience unexpected build issues, run `bun run clean` from the repository root and make sure you have the supported Node.js (v20) and Bun.js (1.3.3) versions installed:
