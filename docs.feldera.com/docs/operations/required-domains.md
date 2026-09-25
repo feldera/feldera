@@ -3,7 +3,7 @@
 To use Feldera in a network that requires you to allowlist new domains, ask your network administrator to allowlist the following hostnames (all over `https`, port `443`).
 
 ## Standard Usage
-- `https://cloud1.feldera.com`: License key validation and usage-telemetry server. (**Enterprise Only**)
+- `https://cloud1.feldera.com`: License key validation and usage-telemetry server; see [Data Sent to Feldera](/operations/telemetry). (**Enterprise Only**)
 - `https://public.ecr.aws/feldera/*`: The Feldera Enterprise Helm Chart pulls images from this repository. (**Enterprise Only**)
 
 ## Custom Runtime Usage (Optional)
