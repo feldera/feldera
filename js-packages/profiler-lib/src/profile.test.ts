@@ -1495,6 +1495,39 @@ describe('CircuitProfile.byName', () => {
         // The expanded label stays unchanged
         expect(outer.operation).toBe('region')
     })
+
+    // The adapters wrap every output view in a region labeled with the view's name.
+    it.each([
+        { label: 'create view report', names: ['report'], expected: 'create view report' },
+        { label: 'create materialized view Report', names: ['report'], expected: 'create materialized view Report' },
+        { label: 'create view report', names: ['report', 'port'], expected: 'create view report port' },
+        // A materialized view's region also holds its first index, named freely by the user.
+        { label: 'create materialized view report', names: ['report', 'report_index'], expected: 'create materialized view report with index' },
+        { label: 'create materialized view report', names: ['by_day'], expected: 'create materialized view report with index' },
+        { label: 'create materialized view my report', names: ['my report'], expected: 'create materialized view my report' },
+        { label: 'Create Materialized View report', names: ['by_day'], expected: 'Create Materialized View report with index' },
+        { label: 'register materialized view report', names: ['by_day'], expected: 'register materialized view report with index' },
+        { label: 'create index by_day', names: ['by_day'], expected: 'create index by_day' },
+        { label: 'create materialized index by_day', names: ['by_day', 'other'], expected: 'create materialized index by_day other' },
+        // A name that only contains a label word is still shown.
+        { label: 'create view report', names: ['reports'], expected: 'create view report reports' }
+    ])('collapsed $label with $names reads $expected', ({ label, names, expected }) => {
+        const profile = new CircuitProfile(1, 'n')
+        const region = new ComplexNode('c1', label, 1)
+        profile.complexNodes.set(region.id, region)
+        const mir: Record<string, never> = {}
+        names.forEach((name, i) => {
+            const node = new SimpleNode(`n${i}`, 'sink', 1)
+            profile.simpleNodes.set(node.id, node)
+            profile.parents.set(node.id, region.id)
+            profile.byPersistentId.set(`pid${i}`, node)
+            mir[`s${i}`] = mirNode(`pid${i}`, { view: name })
+        })
+
+        profile.setDataflow({ calcite_plan: {}, mir })
+
+        expect(region.collapsedOperation()).toBe(expected)
+    })
 })
 
 /** The arguments of `displaysNodeInformation` in order, named for the reader. */
