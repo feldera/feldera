@@ -90,7 +90,10 @@ pub use filter_map::FilterMap;
 pub use neighborhood::{NeighborhoodDescrBox, NeighborhoodDescrStream};
 pub use output::OutputHandle;
 pub use plus::{Minus, Plus};
-pub use recursive::RecursiveStreams;
+pub use recursive::{
+    ClosedVar, NoReport, RecursionBuilder, RecursionReport, RecursionVars, RecursiveStreams,
+    RecursiveVar, Reporting,
+};
 pub use sample::{MAX_QUANTILES, MAX_SAMPLE_SIZE};
 pub use sum::Sum;
 pub use time_series::OrdPartitionedIndexedZSet;
