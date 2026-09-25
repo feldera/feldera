@@ -92,15 +92,34 @@ impl Checkpointer {
     }
 
     pub(super) fn measure_checkpoint_storage_use(&self, uuid: uuid::Uuid) -> Result<u64, Error> {
-        let mut usage = 0;
-        StorageError::ignore_notfound(self.backend.list(
+        let mut n_errors = 0;
+        match Self::measure_storage_path_use(
+            &*self.backend,
             &Self::checkpoint_dir(uuid),
-            &mut |entry| {
-                if let Ok(StorageFileType::File { size }) = entry.file_type {
-                    usage += size;
-                }
-            },
-        ))?;
+            &mut n_errors,
+        ) {
+            Ok(usage) => Ok(usage),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(0),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    fn measure_storage_path_use(
+        backend: &dyn StorageBackend,
+        path: &StoragePath,
+        n_errors: &mut usize,
+    ) -> Result<u64, StorageError> {
+        let mut usage = 0;
+        let mut directories = Vec::new();
+        backend.list(path, &mut |entry| match entry.file_type {
+            Ok(StorageFileType::File { size }) => usage += size,
+            Ok(StorageFileType::Directory) => directories.push(entry.name),
+            Ok(StorageFileType::Other) => (),
+            Err(_) => *n_errors += 1,
+        })?;
+        for directory in directories {
+            usage += Self::measure_storage_path_use(backend, &directory, n_errors)?;
+        }
         Ok(usage)
     }
 
@@ -188,6 +207,7 @@ impl Checkpointer {
         let mut usage = 0;
         let mut counts = EnumMap::from_fn(|_| EnumMap::from_fn(|_| 0usize));
         let mut n_errors = 0;
+        let mut recursive_usage_error = None;
         self.backend
             .list(&StoragePath::default(), &mut |DirEntry { name, file_type}| {
                 let file_type = file_type.unwrap_or_else(|_| {
@@ -231,10 +251,20 @@ impl Checkpointer {
                         }
                     }
                 }
-                if let StorageFileType::File { size } = file_type {
-                    usage += size;
+                match file_type {
+                    StorageFileType::File { size } => usage += size,
+                    StorageFileType::Directory if recursive_usage_error.is_none() => {
+                        match Self::measure_storage_path_use(&*self.backend, &name, &mut n_errors) {
+                            Ok(size) => usage += size,
+                            Err(error) => recursive_usage_error = Some(error),
+                        }
+                    }
+                    _ => (),
                 }
             })?;
+        if let Some(error) = recursive_usage_error {
+            return Err(error.into());
+        }
         info!(
             "GC kept {}/{}/{} expected files/directories/other, kept {}/{}/{} unexpected, and deleted {}/{}/{} unused; {n_errors} error(s) reading directory entries",
             counts[Disposition::KeepExpected][Class::File],
@@ -921,6 +951,44 @@ mod test {
         assert!(
             format!("{err}").contains("pspine-trace.dat"),
             "error should mention the missing file, got: {err}",
+        );
+    }
+
+    #[test]
+    fn startup_usage_includes_checkpoint_subdirectory_files() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let make_backend = || -> Arc<dyn StorageBackend> {
+            Arc::new(PosixBackend::new(
+                tempdir.path(),
+                StorageCacheConfig::default(),
+                &FileBackendConfig::default(),
+            ))
+        };
+
+        let mut checkpointer = Checkpointer::new(make_backend()).unwrap();
+        let uuid = uuid::Uuid::now_v7();
+        checkpointer
+            .commit_and_publish(uuid, 0, None, Some(0), Some(0))
+            .unwrap();
+        drop(checkpointer);
+
+        let nested_payload = vec![1; 1024 * 1024];
+        std::fs::write(
+            tempdir
+                .path()
+                .join(uuid.to_string())
+                .join("subdirectory-payload.dat"),
+            &nested_payload,
+        )
+        .unwrap();
+
+        let backend = make_backend();
+        let _restarted = Checkpointer::new(backend.clone()).unwrap();
+        let usage = backend.usage().load(std::sync::atomic::Ordering::Relaxed);
+        assert!(
+            usage >= nested_payload.len() as i64,
+            "startup usage {usage} does not include {} bytes in checkpoint directory {uuid}",
+            nested_payload.len(),
         );
     }
 
