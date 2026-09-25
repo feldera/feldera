@@ -4471,7 +4471,7 @@ public class StreamingTests extends StreamingTestBase {
             
             CREATE VIEW v
             WITH ('emit_final' = 'ts')
-            AS SELECT t1.ts
+            AS SELECT t1.ts, t1.x, t2.y
             FROM t1 LEFT JOIN t2 on t1.ts = t2.ts;""";
         this.getCCS(sql);
     }

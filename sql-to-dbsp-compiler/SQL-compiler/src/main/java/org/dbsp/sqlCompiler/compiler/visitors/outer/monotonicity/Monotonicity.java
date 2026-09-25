@@ -404,13 +404,33 @@ public class Monotonicity extends CircuitVisitor {
         this.processJoinBase(node);
     }
 
+    /** The monotone type of {@code first} restricted to the key fields that are monotone in
+     * {@code second}.  All value fields in the result are non-monotone.
+     * @param first   Monotone type of an indexed Z-set; the result has this type.
+     * @param second  Monotone type of an indexed Z-set with the same key type. */
+    static PartiallyMonotoneTuple commonKey(IMaybeMonotoneType first, IMaybeMonotoneType second) {
+        PartiallyMonotoneTuple firstKeyValue = first.to(PartiallyMonotoneTuple.class);
+        PartiallyMonotoneTuple secondKeyValue = second.to(PartiallyMonotoneTuple.class);
+        IMaybeMonotoneType key = firstKeyValue.getFieldType(0)
+            .intersection(secondKeyValue.getFieldType(0));
+        DBSPTypeTupleBase valueType = firstKeyValue.getFieldType(1)
+            .getType().to(DBSPTypeTupleBase.class);
+        return new PartiallyMonotoneTuple(
+                Linq.list(key, PartiallyMonotoneTuple.noMonotoneFields(valueType)), true, false);
+    }
+
+    /** A right change retracts or re-emits old left rows with the key of the right change,
+     * so WL(output[key]) = min(WL(left[key]), WL(right[key])). No value field has a waterline. */
     @Override
     public void postorder(DBSPAntiJoinOperator node) {
-        // Preserve monotonicity of left input
-        MonotoneExpression input = this.getMonotoneExpression(node.left());
-        if (input == null)
+        MonotoneExpression left = this.getMonotoneExpression(node.left());
+        MonotoneExpression right = this.getMonotoneExpression(node.right());
+        if (left == null || right == null)
             return;
-        MonotoneExpression output = this.identity(node, getBodyType(input), true);
+        PartiallyMonotoneTuple outputType = commonKey(getBodyType(left), getBodyType(right));
+        if (!outputType.getFieldType(0).mayBeMonotone())
+            return;
+        MonotoneExpression output = this.identity(node, outputType, true);
         this.set(node, output);
     }
 
