@@ -2900,8 +2900,8 @@ some_polymorphic_function2!(datediff_month, Date, Date, Date, Date, i32);
 
 #[doc(hidden)]
 pub fn datediff_quarter_Date_Date(left: Date, right: Date) -> i32 {
-    datediff_year_Date_Date(left, right) * 4
-        + (extract_quarter_Date(right) - extract_quarter_Date(left)) as i32
+    // Elapsed months divided by 3, truncated toward zero, like TIMESTAMPDIFF(QUARTER)
+    datediff_month_Date_Date(left, right) / 3
 }
 
 some_polymorphic_function2!(datediff_quarter, Date, Date, Date, Date, i32);
