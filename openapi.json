@@ -15716,7 +15716,7 @@
           "scale_threshold_available_mb": {
             "type": "integer",
             "format": "int64",
-            "description": "Available storage in Megabytes below which expansion triggers, whatever\nthe usage fraction. Unset by default.",
+            "description": "Expand storage when available space falls below this many MB, even if\nusage is still under `scale_threshold`. Either condition triggers\nexpansion. Unset by default.",
             "default": null,
             "nullable": true,
             "minimum": 0

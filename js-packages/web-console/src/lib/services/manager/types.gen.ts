@@ -5929,8 +5929,9 @@ export type StorageAutoscalingConfig = {
    */
   scale_threshold?: number | null
   /**
-   * Available storage in Megabytes below which expansion triggers, whatever
-   * the usage fraction. Unset by default.
+   * Expand storage when available space falls below this many MB, even if
+   * usage is still under `scale_threshold`. Either condition triggers
+   * expansion. Unset by default.
    */
   scale_threshold_available_mb?: number | null
 }
