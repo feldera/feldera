@@ -237,7 +237,10 @@ Finally, run the pipeline with `run_source_migrations` set to `false`:
 Disabling the source migrations does not remove the connector's other
 requirements: the helper functions, the event trigger, the writable `etl` state
 tables, and the state-store migration checks must all still be present and
-reachable. Before starting an upgraded connector with `run_source_migrations`
+reachable. The connector refuses to start when the event trigger
+`supabase_etl_ddl_message_trigger` is missing or disabled, because without it
+schema changes to the published tables go unnoticed; this check runs with
+either setting. Before starting an upgraded connector with `run_source_migrations`
 set to `false`, an administrator must apply any new source migrations the
 upgrade introduces; pending state-store migrations need the same attention when
 the runtime role lacks the DDL or ownership privileges to apply them. Recheck

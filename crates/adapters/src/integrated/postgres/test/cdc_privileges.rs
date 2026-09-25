@@ -12,6 +12,7 @@ use super::cdc_tests::{
 use super::*;
 
 const SOURCE_MIGRATION: i64 = 20260724120000;
+const EVENT_TRIGGER: &str = "supabase_etl_ddl_message_trigger";
 
 struct Database {
     admin: postgres::Client,
@@ -23,45 +24,11 @@ struct Database {
 }
 
 impl Database {
+    /// A bootstrapped database: etl's objects are installed by a superuser run
+    /// and the runtime role holds the documented grants.
     fn new() -> Self {
-        let admin_url = cdc_connector_url(&postgres_url());
-        let mut admin = pg::pg_connect(&admin_url, &None);
-        let name = unique_pg_name("cdc_privileges_db");
-        // Names contain only a fixed prefix and a UUID, so they are SQL identifiers.
-        admin
-            .batch_execute(&format!("CREATE DATABASE {name} TEMPLATE template0"))
-            .unwrap();
-        let mut url = url::Url::parse(&admin_url).unwrap();
-        url.set_path(&name);
-        let mut db = Self {
-            admin,
-            name,
-            role: unique_pg_name("cdc_runtime"),
-            owner: unique_pg_name("cdc_owner"),
-            url: url.to_string(),
-            runtime_url: String::new(),
-        };
-        db.admin
-            .batch_execute(&format!(
-                "CREATE ROLE {} LOGIN PASSWORD 'cdc_test_password' REPLICATION NOSUPERUSER;
-                 CREATE ROLE {} NOLOGIN NOSUPERUSER;
-                 REVOKE ALL ON DATABASE {} FROM PUBLIC;
-                 GRANT CONNECT, CREATE ON DATABASE {} TO {};",
-                db.role, db.owner, db.name, db.name, db.role,
-            ))
-            .unwrap();
-        url.set_username(&db.role).unwrap();
-        url.set_password(Some("cdc_test_password")).unwrap();
-        db.runtime_url = url.to_string();
-
+        let db = Self::create();
         let mut client = pg::pg_connect(&db.url, &None);
-        client
-            .batch_execute(&format!(
-                "REVOKE ALL ON SCHEMA public FROM PUBLIC;
-                 GRANT USAGE ON SCHEMA public TO {}, {};",
-                db.role, db.owner,
-            ))
-            .unwrap();
 
         // Exercise the default on a genuinely fresh database, including a copy
         // and a streamed write, before installing any runtime grants on etl.
@@ -96,6 +63,48 @@ impl Database {
         db
     }
 
+    /// A database with the roles and their `public` grants but no etl objects.
+    fn create() -> Self {
+        let admin_url = cdc_connector_url(&postgres_url());
+        let mut admin = pg::pg_connect(&admin_url, &None);
+        let name = unique_pg_name("cdc_privileges_db");
+        // Names contain only a fixed prefix and a UUID, so they are SQL identifiers.
+        admin
+            .batch_execute(&format!("CREATE DATABASE {name} TEMPLATE template0"))
+            .unwrap();
+        let mut url = url::Url::parse(&admin_url).unwrap();
+        url.set_path(&name);
+        let mut db = Self {
+            admin,
+            name,
+            role: unique_pg_name("cdc_runtime"),
+            owner: unique_pg_name("cdc_owner"),
+            url: url.to_string(),
+            runtime_url: String::new(),
+        };
+        db.admin
+            .batch_execute(&format!(
+                "CREATE ROLE {} LOGIN PASSWORD 'cdc_test_password' REPLICATION NOSUPERUSER;
+                 CREATE ROLE {} NOLOGIN NOSUPERUSER;
+                 REVOKE ALL ON DATABASE {} FROM PUBLIC;
+                 GRANT CONNECT, CREATE ON DATABASE {} TO {};",
+                db.role, db.owner, db.name, db.name, db.role,
+            ))
+            .unwrap();
+        url.set_username(&db.role).unwrap();
+        url.set_password(Some("cdc_test_password")).unwrap();
+        db.runtime_url = url.to_string();
+
+        pg::pg_connect(&db.url, &None)
+            .batch_execute(&format!(
+                "REVOKE ALL ON SCHEMA public FROM PUBLIC;
+                 GRANT USAGE ON SCHEMA public TO {}, {};",
+                db.role, db.owner,
+            ))
+            .unwrap();
+        db
+    }
+
     fn table(&self) -> CdcTestTable {
         let mut table = CdcTestTable::new_simple(
             &unique_pg_name("cdc_privileges_table"),
@@ -124,8 +133,8 @@ impl Database {
              JOIN pg_roles r ON r.oid = e.evtowner
              JOIN pg_proc p ON p.oid = e.evtfoid
              JOIN pg_roles f ON f.oid = p.proowner
-             WHERE e.evtname = 'supabase_etl_ddl_message_trigger'",
-                &[],
+             WHERE e.evtname = $1",
+                &[&EVENT_TRIGGER],
             )
             .unwrap();
         assert_eq!(row.get::<_, String>(0), "O");
@@ -486,40 +495,102 @@ fn test_cdc_privileges_missing_setup_errors() {
         table.execute(&format!("GRANT {privilege} ON {object} TO {}", db.role));
     }
 
-    // Schema helper failures arise in the copy worker, after startup has returned.
-    for missing in [false, true] {
+    // Table and schema helper failures arise in the copy worker, after startup
+    // has returned. The helper is dropped last because that is permanent.
+    for (revocation, object, diagnostic, advice) in [
+        (
+            "REVOKE SELECT ON {table} FROM {role}",
+            "{table}",
+            "permission denied for table",
+            "SELECT on every table in the publication",
+        ),
+        (
+            "REVOKE EXECUTE ON FUNCTION etl.describe_table_schema(oid) FROM {role}",
+            "describe_table_schema",
+            "permission denied for function",
+            "grant EXECUTE",
+        ),
+        (
+            "DROP FUNCTION etl.describe_table_schema(oid)",
+            "describe_table_schema",
+            "does not exist",
+            "install or update etl's source objects",
+        ),
+    ] {
         let mut source = db.table();
-        if missing {
-            table.execute("DROP FUNCTION etl.describe_table_schema(oid)");
-        } else {
-            table.execute(&format!(
-                "REVOKE EXECUTE ON FUNCTION etl.describe_table_schema(oid) FROM {}",
-                db.role,
-            ));
-        }
+        table.execute(
+            &revocation
+                .replace("{table}", &source.table_name)
+                .replace("{role}", &db.role),
+        );
         let run = Run::new(config(&db.runtime_url, &source, Some(false)));
-        wait(|| !run.errors.is_empty(), 60_000).expect("schema helper failure was not reported");
+        wait(|| !run.errors.is_empty(), 60_000).expect("copy failure was not reported");
         let error = run.errors.try_recv().unwrap();
         assert!(
-            error.contains("describe_table_schema"),
-            "unexpected error: {error}"
-        );
-        assert!(
-            error.contains(if missing {
-                "does not exist"
-            } else {
-                "permission denied"
-            }),
+            error.contains(&object.replace("{table}", &source.table_name))
+                && error.contains(diagnostic),
             "unexpected error: {error}"
         );
         assert_setup_hint(&error, false);
-        assert!(
-            error.contains("install or update etl's source objects"),
-            "{error}"
-        );
-        assert!(error.contains("grant EXECUTE"), "{error}");
+        assert!(error.contains(advice), "{error}");
         run.stop_after_error(&mut source);
     }
+}
+
+/// Without the event trigger, DDL on the published tables would go unnoticed,
+/// so a missing or disabled trigger fails the start with either setting: the
+/// recorded source migration does not recreate it for a superuser either.
+#[test]
+#[serial]
+fn test_cdc_privileges_event_trigger_required() {
+    let db = Database::new();
+    let mut table = db.table();
+    for (statement, problem) in [
+        ("ALTER EVENT TRIGGER {trigger} DISABLE", "is disabled"),
+        ("DROP EVENT TRIGGER {trigger}", "does not exist"),
+    ] {
+        table.execute(&statement.replace("{trigger}", EVENT_TRIGGER));
+        for (url, enabled) in [(&db.runtime_url, false), (&db.url, true)] {
+            let error = startup_error(config(url, &table, Some(enabled)));
+            assert!(
+                error.contains(EVENT_TRIGGER) && error.contains(problem),
+                "unexpected error with run_source_migrations={enabled}: {error}"
+            );
+            assert!(error.contains("#running-as-a-non-superuser"), "{error}");
+        }
+    }
+
+    // Re-running the source migration as a superuser repairs the trigger.
+    table.execute(&format!(
+        "DELETE FROM etl._sqlx_migrations WHERE version = {SOURCE_MIGRATION}"
+    ));
+    let run = Run::new(config(&db.url, &table, None));
+    run.wait_row("insert", 1, None);
+    db.assert_trigger(&mut table.client);
+    run.stop(&mut table);
+}
+
+/// A runtime role pointed at a database no superuser has bootstrapped is
+/// refused before the state-store migrations create any etl object there.
+#[test]
+#[serial]
+fn test_cdc_privileges_unbootstrapped_database() {
+    let db = Database::create();
+    let mut table = db.table();
+    let error = startup_error(config(&db.runtime_url, &table, Some(false)));
+    assert!(
+        error.contains(EVENT_TRIGGER) && error.contains("does not exist"),
+        "unexpected error: {error}"
+    );
+    let etl_installed: bool = table
+        .client
+        .query_one(
+            "SELECT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'etl')",
+            &[],
+        )
+        .unwrap()
+        .get(0);
+    assert!(!etl_installed, "the refused start created the etl schema");
 }
 
 fn assert_setup_hint(error: &str, run_source_migrations: bool) {
