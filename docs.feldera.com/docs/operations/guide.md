@@ -54,6 +54,11 @@ the following methods:
 * the web-console has a button to download the bundle for a pipeline
 * or the `support_bundle` [endpoint in the REST API](/api/download-support-bundle).
 
+A downloaded bundle can be read back in the web console: press the "Open support bundle"
+button on the home page to upload and vie the bundle in the profile viewer, which shows the
+pipeline's logs, metrics and circuit profile. The same button lists the bundles opened
+before, so that a bundle can be reopened without picking the file again.
+
 The support bundle has the following content:
 
 1. **Pipeline Logs**: for warnings and errors from the [logs](/api/stream-pipeline-logs) endpoint.
