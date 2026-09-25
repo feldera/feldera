@@ -107,4 +107,50 @@ public class MonotoneFunctionsIncrementalTests extends StreamingTestBase {
                     .replace("GROUPING", c[1]), 1);
         }
     }
+
+    /** CAST(ts AS TIME) keeps the time of day, which wraps at midnight.  The program runs with
+     * and without LATENESS; no input row is late.  Expected outputs validated with Postgres. */
+    @Test
+    public void castToTimeWithLateness() {
+        String sql = """
+                CREATE TABLE T (ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR);
+                CREATE VIEW V AS SELECT COUNT(*) AS c FROM T GROUP BY CAST(ts AS TIME);""";
+        String[] programs = {
+                // As written
+                sql,
+                // Without LATENESS
+                sql.replace(" LATENESS INTERVAL 1 HOUR", "")
+        };
+        for (String program : programs) {
+            var ccs = this.getCCS(program).compactAfterEachStep();
+            ccs.step("INSERT INTO T VALUES('2024-01-01 10:00:00');", """
+                     c | weight
+                    ------------
+                     1 | 1""");
+            ccs.step("INSERT INTO T VALUES('2024-01-01 20:00:00');", """
+                     c | weight
+                    ------------
+                     1 | 1""");
+            ccs.step("INSERT INTO T VALUES('2024-01-02 00:30:00');", """
+                     c | weight
+                    ------------
+                     1 | 1""");
+            // Same time of day as the first row, on the next day; not late
+            ccs.step("INSERT INTO T VALUES('2024-01-02 10:00:00');", """
+                     c | weight
+                    ------------
+                     1 | -1
+                     2 | 1""");
+        }
+    }
+
+    /** A cast to DATE preserves order and keeps the waterline; a cast to TIME does not. */
+    @Test
+    public void castWaterlines() {
+        String sql = """
+                CREATE TABLE T (ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR);
+                CREATE VIEW V AS SELECT COUNT(*) AS c FROM T GROUP BY CAST(ts AS TYPE);""";
+        this.expectRetainKeys(sql.replace("TYPE", "DATE"), 1);
+        this.expectRetainKeys(sql.replace("TYPE", "TIME"), 0);
+    }
 }

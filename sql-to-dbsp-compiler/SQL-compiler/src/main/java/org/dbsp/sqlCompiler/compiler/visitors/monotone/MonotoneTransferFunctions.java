@@ -49,6 +49,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
@@ -694,15 +695,26 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                 type.is(DBSPTypeBool.class);
     }
 
+    /** False for the casts that do not preserve order: a cast to TIME keeps the time of day,
+     * which wraps at midnight, and a cast of a number to BOOLEAN is true for both signs. */
+    static boolean castPreservesOrder(DBSPType from, DBSPType to) {
+        if (to.is(DBSPTypeTime.class) && !from.is(DBSPTypeTime.class))
+            return false;
+        if (to.is(DBSPTypeBool.class) && !from.is(DBSPTypeBool.class))
+            return false;
+        return true;
+    }
+
     @Override
     public void postorder(DBSPCastExpression expression) {
         MonotoneExpression source = this.get(expression.source);
         DBSPExpression reduced = null;
 
-        // Casts always preserve monotonicity in SQL, but only if the
-        // result type can represent monotone values.
+        // A cast preserves monotonicity if the result type can represent monotone values
+        // and the cast preserves order.
         boolean outputTypeMayBeMonotone = typeCanBeMonotone(expression.getType());
-        boolean isMonotone = source.mayBeMonotone() && outputTypeMayBeMonotone;
+        boolean isMonotone = source.mayBeMonotone() && outputTypeMayBeMonotone &&
+                castPreservesOrder(expression.source.getType(), expression.getType());
         IMaybeMonotoneType resultType;
         if (isMonotone) {
             reduced = expression.replaceSource(source.getReducedExpression());
