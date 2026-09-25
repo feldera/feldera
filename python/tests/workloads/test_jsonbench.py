@@ -620,7 +620,13 @@ def run_cli():
 
 class TestJSONBench(unittest.TestCase):
     def test_jsonbench_1m(self):
-        jsonbench_test(JSONBenchConfig())
+        # Peaks near 5.5 GiB. With the default 1024M request, node
+        # auto-provisioning puts the pipeline on a 4-8 GB spot node, and the
+        # kubelet evicts it mid-test; the replacement pod restarts the
+        # pipeline from scratch, without the transaction the test opened
+        # (#7025, #7008). 8000 leaves about 2 GiB of headroom. No
+        # memory_mb_max: it would shrink the DataFusion pool to 5% of it.
+        jsonbench_test(JSONBenchConfig(resources=Resources(memory_mb_min=8000)))
 
 
 if __name__ == "__main__":
