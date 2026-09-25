@@ -1088,7 +1088,7 @@ where
             self.trace = Some(T::new(
                 &self.trace_factories,
                 self.name.get(),
-                TraceRole::Integral,
+                TraceRole::Accumulator,
             ));
         }
     }
@@ -1148,7 +1148,11 @@ where
         let pid = require_persistent_id(pid, &self.name)?;
         self.trace
             .get_or_insert_with(|| {
-                T::new(&self.trace_factories, self.name.get(), TraceRole::Integral)
+                T::new(
+                    &self.trace_factories,
+                    self.name.get(),
+                    TraceRole::Accumulator,
+                )
             })
             .save(base, pid, files)
     }
@@ -1158,7 +1162,11 @@ where
 
         self.trace
             .get_or_insert_with(|| {
-                T::new(&self.trace_factories, self.name.get(), TraceRole::Integral)
+                T::new(
+                    &self.trace_factories,
+                    self.name.get(),
+                    TraceRole::Accumulator,
+                )
             })
             .restore(base, pid)
     }
@@ -1168,7 +1176,7 @@ where
         self.trace = Some(T::new(
             &self.trace_factories,
             self.name.get(),
-            TraceRole::Integral,
+            TraceRole::Accumulator,
         ));
         self.replay_state = None;
         self.dirty = vec![false; self.root_scope as usize + 1];
@@ -1193,7 +1201,7 @@ where
             self.trace = Some(T::new(
                 &self.trace_factories,
                 self.name.get(),
-                TraceRole::Integral,
+                TraceRole::Accumulator,
             ));
 
             //println!("AccumulateZ1Trace-{}::initializing replay_state", &self.global_id);
