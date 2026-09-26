@@ -1534,7 +1534,7 @@ mod test {
     use dbsp::{
         DBSPHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime, algebra::F32, utils::Tup2,
     };
-    use feldera_macros::IsNone;
+    use feldera_macros::{IsNone, OrdRepr};
     use feldera_types::{deserialize_without_context, format::json::JsonFlavor};
     use serde_json::to_string as to_json_string;
     use size_of::SizeOf;
@@ -1564,6 +1564,7 @@ mod test {
         rkyv::Serialize,
         rkyv::Deserialize,
         IsNone,
+        OrdRepr,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
     struct TestStruct {

@@ -73,7 +73,7 @@ impl<S: RkyvSerializer + ?Sized> rkyv::Serialize<S> for ByteArray {
 /// A `ByteArray` derives its hash from the `SmallVec` holding the payload,
 /// and a `SmallVec` hashes as the slice it derefs to: the length, then the
 /// bytes in one write.
-impl crate::__hash_repr::HashRepr for ByteArray {
+impl crate::__HashRepr for ByteArray {
     const FAITHFUL: bool = true;
 
     #[inline]
@@ -84,12 +84,21 @@ impl crate::__hash_repr::HashRepr for ByteArray {
 
 /// The archived form holds the same bytes in an `ArchivedVec`, so hashing the
 /// slice reproduces the decoded answer exactly.
-impl crate::__hash_repr::HashRepr for ArchivedByteArray {
+impl crate::__HashRepr for ArchivedByteArray {
     const FAITHFUL: bool = true;
 
     #[inline]
     fn hash_repr<H: ::std::hash::Hasher>(&self, state: &mut H) {
         ::std::hash::Hash::hash(self.data.as_slice(), state)
+    }
+}
+
+/// Hand written rather than derived so that the bytes compare as one slice
+/// rather than one element at a time.
+impl dbsp::dynamic::OrdRepr<ByteArray> for ArchivedByteArray {
+    #[inline]
+    fn ord_cmp(&self, other: &ByteArray) -> std::cmp::Ordering {
+        self.data.as_slice().cmp(other.data.as_slice())
     }
 }
 

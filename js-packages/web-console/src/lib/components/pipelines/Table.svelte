@@ -11,6 +11,7 @@
   import { dateMax } from '$lib/functions/common/date'
   import { matchesSubstring } from '$lib/functions/common/string'
   import { type NamesInUnion, unionName } from '$lib/functions/common/union'
+  import { resolve } from '$lib/functions/svelte'
   import { formatDateTime } from '$lib/functions/format'
   import type {
     PipelineStatus as PipelineStatusType,
@@ -233,7 +234,7 @@
             <td class="{rowTd} relative w-3/12 border-surface-100-900 group-hover:bg-surface-50-950"
               ><a
                 class=" absolute inset-x-3 top-2.5 overflow-hidden overflow-ellipsis whitespace-nowrap"
-                href="/pipelines/{pipeline.name}/">{pipeline.name}</a
+                href={resolve(`/pipelines/${encodeURI(pipeline.name)}/`)}>{pipeline.name}</a
               ></td
             >
             <td

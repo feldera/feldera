@@ -11,6 +11,9 @@ import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.PositionOnlyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
@@ -39,6 +42,8 @@ import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.circuit.annotation.Waterline;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
@@ -75,8 +80,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 
 /** As a result of the Monotonicity analysis, this pass inserts new operators:
  * - apply operators that compute the bounds that drive the controlled filters
@@ -362,10 +365,103 @@ public class InsertLimiters extends CircuitCloneVisitor {
         super.postorder(operator);
     }
 
+    /** The bounds of a window, computed by a closure with parameter {@code parameter}
+     * applied to the stream {@code input}. */
+    record WindowEdges(OutputPort input, DBSPParameter[] parameter, DBSPExpression lower, DBSPExpression upper) {}
+
+    @Nullable
+    static DBSPExpression unbox(DBSPExpression expression) {
+        DBSPUnaryExpression unary = expression.as(DBSPUnaryExpression.class);
+        if (unary == null || unary.opcode != DBSPOpcode.TYPEDBOX)
+            return null;
+        return unary.source;
+    }
+
+    /** The bounds of a window, which RewriteNow computes with an Apply operator
+     * that boxes them into TypedBox values. */
+    WindowEdges windowEdges(DBSPWindowOperator operator) {
+        DBSPApplyOperator apply = operator.right().node().as(DBSPApplyOperator.class);
+        Utilities.enforce(apply != null,
+                () -> "Bounds of " + operator + " are not computed by an Apply operator");
+        DBSPClosureExpression function = apply.getClosureFunction();
+        DBSPRawTupleExpression body = function.body.as(DBSPRawTupleExpression.class);
+        Utilities.enforce(body != null && body.fields != null && body.fields.length == 2,
+                () -> "Bounds of " + operator + " are not a pair: " + function);
+        DBSPExpression lower = unbox(body.fields[0]);
+        DBSPExpression upper = unbox(body.fields[1]);
+        Utilities.enforce(lower != null && upper != null,
+                () -> "Bounds of " + operator + " are not boxed: " + function);
+        return new WindowEdges(this.mapped(apply.input()), function.parameters, lower, upper);
+    }
+
+    /** Adds the operators that compute the bound of a window's output.
+     * Returns the stream of bounds, or null if the window has no bound. */
+    @Nullable
+    OutputPort windowBound(DBSPWindowOperator operator) {
+        ReplacementDeltaExpansion expanded = this.getReplacement(operator);
+        if (expanded == null)
+            return null;
+        DBSPSimpleOperator replacement = expanded.replacement.to(DBSPSimpleOperator.class);
+        MonotoneExpression monotone = this.expansionMonotoneValues.get(replacement);
+        if (monotone == null)
+            return null;
+        WindowEdges edges = this.windowEdges(operator);
+        IMaybeMonotoneType output = Monotonicity.getBodyType(monotone);
+        // A bound holds only the monotone columns: the key, and the value when it is
+        // an empty tuple, which counts as monotone.
+        boolean valueInBound = output.to(PartiallyMonotoneTuple.class).getFieldType(1).mayBeMonotone();
+
+        // WL(x) is the waterline of x; window.lower and window.upper are the current window bounds.
+        OutputPort bound;
+        if (operator.lowerUnbounded) {
+            // WL(output[key]) = min(WL(input[key]), window.upper).
+            // Rows enter the window as new input rows, with key >= WL(input[key]),
+            // or through the upper bound, with key >= window.upper.  No row leaves the
+            // window, since window.upper never decreases: it is a monotone function of
+            // a nondecreasing input, such as NOW() + 1 HOUR.
+            OutputPort inputBound = this.boundOf(replacement, replacement.inputs.get(0));
+            // The upper bound as a (valid, value) pair, to combine with the input's bound
+            DBSPExpression upperValue = new DBSPTupleExpression(
+                    new DBSPBoolLiteral(true), edges.upper().deepCopy());
+            DBSPApplyOperator upper = new DBSPApplyOperator(
+                    operator.getRelNode(), upperValue.closure(edges.parameter()), edges.input(), null);
+            this.addOperator(upper);
+            // The key is the first monotone field of the input's bound
+            DBSPType inputBoundType = inputBound.outputType().to(DBSPTypeTupleBase.class).getFieldType(1);
+            DBSPVariablePath inputVar = inputBoundType.ref().var();
+            DBSPVariablePath upperVar = edges.upper().getType().ref().var();
+            DBSPExpression keyBound = min(
+                    inputVar.deref().field(0).applyCloneIfNeeded(),
+                    upperVar.deref().applyCloneIfNeeded());
+            DBSPExpression boundValue = valueInBound ?
+                    new DBSPRawTupleExpression(keyBound, new DBSPTupleExpression()) :
+                    new DBSPRawTupleExpression(keyBound);
+            bound = this.createApply2(inputBound, upper.outputPort(), boundValue.closure(inputVar, upperVar));
+        } else {
+            // WL(output[key]) = window.lower.
+            // Every later change, including new input rows, has key >= window.lower, since
+            // window.lower never decreases.  WL(input[key]) is ignored if it exists: rows that leave
+            // the window can have key < WL(input[key]).
+            DBSPExpression keyBound = edges.lower().deepCopy();
+            DBSPExpression boundValue = valueInBound ?
+                    new DBSPRawTupleExpression(keyBound, new DBSPTupleExpression()) :
+                    new DBSPRawTupleExpression(keyBound);
+            // A bound is a pair (valid, value); the window has bounds at every step
+            DBSPExpression value = new DBSPTupleExpression(new DBSPBoolLiteral(true), boundValue);
+            DBSPApplyOperator apply = new DBSPApplyOperator(
+                    operator.getRelNode(), value.closure(edges.parameter()), edges.input(), null);
+            this.addOperator(apply);
+            bound = apply.outputPort();
+        }
+        this.markBound(replacement.outputPort(), bound);
+        this.markBound(operator.outputPort(), bound);
+        return bound;
+    }
+
     @Override
     public void postorder(DBSPWindowOperator operator) {
-        // Treat as an identity function for the left input
-        this.addBoundsForNonExpandedOperator(operator);
+        if (this.windowBound(operator) == null)
+            this.nonMonotone(operator);
         super.postorder(operator);
     }
 
@@ -2151,8 +2247,19 @@ public class InsertLimiters extends CircuitCloneVisitor {
                                     field.getType(), dataType), true,
                             this.mapped(operator.input()));
                     this.addOperator(ix);
-                    // The upper bound must be exclusive; -infinity lower bound
-                    WindowStreams window = this.window(operator.getRelNode(), true, false, true,
+                    // The upper bound must be exclusive; -infinity lower bound.
+                    // The 'emit_final' annotation is the only source code behind this window,
+                    // so diagnostics about the window point at the annotation.
+                    // A circuit decoded from JSON has properties without positions, so use
+                    // the view's own node unless the annotation's position survived.
+                    SourcePositionRange emitFinal = operator.metadata.properties == null ?
+                            SourcePositionRange.INVALID :
+                            operator.metadata.properties.getPropertyKeyPosition(
+                                    CreateViewStatement.EMIT_FINAL);
+                    CalciteRelNode windowNode = emitFinal.isValid() ?
+                            new PositionOnlyRel(emitFinal) :
+                            operator.getRelNode();
+                    WindowStreams window = this.window(windowNode, true, false, true,
                             ix.outputPort(), apply.outputPort());
                     // GC for window: the waterline delayed
                     PartiallyMonotoneTuple projection = new PartiallyMonotoneTuple(

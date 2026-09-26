@@ -44,7 +44,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareIndexes;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.keys.LeftJoinChains;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.windowSharing.ShareWindowIntegrals;
-import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareInputIndexes;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing.ShareOutputIntegrators;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.intern.Intern;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.recursive.RecursiveComponents;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.recursive.ValidateRecursiveOperators;
@@ -138,6 +138,9 @@ public class CircuitOptimizer extends Passes {
         this.add(new ShareWindowIntegrals(compiler));
         // Combining Joins with subsequent filters can improve the precision of the monotonicity analysis
         this.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
+        // Runs before MonotoneAnalyzer, whose SeparateIntegrators gives the join its own integral
+        // wherever garbage collection needs it
+        this.add(new ShareOutputIntegrators(compiler));
         this.add(new MonotoneAnalyzer(compiler));
         // Can remove this table after the monotone analysis only
         this.add(new RemoveTable(compiler, DBSPCompiler.ERROR_TABLE_NAME));
@@ -160,7 +163,6 @@ public class CircuitOptimizer extends Passes {
         this.add(new RemoveDeindexOperators(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
         this.add(new RemoveIdentityOperators(compiler));
-        this.add(new ShareInputIndexes(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
         this.add(new OptimizeWithGraph(compiler,
                 g -> new OptimizeProjections(compiler, false, g, operatorsAnalyzed)));

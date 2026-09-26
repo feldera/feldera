@@ -4130,7 +4130,7 @@ dependencies = [
 
 [[package]]
 name = "dbsp"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -4218,7 +4218,7 @@ dependencies = [
 
 [[package]]
 name = "dbsp_adapters"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "actix",
  "actix-codec",
@@ -4360,7 +4360,7 @@ dependencies = [
 
 [[package]]
 name = "dbsp_nexmark"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "anyhow",
  "ascii_table",
@@ -4368,9 +4368,9 @@ dependencies = [
  "clap",
  "csv",
  "dbsp",
+ "feldera-fxp",
  "feldera-macros",
  "feldera-size-of",
- "feldera_rust_decimal",
  "hdrhist",
  "indicatif",
  "mimalloc-rust-sys",
@@ -5197,7 +5197,7 @@ dependencies = [
 [[package]]
 name = "etl"
 version = "0.1.0"
-source = "git+https://github.com/feldera/etl?rev=248fa4077c5b0f3e7bc2918a9709be2a03efea73#248fa4077c5b0f3e7bc2918a9709be2a03efea73"
+source = "git+https://github.com/feldera/etl?rev=cdfb3c7e6581b63d8876c3c1b335b3a99e676c55#cdfb3c7e6581b63d8876c3c1b335b3a99e676c55"
 dependencies = [
  "bytes",
  "chrono",
@@ -5227,7 +5227,7 @@ dependencies = [
 [[package]]
 name = "etl-config"
 version = "0.1.0"
-source = "git+https://github.com/feldera/etl?rev=248fa4077c5b0f3e7bc2918a9709be2a03efea73#248fa4077c5b0f3e7bc2918a9709be2a03efea73"
+source = "git+https://github.com/feldera/etl?rev=cdfb3c7e6581b63d8876c3c1b335b3a99e676c55#cdfb3c7e6581b63d8876c3c1b335b3a99e676c55"
 dependencies = [
  "config",
  "secrecy",
@@ -5241,7 +5241,7 @@ dependencies = [
 [[package]]
 name = "etl-postgres"
 version = "0.1.0"
-source = "git+https://github.com/feldera/etl?rev=248fa4077c5b0f3e7bc2918a9709be2a03efea73#248fa4077c5b0f3e7bc2918a9709be2a03efea73"
+source = "git+https://github.com/feldera/etl?rev=cdfb3c7e6581b63d8876c3c1b335b3a99e676c55#cdfb3c7e6581b63d8876c3c1b335b3a99e676c55"
 dependencies = [
  "aws-lc-rs",
  "byteorder",
@@ -5371,7 +5371,7 @@ dependencies = [
 
 [[package]]
 name = "fda"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "anyhow",
  "arrow",
@@ -5418,7 +5418,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-adapterlib"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -5453,7 +5453,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-buffer-cache"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "enum-map",
  "feldera-types",
@@ -5466,9 +5466,9 @@ dependencies = [
 
 [[package]]
 name = "feldera-cloud1-client"
-version = "0.1.3"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3bbbc99187b0e2afa72198abf5fa523a9bfc9ff3d8615d5bc3b408800534a01"
+checksum = "93cbbe3f1905f66cb3304f1aca0deb2d60b9dfc95e5c121fa380448c78069d81"
 dependencies = [
  "chrono",
  "reqwest 0.13.4",
@@ -5476,11 +5476,12 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "utoipa",
+ "uuid",
 ]
 
 [[package]]
 name = "feldera-datagen"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "anyhow",
  "async-channel 2.5.0",
@@ -5505,7 +5506,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-fxp"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "dbsp",
  "feldera-size-of",
@@ -5523,7 +5524,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-iceberg"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "anyhow",
  "atomic",
@@ -5553,7 +5554,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-ir"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "proptest",
  "proptest-derive",
@@ -5565,7 +5566,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-macros"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "prettyplease",
  "proc-macro2",
@@ -5575,7 +5576,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-modular-bloom"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "criterion",
  "fastbloom",
@@ -5585,7 +5586,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-observability"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "chrono",
  "colored",
@@ -5597,7 +5598,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-rest-api"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "bytes",
  "chrono",
@@ -5619,7 +5620,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-samply"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "crossbeam",
  "feldera-size-of",
@@ -5644,7 +5645,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f75b89f6b944171e5b7df05e40a399ce6355f7b03a51fdd446d6235a890f5f57"
 dependencies = [
  "arcstr",
- "feldera_rust_decimal",
  "hashbrown 0.13.2",
  "ordered-float 3.9.2",
  "size-of-derive",
@@ -5654,7 +5654,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-sqllib"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "arcstr",
  "base58",
@@ -5699,7 +5699,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-storage"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "anyhow",
  "crossbeam",
@@ -5722,7 +5722,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-types"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -6711,7 +6711,7 @@ dependencies = [
 [[package]]
 name = "iceberg"
 version = "0.9.0"
-source = "git+https://github.com/feldera/iceberg-rust.git?rev=28c4800f198686f306bd80d11d03f232670feec3#28c4800f198686f306bd80d11d03f232670feec3"
+source = "git+https://github.com/feldera/iceberg-rust.git?rev=c954c5fd852c19588c44b568fdb64dded30bc9b1#c954c5fd852c19588c44b568fdb64dded30bc9b1"
 dependencies = [
  "aes-gcm",
  "anyhow",
@@ -6767,7 +6767,7 @@ dependencies = [
 [[package]]
 name = "iceberg-catalog-glue"
 version = "0.9.0"
-source = "git+https://github.com/feldera/iceberg-rust.git?rev=28c4800f198686f306bd80d11d03f232670feec3#28c4800f198686f306bd80d11d03f232670feec3"
+source = "git+https://github.com/feldera/iceberg-rust.git?rev=c954c5fd852c19588c44b568fdb64dded30bc9b1#c954c5fd852c19588c44b568fdb64dded30bc9b1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6782,7 +6782,7 @@ dependencies = [
 [[package]]
 name = "iceberg-catalog-rest"
 version = "0.9.0"
-source = "git+https://github.com/feldera/iceberg-rust.git?rev=28c4800f198686f306bd80d11d03f232670feec3#28c4800f198686f306bd80d11d03f232670feec3"
+source = "git+https://github.com/feldera/iceberg-rust.git?rev=c954c5fd852c19588c44b568fdb64dded30bc9b1#c954c5fd852c19588c44b568fdb64dded30bc9b1"
 dependencies = [
  "async-trait",
  "chrono",
@@ -6801,7 +6801,7 @@ dependencies = [
 [[package]]
 name = "iceberg-catalog-s3tables"
 version = "0.9.0"
-source = "git+https://github.com/feldera/iceberg-rust.git?rev=28c4800f198686f306bd80d11d03f232670feec3#28c4800f198686f306bd80d11d03f232670feec3"
+source = "git+https://github.com/feldera/iceberg-rust.git?rev=c954c5fd852c19588c44b568fdb64dded30bc9b1#c954c5fd852c19588c44b568fdb64dded30bc9b1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6814,7 +6814,7 @@ dependencies = [
 [[package]]
 name = "iceberg-datafusion"
 version = "0.9.0"
-source = "git+https://github.com/feldera/iceberg-rust.git?rev=28c4800f198686f306bd80d11d03f232670feec3#28c4800f198686f306bd80d11d03f232670feec3"
+source = "git+https://github.com/feldera/iceberg-rust.git?rev=c954c5fd852c19588c44b568fdb64dded30bc9b1#c954c5fd852c19588c44b568fdb64dded30bc9b1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6830,7 +6830,7 @@ dependencies = [
 [[package]]
 name = "iceberg-storage-opendal"
 version = "0.9.0"
-source = "git+https://github.com/feldera/iceberg-rust.git?rev=28c4800f198686f306bd80d11d03f232670feec3#28c4800f198686f306bd80d11d03f232670feec3"
+source = "git+https://github.com/feldera/iceberg-rust.git?rev=c954c5fd852c19588c44b568fdb64dded30bc9b1#c954c5fd852c19588c44b568fdb64dded30bc9b1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -7449,7 +7449,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.53.5",
 ]
 
 [[package]]
@@ -8996,7 +8996,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pipeline-manager"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "actix-cors",
  "actix-files",
@@ -10234,7 +10234,7 @@ dependencies = [
 
 [[package]]
 name = "readers"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "async-std",
  "csv",
@@ -11861,7 +11861,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "sltsqlvalue"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "dbsp",
  "feldera-sqllib",
@@ -12307,7 +12307,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "storage-test-compat"
-version = "0.355.0"
+version = "0.357.0"
 dependencies = [
  "dbsp",
  "derive_more 1.0.0",

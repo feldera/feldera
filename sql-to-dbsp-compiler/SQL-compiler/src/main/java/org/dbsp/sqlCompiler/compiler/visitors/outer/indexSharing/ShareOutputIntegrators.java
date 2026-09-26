@@ -9,7 +9,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IHasPostIntegrator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -25,11 +26,11 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 
-/** An input with a primary key is indexes.  In the circuit it may be
- * followed by another MapIndex, which may feed a Join.  Remove that index
- * if it has the same key and use the input directly. */
-public class ShareInputIndexes extends CircuitCloneVisitor {
-    public ShareInputIndexes(DBSPCompiler compiler) {
+/** An operator that shares the integrator of its output, such as an aggregate, may be
+ * followed by a MapIndex that feeds a Join.  Remove that index if it keeps the key, and make
+ * the join read the output of the operator directly, sharing its integrator. */
+public class ShareOutputIntegrators extends CircuitCloneVisitor {
+    public ShareOutputIntegrators(DBSPCompiler compiler) {
         super(compiler, false);
     }
 
@@ -110,13 +111,22 @@ public class ShareInputIndexes extends CircuitCloneVisitor {
         return reduced.closure(keyVar, leftVar, rightVar);
     }
 
+    /** True if a join that reads the output of the operator shares the integrator that the
+     * operator keeps, instead of integrating that output again.
+     * @param operator  Operator producing an indexed collection. */
+    static boolean sharesOutputIntegrator(DBSPOperator operator) {
+        // Unfortunately this does not apply to DBSPSourceMapOperators,
+        // since these do not have their output integrators in the right place.
+        return operator.is(IHasPostIntegrator.class) &&
+                operator.to(IHasPostIntegrator.class).integratorHoldsOutput();
+    }
+
     @Nullable
     JoinSource joinInput(OutputPort input) {
         DBSPMapIndexOperator mx = input.node().as(DBSPMapIndexOperator.class);
         if (mx == null || mx.getOutputIndexedZSetType().elementType.mayBeNull)
             return null;
-        var table = mx.input().node().as(DBSPSourceMapOperator.class);
-        if (table == null)
+        if (!sharesOutputIntegrator(mx.input().node()))
             return null;
         // Check if the MapIndex key is the identity function
         DBSPClosureExpression ix = mx.getClosureFunction();

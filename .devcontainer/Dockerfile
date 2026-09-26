@@ -50,8 +50,10 @@ RUN echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME && \
 
 ## Setup Java and Python
 
+# mold is the linker for Rust builds here; see the cargo configuration below.
 RUN apt-get install --no-install-recommends -y \
    gcc clang libclang-dev python3-pip python3-plumbum \
+   mold \
    hub numactl openjdk-21-jdk-headless maven
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 
@@ -100,12 +102,27 @@ RUN $HOME/.bun/bin/bun install --global @hey-api/openapi-ts @biomejs/biome
 ## Install Claude Code
 RUN curl -fsSL https://claude.ai/install.sh | bash
 
+# Build arg, not a compose `environment:` entry: the latter is set only at run
+# time, which leaves this empty and silently installs `stable` instead.
+ARG RUST_VERSION=1.96.1
 RUN \
    rustup install $RUST_VERSION && \
    rustup default $RUST_VERSION && \
    rustup component add rustfmt && \
    rustup component add clippy && \
    cargo install cargo-make
+
+# Link with mold, which needs far less memory than GNU ld for a link this size.
+# Scoped to the two Linux targets, so it cannot leak into a host toolchain. This
+# is a user-level file rather than the repository `.cargo/config.toml` because
+# mold runs on Linux only, and Feldera is also developed on macOS.
+RUN mkdir -p $HOME/.cargo && printf '%s\n' \
+   '[target.aarch64-unknown-linux-gnu]' \
+   'rustflags = ["-C", "link-arg=-fuse-ld=mold"]' \
+   '' \
+   '[target.x86_64-unknown-linux-gnu]' \
+   'rustflags = ["-C", "link-arg=-fuse-ld=mold"]' \
+   >> $HOME/.cargo/config.toml
 
 ## Install Samply
 RUN curl --proto '=https' --tlsv1.2 -LsSf https://github.com/feldera/samply/releases/download/v0.13.2/samply-installer.sh | sh

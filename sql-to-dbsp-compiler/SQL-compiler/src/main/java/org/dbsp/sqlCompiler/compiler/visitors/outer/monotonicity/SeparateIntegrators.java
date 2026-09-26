@@ -1,28 +1,15 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPPositiveOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPRankOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPRowNumberOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.IHasInputIntegrator;
+import org.dbsp.sqlCompiler.circuit.operator.IHasPostIntegrator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
@@ -43,17 +30,13 @@ public class SeparateIntegrators extends CircuitCloneWithGraphsVisitor {
         super(compiler, graphs);
     }
 
+    /** True when a consumer that integrates the output of {@code operator} reads the
+     * integrator that {@code operator} keeps.  Such a consumer needs a noop to integrate
+     * on its own, so that a Retain operator applies to one integrator only. */
     private static boolean hasPostIntegrator(DBSPSimpleOperator operator) {
-        return operator.is(DBSPAggregateOperator.class) ||
-                operator.is(DBSPChainAggregateOperator.class) ||
-                operator.is(DBSPAggregateLinearPostprocessOperator.class) ||
-                operator.is(DBSPPartitionedRollingAggregateWithWaterlineOperator.class) ||
-                operator.is(DBSPPartitionedRollingAggregateOperator.class) ||
-                operator.is(DBSPIntegrateOperator.class) ||
-                operator.is(DBSPLagOperator.class) ||
-                operator.is(DBSPIndexedTopKOperator.class) ||
-                operator.is(DBSPRankOperator.class) ||
-                operator.is(DBSPRowNumberOperator.class) ||
+        // A source keeps an integrator of its contents only when the table is materialized
+        return (operator.is(IHasPostIntegrator.class) &&
+                operator.to(IHasPostIntegrator.class).integratorHoldsOutput()) ||
                 (operator.is(DBSPSourceMultisetOperator.class) &&
                         operator.to(DBSPSourceMultisetOperator.class).metadata.materialized) ||
                 (operator.is(DBSPSourceMapOperator.class) &&
@@ -62,19 +45,12 @@ public class SeparateIntegrators extends CircuitCloneWithGraphsVisitor {
 
     /** True when {@code consumer} keeps an integral of the stream it reads on input {@code inputIndex}. */
     private static boolean hasPreIntegrator(DBSPOperator consumer, int inputIndex) {
-        return consumer.is(DBSPJoinBaseOperator.class) ||
-                consumer.is(DBSPStarJoinBaseOperator.class) ||
-                (consumer.is(DBSPWindowOperator.class) && inputIndex == 0) ||
-                consumer.is(DBSPPartitionedRollingAggregateOperator.class) ||
-                consumer.is(DBSPDistinctOperator.class) ||
-                consumer.is(DBSPPositiveOperator.class) ||
-                consumer.is(DBSPAggregateOperator.class) ||
-                consumer.is(DBSPIntegrateOperator.class) ||
-                consumer.is(DBSPLagOperator.class) ||
-                consumer.is(DBSPIndexedTopKOperator.class) ||
-                (consumer.is(DBSPSinkOperator.class) &&
-                        consumer.to(DBSPSinkOperator.class).metadata.viewKind ==
-                                SqlCreateView.ViewKind.MATERIALIZED);
+        // A sink keeps an integrator of the view contents only when the view is materialized
+        if (consumer.is(DBSPSinkOperator.class))
+            return consumer.to(DBSPSinkOperator.class).metadata.viewKind ==
+                    SqlCreateView.ViewKind.MATERIALIZED;
+        return consumer.is(IHasInputIntegrator.class) &&
+                consumer.to(IHasInputIntegrator.class).hasInputIntegrator(inputIndex);
     }
 
     @Override

@@ -221,6 +221,22 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void testFloatingPointAggregateWarning() {
+        DBSPCompiler compiler = this.chattyCompiler();
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE T(g INT, d DOUBLE, n DECIMAL(10, 2));
+                CREATE VIEW V AS SELECT g, SUM(d), AVG(n) FROM T GROUP BY g;""");
+        compiler.getFinalCircuit(true);
+        TestUtil.assertMessagesContain(compiler, """
+                warning: Inefficient aggregate: SUM over DOUBLE values is inefficient because it uses floating-point arithmetic.  Consider using DECIMAL values if possible.
+                    1|CREATE TABLE T(g INT, d DOUBLE, n DECIMAL(10, 2));
+                    2|CREATE VIEW V AS SELECT g, SUM(d), AVG(n) FROM T GROUP BY g;
+                                                 ^^^^^^""");
+        // The DECIMAL aggregate is linear and produces no warning
+        Assert.assertEquals(1, compiler.messages.warningCount());
+    }
+
+    @Test
     public void testFormatWarnings() {
         String sql = "CREATE TABLE T(d DATE);\n" +
                 "CREATE VIEW V AS SELECT FORMAT_DATE(DATE '2020-10-10', '%Y-%m');";
@@ -903,6 +919,12 @@ public class MetadataTests extends BaseSQLTests {
                         #[inline]
                         fn deserialize(&self, _: &mut D) -> Result<I256Wrapper, D::Error> {
                             Ok(I256Wrapper::from(self.bytes))
+                        }
+                    }
+
+                    impl dbsp::dynamic::OrdRepr<I256Wrapper> for ArchivedI256Wrapper {
+                        fn ord_cmp(&self, other: &I256Wrapper) -> std::cmp::Ordering {
+                            I256::from_be_bytes(self.bytes).cmp(&other.data)
                         }
                     }
 

@@ -24,7 +24,7 @@ use deltalake::protocol::SaveMode;
 use deltalake::table::config::TableProperty;
 use deltalake::{DeltaTable, DeltaTableBuilder, ensure_table_uri};
 use feldera_adapterlib::errors::controller::ControllerError;
-use feldera_macros::IsNone;
+use feldera_macros::{IsNone, OrdRepr};
 use feldera_sqllib::Variant;
 use feldera_types::config::{PipelineConfig, TransportConfig};
 use feldera_types::format::json::JsonFlavor;
@@ -142,6 +142,12 @@ fn completed_frontier_metadata(pipeline: &Controller) -> Option<Value> {
 fn pipeline_completed_version(pipeline: &Controller) -> Option<i64> {
     completed_frontier_metadata(pipeline).and_then(|metadata| metadata["version"].as_i64())
 }
+
+/// How long to wait for `pipeline_completed_version` to reach a table version.
+///
+/// The version completes only once the output connector commits it, and a
+/// single commit to GCS has taken 24 s (issue 7260).
+const COMPLETED_VERSION_TIMEOUT_MS: u128 = 200_000;
 
 /// One deterministic test row (even `bigint` so `bigint % 2 = 0` filters pass).
 fn delta_test_record(bigint: i64) -> DeltaTestStruct {
@@ -1801,7 +1807,7 @@ async fn test_follow(
                 false
             }
         },
-        20_000,
+        COMPLETED_VERSION_TIMEOUT_MS,
     )
     .unwrap();
 
@@ -1908,7 +1914,7 @@ async fn test_follow(
                         false
                     }
                 },
-                20_000,
+                COMPLETED_VERSION_TIMEOUT_MS,
             )
             .unwrap();
 
@@ -4763,6 +4769,7 @@ async fn delta_table_follow_partition_column_types_test() {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 struct UpperCaseTestStruct {
@@ -4839,6 +4846,7 @@ async fn delta_table_follow_partition_uppercase_columns_test() {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 struct UnquotedSqlTestStruct {
@@ -6737,6 +6745,7 @@ async fn follow_filter_before_projection_prunes_scan() {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 struct VariantTestStruct {

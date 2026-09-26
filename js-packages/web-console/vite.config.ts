@@ -272,7 +272,23 @@ export default defineConfig(async () => {
           test: {
             name: 'integration',
             environment: 'node',
-            globalSetup: ['src/lib/vitest-integration-setup.ts'],
+            // A setupFile, not globalSetup: globalSetup loads through a Vite
+            // module runner that never receives SvelteKit's compile-time
+            // defines (kit.paths.base and friends), so any module reached
+            // from it that imports `$app/paths` — pipelineManager.ts does,
+            // transitively, through felderaEndpoint.ts — throws
+            // `ReferenceError: __SVELTEKIT_PATHS_BASE__ is not defined`.
+            // Regular test files load through the project's own module
+            // runner, which does have the defines, so setupFiles works.
+            //
+            // A setupFile only runs before files of *this* project, unlike
+            // globalSetup which used to block every project in the run. The
+            // `integration-client` project's own tests compile pipelines too,
+            // so `test-integration` (package.json) now runs this project to
+            // completion — including the cache warmup below — before starting
+            // `integration-client`, instead of passing both `--project` flags
+            // to one `vitest` invocation.
+            setupFiles: ['src/lib/vitest-integration-setup.ts'],
             include: ['src/**/*.test.{js,ts}'],
             exclude: ['src/**/*.svelte.test.{js,ts}']
           }

@@ -32,17 +32,12 @@ import unittest
 import urllib.request
 from typing import List, Optional
 
-from feldera import PipelineBuilder
-from feldera.enums import CompilationProfile
 from feldera.pipeline import Pipeline
-from feldera.runtime_config import Resources, RuntimeConfig
+from feldera.runtime_config import Resources
 from feldera.testutils import (
-    FELDERA_TEST_NUM_HOSTS,
-    FELDERA_TEST_NUM_WORKERS,
-    TEST_CLIENT,
     ViewSpec,
+    build_pipeline,
     check_for_endpoint_errors,
-    generate_program,
     log,
     number_of_processed_records,
     unique_pipeline_name,
@@ -373,22 +368,27 @@ def jsonbench_views() -> List[ViewSpec]:
 def build_jsonbench_pipeline(
     pipeline_name: str, config: JSONBenchConfig, views: List[ViewSpec]
 ) -> Pipeline:
-    sql = generate_program(bluesky_tables(config), views)
+    """Create or replace the JSONBench pipeline for `config`.
+
+    Builds through the shared `build_pipeline`, which carries the CI settings
+    every workload needs. The only addition is the gunzip UDF, which the S3
+    input mode's preprocessor needs to read the compressed files.
+
+    :param pipeline_name: Name of the pipeline to create or replace.
+    :param config: Benchmark configuration: input mode, file count, VARIANT
+        representation and resources.
+    :param views: The benchmark views.
+    :return: The pipeline, created but not yet started.
+    """
     needs_gunzip = config.input_mode == "s3"
-    return PipelineBuilder(
-        TEST_CLIENT,
+    return build_pipeline(
         pipeline_name,
-        sql=sql,
+        bluesky_tables(config),
+        views,
+        resources=config.resources,
         udf_rust=GUNZIP_UDF if needs_gunzip else "",
         udf_toml=GUNZIP_TOML if needs_gunzip else "",
-        compilation_profile=CompilationProfile.OPTIMIZED,
-        runtime_config=RuntimeConfig(
-            provisioning_timeout_secs=60,
-            resources=config.resources,
-            workers=FELDERA_TEST_NUM_WORKERS,
-            hosts=FELDERA_TEST_NUM_HOSTS,
-        ),
-    ).create_or_replace()
+    )
 
 
 # Exact q4/q5 outputs for the 1M dataset (file_0001), identical under both
@@ -620,7 +620,13 @@ def run_cli():
 
 class TestJSONBench(unittest.TestCase):
     def test_jsonbench_1m(self):
-        jsonbench_test(JSONBenchConfig())
+        # Peaks near 5.5 GiB. With the default 1024M request, node
+        # auto-provisioning puts the pipeline on a 4-8 GB spot node, and the
+        # kubelet evicts it mid-test; the replacement pod restarts the
+        # pipeline from scratch, without the transaction the test opened
+        # (#7025, #7008). 8000 leaves about 2 GiB of headroom. No
+        # memory_mb_max: it would shrink the DataFusion pool to 5% of it.
+        jsonbench_test(JSONBenchConfig(resources=Resources(memory_mb_min=8000)))
 
 
 if __name__ == "__main__":

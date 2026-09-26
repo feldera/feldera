@@ -203,6 +203,15 @@ where
     }
 }
 
+/// `SqlString` orders as its text does, so the archived form compares its
+/// bytes with the text directly.
+impl dbsp::dynamic::OrdRepr<SqlString> for ArchivedString {
+    #[inline]
+    fn ord_cmp(&self, other: &SqlString) -> std::cmp::Ordering {
+        self.as_str().cmp(other.str())
+    }
+}
+
 #[doc(hidden)]
 pub fn concat_s_s(left: SqlString, right: SqlString) -> SqlString {
     SqlString::from_concat(&[left.str(), right.str()])
@@ -1037,7 +1046,7 @@ mod test {
 
 /// A `SqlString` archives to `ArchivedString`, whose hash already matches the
 /// decoded one, so only the decoded side needs saying.
-impl crate::__hash_repr::HashRepr for SqlString {
+impl crate::__HashRepr for SqlString {
     const FAITHFUL: bool = true;
 
     #[inline]

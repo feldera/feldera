@@ -2340,6 +2340,15 @@ pub struct StorageAutoscalingConfig {
     )]
     pub scale_threshold: Option<f64>,
 
+    /// Expand storage when available space falls below this many MB, even if
+    /// usage is still under `scale_threshold`. Either condition triggers
+    /// expansion. Unset by default.
+    #[serde(
+        deserialize_with = "crate::serde_via_value::deserialize",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub scale_threshold_available_mb: Option<u64>,
+
     /// Expansion multiplier. Defaults to 2.0.
     #[serde(
         deserialize_with = "crate::serde_via_value::deserialize",
@@ -2358,7 +2367,13 @@ mod resource_config_tests {
         let input = json!({
             "storage_mb_min": 1000,
             "storage_mb_max": 8000,
-            "autoscaling": { "storage": { "scale_threshold": 0.8, "scale_factor": 2.0 } }
+            "autoscaling": {
+                "storage": {
+                    "scale_threshold": 0.8,
+                    "scale_threshold_available_mb": 10000,
+                    "scale_factor": 2.0
+                }
+            }
         });
         let config: ResourceConfig = serde_json::from_value(input).unwrap();
         assert_eq!(config.storage_mb_min, Some(1000));
@@ -2368,6 +2383,7 @@ mod resource_config_tests {
             Some(AutoscalingConfig {
                 storage: Some(StorageAutoscalingConfig {
                     scale_threshold: Some(0.8),
+                    scale_threshold_available_mb: Some(10000),
                     scale_factor: Some(2.0),
                 }),
             })
@@ -2377,6 +2393,10 @@ mod resource_config_tests {
         assert_eq!(
             output["autoscaling"]["storage"]["scale_threshold"],
             json!(0.8)
+        );
+        assert_eq!(
+            output["autoscaling"]["storage"]["scale_threshold_available_mb"],
+            json!(10000)
         );
         assert_eq!(output["autoscaling"]["storage"]["scale_factor"], json!(2.0));
     }
@@ -2408,6 +2428,8 @@ mod resource_config_tests {
     #[test]
     fn autoscaling_rejects_non_numeric_values() {
         let input = json!({ "autoscaling": { "storage": { "scale_threshold": "high" } } });
+        assert!(serde_json::from_value::<ResourceConfig>(input).is_err());
+        let input = json!({ "autoscaling": { "storage": { "scale_threshold_available_mb": -1 } } });
         assert!(serde_json::from_value::<ResourceConfig>(input).is_err());
         let input = json!({ "storage_mb_min": -1 });
         assert!(serde_json::from_value::<ResourceConfig>(input).is_err());

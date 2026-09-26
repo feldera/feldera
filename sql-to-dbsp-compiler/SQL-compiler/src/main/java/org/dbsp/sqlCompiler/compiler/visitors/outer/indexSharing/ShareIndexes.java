@@ -7,24 +7,25 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 
 /** Find patterns where the same collection is indexed twice on the same key with different values
  * (followed by an integral) and try to share the indexing by expanding the values.
+ * In the diagram below "integrator" is really an operator which has an integrator on the input.
  *
  * <pre>
- *        source
- *        /    \
- *    index   index
- *     /         \
- *  join        join
+ *          source
+ *          /    \
+ *      index   index
+ *       /         \
+ *  integrator  integrator
  * </pre>
  * <p>when the two index nodes have the same key, is rewritten as
  * <pre>
- *     source
- *        |
- *      index
- *     /    \
- *  join   join
+ *          source
+ *            |
+ *          index
+ *         /     \
+ *  integrator  integrator
  * </pre>
  * <p>where the common index produces the union of the fields of the two indexes.
- * The two joins need to have their functions adjusted to read the appropriate fields.
+ * The integrators need to have their functions adjusted to read the appropriate fields.
  * */
 public class ShareIndexes extends Passes {
     public ShareIndexes(DBSPCompiler compiler) {
@@ -54,7 +55,7 @@ public class ShareIndexes extends Passes {
         this.add(new DuplicateSharedIndexes(compiler, graph1.getGraphs()));
         this.add(new DeadCode(compiler, true));
 
-        // Share the same MapIndex between many joins
+        // Share the same MapIndex between many integrators
         Graph graph2 = new Graph(compiler);
         this.add(graph2);
         FindSharedIndexes shared = new FindSharedIndexes(compiler, graph2.getGraphs());

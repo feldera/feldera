@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.indexSharing;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
@@ -11,17 +10,21 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneWithGraphsVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
-import org.dbsp.util.Linq;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
- * For each join make sure that the MapIndex preceding it (if it exists) is not shared
+ * For each join or star join make sure that the MapIndex preceding it (if it exists) is not shared
  */
 class DuplicateSharedIndexes extends CircuitCloneWithGraphsVisitor {
     public DuplicateSharedIndexes(DBSPCompiler compiler, CircuitGraphs graph) {
@@ -46,26 +49,22 @@ class DuplicateSharedIndexes extends CircuitCloneWithGraphsVisitor {
         return copy;
     }
 
-    boolean processJoin(DBSPJoinBaseOperator join) {
-        OutputPort left;
-        OutputPort right;
-        var lmi = this.unshareIfNeeded(join.left());
+    /** Give the join its own copy of every shared MapIndex it reads;
+     * false if it reads none. */
+    boolean processJoin(DBSPSimpleOperator join) {
+        List<OutputPort> sources = new ArrayList<>(join.inputs.size());
         boolean modified = false;
-        if (lmi != null) {
-            left = lmi.outputPort();
-            modified = true;
-        } else {
-            left = this.mapped(join.left());
-        }
-        var rmi = this.unshareIfNeeded(join.right());
-        if (rmi != null) {
-            right = rmi.outputPort();
-            modified = true;
-        } else {
-            right = this.mapped(join.right());
+        for (OutputPort input : join.inputs) {
+            DBSPMapIndexOperator copy = this.unshareIfNeeded(input);
+            if (copy != null) {
+                sources.add(copy.outputPort());
+                modified = true;
+            } else {
+                sources.add(this.mapped(input));
+            }
         }
         if (!modified) return false;
-        DBSPSimpleOperator result = join.withInputs(Linq.list(left, right), true)
+        DBSPSimpleOperator result = join.withInputs(sources, true)
                 .to(DBSPSimpleOperator.class);
         this.map(join, result);
         return true;
@@ -127,4 +126,24 @@ class DuplicateSharedIndexes extends CircuitCloneWithGraphsVisitor {
         }
     }
 
+    @Override
+    public void postorder(DBSPStarJoinOperator operator) {
+        if (!this.processJoin(operator)) {
+            super.postorder(operator);
+        }
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinIndexOperator operator) {
+        if (!this.processJoin(operator)) {
+            super.postorder(operator);
+        }
+    }
+
+    @Override
+    public void postorder(DBSPStarJoinFilterMapOperator operator) {
+        if (!this.processJoin(operator)) {
+            super.postorder(operator);
+        }
+    }
 }

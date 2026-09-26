@@ -1,4 +1,5 @@
 import json
+import re
 import time
 import uuid
 from contextlib import closing
@@ -93,6 +94,126 @@ def test_pipeline_metrics(pipeline_name):
     # Invalid
     r_bad = get(api_url(f"/pipelines/{pipeline_name}/metrics?format=does-not-exist"))
     assert r_bad.status_code == HTTPStatus.BAD_REQUEST
+
+
+def _reported_statuses(text: str, pipeline_name: str, metric: str) -> dict[str, int]:
+    """Returns the status to value mapping that `metric` reports for `pipeline_name`."""
+    statuses = {}
+    for line in text.splitlines():
+        m = re.fullmatch(rf"{metric}\{{(.*)\}} (\d+)", line)
+        if not m:
+            continue
+        labels = dict(re.findall(r'(\w+)="([^"]*)"', m.group(1)))
+        if labels["pipeline_name"] == pipeline_name:
+            statuses[labels["status"]] = int(m.group(2))
+    return statuses
+
+
+def _reported_statuses_json(
+    families: list, pipeline_name: str, metric: str
+) -> dict[str, int]:
+    """Returns the status to value mapping that JSON `metric` reports for `pipeline_name`."""
+    for family in families:
+        if family.get("key") != metric:
+            continue
+        return {
+            value["labels"]["status"]: value["value"]
+            for value in family["values"]
+            if value["labels"]["pipeline_name"] == pipeline_name
+        }
+    return {}
+
+
+def _assert_only(reported: dict[str, int], metric: str, expected: str):
+    assert [s for s, value in reported.items() if value == 1] == [expected], (
+        metric,
+        reported,
+    )
+    assert len(reported) > 1, f"{metric} reports only the current status: {reported}"
+
+
+def _assert_reports(text: str, pipeline_name: str, status: str):
+    _assert_only(
+        _reported_statuses(text, pipeline_name, "pipeline_status"),
+        "pipeline_status",
+        status,
+    )
+
+
+def _assert_reports_json(families: list, pipeline_name: str, status: str):
+    _assert_only(
+        _reported_statuses_json(families, pipeline_name, "pipeline_status"),
+        "pipeline_status",
+        status,
+    )
+
+
+@gen_pipeline_name
+def test_pipeline_status_metrics(pipeline_name):
+    """
+    Tests that the status of a pipeline is reported throughout its lifecycle,
+    including while it is stopped and therefore exports no metrics of its own.
+    """
+    create_pipeline(pipeline_name, "")
+    r = get(api_url("/metrics"))
+    assert r.status_code == HTTPStatus.OK, r.text
+    assert "# TYPE pipeline_status gauge" in r.text
+    _assert_reports(r.text, pipeline_name, "Stopped")
+
+    start_pipeline_as_paused(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
+    r = get(api_url("/metrics"))
+    _assert_reports(r.text, pipeline_name, "Paused")
+
+    resume_pipeline(pipeline_name)
+    r = get(api_url("/metrics"))
+    _assert_reports(r.text, pipeline_name, "Running")
+    assert "# TYPE records_processed_total counter" in r.text
+
+    stop_pipeline(pipeline_name)
+    r = get(api_url("/metrics"))
+    _assert_reports(r.text, pipeline_name, "Stopped")
+
+
+@gen_pipeline_name
+def test_single_pipeline_status_metrics(pipeline_name):
+    """
+    Tests that the per-pipeline metrics endpoint reports the status in both
+    output formats, including while the pipeline is stopped and therefore
+    answers no scrape of its own.
+    """
+    url = api_url(f"/pipelines/{pipeline_name}/metrics")
+    create_pipeline(pipeline_name, "")
+
+    # A stopped pipeline exports no metrics itself, but still reports its status.
+    r = get(url)
+    assert r.status_code == HTTPStatus.OK, r.text
+    _assert_reports(r.text, pipeline_name, "Stopped")
+    assert "records_processed_total" not in r.text
+
+    start_pipeline_as_paused(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
+    r = get(url)
+    assert r.status_code == HTTPStatus.OK, r.text
+    _assert_reports(r.text, pipeline_name, "Paused")
+    assert "# TYPE records_processed_total counter" in r.text
+
+    # The two formats must not disagree about the status.
+    if FELDERA_TEST_NUM_HOSTS == 1:
+        r = get(f"{url}?format=json")
+        assert r.status_code == HTTPStatus.OK, r.text
+        families = json.loads(r.text)
+        _assert_reports_json(families, pipeline_name, "Paused")
+        assert any(f.get("key") == "records_processed_total" for f in families)
+
+    stop_pipeline(pipeline_name)
+    r = get(url)
+    assert r.status_code == HTTPStatus.OK, r.text
+    _assert_reports(r.text, pipeline_name, "Stopped")
+
+    # A name that does not exist is still an error, not an all-zero report.
+    r = get(api_url(f"/pipelines/{pipeline_name}-absent/metrics"))
+    assert r.status_code == HTTPStatus.NOT_FOUND, r.text
 
 
 @gen_pipeline_name

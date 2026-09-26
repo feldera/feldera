@@ -40,6 +40,44 @@ pub enum CombinedStatus {
 }
 
 impl CombinedStatus {
+    pub const ALL: [Self; 15] = [
+        Self::Stopped,
+        Self::Provisioning,
+        Self::Unavailable,
+        Self::Coordination,
+        Self::Standby,
+        Self::AwaitingApproval,
+        Self::Initializing,
+        Self::Bootstrapping,
+        Self::ConcurrentBootstrapping,
+        Self::Synchronizing,
+        Self::Replaying,
+        Self::Paused,
+        Self::Running,
+        Self::Suspended,
+        Self::Stopping,
+    ];
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Stopped => "Stopped",
+            Self::Provisioning => "Provisioning",
+            Self::Unavailable => "Unavailable",
+            Self::Coordination => "Coordination",
+            Self::Standby => "Standby",
+            Self::AwaitingApproval => "AwaitingApproval",
+            Self::Initializing => "Initializing",
+            Self::Bootstrapping => "Bootstrapping",
+            Self::ConcurrentBootstrapping => "ConcurrentBootstrapping",
+            Self::Synchronizing => "Synchronizing",
+            Self::Replaying => "Replaying",
+            Self::Paused => "Paused",
+            Self::Running => "Running",
+            Self::Suspended => "Suspended",
+            Self::Stopping => "Stopping",
+        }
+    }
+
     pub fn new(resources_status: ResourcesStatus, runtime_status: Option<RuntimeStatus>) -> Self {
         match resources_status {
             ResourcesStatus::Stopped => Self::Stopped,
@@ -136,5 +174,40 @@ pub fn combine_since(
         std::cmp::max(resources_since, runtime_status_since)
     } else {
         resources_since
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::CombinedStatus;
+    use utoipa::ToSchema;
+
+    /// Returns the variant names that the OpenAPI schema declares for `T`.
+    fn schema_variants<'a, T: ToSchema<'a>>() -> Vec<String> {
+        serde_json::to_value(T::schema().1).unwrap()["enum"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|variant| variant.as_str().unwrap().to_string())
+            .collect()
+    }
+
+    /// `as_str` is an exhaustive match, so a new variant forces an update there,
+    /// but nothing forces one in `ALL`.  A variant missing from `ALL` reports no
+    /// series at all, which reads as every status being 0.
+    #[test]
+    fn all_lists_every_variant_in_order() {
+        let listed: Vec<String> = CombinedStatus::ALL
+            .iter()
+            .map(|status| status.as_str().to_string())
+            .collect();
+        assert_eq!(listed, schema_variants::<CombinedStatus>());
+    }
+
+    #[test]
+    fn as_str_matches_the_api_representation() {
+        for status in CombinedStatus::ALL {
+            assert_eq!(serde_json::to_value(status).unwrap(), status.as_str());
+        }
     }
 }

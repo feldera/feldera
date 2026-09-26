@@ -51,7 +51,7 @@ use uuid::Uuid;
 
 use arrow::array::{Array, Int64Array};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use dbsp::circuit::tokio::TOKIO;
+use dbsp::{DetailedError, circuit::tokio::TOKIO};
 use proptest::prelude::*;
 
 #[test]
@@ -223,6 +223,131 @@ fn test_start_after() {
 +----+------+---+-----+"#;
 
     assert_eq!(&result, expected);
+    controller.stop().unwrap();
+}
+
+/// A panic on the circuit thread after initialization must reach the error
+/// callback as `ControllerPanic`; otherwise the server never learns that the
+/// pipeline died and keeps reporting it as running.
+#[test]
+fn test_circuit_thread_panic_is_reported() {
+    init_test_logger();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 1,
+        "inputs": {}
+    }))
+    .unwrap();
+
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let errors_clone = errors.clone();
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(move |e, _| errors_clone.lock().unwrap().push(e.error_code())),
+    )
+    .unwrap();
+    controller.start();
+
+    // The circuit thread runs this callback, so the panic unwinds through it.
+    controller.start_graph_profile(Box::new(|_| panic!("injected circuit thread panic")));
+
+    // A short timeout: without the fix the report never arrives.
+    wait(|| !errors.lock().unwrap().is_empty(), 10_000)
+        .expect("the circuit thread panic was not reported");
+    assert_eq!(errors.lock().unwrap().as_slice(), ["ControllerPanic"]);
+
+    let stop_error = controller
+        .stop()
+        .expect_err("stopping a controller whose circuit thread panicked must fail");
+    assert_eq!(stop_error.error_code(), "ControllerPanic");
+}
+
+/// A full disk must fail the pipeline with the storage error.
+///
+/// A background merger that cannot write panics.  A worker waiting on that
+/// merger never replies, so the circuit thread must notice the panic while it
+/// waits; otherwise the step blocks forever and the pipeline reports
+/// `Running`.
+#[test]
+fn test_storage_full_reports_storage_error() {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_path = tempdir.path().join("input.csv");
+    let mut input = File::create_new(&input_path).unwrap();
+    let padding = "x".repeat(100);
+    let mut next_id = 0;
+    let mut append_rows = |n: usize| {
+        for _ in 0..n {
+            writeln!(input, "{next_id},true,{next_id},{padding}{next_id}").unwrap();
+            next_id += 1;
+        }
+        input.flush().unwrap();
+    };
+    append_rows(200_000);
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 2,
+        "storage_config": { "path": storage_dir },
+        "storage": { "min_storage_bytes": 0 },
+        "dev_tweaks": { "storage_mb_max": 1 },
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": input_path.display().to_string(), "follow": true },
+                },
+                "format": { "name": "csv" },
+            },
+        },
+    }))
+    .unwrap();
+
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let errors_clone = errors.clone();
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(move |e, _| errors_clone.lock().unwrap().push(e)),
+    )
+    .unwrap();
+    controller.start();
+
+    // The circuit notices dead workers only when it steps, so keep input
+    // flowing, as a live source would.
+    wait(
+        || {
+            append_rows(100);
+            !errors.lock().unwrap().is_empty()
+        },
+        60_000,
+    )
+    .expect("filling storage did not fail the pipeline");
+    let error = errors.lock().unwrap()[0].clone();
+    assert_eq!(error.error_code(), "RuntimeError.WorkerPanic");
+    assert!(
+        error.to_string().contains("no storage space"),
+        "the error should explain that storage is full: {error}"
+    );
+
     controller.stop().unwrap();
 }
 

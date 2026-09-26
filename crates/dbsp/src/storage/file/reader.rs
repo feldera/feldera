@@ -38,7 +38,6 @@ use feldera_modular_bloom::{ModuleDensity, ModuleLayout};
 use feldera_storage::StoragePath;
 use feldera_storage::file::FileId;
 use size_of::SizeOf;
-use smallvec::SmallVec;
 use snap::raw::{Decoder, decompress_len};
 use std::mem::replace;
 use std::ops::Index;
@@ -745,19 +744,20 @@ where
     /// `bias` is [Greater], the child is the last such child.  Returns `None`
     /// if there is no match.
     ///
-    /// The caller supplies `key` as storage for a key.  Before this function
+    /// `compare` sees each probed key in its archived form, so the search
+    /// deserializes only the key that it returns: before this function
     /// returns successfully, it sets `key` to the key for the row that it
     /// found.  On error, `key` might be changed.
     unsafe fn find_best_match<C>(
         &self,
         factories: &Factories<K, A>,
         target_rows: &Range<u64>,
-        compare: &C,
+        compare: &mut C,
         bias: Ordering,
         key: &mut K,
     ) -> Option<usize>
     where
-        C: Fn(&K) -> Ordering,
+        C: FnMut(&K::Archived) -> Ordering,
     {
         unsafe {
             let block_rows = self.rows();
@@ -767,73 +767,59 @@ where
             let mut best = None;
             let mut start = (max(block_rows.start, target_rows.start) - self.first_row) as usize;
             let mut end = (min(block_rows.end, target_rows.end) - self.first_row) as usize;
-            let mut mid = 0;
             while start < end {
-                mid = start.midpoint(end);
-                self.key(factories, mid, key);
-                let cmp = compare(key);
+                let mid = start.midpoint(end);
+                // SAFETY: `mid` is below `self.n_values()`, and the block's
+                // bytes were written as archived `(K, A)` items, which is the
+                // caller's obligation for this block (the checksum verified
+                // on read rules out corruption).
+                let cmp = compare(self.archived_item(factories, mid).fst());
 
                 match cmp {
                     Less => end = mid,
-                    Equal => return Some(mid),
+                    Equal => {
+                        self.key(factories, mid, key);
+                        return Some(mid);
+                    }
                     Greater => start = mid + 1,
                 };
                 if cmp == bias {
                     best = Some(mid);
                 }
             }
-            if let Some(best) = best
-                && best != mid
-            {
-                // We kept searching beyond the key that was ultimately best, so
-                // we have to re-deserialize the best one.  With some additional
-                // complication, we could avoid this if we had two different
-                // slots to deserialize keys and we could indicate to the caller
-                // which one was the right one.
+            if let Some(best) = best {
                 self.key(factories, best, key);
             }
             best
         }
     }
 
-    /// Searches this data block for `target` and returns whether it was
-    /// successful.
+    /// Searches this data block for `target`.  If it is found, deserializes
+    /// its key into `key` and returns its index.
     ///
-    /// Maintains `key_stack` and `index_stack` as a cache of the keys along a
-    /// binary search through the data block.  When successful, the index of the
-    /// child found and its key are at the top of `index_stack` and `key_stack`,
-    /// respectively.
-    unsafe fn find_with_cache<const N: usize>(
-        &self,
-        factories: &Factories<K, A>,
-        key_stack: &mut DynVec<K>,
-        index_stack: &mut SmallVec<[usize; N]>,
-        target: &K,
-    ) -> bool {
+    /// # Safety
+    ///
+    /// Unsafe because `rkyv` deserialization is unsafe: the block's bytes are
+    /// read as archived `(K, A)` items, which they are when the file was
+    /// written for those types.
+    unsafe fn find(&self, factories: &Factories<K, A>, target: &K, key: &mut K) -> Option<usize> {
         unsafe {
             let mut start = 0;
             let mut end = self.n_values();
-            let mut i = 0;
             while start < end {
                 let mid = start.midpoint(end);
-                if index_stack.get(i) != Some(&mid) {
-                    index_stack.truncate(i);
-                    index_stack.push(mid);
-                    key_stack.truncate(i);
-                    key_stack.push_with(&mut |key| self.key(factories, mid, key));
-                };
-                match target.cmp(&key_stack[i]) {
-                    Less => end = mid,
+                // SAFETY: `mid` is below `self.n_values()`, and the block
+                // holds archived `(K, A)` items, as the caller guarantees.
+                match self.archived_item(factories, mid).fst().cmp_target(target) {
+                    Less => start = mid + 1,
                     Equal => {
-                        index_stack.truncate(i + 1);
-                        key_stack.truncate(i + 1);
-                        return true;
+                        self.key(factories, mid, key);
+                        return Some(mid);
                     }
-                    Greater => start = mid + 1,
+                    Greater => end = mid,
                 };
-                i += 1;
             }
-            false
+            None
         }
     }
 }
@@ -1204,6 +1190,24 @@ where
         }
     }
 
+    /// Returns bound number `index` in its archived form.
+    ///
+    /// # Safety
+    ///
+    /// Unsafe because `rkyv` deserialization is unsafe: the bytes at the
+    /// bound's offset are read as an archived `K`, which they are when the
+    /// file was written for that key type.  `index` must be below
+    /// `2 * self.n_children()`.
+    unsafe fn archived_bound(&self, key_factory: &dyn Factory<K>, index: usize) -> &K::Archived {
+        unsafe {
+            let offset = self.bounds.get(&self.raw, index) as usize;
+            // SAFETY: the writer stored at `offset` the archived `K` that
+            // `get_bound` deserializes from the same position; the caller
+            // guarantees the file's key type and the index.
+            key_factory.archived_value(&self.raw, offset)
+        }
+    }
+
     unsafe fn key_range(&self, min: &mut K, max: &mut K) {
         unsafe {
             self.get_bound(0, min);
@@ -1218,19 +1222,16 @@ where
     /// Returns the index of the child of this index block that contains a row
     /// in the range `target_rows` and which may contain a key for which
     /// `compare` returns `bias` or [Equal], or `None` if there is no such
-    /// child.
-    ///
-    /// The caller supplies `bound` as temporary storage for a key.  This
-    /// function might change it.
+    /// child.  `compare` sees each bound in its archived form.
     unsafe fn find_best_match<C>(
         &self,
+        key_factory: &dyn Factory<K>,
         target_rows: &Range<u64>,
-        compare: &C,
+        compare: &mut C,
         bias: Ordering,
-        bound: &mut K,
     ) -> Option<usize>
     where
-        C: Fn(&K) -> Ordering,
+        C: FnMut(&K::Archived) -> Ordering,
     {
         unsafe {
             let mut start = 0;
@@ -1241,8 +1242,9 @@ where
                 let row = self.get_row_bound(mid) + self.first_row;
                 let cmp = match range_compare(target_rows, row) {
                     Equal => {
-                        self.get_bound(mid, bound);
-                        let cmp = compare(bound);
+                        // SAFETY: `mid` is below `2 * self.n_children()`,
+                        // and the file's key type is the caller's obligation.
+                        let cmp = compare(self.archived_bound(key_factory, mid));
                         if cmp == Equal {
                             return Some(mid / 2);
                         }
@@ -1313,18 +1315,18 @@ where
     }
 
     /// Returns the comparison of the largest bound key using `compare`.
-    unsafe fn compare_max<C>(&self, key_factory: &dyn Factory<K>, compare: &C) -> Ordering
+    ///
+    /// # Safety
+    ///
+    /// Unsafe because `rkyv` deserialization is unsafe; see
+    /// [`Self::archived_bound`].
+    unsafe fn compare_max<C>(&self, key_factory: &dyn Factory<K>, compare: &mut C) -> Ordering
     where
-        C: Fn(&K) -> Ordering,
+        C: FnMut(&K::Archived) -> Ordering,
     {
-        unsafe {
-            let mut ordering = Equal;
-            key_factory.with(&mut |key| {
-                self.max_bound(key);
-                ordering = compare(key);
-            });
-            ordering
-        }
+        // SAFETY: the last bound's index is in range by construction, and
+        // the file's key type is the caller's obligation.
+        unsafe { compare(self.archived_bound(key_factory, self.last_bound_index())) }
     }
 }
 
@@ -2274,6 +2276,7 @@ where
             row_group: self.clone(),
             key,
             position,
+            scratch: None,
         }
     }
 
@@ -2491,6 +2494,11 @@ where
     /// When `position.has_value()`, this is the deserialized key at that row.
     /// Otherwise, it can have any value.
     key: Box<K>,
+
+    /// Where a predicate seek deserializes each probed key.  Allocated by the
+    /// first such seek and kept for the next, so that a seek per input record
+    /// does not cost an allocation per record.
+    scratch: Option<Box<K>>,
 }
 
 impl<K, A, N, T> Clone for Cursor<'_, K, A, N, T>
@@ -2503,6 +2511,8 @@ where
             row_group: self.row_group.clone(),
             key: clone_box(&self.key),
             position: self.position.clone(),
+            // A cache, so the clone allocates its own when it needs one.
+            scratch: None,
         }
     }
 }
@@ -2676,10 +2686,30 @@ where
     where
         P: Fn(&K) -> bool + Clone,
     {
+        // The predicate takes an unarchived key, so every probe deserializes
+        // into the cursor's scratch key.  The closure borrows the scratch
+        // while the search borrows the position and the key, so the fields
+        // are taken apart here rather than going through
+        // `Self::advance_to_first_ge`.
+        let Self {
+            row_group,
+            position,
+            key,
+            scratch,
+        } = self;
+        let scratch = scratch.get_or_insert_with(|| row_group.factories.key_factory.default_box());
+        // SAFETY: the caller's obligation (see `# Safety`) is the one that
+        // `Position::advance_to_first_ge` has; the closure itself only calls
+        // safe methods on the archived key it is handed.
         unsafe {
-            self.advance_to_first_ge(&|key| {
-                if predicate(key) { Less } else { Greater }
-            })
+            position.advance_to_first_ge(
+                row_group,
+                &mut |archived: &K::Archived| {
+                    archived.deserialize(&mut **scratch);
+                    if predicate(&**scratch) { Less } else { Greater }
+                },
+                &mut **key,
+            )
         }
     }
 
@@ -2691,12 +2721,15 @@ where
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn advance_to_value_or_larger(&mut self, target: &K) -> Result<(), Error> {
-        unsafe { self.advance_to_first_ge(&|key| target.cmp(key)) }
+        // SAFETY: the caller's obligation (see `# Safety`) is the one that
+        // `advance_to_first_ge` has.
+        unsafe { self.advance_to_first_ge(&mut |archived| archived.cmp_target(target).reverse()) }
     }
 
     /// Moves the cursor forward past rows for which `compare` returns [`Less`],
     /// where `compare` is a function such that if it returns [`Equal`] or
     /// [`Greater`] for a given key, it returns [`Greater`] for all larger keys.
+    /// `compare` sees each key in its archived form.
     ///
     /// This function does not move the cursor if `compare` returns [`Equal`] or
     /// [`Greater`] for the current row or a previous row.
@@ -2709,9 +2742,9 @@ where
     /// # Safety
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
-    pub unsafe fn advance_to_first_ge<C>(&mut self, compare: &C) -> Result<(), Error>
+    pub unsafe fn advance_to_first_ge<C>(&mut self, compare: &mut C) -> Result<(), Error>
     where
-        C: Fn(&K) -> Ordering,
+        C: FnMut(&K::Archived) -> Ordering,
     {
         unsafe {
             self.position
@@ -2733,10 +2766,30 @@ where
     where
         P: Fn(&K) -> bool + Clone,
     {
+        // See `seek_forward_until` for the scratch key and the split.
+        let Self {
+            row_group,
+            position,
+            key,
+            scratch,
+        } = self;
+        let scratch = scratch.get_or_insert_with(|| row_group.factories.key_factory.default_box());
+        // SAFETY: as in `seek_forward_until`: the caller's obligation is the
+        // one that `Position::rewind_to_last_le` has, and the closure is
+        // safe code.
         unsafe {
-            self.rewind_to_last_le(&|key| {
-                if !predicate(key) { Less } else { Greater }
-            })
+            position.rewind_to_last_le(
+                row_group,
+                &mut |archived: &K::Archived| {
+                    archived.deserialize(&mut **scratch);
+                    if !predicate(&**scratch) {
+                        Less
+                    } else {
+                        Greater
+                    }
+                },
+                &mut **key,
+            )
         }
     }
 
@@ -2751,13 +2804,15 @@ where
     where
         K: Ord,
     {
-        unsafe { self.rewind_to_last_le(&|key| target.cmp(key)) }
+        // SAFETY: the caller's obligation (see `# Safety`) is the one that
+        // `rewind_to_last_le` has.
+        unsafe { self.rewind_to_last_le(&mut |archived| archived.cmp_target(target).reverse()) }
     }
 
     /// Moves the cursor backward past rows for which `compare` returns
     /// [`Greater`], where `compare` is a function such that if it returns
     /// [`Equal`] or [`Less`] for a given key, it returns [`Less`] for all
-    /// lesser keys.
+    /// lesser keys.  `compare` sees each key in its archived form.
     ///
     /// This function does not move the cursor if `compare` returns [`Equal`] or
     /// [`Less`] for the current row or a previous row.
@@ -2765,18 +2820,14 @@ where
     /// # Safety
     ///
     /// Unsafe because `rkyv` deserialization is unsafe.
-    pub unsafe fn rewind_to_last_le<C>(&mut self, compare: &C) -> Result<(), Error>
+    pub unsafe fn rewind_to_last_le<C>(&mut self, compare: &mut C) -> Result<(), Error>
     where
-        C: Fn(&K) -> Ordering,
+        C: FnMut(&K::Archived) -> Ordering,
     {
-        let position = unsafe {
-            Position::best_match::<N, T, _>(&self.row_group, compare, Greater, &mut *self.key)
-        }?;
-        if position < self.position {
-            self.position = position;
+        unsafe {
+            self.position
+                .rewind_to_last_le(&self.row_group, compare, &mut *self.key)
         }
-        unsafe { self.position.key(&self.row_group.factories, &mut self.key) };
-        Ok(())
     }
 }
 
@@ -2978,13 +3029,13 @@ where
     /// found.  On error, `key` might be changed.
     unsafe fn best_match<N, T, C>(
         row_group: &RowGroup<'_, K, A, N, T>,
-        compare: &C,
+        compare: &mut C,
         bias: Ordering,
         key: &mut K,
     ) -> Result<Option<Self>, Error>
     where
         T: ColumnSpec,
-        C: Fn(&K) -> Ordering,
+        C: FnMut(&K::Archived) -> Ordering,
     {
         unsafe {
             let mut indexes = Vec::new();
@@ -2994,9 +3045,12 @@ where
             loop {
                 match node.read(&row_group.reader.file)? {
                     TreeBlock::Index(index_block) => {
-                        let Some(child_idx) =
-                            index_block.find_best_match(&row_group.rows, compare, bias, key)
-                        else {
+                        let Some(child_idx) = index_block.find_best_match(
+                            row_group.factories.key_factory,
+                            &row_group.rows,
+                            compare,
+                            bias,
+                        ) else {
                             return Ok(None);
                         };
                         node = index_block.get_child(child_idx)?;
@@ -3052,29 +3106,35 @@ where
     unsafe fn advance_to_first_ge<N, T, C>(
         &mut self,
         row_group: &RowGroup<'_, K, A, N, T>,
-        compare: &C,
+        compare: &mut C,
         key: &mut K,
     ) -> Result<bool, Error>
     where
         T: ColumnSpec,
-        C: Fn(&K) -> Ordering,
+        C: FnMut(&K::Archived) -> Ordering,
     {
         unsafe {
             // Check the current position first. We might already be done.
-            if compare(key) != Greater {
+            // SAFETY: a path's data block holds its row, and the file's item
+            // types are the caller's obligation.
+            let current = self
+                .data
+                .archived_item_for_row(&row_group.factories, self.row);
+            if compare(current.fst()) != Greater {
                 return Ok(true);
             }
 
             // If the last item in `rows` in the current data block is greater than
             // or equal to the target, then the position must be in the current data
             // block.
-            self.data.key_for_row(
-                &row_group.factories,
-                min(self.data.rows().end, row_group.rows.end) - 1,
-                key,
-            );
+            let last_row = min(self.data.rows().end, row_group.rows.end) - 1;
+            // SAFETY: `last_row` is in this data block, since the block
+            // holds `self.row`, which the row group's range contains.
+            let last = self
+                .data
+                .archived_item_for_row(&row_group.factories, last_row);
             let mut rows = self.row + 1..row_group.rows.end;
-            if compare(key) != Greater {
+            if compare(last.fst()) != Greater {
                 let child_idx = self
                     .data
                     .find_best_match(&row_group.factories, &rows, compare, Less, key)
@@ -3096,7 +3156,12 @@ where
                 }
 
                 // Otherwise, our target (if any) must be below `index_block`.
-                let Some(child_idx) = index_block.find_best_match(&rows, compare, Less, key) else {
+                let Some(child_idx) = index_block.find_best_match(
+                    row_group.factories.key_factory,
+                    &rows,
+                    compare,
+                    Less,
+                ) else {
                     // `rows.end` is inside `index_block` but the largest key is
                     // less than the target.
                     return Ok(false);
@@ -3107,9 +3172,12 @@ where
                 loop {
                     match node.read::<K, A>(&row_group.reader.file)? {
                         TreeBlock::Index(index_block) => {
-                            let Some(child_idx) =
-                                index_block.find_best_match(&rows, compare, Less, key)
-                            else {
+                            let Some(child_idx) = index_block.find_best_match(
+                                row_group.factories.key_factory,
+                                &rows,
+                                compare,
+                                Less,
+                            ) else {
                                 return Ok(false);
                             };
                             node = index_block.get_child(child_idx)?;
@@ -3386,13 +3454,13 @@ where
     }
     unsafe fn best_match<N, T, C>(
         row_group: &RowGroup<'_, K, A, N, T>,
-        compare: &C,
+        compare: &mut C,
         bias: Ordering,
         key: &mut K,
     ) -> Result<Self, Error>
     where
         T: ColumnSpec,
-        C: Fn(&K) -> Ordering,
+        C: FnMut(&K::Archived) -> Ordering,
     {
         unsafe {
             match Path::best_match(row_group, compare, bias, key)? {
@@ -3442,12 +3510,12 @@ where
     unsafe fn advance_to_first_ge<N, T, C>(
         &mut self,
         row_group: &RowGroup<'_, K, A, N, T>,
-        compare: &C,
+        compare: &mut C,
         key: &mut K,
     ) -> Result<(), Error>
     where
         T: ColumnSpec,
-        C: Fn(&K) -> Ordering,
+        C: FnMut(&K::Archived) -> Ordering,
     {
         unsafe {
             match self {
@@ -3474,5 +3542,39 @@ where
             }
             Ok(())
         }
+    }
+
+    /// Moves this position backward, past rows in `row_group` for which
+    /// `compare` returns [`Greater`], where `compare` is a function such that
+    /// if it returns [`Equal`] or [`Less`] for a given key, it returns
+    /// [`Less`] for all lesser keys.
+    ///
+    /// On return, if the position is on a row, `key` is its key.
+    ///
+    /// This function does not change the position if `compare` returns
+    /// [`Equal`] or [`Less`] for the current row or a previous row.
+    ///
+    /// # Safety
+    ///
+    /// Unsafe because `rkyv` deserialization is unsafe.
+    unsafe fn rewind_to_last_le<N, T, C>(
+        &mut self,
+        row_group: &RowGroup<'_, K, A, N, T>,
+        compare: &mut C,
+        key: &mut K,
+    ) -> Result<(), Error>
+    where
+        T: ColumnSpec,
+        C: FnMut(&K::Archived) -> Ordering,
+    {
+        // Backward seeks have no equivalent of the forward search from the
+        // current path, so this starts from the root every time.
+        let position = unsafe { Self::best_match::<N, T, _>(row_group, compare, Greater, key) }?;
+        if position < *self {
+            *self = position;
+        }
+        // SAFETY: the caller's obligation covers reading the row's key.
+        unsafe { self.key(&row_group.factories, key) };
+        Ok(())
     }
 }

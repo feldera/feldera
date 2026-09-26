@@ -734,7 +734,7 @@ export type Configuration = {
    */
   conceptualhq: string
   /**
-   * Feldera edition: "Open source" or "Enterprise"
+   * Feldera edition: "Open source", "Enterprise" or "EnterpriseDev"
    */
   edition: string
   license_validity?: LicenseValidity | null
@@ -3385,6 +3385,10 @@ export type LicenseInformation = {
    */
   extension_url?: string | null
   /**
+   * Whether the license only permits development use.
+   */
+  is_dev?: boolean
+  /**
    * Whether the license is a trial
    */
   is_trial: boolean
@@ -5928,6 +5932,12 @@ export type StorageAutoscalingConfig = {
    * Usage fraction that triggers expansion. Defaults to 0.8.
    */
   scale_threshold?: number | null
+  /**
+   * Expand storage when available space falls below this many MB, even if
+   * usage is still under `scale_threshold`. Either condition triggers
+   * expansion. Unset by default.
+   */
+  scale_threshold_available_mb?: number | null
 }
 
 /**
@@ -6939,7 +6949,7 @@ export type GetMetricsData = {
 
 export type GetMetricsResponses = {
   /**
-   * Metrics of all running pipelines belonging to this tenant in Prometheus format
+   * Metrics of all pipelines belonging to this tenant in Prometheus format
    */
   200: Blob | File
 }
@@ -8193,7 +8203,6 @@ export type GetPipelineMetricsErrors = {
    */
   404: ErrorResponse
   500: ErrorResponse
-  503: ErrorResponse
 }
 
 export type GetPipelineMetricsError = GetPipelineMetricsErrors[keyof GetPipelineMetricsErrors]

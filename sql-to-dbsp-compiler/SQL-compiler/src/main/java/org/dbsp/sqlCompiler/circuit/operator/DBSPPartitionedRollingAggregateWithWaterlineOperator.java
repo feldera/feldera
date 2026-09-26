@@ -50,7 +50,7 @@ import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 
 public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
         extends DBSPBinaryOperator
-        implements INonLinearAggregate, IIncremental {
+        implements INonLinearAggregate, IHasPostIntegrator, IIncremental {
     @Nullable
     public final DBSPAggregateList aggregateList;
     public final DBSPClosureExpression partitioningFunction;

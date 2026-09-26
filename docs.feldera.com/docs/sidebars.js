@@ -515,6 +515,7 @@ const operations = {
         'operations/json-logging',
         'operations/visualizing-profiles',
         'operations/required-domains',
+        'operations/best_practices/best_practices'
     ]
 };
 

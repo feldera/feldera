@@ -12,6 +12,7 @@ import org.apache.calcite.rel.core.Window;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.ir.type.user.StreamKind;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
@@ -151,7 +152,10 @@ public class FindUnboundedState extends Passes {
 
     /** True if the integral of the stream is bounded */
     boolean isBounded(OutputPort port) {
-        return this.bounded.contains(port) || this.gcedStreams.contains(port);
+        // A waterline stream carries one scalar per step, whichever operator computes it,
+        // so integrating it keeps a single value.
+        return port.kind() == StreamKind.WATERLINE
+                || this.bounded.contains(port) || this.gcedStreams.contains(port);
     }
 
     /** True if some output stream of the operator has its stream pruned by a GC operator */
@@ -698,23 +702,43 @@ public class FindUnboundedState extends Passes {
             return SourcePositionRange.INVALID;
         }
 
-        /** The operator's own position when it has one; the compiler synthesizes
-         * many operators without positions, and the view statement narrows the position. */
-        SourcePositionRange positionOf(DBSPOperator operator, @Nullable ViewOrigins.ViewSourcePosition view) {
-            SourcePositionRange own = this.ownPosition(operator);
-            if (own.isValid() || view == null)
-                return own;
-            return view.position();
+        /** The operator's internal identity: the name the compiler gives it and the
+         * operation it performs.  Reported when no SQL source describes the operator. */
+        static String internalName(DBSPOperator operator) {
+            String operation = operator.is(DBSPSimpleOperator.class) ?
+                    operator.to(DBSPSimpleOperator.class).operation :
+                    operator.getClass().getSimpleName();
+            return operation + " " + operator.getIdString();
         }
 
-        String describe(DBSPOperator operator, @Nullable ViewOrigins.ViewSourcePosition view) {
+        /** Fallback description of an operator which cannot be tied to source code. */
+        static String internalDescription(UnboundedOperator ub) {
+            StringBuilder result = new StringBuilder();
+            result.append(internalName(ub.operator()));
+            for (int input : ub.unboundedInputs()) {
+                result.append(", unbounded input ")
+                        .append(input)
+                        .append(" produced by ")
+                        .append(internalName(ub.operator().inputs.get(input).node()));
+            }
+            return result.toString();
+        }
+
+        /** @param position where the warning points, invalid when neither the operator nor
+         *                  the view containing it has a source position. */
+        String describe(UnboundedOperator ub, @Nullable ViewOrigins.ViewSourcePosition view,
+                        SourcePositionRange position) {
+            DBSPOperator operator = ub.operator();
+            String message;
             if (operator.is(IInputOperator.class)) {
                 String table = operator.to(IInputOperator.class).getTableName().singleQuote();
-                return "The index of table " + table + " may grow without bound";
+                message = "The index of table " + table + " may grow without bound";
+            } else {
+                String where = view == null ? "" :
+                        " in the code implementing view " + view.view().singleQuote();
+                message = "The state of " + sqlName(operator) + where + " may grow without bound";
             }
-            String where = view == null ? "" :
-                    " in the code implementing view " + view.view().singleQuote();
-            return "The state of " + sqlName(operator) + where + " may grow without bound";
+            return position.isValid() ? message : message + "; " + internalDescription(ub);
         }
 
         @Override
@@ -724,8 +748,10 @@ public class FindUnboundedState extends Passes {
             boolean first = true;
             for (UnboundedOperator ub : FindUnboundedState.this.unbounded) {
                 ViewOrigins.ViewSourcePosition view = this.viewOf(ub);
+                SourcePositionRange own = this.ownPosition(ub.operator());
+                SourcePositionRange position = own.isValid() || view == null ? own : view.position();
                 FindUnboundedState.this.compiler.reportWarning(
-                        this.positionOf(ub.operator(), view), WARNING, this.describe(ub.operator(), view));
+                        position, WARNING, this.describe(ub, view, position));
                 if (first)
                     FindUnboundedState.this.compiler.reportWarning(SourcePositionRange.INVALID, WARNING, HINT, true);
                 first = false;

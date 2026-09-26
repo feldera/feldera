@@ -1,6 +1,14 @@
 /**
  * Cross-tab handoff for uploaded support bundle ArrayBuffers.
  *
+ * Most bundles never use this path. Picking a bundle normally stores it in the bundle
+ * history, and the new tab reads the archive from there through `openStoredBundleTab`,
+ * so no bytes cross between tabs and the viewer tab survives a reload. The code below
+ * carries the bundles the history will not take: an archive over
+ * `maxCachedBundleBytes`, or one the browser refused to store. Such a bundle exists
+ * only as a `File` in the tab that picked it, and a reload leaves nothing to recover
+ * that file from, so its bytes have to reach the new tab while both tabs are still open.
+ *
  * Hybrid transport:
  *   - Control plane (READY / ACK): BroadcastChannel keyed by a UUID in the URL,
  *     so the handshake survives any OIDC redirect chain the new tab may go
@@ -18,6 +26,8 @@
  *     the round-trip is just event-loop scheduling (~four microtasks), no byte
  *     copy regardless of bundle size — anything beyond ~1 s is a real fault.
  */
+
+import { resolve } from '$lib/functions/svelte'
 
 const READY_MSG = 'profile-bundle-ready'
 const BUNDLE_MSG = 'profile-bundle-data'
@@ -46,8 +56,34 @@ export class ProfileBundleUnavailableError extends Error {
 }
 
 export function openRemoteBundleTab(pipelineName: string, collect: boolean) {
-  const url = `/profile-viewer?pipelineName=${encodeURIComponent(pipelineName)}&source=remote&collect=${collect ? '1' : '0'}`
+  const url = resolve(
+    `/profile-viewer?pipelineName=${encodeURIComponent(pipelineName)}&source=remote&collect=${collect ? '1' : '0'}`
+  )
   window.open(url, '_blank')
+}
+
+/**
+ * The URL that opens the viewer on a bundle in the history. The viewer reads the
+ * archive itself, from the entry `bundleId` names, so nothing is handed from one tab
+ * to the other and the tab survives a reload.
+ *
+ * This is the one spelling of that URL: the viewer page rewrites its own address with
+ * it after the user picks a bundle there, so that the link a reload follows and the
+ * link a new tab opens are the same link.
+ */
+export const storedBundleUrl = (bundleId: number) =>
+  resolve(`/profile-viewer?source=upload&bundle=${bundleId}`)
+
+/**
+ * Opens a bundle from the history in a new tab.
+ *
+ * Throws when the browser blocked the new window. The message is the one
+ * `openUploadBundleTab` throws, so that a caller can report both the same way.
+ */
+export function openStoredBundleTab(bundleId: number) {
+  if (!window.open(storedBundleUrl(bundleId), '_blank')) {
+    throw new Error('Browser blocked the popup. Allow popups for this site and try again.')
+  }
 }
 
 export type UploadBundleHandoff = {
@@ -75,7 +111,7 @@ export function openUploadBundleTab(): UploadBundleHandoff {
   const channelId = crypto.randomUUID()
   // No pipelineName in the URL: the viewer reads it from the uploaded bundle's
   // pipeline_config.json once the bytes arrive over the channel.
-  const url = `/profile-viewer?source=upload&channel=${channelId}`
+  const url = resolve(`/profile-viewer?source=upload&channel=${channelId}`)
 
   const child = window.open(url, '_blank')
   if (!child) {

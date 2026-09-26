@@ -5,6 +5,7 @@ use tracing::{debug, warn};
 
 mod auth;
 
+pub mod all_in_one;
 pub mod api;
 pub mod cluster_monitor;
 pub mod common_error;
@@ -18,6 +19,17 @@ pub mod logging;
 pub mod oidc;
 pub mod pipeline_env;
 pub mod runner;
+
+/// Edition reported by `/config` and the startup banner.
+pub fn edition() -> &'static str {
+    if cfg!(feature = "feldera-enterprise-dev") {
+        "EnterpriseDev"
+    } else if cfg!(feature = "feldera-enterprise") {
+        "Enterprise"
+    } else {
+        "Open source"
+    }
+}
 
 /// Feature gate for new/unstable features that aren't rolled out or will change
 /// substantially in the future.

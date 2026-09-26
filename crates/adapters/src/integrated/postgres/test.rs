@@ -90,7 +90,7 @@ mod pg {
 
     use chrono::SubsecRound;
     use dbsp::{Runtime, utils::Tup1};
-    use feldera_macros::IsNone;
+    use feldera_macros::{IsNone, OrdRepr};
     use feldera_sqllib::{F32, F64, SqlDecimal, SqlString, Variant};
     use feldera_types::{
         config::PipelineConfig,
@@ -140,6 +140,7 @@ mod pg {
         rkyv::Serialize,
         rkyv::Deserialize,
         IsNone,
+        OrdRepr,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
     pub(super) struct PostgresTestStruct {
@@ -3563,6 +3564,7 @@ mod cdc_tests {
     use feldera_types::config::PipelineConfig;
     use feldera_types::serde_with_context::DeserializeWithContext;
     use pg::pg_connect;
+    use std::time::{Duration, Instant};
 
     /// Helper: creates a table, publication, and sets REPLICA IDENTITY FULL.
     /// Returns a connected client for further DML operations.
@@ -3949,6 +3951,7 @@ mod cdc_tests {
         rkyv::Serialize,
         rkyv::Deserialize,
         feldera_macros::IsNone,
+        feldera_macros::OrdRepr,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
     pub(super) struct CdcAllTypesStruct {
@@ -5135,6 +5138,138 @@ mod cdc_tests {
         );
 
         let _ = controller.stop();
+    }
+
+    /// Stop the pipeline right after a row streamed in behind the initial
+    /// copy, and check that the replication slots are released at once.
+    ///
+    /// etl buffers streamed rows for up to its batch fill time before it hands
+    /// them over. Until etl discarded such a buffer at shutdown, the worker
+    /// holding it waited the fill time out with its slot active, and under CI
+    /// load the wait grew past the release timeout (#7170, #7201). Whether a
+    /// stop lands on a buffered row is a matter of timing, so the test stops
+    /// several pipelines. Every release must stay within the connector's
+    /// bound, and no stop may reach the grace that closes etl's connections
+    /// by force: that fallback releases the slots too, but late, and a
+    /// release is prompt only when etl stopped on its own.
+    #[test]
+    #[serial]
+    fn test_cdc_stop_with_buffered_rows_releases_slots_promptly() {
+        use crate::integrated::postgres::cdc_input::{
+            ETL_STOP_GRACE, RUNTIME_SHUTDOWN_TIMEOUT, STOPPED_PAST_GRACE, WATCHER_SHUTDOWN_TIMEOUT,
+            pipeline_id,
+        };
+
+        // The connector's bound on a stop, with room for PostgreSQL to notice
+        // a closed connection.
+        let release_bound = WATCHER_SHUTDOWN_TIMEOUT
+            + ETL_STOP_GRACE
+            + RUNTIME_SHUTDOWN_TIMEOUT
+            + Duration::from_secs(2);
+
+        let url = postgres_url();
+        for _ in 0..10 {
+            let table_name = unique_pg_name("cdc_test_prompt_release");
+            let publication = unique_pg_name("cdc_pub_prompt_release");
+            let mut table = CdcTestTable::new_simple(&table_name, &publication, &url);
+            table.execute(&format!(
+                "INSERT INTO {table_name} VALUES (1, true, NULL, 'first')"
+            ));
+            let output_file = NamedTempFile::new().unwrap();
+            let output_path = output_file.path().to_owned();
+            let (controller, err_receiver) = cdc_simple_test_circuit(
+                &url,
+                &publication,
+                &format!("public.{table_name}"),
+                &output_path,
+            );
+            controller.start();
+            wait(
+                || count_inserts(&read_output_json(&output_path)) >= 1 || !err_receiver.is_empty(),
+                60_000,
+            )
+            .expect("timeout: the copied row did not arrive");
+            // Commit a row as the copy lands, so that it streams in while etl
+            // is still handing the table over between its workers.
+            table.execute(&format!(
+                "INSERT INTO {table_name} VALUES (2, false, 42, 'second')"
+            ));
+            wait(
+                || count_inserts(&read_output_json(&output_path)) >= 2 || !err_receiver.is_empty(),
+                60_000,
+            )
+            .expect("timeout: the streamed row did not arrive");
+            assert!(err_receiver.is_empty(), "unexpected errors before stop");
+
+            controller.stop().unwrap();
+            let stopped = Instant::now();
+            wait_for_slots_released(&mut table);
+            let release = stopped.elapsed();
+            assert!(
+                release < release_bound,
+                "replication slots released {release:?} after stop"
+            );
+            let pipeline = pipeline_id(
+                &cdc_connector_url(&url),
+                &publication,
+                &format!("public.{table_name}"),
+            );
+            assert!(
+                !STOPPED_PAST_GRACE.lock().unwrap().contains(&pipeline),
+                "the stop ran past the grace: etl held its slots for more than {ETL_STOP_GRACE:?} \
+                 and the connector closed its connections by force"
+            );
+        }
+    }
+
+    /// Shutting the connector's runtime down closes the PostgreSQL connections
+    /// it hosts. That is what releases a replication slot when an etl worker
+    /// outlives the stop grace, so a backend held by a hosted connection must
+    /// be gone once the runtime is.
+    #[test]
+    #[serial]
+    fn test_cdc_runtime_shutdown_closes_hosted_connections() {
+        let url = postgres_url();
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap();
+        let backend_pid: i32 = runtime.block_on(async {
+            let (client, connection) = tokio_postgres::connect(&url, tokio_postgres::NoTls)
+                .await
+                .expect("failed to connect");
+            tokio::spawn(connection);
+            let pid = client
+                .query_one("SELECT pg_backend_pid()", &[])
+                .await
+                .unwrap()
+                .get(0);
+            // A query that does not return stands in for an etl worker that
+            // does not stop.
+            tokio::spawn(async move {
+                let _ = client.execute("SELECT pg_sleep(600)", &[]).await;
+            });
+            // Let the hosted task send its query before the runtime goes.
+            tokio::task::yield_now().await;
+            pid
+        });
+        runtime.shutdown_timeout(crate::integrated::postgres::cdc_input::RUNTIME_SHUTDOWN_TIMEOUT);
+
+        let mut observer = pg_connect(&url, &None);
+        wait(
+            || {
+                observer
+                    .query(
+                        "SELECT 1 FROM pg_stat_activity WHERE pid = $1",
+                        &[&backend_pid],
+                    )
+                    .unwrap()
+                    .is_empty()
+            },
+            5_000,
+        )
+        .expect("the backend of a hosted connection outlived the runtime");
     }
 
     // -------------------------------------------------------------------

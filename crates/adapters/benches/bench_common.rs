@@ -3,7 +3,7 @@ use dbsp::utils::Tup2;
 use dbsp_adapters::static_compile::seroutput::SerBatchImpl;
 use dbsp_adapters::{OutputConsumer, SerBatch};
 use feldera_adapterlib::transport::OutputBatchType;
-use feldera_macros::IsNone;
+use feldera_macros::{IsNone, OrdRepr};
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::{deserialize_without_context, serialize_struct};
 use rand::rngs::SmallRng;
@@ -62,6 +62,7 @@ pub fn bench_iter(
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct BenchTestStruct {
@@ -113,6 +114,7 @@ impl BenchTestStruct {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct BenchKeyStruct {
