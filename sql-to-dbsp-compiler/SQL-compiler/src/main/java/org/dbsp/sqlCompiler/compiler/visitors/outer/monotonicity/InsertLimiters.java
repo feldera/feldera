@@ -47,6 +47,7 @@ import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -668,6 +669,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     projection = new PartiallyMonotoneTuple(Linq.list(keyPart, value), tuple.raw, tuple.mayBeNull);
                     final int limit;
                     DBSPIntegrateTraceRetainNValuesOperator.WhichN which;
+                    @Nullable DBSPClosureExpression alsoRetain = null;
                     if (aggregator.function != null &&
                             aggregator.getFunction().is(DBSPMinMax.class)) {
                         DBSPMinMax mm = aggregator.getFunction().to(DBSPMinMax.class);
@@ -682,9 +684,23 @@ public class InsertLimiters extends CircuitCloneVisitor {
                                 limit = 1;
                                 yield DBSPIntegrateTraceRetainNValuesOperator.WhichN.TopN;
                             }
-                            case ArgMinSome, MinSome1 -> {
-                                // The limit is 1 because the NULL is actually ignored by MinSome1
+                            case MinSome1 -> {
+                                // The NULLs are a single value, which takes one of the slots
                                 limit = 2;
+                                yield DBSPIntegrateTraceRetainNValuesOperator.WhichN.BottomN;
+                            }
+                            case ArgMinSome -> {
+                                // The value is Tup1<(compared, payload)>
+                                DBSPVariablePath v = source.getOutputIndexedZSetType().elementType.ref().var();
+                                // Rows with a NULL 'compared' sort first, so they are all retained,
+                                // for all possible values of 'payload'.
+                                // Once a non-NULL value is below the waterline the NULL rows can no longer
+                                // be the result, but the predicate sees one row at a time and keeps them:
+                                // a group that keeps receiving NULL values grows without bound.
+                                alsoRetain = new DBSPIsNullExpression(aggregator.getNode(),
+                                        v.deref().field(0).field(0)).closure(v);
+                                // The one slot keeps the smallest non-NULL compared value
+                                limit = 1;
                                 yield DBSPIntegrateTraceRetainNValuesOperator.WhichN.BottomN;
                             }
                         };
@@ -698,8 +714,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
                         OutputPort extractRight = this.createApply(limiter, func.closure(var));
 
                         DBSPSimpleOperator retainRight = DBSPIntegrateTraceRetainNValuesOperator.create(
-                                aggregator.getRelNode(), source, projection, this.createDelay(extractRight),
-                                limit, which);
+                                this.compiler, aggregator.getRelNode(), source, projection,
+                                this.createDelay(extractRight), limit, which, alsoRetain);
                         this.addOperator(retainRight);
                     }
                 }
@@ -1329,8 +1345,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             this.addOperator(retainLeft);
 
             DBSPSimpleOperator retainRight = DBSPIntegrateTraceRetainNValuesOperator.create(
-                    join.getRelNode(), this.mapped(join.right()), rightDataProjection, this.createDelay(minOperator),
-                    1, DBSPIntegrateTraceRetainNValuesOperator.WhichN.LastN);
+                    this.compiler, join.getRelNode(), this.mapped(join.right()), rightDataProjection,
+                    this.createDelay(minOperator), 1, DBSPIntegrateTraceRetainNValuesOperator.WhichN.LastN, null);
             this.addOperator(retainRight);
         }
 
