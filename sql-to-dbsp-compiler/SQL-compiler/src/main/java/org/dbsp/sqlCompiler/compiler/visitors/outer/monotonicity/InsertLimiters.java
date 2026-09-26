@@ -47,6 +47,7 @@ import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -2300,6 +2301,20 @@ public class InsertLimiters extends CircuitCloneVisitor {
                             operator.getRelNode(), makePair.closure(var.asParameter()), boundSource,null);
                     this.addOperator(apply);
 
+                    OutputPort data = this.mapped(operator.input());
+                    if (tsType.mayBeNull) {
+                        // A row with a NULL value is never late, so it is never final and never
+                        // emitted; the window does not need to store it.  The GC for the window
+                        // would never remove it, so the state of the window could grow unbounded.
+                        DBSPVariablePath row = dataType.ref().var();
+                        DBSPExpression notNull = new DBSPIsNullExpression(operator.getNode(),
+                                row.deref().field(monotoneFieldIndex)).not();
+                        DBSPFilterOperator filter = new DBSPFilterOperator(
+                                operator.getRelNode(), notNull.closure(row), data);
+                        this.addOperator(filter);
+                        data = filter.outputPort();
+                    }
+
                     // Window requires data to be indexed
                     DBSPExpression field = t.deref().field(monotoneFieldIndex);
                     DBSPSimpleOperator ix = new DBSPMapIndexOperator(operator.getRelNode(),
@@ -2308,7 +2323,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                                     t.deref().applyCloneIfNeeded()).closure(t.asParameter()),
                             new DBSPTypeIndexedZSet(operator.getRelNode(),
                                     field.getType(), dataType), true,
-                            this.mapped(operator.input()));
+                            data);
                     this.addOperator(ix);
                     // The upper bound must be exclusive; -infinity lower bound.
                     // The 'emit_final' annotation is the only source code behind this window,

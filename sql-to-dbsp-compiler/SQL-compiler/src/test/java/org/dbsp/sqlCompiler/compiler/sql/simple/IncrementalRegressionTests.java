@@ -10,7 +10,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -2277,7 +2276,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
             int joins = 0;
 
             @Override
-            public void postorder(DBSPStarJoinIndexOperator operator) {
+            public void postorder(DBSPStarJoinFilterMapOperator operator) {
                 this.joins++;
             }
 
