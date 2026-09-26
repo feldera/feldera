@@ -3557,6 +3557,9 @@ fn test_pg_non_unique_keys_skipped() {
 mod cdc_scenarios;
 
 #[cfg(feature = "with-postgres-cdc")]
+mod cdc_privileges;
+
+#[cfg(feature = "with-postgres-cdc")]
 mod cdc_tests {
     use super::*;
     use crate::test::wait;
@@ -3831,7 +3834,6 @@ mod cdc_tests {
         }
 
         let url = cdc_connector_url(url);
-        let schema = TestStruct::schema();
         let mut postgres_cdc_config = json!({
             "uri": url,
             "publication": publication,
@@ -3845,6 +3847,18 @@ mod cdc_tests {
                 .extend(tls_json.as_object().unwrap().clone());
         }
 
+        build_simple_cdc_test_circuit(postgres_cdc_config, output_path)
+    }
+
+    /// Build a CDC test circuit from a ready-made `postgres_cdc_input` config.
+    ///
+    /// Shared by the plain and the de-elevated-role scenarios: the input schema
+    /// matches the "simple" table (id, b, i, s) and the output is a JSON file.
+    pub(super) fn build_simple_cdc_test_circuit(
+        postgres_cdc_config: serde_json::Value,
+        output_path: &Path,
+    ) -> Result<(Controller, crossbeam::channel::Receiver<String>), crate::ControllerError> {
+        let schema = TestStruct::schema();
         let config = serde_json::from_value(json!({
             "name": "cdc_test",
             "workers": 1,

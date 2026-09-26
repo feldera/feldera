@@ -17,8 +17,9 @@ query once, this connector first snapshots the source table and then continues
 to ingest inserts, updates, and deletes from PostgreSQL's write-ahead log.
 
 The connector uses a PostgreSQL publication that must exist before the
-pipeline starts. The connecting PostgreSQL user must be a superuser (see
-[Objects the connector installs](#objects-the-connector-installs)).
+pipeline starts. The connecting PostgreSQL user must either be a superuser, or
+a role prepared according to
+[Running as a non-superuser](#running-as-a-non-superuser).
 
 ## PostgreSQL CDC input connector configuration
 
@@ -26,9 +27,10 @@ Use transport name `postgres_cdc_input`.
 
 | Property          | Type   | Default | Description                                                                                                                                                                                     |
 | ----------------- | ------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `uri`\*           | string |         | PostgreSQL connection URL, e.g. `"postgres://postgres:password@localhost:5432/postgres"`. The URL must include a username, host, and database name. The user must be a superuser (see [PostgreSQL setup](#postgresql-setup)). |
+| `uri`\*           | string |         | PostgreSQL connection URL, e.g. `"postgres://postgres:password@localhost:5432/postgres"`. The URL must include a username, host, and database name. The user must be a superuser or a role prepared according to [Running as a non-superuser](#running-as-a-non-superuser). |
 | `publication`\*   | string |         | Name of an existing PostgreSQL publication. The publication must include `source_table`; a pipeline whose publication does not carry the table fails to start with an error that lists the tables it does carry.                                                                                                        |
 | `source_table`\*  | string |         | PostgreSQL table to replicate, schema-qualified, e.g. `"public.orders"`. A name given without a schema refers to a table in `public`.                                                                                                                |
+| `run_source_migrations` | boolean | `true` | Whether the connector runs etl's source migrations on startup. The migrations install helper functions and a `ddl_command_end` event trigger; creating the trigger requires a superuser. Set to `false` after an administrator has installed the source objects out-of-band (see [Running as a non-superuser](#running-as-a-non-superuser)). This does not skip the state-store migrations, which run on every start. |
 | `ssl_ca_pem`      | string |         | CA certificates in PEM format. Setting this enables TLS and takes precedence over `ssl_ca_location`.                                                                                            |
 | `ssl_ca_location` | string |         | Path to a PEM file containing CA certificates. Used when `ssl_ca_pem` is not set.                                                                                                               |
 
@@ -53,8 +55,8 @@ SHOW wal_level;
 The value must be `logical`. If it is not, configure PostgreSQL with
 `wal_level = logical` and restart the server.
 
-The connecting user must be a superuser (see
-[Objects the connector installs](#objects-the-connector-installs)). A superuser
+The connecting user must be a superuser, or a role prepared according to
+[Running as a non-superuser](#running-as-a-non-superuser). A superuser
 may use logical replication and read every table without further attributes or
 grants, so the role needs nothing else. The credential is not scoped to the
 published tables: a superuser can read and write every table in the cluster,
@@ -86,7 +88,7 @@ old row values needed to retract records from the Feldera input table.
 
 ### Objects the connector installs
 
-The connector embeds the [etl](https://github.com/supabase/etl) replication
+The connector embeds the [etl](https://github.com/feldera/etl) replication
 library, which keeps its state in the source database. Every time the pipeline
 starts, the connector connects as the configured user and applies the etl
 migrations that the database does not yet hold. etl divides its migrations into
@@ -118,16 +120,131 @@ table in order with the row changes around them. It fires for every
 `ALTER TABLE` and `ALTER PUBLICATION` in the database but emits a message only
 for tables that some publication contains.
 
-PostgreSQL allows only a superuser to create an event trigger, so the
-connecting user must be a superuser. The requirement holds on every start, not
-only the first: the connector applies the migrations each time the pipeline
-starts, offers no option to skip them, and a start that cannot apply a
-migration fails. Do not plan to downgrade the role once the objects exist. A read-only
+PostgreSQL allows only a superuser to create an event trigger, so installing
+or upgrading the source objects requires a superuser. The connector checks for
+pending source migrations on every start by default. Already applied migrations
+are not repeated, but a new migration can require superuser privileges. A start
+that cannot apply a migration fails. Setting `run_source_migrations` to `false`
+skips the source migrations, so a de-elevated role can connect once an
+administrator has installed the source objects (see
+[Running as a non-superuser](#running-as-a-non-superuser)).
+
+The state-store migrations are not gated by `run_source_migrations`: the
+connector applies them on every start regardless of the setting. A read-only
 standby cannot serve as the source: etl skips the source migrations when
 `pg_is_in_recovery()` reports a standby, but it runs the state-store migrations
 on every start, and the standby rejects their writes, so the start fails. The
 objects stay in the database after the pipeline stops or the user deletes it,
 and pipelines that read from the same database share them.
+
+### Running as a non-superuser
+
+To run the connector under a role that is not a superuser, install the source
+objects once as an administrator, then connect as a role with the narrower
+privileges the connector needs.
+
+First, start the pipeline once as a superuser with the default configuration
+(`run_source_migrations` unset, i.e. `true`), using the same Feldera version
+that will run the pipeline later so the installed objects match the embedded
+etl. Wait until the initial snapshot completes before stopping it if you want
+the runtime role to resume that same pipeline without repeating the snapshot.
+
+Alternatively, install both migration sets out-of-band. Check out the
+[etl repository](https://github.com/feldera/etl) at the `rev` pinned for the
+`etl` dependency in your Feldera release's root `Cargo.toml`.
+From that checkout, with the SQLx CLI installed and an administrator connection
+URL in `ADMIN_DATABASE_URL`, run:
+
+```sh
+psql "$ADMIN_DATABASE_URL" -v ON_ERROR_STOP=1 -c 'CREATE SCHEMA IF NOT EXISTS etl'
+PGOPTIONS='-c search_path=etl' sqlx migrate run \
+    --database-url "$ADMIN_DATABASE_URL" --ignore-missing \
+    --source crates/etl/migrations/postgres_store
+PGOPTIONS='-c search_path=etl' sqlx migrate run \
+    --database-url "$ADMIN_DATABASE_URL" --ignore-missing \
+    --source crates/etl/migrations/source
+```
+
+Apply the state-store migrations first, followed by the source migrations.
+Both sets share `etl._sqlx_migrations`: the `search_path` option places the log
+in the correct schema, and `--ignore-missing` lets each set coexist with the
+other's history. SQLx applies pending up migrations in version order and records
+their checksums. Do not apply the SQL files alone without recording migration
+history; subsequent starts would attempt to apply them again.
+
+Then stop the bootstrap pipeline and grant the runtime role only what it needs:
+
+```sql
+-- The role is not a superuser, but may use logical replication.
+CREATE ROLE feldera_runtime WITH LOGIN PASSWORD 'password' REPLICATION NOSUPERUSER;
+
+-- Read the published tables.
+GRANT CONNECT ON DATABASE postgres TO feldera_runtime;
+GRANT USAGE ON SCHEMA public TO feldera_runtime;
+GRANT SELECT ON public.orders TO feldera_runtime;
+
+-- etl runs `CREATE SCHEMA IF NOT EXISTS etl` on every start, so the runtime
+-- role needs CREATE on the database even after the schema exists.
+GRANT CREATE ON DATABASE postgres TO feldera_runtime;
+
+-- SQLx runs CREATE TABLE IF NOT EXISTS for its migration log on every start.
+-- PostgreSQL checks CREATE on the schema even when the table already exists.
+GRANT USAGE, CREATE ON SCHEMA etl TO feldera_runtime;
+GRANT SELECT ON etl._sqlx_migrations TO feldera_runtime;
+
+-- Read and update etl's state tables (created by the bootstrap start).
+GRANT SELECT, INSERT, UPDATE, DELETE ON
+    etl.replication_state, etl.replication_progress,
+    etl.table_schemas, etl.table_columns, etl.destination_tables_metadata
+TO feldera_runtime;
+
+-- etl's source migrations revoke public access to the helper functions it
+-- installs; grant the runtime role explicit execute.
+GRANT EXECUTE ON FUNCTION etl.describe_table_schema(pg_catalog.oid) TO feldera_runtime;
+GRANT EXECUTE ON FUNCTION etl.describe_table_identity(pg_catalog.oid) TO feldera_runtime;
+```
+
+Replace `postgres`, `public`, and `public.orders` with your database, schema,
+and published tables. etl reads every table in the publication, so grant
+`USAGE` and `SELECT` for each of them even when this connector selects just one
+`source_table`. The identity columns in the current etl state tables do not
+require separate sequence grants. Keep the etl objects, especially the event
+trigger and its security-definer function, owned by the administrator. The
+runtime role needs no ownership or write privileges on the published tables.
+
+The recipe requires database and etl-schema creation privileges as described
+above; it is not a read-only database account. Its etl grants cover state shared
+by pipelines using that database. PostgreSQL's `REPLICATION` attribute also
+permits creating replication slots and is not an access boundary limited to
+the configured publication.
+
+Finally, run the pipeline with `run_source_migrations` set to `false`:
+
+```json
+{
+    "transport": {
+        "name": "postgres_cdc_input",
+        "config": {
+            "uri": "postgres://feldera_runtime:password@localhost:5432/postgres",
+            "publication": "feldera_orders",
+            "source_table": "public.orders",
+            "run_source_migrations": false
+        }
+    }
+}
+```
+
+Disabling the source migrations does not remove the connector's other
+requirements: the helper functions, the event trigger, the writable `etl` state
+tables, and the state-store migration checks must all still be present and
+reachable. The connector refuses to start when the event trigger
+`supabase_etl_ddl_message_trigger` is missing or disabled, because without it
+schema changes to the published tables go unnoticed; this check runs with
+either setting. Before starting an upgraded connector with `run_source_migrations`
+set to `false`, an administrator must apply any new source migrations the
+upgrade introduces; pending state-store migrations need the same attention when
+the runtime role lacks the DDL or ownership privileges to apply them. Recheck
+the grants after any migration that recreates functions or adds tables.
 
 ## Schema requirements
 

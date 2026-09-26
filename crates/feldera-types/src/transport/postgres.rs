@@ -74,12 +74,17 @@ impl PostgresTlsConfig {
 /// Postgres CDC input connector configuration.
 ///
 /// Uses logical replication to capture ongoing changes from a Postgres database.
-/// Requires a pre-created publication and a user with REPLICATION privilege.
+/// Requires a pre-created publication. Automatic source migrations require a
+/// superuser; with administrator-installed source objects and
+/// `run_source_migrations = false`, a replication role with the documented
+/// source-table and etl state-store privileges can be used instead.
 /// Tables must have primary keys and `REPLICA IDENTITY FULL` is recommended
 /// for UPDATE/DELETE support.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct PostgresCdcReaderConfig {
-    /// Postgres connection URI. The user must have REPLICATION privilege.
+    /// Postgres connection URI. Automatic source migrations require a superuser.
+    /// With `run_source_migrations = false`, the user needs REPLICATION and the
+    /// grants described in [Running as a non-superuser](https://docs.feldera.com/connectors/sources/postgresql-cdc#running-as-a-non-superuser).
     /// See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>
     pub uri: String,
 
@@ -91,10 +96,28 @@ pub struct PostgresCdcReaderConfig {
     /// Must be included in the publication.
     pub source_table: String,
 
+    /// Whether the connector runs etl's source migrations on startup.
+    ///
+    /// The source migrations install the schema helper functions and the
+    /// `ddl_command_end` event trigger. Creating the event trigger requires a
+    /// superuser, so a de-elevated role can set this to `false` and have an
+    /// administrator install the source objects out-of-band. Disabling this
+    /// does not skip the state-store migrations, which run on every start
+    /// regardless.
+    ///
+    /// Default: `true`.
+    #[serde(default = "default_run_source_migrations")]
+    #[schema(default = default_run_source_migrations)]
+    pub run_source_migrations: bool,
+
     /// TLS/SSL configuration.
     #[serde(flatten)]
     #[schema(inline)]
     pub tls: PostgresTlsConfig,
+}
+
+fn default_run_source_migrations() -> bool {
+    true
 }
 
 impl PostgresCdcReaderConfig {
@@ -309,12 +332,14 @@ impl PostgresWriterConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     fn postgres_cdc_config(tls: PostgresTlsConfig) -> PostgresCdcReaderConfig {
         PostgresCdcReaderConfig {
             uri: "postgres://user:password@localhost:5432/database".to_string(),
             publication: "publication".to_string(),
             source_table: "public.table".to_string(),
+            run_source_migrations: true,
             tls,
         }
     }
@@ -366,5 +391,42 @@ mod tests {
 
         let err = config.validate().unwrap_err();
         assert!(err.contains("source_table cannot be empty"));
+    }
+
+    #[test]
+    fn postgres_cdc_config_defaults_run_source_migrations_to_true() {
+        let config: PostgresCdcReaderConfig = serde_json::from_value(json!({
+            "uri": "postgres://user:password@localhost:5432/database",
+            "publication": "publication",
+            "source_table": "public.table",
+        }))
+        .unwrap();
+
+        assert!(config.run_source_migrations);
+    }
+
+    #[test]
+    fn postgres_cdc_config_honors_run_source_migrations_false() {
+        let config: PostgresCdcReaderConfig = serde_json::from_value(json!({
+            "uri": "postgres://user:password@localhost:5432/database",
+            "publication": "publication",
+            "source_table": "public.table",
+            "run_source_migrations": false,
+        }))
+        .unwrap();
+
+        assert!(!config.run_source_migrations);
+    }
+
+    #[test]
+    fn postgres_cdc_config_round_trips_run_source_migrations() {
+        for enabled in [true, false] {
+            let mut config = postgres_cdc_config(PostgresTlsConfig::default());
+            config.run_source_migrations = enabled;
+            let json = serde_json::to_value(&config).unwrap();
+            assert_eq!(json["run_source_migrations"], enabled);
+            let decoded: PostgresCdcReaderConfig = serde_json::from_value(json).unwrap();
+            assert_eq!(decoded, config);
+        }
     }
 }

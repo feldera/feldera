@@ -13894,18 +13894,23 @@
                 "type": "string",
                 "description": "Name of the pre-created Postgres publication to replicate from."
               },
+              "run_source_migrations": {
+                "type": "boolean",
+                "description": "Whether the connector runs etl's source migrations on startup.\n\nThe source migrations install the schema helper functions and the\n`ddl_command_end` event trigger. Creating the event trigger requires a\nsuperuser, so a de-elevated role can set this to `false` and have an\nadministrator install the source objects out-of-band. Disabling this\ndoes not skip the state-store migrations, which run on every start\nregardless.\n\nDefault: `true`.",
+                "default": true
+              },
               "source_table": {
                 "type": "string",
                 "description": "Postgres table to replicate, schema-qualified (e.g. \"public.orders\").\nA name given without a schema refers to a table in \"public\".\nMust be included in the publication."
               },
               "uri": {
                 "type": "string",
-                "description": "Postgres connection URI. The user must have REPLICATION privilege.\nSee: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>"
+                "description": "Postgres connection URI. Automatic source migrations require a superuser.\nWith `run_source_migrations = false`, the user needs REPLICATION and the\ngrants described in [Running as a non-superuser](https://docs.feldera.com/connectors/sources/postgresql-cdc#running-as-a-non-superuser).\nSee: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>"
               }
             }
           }
         ],
-        "description": "Postgres CDC input connector configuration.\n\nUses logical replication to capture ongoing changes from a Postgres database.\nRequires a pre-created publication and a user with REPLICATION privilege.\nTables must have primary keys and `REPLICA IDENTITY FULL` is recommended\nfor UPDATE/DELETE support."
+        "description": "Postgres CDC input connector configuration.\n\nUses logical replication to capture ongoing changes from a Postgres database.\nRequires a pre-created publication. Automatic source migrations require a\nsuperuser; with administrator-installed source objects and\n`run_source_migrations = false`, a replication role with the documented\nsource-table and etl state-store privileges can be used instead.\nTables must have primary keys and `REPLICA IDENTITY FULL` is recommended\nfor UPDATE/DELETE support."
       },
       "PostgresReaderConfig": {
         "allOf": [
