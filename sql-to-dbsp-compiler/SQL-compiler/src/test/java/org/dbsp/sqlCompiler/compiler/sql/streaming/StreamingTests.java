@@ -1190,7 +1190,8 @@ public class StreamingTests extends StreamingTestBase {
             public void endVisit() {
                 Assert.assertEquals(1, this.rollingWithWaterline);
                 Assert.assertEquals(2, this.retainKeys);
-                Assert.assertEquals(1, this.retainNValues);
+                // MIN and MAX of the session timestamps keep opposite ends of the range
+                Assert.assertEquals(2, this.retainNValues);
             }
         });
         // The waterline is max over all data of (ts - 1 hour); each step is

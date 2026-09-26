@@ -108,7 +108,13 @@ public final class DBSPIntegrateTraceRetainNValuesOperator
         visitor.pop(this);
     }
 
-    // equivalent inherited from parent
+    @Override
+    public boolean equivalent(DBSPOperator other) {
+        if (!super.equivalent(other))
+            return false;
+        DBSPIntegrateTraceRetainNValuesOperator otherOperator = other.as(DBSPIntegrateTraceRetainNValuesOperator.class);
+        return otherOperator != null && this.n == otherOperator.n && this.which == otherOperator.which;
+    }
 
     @SuppressWarnings("unused")
     public static DBSPIntegrateTraceRetainNValuesOperator fromJson(JsonNode node, JsonDecoder decoder) {
