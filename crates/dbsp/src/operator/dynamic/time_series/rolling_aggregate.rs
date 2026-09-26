@@ -396,9 +396,18 @@ where
     {
         self.circuit()
             .region("partitioned_rolling_aggregate_with_waterline", || {
-                // Shift the aggregation window so that its right end is at 0.
+                // A change at time `t` affects the rows at `t - max(range.to, 0)` and later, and
+                // these rows read inputs from `t + min(range.from, 0) - max(range.to, 0)` on.
+                let before = match range.from {
+                    RelOffset::After(_) => RelOffset::Before(HasZero::zero()),
+                    before => before,
+                };
+                let after = match range.to {
+                    RelOffset::Before(_) => RelOffset::Before(HasZero::zero()),
+                    after => after,
+                };
                 let shifted_range =
-                    RelRange::new(range.from - range.to, RelOffset::Before(HasZero::zero()));
+                    RelRange::new(before - after, RelOffset::Before(HasZero::zero()));
 
                 // Trace bound used inside `partitioned_rolling_aggregate_inner` to
                 // bound its output trace.  This is the same bound we use to construct
@@ -413,7 +422,7 @@ where
                     .default_box();
 
                 // Restrict the input stream to the `[lb -> ∞)` time window,
-                // where `lb = waterline - (range.to - range.from)` is the lower
+                // where `lb = waterline + min(range.from, 0) - max(range.to, 0)` is the lower
                 // bound on input timestamps that may be used to compute
                 // changes to the rolling aggregate operator.
                 let bounds = waterline.apply_mut(move |wm| {
@@ -1463,6 +1472,79 @@ mod test {
         }
 
         circuit.kill().unwrap();
+    }
+
+    /// Compare the rolling aggregate with a waterline, for lateness 0, with the reference
+    /// implementation after each batch of `trace`.
+    fn test_rolling_aggregate_with_waterline(range: RelRange<u64>, trace: Vec<InputBatch>) {
+        let (mut circuit, (input, output, expected)) = Runtime::init_circuit(
+            CircuitConfig::from(2).with_splitter_chunk_size_records(6),
+            move |circuit| {
+                let (input_stream, input_handle) =
+                    circuit.add_input_indexed_zset::<u64, Tup2<u64, i64>>();
+                let input_by_time = input_stream
+                    .map_index(|(partition, Tup2(ts, val))| (*ts, Tup2(*partition, *val)));
+                let input_stream = input_stream.as_partitioned_zset();
+                let waterline: Stream<_, TypedBox<u64, DynDataTyped<u64>>> = input_by_time
+                    .waterline_monotonic(|| 0, |ts| *ts)
+                    .transaction_delay_with_initial_value(TypedBox::new(0));
+                let aggregator = <Fold<i64, i64, DefaultSemigroup<_>, _, _>>::new(
+                    0i64,
+                    |agg: &mut i64, val: &i64, w: ZWeight| *agg += val * w,
+                );
+                let output = Stream::partitioned_rolling_aggregate_with_waterline(
+                    &input_by_time,
+                    &waterline,
+                    |Tup2(partition, val)| (*partition, *val),
+                    aggregator,
+                    range,
+                )
+                .accumulate_integrate()
+                .accumulate_output();
+                let expected = partitioned_rolling_aggregate_slow(&input_stream.inner(), range)
+                    .accumulate_output();
+                Ok((input_handle, output, expected))
+            },
+        )
+        .unwrap();
+
+        for mut batch in trace {
+            input.append(&mut batch);
+            circuit.transaction().unwrap();
+            assert_eq!(
+                output.concat().consolidate(),
+                expected.concat().consolidate()
+            );
+        }
+        circuit.kill().unwrap();
+    }
+
+    // The row at the waterline, 5, reads the input at 0 through its window [0, 4] of the
+    // range [-5, -1].
+    #[test]
+    fn test_rolling_aggregate_waterline_preceding_upper_bound() {
+        test_rolling_aggregate_with_waterline(
+            RelRange::new(RelOffset::Before(5), RelOffset::Before(1)),
+            vec![
+                vec![Tup2(0u64, Tup2(Tup2(0u64, 1i64), 1))],
+                vec![Tup2(0u64, Tup2(Tup2(5u64, 1i64), 1))],
+                vec![Tup2(0u64, Tup2(Tup2(5u64, 2i64), 1))],
+            ],
+        );
+    }
+
+    // The row at the waterline, 3, changes the output of row 0 through its window [1, 3]
+    // of the range [1, 3].
+    #[test]
+    fn test_rolling_aggregate_waterline_following_lower_bound() {
+        test_rolling_aggregate_with_waterline(
+            RelRange::new(RelOffset::After(1), RelOffset::After(3)),
+            vec![
+                vec![Tup2(0u64, Tup2(Tup2(0u64, 1i64), 1))],
+                vec![Tup2(0u64, Tup2(Tup2(3u64, 1i64), 1))],
+                vec![Tup2(0u64, Tup2(Tup2(3u64, 2i64), 1))],
+            ],
+        );
     }
 
     #[test]
