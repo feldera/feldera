@@ -11,6 +11,7 @@ on:
 permissions:
   actions: read
   contents: read
+  id-token: write # exchanged for a Databricks token; see the Unity Catalog auth step below
 
 jobs:
   adapter-tests:
@@ -102,6 +103,43 @@ jobs:
           docker logs redpanda >&2
           exit 1
 
+      # feldera-ci has no OAuth secret; it authenticates through Databricks
+      # workload identity federation instead, exchanging this job's own
+      # GitHub OIDC token for a Databricks access token (see
+      # infrastructure/terraform/databricks/access_control.tf for the
+      # federation policy this matches). The token is scoped to this job
+      # only and lives only as long as it takes the test step below to run.
+      - name: Get GitHub OIDC token for Databricks federation
+        id: github-oidc
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: |
+          token=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+              "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=feldera-databricks-unity-test" \
+              | jq -r '.value')
+          echo "::add-mask::$token"
+          [ -n "$token" ] && [ "$token" != "null" ] || { echo "ERROR: empty OIDC token" >&2; exit 1; }
+          echo "token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Exchange for a Databricks access token
+        id: databricks-oidc
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: |
+          db_token=$(curl -sS -X POST "$DATABRICKS_HOST/oidc/v1/token" \
+              -H 'Content-Type: application/x-www-form-urlencoded' \
+              --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:token-exchange' \
+              --data-urlencode 'subject_token_type=urn:ietf:params:oauth:token-type:jwt' \
+              --data-urlencode "subject_token=$GITHUB_OIDC_TOKEN" \
+              --data-urlencode "client_id=$UNITY_CI_SERVICE_PRINCIPAL_APPLICATION_ID" \
+              --data-urlencode 'scope=all-apis' \
+              | jq -r '.access_token // empty')
+          echo "::add-mask::$db_token"
+          [ -n "$db_token" ] || { echo "ERROR: no access_token from Databricks" >&2; exit 1; }
+          echo "token=$db_token" >> "$GITHUB_OUTPUT"
+        env:
+          GITHUB_OIDC_TOKEN: ${{ steps.github-oidc.outputs.token }}
+          DATABRICKS_HOST: ${{ vars.DATABRICKS_WORKSPACE_HOST }}
+          UNITY_CI_SERVICE_PRINCIPAL_APPLICATION_ID: ${{ vars.UNITY_CI_SERVICE_PRINCIPAL_APPLICATION_ID }}
+
       # Pubsub tests are only supported on x86_64, see below
       - name: Run adapters tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
@@ -112,6 +150,8 @@ jobs:
         shell: bash
         env:
           RUST_BACKTRACE: 1
+          DELTA_TABLE_TEST_UNITY_ACCESS_TOKEN: ${{ steps.databricks-oidc.outputs.token }}
+          DELTA_TABLE_TEST_UNITY_HOST: ${{ vars.DATABRICKS_WORKSPACE_HOST }}
           # Cap libtest parallelism at the runner core budget. Adapter tests
           # share the pod with postgres/redpanda/redis sidecars; if those start
           # starving we can lower CI_RUNNER_CORES or switch this to its own var.

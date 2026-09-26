@@ -4263,13 +4263,12 @@ fn delta_table_unity_change_feed() {
     const MERGE_VERSION: i64 = 2;
 
     let mut config: HashMap<String, Value> = [
+        // feldera-ci has no OAuth secret; CI mints this token per run via
+        // Databricks workload identity federation (see test-adapters.yml),
+        // so there is nothing here to rotate or leak.
         (
-            "unity_client_id",
-            std::env::var("DELTA_TABLE_TEST_UNITY_CLIENT_ID").unwrap(),
-        ),
-        (
-            "unity_client_secret",
-            std::env::var("DELTA_TABLE_TEST_UNITY_CLIENT_SECRET").unwrap(),
+            "databricks_token",
+            std::env::var("DELTA_TABLE_TEST_UNITY_ACCESS_TOKEN").unwrap(),
         ),
         (
             "databricks_host",
@@ -4360,13 +4359,12 @@ fn delta_table_unity_people_2m() {
     use crate::test::DatabricksPeople;
 
     let object_store_config = [
+        // feldera-ci has no OAuth secret; CI mints this token per run via
+        // Databricks workload identity federation (see test-adapters.yml),
+        // so there is nothing here to rotate or leak.
         (
-            "unity_client_id".to_string(),
-            std::env::var("DELTA_TABLE_TEST_UNITY_CLIENT_ID").unwrap(),
-        ),
-        (
-            "unity_client_secret".to_string(),
-            std::env::var("DELTA_TABLE_TEST_UNITY_CLIENT_SECRET").unwrap(),
+            "databricks_token".to_string(),
+            std::env::var("DELTA_TABLE_TEST_UNITY_ACCESS_TOKEN").unwrap(),
         ),
         (
             "databricks_host".to_string(),
