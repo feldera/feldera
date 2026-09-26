@@ -2003,7 +2003,7 @@ some_polymorphic_function1!(ceil_nanosecond, TimestampTz, TimestampTz, Timestamp
 pub fn tumble_Timestamp_ShortInterval(ts: Timestamp, i: ShortInterval) -> Timestamp {
     let ts_us = ts.microseconds();
     let i_us = i.microseconds();
-    let round = ts_us - ts_us % i_us;
+    let round = ts_us - ts_us.rem_euclid(i_us);
     Timestamp::from_microseconds(round)
 }
 
@@ -2035,7 +2035,7 @@ pub fn tumble_Timestamp_ShortInterval_Time(ts: Timestamp, i: ShortInterval, t: T
     let t_us = (t.nanoseconds() / 1000) as i64;
     let ts_us = ts.microseconds() - t_us;
     let i_us = i.microseconds();
-    let round = ts_us - ts_us % i_us;
+    let round = ts_us - ts_us.rem_euclid(i_us);
     Timestamp::from_microseconds(round + t_us)
 }
 
@@ -2079,7 +2079,7 @@ pub fn tumble_Timestamp_ShortInterval_ShortInterval(
     let t_us = t.microseconds();
     let ts_us = ts.microseconds() - t_us;
     let i_us = i.microseconds();
-    let round = ts_us - ts_us % i_us;
+    let round = ts_us - ts_us.rem_euclid(i_us);
     Timestamp::from_microseconds(round + t_us)
 }
 
@@ -2126,7 +2126,7 @@ pub fn hop_start(
     let size_us = size.microseconds();
     let period_us = period.microseconds();
     let start_us = start.microseconds();
-    ts_us - ((ts_us - start_us) % period_us) + period_us - size_us
+    ts_us - (ts_us - start_us).rem_euclid(period_us) + period_us - size_us
 }
 
 // Helper function used by the monotonicity analysis for hop table functions
