@@ -1,12 +1,18 @@
-"""Snapshot read of a UC-Uniform-over-Iceberg table (``columnMapping.mode='id'``).
+"""Reads of a UC-Uniform-over-Iceberg table (``columnMapping.mode='id'``).
 
 A Unity Catalog Uniform table exposes Iceberg data files as Delta. A native
 Iceberg writer (Flink / pyiceberg) names the Parquet columns by their *logical*
 names and identifies them by Parquet ``field_id``; the synthesized Delta log uses
-``columnMapping.mode='id'`` with physical names ``col-<id>``. A correct snapshot
-read must resolve each column by field id, not by physical name -- otherwise a
-column whose physical name (``col-<id>``) is absent from the logically-named file
-reads as NULL (nullable) or fails outright (non-nullable).
+``columnMapping.mode='id'`` with physical names ``col-<id>``. A correct read must
+resolve each column by field id, not by physical name -- otherwise a column whose
+physical name (``col-<id>``) is absent from the logically-named file reads as NULL
+(nullable) or fails outright (non-nullable).
+
+Each ingest mode plans its reads differently, so each is covered: ``snapshot``
+reads the table at its latest version, while ``follow`` and ``cdc`` replay the
+log commit by commit. The fixture's two commits let a replay starting at v0 see
+only the second one, which distinguishes a working follow path from one that
+quietly re-read the whole table.
 
 This reproduces the customer's ``cdc_raw`` failure on two fronts: the non-nullable
 top-level ``op`` (physical name ``col-102``) is missing from the physical schema
@@ -29,27 +35,42 @@ from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
 
 from tests import TEST_CLIENT
-from tests.platform.fixtures.uniform_iceberg import EXPECTED_ROWS
+from tests.platform.fixtures.uniform_iceberg import EXPECTED_ROWS, V1_ROWS
 from tests.utils import DeltaTestLocation, ensure_delta_spark_fixture
 
 TABLE = "t"
 CONNECTOR = "delta_in"
 # Bump to invalidate cached MinIO/local copies when the fixture definition changes.
-FIXTURE_VERSION = "v1"
+FIXTURE_VERSION = "v2"
 
 # pyarrow builder that writes the logical-name Parquet + hand-written _delta_log.
 # It runs in a subprocess (see ensure_delta_spark_fixture) with only pyarrow.
 _FIXTURE_BUILDER = Path(__file__).parent / "fixtures" / "uniform_iceberg.py"
 
 
-def _build_sql(loc: DeltaTestLocation) -> str:
+# Replay the second commit only: v0 is the already-consumed baseline. A follow or
+# CDC read that ignored the baseline and re-read the table would return v0's rows
+# too, so the narrower expectation is the point.
+_REPLAY_CONFIG = {"version": 0, "end_version": 1}
+
+# CDC mode needs a delete filter and an order-by. The fixture marks no deletes, so
+# use a predicate no row satisfies; resolving it against the logical column name
+# also confirms a filter survives the physical-name remap.
+_CDC_CONFIG = {
+    **_REPLAY_CONFIG,
+    "cdc_delete_filter": "op = 'x'",
+    "cdc_order_by": "id asc",
+}
+
+
+def _build_sql(loc: DeltaTestLocation, extra_config: dict | None = None) -> str:
     connectors = json.dumps(
         [
             {
                 "name": CONNECTOR,
                 "transport": {
                     "name": "delta_table_input",
-                    "config": dict(loc.connector_config),
+                    "config": {**loc.connector_config, **(extra_config or {})},
                 },
             }
         ]
@@ -87,15 +108,27 @@ def _snapshot_rows(pipeline) -> list[dict]:
     )
 
 
-def test_delta_input_uniform_iceberg_id_snapshot(pipeline_name):
-    """Snapshot read of a UC-Uniform-over-Iceberg table resolves columns by
-    Parquet field id at every level: the diverging non-nullable ``op`` (``col-102``)
-    comes back with real values instead of failing, and the nested ``after`` struct
-    -- whose children are themselves mapped to ``col-<id>`` -- is reconstructed by
-    field id instead of failing the struct cast."""
+def _run_uniform_test(
+    pipeline_name: str,
+    *,
+    mode: str,
+    expected_rows: list[dict],
+    extra_config: dict | None = None,
+) -> None:
+    """Ingest the Uniform table in ``mode`` and check that every column resolves
+    by Parquet field id: the diverging non-nullable ``op`` (``col-102``) comes
+    back with real values instead of failing, and the nested ``after`` struct --
+    whose children are themselves mapped to ``col-<id>`` -- is reconstructed by
+    field id instead of failing the struct cast.
+
+    One wrapper test per mode rather than ``pytest.mark.parametrize`` so each gets
+    a distinct pipeline name: the ``pipeline_name`` fixture derives the name from
+    the test function, and parametrized cases sharing one name could collide
+    under ``pytest -n``.
+    """
     loc = DeltaTestLocation.create(
         pipeline_name,
-        mode="snapshot",
+        mode=mode,
         stable_subpath=f"uniform_iceberg_id_{FIXTURE_VERSION}",
     )
     try:
@@ -106,7 +139,7 @@ def test_delta_input_uniform_iceberg_id_snapshot(pipeline_name):
         pipeline = PipelineBuilder(
             TEST_CLIENT,
             pipeline_name,
-            sql=_build_sql(loc),
+            sql=_build_sql(loc, extra_config),
             runtime_config=RuntimeConfig(
                 workers=FELDERA_TEST_NUM_WORKERS,
                 hosts=FELDERA_TEST_NUM_HOSTS,
@@ -123,13 +156,13 @@ def test_delta_input_uniform_iceberg_id_snapshot(pipeline_name):
                     "op": r["op"],
                     "merchant": r["after"]["transaction__merchant_name"],
                 }
-                for r in EXPECTED_ROWS
+                for r in expected_rows
             ),
             key=lambda r: r["id"],
         )
         rows = _snapshot_rows(pipeline)
         assert rows == expected, (
-            "snapshot read must resolve column-mapped Uniform/Iceberg data by "
+            f"{mode} read must resolve column-mapped Uniform/Iceberg data by "
             "field id at every level (top-level op/col-102 and the nested after "
             f"struct's children); got {rows}"
         )
@@ -137,3 +170,32 @@ def test_delta_input_uniform_iceberg_id_snapshot(pipeline_name):
         pipeline.stop(force=True)
     finally:
         loc.cleanup()
+
+
+def test_delta_input_uniform_iceberg_id_snapshot(pipeline_name):
+    """Snapshot read of the whole table at its latest version."""
+    _run_uniform_test(pipeline_name, mode="snapshot", expected_rows=EXPECTED_ROWS)
+
+
+def test_delta_input_uniform_iceberg_id_follow(pipeline_name):
+    """Follow the log from v0, which applies the second commit alone.
+
+    Follow plans its reads per commit rather than over the table, so it resolves
+    columns through a different path than ``snapshot`` and needs its own case.
+    """
+    _run_uniform_test(
+        pipeline_name,
+        mode="follow",
+        expected_rows=V1_ROWS,
+        extra_config=_REPLAY_CONFIG,
+    )
+
+
+def test_delta_input_uniform_iceberg_id_cdc(pipeline_name):
+    """Read the second commit in CDC mode, where no row is a delete."""
+    _run_uniform_test(
+        pipeline_name,
+        mode="cdc",
+        expected_rows=V1_ROWS,
+        extra_config=_CDC_CONFIG,
+    )

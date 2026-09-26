@@ -1,4 +1,5 @@
 mod deletion_vector;
+mod field_id_adapter;
 mod input;
 mod output;
 
