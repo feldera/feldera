@@ -1,7 +1,7 @@
 /**
  * Tests for the pipelines `Table`: the left-to-right column order, mouse
- * interaction with column sorting, the sort affordances each header paints, and
- * the borders that close off the last row.
+ * interaction with column sorting, the sort affordances each header paints, the
+ * borders that close off the last row, the sticky header, and a clean teardown.
  *
  * The real pipelines `Table` is mounted with a handful of pipeline thumbs whose name order
  * and "status changed" order deliberately disagree, so every assertion about row
@@ -110,14 +110,7 @@ describe('Table — column sorting', () => {
     useLayoutSettings().pipelinesTableSort.value = { column: 'name', direction: 'asc' }
   })
 
-  afterEach(async () => {
-    // @vincjo/datatables' setRows() defers a scroll-position restore via
-    // setTimeout(..., 2) that dereferences table.element. On unmount Svelte nulls
-    // that binding, so a timer still in flight throws "Cannot set properties of
-    // null (setting 'scrollTop')". vitest-browser-svelte unmounts after afterEach
-    // runs, so waiting out the 2 ms window here lets the timer fire while the
-    // component — and its element — is still alive.
-    await new Promise((resolve) => setTimeout(resolve, 10))
+  afterEach(() => {
     localStorage.clear()
   })
 
@@ -182,10 +175,7 @@ describe('Table — column order', () => {
     useLayoutSettings().pipelinesTableSort.value = { column: 'name', direction: 'asc' }
   })
 
-  afterEach(async () => {
-    // See the sorting suite's afterEach: wait out @vincjo/datatables' 2 ms
-    // scroll-restore timer so it fires while the component is still mounted.
-    await new Promise((resolve) => setTimeout(resolve, 10))
+  afterEach(() => {
     localStorage.clear()
   })
 
@@ -218,10 +208,7 @@ describe('Table — row borders', () => {
     useLayoutSettings().pipelinesTableSort.value = { column: 'name', direction: 'asc' }
   })
 
-  afterEach(async () => {
-    // See the sorting suite's afterEach: wait out @vincjo/datatables' 2 ms
-    // scroll-restore timer so it fires while the component is still mounted.
-    await new Promise((resolve) => setTimeout(resolve, 10))
+  afterEach(() => {
     localStorage.clear()
   })
 
@@ -264,10 +251,7 @@ describe('Table — sort affordances', () => {
     useLayoutSettings().pipelinesTableSort.value = { column: 'name', direction: 'asc' }
   })
 
-  afterEach(async () => {
-    // See the sorting suite's afterEach: wait out @vincjo/datatables' 2 ms
-    // scroll-restore timer so it fires while the component is still mounted.
-    await new Promise((resolve) => setTimeout(resolve, 10))
+  afterEach(() => {
     localStorage.clear()
   })
 
@@ -317,10 +301,7 @@ describe('Table — header alignment', () => {
     useLayoutSettings().pipelinesTableSort.value = { column: 'name', direction: 'asc' }
   })
 
-  afterEach(async () => {
-    // See the sorting suite's afterEach: wait out @vincjo/datatables' 2 ms
-    // scroll-restore timer so it fires while the component is still mounted.
-    await new Promise((resolve) => setTimeout(resolve, 10))
+  afterEach(() => {
     localStorage.clear()
   })
 
@@ -341,5 +322,70 @@ describe('Table — header alignment', () => {
     expect(justifyOf('Status')).toBe('center')
     expect(justifyOf('Errors Runtime errors')).toBe('flex-end')
     expect(justifyOf('Pipeline name')).toBe('normal')
+  })
+})
+
+describe('Table — sticky header', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useLayoutSettings().pipelinesTableSort.value = { column: 'name', direction: 'asc' }
+  })
+
+  afterEach(() => {
+    localStorage.clear()
+  })
+
+  it('keeps the column headers on screen after scrolling down', async () => {
+    const manyPipelines = Array.from({ length: 60 }, (_, i) => ({
+      ...thumb('alpha'),
+      name: `pipeline-${String(i).padStart(2, '0')}`
+    }))
+    const { container } = render(Table, {
+      props: { pipelines: manyPipelines, selectedPipelines: [] }
+    } as any)
+    // The container stands in for the page: the one scroll container above the table.
+    container.style.height = '400px'
+    container.style.overflowY = 'auto'
+    await expect.poll(rowOrder).toHaveLength(manyPipelines.length)
+    expect(container.scrollHeight).toBeGreaterThan(container.clientHeight)
+
+    container.scrollTop = container.scrollHeight
+    await new Promise((painted) => requestAnimationFrame(() => requestAnimationFrame(painted)))
+
+    const viewport = container.getBoundingClientRect()
+    const firstRow = document.querySelector('tbody tr')!.getBoundingClientRect()
+    // The first row has scrolled out of view, so the headers are not simply where
+    // they started.
+    expect(firstRow.bottom).toBeLessThan(viewport.top)
+    // Visible means the header, not a row scrolled underneath it, is the topmost
+    // element at its position.
+    const nameHeader = headerCell('Pipeline name')
+    const box = nameHeader.getBoundingClientRect()
+    expect(box.top).toBeGreaterThanOrEqual(viewport.top)
+    expect(box.bottom).toBeLessThanOrEqual(viewport.bottom)
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
+    expect(nameHeader.contains(hit)).toBe(true)
+  })
+})
+
+describe('Table — teardown', () => {
+  it('leaves no timer that writes to the table after unmount', async () => {
+    const errors: string[] = []
+    const recordError = (event: ErrorEvent) => errors.push(event.message)
+    window.addEventListener('error', recordError)
+    try {
+      const { rerender, unmount } = mountTable()
+      await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
+
+      // New rows go through `TableHandler.setRows`, and unmounting straight after
+      // leaves any timer it scheduled to fire on a destroyed table.
+      await rerender({ pipelines: [...pipelines, thumb('echo')], selectedPipelines: [] })
+      unmount()
+      await new Promise((resolve) => setTimeout(resolve, 20))
+
+      expect(errors).toEqual([])
+    } finally {
+      window.removeEventListener('error', recordError)
+    }
   })
 })
