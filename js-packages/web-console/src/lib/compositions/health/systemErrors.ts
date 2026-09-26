@@ -303,7 +303,10 @@ const flattenStderr = (stderr: string) => stderr.replaceAll('\n--- stderr\n', '\
 const rustCompilerErrorRegex =
   /^((?:[\w-]+: )?(warning:(?! `)|error(\[[\w]+\])?:)([\s\S])+?)(\n(\n|(?=error|warning))|\n?$(?![\s\S]))/gm
 
-/** Old managers put rustc text in stderr and do not send `messages`. */
+/**
+ * Parse rustc text out of stderr. Old managers do not send `messages`.
+ * Remove this once those managers are no longer in use.
+ */
 const extractRustStderrErrors = <Report>(
   stderr: string,
   pipelineName: string,
@@ -359,6 +362,7 @@ export const extractProgramErrors =
           messages.map(extractRustCompilerMessage(pipeline.name, source, getReport))
         )
       } else {
+        // Temporary: old managers omit `messages` and leave rustc text in stderr.
         result.push.apply(
           result,
           extractRustStderrErrors(rust.stderr, pipeline.name, source, getReport)
