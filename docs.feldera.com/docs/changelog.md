@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+## v0.356.0
+
 - Bug fix (SQL): `DATEDIFF(QUARTER, left, right)` mixed whole years with
   calendar quarters and often returned wrong values; for example,
   `DATEDIFF(QUARTER, DATE '2020-06-15', DATE '2021-01-01')` returned -1
