@@ -359,7 +359,10 @@ GROUP BY
 
 The `emit_final` annotation causes the view to emit only the rows that
 have a value in the specified column that is before the view's current
-waterline.  Let us insert some records in the `purchase` table and
+waterline.  Rows whose value in this column is `NULL` are never emitted:
+a `NULL` value is never late, so such a row can still be deleted.
+
+Let us insert some records in the `purchase` table and
 observe how this affects the waterlines and the output of the view
 with and without `emit_final` annotations.
 
