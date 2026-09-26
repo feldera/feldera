@@ -16016,6 +16016,11 @@
             ],
             "nullable": true
           },
+          "take_bucket_ownership": {
+            "type": "boolean",
+            "description": "Take ownership of `bucket` when the pipeline starts, even if another\npipeline owns it.\n\nA pipeline records its ownership of `bucket` in an `owner.json` file\nat the root of `bucket`, and a push fails without writing anything if\nthat file names a different pipeline.  When this is `true`, the\npipeline takes ownership as it starts (a standby pipeline, when it is\nactivated): it logs a warning naming the previous and new owners and\noverwrites `owner.json`.  The previous owner's later pushes to\n`bucket` then fail.\n\nThis only applies at startup.  If another pipeline takes ownership of\n`bucket` while this pipeline is running, this pipeline's pushes fail.\n\nOwnership changes before the pipeline opens its checkpoint, so it\nsticks even if the pipeline then fails to start: the previous owner's\npushes keep failing.  To give `bucket` back, start the previous owner\nwith `take_bucket_ownership` set.\n\nUse this to hand a checkpoint location over to a pipeline that\nreplaces another one, e.g., after deleting and recreating a pipeline.\nStop the previous owner first, and set this on only one of the\npipelines that share a `bucket`.\n\nDefault: false",
+            "default": false
+          },
           "transfers": {
             "type": "integer",
             "format": "int32",

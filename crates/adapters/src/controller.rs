@@ -350,6 +350,40 @@ impl ControllerBuilder {
         Err(ControllerError::EnterpriseFeature("standby"))
     }
 
+    /// Takes ownership of the sync bucket as the pipeline starts, if the sync
+    /// config sets `take_bucket_ownership`.
+    ///
+    /// Every way of starting a pipeline opens it through exactly one of the
+    /// `open_*` methods below: a single host after its initial pull, a
+    /// standby pipeline after activation, and a multihost host after the
+    /// coordinator activates it.  Calling this from them takes ownership once
+    /// per run, before any push, and never mid-run.  Every host of a
+    /// multihost pipeline takes ownership; the hosts share one identity, so
+    /// they agree on the owner.
+    ///
+    /// Ownership changes before the checkpoint is opened, so a pipeline that
+    /// then fails to start keeps the bucket.
+    ///
+    /// # Returns
+    /// `Ok(())` if ownership was taken or not requested; otherwise the error
+    /// that fails startup.
+    fn take_bucket_ownership(&self) -> Result<(), ControllerError> {
+        #[cfg(feature = "feldera-enterprise")]
+        if let Some(storage) = &self.storage
+            && let Some(sync) = self.sync_config()
+            && sync.take_bucket_ownership
+        {
+            let pipeline = self.config.pipeline_identity().ok_or_else(|| {
+                ControllerError::checkpoint_push_error(missing_pipeline_identity_message(
+                    "cannot take ownership of object store bucket",
+                ))
+            })?;
+            sync::take_bucket_ownership(storage.backend.clone(), &sync, &pipeline)?;
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn with_layout(self, layout: Layout) -> Self {
         Self {
             layout: Some(layout),
@@ -363,6 +397,7 @@ impl ControllerBuilder {
         self,
         checkpoint_uuid: Uuid,
     ) -> Result<ControllerInit, ControllerError> {
+        self.take_bucket_ownership()?;
         ControllerInit::with_checkpoint(
             self.layout,
             self.config.clone(),
@@ -374,12 +409,14 @@ impl ControllerBuilder {
     /// Creates a [ControllerInit] that will start fresh without using a
     /// checkpoint.
     pub(crate) fn open_without_checkpoint(self) -> Result<ControllerInit, ControllerError> {
+        self.take_bucket_ownership()?;
         ControllerInit::without_checkpoint(self.layout, self.config.clone(), self.storage.clone())
     }
 
     /// Creates a [ControllerInit] that will start from the latest checkpoint,
     /// if there is one, or start fresh without a checkpoint otherwise.
     pub(crate) fn open_latest_checkpoint(self) -> Result<ControllerInit, ControllerError> {
+        self.take_bucket_ownership()?;
         ControllerInit::with_latest_checkpoint(
             self.layout,
             self.config.clone(),
