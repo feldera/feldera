@@ -1,4 +1,5 @@
 // API to read from tables/views and write into tables using HTTP
+use crate::api::endpoints::metrics;
 use crate::api::error::ApiError;
 use crate::api::examples;
 use crate::api::main::ServerState;
@@ -17,7 +18,8 @@ use actix_web::{
 #[allow(unused_imports)]
 use feldera_types::checkpoint::RemoteCheckpoint;
 use feldera_types::query_params::{
-    ApproveParameters, MetricsParameters, SamplyProfileGetParams, SamplyProfileParams,
+    ApproveParameters, MetricsFormat, MetricsParameters, SamplyProfileGetParams,
+    SamplyProfileParams,
 };
 use feldera_types::runtime_status::BootstrapConfig;
 use feldera_types::{program_schema::SqlIdentifier, query_params::ActivateParams};
@@ -706,7 +708,7 @@ pub(crate) async fn get_pipeline_stats(
 
 /// Get Pipeline Metrics
 ///
-/// Retrieve the metrics of a running or paused pipeline.
+/// Retrieve the metrics of a pipeline.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -722,15 +724,6 @@ pub(crate) async fn get_pipeline_stats(
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse
             , example = json!(examples::error_unknown_pipeline_name())),
-        (status = SERVICE_UNAVAILABLE
-            , body = ErrorResponse
-            , examples(
-                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
-                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
-                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
-                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
-            )
-        ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Metrics & Debugging"
@@ -741,23 +734,50 @@ pub(crate) async fn get_pipeline_metrics(
     client: WebData<awc::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
-    _query: web::Query<MetricsParameters>,
+    query: web::Query<MetricsParameters>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
-    state
-        .runner
-        .forward_http_request_to_pipeline_by_name(
-            client.as_ref(),
-            *tenant_id,
-            &pipeline_name,
-            Method::GET,
-            "metrics",
-            request.query_string(),
-            None,
-            None,
-        )
+
+    let pipeline = state
+        .db
+        .lock()
         .await
+        .get_pipeline_for_monitoring(*tenant_id, &pipeline_name)
+        .await?;
+    let pipelines = std::slice::from_ref(&pipeline);
+
+    let from_pipeline = metrics::fetch_pipeline_metrics(
+        &state,
+        client.as_ref(),
+        *tenant_id,
+        &pipeline,
+        request.query_string(),
+    )
+    .await;
+
+    match query.format {
+        MetricsFormat::Prometheus => {
+            let mut body = metrics::status_metrics(pipelines).into_bytes();
+            if let Some(bytes) = from_pipeline {
+                body.extend(bytes);
+                body.push(b'\n');
+            }
+            Ok(HttpResponse::Ok().content_type("text/plain").body(body))
+        }
+        MetricsFormat::Json => {
+            let mut families = metrics::status_metrics_json(pipelines);
+            if let Some(bytes) = from_pipeline {
+                match serde_json::from_slice::<Vec<serde_json::Value>>(&bytes) {
+                    Ok(from_pipeline) => families.extend(from_pipeline),
+                    Err(error) => {
+                        debug!("Pipeline {pipeline_name} returned invalid JSON metrics: {error}")
+                    }
+                }
+            }
+            Ok(HttpResponse::Ok().json(families))
+        }
+    }
 }
 
 /// Get Time Series Stats
