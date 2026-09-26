@@ -6945,7 +6945,7 @@ export type GetMetricsData = {
 
 export type GetMetricsResponses = {
   /**
-   * Metrics of all running pipelines belonging to this tenant in Prometheus format
+   * Metrics of all pipelines belonging to this tenant in Prometheus format
    */
   200: Blob | File
 }
@@ -8199,7 +8199,6 @@ export type GetPipelineMetricsErrors = {
    */
   404: ErrorResponse
   500: ErrorResponse
-  503: ErrorResponse
 }
 
 export type GetPipelineMetricsError = GetPipelineMetricsErrors[keyof GetPipelineMetricsErrors]
