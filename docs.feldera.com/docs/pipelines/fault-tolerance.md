@@ -143,13 +143,13 @@ are disabled, then the user should occasionally invoke this API to
 ensure that the checkpoint feature is useful.
 
 > Writing a checkpoint is ordinarily a fast operation that takes
-several seconds.  However, the [Delta Lake input
-connector](../connectors/sources/delta.md) can only checkpoint at some
-input positions.  When a checkpoint is requested between those points,
-Feldera executes steps that draw input only from those connectors
-until they advance to a point at which a checkpoint is possible, and
-then writes the checkpoint.  In some cases, this can take minutes or
-longer.
+several seconds.  However, the [Delta Lake](../connectors/sources/delta.md)
+and [Iceberg](../connectors/sources/iceberg.md) input connectors can
+only checkpoint at some input positions.  When a checkpoint is
+requested between those points, Feldera executes steps that draw input
+only from those connectors until they advance to a point at which a
+checkpoint is possible, and then writes the checkpoint.  In some
+cases, this can take minutes or longer.
 
 ## Fault-tolerant connectors
 
@@ -174,7 +174,7 @@ tolerance.
 |[Delta Lake]|✅|✅|❌|
 |[HTTP GET (URL)]|✅|✅|✅|
 |[HTTP]|✅|✅|✅|
-|[Iceberg]|❌|❌|❌|
+|[Iceberg]|✅|✅|❌|
 |[Kafka]|✅|✅|✅|
 |[NATS]|✅|✅|✅|
 |[PostgreSQL]|❌|❌|❌|
