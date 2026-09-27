@@ -1269,6 +1269,106 @@ fn test_recursive_circuit1() {
     );
 }
 
+/// Transitive closure of `edges`, built with `recursion_builder` and named
+/// like the `recursive()` pipelines in this file.
+///
+/// # Arguments
+///
+/// * `circuit` - circuit to build the recursion in.
+/// * `edges` - edges of the graph.
+///
+/// # Returns
+///
+/// The stream of changes to the closure.
+fn recursion_builder_paths(
+    circuit: &RootCircuit,
+    edges: &Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>>,
+) -> Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>> {
+    circuit
+        .recursion_builder(
+            |child| Ok(child.recursive_var::<OrdZSet<Tup2<u64, u64>>>()),
+            |child, paths| {
+                paths.set_persistent_id(Some("paths_recursive"));
+
+                let edges = edges.delta0(child);
+
+                let paths_indexed = paths
+                    .map_index(|&Tup2(x, y)| (y, x))
+                    .set_persistent_id(Some("paths_indexed"));
+                let edges_indexed = edges
+                    .map_index(|Tup2(x, y)| (*x, *y))
+                    .set_persistent_id(Some("edges_indexed"));
+
+                let step = edges
+                    .plus(&paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to)));
+                step.set_persistent_id(Some("paths_step"));
+                Ok(step)
+            },
+        )
+        .finish()
+        .unwrap()
+}
+
+// `recursive_circuit1`, with the recursion built by `recursion_builder`.
+fn recursion_builder_circuit1(
+    circuit: &mut RootCircuit,
+) -> (
+    (),
+    ZSetHandle<Tup2<u64, u64>>,
+    (),
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, u64>>>>,
+) {
+    let (input_stream1, input_handle1) = circuit.add_input_zset::<Tup2<u64, u64>>();
+    input_stream1.set_persistent_id(Some("input1"));
+
+    input_stream1.integrate_trace();
+
+    let paths = recursion_builder_paths(circuit, &input_stream1);
+    let output_handle1 = paths.accumulate_output_persistent(Some("output1"));
+
+    ((), input_handle1, (), output_handle1)
+}
+
+// `recursive_circuit2`, with the recursion built by `recursion_builder`.
+fn recursion_builder_circuit2(
+    circuit: &mut RootCircuit,
+) -> (
+    ZSetHandle<Tup2<u64, u64>>,
+    (),
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, u64>>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, u64>>>>,
+) {
+    let (input_stream1, input_handle1) = circuit.add_input_zset::<Tup2<u64, u64>>();
+    input_stream1.set_persistent_id(Some("input1"));
+
+    input_stream1.integrate_trace();
+
+    let paths = recursion_builder_paths(circuit, &input_stream1);
+    let output_handle1 = paths.accumulate_output_persistent(Some("output1"));
+    let output_handle2 = paths.accumulate_output_persistent(Some("output2"));
+
+    (input_handle1, (), output_handle1, output_handle2)
+}
+
+#[test]
+fn test_recursion_builder_circuit1() {
+    test_replay::<
+        (),
+        TestData1<Tup2<u64, u64>>,
+        (),
+        (),
+        TestData1<Tup2<u64, u64>>,
+        TestData1<Tup2<u64, u64>>,
+    >(
+        Arc::new(recursion_builder_circuit1),
+        Arc::new(recursion_builder_circuit2),
+        std::iter::repeat_n((), 5).collect(),
+        chain(0, 5),
+        chain(5, 10),
+        std::iter::repeat_n((), 5).collect(),
+    );
+}
+
 // Circuit with lag:
 //
 // Pipeline 1:
@@ -5812,6 +5912,53 @@ fn test_concurrent_recursive_view() {
         |config| config,
         Arc::new(recursive_view_old),
         Arc::new(recursive_view_new),
+        p1,
+        p2,
+        p3,
+        Vec::new(),
+        ExpectedOutcome::Concurrent,
+        |_| {},
+    );
+}
+
+// `recursive_view_new`, with the recursion built by `recursion_builder`.
+#[allow(clippy::type_complexity)]
+fn recursion_builder_view_new(
+    circuit: &mut RootCircuit,
+) -> (
+    ZSetHandle<Tup2<u64, u64>>,
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, u64>>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, u64>>>>,
+) {
+    let (edges, ih) = circuit.add_input_zset::<Tup2<u64, u64>>();
+    edges.set_persistent_id(Some("edges"));
+    edges.integrate_trace();
+    let out_old = edges
+        .map(|Tup2(x, y)| Tup2(*x, *y))
+        .accumulate_output_persistent(Some("out_old"));
+
+    // New view: transitive closure (paths) of the edge relation.
+    let paths = recursion_builder_paths(circuit, &edges);
+    let out_new = paths.accumulate_output_persistent(Some("out_new"));
+    (ih, out_old, out_new)
+}
+
+#[test]
+fn test_concurrent_recursion_builder_view() {
+    // `test_concurrent_recursive_view`, with the recursion built by
+    // `recursion_builder`.
+    let p1 = edge_chunks(&[(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6)]);
+    let p2 = edge_chunks(&[(6, 7), (7, 8)]);
+    let p3 = edge_chunks(&[(8, 9), (10, 11)]);
+    run_concurrent_bootstrap_test::<
+        TestData1<Tup2<u64, u64>>,
+        TestData1<Tup2<u64, u64>>,
+        TestData1<Tup2<u64, u64>>,
+    >(
+        NUM_WORKERS,
+        |config| config,
+        Arc::new(recursive_view_old),
+        Arc::new(recursion_builder_view_new),
         p1,
         p2,
         p3,
