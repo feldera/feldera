@@ -58,7 +58,7 @@ CREATE TABLE customer (
 -- Credit card transactions.
 CREATE TABLE transaction (
     -- Lateness annotation: transactions cannot arrive more than 1 day out of order.
-    ts TIMESTAMP LATENESS INTERVAL 1 DAYS,
+    ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 DAYS,
     amt DECIMAL(38, 2),
     customer_id BIGINT NOT NULL,
     state VARCHAR

@@ -4569,7 +4569,7 @@ public class StreamingTests extends StreamingTestBase {
                 CREATE TABLE input_log (
                     id BIGINT,
                     s VARCHAR,
-                    ts TIMESTAMP,
+                    ts TIMESTAMP NOT NULL,
                     is_delete BOOLEAN DEFAULT CAST(CONNECTOR_METADATA()['is_delete'] AS BOOLEAN)
                 ) WITH (
                     'append_only' = 'true',
