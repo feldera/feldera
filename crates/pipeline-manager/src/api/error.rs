@@ -14,7 +14,6 @@ pub enum ApiError {
     // very likely already not be matched if it misses a URL-encoded parameter.
     MissingUrlEncodedParam { param: &'static str },
     InvalidUuidParam { value: String, error: String },
-    InvalidNameParam { value: String, error: String },
     InvalidChecksumParam { value: String, error: String },
     InvalidVersionParam { value: String, error: String },
     InvalidLogCursorParam { value: String, error: String },
@@ -42,7 +41,6 @@ impl DetailedError for ApiError {
         match self {
             Self::MissingUrlEncodedParam { .. } => Cow::from("MissingUrlEncodedParam"),
             Self::InvalidUuidParam { .. } => Cow::from("InvalidUuidParam"),
-            Self::InvalidNameParam { .. } => Cow::from("InvalidNameParam"),
             Self::InvalidChecksumParam { .. } => Cow::from("InvalidChecksumParam"),
             Self::InvalidVersionParam { .. } => Cow::from("InvalidVersionParam"),
             Self::InvalidLogCursorParam { .. } => Cow::from("InvalidLogCursorParam"),
@@ -77,9 +75,6 @@ impl Display for ApiError {
             }
             Self::InvalidUuidParam { value, error } => {
                 write!(f, "Invalid UUID string '{value}': {error}")
-            }
-            Self::InvalidNameParam { value, error } => {
-                write!(f, "Invalid name string '{value}': {error}")
             }
             Self::InvalidChecksumParam { value, error } => {
                 write!(f, "Invalid checksum string '{value}': {error}")
@@ -180,7 +175,6 @@ impl ResponseError for ApiError {
         match self {
             Self::MissingUrlEncodedParam { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidUuidParam { .. } => StatusCode::BAD_REQUEST,
-            Self::InvalidNameParam { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidChecksumParam { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidVersionParam { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidLogCursorParam { .. } => StatusCode::BAD_REQUEST,
