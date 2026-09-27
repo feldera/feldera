@@ -812,8 +812,9 @@ mod test {
         time::{Duration, Instant},
     };
 
-    use crate::operator::dynamic::recursive::test::reachability::{
-        Edge, checkpoint_and_restart, edges_data, expected_reachable,
+    use crate::operator::dynamic::recursive::test::{
+        reachability::{Edge, checkpoint_and_restart, edges_data, expected_reachable},
+        recursion_test_config,
     };
     use crate::{
         Circuit, RootCircuit, Runtime, Stream,
@@ -1024,7 +1025,8 @@ mod test {
         let mut edges = edges_data.into_iter();
         let mut expected_reachable = expected_reachable().into_iter();
 
-        let (mut handle, _) = Runtime::init_circuit(1, move |circuit| {
+        let config = recursion_test_config(1);
+        let (mut handle, _) = Runtime::init_circuit(config, move |circuit| {
             let edges = circuit.add_source(Generator::new(move || edges.next().unwrap()));
 
             let reachable = circuit
@@ -1071,7 +1073,8 @@ mod test {
     fn with_bound_caps_non_converging() {
         const BOUND: NonZeroU64 = NonZeroU64::new(3).unwrap();
 
-        let (mut handle, output) = Runtime::init_circuit(1, move |circuit| {
+        let config = recursion_test_config(1);
+        let (mut handle, output) = Runtime::init_circuit(config, move |circuit| {
             let mut seed = [zset! { 0usize => 1 }].into_iter();
             let seed = circuit.add_source(Generator::new(move || seed.next().unwrap_or_default()));
 
@@ -1110,7 +1113,8 @@ mod test {
     fn with_report_signals_truncation() {
         const BOUND: NonZeroU64 = NonZeroU64::new(3).unwrap();
 
-        let (mut handle, outcome) = Runtime::init_circuit(1, move |circuit| {
+        let config = recursion_test_config(1);
+        let (mut handle, outcome) = Runtime::init_circuit(config, move |circuit| {
             let mut seed = [zset! { 0usize => 1 }].into_iter();
             let seed = circuit.add_source(Generator::new(move || seed.next().unwrap_or_default()));
 
@@ -1156,7 +1160,8 @@ mod test {
         let steps = edges_data.len();
         let mut edges = edges_data.into_iter();
 
-        let (mut handle, outcome) = Runtime::init_circuit(1, move |circuit| {
+        let config = recursion_test_config(1);
+        let (mut handle, outcome) = Runtime::init_circuit(config, move |circuit| {
             let edges = circuit.add_source(Generator::new(move || edges.next().unwrap()));
 
             let (reachable, outcome) = circuit
@@ -1213,7 +1218,8 @@ mod test {
         const BOUND: NonZeroU64 = NonZeroU64::new(3).unwrap();
         const TRANSACTIONS: usize = 4;
 
-        let (mut handle, (result, report)) = Runtime::init_circuit(1, move |circuit| {
+        let config = recursion_test_config(1);
+        let (mut handle, (result, report)) = Runtime::init_circuit(config, move |circuit| {
             // A distinct seed element per transaction, so the shift recursion
             // always has work to do and never converges within the bound.
             let mut n = 0usize;
@@ -1278,7 +1284,8 @@ mod test {
     /// type-checks and builds; convergence is exercised by the tests above.
     #[test]
     fn without_distinct_builds() {
-        let (_handle, _) = Runtime::init_circuit(1, move |circuit| {
+        let config = recursion_test_config(1);
+        let (_handle, _) = Runtime::init_circuit(config, move |circuit| {
             let (edges, edges_handle) = circuit.add_input_zset::<Edge>();
 
             // A step that stabilizes on its own (a plain map), so dropping the
@@ -1356,7 +1363,8 @@ mod test {
     /// when the bound cuts the recursion short.
     #[test]
     fn issue4168() {
-        let (mut circuit, edges_handle) = Runtime::init_circuit(8, move |circuit| {
+        let config = recursion_test_config(8);
+        let (mut circuit, edges_handle) = Runtime::init_circuit(config, move |circuit| {
             let (edges, edges_handle) = circuit.add_input_zset::<Tup2<u64, u64>>();
 
             transitive_closure(circuit, &edges, true, None);
@@ -1400,8 +1408,9 @@ mod test {
 
         for distinct in [true, false] {
             for bound in [None, NonZeroU64::new(5)] {
+                let config = recursion_test_config(1);
                 let (mut root, (edges_handle, paths_handle)) =
-                    Runtime::init_circuit(1, move |circuit| {
+                    Runtime::init_circuit(config, move |circuit| {
                         let (edges, edges_handle) = circuit.add_input_zset::<Tup2<u64, u64>>();
                         let paths_handle = transitive_closure(circuit, &edges, distinct, bound)
                             .integrate()
