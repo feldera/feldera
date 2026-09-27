@@ -58,7 +58,9 @@ where
     /// the shape it returns — a single [`RecursiveVar`], a tuple of them, or a
     /// [`Vec`] — fixes the arity, so none has to be supplied.  The `step`
     /// closure receives the matching feedback streams and defines the recursive
-    /// computation.
+    /// computation.  In [persistent mode](crate::circuit::Mode::Persistent), the
+    /// step closure must name the operators it creates; see
+    /// [Persistent ids](RecursionBuilder#persistent-ids).
     ///
     /// The call returns a [`RecursionBuilder`] for this specific recursive
     /// computation, and the builder offers optional modifiers
@@ -507,6 +509,29 @@ impl ReportMode for Reporting {
 /// especially useful together with [`with_bound`](RecursionBuilder::with_bound)
 /// to detect truncated results.
 ///
+/// # Persistent ids
+///
+/// In [persistent mode](crate::circuit::Mode::Persistent) every operator that
+/// holds state must carry a persistent id, and operators inside the recursive
+/// scope are no exception: without one, taking a checkpoint fails with
+/// `NoPersistentId`.  The step closure is responsible for assigning them, by
+/// calling [`set_persistent_id`](crate::circuit::Stream::set_persistent_id) on
+/// * each feedback stream it receives, which names the `z^-1` operator that
+///   closes the loop, and
+/// * every stream it creates, including the ones it returns, from which the
+///   implicit `distinct`, if any, and the integral that exports the result
+///   derive their own ids.
+///
+/// Name each feedback stream before the step closure builds anything from it:
+/// the operators that maintain state over a stream derive their own ids from it
+/// as they are constructed, so a name assigned later leaves them unnamed.  In
+/// practice, call `set_persistent_id` on the feedback streams first thing in
+/// the step closure.
+///
+/// The names must identify the same computation across restarts, so derive
+/// them from the program (a view name, a hash of the subgraph) rather than from
+/// anything positional.
+///
 /// # Examples
 ///
 /// A single recursive relation (transitive closure), matching the shape handled
@@ -531,13 +556,23 @@ impl ReportMode for Reporting {
 ///         .recursion_builder(
 ///             |child| Ok(child.recursive_var::<OrdZSet<Edge>>()),
 ///             |child, reachable| {
-///                 let edges = edges.delta0(child);
-///                 let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
-///                 let reachable_indexed = reachable.map_index(|&Tup2(x, y)| (y, x));
+///                 // Name the feedback stream and every stream built from it,
+///                 // so that the operators inside the scope can be checkpointed.
+///                 reachable.set_persistent_id(Some("reachable"));
 ///
-///                 Ok(edges.plus(
+///                 let edges = edges.delta0(child);
+///                 let edges_indexed = edges
+///                     .map_index(|Tup2(x, y)| (*x, *y))
+///                     .set_persistent_id(Some("edges_indexed"));
+///                 let reachable_indexed = reachable
+///                     .map_index(|&Tup2(x, y)| (y, x))
+///                     .set_persistent_id(Some("reachable_indexed"));
+///
+///                 let reachable_next = edges.plus(
 ///                     &reachable_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to)),
-///                 ))
+///                 );
+///                 reachable_next.set_persistent_id(Some("reachable_next"));
+///                 Ok(reachable_next)
 ///             },
 ///         )
 ///         .finish()?;
