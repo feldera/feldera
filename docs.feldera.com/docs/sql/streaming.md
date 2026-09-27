@@ -78,7 +78,7 @@ days of changes:
 CREATE TABLE input_log (
     id BIGINT, -- not declared as primary key
     s VARCHAR,
-    ts TIMESTAMP,
+    ts TIMESTAMP NOT NULL,
     -- Is the change a deletion?  Produced by the connector
     is_delete BOOLEAN DEFAULT CAST(CONNECTOR_METADATA()['is_delete'] AS BOOLEAN)
 ) WITH (

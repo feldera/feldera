@@ -165,7 +165,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                     category STRING,
                     amt DOUBLE,
                     trans_num STRING,
-                    unix_time INTEGER LATENESS 0,
+                    unix_time INTEGER NOT NULL LATENESS 0,
                     merch_lat DOUBLE,
                     merch_long DOUBLE,
                     is_fraud BIGINT
