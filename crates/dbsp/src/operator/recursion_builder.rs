@@ -93,8 +93,8 @@ where
 /// It bundles an initially empty feedback stream with the factories and
 /// feedback connector needed to close its loop once the step function has
 /// produced the next iteration.  A [`RecursionBuilder`] performs the wiring;
-/// callers only ever touch the [`stream`](RecursiveVar::stream) they feed into
-/// their recursive step.
+/// callers only ever touch its feedback stream, which the builder passes to
+/// the step closure.
 pub struct RecursiveVar<C, Z>
 where
     C: Circuit,
