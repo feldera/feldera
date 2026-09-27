@@ -548,6 +548,7 @@ impl ReportMode for Reporting {
 /// circuit.transaction().unwrap();
 /// Ok::<(), DbspError>(())
 /// ```
+#[must_use = "a `RecursionBuilder` builds nothing until `finish` is called"]
 pub struct RecursionBuilder<'a, C, F1, F2, R: ReportMode = NoReport> {
     circuit: &'a C,
     init: F1,
