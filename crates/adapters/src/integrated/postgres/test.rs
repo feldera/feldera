@@ -265,6 +265,9 @@ mod pg {
     /// Connects a sync postgres client, with TLS if config is provided.
     pub(super) fn pg_connect(uri: &str, tls: &Option<PostgresTlsConfig>) -> postgres::Client {
         if let Some(tls) = tls {
+            // The binary installs the process-level provider at startup;
+            // tests must do it themselves.
+            let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
             let connector = make_tls_connector(tls, "test")
                 .expect("failed to build TLS connector")
                 .expect("TLS config should produce a connector");
