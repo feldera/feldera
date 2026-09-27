@@ -19,15 +19,17 @@ use datafusion::catalog::TableProvider;
 use datafusion::common::arrow::array::RecordBatch;
 use datafusion::common::tree_node::{TransformedResult, TreeNode};
 use datafusion::common::{DFSchema, DataFusionError, ScalarValue};
+use datafusion::config::ConfigNonZeroUsize;
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
 use datafusion::execution::memory_pool::MemoryLimit;
+use datafusion::logical_expr::physical_planning_context::PhysicalPlanningContext;
 use datafusion::optimizer::analyzer::type_coercion::TypeCoercionRewriter;
 use datafusion::physical_plan::{
-    ExecutionPlan, ExecutionPlanProperties, PhysicalExpr, SendableRecordBatchStream, displayable,
-    execute_stream,
+    ExecutionPlan, ExecutionPlanProperties, PhysicalExpr, SendableRecordBatchStream,
+    StatisticsArgs, StatisticsContext, displayable, execute_stream,
 };
 use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
 use dbsp::circuit::tokio::TOKIO;
@@ -273,7 +275,9 @@ fn scan_partitions(plan: &Arc<dyn ExecutionPlan>) -> usize {
 /// tables the connector builds for follow and CDC reads collect no statistics,
 /// so their callers supply a [`ReadSize`] instead.
 fn plan_read_size(plan: &dyn ExecutionPlan) -> Option<ReadSize> {
-    let statistics = plan.partition_statistics(None).ok()?;
+    let statistics = StatisticsContext::new()
+        .compute(plan, &StatisticsArgs::new())
+        .ok()?;
     Some(ReadSize {
         bytes: *statistics.total_byte_size.get_value()? as u64,
         records: *statistics.num_rows.get_value()? as u64,
@@ -569,14 +573,9 @@ pub(super) fn apply_filter(
 /// would point at the wrong relation after `except`. (`cdc_adds` and
 /// `cdc_removes` are labels for the two sides, not registered tables.)
 ///
-/// Caveat: `EXCEPT ALL` relies on `arrow_row::RowConverter`, which in
-/// the currently pinned `arrow-row` does not support `Map` columns.
-/// Pure-append transactions on tables with `Map` columns are
-/// unaffected (the `EXCEPT ALL` branch isn't taken when `removes_df`
-/// is `None`); transactions that do produce Removes fail here with
-/// `NotImplemented`. See issue:
-///   - https://github.com/apache/datafusion/issues/15428
-///   - https://github.com/apache/arrow-rs/issues/7879
+/// `EXCEPT ALL` relies on `arrow_row::RowConverter`, which supports every
+/// Delta-mappable type as of `arrow-row` 59, `Map` included; the
+/// `except_all_supports_every_delta_mappable_type` test guards that.
 ///
 /// Free function (not a method on the connector) so a unit test can
 /// inspect the resulting logical plan without standing up the full
@@ -595,7 +594,7 @@ pub(super) fn build_cdc_dataframe(
         Some(removes_df) => {
             let removes_df = apply_filter(removes_df, filter, description, Some("cdc_removes"))?;
             adds_df.except(removes_df).map_err(|e| {
-                anyhow!("failed to build the CDC set difference for {description}: {e}. This typically means the Delta table contains a `Map` column, which the CDC deduplication step (`EXCEPT ALL`) does not yet support.")
+                anyhow!("failed to build the CDC set difference for {description}: {e}. This can happen if the table uses a column type the CDC deduplication step (`EXCEPT ALL`) cannot compare.")
             })?
         }
     };
@@ -2666,7 +2665,7 @@ impl DeltaTableInputEndpointInner {
         // synthetic `delta-rs://` URL, so we don't register it anymore.)
         let log_store = delta_table.log_store();
         let runtime_env = self.datafusion.runtime_env();
-        runtime_env.register_object_store(log_store.root_url(), log_store.root_object_store(None));
+        runtime_env.register_object_store(log_store.root_url(), log_store.root_object_store());
 
         // if let Some(schema) = delta_table.schema() {
         //     info!("Delta table schema: {schema:?}");
@@ -2797,7 +2796,12 @@ impl DeltaTableInputEndpointInner {
             })?;
 
         let physical_expr = DefaultPhysicalPlanner::default()
-            .create_physical_expr(&filter_expr, schema, &self.datafusion.state())
+            .create_physical_expr(
+                &filter_expr,
+                schema,
+                &self.datafusion.state(),
+                &PhysicalPlanningContext::default(),
+            )
             .map_err(|e| {
                 anyhow!("cannot compile 'cdc_delete_filter' expression '{delete_filter}': {e}")
             })?;
@@ -3113,7 +3117,8 @@ impl DeltaTableInputEndpointInner {
                     &self.endpoint_name,
                     DECODE_BUDGET_BYTES / 1024 / 1024,
                 );
-                state.config_mut().options_mut().execution.batch_size = rows;
+                state.config_mut().options_mut().execution.batch_size =
+                    ConfigNonZeroUsize::try_new(rows)?;
                 state.create_physical_plan(&logical).await?
             }
             None => plan,
@@ -4300,7 +4305,7 @@ impl DeltaTableInputEndpointInner {
             .collect::<AnyResult<Vec<_>>>()?;
 
         filtered_parquet_table(
-            table.log_store().object_store(None),
+            table.log_store().object_store(),
             files,
             read_schema,
             mode,
@@ -5838,7 +5843,8 @@ mod read_schema_tests {
 
         let (mut state, logical) = df.into_parts();
         let plan = state.create_physical_plan(&logical).await.unwrap();
-        state.config_mut().options_mut().execution.batch_size = AFTER;
+        state.config_mut().options_mut().execution.batch_size =
+            ConfigNonZeroUsize::try_new(AFTER).unwrap();
 
         let mut largest = 0;
         let mut stream = execute_stream(plan, state.task_ctx()).unwrap();
@@ -5951,7 +5957,8 @@ mod read_schema_tests {
 
         let (mut state, plan) = ctx.read_table(Arc::new(table)).unwrap().into_parts();
         let plan = state.create_physical_plan(&plan).await.unwrap();
-        state.config_mut().options_mut().execution.batch_size = 100;
+        state.config_mut().options_mut().execution.batch_size =
+            ConfigNonZeroUsize::try_new(100).unwrap();
 
         let mut stream = execute_stream(plan, state.task_ctx()).unwrap();
         let batch = stream.next().await.expect("the file holds rows").unwrap();

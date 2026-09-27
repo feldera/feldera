@@ -8,7 +8,7 @@ use arrow_json::writer::LineDelimited;
 use async_stream::{stream, try_stream};
 use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
-use datafusion::common::hash_utils::create_hashes;
+use datafusion::common::hash_utils::{RandomState as DfRandomState, create_hashes};
 use datafusion::common::{DataFusionError, Result as DFResult};
 use datafusion::dataframe::DataFrame;
 use datafusion::execution::SendableRecordBatchStream;
@@ -120,13 +120,13 @@ pub(crate) fn stream_text_query(
 
 /// Incremental, order-independent hasher for record batches.
 ///
-/// Uses DataFusion's `create_hashes` (ahash) per batch with two independent
+/// Uses DataFusion's `create_hashes` per batch with two independent
 /// seeds for ~128-bit collision resistance. Row hashes are combined via
 /// wrapping u64 addition (commutative), so no sorting is required. Memory
 /// usage is O(batch_size).
 struct BatchHasher {
-    rs1: ahash::RandomState,
-    rs2: ahash::RandomState,
+    rs1: DfRandomState,
+    rs2: DfRandomState,
     buf1: Vec<u64>,
     buf2: Vec<u64>,
     acc1: u64,
@@ -137,8 +137,8 @@ struct BatchHasher {
 impl BatchHasher {
     fn new() -> Self {
         Self {
-            rs1: ahash::RandomState::with_seeds('M' as u64, 'U' as u64, 'A' as u64, 'Y' as u64),
-            rs2: ahash::RandomState::with_seeds('T' as u64, 'H' as u64, 'A' as u64, 'I' as u64),
+            rs1: DfRandomState::with_seed(u64::from_be_bytes(*b"MUAY____")),
+            rs2: DfRandomState::with_seed(u64::from_be_bytes(*b"THAI____")),
             buf1: Vec::new(),
             buf2: Vec::new(),
             acc1: 0,

@@ -19,6 +19,7 @@ use arrow::compute::cast;
 use arrow::datatypes::{DataType, Field, FieldRef, Fields, Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use async_stream::try_stream;
+use bytes::Bytes;
 use datafusion::catalog::TableProvider;
 use datafusion::catalog::streaming::StreamingTable;
 use datafusion::common::DataFusionError;
@@ -29,19 +30,96 @@ use datafusion::physical_plan::streaming::PartitionStream;
 use delta_kernel::actions::deletion_vector::{
     DeletionVectorDescriptor as KernelDvDescriptor, DeletionVectorStorageType,
 };
+use delta_kernel::object_store::{GetOptions, GetRange, ObjectStoreExt};
 use deltalake::kernel::{DeletionVectorDescriptor, StorageType};
 use deltalake::logstore::LogStore;
 use deltalake::{DeltaTable, ObjectStore, Path};
 use futures_util::StreamExt;
+use futures_util::future::BoxFuture;
+use futures_util::{FutureExt, TryFutureExt};
 use parquet::arrow::ProjectionMask;
 use parquet::arrow::arrow_reader::{
     ArrowReaderMetadata, ArrowReaderOptions, RowSelection, RowSelector,
 };
-use parquet::arrow::async_reader::{ParquetObjectReader, ParquetRecordBatchStreamBuilder};
+use parquet::arrow::async_reader::{
+    AsyncFileReader, MetadataSuffixFetch, ParquetRecordBatchStreamBuilder,
+};
+use parquet::errors::{ParquetError, Result as ParquetResult};
+use parquet::file::metadata::{ParquetMetaData, ParquetMetaDataReader};
 use roaring::RoaringTreemap;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::ops::Range;
 use std::sync::Arc;
+
+/// Reads a Parquet file out of an object store for [`ParquetRecordBatchStreamBuilder`].
+///
+/// Hand-written rather than using `ParquetObjectReader`, which parquet 59
+/// deprecated in favour of implementing this trait directly (arrow-rs #10308).
+#[derive(Clone)]
+struct ObjectStoreReader {
+    store: Arc<dyn ObjectStore>,
+    path: Path,
+}
+
+fn to_parquet_err(e: delta_kernel::object_store::Error) -> ParquetError {
+    ParquetError::External(Box::new(e))
+}
+
+impl AsyncFileReader for ObjectStoreReader {
+    fn get_bytes(&mut self, range: Range<u64>) -> BoxFuture<'_, ParquetResult<Bytes>> {
+        self.store
+            .get_range(&self.path, range)
+            .map_err(to_parquet_err)
+            .boxed()
+    }
+
+    fn get_byte_ranges(
+        &mut self,
+        ranges: Vec<Range<u64>>,
+    ) -> BoxFuture<'_, ParquetResult<Vec<Bytes>>> {
+        async move {
+            self.store
+                .get_ranges(&self.path, &ranges)
+                .await
+                .map_err(to_parquet_err)
+        }
+        .boxed()
+    }
+
+    fn get_metadata<'a>(
+        &'a mut self,
+        options: Option<&'a ArrowReaderOptions>,
+    ) -> BoxFuture<'a, ParquetResult<Arc<ParquetMetaData>>> {
+        async move {
+            let metadata = ParquetMetaDataReader::new()
+                .with_arrow_reader_options(options)
+                .load_via_suffix_and_finish(self)
+                .await?;
+            Ok(Arc::new(metadata))
+        }
+        .boxed()
+    }
+}
+
+/// Fetch the footer without knowing the file size, via a suffix range request.
+impl MetadataSuffixFetch for &mut ObjectStoreReader {
+    fn fetch_suffix(&mut self, suffix: usize) -> BoxFuture<'_, ParquetResult<Bytes>> {
+        let options = GetOptions {
+            range: Some(GetRange::Suffix(suffix as u64)),
+            ..Default::default()
+        };
+        async move {
+            let resp = self
+                .store
+                .get_opts(&self.path, options)
+                .await
+                .map_err(to_parquet_err)?;
+            resp.bytes().await.map_err(to_parquet_err)
+        }
+        .boxed()
+    }
+}
 
 /// Convert the delta-rs descriptor into its `delta_kernel` equivalent, which
 /// owns the decoding logic. The fields are identical; only the storage-type
@@ -70,7 +148,7 @@ pub(crate) async fn read_deletion_vector(
     table: &DeltaTable,
 ) -> AnyResult<RoaringTreemap> {
     let log_store = table.log_store();
-    let storage = log_store.engine(None).storage_handler();
+    let storage = log_store.engine().storage_handler();
 
     // Sidecar paths resolve via `Url::join`, which drops the last path
     // segment unless the base URL ends with '/'.
@@ -512,7 +590,7 @@ fn project_to_logical(
 /// Build the [`ProjectionMask`] selecting the root file columns `logical_schema`
 /// wants, matched by field id (falling back to name); the rest are never decoded.
 fn logical_projection_mask(
-    builder: &ParquetRecordBatchStreamBuilder<ParquetObjectReader>,
+    builder: &ParquetRecordBatchStreamBuilder<ObjectStoreReader>,
     logical_schema: &SchemaRef,
 ) -> ProjectionMask {
     let want_ids: HashSet<&str> = logical_schema
@@ -592,7 +670,7 @@ impl PartitionStream for MaskedParquetPartition {
             for file in files.iter() {
                 let path = &file.path;
                 let probe = ParquetRecordBatchStreamBuilder::new(
-                        ParquetObjectReader::new(Arc::clone(&store), path.clone()))
+                        ObjectStoreReader { store: Arc::clone(&store), path: path.clone() })
                     .await
                     .map_err(|e| DataFusionError::External(
                         format!("failed to open Parquet file '{path}': {e}").into()))?;
@@ -612,7 +690,7 @@ impl PartitionStream for MaskedParquetPartition {
                 // (which it did, just above).
                 let total_rows = metadata.metadata().file_metadata().num_rows() as u64;
                 let builder = ParquetRecordBatchStreamBuilder::new_with_metadata(
-                    ParquetObjectReader::new(Arc::clone(&store), path.clone()),
+                    ObjectStoreReader { store: Arc::clone(&store), path: path.clone() },
                     metadata,
                 );
                 // Decode only the columns the logical schema names.
@@ -1340,7 +1418,7 @@ mod tests {
             ArrowDataType::Int64,
             false,
         )]));
-        let store = unloaded_table(dir.path()).log_store().object_store(None);
+        let store = unloaded_table(dir.path()).log_store().object_store();
         let provider = filtered_parquet_table(
             store,
             files,
@@ -1435,7 +1513,7 @@ mod tests {
             ArrowField::new("_change_type", ArrowDataType::Utf8, true),
         ]));
 
-        let store = unloaded_table(dir.path()).log_store().object_store(None);
+        let store = unloaded_table(dir.path()).log_store().object_store();
         let provider = filtered_parquet_table(
             store,
             vec![MaskedFile {
@@ -1523,7 +1601,7 @@ mod tests {
         ]));
         let deleted = RoaringTreemap::from_iter((0..TOTAL_ROWS as u64).filter(|i| i % 2 == 0));
 
-        let store = unloaded_table(dir.path()).log_store().object_store(None);
+        let store = unloaded_table(dir.path()).log_store().object_store();
         let provider = filtered_parquet_table(
             store,
             vec![MaskedFile {
@@ -1614,7 +1692,7 @@ mod tests {
             ),
         ]));
 
-        let store = unloaded_table(dir.path()).log_store().object_store(None);
+        let store = unloaded_table(dir.path()).log_store().object_store();
         let provider = filtered_parquet_table(
             store,
             vec![MaskedFile {
@@ -1690,7 +1768,7 @@ mod tests {
         let wanted: Vec<u64> = [0u64, 1, 2, 50, 51, 199].into_iter().collect();
         let selected = RoaringTreemap::from_iter(wanted.iter().copied());
 
-        let store = unloaded_table(dir.path()).log_store().object_store(None);
+        let store = unloaded_table(dir.path()).log_store().object_store();
         let provider = filtered_parquet_table(
             store,
             vec![MaskedFile {

@@ -7,6 +7,7 @@ use datafusion::arrow::datatypes::Schema as ArrowSchema;
 use datafusion::catalog::TableProvider;
 use datafusion::common::arrow::array::RecordBatch;
 use datafusion::prelude::{DataFrame, SQLOptions, SessionContext};
+use datafusion_iceberg::IcebergStaticTableProvider;
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::{
     catalog::{ArrowStream, InputCollectionHandle},
@@ -41,7 +42,7 @@ use iceberg::{
     scan::{FileScanTask, FileScanTaskStream},
     spec::{
         DataContentType, DataFile, ManifestStatus, NameMapping, Operation,
-        SchemaRef as IcebergSchemaRef, SnapshotRef, TableMetadata, DEFAULT_SCHEMA_NAME_MAPPING,
+        SchemaRef as IcebergSchemaRef, SnapshotRef, TableMetadata,
     },
     table::{StaticTable, Table as IcebergTable},
     Catalog, Runtime, TableIdent,
@@ -58,7 +59,6 @@ use iceberg_catalog_s3tables::{
     S3TablesCatalogBuilder, S3TABLES_CATALOG_PROP_ENDPOINT_URL,
     S3TABLES_CATALOG_PROP_TABLE_BUCKET_ARN,
 };
-use iceberg_datafusion::IcebergStaticTableProvider;
 use iceberg_storage_opendal::OpenDalResolvingStorageFactory;
 use log::{debug, info, trace, warn};
 use serde::{Deserialize, Serialize};
@@ -529,14 +529,10 @@ fn is_noop_operation(snapshot: &SnapshotRef) -> bool {
 fn table_name_mapping(table: &IcebergTable) -> Result<Option<Arc<NameMapping>>, AnyError> {
     table
         .metadata()
-        .properties()
-        .get(DEFAULT_SCHEMA_NAME_MAPPING)
-        .map(|json| serde_json::from_str::<NameMapping>(json))
-        .transpose()
+        .table_properties()
+        .default_name_mapping()
         .map(|mapping| mapping.map(Arc::new))
-        .map_err(|e| {
-            anyhow!("error parsing the table's '{DEFAULT_SCHEMA_NAME_MAPPING}' property: {e}")
-        })
+        .map_err(|e| anyhow!("error parsing the table's default name mapping: {e}"))
 }
 
 /// Integrated input connector that reads from an Iceberg table.
@@ -1311,12 +1307,11 @@ impl IcebergInputEndpointInner {
         table: &IcebergTable,
         snapshot: &SnapshotRef,
     ) -> Result<SnapshotDelta, AnyError> {
-        let file_io = table.file_io();
-        let metadata = table.metadata();
         let snapshot_id = snapshot.snapshot_id();
 
-        let manifest_list = snapshot
-            .load_manifest_list(file_io, metadata)
+        let manifest_list = table
+            .manifest_list_reader(snapshot)
+            .load()
             .await
             .map_err(|e| anyhow!("error reading manifest list of snapshot {snapshot_id}: {e}"))?;
 
@@ -1331,12 +1326,16 @@ impl IcebergInputEndpointInner {
                 continue;
             }
 
-            let manifest = manifest_file.load_manifest(file_io).await.map_err(|e| {
-                anyhow!(
-                    "error reading manifest '{}': {e}",
-                    manifest_file.manifest_path
-                )
-            })?;
+            let manifest = table
+                .manifest_reader()
+                .read(manifest_file)
+                .await
+                .map_err(|e| {
+                    anyhow!(
+                        "error reading manifest '{}': {e}",
+                        manifest_file.manifest_path
+                    )
+                })?;
 
             for entry in manifest.entries() {
                 // Skip entries carried into this manifest from earlier snapshots
@@ -1385,26 +1384,28 @@ impl IcebergInputEndpointInner {
             .iter()
             .map(|file| {
                 let data_file = &file.data_file;
-                Ok(FileScanTask {
-                    file_size_in_bytes: data_file.file_size_in_bytes(),
-                    start: 0,
-                    length: data_file.file_size_in_bytes(),
-                    record_count: Some(data_file.record_count()),
-                    data_file_path: data_file.file_path().to_string(),
-                    data_file_format: data_file.file_format(),
-                    schema: schema.clone(),
-                    project_field_ids: field_ids.to_vec(),
-                    predicate: None,
-                    deletes: vec![],
+                FileScanTask::builder()
+                    .with_file_size_in_bytes(data_file.file_size_in_bytes())
+                    .with_start(0)
+                    .with_length(data_file.file_size_in_bytes())
+                    .with_record_count(Some(data_file.record_count()))
+                    .with_data_file_path(data_file.file_path().to_string())
+                    .with_data_file_format(data_file.file_format())
+                    .with_schema(schema.clone())
+                    .with_project_field_ids(field_ids.to_vec())
+                    .with_predicate(None)
+                    .with_deletes(vec![])
                     // Both `partition` and `partition_spec` must be set for the
                     // reader to materialize identity-partition column constants.
-                    partition: Some(data_file.partition().clone()),
-                    partition_spec: metadata
-                        .partition_spec_by_id(file.partition_spec_id)
-                        .cloned(),
-                    name_mapping: name_mapping.clone(),
-                    case_sensitive: false,
-                })
+                    .with_partition(Some(data_file.partition().clone()))
+                    .with_partition_spec(
+                        metadata
+                            .partition_spec_by_id(file.partition_spec_id)
+                            .cloned(),
+                    )
+                    .with_name_mapping(name_mapping.clone())
+                    .with_case_sensitive(false)
+                    .build()
             })
             .collect();
 
@@ -2905,25 +2906,23 @@ mod variant_tests {
         );
     }
 
-    /// `iceberg-rust` has no `variant` primitive type, so a table whose schema
-    /// declares one cannot be loaded at all, whatever the connector can decode.
-    ///
-    /// When a future `iceberg-rust` adds the type this assertion fails, which
-    /// is the signal to write the end-to-end test and update the connector
-    /// documentation.
+    /// `iceberg-rust` parses the `variant` primitive type, so a table whose
+    /// schema declares one loads. Decoding is covered by the test above; what
+    /// is still missing is an end-to-end read against a seeded table, which
+    /// needs a writer that produces variant columns.
     #[test]
-    fn iceberg_rust_still_lacks_the_variant_type() {
+    fn iceberg_rust_has_the_variant_type() {
         let variant_field = serde_json::json!({
             "id": 1,
             "name": "v",
             "required": false,
             "type": "variant",
         });
-        let error = serde_json::from_value::<iceberg::spec::NestedField>(variant_field)
-            .expect_err("iceberg-rust gained a `variant` type; see the doc comment");
-        assert!(
-            error.to_string().contains("variant"),
-            "unexpected error: {error}"
+        let field = serde_json::from_value::<iceberg::spec::NestedField>(variant_field)
+            .expect("iceberg-rust should parse the `variant` type");
+        assert_eq!(
+            field.field_type.as_ref(),
+            &iceberg::spec::Type::Variant(iceberg::spec::VariantType)
         );
     }
 

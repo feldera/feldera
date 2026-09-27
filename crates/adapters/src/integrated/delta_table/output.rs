@@ -467,15 +467,13 @@ impl WriterTask {
         inner: Arc<DeltaTableWriterInner>,
         continue_previous_state: bool,
     ) -> AnyResult<Self> {
-        let mut storage_options = inner.config.object_store_config.clone();
+        let storage_options = inner.config.object_store_config.clone();
 
-        // FIXME: S3 does not support the atomic rename operation required by delta. This is not a problem
-        // with a single writer, but multiple writers require an external coordinator service.
-        // `delta-rs` users tend to rely on the DynamoDB lock client for this
-        // (see `object_store::aws::DynamoCommit`), but that only helps if all writers use the
-        // same lock service.  For now we simply tell the object store client to use unsafe renames
-        // and hope for the best.  Without this config option, writes to S3-based delta tables will fail.
-        storage_options.insert("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".to_string());
+        // S3 has no atomic rename, so delta commits rely on conditional put
+        // (`copy_if_not_exists`), which delta-rs configures by default and every
+        // current S3 implementation supports. Setting `AWS_S3_ALLOW_UNSAFE_RENAME`
+        // would opt out of that into unsafe overwriting renames, so we leave it
+        // to the user's `object_store_config` for stores that need it.
 
         // On restart (resuming from a checkpoint), open the existing table
         // without truncating or error-checking.  This prevents data loss when
@@ -944,6 +942,7 @@ async fn stream_encode_and_write(
         inner.arrow_schema.clone(),
         vec![],
         Some(writer_properties),
+        None,
         Some(TARGET_FILE_SIZE),
         None,
         DataSkippingNumIndexedCols::NumColumns(num_indexed_cols),

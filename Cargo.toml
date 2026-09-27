@@ -57,9 +57,9 @@ anyhow = "1.0.91"
 apache-avro = "0.18.0"
 arc-swap = "1.5.1"
 arcstr = "1.2.0"
-arrow = "58"
-arrow-json = "58"
-arrow-schema = "58"
+arrow = "59"
+arrow-json = "59"
+arrow-schema = "59"
 ascii_table = "=4.0.2"
 async-channel = "2.3.1"
 # Its default feature set selects ring; aws-lc-rs is the same choice made
@@ -129,59 +129,48 @@ csv = "1.2.2"
 csv-core = "0.1.10"
 data-encoding = "2.9.0"
 dashmap = "6.1.0"
-datafusion = "53.1"
+datafusion = "55"
 dbsp = { path = "crates/dbsp", version = "0.364.0" }
 # JSON functions applied to strings.
-datafusion-functions-json = "0.53.1"
+datafusion-functions-json = "0.55.4"
 dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.14.1"
-# Feldera fork of delta-rs: upstream tag `rust-v0.32.3` + 7 patches, on branch
-# `field-id-nested-containers-0.32.3`. When bumping the pinned revision, preserve
-# these patches:
-#   - 7f8bb445 "Disable unsupported feature check." — downgrade the reader-side
-#     check in `can_read_from_protocol` to a warning, so a table declaring a
-#     feature delta-rs does not list still reads. Guarded by
-#     `delta_table_snapshot_unlisted_reader_feature_test`.
-#   - 297f2dd1 "delta-rs: resolve column-mapped Uniform/Iceberg columns by
-#     Parquet field id." — fixes `col-<id> is missing from the physical schema`
-#     when reading UC-Uniform-over-Iceberg tables (columnMapping.mode=id). #6557.
-#   - 4913d02f "catalog-unity: refresh Unity Catalog S3 credentials before they
-#     expire" — the vended temporary credentials last an hour, so a long-running
-#     `uc://` pipeline failed with `ExpiredToken` without this.
-#   - 943cf48b "delta-rs: load deletion vectors without the blocking pool":
-#     planning a scan spawned one blocking task per deletion-vector file, and
-#     each waited on a hand-off that needed a second thread from the same pool,
-#     so a table with enough vectors deadlocked Tokio's pool for good. Reported
-#     upstream with a standalone reproduction:
-#     https://github.com/ryzhyk/delta-rs-dv-deadlock
-#     Guarded by `delta_table_deletion_vector_scan_without_blocking_pool_test`.
-#   - 78a5d066 "delta-rs: regression test for the deletion-vector blocking-pool
-#     deadlock": eight vectors against four blocking threads, which wedges
-#     without the patch above.
-#   - 9c858990 "delta-rs: backport delta-io/delta-rs#4692 onto 0.32.3" — the
-#     deletion-vector keep mask is consumed in physical row order, so a scan
-#     that splits, filters or reorders a file underneath it returns the right
-#     number of rows made of the wrong records. Onto 0.32.3 rather than a
-#     rebase, because #4692 targets DataFusion 54/55 and our iceberg fork pins
-#     53; one part of it needs `FileScanConfigBuilder::with_output_partitioning`,
-#     which 53 lacks, and is done with a file-source wrapper instead. The commit
-#     message lists what was and was not ported.
-#   - 0ae918e3 "delta-rs: align a container's nested field names by field id" —
-#     a snapshot of a column-mapped table read a struct nested in an ARRAY or a
-#     MAP under the wrong field names, silently, once the table had reordered
-#     them. #7279.
+# Feldera fork of delta-rs: upstream `main` + 6 patches, on branch
+# `main-feldera`. When bumping the pinned revision, preserve these patches:
+#   - Disable unsupported feature check. — downgrade the reader-side check in
+#     `can_read_from_protocol` to a warning, so a table declaring a feature
+#     delta-rs does not list still reads. Four upstream tests assert the check
+#     fires and fail with the patch applied; that is expected on every rebase.
+#     Guarded by `delta_table_snapshot_unlisted_reader_feature_test`.
+#   - catalog-unity: refresh Unity Catalog S3 credentials before they expire —
+#     the vended credentials last an hour, so a long-running `uc://` pipeline
+#     failed with `ExpiredToken`. Upstream #4628, still open.
+#   - resolve column-mapped Uniform/Iceberg columns by Parquet field id — fixes
+#     `col-<id> is missing from the physical schema` on UC-Uniform-over-Iceberg
+#     tables (columnMapping.mode=id). #6557.
+#   - load deletion vectors without the blocking pool — scan planning spawned one
+#     blocking task per deletion-vector file, each waiting on a hand-off that
+#     needed a second thread from the same pool, so a table with enough vectors
+#     deadlocked Tokio's pool. Upstream #4657 is open and main still calls
+#     `spawn_blocking`, so the hazard remains.
+#   - regression test for that deadlock: eight vectors against four blocking
+#     threads. Guarded by
+#     `delta_table_deletion_vector_scan_without_blocking_pool_test`.
+#   - round-robin pre-split unpartitioned scans into target_partitions FileGroups
+#     — RESTORED 2026-10-05 after being wrongly dropped. DataFusion byte-range
+#     splits a file group only past `repartition_file_min_size`, so a small
+#     many-file unpartitioned table is read by one thread, one file at a time
+#     (demo regression #2042: 26s -> 177s). Safe alongside deletion vectors again
+#     because upstream's own #4692 fix coalesces the scan instead of forcing a
+#     single partition. Disable with `DELTA_SCAN_ROUND_ROBIN=false`.
 #
-# Reverted along the way, do not reinstate without reading #4692:
-#   - 5b35c098 "round-robin pre-split unpartitioned scans into target_partitions
-#     FileGroups" — incompatible with #4692, which requires a single input
-#     partition wherever masks are applied. DataFusion's own
-#     repartition_file_scans covers the same ground.
-# Diff vs. upstream:
-#   https://github.com/delta-io/delta-rs/compare/rust-v0.32.3...feldera:delta-rs:field-id-nested-containers-0.32.3
-deltalake = { git = "https://github.com/feldera/delta-rs.git", rev = "0ae918e359004ffcf61ae100be77d2c7cbe553e4" }
-deltalake-catalog-unity = { git = "https://github.com/feldera/delta-rs.git", rev = "0ae918e359004ffcf61ae100be77d2c7cbe553e4" }
+# Dropped, already upstream — do not reapply:
+#   - "backport delta-io/delta-rs#4692 onto 0.32.3": landed on main as
+#     `fix(datafusion): preserve row order in deletion vector scans`.
+deltalake = { git = "https://github.com/feldera/delta-rs.git", rev = "c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0" }
+deltalake-catalog-unity = { git = "https://github.com/feldera/delta-rs.git", rev = "c7f5926ecb0e2cf3307422150e0dfbfbee1f26d0" }
 
-delta_kernel = { package = "buoyant_kernel", version = "0.22" }
+delta_kernel = { package = "buoyant_kernel", version = "0.28" }
 derive_more = { version = "1.0.0" }
 directories = "6.0"
 dirs = "5.0"
@@ -229,13 +218,28 @@ hdrhist = "0.5"
 hex = "0.4.3"
 home = "=0.5.9"
 http = "1.3.1"
-# TODO: Use iceberg v0.10.0 when released
-iceberg = { git = "https://github.com/feldera/iceberg-rust.git", rev = "c954c5fd852c19588c44b568fdb64dded30bc9b1" }
-iceberg-catalog-glue = { git = "https://github.com/feldera/iceberg-rust.git", rev = "c954c5fd852c19588c44b568fdb64dded30bc9b1" }
-iceberg-catalog-rest = { git = "https://github.com/feldera/iceberg-rust.git", rev = "c954c5fd852c19588c44b568fdb64dded30bc9b1" }
-iceberg-catalog-s3tables = { git = "https://github.com/feldera/iceberg-rust.git", rev = "c954c5fd852c19588c44b568fdb64dded30bc9b1" }
-iceberg-datafusion = { git = "https://github.com/feldera/iceberg-rust.git", rev = "c954c5fd852c19588c44b568fdb64dded30bc9b1" }
-iceberg-storage-opendal = { git = "https://github.com/feldera/iceberg-rust.git", rev = "c954c5fd852c19588c44b568fdb64dded30bc9b1", features = ["opendal-s3", "opendal-gcs", "opendal-fs", "opendal-memory"] }
+# The fork carries one Feldera patch, `fix(reader): keep unpolled metadata reads
+# from stalling a scan`, rebased onto apache/iceberg-rust main. Main is needed
+# because 0.10.1 ships DataFusion 53 / arrow 58, while delta-rs main needs
+# DataFusion 55 / arrow 59. Upstreaming that patch retires this fork and, with
+# it, the `datafusion-iceberg` fork below, which exists only to repoint here.
+iceberg = { git = "https://github.com/feldera/iceberg-rust", rev = "ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16" }
+iceberg-catalog-glue = { git = "https://github.com/feldera/iceberg-rust", rev = "ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16" }
+iceberg-catalog-rest = { git = "https://github.com/feldera/iceberg-rust", rev = "ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16" }
+iceberg-catalog-s3tables = { git = "https://github.com/feldera/iceberg-rust", rev = "ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16" }
+iceberg-storage-opendal = { git = "https://github.com/feldera/iceberg-rust", rev = "ba063f0f6e6539b67a8ea6c5f31fdd968ac2af16", features = ["opendal-s3", "opendal-gcs", "opendal-fs", "opendal-memory"] }
+# apache/iceberg-rust moved its DataFusion integration to apache/datafusion-iceberg
+# (iceberg-rust#3228), renaming the crate `iceberg-datafusion` to
+# `datafusion-iceberg`. The new repository has no release carrying DataFusion 55,
+# so pin our fork.
+# TODO: move to crates.io once `datafusion-iceberg` releases against DF 55.
+#
+# It must resolve `iceberg` from the same source we do, or its `Table` and ours
+# are different types. A `[patch]` section cannot fix this: generated SQL
+# pipeline workspaces import this through `crates/adapters` and carry no
+# patches. Until both sides use a crates.io release, that means a Feldera fork
+# of `datafusion-iceberg` whose `iceberg` dep points at our `iceberg-rust` fork.
+datafusion-iceberg = { git = "https://github.com/feldera/datafusion-iceberg.git", rev = "577ba62a99ab8522e29a955d20929ab29585c70d" }
 impl-trait-for-tuples = "0.2"
 indexmap = "2.7.1"
 indicatif = "0.17.0-rc.11"
@@ -270,12 +274,12 @@ object_store = "0.14.1"
 once_cell = "1.20.2"
 ordered-float = { version = "4.2.0", features = ["serde"] }
 ouroboros = "0.18.4"
-parquet = "58"
+parquet = "59"
 # The Parquet variant binary encoding, used to read and write Delta and
 # Iceberg VARIANT columns. Released from arrow-rs alongside `parquet`, and
 # sharing `arrow` with it, so keep the three on one point release.
-parquet-variant = "58"
-parquet-variant-compute = "58"
+parquet-variant = "59"
+parquet-variant-compute = "59"
 paste = "1.0.12"
 petgraph = "0.6.0"
 pg-client-config = "0.1.2"
@@ -334,15 +338,10 @@ schema_registry_converter = { version = "4.2.0", default-features = false }
 semver = "1.0.27"
 serde = "1.0.213"
 serde_dynamo = { version = "4.3.0", features = ["aws-sdk-dynamodb+1"] }
-# serde_arrow fork that recognizes the "+00:00" timezone Iceberg uses for
-# `timestamptz` columns (upstream 0.14.2 accepts only the name "UTC").
-# Remove the git source when https://github.com/chmp/serde_arrow/pull/320
-# is released. `version` keeps the crates that depend on serde_arrow
-# publishable to crates.io; cargo drops the git source when publishing.
-# The git source goes on the dependency rather than in a `[patch]` section
-# because patches do not apply to generated SQL pipeline workspaces, which
-# import this dependency through `crates/adapters`.
-serde_arrow = { version = "0.14.2", git = "https://github.com/ryzhyk/serde_arrow.git", rev = "9555b34fb85d4323e4381ad5a09872c1696a0d34", features = ["arrow-58"] }
+# 0.15 carries chmp/serde_arrow#320, which accepts the "+00:00" timezone
+# Iceberg uses for `timestamptz`; the Feldera fork that used to patch that in
+# is no longer needed.
+serde_arrow = { version = "0.15.0", features = ["arrow-59"] }
 serde_bytes = "0.11.15"
 serde_json = { version = "1.0.132", features = ["arbitrary_precision"] }
 serde_json_path_to_error = "0.1.5"

@@ -609,7 +609,7 @@ pub fn q16(_circuit: &mut RootCircuit, input: NexmarkStream) -> Q16Stream {
                     .unwrap(),
                 minute: Time::from_hms(max_minutes.0, max_minutes.1, 0)
                     .unwrap()
-                    .format(&format_description::parse("[hour]:[minute]").unwrap())
+                    .format(&format_description::parse_borrowed::<2>("[hour]:[minute]").unwrap())
                     .unwrap(),
                 total_bids: *total_bids as u64,
                 rank1_bids: *rank1_bids as u64,

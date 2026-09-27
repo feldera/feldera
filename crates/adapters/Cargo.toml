@@ -194,7 +194,6 @@ tokio-util = { workspace = true, features = ["io"] }
 tokio-stream = { workspace = true, features = ["sync"] }
 home = { workspace = true }
 datafusion = { workspace = true }
-ahash = { workspace = true }
 sha2 = { workspace = true }
 rmp-serde = { workspace = true }
 rmpv = { workspace = true, features = ["with-serde"] }
