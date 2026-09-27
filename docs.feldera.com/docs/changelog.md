@@ -12,10 +12,10 @@ Source edition can be found on github.
 
 - Incompatible change (SQL): a `RANGE` window frame with a bound of the
   form `n PRECEDING` or `n FOLLOWING` now requires an `ORDER BY` column
-  that cannot be `NULL`.  A program using e.g., 
+  that cannot be `NULL`.  A program using e.g.,
   `RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW`
   over a nullable timestamp, now fails to compile.  This can be worked around
-  by declaring the column `NOT NULL`, or filter out the `NULL` values first, 
+  by declaring the column `NOT NULL`, or by filtering out the `NULL` values first,
   for example with `WHERE ts IS NOT NULL`.  See [Unsupported
   operations](/sql/unsupported-operations#range-frames-with-offsets-over-nullable-columns).
 

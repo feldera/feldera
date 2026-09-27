@@ -157,28 +157,49 @@ public class RangeFrameTests extends SqlIoTest {
             DESC NULLS LAST, 1 FOLLOWING, 2 FOLLOWING: NULL 4 NULL NULL NULL 64
             DESC NULLS LAST, 1 FOLLOWING, UNBOUNDED FOLLOWING: NULL 4 12 12 60 124""";
 
-    /** Every shape over the nullable column. */
+    /** Every shape over the nullable column; the 9 frames with an offset are rejected for each
+     * of the 4 orderings. */
     @Test
     public void everyFrameOverNullableColumn() {
-        this.checkFrames(TABLE, DATA, "T", NULLABLE_SUMS, 0);
+        int rejected = this.checkFrames(TABLE, DATA, "T", NULLABLE_SUMS, 0);
+        Assert.assertEquals(36, rejected);
     }
 
     /** Every shape over the nullable column after the NULL values are filtered out. */
     @Test
     public void everyFrameAfterFilteringNulls() {
-        this.checkFrames(TABLE, DATA, "(SELECT * FROM T WHERE ts IS NOT NULL) nn", NOT_NULL_SUMS, 2);
+        int rejected = this.checkFrames(TABLE, DATA, "(SELECT * FROM T WHERE ts IS NOT NULL) nn", NOT_NULL_SUMS, 2);
+        Assert.assertEquals(0, rejected);
     }
 
     /** Every shape over a NOT NULL column. */
     @Test
     public void everyFrameOverNotNullColumn() {
-        this.checkFrames(NOT_NULL_TABLE, NOT_NULL_DATA, "T", NOT_NULL_SUMS, 2);
+        int rejected = this.checkFrames(NOT_NULL_TABLE, NOT_NULL_DATA, "T", NOT_NULL_SUMS, 2);
+        Assert.assertEquals(0, rejected);
     }
 
-    /** The rejection covers every type of ORDER BY column, and a filter that is not true for
-     * NULL makes a column acceptable. */
+    /** The rejection covers every type of ORDER BY column and every source of NULL values, and a
+     * filter that is not true for NULL makes a column acceptable. */
     @Test
     public void offsetFramesNeedNonNullColumn() {
+        String frame = "SUM(x) OVER (ORDER BY ts RANGE BETWEEN 2 PRECEDING AND CURRENT ROW)";
+        // The nullable side of a LEFT JOIN
+        this.statementsFailingInCompilation(NOT_NULL_TABLE + """
+                CREATE TABLE U (k INT NOT NULL, y INT NOT NULL);
+                CREATE VIEW V AS SELECT SUM(x) OVER
+                  (ORDER BY U.y RANGE BETWEEN 2 PRECEDING AND CURRENT ROW) FROM T LEFT JOIN U ON T.x = U.k;""",
+                "A RANGE window frame with a PRECEDING or FOLLOWING offset");
+        // QUALIFY filters the rows after the window computes them
+        this.statementsFailingInCompilation(TABLE +
+                "CREATE VIEW V AS SELECT x FROM T QUALIFY " + frame + " > 0;",
+                "A RANGE window frame with a PRECEDING or FOLLOWING offset");
+        // NULL IN (...) is never true
+        this.getCC(TABLE + "CREATE TABLE W (w SMALLINT);\n" +
+                "CREATE VIEW V AS SELECT " + frame + " FROM T WHERE ts IN (SELECT w FROM W);");
+        // An expression that is NULL exactly when ts is NULL
+        this.getCC(TABLE + "CREATE VIEW V AS SELECT SUM(x) OVER " +
+                "(ORDER BY ts + 1 RANGE BETWEEN 2 PRECEDING AND CURRENT ROW) FROM T WHERE ts IS NOT NULL;");
         this.statementsFailingInCompilation("""
                 CREATE TABLE D (d DATE, x INT NOT NULL);
                 CREATE VIEW V AS SELECT SUM(x) OVER
@@ -203,22 +224,26 @@ public class RangeFrameTests extends SqlIoTest {
      * @param data      Contents of table T.
      * @param source    The relation that the view reads.
      * @param sums      The sums computed by Postgres for every shape.
-     * @param firstRow  Index in TS of the first row of {@code source}; the rows before it have a NULL ts. */
-    void checkFrames(String table, String data, String source, String sums, int firstRow) {
+     * @param firstRow  Index in TS of the first row of {@code source}; the rows before it have a NULL ts.
+     * @return The number of shapes rejected at compile time. */
+    int checkFrames(String table, String data, String source, String sums, int firstRow) {
         Map<String, String[]> expectedSums = new HashMap<>();
         for (String line : sums.split("\n")) {
             String[] labelAndSums = line.split(": ");
             expectedSums.put(labelAndSums[0], labelAndSums[1].split(" "));
         }
         List<String> branches = new ArrayList<>();
+        int rejected = 0;
         StringBuilder expected = new StringBuilder(" frame | ts | x | s\n------------------");
         for (String ordering : ORDERINGS) {
             for (String[] frame : FRAMES) {
                 String label = ordering + ", " + frame[0] + ", " + frame[1];
                 String branch = "SELECT '" + label + "' AS frame, ts, x, SUM(x) OVER (ORDER BY ts " +
                         ordering + " RANGE BETWEEN " + frame[0] + " AND " + frame[1] + ") AS s FROM " + source;
-                if (this.isRejected(table + "CREATE VIEW V AS " + branch + ";"))
+                if (this.isRejected(table + "CREATE VIEW V AS " + branch + ";")) {
+                    rejected++;
                     continue;
+                }
                 branches.add(branch);
                 String[] rowSums = expectedSums.get(label);
                 for (int row = firstRow; row < TS.length; row++)
@@ -229,6 +254,7 @@ public class RangeFrameTests extends SqlIoTest {
         var ccs = this.getCCS(table + "CREATE VIEW V AS " + String.join("\nUNION ALL ", branches) + ";")
                 .withStringTrim();
         ccs.stepWeightOne(data, expected.toString());
+        return rejected;
     }
 
     /** True if {@code program} fails to compile because of a RANGE frame over a nullable column. */

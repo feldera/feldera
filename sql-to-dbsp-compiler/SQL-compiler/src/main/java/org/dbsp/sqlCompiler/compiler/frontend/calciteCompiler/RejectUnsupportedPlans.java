@@ -128,17 +128,25 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
                     "for example with 'WHERE column IS NOT NULL'.\n" + WINDOW_DOCUMENTATION.citation());
         }
 
-        /** True if the input rows cannot have a NULL {@code key}: its type is NOT NULL, or
-         * a predicate on the input is not true when {@code key} is NULL. */
+        /** True if the input rows cannot have a NULL {@code key}: its type is NOT NULL, a
+         * predicate on the input is not true when {@code key} is NULL, or {@code key} is NULL
+         * only when one of its operands is NULL and no operand can be NULL. */
         boolean excludesNull(RexNode key) {
             if (this.inputPredicates.isEffectivelyNotNull(key))
                 return true;
-            if (!(key instanceof RexInputRef ref))
+            if (key instanceof RexInputRef ref) {
+                ImmutableBitSet nullColumns = ImmutableBitSet.of(ref.getIndex());
+                for (RexNode predicate : this.inputPredicates.pulledUpPredicates)
+                    if (Strong.isNotTrue(predicate, nullColumns))
+                        return true;
                 return false;
-            ImmutableBitSet nullColumns = ImmutableBitSet.of(ref.getIndex());
-            for (RexNode predicate : this.inputPredicates.pulledUpPredicates)
-                if (Strong.isNotTrue(predicate, nullColumns))
-                    return true;
+            }
+            if (key instanceof RexCall call && Strong.policy(call) == Strong.Policy.ANY) {
+                for (RexNode operand : call.getOperands())
+                    if (!this.excludesNull(operand))
+                        return false;
+                return true;
+            }
             return false;
         }
 
