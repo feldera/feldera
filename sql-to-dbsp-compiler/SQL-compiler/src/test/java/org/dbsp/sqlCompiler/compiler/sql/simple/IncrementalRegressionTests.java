@@ -342,7 +342,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
 
                 -- Credit card transactions.
                 CREATE TABLE transaction (
-                    ts TIMESTAMP LATENESS INTERVAL 10 MINUTES,
+                    ts TIMESTAMP NOT NULL LATENESS INTERVAL 10 MINUTES,
                     amt DOUBLE,
                     customer_id BIGINT NOT NULL,
                     cc_num BIGINT NOT NULL,

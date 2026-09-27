@@ -52,6 +52,15 @@ exactly one column.  Plain window functions such as `RANK` and
 `DENSE_RANK` support `ORDER BY` on multiple columns.
 See [#457](https://github.com/feldera/feldera/issues/457).
 
+### `RANGE` frames with offsets over nullable columns
+
+A `RANGE` window frame with a bound of the form `n PRECEDING` or `n
+FOLLOWING`, such as `RANGE BETWEEN 2 PRECEDING AND CURRENT ROW`,
+requires an `ORDER BY` column that cannot be `NULL`.  To use such a
+frame over a nullable column, filter out the `NULL` values first, for
+example with `WHERE ts IS NOT NULL`.
+See [#7277](https://github.com/feldera/feldera/issues/7277).
+
 ### Constant Window Boundaries
 
 Window boundaries must be constant expressions. For example, `RANGE
