@@ -7926,8 +7926,7 @@ where
 }
 
 /// As [`write_id_mapped_table`], but with the log's nested children in the data
-/// file's order, which is all delta-rs can read: it pairs a list or map
-/// element's struct children by position, ignoring their ids.
+/// file's order, so a read that ignored their ids would still come out right.
 fn write_id_mapped_table_in_file_order<T>(table_dir: &Path, relation: &[Field], commits: &[&[T]])
 where
     T: DBData + SerializeWithContext<SqlSerdeConfig> + Sync,
@@ -8579,6 +8578,73 @@ async fn delta_table_cdc_id_mapped_deletion_vector_test() {
         "a CDC read must resolve the columns of a listed file and of one a \
          deletion vector masks the same way, and drop the masked row"
     );
+}
+
+/// A snapshot of an id-mapped table reads a struct nested in an `ARRAY` or a
+/// `MAP` under the right field names, even after the table reordered them.
+///
+/// The log's `col-<id>` children had to be relabeled to the file's names before
+/// the struct cast paired them, and neither container reached that relabeling:
+/// a list matched only when the log and the file agreed on the list flavor, and
+/// a map's `entries`, `key` and `value` carry no column mapping id to pair on.
+/// Both left every child named `col-<id>`, nothing overlapped the file's names,
+/// and the cast fell back to pairing by position, so the two fields came back
+/// exchanged with no error. Fixed in the delta-rs fork by `0ae918e3`; #7279.
+///
+/// `after` is the control: a struct outside a container was always paired by
+/// name, so it read correctly even while the other two did not.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_snapshot_id_mapped_reordered_nested_fields_test() {
+    /// `snapshot` mode rejects `end_version`, so this cannot use
+    /// [`read_uniform_table`].
+    fn snapshot_read(table_uri: &str) -> Vec<UniformTestStruct> {
+        use dbsp::typed_batch::IndexedZSetReader;
+
+        let output_file = NamedTempFile::new().unwrap();
+        let pipeline = delta_table_input_pipeline::<UniformTestStruct>(
+            table_uri,
+            &UniformTestStruct::schema(),
+            &HashMap::from([("mode".to_string(), json!("snapshot"))]),
+            &output_file.path().display().to_string(),
+        );
+        pipeline.start();
+        wait(|| pipeline.pipeline_complete(), 60_000).expect("timeout ingesting the table");
+        pipeline.stop().unwrap();
+        let mut rows: Vec<UniformTestStruct> =
+            file_to_zset::<UniformTestStruct>(&mut File::open(output_file.path()).unwrap())
+                .iter()
+                .map(|(row, (), _weight): (UniformTestStruct, (), _)| row)
+                .collect();
+        rows.sort();
+        rows
+    }
+
+    async fn snapshot_of(table_dir: &Path) -> Vec<UniformTestStruct> {
+        let uri = table_dir.display().to_string();
+        tokio::task::spawn_blocking(move || snapshot_read(&uri))
+            .await
+            .unwrap()
+    }
+
+    let rows = [UniformTestStruct::new(1, "alpha", "Coffee Shop", "settled")];
+    let schema = UniformTestStruct::schema();
+
+    // The log lists the nested struct's fields in the opposite order to the
+    // data file, which is what a field reorder leaves behind.
+    let reordered = TempDir::new().unwrap();
+    write_id_mapped_table(reordered.path(), &schema, &[&rows]);
+    assert_eq!(
+        snapshot_of(reordered.path()).await,
+        rows.to_vec(),
+        "a reordered log must not exchange the fields of the struct inside \
+         `history` (an ARRAY) or `tags` (a MAP)"
+    );
+
+    // The same rows with the log in the file's order, which never depended on
+    // the relabeling and must stay readable.
+    let in_order = TempDir::new().unwrap();
+    write_id_mapped_table_in_file_order(in_order.path(), &schema, &[&rows]);
+    assert_eq!(snapshot_of(in_order.path()).await, rows.to_vec());
 }
 
 /// The two readers a `snapshot_and_follow` read uses must agree.
