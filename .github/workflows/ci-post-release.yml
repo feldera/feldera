@@ -4,14 +4,8 @@ on:
   release:
     types: [published]
 
-env:
-  RUSTC_WRAPPER: sccache
-  # sccache: native GCS backend, credentials come from the runner pod via
-  # Workload Identity (no secrets).
-  SCCACHE_GCS_BUCKET: ${{ vars.SCCACHE_GCS_BUCKET }}
-  SCCACHE_GCS_RW_MODE: READ_WRITE
-  AWS_ACCESS_KEY_ID: "${{ secrets.CI_GCS_HMAC_ACCESS_KEY_ID }}"
-  AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}"
+# No sccache on this release branch: the branch sees a handful of one-off
+# runs, not worth polluting the shared compile cache for.
 
 jobs:
   # Ideally this would just invoke `publish-python.yml`
@@ -42,7 +36,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@6dfebec6ddbcd197e02256fbdf54deb334fb7f06 # v2
         with:
-          version: "0.11.3"
+          version: "0.12.5"
           enable-cache: true
           cache-dependency-glob: "python/uv.lock"
       - name: "Set up Python"
@@ -90,7 +84,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@6dfebec6ddbcd197e02256fbdf54deb334fb7f06 # v2
         with:
-          version: "0.11.3"
+          version: "0.12.5"
           enable-cache: true
       - name: "Set up Python"
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -139,7 +133,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@6dfebec6ddbcd197e02256fbdf54deb334fb7f06 # v2
         with:
-          version: "0.11.3"
+          version: "0.12.5"
           enable-cache: true
       - name: "Set up Python"
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -205,8 +199,30 @@ jobs:
           else
             echo "bump=true" >> "$GITHUB_OUTPUT"
           fi
+      # The release is built from one commit, and more pull requests may merge into
+      # main before this job runs.
+      - name: File changelog entries under the released version
+        id: filing
+        continue-on-error: true
+        if: ${{ steps.bump-check.outputs.bump == 'true' && github.event.release.tag_name != '' }}
+        env:
+          RELEASED_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -eu
+          git fetch --no-tags --depth 1 origin "+refs/tags/$RELEASED_TAG:refs/tags/$RELEASED_TAG"
+          python3 scripts/file_changelog_release.py \
+            --tag "$RELEASED_TAG" \
+            --changelog docs.feldera.com/docs/changelog.md
+
       - name: Bump cargo versions
         if: ${{ steps.bump-check.outputs.bump == 'true' }}
+        env:
+          # Compiling the manager runs postgresql_embedded's build script,
+          # which lists the releases of theseus-rs/postgresql-binaries through
+          # the GitHub API. Anonymous calls share the runners' egress address
+          # and its 60-per-hour limit, which fails the build with "403 rate
+          # limit exceeded"; postgresql_archive sends this token when it is set.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cargo set-version --bump ${{ vars.RELEASE_NEXT_VERSION }}
           cargo run --release --locked --bin pipeline-manager -- --dump-openapi
@@ -240,6 +256,15 @@ jobs:
         if: ${{ steps.bump-check.outputs.bump == 'true' }}
         run: |
           git diff
+      # Filing the changelog is cosmetic, the version bump is not: a changelog
+      # the filing cannot handle warns and leaves the entries unreleased, while
+      # the bump still commits and pushes.  The merge queue runs the same filing
+      # as a dry run, so a changelog that breaks it fails its own pull request.
+      - name: Warn when the job could not file the changelog
+        if: ${{ steps.filing.outcome == 'failure' }}
+        run: |
+          echo "::warning::the released entries stay under \`## Unreleased\`; file them by hand"
+
       - uses: EndBug/add-and-commit@a94899bca583c204427a224a7af87c02f9b325d5 # a94899bca583c204427a224a7af87c02f9b325d5
         if: ${{ vars.RELEASE_DRY_RUN == 'false' && steps.bump-check.outputs.bump == 'true' }}
         with:

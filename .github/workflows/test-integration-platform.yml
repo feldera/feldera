@@ -20,10 +20,6 @@ on:
         required: false
         type: string
 
-env:
-  FELDERA_SENTRY_ENABLED: 1
-  SENTRY_ENVIRONMENT: ci
-
 jobs:
   manager-no-network:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'manager-no-network') }}
@@ -260,25 +256,26 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/python
 
+      # The Delta and Iceberg suites are ignored on this release branch: in CI
+      # their helpers (python/tests/utils.py) reach the object store over S3
+      # with static GCS HMAC keys, and those keys no longer exist (main's
+      # tests moved to Workload Identity).
       - name: Run platform tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/platform --timeout=1500 -vv ${{ vars.PYTEST_EXTRA }}
+        run: >-
+          uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/platform
+          --ignore=tests/platform/test_delta_input_catchup.py
+          --ignore=tests/platform/test_delta_input_column_mapping.py
+          --ignore=tests/platform/test_delta_input_column_mapping_nested.py
+          --ignore=tests/platform/test_delta_input_deletion_vectors.py
+          --ignore=tests/platform/test_delta_input_uniform_iceberg.py
+          --ignore=tests/platform/test_delta_output_restart.py
+          --ignore=tests/platform/test_iceberg_input.py
+          --timeout=1500 -vv ${{ vars.PYTEST_EXTRA }}
         working-directory: python
         env:
           PYTHONPATH: ${{ github.workspace }}/python
           IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
-          # GCS test-bucket credentials, surfaced under the standard env
-          # names the Delta tests read (see python/tests/utils.py).
-          CI_K8S_MINIO_ACCESS_KEY_ID: ${{ secrets.CI_GCS_HMAC_ACCESS_KEY_ID }}
-          CI_K8S_MINIO_SECRET_ACCESS_KEY: ${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}
-          CI_MINIO_ENDPOINT: https://storage.googleapis.com
-          CI_MINIO_BUCKET: feldera-ci-test-feldera-ci
-          # rclone quirks for GCS S3-interop; MinIO provider signing gets 403.
-          CI_MINIO_PROVIDER: GCS
-          # GCS S3-interop lacks x-amz checksums; newer AWS SDKs (pyarrow's C++
-          # SDK) fail GetObject with "Response checksums mismatch" otherwise.
-          AWS_REQUEST_CHECKSUM_CALCULATION: WHEN_REQUIRED
-          AWS_RESPONSE_CHECKSUM_VALIDATION: WHEN_REQUIRED
 
       - name: Download fda binary
         uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7

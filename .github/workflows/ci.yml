@@ -85,6 +85,10 @@ jobs:
 
   invoke-tests-integration-runtime:
     name: Integration Tests
+    # Disabled on this release branch: the runtime tests compile this
+    # branch's runtime on the hosted CI instances, which run main's platform,
+    # and main's enterprise crates no longer compile against 0.334.
+    if: ${{ false }}
     needs: [invoke-build-java]
     uses: ./.github/workflows/test-integration-runtime.yml
     # A called workflow gets no more than the calling job grants, and the

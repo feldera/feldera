@@ -43,14 +43,33 @@ jobs:
         working-directory: js-packages/web-console
 
       - name: Verify pipeline-manager is reachable
-        run: curl -fsSL --retry 5 --retry-delay 2 --retry-connrefused http://localhost:8080/healthz
+        run: curl -fsSL --retry 5 --retry-delay 2 --retry-connrefused http://pipeline-manager:8080/healthz
+
+      # The browser loads the app over this forward rather than from the service
+      # name directly, because Chromium grants a secure context to `localhost`
+      # but not to a bare hostname. `crypto.randomUUID`, which the support-bundle
+      # handoff calls, is undefined outside one. Forwarding leaves every origin
+      # below spelled the same way a local run spells it.
+      - name: Forward pipeline-manager to localhost
+        run: |
+          nohup node -e '
+            const net = require("net")
+            net.createServer((client) => {
+              const upstream = net.connect(8080, "pipeline-manager")
+              client.pipe(upstream)
+              upstream.pipe(client)
+              client.on("error", () => upstream.destroy())
+              upstream.on("error", () => client.destroy())
+            }).listen(8080, "127.0.0.1")
+          ' > /tmp/pipeline-manager-forward.log 2>&1 &
+          curl -fsSL --retry 15 --retry-delay 1 --retry-connrefused http://localhost:8080/healthz
 
       - name: Run vitest integration tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: bun run test-integration
         working-directory: js-packages/web-console
         env:
-          FELDERA_API_URL: http://localhost:8080
+          FELDERA_TEST_API_ORIGIN: http://localhost:8080
 
       - name: Run Playwright e2e tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}

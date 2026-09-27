@@ -6,15 +6,9 @@ on:
   workflow_dispatch:
 
 env:
-  RUSTC_WRAPPER: sccache
-  # sccache: native GCS backend, credentials come from the runner pod via
-  # Workload Identity (no secrets).
-  SCCACHE_GCS_BUCKET: ${{ vars.SCCACHE_GCS_BUCKET }}
-  SCCACHE_GCS_RW_MODE: READ_WRITE
-  AWS_ACCESS_KEY_ID: "${{ secrets.CI_GCS_HMAC_ACCESS_KEY_ID }}"
-  AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}"
-  # sccache cannot cache rustc when incremental is on; required for the
-  # Rust builds invoked by mvn → sql-to-dbsp to hit the sccache MinIO store.
+  # No sccache on this release branch: the branch sees a handful of one-off
+  # runs, not worth polluting the shared compile cache for.
+  # Incremental compilation only adds overhead in one-shot CI builds.
   CARGO_INCREMENTAL: 0
   # Pin Maven's local repo so it matches the cache path regardless of the
   # container runner's $HOME.

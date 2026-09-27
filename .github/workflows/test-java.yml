@@ -5,15 +5,10 @@ on:
   workflow_dispatch:
 
 env:
-  RUSTC_WRAPPER: sccache
-  # sccache: native GCS backend, credentials come from the runner pod via
-  # Workload Identity (no secrets).
-  SCCACHE_GCS_BUCKET: ${{ vars.SCCACHE_GCS_BUCKET }}
-  SCCACHE_GCS_RW_MODE: READ_WRITE
-  AWS_ACCESS_KEY_ID: "${{ secrets.CI_GCS_HMAC_ACCESS_KEY_ID }}"
-  AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_GCS_HMAC_SECRET_ACCESS_KEY }}"
+  # No sccache on this release branch: the branch sees a handful of one-off
+  # runs, not worth polluting the shared compile cache for.
   RUST_MIN_STACK: 8388608
-  # sccache cannot cache rustc invocations when incremental is on.
+  # Incremental compilation only adds overhead in one-shot CI builds.
   CARGO_INCREMENTAL: 0
   # Cap cargo parallelism at the k8s runner core budget. Java tests drive a
   # Rust build via mvn → sql-to-dbsp; without this cap arm64 runners OOM from
@@ -45,7 +40,7 @@ jobs:
         uses: ./.github/actions/feldera-gcs-cache
         with:
           # Crate downloads only, NOT target/: caching the multi-GB target/
-          # trees never paid off, and sccache already caches compiled crates.
+          # trees never paid off.
           # registry/src is excluded, cargo regenerates it from registry/cache.
           path: |
             # Absolute paths: CARGO_HOME is /home/ubuntu/.cargo (feldera-dev image
@@ -90,8 +85,3 @@ jobs:
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: mvn test --no-transfer-progress -B -Dsurefire.failIfNoSpecifiedTests=false -Dtest=RotateTests#quick
         working-directory: ./sql-to-dbsp-compiler
-
-      - name: Print sccache stats
-        run: |
-          sccache --show-stats
-        if: ${{ vars.CI_DRY_RUN != 'true' }}
