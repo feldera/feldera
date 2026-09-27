@@ -770,12 +770,19 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::num::NonZeroU64;
+    use std::{
+        num::NonZeroU64,
+        thread,
+        time::{Duration, Instant},
+    };
 
     use crate::operator::dynamic::recursive::test::reachability::{
         Edge, checkpoint_and_restart, edges_data, expected_reachable,
     };
-    use crate::{Circuit, Runtime, operator::Generator, typed_batch::OrdZSet, utils::Tup2, zset};
+    use crate::{
+        Circuit, RootCircuit, Runtime, Stream, operator::Generator, typed_batch::OrdZSet,
+        utils::Tup2, zset,
+    };
 
     /// Transitive closure via [`RecursionBuilder`] over a *single* recursive
     /// variable, checkpointed and restarted halfway through.  Must reproduce
@@ -1252,5 +1259,131 @@ mod test {
             Ok(edges_handle)
         })
         .unwrap();
+    }
+
+    /// Transitive closure of `edges`, built with the recursion builder.
+    ///
+    /// # Arguments
+    ///
+    /// * `circuit` - circuit to build the recursion in.
+    /// * `edges` - edges of the graph.
+    /// * `distinct` - whether to keep the builder's implicit `distinct`.
+    /// * `bound` - optional cap on the number of iterations per transaction.
+    ///
+    /// # Returns
+    ///
+    /// The stream of changes to the closure.
+    fn transitive_closure(
+        circuit: &RootCircuit,
+        edges: &Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>>,
+        distinct: bool,
+        bound: Option<NonZeroU64>,
+    ) -> Stream<RootCircuit, OrdZSet<Tup2<u64, u64>>> {
+        let builder = circuit.recursion_builder(
+            |child| Ok(child.recursive_var::<OrdZSet<Tup2<u64, u64>>>()),
+            |child, paths| {
+                let edges = edges.delta0(child);
+
+                let paths_indexed = paths.map_index(|&Tup2(x, y)| (y, x));
+                let edges_indexed = edges.map_index(|Tup2(x, y)| (*x, *y));
+
+                let longer_paths =
+                    paths_indexed.join(&edges_indexed, |_via, from, to| Tup2(*from, *to));
+                Ok(edges.plus(&longer_paths))
+            },
+        );
+        let builder = if distinct {
+            builder
+        } else {
+            builder.without_distinct()
+        };
+        let builder = match bound {
+            Some(bound) => builder.with_bound(bound),
+            None => builder,
+        };
+        builder.finish().unwrap()
+    }
+
+    /// Two independent recursions on eight workers must not deadlock.
+    ///
+    /// A worker that blocks in one recursion's termination check, while a peer
+    /// evaluates the other recursion, waits forever; see
+    /// <https://github.com/feldera/feldera/issues/4168>, fixed for
+    /// [`recursive`](crate::ChildCircuit::recursive) by making the check
+    /// asynchronous.  The builder has a termination check of its own.  One of
+    /// the two recursions is bounded, so its workers must also stop together
+    /// when the bound cuts the recursion short.
+    #[test]
+    fn issue4168() {
+        let (mut circuit, edges_handle) = Runtime::init_circuit(8, move |circuit| {
+            let (edges, edges_handle) = circuit.add_input_zset::<Tup2<u64, u64>>();
+
+            transitive_closure(circuit, &edges, true, None);
+            transitive_closure(circuit, &edges, true, NonZeroU64::new(5));
+
+            Ok(edges_handle)
+        })
+        .unwrap();
+
+        let handle = thread::spawn(move || {
+            for i in 0..100 {
+                edges_handle.append(&mut vec![Tup2(Tup2(i, i + 1), 1)]);
+                circuit.transaction().unwrap();
+            }
+        });
+
+        let start = Instant::now();
+        while start.elapsed() < Duration::from_secs(200) {
+            if handle.is_finished() {
+                handle.join().unwrap();
+                return;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
+
+        panic!("Deadlock in test 'issue4168'");
+    }
+
+    /// Inserting a chain of edges and then deleting it must leave the
+    /// transitive closure empty, whether the recursion keeps its `distinct` or
+    /// not, and whether or not a bound cuts it short; see
+    /// <https://github.com/feldera/feldera/issues/4028>.
+    #[test]
+    fn issue4028() {
+        let insert_edges = (0..100)
+            .map(|i| Tup2(Tup2(i, i + 1), 1))
+            .collect::<Vec<_>>();
+        let delete_edges = (0..100)
+            .map(|i| Tup2(Tup2(i, i + 1), -1))
+            .collect::<Vec<_>>();
+
+        for distinct in [true, false] {
+            for bound in [None, NonZeroU64::new(5)] {
+                let (mut root, (edges_handle, paths_handle)) =
+                    Runtime::init_circuit(1, move |circuit| {
+                        let (edges, edges_handle) = circuit.add_input_zset::<Tup2<u64, u64>>();
+                        let paths_handle = transitive_closure(circuit, &edges, distinct, bound)
+                            .integrate()
+                            .output();
+
+                        Ok((edges_handle, paths_handle))
+                    })
+                    .unwrap();
+
+                for _ in 0..10 {
+                    edges_handle.append(&mut insert_edges.clone());
+                    root.transaction().unwrap();
+
+                    edges_handle.append(&mut delete_edges.clone());
+                    root.transaction().unwrap();
+
+                    let paths = paths_handle.consolidate();
+                    assert!(
+                        paths.is_empty(),
+                        "distinct: {distinct}, bound: {bound:?}: paths left behind: {paths:?}"
+                    );
+                }
+            }
+        }
     }
 }
