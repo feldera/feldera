@@ -54,6 +54,7 @@ pub mod neighborhood;
 mod non_incremental;
 #[cfg(test)]
 mod nonlinear_recursion_tests;
+mod recursion_builder;
 mod recursive;
 pub mod sample;
 mod semijoin;
@@ -92,10 +93,10 @@ pub use filter_map::FilterMap;
 pub use neighborhood::{NeighborhoodDescrBox, NeighborhoodDescrStream};
 pub use output::OutputHandle;
 pub use plus::{Minus, Plus};
-pub use recursive::{
-    ClosedVar, NoReport, RecursionBuilder, RecursionReport, RecursionVars, RecursiveStreams,
-    RecursiveVar, Reporting,
+pub use recursion_builder::{
+    ClosedVar, NoReport, RecursionBuilder, RecursionReport, RecursionVars, RecursiveVar, Reporting,
 };
+pub use recursive::RecursiveStreams;
 pub use sample::{MAX_QUANTILES, MAX_SAMPLE_SIZE};
 pub use sum::Sum;
 pub use time_series::OrdPartitionedIndexedZSet;
