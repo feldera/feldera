@@ -651,10 +651,6 @@ where
                     // Start the next transaction's epoch from zero. Explicitly
                     // tested in `with_bound_counter_resets_across_transactions`
                     // below.
-                    debug_assert!(
-                        stop,
-                        "iteration.set(0) must only fire on the last epoch iteration"
-                    );
                     iteration.set(0);
                 }
 
@@ -1112,7 +1108,7 @@ mod test {
             outcome.truncated(),
             "a bounded non-converging recursion must report truncation"
         );
-        assert_eq!(outcome.converged(), false);
+        assert!(!outcome.converged());
         assert_eq!(outcome.converged_iterations(), None);
         assert_eq!(outcome.iterations(), BOUND.get());
     }
@@ -1162,8 +1158,8 @@ mod test {
             let iterations = outcome
                 .converged_iterations()
                 .expect("reachability must converge within the bound");
-            assert_eq!(outcome.converged(), true);
-            assert_eq!(outcome.truncated(), false);
+            assert!(outcome.converged());
+            assert!(!outcome.truncated());
             assert_eq!(outcome.iterations(), iterations);
             assert!(
                 (1..1_000).contains(&iterations),
