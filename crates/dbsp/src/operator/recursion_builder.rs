@@ -66,7 +66,11 @@ where
     /// before [`finish`](RecursionBuilder::finish) builds it.
     ///
     /// See [`RecursionBuilder`] for a complete example.
-    pub fn recursion<V, F1, F2>(&self, init: F1, step: F2) -> RecursionBuilder<'_, Self, F1, F2>
+    pub fn recursion_builder<V, F1, F2>(
+        &self,
+        init: F1,
+        step: F2,
+    ) -> RecursionBuilder<'_, Self, F1, F2>
     where
         V: RecursionVars<IterativeCircuit<Self>>,
         F1: FnOnce(&IterativeCircuit<Self>) -> Result<V, SchedulerError>,
@@ -476,7 +480,7 @@ impl ReportMode for Reporting {
 }
 
 /// A unified builder for recursive computations, returned by
-/// [`recursion`](ChildCircuit::recursion).
+/// [`recursion_builder`](ChildCircuit::recursion_builder).
 ///
 /// [`RecursionBuilder`] subsumes both [`recursive`](ChildCircuit::recursive)
 /// and [`recursive_dynamic`](ChildCircuit::recursive_dynamic) behind a single
@@ -521,10 +525,10 @@ impl ReportMode for Reporting {
 ///     let mut edges = [zset! { Tup2(1u64, 2u64) => 1, Tup2(2, 3) => 1 }].into_iter();
 ///     let edges = root_circuit.add_source(Generator::new(move || edges.next().unwrap()));
 ///
-///     // The `recursion` call defines the computation; the closures' types are
-///     // inferred, so no circuit or stream annotations are needed.
+///     // The `recursion_builder` call defines the computation; the closures'
+///     // types are inferred, so no circuit or stream annotations are needed.
 ///     let reachable = root_circuit
-///         .recursion(
+///         .recursion_builder(
 ///             |child| Ok(child.recursive_var::<OrdZSet<Edge>>()),
 ///             |child, reachable| {
 ///                 let edges = edges.delta0(child);
@@ -793,7 +797,7 @@ mod test {
             let edges = circuit.add_source(Generator::new(move || edges.next().unwrap()));
 
             let reachable = circuit
-                .recursion(
+                .recursion_builder(
                     // The number of `recursive_var` calls fixes the arity; here
                     // it is a single stream, so no arity has to be supplied.
                     |child| Ok(child.recursive_var::<OrdZSet<Edge>>()),
@@ -846,7 +850,7 @@ mod test {
             let edges = circuit.add_source(Generator::new(move || edges.next().unwrap()));
 
             let mut reachable = circuit
-                .recursion(
+                .recursion_builder(
                     |child| {
                         Ok(vec![
                             child.recursive_var::<OrdZSet<Edge>>(),
@@ -922,7 +926,7 @@ mod test {
             let edges = circuit.add_source(Generator::new(move || edges.next().unwrap()));
 
             let ((reachable, reachable_reverse), report) = circuit
-                .recursion(
+                .recursion_builder(
                     // Two recursive variables of the same type, returned as a
                     // tuple; the arity (2) is fixed by the tuple's shape.
                     |child| {
@@ -993,7 +997,7 @@ mod test {
             let edges = circuit.add_source(Generator::new(move || edges.next().unwrap()));
 
             let reachable = circuit
-                .recursion(
+                .recursion_builder(
                     |child| Ok(child.recursive_var::<OrdZSet<Edge>>()),
                     |child, reachable| {
                         let edges = edges.delta0(child);
@@ -1041,7 +1045,7 @@ mod test {
             let seed = circuit.add_source(Generator::new(move || seed.next().unwrap_or_default()));
 
             let result = circuit
-                .recursion(
+                .recursion_builder(
                     |child| Ok(child.recursive_var::<OrdZSet<usize>>()),
                     move |child, x| {
                         // `seed` is injected once (at iteration 0) via delta0;
@@ -1080,7 +1084,7 @@ mod test {
             let seed = circuit.add_source(Generator::new(move || seed.next().unwrap_or_default()));
 
             let (result, outcome) = circuit
-                .recursion(
+                .recursion_builder(
                     |child| Ok(child.recursive_var::<OrdZSet<usize>>()),
                     move |child, x| {
                         let seed = seed.delta0(child);
@@ -1125,7 +1129,7 @@ mod test {
             let edges = circuit.add_source(Generator::new(move || edges.next().unwrap()));
 
             let (reachable, outcome) = circuit
-                .recursion(
+                .recursion_builder(
                     |child| Ok(child.recursive_var::<OrdZSet<Edge>>()),
                     |child, reachable| {
                         let edges = edges.delta0(child);
@@ -1189,7 +1193,7 @@ mod test {
             }));
 
             let (result, report) = circuit
-                .recursion(
+                .recursion_builder(
                     |child| Ok(child.recursive_var::<OrdZSet<usize>>()),
                     move |child, x| {
                         let seed = seed.delta0(child);
@@ -1249,7 +1253,7 @@ mod test {
             // A step that stabilizes on its own (a plain map), so dropping the
             // `distinct` is safe: the output weights do not grow unboundedly.
             let closure = circuit
-                .recursion(
+                .recursion_builder(
                     |child| Ok(child.recursive_var::<OrdZSet<Edge>>()),
                     move |child, _reachable| {
                         let edges = edges.delta0(child);

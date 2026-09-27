@@ -6,7 +6,7 @@
 //! - **iterate**: `Circuit::iterate` with a manual feedback loop that carries
 //!   only the per-iteration frontier and deduplicates with an explicit
 //!   `distinct`. See [`build_iterate_variant`].
-//! - **recursion**: `Circuit::recursion` (the `RecursionBuilder` API) over a
+//! - **recursion**: `Circuit::recursion_builder` (the `RecursionBuilder` API) over a
 //!   *tuple* of the two mutually recursive relations (`red`, `blue`).  Unlike
 //!   the transitive-closure benchmarks, the `distinct` is kept (both variants
 //!   need it here for termination), so this variant differs from `recursive`
@@ -305,7 +305,7 @@ fn build_recursive_variant() -> anyhow::Result<BipartiteGraphCircuit> {
 }
 
 /// Computes the red/blue graph coloring using DBSP's
-/// [`recursion` builder API](dbsp::circuit::ChildCircuit::recursion) over a
+/// [`recursion_builder` API](dbsp::circuit::ChildCircuit::recursion_builder) over a
 /// tuple of the two mutually recursive relations.
 ///
 /// This performs the same work as [`build_recursive_variant`] — the implicit
@@ -320,7 +320,7 @@ fn build_recursion_variant() -> anyhow::Result<BipartiteGraphCircuit> {
             let (init, init_input) = root_circuit.add_input_zset::<NodeId>();
 
             let (red_output, blue_output) = root_circuit
-                .recursion(
+                .recursion_builder(
                     // Two mutually recursive relations; the arity (2) is fixed
                     // by the returned tuple's shape.
                     |child_circuit| {

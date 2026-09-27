@@ -6,7 +6,7 @@
 //! - **iterate**: `Circuit::iterate` with a manual feedback loop that only
 //!   carries the per-iteration frontier and therefore skips the `distinct`.
 //!   See [`build_iterate_variant`].
-//! - **recursion**: `Circuit::recursion` (the `RecursionBuilder` API) with
+//! - **recursion**: `Circuit::recursion_builder` (the `RecursionBuilder` API) with
 //!   `without_distinct`.  It keeps the concise fixed-point form of the
 //!   `recursive` variant, but — like the `iterate` variant — drops the
 //!   `distinct` altogether, expressing declaratively what the `recursive`
@@ -286,7 +286,7 @@ fn build_recursive_variant() -> anyhow::Result<TransClosureCircuit> {
 }
 
 /// Computes the transitive closure of an acyclic graph using DBSP's
-/// [`recursion` builder API](dbsp::circuit::ChildCircuit::recursion).
+/// [`recursion_builder` API](dbsp::circuit::ChildCircuit::recursion_builder).
 ///
 /// This is the same fixed-point computation as [`build_recursive_variant`], but
 /// [`without_distinct`](dbsp::operator::RecursionBuilder::without_distinct)
@@ -303,7 +303,7 @@ fn build_recursion_variant() -> anyhow::Result<TransClosureCircuit> {
             });
 
             let closure = root_circuit
-                .recursion(
+                .recursion_builder(
                     // A single recursive relation; its arity is inferred, so
                     // none is supplied.
                     |child_circuit| {
