@@ -772,48 +772,10 @@ where
 mod test {
     use std::num::NonZeroU64;
 
+    use crate::operator::dynamic::recursive::test::reachability::{
+        Edge, edges_data, expected_reachable,
+    };
     use crate::{Circuit, Runtime, operator::Generator, typed_batch::OrdZSet, utils::Tup2, zset};
-
-    type Edge = Tup2<usize, usize>;
-
-    /// Changes to the edges relation, shared by the tests below.  Copied from
-    /// the dynamic-layer tests so the builder API is checked against the exact
-    /// same fixture as [`recursive`](crate::ChildCircuit::recursive) and
-    /// [`recursive_dynamic`](crate::ChildCircuit::recursive_dynamic).
-    fn edges_data() -> Vec<OrdZSet<Edge>> {
-        vec![
-            zset! { Tup2(1, 2) => 1 },
-            zset! { Tup2(2, 3) => 1 },
-            zset! { Tup2(1, 3) => 1 },
-            zset! { Tup2(3, 1) => 1 },
-            zset! { Tup2(3, 1) => -1 },
-            zset! { Tup2(1, 2) => -1 },
-            zset! { Tup2(2, 4) => 1, Tup2(4, 1) => 1 },
-            zset! { Tup2(2, 3) => -1, Tup2(3, 2) => 1 },
-        ]
-    }
-
-    /// Expected output to the reachable relation.
-    fn expected_reachable() -> Vec<OrdZSet<Edge>> {
-        vec![
-            zset! { Tup2(1, 2) => 1 },
-            zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-            zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-            zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1,
-            Tup2(1, 2) => 1, Tup2(1, 3) => 1, Tup2(2, 3) => 1,
-            Tup2(2, 1) => 1, Tup2(3, 1) => 1, Tup2(3, 2) => 1 },
-            zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-            zset! { Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
-            zset! { Tup2(1, 3) => 1, Tup2(2, 3) => 1, Tup2(2, 4) => 1,
-            Tup2(2, 1) => 1, Tup2(4, 1) => 1, Tup2(4, 3) => 1 },
-            zset! { Tup2(1, 1) => 1, Tup2(2, 2) => 1, Tup2(3, 3) => 1,
-            Tup2(4, 4) => 1, Tup2(1, 2) => 1, Tup2(1, 3) => 1,
-            Tup2(1, 4) => 1, Tup2(2, 1) => 1, Tup2(2, 3) => 1,
-            Tup2(2, 4) => 1, Tup2(3, 1) => 1, Tup2(3, 2) => 1,
-            Tup2(3, 4) => 1, Tup2(4, 1) => 1, Tup2(4, 2) => 1,
-            Tup2(4, 3) => 1 },
-        ]
-    }
 
     /// Transitive closure via [`RecursionBuilder`] over a *single* recursive
     /// variable.  Must reproduce the output of the single-`Stream`

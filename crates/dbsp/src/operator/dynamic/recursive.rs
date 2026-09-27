@@ -259,7 +259,7 @@ where
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use crate::{
         Circuit, Runtime, Stream, operator::Generator, typed_batch::OrdZSet, utils::Tup2, zset,
     };
@@ -370,7 +370,7 @@ mod test {
         }
     }
 
-    mod reachability {
+    pub(crate) mod reachability {
         use super::*;
         use crate::{
             DBSPHandle, FallbackZSet, OutputHandle, RootCircuit,
@@ -381,10 +381,10 @@ mod test {
         use std::ops::Range;
         use uuid::Uuid;
 
-        type Edge = Tup2<usize, usize>;
+        pub(crate) type Edge = Tup2<usize, usize>;
 
         /// Changes to the edges relation.
-        fn edges_data() -> Vec<OrdZSet<Edge>> {
+        pub(crate) fn edges_data() -> Vec<OrdZSet<Edge>> {
             vec![
                 zset! { Tup2(1, 2) => 1 },
                 zset! { Tup2(2, 3) => 1},
@@ -398,7 +398,7 @@ mod test {
         }
 
         /// Expected output to the reachable relation.
-        fn expected_reachable() -> Vec<OrdZSet<Edge>> {
+        pub(crate) fn expected_reachable() -> Vec<OrdZSet<Edge>> {
             vec![
                 zset! { Tup2(1, 2) => 1 },
                 zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
@@ -421,7 +421,7 @@ mod test {
 
         /// Output of one recursive relation: the changes it makes in each
         /// transaction.
-        type Deltas = OutputHandle<SpineSnapshot<OrdZSet<Edge>>>;
+        pub(crate) type Deltas = OutputHandle<SpineSnapshot<OrdZSet<Edge>>>;
 
         /// Runs a reachability circuit over [`edges_data`], checkpointing it
         /// halfway through and restarting it from that checkpoint.
@@ -438,7 +438,7 @@ mod test {
         /// backfill: the checkpoint is the only place that state can come from.
         /// A scope that came back empty computes the wrong changes and fails
         /// the comparison.
-        fn checkpoint_and_restart<F>(build: F)
+        pub(crate) fn checkpoint_and_restart<F>(build: F)
         where
             F: Fn(&mut RootCircuit, usize) -> Vec<Deltas> + Clone + Send + Sync + 'static,
         {
