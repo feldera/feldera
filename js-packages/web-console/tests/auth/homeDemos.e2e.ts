@@ -12,6 +12,7 @@ test.describe('Home page demos on an authenticated instance', () => {
     // `/v0/config/demos` requires a bearer token, so this fails whenever the
     // console fetches the demo list before its auth interceptor is in place.
     await expect(page.getByText('Explore use cases and tutorials')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Feldera Basics', exact: true })).toBeVisible()
+    // The whole card is the button, so its name also holds the demo type and description.
+    await expect(page.getByRole('button', { name: 'Feldera Basics' })).toBeVisible()
   })
 })
