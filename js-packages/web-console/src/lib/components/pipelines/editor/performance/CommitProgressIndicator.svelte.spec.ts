@@ -102,7 +102,35 @@ describe('CommitProgressIndicator.svelte', () => {
       await expect.element(rowTitle('Transaction')).toBeInTheDocument()
       await expect.element(page.getByText('Committing')).toBeInTheDocument()
       await expect.element(page.getByText('ID:7')).toBeInTheDocument()
-      await expect.element(page.getByText(/Completed\s*3\s*out of\s*10/)).toBeInTheDocument()
+      await expect.element(page.getByText(/Completed ops\s*3\s*out of\s*10/)).toBeInTheDocument()
+    })
+
+    it('keeps the old transaction on screen until its bar is full', async () => {
+      const { rerender } = await transacting()
+      await rerender({
+        metrics: makeMetrics({
+          transaction_status: 'TransactionInProgress',
+          transaction_id: 8,
+          commit_progress: progress(1, 0, 9)
+        })
+      })
+      // First, the bar of transaction 7 moves to 100% in half a poll period.
+      await expect.element(page.getByText('ID:7')).toBeInTheDocument()
+      await expect.element(page.getByText('Committing')).toBeInTheDocument()
+      await expect.element(page.getByText(/Completed ops\s*3\s*out of\s*10/)).toBeInTheDocument()
+
+      await expect.element(page.getByText('ID:8'), { timeout: 3000 }).toBeInTheDocument()
+      await expect.element(page.getByText('Started')).toBeInTheDocument()
+      await expect.element(page.getByText(/Completed ops\s*1\s*out of\s*10/)).toBeInTheDocument()
+    })
+
+    it('keeps an ended transaction on screen until its bar is full', async () => {
+      const { rerender } = await transacting()
+      await rerender({ metrics: makeMetrics({ transaction_id: 7 }) })
+      await expect.element(page.getByText('Committing')).toBeInTheDocument()
+
+      await expect.element(page.getByText('None'), { timeout: 3000 }).toBeInTheDocument()
+      await expect.element(page.getByText('ID:7')).not.toBeInTheDocument()
     })
 
     it('hides the bootstrapping row', async () => {
@@ -126,7 +154,7 @@ describe('CommitProgressIndicator.svelte', () => {
       await bootstrapping()
       await expect.element(rowTitle('Bootstrapping')).toBeInTheDocument()
       await expect.element(page.getByText('Backfilling')).toBeInTheDocument()
-      await expect.element(page.getByText(/Completed\s*1\s*out of\s*4/)).toBeInTheDocument()
+      await expect.element(page.getByText(/Completed ops\s*1\s*out of\s*4/)).toBeInTheDocument()
     })
 
     it('keeps the transaction row in place, reporting no transaction', async () => {

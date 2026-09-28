@@ -47,9 +47,11 @@
     idle="disable"
     resetKey={transactionId}
   >
-    {#snippet detail()}
+    {#snippet detail(shownTransactionId)}
       <div class="font-dm-mono text-sm text-nowrap">
-        <span class="select-none">ID:</span>{transactionId}
+        <span class="select-none">ID:</span><span class="text-base font-bold"
+          >{shownTransactionId}</span
+        >
       </div>
     {/snippet}
   </CommitProgressRow>
