@@ -15,4 +15,5 @@
 mod closure;
 mod harness;
 mod parsing;
+mod points_to;
 mod tree;
