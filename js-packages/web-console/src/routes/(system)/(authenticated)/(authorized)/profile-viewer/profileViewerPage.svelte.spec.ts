@@ -124,6 +124,7 @@ vi.mock('$lib/services/supportBundleHistory', async (importOriginal) => ({
   resolveStoredBundle
 }))
 
+import { fakeHandle } from '$lib/services/testSupportBundleHelpers'
 // These imports come after the vi.mock calls above, so that the mocks are in place.
 import ProfileViewerPage from './+page.svelte'
 
@@ -137,16 +138,6 @@ const historyEntry = () => ({
   ops: { bytes: () => 0, read: readArchive, requestPermission }
 })
 const BUNDLE = historyEntry()
-
-/**
- * Stands in for the `FileSystemFileHandle` the picker returns. Only `name` and
- * `getFile` are reached from here.
- */
-const fakeHandle = (name: string) => ({
-  name,
-  kind: 'file',
-  getFile: async () => new File(['bundle contents'], name)
-})
 
 type PageData = {
   pipelineName?: string

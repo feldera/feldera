@@ -1,13 +1,12 @@
 <script lang="ts">
   /**
-   * "Open support bundle": the button and the dialog it opens.
+   * The "Open support bundle" dialog. Put it in `useGlobalDialog().dialog` to show it.
    *
-   * The dialog lists the bundles the user opened before, and the button at the bottom
+   * It lists the bundles the user opened before, and the button at the bottom
    * left of it picks a new one from disk. Both open a profile viewer tab, and that tab
    * reads the archive out of the bundle history itself.
    */
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
-  import SupportBundlePopup from '$lib/components/supportBundle/SupportBundlePopup.svelte'
   import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { openStoredBundleTab } from '$lib/compositions/profileBundleHandoff'
@@ -19,15 +18,7 @@
     isBundleCacheRequired,
     markBundleOpenedNow
   } from '$lib/services/supportBundleHistory'
-
-  const {
-    btnClass,
-    onOpen
-  }: {
-    btnClass?: string
-    /** Runs when the dialog opens. */
-    onOpen?: () => void
-  } = $props()
+  import SupportBundlePopup from './SupportBundlePopup.svelte'
 
   const history = useSupportBundleHistory()
   const globalDialog = useGlobalDialog()
@@ -104,71 +95,58 @@
     : 'Recent support bundles'
 </script>
 
-<button
-  class="fd fd-stethoscope btn-icon preset-tonal-surface text-[24px] {btnClass}"
-  onclick={() => {
-    globalDialog.dialog = openBundleDialog
-    onOpen?.()
-  }}
-  title="Open support bundle"
-  data-testid="btn-open-support-bundle"
->
-</button>
-
-{#snippet openBundleDialog()}
-  <GenericDialog content={{ title: historyTitle }}>
-    <!-- As wide as the dialog and no wider, however long the names are, so that the
-         list scrolls up and down only. -->
-    <div
-      class="scrollbar flex max-h-[50vh] w-full min-w-0 flex-col overflow-y-auto"
-      data-testid="box-all-bundles"
-    >
-      {#each history.current as entry (entry.id)}
-        <button
-          class="flex min-w-0 items-baseline justify-between gap-6 rounded px-2 py-2 text-left hover:preset-tonal-surface"
-          title={entry.name}
-          onclick={() => openBundle(entry)}
-          data-testid="btn-open-bundle-from-list"
-        >
-          <!-- A name too long for its row ends in an ellipsis. The `title` above
-               carries the whole name, for the tooltip. -->
-          <span class="min-w-0 truncate" data-testid="box-bundle-name">{entry.name}</span>
-          <!-- Keeps its width and its place at the row's right edge. The name gives up
-           the space instead. -->
-          <span
-            class="shrink-0 whitespace-nowrap text-surface-700-300"
-            data-testid="box-bundle-opened-ago"
-          >
-            {formatElapsedTime(new Date(entry.openedAt), 'dhm').trim()} ago
-          </span>
-        </button>
-      {:else}
-        <span class="px-2 py-2 text-surface-700-300">No support bundles opened recently</span>
-      {/each}
-    </div>
-    <div class="flex justify-between">
-      <!-- This button opens the file picker immediately. The popup then shows a
-           confirm button, because the browser opens the viewer tab
-           only after receiving a "user activation" from a new click. -->
-      <SupportBundlePopup mode="pick" align="left" drop="up" onOpened={closeDialog}>
-        {#snippet trigger(pick)}
-          <button
-            class="btn preset-outlined-primary-500"
-            onclick={pick}
-            data-testid="btn-pick-support-bundle"
-          >
-            <span class="fd fd-file-search text-[18px]"></span>
-            Upload support bundle
-          </button>
-        {/snippet}
-      </SupportBundlePopup>
+<GenericDialog content={{ title: historyTitle }}>
+  <!-- As wide as the dialog and no wider, however long the names are, so that the
+       list scrolls up and down only. -->
+  <div
+    class="scrollbar flex max-h-[50vh] w-full min-w-0 flex-col overflow-y-auto"
+    data-testid="box-all-bundles"
+  >
+    {#each history.current as entry (entry.id)}
       <button
-        class="btn preset-tonal-surface"
-        onclick={clearHistory}
-        data-testid="btn-clear-bundle-history"
+        class="flex min-w-0 items-baseline justify-between gap-6 rounded px-2 py-2 text-left hover:preset-tonal-surface"
+        title={entry.name}
+        onclick={() => openBundle(entry)}
+        data-testid="btn-open-bundle-from-list"
       >
-        Clear history
+        <!-- A name too long for its row ends in an ellipsis. The `title` above
+             carries the whole name, for the tooltip. -->
+        <span class="min-w-0 truncate" data-testid="box-bundle-name">{entry.name}</span>
+        <!-- Keeps its width and its place at the row's right edge. The name gives up
+         the space instead. -->
+        <span
+          class="shrink-0 whitespace-nowrap text-surface-700-300"
+          data-testid="box-bundle-opened-ago"
+        >
+          {formatElapsedTime(new Date(entry.openedAt), 'dhm').trim()} ago
+        </span>
       </button>
-    </div>
-  </GenericDialog>
-{/snippet}
+    {:else}
+      <span class="px-2 py-2 text-surface-700-300">No support bundles opened recently</span>
+    {/each}
+  </div>
+  <div class="flex justify-between">
+    <!-- This button opens the file picker immediately. The popup then shows a
+         confirm button, because the browser opens the viewer tab
+         only after receiving a "user activation" from a new click. -->
+    <SupportBundlePopup mode="pick" align="left" drop="up" onOpened={closeDialog}>
+      {#snippet trigger(pick)}
+        <button
+          class="btn preset-outlined-primary-500"
+          onclick={pick}
+          data-testid="btn-pick-support-bundle"
+        >
+          <span class="fd fd-file-search text-[18px]"></span>
+          Upload support bundle
+        </button>
+      {/snippet}
+    </SupportBundlePopup>
+    <button
+      class="btn preset-tonal-surface"
+      onclick={clearHistory}
+      data-testid="btn-clear-bundle-history"
+    >
+      Clear history
+    </button>
+  </div>
+</GenericDialog>

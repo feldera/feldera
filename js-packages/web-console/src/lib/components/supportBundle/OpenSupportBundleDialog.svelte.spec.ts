@@ -1,6 +1,5 @@
 /**
- * Tests for the "Open support bundle" button and the dialog it opens: the list of
- * bundles opened before, with the button that picks a new one and "Clear history" in
+ * Tests for the "Open support bundle" dialog: the list of bundles opened before, with the button that picks a new one and "Clear history" in
  * the row below them.
  *
  * These run in the browser project. The history is the real one, IndexedDB included,
@@ -9,6 +8,7 @@
  * a new window through, and so is the request for permission to read a file.
  */
 
+import { createRawSnippet, mount, unmount } from 'svelte'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render } from 'vitest-browser-svelte'
 
@@ -60,11 +60,11 @@ vi.mock('$lib/services/supportBundleHistory', async (importOriginal) => {
   addToBundleHistory.mockImplementation(original.addToBundleHistory)
   return { ...original, addToBundleHistory }
 })
-// Only the call that would put a browser permission prompt on screen is stubbed. A
-// stand-in handle read back out of the database has no permission method, so the real
-// operation answers true without asking, and this spy answers with whatever a test
-// asks for instead. An entry stored as a copy still offers nothing, which is what the
-// component reads to decide that it need not ask at all.
+// This mock replaces only `requestPermission`, because the real one can show a browser
+// permission prompt. The test handles in the database are fake and have no permission
+// method, so the real `requestPermission` always returns true. The spy returns what
+// each test sets. Entries stored as a copy still get no `requestPermission`, because
+// the component skips the permission check when that method is absent.
 vi.mock('$lib/services/supportBundleStorage', async (importOriginal) => {
   const original = await importOriginal<typeof import('$lib/services/supportBundleStorage')>()
   return {
@@ -81,18 +81,8 @@ import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
 import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
 import { clearBundleHistory, listBundleHistory } from '$lib/services/supportBundleHistory'
 import { putBundleRecord } from '$lib/services/supportBundleStore'
-import OpenSupportBundleButton from './OpenSupportBundleButton.svelte'
-
-/**
- * Stands in for a `FileSystemFileHandle`. Its methods are put on the prototype: the
- * history writes a handle with structured clone, which copies only an object's own
- * properties and turns down functions among them.
- */
-const fakeHandle = (name: string) =>
-  Object.create(
-    { getFile: async () => new File(['bundle contents'], name) },
-    { name: { value: name, enumerable: true }, kind: { value: 'file', enumerable: true } }
-  ) as FileSystemFileHandle
+import { fakeHandle } from '$lib/services/testSupportBundleHelpers'
+import OpenSupportBundleDialog from './OpenSupportBundleDialog.svelte'
 
 const bundleName = (index: number) => `pipeline-alpha-support-bundle-2026-01-${index}.zip`
 const BUNDLE_COUNT = 10
@@ -107,8 +97,9 @@ const seedHistory = async (names: string[]) => {
 }
 
 /**
- * Seeds bundles opened `openedMinutesAgo` ago. `addToBundleHistory` stamps the current
- * time, so an entry with a past `openedAt` is written directly.
+ * Clears the history, then adds each bundle as if the user opened it
+ * `openedMinutesAgo` minutes ago. `addToBundleHistory` always records the current time
+ * as `openedAt`, so this writes the records to the store directly.
  */
 const seedHistoryOpenedAgo = async (bundles: { name: string; openedMinutesAgo: number }[]) => {
   await clearBundleHistory()
@@ -123,22 +114,20 @@ const seedHistoryOpenedAgo = async (bundles: { name: string; openedMinutesAgo: n
   }
 }
 
-let mounted: { unmount: () => Promise<void> } | undefined
 let modal: { unmount: () => Promise<void> } | undefined
 
-/** Mounts the button on its own, the way the page header renders it. */
-const renderButton = () => {
-  const rendered = render(OpenSupportBundleButton)
-  mounted = rendered as any
-  const container = rendered.container
-  return {
-    container,
-    button: container.querySelector<HTMLElement>('[data-testid=btn-open-support-bundle]')!
+/** The dialog as the pages put it in the global dialog host. */
+const supportBundleDialog = createRawSnippet(() => ({
+  render: () => '<div></div>',
+  setup: (target) => {
+    const dialog = mount(OpenSupportBundleDialog, { target })
+    return () => unmount(dialog)
   }
-}
+}))
 
-/** Mounts the shared modal host with whatever the button opened. */
+/** Opens the dialog through the shared modal host, the way the pages do. */
 const renderOpenDialog = () => {
+  useGlobalDialog().dialog = supportBundleDialog
   const target = document.createElement('div')
   document.body.appendChild(target)
   modal = render(GlobalModal, {
@@ -148,16 +137,14 @@ const renderOpenDialog = () => {
   return target
 }
 
-/** The button, its dialog, and a history that has finished loading. */
+/** The dialog, with a history that has finished loading. */
 const openDialog = async () => {
-  const { container, button } = renderButton()
-  button.click()
   const dialog = renderOpenDialog()
   // The names, not their number: the list is module-level state that outlives one
   // test, so a stale list of the same length would satisfy a count.
   const stored = (await listBundleHistory()).map((entry) => entry.name)
   await expect.poll(() => listedNames(dialog)).toEqual(stored)
-  return { container, button, dialog }
+  return { dialog }
 }
 
 const listedRows = (dialog: HTMLElement) => [
@@ -181,7 +168,7 @@ const probeStyle = (container: HTMLElement, className: string) => {
   return { color, backgroundColor, borderTopColor }
 }
 
-describe('OpenSupportBundleButton.svelte', () => {
+describe('OpenSupportBundleDialog.svelte', () => {
   beforeEach(async () => {
     // Skeleton's palette lives behind the theme selector. Without it the color
     // assertions below would compare two inherited blacks.
@@ -198,62 +185,21 @@ describe('OpenSupportBundleButton.svelte', () => {
   })
 
   afterEach(async () => {
-    await mounted?.unmount()
-    mounted = undefined
     await modal?.unmount()
     modal = undefined
     useGlobalDialog().dialog = null
     vi.unstubAllGlobals()
   })
 
-  describe('the button', () => {
-    it('is a tonal icon button whose title says what it opens', async () => {
-      const { container, button } = renderButton()
+  describe('the title', () => {
+    it('names the history once, with a button to close the dialog', async () => {
+      const { dialog } = await openDialog()
 
-      // The icon carries no text, so the title is what names the button.
-      expect(button.title).toBe('Open support bundle')
-      expect(button.textContent!.trim()).toBe('')
-      expect(getComputedStyle(button).backgroundColor).toBe(
-        probeStyle(container, 'preset-tonal-surface').backgroundColor
-      )
-    })
-
-    it('opens the dialog and nothing else', async () => {
-      const { container, button } = renderButton()
-
-      // Nothing of the dialog exists until the button is clicked.
-      expect(container.querySelector('[data-testid=box-all-bundles]')).toBe(null)
-      expect(useGlobalDialog().dialog).toBe(null)
-
-      button.click()
-
-      expect(useGlobalDialog().dialog).not.toBe(null)
-      const dialog = renderOpenDialog()
-      // The dialog's title names the history it lists.
       expect(
         dialog.querySelector<HTMLElement>('[data-testid=box-dialog-title]')!.textContent
       ).toContain('Recent support bundles')
       expect(dialog.textContent!.match(/Recent support bundles/g)).toHaveLength(1)
       expect(dialog.querySelector('[aria-label="Close dialog"]')).toBeTruthy()
-    })
-
-    it('takes a class for the caller to place it with, and reports opening', async () => {
-      // What the navigation drawer needs: the button centred in its column, and a
-      // callback that closes the drawer.
-      const onOpen = vi.fn()
-      const rendered = render(OpenSupportBundleButton, { btnClass: 'self-center', onOpen })
-      mounted = rendered as any
-      const button = rendered.container.querySelector<HTMLElement>(
-        '[data-testid=btn-open-support-bundle]'
-      )!
-
-      expect(getComputedStyle(button).alignSelf).toBe('center')
-      expect(onOpen).not.toHaveBeenCalled()
-
-      button.click()
-
-      expect(onOpen).toHaveBeenCalledOnce()
-      expect(useGlobalDialog().dialog).not.toBe(null)
     })
   })
 
@@ -273,7 +219,7 @@ describe('OpenSupportBundleButton.svelte', () => {
       // Flush with the row's left edge, so it lines up with the bundles above it.
       const row = clear.parentElement!.getBoundingClientRect()
       expect(Math.abs(pick.getBoundingClientRect().left - row.left)).toBeLessThanOrEqual(1)
-      // Outlined in primary, like the button that opened the dialog.
+      // Outlined in primary, not filled.
       expect(getComputedStyle(pick).borderTopColor).toBe(
         probeStyle(dialog, 'border-primary-500').borderTopColor
       )

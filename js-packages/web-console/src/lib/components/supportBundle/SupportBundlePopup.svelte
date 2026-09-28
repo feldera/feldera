@@ -81,10 +81,11 @@
   }
 
   async function pickBundle() {
-    // Choosing again supersedes whatever is waiting for confirmation, and dropping it
-    // here covers the user who then dismisses the picker: a confirmation left standing
-    // would name a file the user has moved on from. Clearing it here rather than leaving
-    // it to the popup's outside-click handler keeps the two independent of each other.
+    // A file waits for confirmation when the user picked it but did not yet click the
+    // confirm button that opens it in the viewer. A new pick replaces that file, so
+    // remove it now. If the user then closes the picker without a choice, no confirm
+    // button stays for the old file. This does not depend on the popup's outside-click
+    // handler.
     dismissPicked()
     if (!picker.isSupported) {
       // Clicking the input closes the dropdown, because the input sits outside it.

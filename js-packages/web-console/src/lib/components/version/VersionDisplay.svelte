@@ -19,13 +19,13 @@
 {/snippet}
 
 <div class="relative text-surface-600-400">
-  <span class="flex gap-2">{@render logo('fill-surface-600-400')} {versionText}</span>
+  <span class="flex gap-3">{@render logo('fill-surface-600-400')} {versionText}</span>
   {#if revisionText}
     <Popover
       class="bg-white-dark z-10 -mt-11 -mr-20 ml-4 w-full max-w-[400px] pt-2 pl-2 text-surface-950-50"
       placement="bottom-end"
     >
-      <span class="flex gap-2">{@render logo('fill-surface-950-50')} {versionText}</span>
+      <span class="flex gap-3">{@render logo('fill-surface-950-50')} {versionText}</span>
       <ClipboardCopyButton class="absolute top-0 right-0 m-2" value={versionText + revisionText}
       ></ClipboardCopyButton>
       <br class="select-none" />
