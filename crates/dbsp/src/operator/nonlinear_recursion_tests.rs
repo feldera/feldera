@@ -12,6 +12,7 @@
 //! plain Rust.
 //! 
 //! The [`harness`] module contains common test harness for these tests.
+mod bill_of_materials;
 mod closure;
 mod galen;
 mod harness;
