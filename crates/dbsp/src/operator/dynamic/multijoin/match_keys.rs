@@ -27,7 +27,7 @@ use futures::{Stream as AsyncStream, StreamExt};
 use size_of::{Context, SizeOf};
 use std::{
     cell::{Cell, RefCell},
-    collections::{BTreeMap, HashMap, hash_map::Entry},
+    collections::{BTreeMap, HashMap},
     marker::PhantomData,
     ops::Deref,
     pin::Pin,
@@ -558,17 +558,23 @@ where
 
                     start += run_length;
 
-                    if let Entry::Vacant(vacant) = self.future_outputs.borrow_mut().entry(batch_time) {
-                        // Nothing searches this spine until it is output by the
-                        // operator, so it merges as an accumulator does.
-                        let mut spine = <Spine<O> as Trace>::new(
-                            &self.output_factories,
-                            self.name.clone(),
-                            TraceRole::Accumulator,
-                        );
-                        spine.insert(O::dyn_from_tuples(&self.output_factories, (), &mut batch)).await;
-                        vacant.insert(spine);
-                    }
+                    // An earlier clock cycle may already have computed updates
+                    // for `batch_time`; add these to them.
+                    let updates = O::dyn_from_tuples(&self.output_factories, (), &mut batch);
+                    self.future_outputs
+                        .borrow_mut()
+                        .entry(batch_time)
+                        .or_insert_with(|| {
+                            // Nothing searches this spine until it is output by
+                            // the operator, so it merges as an accumulator does.
+                            <Spine<O> as Trace>::new(
+                                &self.output_factories,
+                                self.name.clone(),
+                                TraceRole::Accumulator,
+                            )
+                        })
+                        .insert(updates)
+                        .await;
                     batch.clear();
                 }
 
