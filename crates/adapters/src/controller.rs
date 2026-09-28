@@ -6521,18 +6521,40 @@ type StreamEndpointMap = BTreeMap<String, (OutputCollectionHandles, BTreeSet<End
 /// read second would find it empty, and its endpoints would never receive
 /// output.  The first index of a materialized view shares the view's handles,
 /// so endpoints on that index join the view's group.
+///
+/// Every output handle in the catalog has a group from the start, so
+/// `push_output` reads every handle after every step, whether or not the
+/// handle has endpoints.  A handle keeps its output until someone reads it,
+/// and the handle of a materialized view receives output even without
+/// endpoints, so a handle that nobody read could pass stale output to the
+/// first endpoint attached to it.
 struct OutputEndpoints {
     by_id: BTreeMap<EndpointId, OutputEndpointDescr>,
 
-    /// Endpoints grouped by the name of the output handles they read from.
+    /// The endpoints of each output handle in the catalog, keyed by the
+    /// handle's name in canonical form.
     by_stream: StreamEndpointMap,
 }
 
 impl OutputEndpoints {
-    fn new() -> Self {
+    /// Creates a group with no endpoints for each output handle in `catalog`.
+    ///
+    /// # Arguments
+    ///
+    /// * `catalog` - The circuit's catalog.
+    ///
+    /// # Returns
+    ///
+    /// Output endpoints with no endpoint attached.
+    fn new(catalog: &dyn CircuitCatalog) -> Self {
+        let by_stream = catalog
+            .output_iter()
+            .map(|(name, handles)| (name.name(), (handles.clone(), BTreeSet::new())))
+            .collect();
+
         Self {
             by_id: BTreeMap::new(),
-            by_stream: BTreeMap::new(),
+            by_stream,
         }
     }
 
@@ -6557,19 +6579,33 @@ impl OutputEndpoints {
             .find(|ep| ep.endpoint_name == endpoint_name)
     }
 
+    /// Adds an endpoint to the group of the output handles it reads from.
+    ///
+    /// # Arguments
+    ///
+    /// * `endpoint_id` - Id of the endpoint.
+    /// * `endpoint_descr` - The endpoint.  Its `stream_name` names the group.
+    ///
+    /// # Returns
+    ///
+    /// An error if no group has that name.  The endpoint's handles then came
+    /// from the catalog under another name, and reading them in a new group
+    /// would starve the group that already reads them.
     fn insert(
         &mut self,
         endpoint_id: EndpointId,
-        handles: OutputCollectionHandles,
         endpoint_descr: OutputEndpointDescr,
-    ) {
+    ) -> Result<(), ControllerError> {
+        let Some((handles, endpoints)) = self.by_stream.get_mut(&endpoint_descr.stream_name) else {
+            return Err(ControllerError::unknown_output_stream(
+                &endpoint_descr.endpoint_name,
+                &endpoint_descr.stream_name,
+            ));
+        };
         handles.enable_count.enable();
-        self.by_stream
-            .entry(endpoint_descr.stream_name.clone())
-            .or_insert_with(|| (handles, BTreeSet::new()))
-            .1
-            .insert(endpoint_id);
+        endpoints.insert(endpoint_id);
         self.by_id.insert(endpoint_id, endpoint_descr);
+        Ok(())
     }
 
     fn remove(&mut self, endpoint_id: &EndpointId) -> Option<OutputEndpointDescr> {
@@ -7335,6 +7371,7 @@ impl ControllerInner {
         let session_ctxt = create_session_context(&config, datafusion_runtime_env.clone());
         let controller = Arc::new_cyclic(|weak| {
             let adhoc_tables = Self::initialize_adhoc_queries(&session_ctxt, &*catalog, weak);
+            let outputs = OutputEndpoints::new(&*catalog);
             Self {
                 status,
                 secrets_dir: config.secrets_dir().to_path_buf(),
@@ -7347,7 +7384,7 @@ impl ControllerInner {
                 lir,
                 trace_snapshots: Default::default(),
                 next_input_id: Atomic::new(0),
-                outputs: ShardedLock::new(OutputEndpoints::new()),
+                outputs: ShardedLock::new(outputs),
                 next_output_id: Atomic::new(0),
                 layout: runtime.layout().clone(),
                 runtime: runtime.downgrade(),
@@ -8235,7 +8272,7 @@ impl ControllerInner {
         if outputs.lookup_by_name(endpoint_name).is_some() {
             Err(ControllerError::duplicate_output_endpoint(endpoint_name))?;
         }
-        outputs.insert(endpoint_id, handles.clone(), endpoint_descr);
+        outputs.insert(endpoint_id, endpoint_descr)?;
         drop(outputs);
 
         // We succeeded, cancel removal of the endpoint.
