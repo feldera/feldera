@@ -42,7 +42,7 @@ use std::rc::Rc;
 use std::{
     borrow::Cow,
     cmp::{Ordering, min},
-    collections::{HashMap, hash_map::Entry},
+    collections::HashMap,
     marker::PhantomData,
     ops::Deref,
     panic::Location,
@@ -1702,11 +1702,17 @@ where
 
                     start += run_length;
 
-                    if let Entry::Vacant(vacant) = self.future_outputs.borrow_mut().entry(batch_time) {
-                        let mut spine = <Spine<Z> as Trace>::new(&self.output_factories, self.name.get());
-                        spine.insert(Z::dyn_from_tuples(&self.output_factories, (), &mut batch)).await;
-                        vacant.insert(spine);
-                    };
+                    // An earlier clock cycle may already have computed updates
+                    // for `batch_time`; add these to them.
+                    let updates = Z::dyn_from_tuples(&self.output_factories, (), &mut batch);
+                    self.future_outputs
+                        .borrow_mut()
+                        .entry(batch_time)
+                        .or_insert_with(|| {
+                            <Spine<Z> as Trace>::new(&self.output_factories, self.name.get())
+                        })
+                        .insert(updates)
+                        .await;
                     batch.clear();
                 }
 
@@ -1804,10 +1810,10 @@ where
 #[cfg(test)]
 pub(crate) mod test {
     use crate::{
-        DBData, Runtime, Stream, ZWeight,
+        DBData, NestedCircuit, Runtime, Stream, ZWeight,
         circuit::CircuitConfig,
         indexed_zset,
-        typed_batch::{OrdZSet, TypedBatch},
+        typed_batch::{OrdIndexedZSet, OrdZSet, TypedBatch},
         utils::Tup2,
         zset,
     };
@@ -2163,6 +2169,104 @@ pub(crate) mod test {
                 expected_outputs.next().unwrap()
             );
         }
+    }
+
+    /// A level of a seed in [`check_join_across_iterations`]: `(seed, level)`.
+    pub(crate) type Level = Tup2<u64, u64>;
+
+    /// Checks that a join in a recursive scope keeps every update it computes
+    /// for a later iteration, including updates that several iterations
+    /// compute for the same one.
+    ///
+    /// Each seed derives its level `n` in iteration `n`, and the recursion
+    /// pairs up all levels with `join`.  In the second transaction, every
+    /// level of the new seed meets the levels that the first transaction
+    /// derived in later iterations, so consecutive iterations compute pairs
+    /// for the same later iterations.
+    ///
+    /// # Arguments
+    ///
+    /// * `join` - joins a stream of levels, all under the same key, with
+    ///   itself, returning every pair of levels.
+    pub(crate) fn check_join_across_iterations<F>(join: F)
+    where
+        F: Fn(
+                &Stream<NestedCircuit, OrdIndexedZSet<u64, Level>>,
+            ) -> Stream<NestedCircuit, OrdZSet<Tup2<Level, Level>>>
+            + Clone
+            + Send
+            + 'static,
+    {
+        const MAX_LEVEL: u64 = 3;
+
+        for workers in [1, 4] {
+            let join = join.clone();
+            let (mut circuit, (seeds_handle, pairs_handle)) =
+                Runtime::init_circuit(workers, move |circuit| {
+                    let (seeds, seeds_handle) = circuit.add_input_zset::<u64>();
+
+                    let (_levels, pairs) = circuit
+                        .recursive(
+                            |child,
+                             (levels, _pairs): (
+                                Stream<_, OrdZSet<Level>>,
+                                Stream<_, OrdZSet<Tup2<Level, Level>>>,
+                            )| {
+                                let seeds = seeds.delta0(child);
+
+                                let next_levels = seeds.map(|seed| Tup2(*seed, 0)).plus(
+                                    &levels.flat_map(|Tup2(seed, level)| {
+                                        (*level < MAX_LEVEL).then(|| Tup2(*seed, level + 1))
+                                    }),
+                                );
+
+                                // A single key, so that every level meets
+                                // every other level.
+                                let pairs = join(&levels.map_index(|level| (0, *level)));
+
+                                Ok((next_levels, pairs))
+                            },
+                        )
+                        .unwrap();
+
+                    Ok((
+                        seeds_handle,
+                        pairs.accumulate_integrate().accumulate_output(),
+                    ))
+                })
+                .unwrap();
+
+            for seeds in 1..=2 {
+                seeds_handle.push(seeds, 1);
+                circuit.transaction().unwrap();
+
+                let levels = (1..=seeds)
+                    .flat_map(|seed| (0..=MAX_LEVEL).map(move |level| Tup2(seed, level)))
+                    .collect::<Vec<_>>();
+                let expected = levels
+                    .iter()
+                    .flat_map(|level1| {
+                        levels
+                            .iter()
+                            .map(move |level2| Tup2(Tup2(*level1, *level2), 1))
+                    })
+                    .collect::<Vec<_>>();
+                assert_eq!(
+                    pairs_handle.concat().consolidate(),
+                    OrdZSet::from_keys((), expected),
+                    "workers: {workers}, seeds: {seeds}"
+                );
+            }
+
+            circuit.kill().unwrap();
+        }
+    }
+
+    #[test]
+    fn join_trace_accumulates_future_updates() {
+        check_join_across_iterations(|levels| {
+            levels.join(levels, |_key, level1, level2| Tup2(*level1, *level2))
+        });
     }
 
     fn antijoin_test(transaction: bool) {
