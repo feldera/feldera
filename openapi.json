@@ -7843,8 +7843,7 @@
             "description": "User identifier",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -7913,8 +7912,7 @@
             "description": "User identifier",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -8156,8 +8154,7 @@
             "description": "Tenant identifier",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
@@ -8226,8 +8223,7 @@
             "description": "Tenant identifier",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
             }
           }
         ],
