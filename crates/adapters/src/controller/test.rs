@@ -3504,6 +3504,109 @@ fn aliased_index_connector_receives_the_snapshot() {
     }
 }
 
+/// A connector attached to a materialized view between transactions receives
+/// no output from before it was attached, even when the next transaction
+/// takes several steps.
+///
+/// A materialized view's output handle receives every transaction's output,
+/// with or without connectors.  In an explicit transaction, the connector's
+/// group first reads the handle before the transaction commits, so the handle
+/// must not still hold the output of the transaction that committed before
+/// the connector was attached.
+#[test]
+fn connector_attached_between_transactions_receives_no_earlier_output() {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let input_path = tempdir.path().join("input.csv");
+    let output_path = tempdir.path().join("output.csv");
+    File::create_new(&input_path).unwrap();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": input_path.display().to_string(),
+                        "follow": true,
+                    },
+                },
+                "format": { "name": "csv" },
+            },
+        },
+        "outputs": {},
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &[],
+                &[Some("output")],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+
+    // The view has no connector while it processes these records.
+    append_input(&input_path, 0..100);
+    wait(
+        || {
+            controller
+                .status()
+                .global_metrics
+                .num_total_processed_records()
+                >= 100
+        },
+        OUTPUT_TIMEOUT_MS,
+    )
+    .unwrap();
+
+    // Attach a connector between transactions, then feed an explicit
+    // transaction, whose step reads the view's handle before the commit.
+    let output_config: OutputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_output1",
+        "transport": {
+            "name": "file_output",
+            "config": { "path": output_path.display().to_string() },
+        },
+        "format": { "name": "csv", "config": {} },
+    }))
+    .unwrap();
+    controller
+        .inner
+        .connect_output("test_output1", &output_config, None)
+        .unwrap();
+    controller.start_transaction().unwrap();
+    append_input(&input_path, 100..200);
+    wait(
+        || controller.status().num_total_circuit_input_records() >= 200,
+        OUTPUT_TIMEOUT_MS,
+    )
+    .unwrap();
+
+    controller.start_commit_transaction().unwrap();
+    wait(
+        || {
+            output_endpoint_metrics(&controller, "test_output1").total_processed_input_records
+                >= 200
+        },
+        OUTPUT_TIMEOUT_MS,
+    )
+    .unwrap();
+    controller.stop().unwrap();
+
+    check_file_contents(&output_path, 100..200);
+}
+
 /// Runs a basic test of suspend and resume, without fault tolerance.
 ///
 /// For each element of `rounds`, the test writes the specified number of
