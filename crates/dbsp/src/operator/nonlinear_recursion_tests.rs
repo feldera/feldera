@@ -14,4 +14,5 @@
 //! The [`harness`] module contains common test harness for these tests.
 mod closure;
 mod harness;
+mod parsing;
 mod tree;

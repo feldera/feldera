@@ -11,8 +11,8 @@ use std::collections::BTreeSet;
 use proptest::prelude::*;
 
 use super::harness::{
-    Program, Proposals, Transaction, ZSet, any_config, apply_proposals, check, configs, fixpoint,
-    map_steps, read_zset, set_after, set_zset, workloads,
+    Program, Transaction, ZSet, any_config, apply_proposals, check, configs, fixpoint, map_steps,
+    proposals, read_zset, set_after, set_zset, workloads,
 };
 use crate::{
     OutputHandle, RootCircuit, Stream, ZSetHandle, ZWeight, define_inner_star_join,
@@ -382,21 +382,6 @@ fn star_triggers() -> Vec<Vec<Transaction<(EdgeChanges, NodeChanges)>>> {
     ]
 }
 
-/// Generates proposed changes to a set.
-///
-/// # Arguments
-///
-/// * `element` - generates the set's elements.
-///
-/// # Returns
-///
-/// A strategy for up to four proposals.
-fn proposals<T: Clone + std::fmt::Debug>(
-    element: impl Strategy<Value = T>,
-) -> impl Strategy<Value = Proposals<T>> {
-    prop::collection::vec((element, any::<bool>()), 0..5)
-}
-
 /// Generates edges between `nodes` nodes, loops and cycles included.
 ///
 /// # Arguments
@@ -417,7 +402,7 @@ fn edge(nodes: u64) -> impl Strategy<Value = Edge> {
 ///
 /// A strategy for workloads.
 fn doubling_workloads() -> impl Strategy<Value = Vec<Transaction<EdgeChanges>>> {
-    workloads(proposals(edge(7)), 5, 3).prop_map(|raw| {
+    workloads(proposals(edge(7), 4), 5, 3).prop_map(|raw| {
         let mut edges = BTreeSet::new();
         map_steps(raw, |proposals| apply_proposals(&mut edges, &proposals))
     })
@@ -429,7 +414,7 @@ fn doubling_workloads() -> impl Strategy<Value = Vec<Transaction<EdgeChanges>>> 
 ///
 /// A strategy for workloads.
 fn mutual_workloads() -> impl Strategy<Value = Vec<Transaction<(EdgeChanges, EdgeChanges)>>> {
-    workloads((proposals(edge(6)), proposals(edge(6))), 5, 3).prop_map(|raw| {
+    workloads((proposals(edge(6), 4), proposals(edge(6), 4)), 5, 3).prop_map(|raw| {
         let (mut e, mut f) = (BTreeSet::new(), BTreeSet::new());
         map_steps(raw, |(e_proposals, f_proposals)| {
             (
@@ -446,7 +431,7 @@ fn mutual_workloads() -> impl Strategy<Value = Vec<Transaction<(EdgeChanges, Edg
 ///
 /// A strategy for workloads.
 fn star_workloads() -> impl Strategy<Value = Vec<Transaction<(EdgeChanges, NodeChanges)>>> {
-    workloads((proposals(edge(7)), proposals(0..7u64)), 5, 3).prop_map(|raw| {
+    workloads((proposals(edge(7), 4), proposals(0..7u64, 4)), 5, 3).prop_map(|raw| {
         let (mut edges, mut joinable) = (BTreeSet::new(), BTreeSet::new());
         map_steps(raw, |(edge_proposals, node_proposals)| {
             (

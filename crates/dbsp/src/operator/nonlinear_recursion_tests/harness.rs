@@ -320,6 +320,23 @@ pub(super) fn workloads<S: Strategy>(
     )
 }
 
+/// Generates proposed changes to a set.
+///
+/// # Arguments
+///
+/// * `element` - generates the set's elements.
+/// * `max` - the maximum number of proposals.
+///
+/// # Returns
+///
+/// A strategy for proposals.
+pub(super) fn proposals<T: Clone + Debug>(
+    element: impl Strategy<Value = T>,
+    max: usize,
+) -> impl Strategy<Value = Proposals<T>> {
+    prop::collection::vec((element, any::<bool>()), 0..=max)
+}
+
 /// Converts every step of a raw workload, in order.
 ///
 /// # Arguments
