@@ -215,10 +215,15 @@ fn cyk_triggers() -> Vec<Vec<Transaction<ParseInput>>> {
     };
     let setup = vec![grammar, tokens(0..8, 1)];
     vec![
-        // Append a token.
-        vec![setup.clone(), vec![tokens([8], 1)]],
-        // Append two tokens, in two steps of one transaction.
-        vec![setup.clone(), vec![tokens([8], 1), tokens([9], 1)]],
+        // Append a token, then delete the first one.
+        vec![setup.clone(), vec![tokens([8], 1)], vec![tokens([0], -1)]],
+        // Append two tokens, in two steps of one transaction, then delete one
+        // in the middle.
+        vec![
+            setup.clone(),
+            vec![tokens([8], 1), tokens([9], 1)],
+            vec![tokens([4], -1)],
+        ],
         // Append a token, then remove and restore one in the middle.
         vec![
             setup.clone(),
@@ -226,7 +231,8 @@ fn cyk_triggers() -> Vec<Vec<Transaction<ParseInput>>> {
             vec![tokens([4], -1)],
             vec![tokens([4], 1)],
         ],
-        // A second nonterminal that the old sentence can derive too.
+        // A second nonterminal that the old sentence can derive too, then
+        // a token deleted in the middle.
         vec![
             setup,
             vec![ParseInput {
@@ -234,6 +240,7 @@ fn cyk_triggers() -> Vec<Vec<Transaction<ParseInput>>> {
                 binary: vec![(Tup3(1, 1, 0), 1)],
                 ..ParseInput::default()
             }],
+            vec![tokens([4], -1)],
         ],
     ]
 }

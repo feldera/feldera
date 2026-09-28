@@ -452,7 +452,8 @@ fn tree_triggers() -> Vec<Vec<Transaction<TreeInput>>> {
     vec![
         // `x` of the uneven tree arrives in a later transaction.
         vec![vec![uneven_tree(None)], vec![set_x(3)]],
-        // The same in one transaction.
+        // The same in one transaction: a control, since a recursion's first
+        // run computes no output ahead of time.
         vec![vec![uneven_tree(Some(10))]],
         // Three trees, loaded one tree per step, then `x` of trees 1 and 3
         // set in two steps.

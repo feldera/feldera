@@ -305,20 +305,25 @@ fn chain() -> EdgeChanges {
 /// join in one iteration, and the path `9 -> 1` it yields reaches the join in
 /// the next.  Both meet paths of the chain found in later iterations, so the
 /// join computes output for the same later iterations in two consecutive
-/// iterations.
+/// iterations.  Paths have many derivations, and losing some of them loses no
+/// path; cutting the chain must retract every derivation of the paths across
+/// the cut, which exposes any that were lost.
 ///
 /// # Returns
 ///
 /// The workloads, each a list of transactions.
 fn doubling_triggers() -> Vec<Vec<Transaction<EdgeChanges>>> {
     let prepend = vec![edge_changes(&[(9, 0)], 1)];
+    let cut = |weight| vec![edge_changes(&[(4, 5)], weight)];
     vec![
-        // The trigger.
-        vec![vec![chain()], prepend.clone()],
-        // Two new edges, each in its own step of one transaction.
+        // The trigger, then the cut.
+        vec![vec![chain()], prepend.clone(), cut(-1)],
+        // Two new edges, each in its own step of one transaction, then the
+        // cut.
         vec![
             vec![chain()],
             vec![edge_changes(&[(9, 0)], 1), edge_changes(&[(10, 9)], 1)],
+            cut(-1),
         ],
         // The trigger, then deletions and reinsertions that change paths
         // found in late iterations.
@@ -326,9 +331,9 @@ fn doubling_triggers() -> Vec<Vec<Transaction<EdgeChanges>>> {
             vec![chain()],
             prepend.clone(),
             vec![edge_changes(&[(9, 0)], -1)],
-            vec![edge_changes(&[(4, 5)], -1)],
+            cut(-1),
             prepend,
-            vec![edge_changes(&[(4, 5)], 1)],
+            cut(1),
         ],
         // A cycle through the whole chain.
         vec![vec![chain()], vec![edge_changes(&[(8, 0)], 1)]],
@@ -336,7 +341,7 @@ fn doubling_triggers() -> Vec<Vec<Transaction<EdgeChanges>>> {
 }
 
 /// [`doubling_triggers`] for [`MutualPaths`], with the chain in both `e` and
-/// `f` and the new edges in either.
+/// `f`, the new edges in either, and cuts in either or both.
 ///
 /// # Returns
 ///
@@ -345,12 +350,15 @@ fn mutual_triggers() -> Vec<Vec<Transaction<(EdgeChanges, EdgeChanges)>>> {
     let chains = vec![(chain(), chain())];
     let in_e = |edges: &[(u64, u64)], weight| (edge_changes(edges, weight), vec![]);
     let in_f = |edges: &[(u64, u64)], weight| (vec![], edge_changes(edges, weight));
+    // Cuts both chains.
+    let cut = vec![(edge_changes(&[(4, 5)], -1), edge_changes(&[(4, 5)], -1))];
     vec![
-        vec![chains.clone(), vec![in_e(&[(9, 0)], 1)]],
-        vec![chains.clone(), vec![in_f(&[(9, 0)], 1)]],
+        vec![chains.clone(), vec![in_e(&[(9, 0)], 1)], cut.clone()],
+        vec![chains.clone(), vec![in_f(&[(9, 0)], 1)], cut.clone()],
         vec![
             chains.clone(),
             vec![in_e(&[(9, 0)], 1), in_f(&[(10, 9)], 1)],
+            cut,
         ],
         vec![
             chains,
@@ -362,8 +370,9 @@ fn mutual_triggers() -> Vec<Vec<Transaction<(EdgeChanges, EdgeChanges)>>> {
     ]
 }
 
-/// [`doubling_triggers`] for [`StarDoubling`], with every node joinable, and
-/// then one node not.
+/// [`doubling_triggers`] for [`StarDoubling`]: the chain and the new edges,
+/// with every node joinable, then node 4 no longer joinable, which cuts every
+/// path through it.
 ///
 /// # Returns
 ///
@@ -372,7 +381,17 @@ fn star_triggers() -> Vec<Vec<Transaction<(EdgeChanges, NodeChanges)>>> {
     let setup = vec![(chain(), (0..11).map(|node| (node, 1)).collect())];
     let prepend = vec![(edge_changes(&[(9, 0)], 1), vec![])];
     vec![
-        vec![setup.clone(), prepend.clone()],
+        // Two new edges, each in its own step of one transaction.
+        vec![
+            setup.clone(),
+            vec![
+                (edge_changes(&[(9, 0)], 1), vec![]),
+                (edge_changes(&[(10, 9)], 1), vec![]),
+            ],
+            vec![(vec![], vec![(4, -1)])],
+        ],
+        // The trigger, then node 4 stops being joinable and becomes joinable
+        // again.
         vec![
             setup,
             prepend,
