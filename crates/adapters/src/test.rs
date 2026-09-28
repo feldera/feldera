@@ -606,6 +606,78 @@ where
     (circuit, Box::new(catalog))
 }
 
+/// Creates a circuit with a materialized view and its only index, which
+/// share one output handle.
+///
+/// This is how the SQL compiler registers the first index of a materialized
+/// view: the view and the index are the same indexed stream, so connectors on
+/// either one read their updates from the same handle.
+///
+/// # Arguments
+///
+/// * `config` - Circuit configuration.
+/// * `view_name` - Name of the view.
+/// * `index_name` - Name of the view's index, keyed on `id`.
+///
+/// # Returns
+///
+/// The circuit and its catalog.  The view contains the records of table
+/// `test_input1`, whose primary key is `id`.
+pub fn test_circuit_with_aliased_index(
+    config: CircuitConfig,
+    view_name: &str,
+    index_name: &str,
+) -> (DBSPHandle, Box<dyn CircuitCatalog>) {
+    let view_name = view_name.to_string();
+    let index_name = index_name.to_string();
+
+    let (circuit, catalog) = Runtime::init_circuit(config, move |circuit| {
+        let mut catalog = Catalog::new();
+
+        let (input, hinput) = circuit
+            .add_input_map_persistent::<KeyStruct, TestStruct, TestStruct, _>(
+                Some("input"),
+                |val, upd| *val = upd.clone(),
+            );
+        input.set_persistent_mir_id("input");
+
+        let relation =
+            |name: &str| Relation::new(name.into(), TestStruct::schema(), false, BTreeMap::new());
+        let input_schema = serde_json::to_string(
+            &relation("test_input1").with_primary_key(&[SqlIdentifier::from("id")]),
+        )
+        .unwrap();
+        let view_schema = serde_json::to_string(&relation(&view_name)).unwrap();
+
+        let key_func = |record: &TestStruct| KeyStruct::for_id(record.id);
+        catalog.register_materialized_input_map::<
+            KeyStruct,
+            KeyStruct,
+            TestStruct,
+            TestStruct,
+            TestStruct,
+            TestStruct,
+            _,
+            _,
+        >(input.clone(), hinput, key_func, key_func, &input_schema);
+        catalog.register_materialized_output_map_persistent::<
+            KeyStruct,
+            KeyStruct,
+            TestStruct,
+            TestStruct,
+        >(
+            Some("output"),
+            input,
+            Some(SqlIdentifier::from(&index_name)),
+            &view_schema,
+            &["id".to_string()],
+        );
+        Ok(catalog)
+    })
+    .unwrap();
+    (circuit, Box::new(catalog))
+}
+
 pub fn list_files_recursive(dir: &Path, extension: &OsStr) -> Result<Vec<PathBuf>, std::io::Error> {
     let mut result = Vec::new();
 

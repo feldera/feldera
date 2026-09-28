@@ -4007,23 +4007,7 @@ impl CircuitThread {
         let mut snapshot = BTreeMap::new();
         for (name, clh) in self.controller.catalog.output_iter() {
             if let Some(ih) = &clh.integrate_handle {
-                let batches = ih.take_from_all();
-
-                // The first index of a materialized view registers its
-                // integral under the view name with `alias_as_index =
-                // Some(index)` (see
-                // `register_materialized_output_map_persistent`). Also
-                // publish the snapshot under the alias so a connector
-                // configured with `index: <alias>` finds it via
-                // `enqueue_latest_snapshot`'s name lookup.
-                if let Some(alias) = &clh.alias_as_index {
-                    debug_assert_ne!(
-                        alias, name,
-                        "alias_as_index must differ from the catalog name",
-                    );
-                    snapshot.insert(alias.clone(), batches.clone());
-                }
-                snapshot.insert(name.clone(), batches);
+                snapshot.insert(name.clone(), ih.take_from_all());
             }
         }
 
@@ -6474,7 +6458,9 @@ struct OutputEndpointDescr {
     /// Endpoint name.
     endpoint_name: String,
 
-    /// Stream name that the endpoint is connected to.
+    /// Name of the output handles the endpoint reads from: the name of the
+    /// stream, or of the index for an endpoint on an index with handles of
+    /// its own.  See [`OutputEndpoints`].
     stream_name: String,
 
     /// Transaction number when the endpoint was created.
@@ -6527,8 +6513,18 @@ impl OutputEndpointDescr {
 
 type StreamEndpointMap = BTreeMap<String, (OutputCollectionHandles, BTreeSet<EndpointId>)>;
 
+/// The controller's output endpoints.
+///
+/// `push_output` reads the delta handle of each group in `by_stream` once per
+/// step and hands the batch to every endpoint in the group.  Reading a handle
+/// removes the batch from it, so no two groups may share a handle: the group
+/// read second would find it empty, and its endpoints would never receive
+/// output.  The first index of a materialized view shares the view's handles,
+/// so endpoints on that index join the view's group.
 struct OutputEndpoints {
     by_id: BTreeMap<EndpointId, OutputEndpointDescr>,
+
+    /// Endpoints grouped by the name of the output handles they read from.
     by_stream: StreamEndpointMap,
 }
 
@@ -7973,7 +7969,16 @@ impl ControllerInner {
                 &SqlIdentifier::from(index),
             )?;
 
-            (handles, index.clone())
+            // The first index of a materialized view shares the view's output
+            // handles (see `alias_as_index`), so the endpoint joins the view's
+            // group in `OutputEndpoints`.
+            let stream_name = if handles.alias_as_index.is_some() {
+                endpoint_config.stream.to_string()
+            } else {
+                index.clone()
+            };
+
+            (handles, stream_name)
         } else {
             (
                 self.catalog

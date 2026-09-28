@@ -1,4 +1,5 @@
 import json
+import time
 
 from feldera import PipelineBuilder
 from feldera.enums import BootstrapPolicy
@@ -27,12 +28,23 @@ def normalize_egress_rows(rows: list[dict]) -> list[dict]:
     return normalized
 
 
-def collect_output_chunks(stream, expected_rows: int) -> tuple[list[dict], list[dict]]:
-    """Read a fixed number of rows from the streaming egress API."""
+def collect_output_chunks(
+    stream, expected_rows: int, timeout_s: float = 60.0
+) -> tuple[list[dict], list[dict]]:
+    """Read a fixed number of rows from the streaming egress API.
+
+    Fails if the rows do not arrive within ``timeout_s`` seconds.  An idle
+    stream sends an empty chunk every 3 seconds, so the deadline is checked
+    even when no rows arrive.
+    """
+    deadline = time.monotonic() + timeout_s
     chunks: list[dict] = []
     rows: list[dict] = []
 
     while len(rows) < expected_rows:
+        assert time.monotonic() < deadline, (
+            f"received {len(rows)} of {expected_rows} rows in {timeout_s} s"
+        )
         chunk = next(stream)
         chunks.append(chunk)
         rows.extend(chunk.get("json_data") or [])
@@ -41,10 +53,54 @@ def collect_output_chunks(stream, expected_rows: int) -> tuple[list[dict], list[
 
 
 def test_egress_send_snapshot(pipeline_name):
-    sql = """
-    CREATE TABLE t1(id INT) WITH ('materialized' = 'true');
-    CREATE MATERIALIZED VIEW v1 AS SELECT * FROM t1;
+    """An `/egress` stream with `send_snapshot` starts with the view's
+    contents, then carries the view's changes.
+
+    A Delta sink on the view's first index receives every change while the
+    stream is open and after it closes.  The index shares the view's output
+    handle, and `v1` sorts before `v1_idx`: the order in which the stream
+    used to take all of the view's output from the sink (#7281).
+    """
+    location = DeltaTestLocation.create(pipeline_name)
+    sink = _delta_connector(location, send_snapshot=False, index="v1_idx")
+    sql = f"""
+    CREATE TABLE t1(id INT NOT NULL) WITH ('materialized' = 'true');
+    CREATE MATERIALIZED VIEW v1 WITH (
+        'connectors' = '{json.dumps([sink])}'
+    ) AS SELECT * FROM t1;
+    CREATE INDEX v1_idx ON v1(id);
     """.strip()
+
+    def push(ids: list[int]):
+        """Insert rows with `ids` into `t1` and wait until they are processed."""
+        TEST_CLIENT.push_to_pipeline(
+            pipeline_name,
+            "t1",
+            "json",
+            [{"id": i} for i in ids],
+            array=True,
+            update_format="raw",
+            wait=True,
+            wait_timeout_s=30.0,
+        )
+
+    def wait_for_sink(ids: list[int]):
+        """Wait until the Delta sink holds exactly the rows with `ids`."""
+        expected = sorted_rows([{"id": i} for i in ids])
+        wait_for_condition(
+            f"the Delta sink on v1_idx holds ids {ids}",
+            lambda: sorted_rows(location.read_rows()) == expected,
+            timeout_s=60.0,
+            poll_interval_s=1.0,
+        )
+
+    def egress_endpoints() -> list[str]:
+        """Names of the pipeline's `/egress` endpoints."""
+        return [
+            output.endpoint_name
+            for output in pipeline.stats().outputs
+            if ".api-" in (output.endpoint_name or "")
+        ]
 
     pipeline = PipelineBuilder(
         TEST_CLIENT,
@@ -54,24 +110,22 @@ def test_egress_send_snapshot(pipeline_name):
     ).create_or_replace()
     pipeline.start()
 
-    TEST_CLIENT.push_to_pipeline(
-        pipeline_name,
-        "t1",
-        "json",
-        [{"id": 1}, {"id": 2}],
-        array=True,
-        update_format="raw",
-        wait=True,
-        wait_timeout_s=30.0,
-    )
+    push([1, 2])
+    wait_for_sink([1, 2])
 
-    stream_factory = TEST_CLIENT.listen_to_pipeline(
-        pipeline_name,
-        "v1",
-        format="json",
-        send_snapshot=True,
+    # Open the stream directly: `listen_to_pipeline` keeps the response in a
+    # generator that the test cannot close.
+    response = TEST_CLIENT.http.post(
+        path=f"/pipelines/{pipeline_name}/egress/v1",
+        params={
+            "format": "json",
+            "array": "false",
+            "backpressure": "true",
+            "send_snapshot": "true",
+        },
+        stream=True,
     )
-    stream = stream_factory()
+    stream = (json.loads(line) for line in response.iter_lines() if line)
 
     snapshot_chunks, snapshot_rows = collect_output_chunks(stream, 2)
     assert sorted_rows(normalize_egress_rows(snapshot_rows)) == [
@@ -81,21 +135,25 @@ def test_egress_send_snapshot(pipeline_name):
     assert snapshot_chunks
     assert all(chunk.get("snapshot") is True for chunk in snapshot_chunks)
 
-    TEST_CLIENT.push_to_pipeline(
-        pipeline_name,
-        "t1",
-        "json",
-        [{"id": 3}],
-        array=True,
-        update_format="raw",
-        wait=True,
-        wait_timeout_s=30.0,
-    )
+    push([3])
 
     delta_chunks, delta_rows = collect_output_chunks(stream, 1)
     assert normalize_egress_rows(delta_rows) == [{"id": 3}]
     assert delta_chunks
     assert all(chunk.get("snapshot") is False for chunk in delta_chunks)
+    wait_for_sink([1, 2, 3])
+
+    # Close the stream, and wait for the pipeline to remove its endpoint.
+    response.close()
+    wait_for_condition(
+        "the pipeline removes the /egress endpoint",
+        lambda: not egress_endpoints(),
+        timeout_s=30.0,
+        poll_interval_s=0.5,
+    )
+
+    push([4])
+    wait_for_sink([1, 2, 3, 4])
 
 
 # Number of deterministic rows pushed into ``t1`` and expected to land
