@@ -21,3 +21,4 @@ mod points_to;
 mod state_machine;
 mod tree;
 mod trips;
+mod walk_counts;
