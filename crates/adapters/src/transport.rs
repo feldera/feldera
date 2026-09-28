@@ -74,7 +74,7 @@ use crate::transport::kafka::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint, Kafka
 use crate::transport::null::NullOutputEndpoint;
 
 #[cfg(feature = "with-nats")]
-use crate::transport::nats::NatsInputEndpoint;
+use crate::transport::nats::{NatsInputEndpoint, NatsOutputEndpoint};
 
 #[cfg(feature = "with-s2")]
 use crate::transport::s2::{S2InputEndpoint, S2OutputEndpoint};
@@ -137,6 +137,7 @@ pub fn input_transport_config_to_endpoint(
         | TransportConfig::PostgresCdcInput(_)
         | TransportConfig::PostgresOutput(_)
         | TransportConfig::HttpOutput(_)
+        | TransportConfig::NatsOutput(_)
         | TransportConfig::RedisOutput(_)
         | TransportConfig::IcebergInput(_)
         | TransportConfig::S2Output(_)
@@ -186,6 +187,10 @@ pub fn output_transport_config_to_endpoint(
         }
         #[cfg(feature = "with-s2")]
         TransportConfig::S2Output(config) => Ok(Some(Box::new(S2OutputEndpoint::new(config)?))),
+        #[cfg(feature = "with-nats")]
+        TransportConfig::NatsOutput(config) => {
+            Ok(Some(Box::new(NatsOutputEndpoint::new(config, shutdown)?)))
+        }
         TransportConfig::NullOutput => Ok(Some(Box::new(NullOutputEndpoint))),
         _ => Ok(None),
     }
