@@ -3537,6 +3537,14 @@ export type MultihostConfig = {
   hosts: number
 }
 
+/**
+ * A header attached to every message published by `nats_output`.
+ */
+export type NatsHeader = {
+  key: string
+  value: string
+}
+
 export type NatsInputConfig = {
   connection_config: ConnectOptions
   consumer_config: ConsumerConfig
@@ -3551,6 +3559,51 @@ export type NatsInputConfig = {
    */
   retry_interval_secs?: number
   stream_name: string
+}
+
+/**
+ * How `nats_output` chooses the `Nats-Msg-Id` header of each message.
+ */
+export type NatsMessageId = 'content_hash' | 'none'
+
+/**
+ * Configuration for writing data to a NATS subject with `nats_output`.
+ *
+ * The connector publishes to JetStream: each message is published with an
+ * acknowledgment request and the publish is retried until the server
+ * acknowledges it or the pipeline shuts down, so data is not lost to a
+ * server that is momentarily unavailable. The subject must be bound to a
+ * JetStream stream; publishing to a subject with no stream raises
+ * "no responders" and the publish fails.
+ */
+export type NatsOutputConfig = {
+  connection_config: ConnectOptions
+  /**
+   * Headers to add to every message published by this connector, as
+   * key/value pairs. Values are UTF-8 strings.
+   */
+  headers?: Array<NatsHeader>
+  /**
+   * Override for the maximum message size in bytes the connector offers to
+   * the encoder. When unset, the connector discovers the limit at connect
+   * time: the bound stream's `max_message_size` when the stream sets one,
+   * else the server's max payload. The encoder splits output records across
+   * messages by this limit; a record larger than the limit fails the
+   * pipeline with an error naming the record rather than reaching the
+   * server.
+   */
+  max_message_size?: number | null
+  message_id?: NatsMessageId
+  /**
+   * How long to wait for the server's publish acknowledgment before
+   * retrying the publish. Must be at least 1.
+   */
+  publish_timeout_secs?: number
+  /**
+   * NATS subject to publish to (e.g., "orders.created"). The subject
+   * must be bound to a JetStream stream on the target server.
+   */
+  subject: string
 }
 
 /**
@@ -6670,6 +6723,10 @@ export type TransportConfig =
   | {
       config: NatsInputConfig
       name: 'nats_input'
+    }
+  | {
+      config: NatsOutputConfig
+      name: 'nats_output'
     }
   | {
       config: KafkaInputConfig
