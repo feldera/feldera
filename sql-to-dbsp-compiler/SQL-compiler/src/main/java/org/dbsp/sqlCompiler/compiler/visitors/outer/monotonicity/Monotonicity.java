@@ -1108,7 +1108,11 @@ public class Monotonicity extends CircuitVisitor {
     public void postorder(DBSPPartitionedRollingAggregateOperator node) {
         // Input type is IndexedZSet<timestamp, tuple>
         // Output type is IndexedZSet<partition, Tup2<timestamp, aggregateType>>
-        // If the input timestamp is monotone, the output timestamp is too.
+        if (node.upper.isFollowing())
+            // A new row at t changes the outputs of the earlier rows whose frame reaches t
+            return;
+        // A new row at t changes only the outputs of the rows at t or later, so
+        // WL(output[timestamp]) = WL(input[timestamp])
         MonotoneExpression inputValue = this.getMonotoneExpression(node.input());
         if (inputValue == null)
             return;
@@ -1129,14 +1133,11 @@ public class Monotonicity extends CircuitVisitor {
         Utilities.enforce(varType.size() == 2, () -> "Expected a pair, got " + finalVarType);
         varType = new DBSPTypeRawTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
         DBSPVariablePath var = varType.var();
-        DBSPExpression lowerBound = ExpressionCompiler.makeBinaryExpression(node.getNode(),
-                timestampType, DBSPOpcode.SUB, var.field(0).deref(), node.lower.representation);
-
         DBSPExpression body =
                 new DBSPRawTupleExpression(
                         makeNoExpression(ix.keyType),
                         new DBSPTupleExpression(
-                                lowerBound,
+                                var.field(0).deref(),
                                 makeNoExpression(outputValueType.tupFields[1]).someIfNeeded()));
         DBSPClosureExpression closure = body.closure(var);
         MonotoneTransferFunctions analyzer = new MonotoneTransferFunctions(

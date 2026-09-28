@@ -734,13 +734,20 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     @Override
     public void postorder(DBSPUnsignedWrapExpression expression) {
         MonotoneExpression source = this.get(expression.source);
+        this.positiveExpressions.add(expression);
+        if (this.constantExpressions.contains(expression.source))
+            this.constantExpressions.add(expression);
+        // DESC reverses the order, and NULLS FIRST encodes NULL, which is never late, below every value
+        if (!expression.ascending || (expression.source.getType().mayBeNull && !expression.nullsLast)) {
+            MonotoneExpression result = new MonotoneExpression(
+                    expression, new NonMonotoneType(expression.getType()), null);
+            this.set(expression, result);
+            return;
+        }
         DBSPExpression reduced = null;
         if (source.mayBeMonotone()) {
             reduced = expression.replaceSource(source.getReducedExpression());
         }
-        this.positiveExpressions.add(expression);
-        if (this.constantExpressions.contains(expression.source))
-            this.constantExpressions.add(expression);
         MonotoneExpression result = new MonotoneExpression(
                 expression, source.copyMonotonicity(expression.getType()), reduced);
         this.set(expression, result);

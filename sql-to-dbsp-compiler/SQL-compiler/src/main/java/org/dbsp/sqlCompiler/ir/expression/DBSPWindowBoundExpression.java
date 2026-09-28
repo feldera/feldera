@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -23,6 +24,15 @@ public class DBSPWindowBoundExpression extends DBSPExpression {
         super(object, representation.getType());
         this.isPreceding = isPreceding;
         this.representation = representation;
+    }
+
+    /** True if the bound is after the current row.  CURRENT ROW is After(0); every other
+     * offset is positive, and may be a cast of a literal. */
+    public boolean isFollowing() {
+        if (this.isPreceding)
+            return false;
+        IsNumericLiteral literal = this.representation.as(IsNumericLiteral.class);
+        return literal == null || literal.gt0();
     }
 
     @Override
