@@ -73,6 +73,12 @@ jobs:
 
   invoke-tests-web-console-e2e:
     name: Web Console End-to-End Tests
+    # Disabled on this release branch: main switched this job off (via
+    # CI_SKIP_JOBS) for the whole 0.334 era and only turned it back on in
+    # mid-September, after its web console test setup changed. The branch's
+    # setup cannot drive it: vitest finds no test files, and SvelteKit's path
+    # globals are undefined.
+    if: ${{ false }}
     needs: [invoke-build-docker]
     uses: ./.github/workflows/test-web-console-e2e.yml
     secrets: inherit
