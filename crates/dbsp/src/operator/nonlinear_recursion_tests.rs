@@ -18,4 +18,5 @@ mod galen;
 mod harness;
 mod parsing;
 mod points_to;
+mod state_machine;
 mod tree;
