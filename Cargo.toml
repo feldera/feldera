@@ -1,6 +1,6 @@
 [workspace.package]
 authors = ["Feldera Team <dev@feldera.com>"]
-version = "0.357.0"
+version = "0.358.0"
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/feldera/feldera"
 repository = "https://github.com/feldera/feldera"
@@ -130,13 +130,13 @@ csv-core = "0.1.10"
 data-encoding = "2.9.0"
 dashmap = "6.1.0"
 datafusion = "53.1"
-dbsp = { path = "crates/dbsp", version = "0.357.0" }
+dbsp = { path = "crates/dbsp", version = "0.358.0" }
 # JSON functions applied to strings.
 datafusion-functions-json = "0.53.1"
 dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.14.1"
-# Feldera fork of delta-rs: upstream tag `rust-v0.32.3` + 6 patches, on branch
-# `dv-scan-order-backport-0.32.3`. When bumping the pinned revision, preserve
+# Feldera fork of delta-rs: upstream tag `rust-v0.32.3` + 7 patches, on branch
+# `field-id-nested-containers-0.32.3`. When bumping the pinned revision, preserve
 # these patches:
 #   - 7f8bb445 "Disable unsupported feature check." — relax the writer-side
 #     protocol-feature gate so we can write tables produced by newer clients.
@@ -163,6 +163,10 @@ deadpool-postgres = "0.14.1"
 #     53; one part of it needs `FileScanConfigBuilder::with_output_partitioning`,
 #     which 53 lacks, and is done with a file-source wrapper instead. The commit
 #     message lists what was and was not ported.
+#   - 0ae918e3 "delta-rs: align a container's nested field names by field id" —
+#     a snapshot of a column-mapped table read a struct nested in an ARRAY or a
+#     MAP under the wrong field names, silently, once the table had reordered
+#     them. #7279.
 #
 # Reverted along the way, do not reinstate without reading #4692:
 #   - 5b35c098 "round-robin pre-split unpartitioned scans into target_partitions
@@ -170,9 +174,9 @@ deadpool-postgres = "0.14.1"
 #     partition wherever masks are applied. DataFusion's own
 #     repartition_file_scans covers the same ground.
 # Diff vs. upstream:
-#   https://github.com/delta-io/delta-rs/compare/rust-v0.32.3...feldera:delta-rs:dv-scan-order-backport-0.32.3
-deltalake = { git = "https://github.com/feldera/delta-rs.git", rev = "9c85899091c75f5f3283e9628157f7b739807002" }
-deltalake-catalog-unity = { git = "https://github.com/feldera/delta-rs.git", rev = "9c85899091c75f5f3283e9628157f7b739807002" }
+#   https://github.com/delta-io/delta-rs/compare/rust-v0.32.3...feldera:delta-rs:field-id-nested-containers-0.32.3
+deltalake = { git = "https://github.com/feldera/delta-rs.git", rev = "0ae918e359004ffcf61ae100be77d2c7cbe553e4" }
+deltalake-catalog-unity = { git = "https://github.com/feldera/delta-rs.git", rev = "0ae918e359004ffcf61ae100be77d2c7cbe553e4" }
 
 delta_kernel = { package = "buoyant_kernel", version = "0.22" }
 derive_more = { version = "1.0.0" }
@@ -184,21 +188,21 @@ erased-serde = "0.3.31"
 fake = "2.10"
 fastbloom = "0.14.0"
 fdlimit = "0.3.0"
-feldera-buffer-cache = { version = "0.357.0", path = "crates/buffer-cache" }
+feldera-buffer-cache = { version = "0.358.0", path = "crates/buffer-cache" }
 feldera-cloud1-client = "0.3.0"
 feldera-datagen = { path = "crates/datagen" }
-feldera-fxp = { version = "0.357.0", path = "crates/fxp", features = ["dbsp"] }
+feldera-fxp = { version = "0.358.0", path = "crates/fxp", features = ["dbsp"] }
 feldera-iceberg = { path = "crates/iceberg" }
-feldera-observability = { version = "0.357.0", path = "crates/feldera-observability" }
-feldera-macros = { version = "0.357.0", path = "crates/feldera-macros" }
-feldera-modular-bloom = { version = "0.357.0", path = "crates/modular-bloom" }
-feldera-sqllib = { version = "0.357.0", path = "crates/sqllib" }
-feldera-storage = { version = "0.357.0", path = "crates/storage" }
-feldera-types = { version = "0.357.0", path = "crates/feldera-types" }
-feldera-rest-api = { version = "0.357.0", path = "crates/rest-api" }
-feldera-ir = { version = "0.357.0", path = "crates/ir" }
-feldera-adapterlib = { version = "0.357.0", path = "crates/adapterlib" }
-feldera-samply = { version = "0.357.0", path = "crates/samply" }
+feldera-observability = { version = "0.358.0", path = "crates/feldera-observability" }
+feldera-macros = { version = "0.358.0", path = "crates/feldera-macros" }
+feldera-modular-bloom = { version = "0.358.0", path = "crates/modular-bloom" }
+feldera-sqllib = { version = "0.358.0", path = "crates/sqllib" }
+feldera-storage = { version = "0.358.0", path = "crates/storage" }
+feldera-types = { version = "0.358.0", path = "crates/feldera-types" }
+feldera-rest-api = { version = "0.358.0", path = "crates/rest-api" }
+feldera-ir = { version = "0.358.0", path = "crates/ir" }
+feldera-adapterlib = { version = "0.358.0", path = "crates/adapterlib" }
+feldera-samply = { version = "0.358.0", path = "crates/samply" }
 flate2 = "1.1.0"
 form_urlencoded = "1.2.0"
 fs_extra = "1.3.0"
