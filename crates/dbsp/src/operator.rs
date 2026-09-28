@@ -52,6 +52,8 @@ pub mod join;
 mod join_range;
 pub mod neighborhood;
 mod non_incremental;
+#[cfg(test)]
+mod nonlinear_recursion_tests;
 mod recursive;
 pub mod sample;
 mod semijoin;
