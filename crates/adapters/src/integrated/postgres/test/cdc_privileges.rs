@@ -2,6 +2,8 @@
 //!
 //! Each test owns a database and two roles. In particular, the test that removes
 //! a migration history entry must never use the suite's shared `etl` schema.
+//! `test_cdc_privileges_documented_recipe` embeds the connector docs page and
+//! runs its grant recipe verbatim, so an edit to either side fails the test.
 //! `POSTGRES_URL` must connect as an administrator to a server with
 //! `wal_level=logical`; the fixtures create databases, roles, and event triggers.
 
@@ -13,6 +15,7 @@ use super::*;
 
 const SOURCE_MIGRATION: i64 = 20260724120000;
 const EVENT_TRIGGER: &str = "supabase_etl_ddl_message_trigger";
+const PASSWORD: &str = "cdc_test_password";
 
 struct Database {
     admin: postgres::Client,
@@ -65,6 +68,25 @@ impl Database {
 
     /// A database with the roles and their `public` grants but no etl objects.
     fn create() -> Self {
+        let mut db = Self::bare();
+        db.admin
+            .batch_execute(&format!(
+                "CREATE ROLE {role} LOGIN PASSWORD '{PASSWORD}' REPLICATION NOSUPERUSER;
+                 GRANT CONNECT, CREATE ON DATABASE {name} TO {role};",
+                role = db.role,
+                name = db.name,
+            ))
+            .unwrap();
+        pg::pg_connect(&db.url, &None)
+            .batch_execute(&format!("GRANT USAGE ON SCHEMA public TO {}", db.role))
+            .unwrap();
+        db
+    }
+
+    /// A database with the owner role and PUBLIC's default privileges revoked,
+    /// but no runtime role and no etl objects. The documented recipe creates
+    /// the runtime role itself, so nothing here may depend on it.
+    fn bare() -> Self {
         let admin_url = cdc_connector_url(&postgres_url());
         let mut admin = pg::pg_connect(&admin_url, &None);
         let name = unique_pg_name("cdc_privileges_db");
@@ -84,28 +106,38 @@ impl Database {
         };
         db.admin
             .batch_execute(&format!(
-                "CREATE ROLE {} LOGIN PASSWORD 'cdc_test_password' REPLICATION NOSUPERUSER;
-                 CREATE ROLE {} NOLOGIN NOSUPERUSER;
-                 REVOKE ALL ON DATABASE {} FROM PUBLIC;
-                 GRANT CONNECT, CREATE ON DATABASE {} TO {};",
-                db.role, db.owner, db.name, db.name, db.role,
+                "CREATE ROLE {} NOLOGIN NOSUPERUSER;
+                 REVOKE ALL ON DATABASE {} FROM PUBLIC;",
+                db.owner, db.name,
             ))
             .unwrap();
         url.set_username(&db.role).unwrap();
-        url.set_password(Some("cdc_test_password")).unwrap();
+        url.set_password(Some(PASSWORD)).unwrap();
         db.runtime_url = url.to_string();
 
         pg::pg_connect(&db.url, &None)
             .batch_execute(&format!(
                 "REVOKE ALL ON SCHEMA public FROM PUBLIC;
-                 GRANT USAGE ON SCHEMA public TO {}, {};",
-                db.role, db.owner,
+                 GRANT USAGE ON SCHEMA public TO {};",
+                db.owner,
             ))
             .unwrap();
         db
     }
 
+    /// [`Self::owned_table`] with the documented `SELECT` grant for the runtime role.
     fn table(&self) -> CdcTestTable {
+        let mut table = self.owned_table();
+        table.execute(&format!(
+            "GRANT SELECT ON {} TO {}",
+            table.table_name, self.role
+        ));
+        table
+    }
+
+    /// A published table owned by the source owner and holding the snapshot
+    /// row. The runtime role has no privilege on it yet.
+    fn owned_table(&self) -> CdcTestTable {
         let mut table = CdcTestTable::new_simple(
             &unique_pg_name("cdc_privileges_table"),
             &unique_pg_name("cdc_privileges_pub"),
@@ -115,11 +147,9 @@ impl Database {
             .client
             .batch_execute(&format!(
                 "ALTER TABLE {table} OWNER TO {owner};
-             GRANT SELECT ON {table} TO {role};
              INSERT INTO {table} VALUES (1, true, 10, 'snapshot');",
                 table = table.table_name,
                 owner = self.owner,
-                role = self.role,
             ))
             .unwrap();
         table
@@ -279,6 +309,47 @@ fn startup_error(config: serde_json::Value) -> String {
             panic!("connector unexpectedly started");
         }
     }
+}
+
+/// The `CREATE ROLE` and `GRANT` statements of the docs section "Running as a
+/// non-superuser", with the example names replaced by the fixture's. Embedding
+/// the page keeps this test and the recipe customers copy from drifting apart.
+fn documented_grants(db: &Database, table: &CdcTestTable) -> String {
+    const DOCS: &str = include_str!(
+        "../../../../../../docs.feldera.com/docs/connectors/sources/postgresql-cdc.md"
+    );
+    const SECTION: &str = "### Running as a non-superuser";
+    const INTRO: &str = "grant the runtime role only what it needs:";
+    let section = DOCS.split_once(SECTION).expect("docs section missing").1;
+    let after_intro = section
+        .split_once(INTRO)
+        .expect("docs grant intro missing")
+        .1;
+    let block = after_intro
+        .split_once("```sql\n")
+        .expect("docs grant block missing")
+        .1;
+    let mut sql = block
+        .split_once("\n```")
+        .expect("docs grant block unterminated")
+        .0
+        .to_string();
+    let database = format!("DATABASE {}", db.name);
+    let published_table = format!("public.{}", table.table_name);
+    let password = format!("'{PASSWORD}'");
+    for (example, actual) in [
+        ("feldera_runtime", db.role.as_str()),
+        ("'password'", password.as_str()),
+        ("DATABASE postgres", database.as_str()),
+        ("public.orders", published_table.as_str()),
+    ] {
+        assert!(
+            sql.contains(example),
+            "the docs recipe no longer mentions {example}:\n{sql}"
+        );
+        sql = sql.replace(example, actual);
+    }
+    sql
 }
 
 #[test]
@@ -591,6 +662,91 @@ fn test_cdc_privileges_unbootstrapped_database() {
         .unwrap()
         .get(0);
     assert!(!etl_installed, "the refused start created the etl schema");
+}
+
+/// The docs section "Running as a non-superuser" is what customers follow, so
+/// run it as written: bootstrap once as a superuser, apply the documented
+/// statements verbatim, then stream as the runtime role without a second
+/// snapshot. The recipe's first statement grants REPLICATION; the test ends by
+/// taking it away to check that PostgreSQL's refusal reaches the user with
+/// the hint that names the attribute.
+#[test]
+#[serial]
+fn test_cdc_privileges_documented_recipe() {
+    let db = Database::bare();
+    let mut table = db.owned_table();
+
+    // Step 1: a superuser start with the default configuration, stopped only
+    // after the initial snapshot completed.
+    let run = Run::new(config(&db.url, &table, None));
+    run.wait_row("insert", 1, None);
+    wait_for_etl_sync_completed(&mut table);
+    run.stop(&mut table);
+
+    // Step 2: the documented CREATE ROLE and GRANT statements.
+    pg::pg_connect(&db.url, &None)
+        .batch_execute(&documented_grants(&db, &table))
+        .unwrap();
+    let row = pg::pg_connect(&db.runtime_url, &None)
+        .query_one(
+            "SELECT rolsuper, rolreplication FROM pg_roles WHERE rolname = current_user",
+            &[],
+        )
+        .unwrap();
+    assert!(!row.get::<_, bool>(0), "the documented role is a superuser");
+    assert!(
+        row.get::<_, bool>(1),
+        "the documented role lacks REPLICATION"
+    );
+
+    // Step 3: the runtime role resumes the bootstrap pipeline with the source
+    // migrations off. Streamed writes and DDL through the trigger go through.
+    let run = Run::new(config(&db.runtime_url, &table, Some(false)));
+    table.execute(&format!(
+        "INSERT INTO {} VALUES (2, false, 20, 'stream')",
+        table.table_name
+    ));
+    run.wait_row("insert", 2, Some("stream"));
+    assert!(
+        !read_output_json(run.output.path())
+            .iter()
+            .any(|r| r["insert"]["id"] == 1),
+        "the runtime role repeated the snapshot"
+    );
+    table.execute(&format!(
+        "UPDATE {} SET s = 'updated' WHERE id = 2",
+        table.table_name
+    ));
+    run.wait_row("delete", 2, Some("stream"));
+    run.wait_row("insert", 2, Some("updated"));
+    table.execute(&format!("DELETE FROM {} WHERE id = 2", table.table_name));
+    run.wait_row("delete", 2, Some("updated"));
+    table
+        .client
+        .batch_execute(&format!(
+            "SET ROLE {}; ALTER TABLE {} DROP COLUMN i; RESET ROLE;
+         INSERT INTO {} (id, b, s) VALUES (3, true, 'after_ddl');",
+            db.owner, table.table_name, table.table_name,
+        ))
+        .unwrap();
+    run.wait_row("insert", 3, Some("after_ddl"));
+    db.assert_trigger(&mut table.client);
+    run.stop(&mut table);
+
+    // Without REPLICATION, PostgreSQL refuses the walsender when etl opens its
+    // replication connection at start. The refusal must reach the user with
+    // the hint naming the attribute, since no grant in the recipe covers it.
+    table.execute(&format!("ALTER ROLE {} NOREPLICATION", db.role));
+    let error = startup_error(config(&db.runtime_url, &table, Some(false)));
+    assert!(
+        error.contains("must be superuser or replication role to start walsender"),
+        "unexpected error: {error}"
+    );
+    assert!(
+        error.contains("The runtime role also needs the REPLICATION attribute"),
+        "{error}"
+    );
+    assert_setup_hint(&error, false);
 }
 
 fn assert_setup_hint(error: &str, run_source_migrations: bool) {
