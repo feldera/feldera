@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use dbsp::DBData;
 use dbsp::algebra::{F32, F64};
-use dbsp::dynamic::{DowncastTrait, DynData, Erase};
+use dbsp::dynamic::{DowncastTrait, DynData, Erase, OrdRepr};
 use dbsp::storage::backend::memory_impl::MemoryBackend;
 use dbsp::storage::buffer_cache::BufferCache;
 use dbsp::storage::file::Factories;
@@ -288,6 +288,34 @@ where
 {
     for value in values {
         roundtrip_eq(value)?;
+    }
+    Ok(())
+}
+
+/// The contract of `OrdRepr`, which storage relies on to search a file with
+/// a key it holds in memory: the archive of `lhs` orders against `rhs`
+/// exactly as `lhs` does.
+fn archived_ord_eq<T: DBData>(lhs: &T, rhs: &T) -> Result<(), TestCaseError> {
+    let bytes = dbsp::storage::file::to_bytes(lhs)
+        .map_err(|err| TestCaseError::fail(format!("serialize failed: {err:?}")))?;
+    // SAFETY: `bytes` is the archive of a `T`, in the aligned buffer
+    // `to_bytes` produced, so a `T::Repr` sits at its root.
+    let archived = unsafe { rkyv::archived_root::<T>(&bytes[..]) };
+    prop_assert_eq!(
+        archived.ord_cmp(rhs),
+        lhs.cmp(rhs),
+        "{:?} vs {:?}",
+        lhs,
+        rhs
+    );
+    Ok(())
+}
+
+fn archived_ord_all<T: DBData>(values: &[T]) -> Result<(), TestCaseError> {
+    for lhs in values {
+        for rhs in values {
+            archived_ord_eq(lhs, rhs)?;
+        }
     }
     Ok(())
 }
@@ -1740,6 +1768,19 @@ macro_rules! tuple_roundtrip_test {
     };
 }
 
+macro_rules! tuple_archived_ord_test {
+    ($name:ident, $ty:ty, $strategy:expr) => {
+        proptest! {
+            #![proptest_config(ProptestConfig::with_cases(PROPTEST_CASES))]
+            #[test]
+            fn $name(lhs in $strategy, rhs in $strategy) {
+                archived_ord_eq::<$ty>(&lhs, &rhs)?;
+                archived_ord_eq::<$ty>(&lhs, &lhs)?;
+            }
+        }
+    };
+}
+
 macro_rules! tuple_storage_roundtrip_test {
     ($name:ident, $ty:ty, $strategy:expr) => {
         proptest! {
@@ -1771,6 +1812,26 @@ tuple_roundtrip_test!(tup15_roundtrip, Tup15Ty, tup15_strategy());
 tuple_roundtrip_test!(tup16_roundtrip, Tup16Ty, tup16_strategy());
 tuple_roundtrip_test!(tup17_roundtrip, Tup17Ty, tup17_strategy());
 tuple_roundtrip_test!(tup65_roundtrip, Tup65Ty, tup65_strategy());
+
+tuple_archived_ord_test!(tup0_archived_ord, Tup0Ty, tup0_strategy());
+tuple_archived_ord_test!(tup1_archived_ord, Tup1Ty, tup1_strategy());
+tuple_archived_ord_test!(tup2_archived_ord, Tup2Ty, tup2_strategy());
+tuple_archived_ord_test!(tup3_archived_ord, Tup3Ty, tup3_strategy());
+tuple_archived_ord_test!(tup4_archived_ord, Tup4Ty, tup4_strategy());
+tuple_archived_ord_test!(tup5_archived_ord, Tup5Ty, tup5_strategy());
+tuple_archived_ord_test!(tup6_archived_ord, Tup6Ty, tup6_strategy());
+tuple_archived_ord_test!(tup7_archived_ord, Tup7Ty, tup7_strategy());
+tuple_archived_ord_test!(tup8_archived_ord, Tup8Ty, tup8_strategy());
+tuple_archived_ord_test!(tup9_archived_ord, Tup9Ty, tup9_strategy());
+tuple_archived_ord_test!(tup10_archived_ord, Tup10Ty, tup10_strategy());
+tuple_archived_ord_test!(tup11_archived_ord, Tup11Ty, tup11_strategy());
+tuple_archived_ord_test!(tup12_archived_ord, Tup12Ty, tup12_strategy());
+tuple_archived_ord_test!(tup13_archived_ord, Tup13Ty, tup13_strategy());
+tuple_archived_ord_test!(tup14_archived_ord, Tup14Ty, tup14_strategy());
+tuple_archived_ord_test!(tup15_archived_ord, Tup15Ty, tup15_strategy());
+tuple_archived_ord_test!(tup16_archived_ord, Tup16Ty, tup16_strategy());
+tuple_archived_ord_test!(tup17_archived_ord, Tup17Ty, tup17_strategy());
+tuple_archived_ord_test!(tup65_archived_ord, Tup65Ty, tup65_strategy());
 
 tuple_storage_roundtrip_test!(
     tup0_storage_roundtrip,
@@ -1889,6 +1950,30 @@ fn edge_case_roundtrip() -> Result<(), TestCaseError> {
     roundtrip_all(&edge_values_tup16())?;
     roundtrip_all(&edge_values_tup17())?;
     roundtrip_all(&edge_values_tup65())?;
+    Ok(())
+}
+
+#[test]
+fn edge_case_archived_ord() -> Result<(), TestCaseError> {
+    archived_ord_all(&edge_values_tup0())?;
+    archived_ord_all(&edge_values_tup1())?;
+    archived_ord_all(&edge_values_tup2())?;
+    archived_ord_all(&edge_values_tup3())?;
+    archived_ord_all(&edge_values_tup4())?;
+    archived_ord_all(&edge_values_tup5())?;
+    archived_ord_all(&edge_values_tup6())?;
+    archived_ord_all(&edge_values_tup7())?;
+    archived_ord_all(&edge_values_tup8())?;
+    archived_ord_all(&edge_values_tup9())?;
+    archived_ord_all(&edge_values_tup10())?;
+    archived_ord_all(&edge_values_tup11())?;
+    archived_ord_all(&edge_values_tup12())?;
+    archived_ord_all(&edge_values_tup13())?;
+    archived_ord_all(&edge_values_tup14())?;
+    archived_ord_all(&edge_values_tup15())?;
+    archived_ord_all(&edge_values_tup16())?;
+    archived_ord_all(&edge_values_tup17())?;
+    archived_ord_all(&edge_values_tup65())?;
     Ok(())
 }
 

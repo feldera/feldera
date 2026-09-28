@@ -126,6 +126,7 @@ mod factory;
 mod hash_repr;
 mod lean_vec;
 mod option;
+mod ord_repr;
 pub mod pair;
 mod pairs;
 pub(crate) mod rkyv;
@@ -143,6 +144,7 @@ pub use factory::{Factory, WithFactory};
 pub use hash_repr::{HashRepr, archived_hash};
 pub use lean_vec::{LeanVec, RawIter, RawVec};
 pub use option::{DynOpt, Opt};
+pub use ord_repr::OrdRepr;
 pub use pair::{DynPair, Pair};
 pub use pairs::{DynPairs, Pairs, PairsTrait};
 pub use rkyv::{

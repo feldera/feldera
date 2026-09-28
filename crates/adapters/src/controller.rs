@@ -68,7 +68,7 @@ use dbsp::{
     circuit::{CircuitConfig, Layout},
     profile::{DbspProfile, GraphProfile},
 };
-use dbsp::{Runtime, WeakRuntime};
+use dbsp::{Error as DbspError, Runtime, WeakRuntime};
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::soft_delete::SoftDeleteHandle;
@@ -350,6 +350,40 @@ impl ControllerBuilder {
         Err(ControllerError::EnterpriseFeature("standby"))
     }
 
+    /// Takes ownership of the sync bucket as the pipeline starts, if the sync
+    /// config sets `take_bucket_ownership`.
+    ///
+    /// Every way of starting a pipeline opens it through exactly one of the
+    /// `open_*` methods below: a single host after its initial pull, a
+    /// standby pipeline after activation, and a multihost host after the
+    /// coordinator activates it.  Calling this from them takes ownership once
+    /// per run, before any push, and never mid-run.  Every host of a
+    /// multihost pipeline takes ownership; the hosts share one identity, so
+    /// they agree on the owner.
+    ///
+    /// Ownership changes before the checkpoint is opened, so a pipeline that
+    /// then fails to start keeps the bucket.
+    ///
+    /// # Returns
+    /// `Ok(())` if ownership was taken or not requested; otherwise the error
+    /// that fails startup.
+    fn take_bucket_ownership(&self) -> Result<(), ControllerError> {
+        #[cfg(feature = "feldera-enterprise")]
+        if let Some(storage) = &self.storage
+            && let Some(sync) = self.sync_config()
+            && sync.take_bucket_ownership
+        {
+            let pipeline = self.config.pipeline_identity().ok_or_else(|| {
+                ControllerError::checkpoint_push_error(missing_pipeline_identity_message(
+                    "cannot take ownership of object store bucket",
+                ))
+            })?;
+            sync::take_bucket_ownership(storage.backend.clone(), &sync, &pipeline)?;
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn with_layout(self, layout: Layout) -> Self {
         Self {
             layout: Some(layout),
@@ -363,6 +397,7 @@ impl ControllerBuilder {
         self,
         checkpoint_uuid: Uuid,
     ) -> Result<ControllerInit, ControllerError> {
+        self.take_bucket_ownership()?;
         ControllerInit::with_checkpoint(
             self.layout,
             self.config.clone(),
@@ -374,12 +409,14 @@ impl ControllerBuilder {
     /// Creates a [ControllerInit] that will start fresh without using a
     /// checkpoint.
     pub(crate) fn open_without_checkpoint(self) -> Result<ControllerInit, ControllerError> {
+        self.take_bucket_ownership()?;
         ControllerInit::without_checkpoint(self.layout, self.config.clone(), self.storage.clone())
     }
 
     /// Creates a [ControllerInit] that will start from the latest checkpoint,
     /// if there is one, or start fresh without a checkpoint otherwise.
     pub(crate) fn open_latest_checkpoint(self) -> Result<ControllerInit, ControllerError> {
+        self.take_bucket_ownership()?;
         ControllerInit::with_latest_checkpoint(
             self.layout,
             self.config.clone(),
@@ -776,21 +813,48 @@ impl Controller {
                             Ok(())
                         }
                         Ok(mut circuit_thread) => {
-                            if let Err(error) = circuit_thread.run(init_status_sender) {
-                                circuit_thread.controller.error(error, None);
+                            let run_result = catch_unwind(AssertUnwindSafe(|| {
+                                circuit_thread.run(&init_status_sender)
+                            }));
+                            let panicked = run_result.is_err();
+                            match run_result {
+                                Ok(Ok(())) => (),
+                                Ok(Err(error)) => circuit_thread.controller.error(error, None),
+                                Err(_) => {
+                                    // The panic hook already logged the message
+                                    // and backtrace.  Without this report, the
+                                    // pipeline would keep reporting `Running`.
+                                    //
+                                    // Before initialization completes, `build`
+                                    // is still waiting on the channel and reports
+                                    // the failure itself; afterward it has dropped
+                                    // the receiver, so `send` fails and the error
+                                    // callback is the only way out.
+                                    let error = ControllerError::controller_panic();
+                                    if let Err(SendError(Err(error))) =
+                                        init_status_sender.send(Err(error))
+                                    {
+                                        circuit_thread.controller.error(error, None);
+                                    }
+                                }
                             }
-                            circuit_thread.finish().inspect_err(|error| {
+                            let finish_result = circuit_thread.finish().inspect_err(|error| {
                                 // Log the error before returning it from the
                                 // thread: otherwise, only [Controller::stop]
                                 // will join the thread and report the error.
                                 error!("circuit thread died with error: {error}")
-                            })
+                            });
+                            if panicked {
+                                Err(ControllerError::controller_panic())
+                            } else {
+                                finish_result
+                            }
                         }
                     }
                 })
                 .expect("failed to spawn circuit-thread");
             // If `recv` fails, it indicates that the circuit thread panicked
-            // during initialization.
+            // while constructing the circuit.
             let inner = init_status_receiver
                 .recv()
                 .map_err(|_| ControllerError::dbsp_panic())??;
@@ -3291,7 +3355,7 @@ impl CircuitThread {
     ///   The circuit is considered fully initialized after executing the first step.
     fn run(
         &mut self,
-        init_status_sender: SyncSender<Result<Arc<ControllerInner>, ControllerError>>,
+        init_status_sender: &SyncSender<Result<Arc<ControllerInner>, ControllerError>>,
     ) -> Result<(), ControllerError> {
         let config = &self.controller.status.pipeline_config;
 
@@ -3803,6 +3867,24 @@ impl CircuitThread {
         Ok(true)
     }
 
+    /// Starts or commits a transaction in the circuit, if the controller's
+    /// transaction state calls for it.
+    fn advance_transaction(&mut self) -> Result<(), DbspError> {
+        match self.controller.advance_transaction_state() {
+            Some(AdvanceTransaction::Start) => {
+                self.controller.increment_transaction_number();
+                self.circuit.start_transaction()
+            }
+            Some(AdvanceTransaction::Commit) => self.circuit.start_commit_transaction(),
+            Some(AdvanceTransaction::StartAndCommit) => {
+                self.controller.increment_transaction_number();
+                self.circuit.start_transaction()?;
+                self.circuit.start_commit_transaction()
+            }
+            None => Ok(()),
+        }
+    }
+
     /// Evaluate the circuit for a single step or a single transaction.
     ///
     /// When processing a transaction, perform a single step within the transaction.
@@ -3812,28 +3894,12 @@ impl CircuitThread {
     /// When not processing a transaction, call `circuit.transaction` to start and
     /// instantly commit a transaction.
     fn step_circuit(&mut self) {
-        match self.controller.advance_transaction_state() {
-            Some(AdvanceTransaction::Start) => {
-                self.controller.increment_transaction_number();
-                self.circuit
-                    .start_transaction()
-                    .expect("should have been able to start transaction");
-            }
-            Some(AdvanceTransaction::Commit) => {
-                self.circuit
-                    .start_commit_transaction()
-                    .expect("should have been able to start transaction commit");
-            }
-            Some(AdvanceTransaction::StartAndCommit) => {
-                self.controller.increment_transaction_number();
-                self.circuit
-                    .start_transaction()
-                    .expect("should have been able to start transaction");
-                self.circuit
-                    .start_commit_transaction()
-                    .expect("should have been able to start transaction commit");
-            }
-            None => (),
+        // A worker that died, e.g. on a full disk, fails these calls.  Report
+        // its error rather than panicking, so the pipeline fails with the
+        // worker's explanation instead of a bare controller panic.
+        if let Err(error) = self.advance_transaction() {
+            self.controller.error(Arc::new(error.into()), None);
+            return;
         }
 
         let transaction_state = self.controller.get_transaction_state();

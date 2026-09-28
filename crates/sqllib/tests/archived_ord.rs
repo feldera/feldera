@@ -1,9 +1,12 @@
-//! Does comparing two values in their archived form give the same answer as
-//! comparing them decoded?
+//! Does comparing two values in their archived form, or an archived value
+//! with a decoded one, give the same answer as comparing them decoded?
 //!
 //! The engine relies on the ordering of archived values being consistent with
-//! the ordering over thei deserializes representations for correctness.  This
-//! test suite validates this requirement for all supported types.
+//! the ordering over their deserialized representations for correctness.  This
+//! test suite validates this requirement for all supported types.  A merge
+//! compares two archived values; a search of a file-backed batch compares an
+//! archived value with the decoded key it is looking for, through `OrdRepr`.
+//! Both have to agree with the decoded order.
 //!
 //! The suite has two halves.  The first walks hand-picked values, chosen to
 //! test various corner cases (where bugs are the most likely): the extremes of each
@@ -16,7 +19,7 @@ use std::mem::size_of;
 
 use dbsp::DBData;
 use dbsp::algebra::{F32, F64};
-use dbsp::dynamic::{DynData, Erase, HashRepr, WithFactory};
+use dbsp::dynamic::{DynData, Erase, HashRepr, OrdRepr, WithFactory};
 use dbsp::storage::buffer_cache::FBuf;
 use dbsp::storage::file::to_bytes;
 use dbsp::utils::tuple::TupleFormat;
@@ -66,15 +69,13 @@ where
 /// Checks the archived comparisons of `a` and `b` against the decoded answer.
 ///
 /// Decoded against decoded is the answer; it is what everything else has to
-/// match, not something under test.  Three things are: the archived ordering,
-/// the archived equality, and the archived ordering again through the trait
+/// match, not something under test.  Five things are: the archived ordering,
+/// the archived equality, the archived ordering again through the trait
 /// object a merger holds, which reaches a different implementation from the
-/// concrete one and so can disagree with it.
-///
-/// Comparing an archived value against a decoded one is not here.  It is the
-/// comparison a merge of a file batch with an in-memory one would make, and
-/// it is left for when that comparison is supported across the board; see the
-/// module documentation.
+/// concrete one and so can disagree with it, and the ordering of an archived
+/// value against a decoded one, through `OrdRepr` and again through the
+/// trait object, which is the comparison a search of a file-backed batch
+/// makes with the key it holds in memory.
 fn check_pair<T>(label: &str, a: &T, b: &T)
 where
     T: DBData + Erase<DynData>,
@@ -106,6 +107,33 @@ where
         "{label}: archived comparison through the trait object disagrees\n  \
          left:  {a:?}\n  right: {b:?}"
     );
+
+    // Archived against decoded, from both sides, so that an implementation
+    // that only agrees with the decoded order from one side shows up.
+    assert_eq!(
+        a_arch.ord_cmp(b),
+        want,
+        "{label}: archived-against-decoded comparison disagrees with decoded\n  \
+         left:  {a:?}\n  right: {b:?}"
+    );
+    assert_eq!(
+        b_arch.ord_cmp(a),
+        want.reverse(),
+        "{label}: archived-against-decoded comparison disagrees with decoded\n  \
+         left:  {b:?}\n  right: {a:?}"
+    );
+    assert_eq!(
+        a_dyn.cmp_target(b.erase()),
+        want,
+        "{label}: archived-against-decoded comparison through the trait object disagrees\n  \
+         left:  {a:?}\n  right: {b:?}"
+    );
+    assert_eq!(
+        a_dyn.eq_target(b.erase()),
+        (a == b),
+        "{label}: archived-against-decoded equality through the trait object disagrees\n  \
+         left:  {a:?}\n  right: {b:?}"
+    );
 }
 
 /// Checks every ordered pair drawn from `values`, both ways round.
@@ -133,7 +161,9 @@ where
 ///
 /// Pairwise agreement already implies this, but sorting exercises the
 /// comparisons in the order a merge would make them and reports a readable
-/// sequence when it fails.
+/// sequence when it fails.  The third sort compares each archived value with
+/// the decoded form of the other, as a merge of a file batch with an
+/// in-memory one does.
 fn check_sort_agrees<T>(label: &str, values: &[T])
 where
     T: DBData + Erase<DynData>,
@@ -151,6 +181,16 @@ where
     assert_eq!(
         by_decoded, by_archived,
         "{label}: sorting by the archived order gives a different sequence"
+    );
+
+    let mut order: Vec<usize> = (0..values.len()).collect();
+    // SAFETY: every buffer in `archives` came from `archive::<T>` above.
+    order.sort_by(|&i, &j| unsafe { root::<T>(&archives[i]) }.ord_cmp(&values[j]));
+    let by_mixed: Vec<&T> = order.into_iter().map(|i| &values[i]).collect();
+
+    assert_eq!(
+        by_decoded, by_mixed,
+        "{label}: sorting archived values against decoded ones gives a different sequence"
     );
 }
 
@@ -1808,6 +1848,13 @@ where
 
 /// Checks that a type's archived form claims to be faithful and hashes the
 /// way the decoded form does, over every value given.
+///
+/// The decoded form's own implementation is checked here too.  Nothing reads
+/// it directly -- a caller that holds a decoded value hashes it with
+/// [`Hash`](std::hash::Hash) -- but a composite asks its fields for it, and
+/// asks them whether they are faithful, so a field that answers either
+/// question wrongly makes the composite wrong.  That it answers as `Hash`
+/// does is therefore the same requirement, one level down.
 fn check_hash_all<T>(label: &str, values: &[T])
 where
     T: DBData + HashRepr,
@@ -1817,6 +1864,18 @@ where
         <T::Repr as HashRepr>::FAITHFUL,
         "{label}: the archived form does not claim to hash faithfully"
     );
+    assert!(
+        <T as HashRepr>::FAITHFUL,
+        "{label}: the decoded form does not claim to hash faithfully"
+    );
+    for (i, value) in values.iter().enumerate() {
+        assert_eq!(
+            calls_of(|log| std::hash::Hash::hash(value, log)),
+            calls_of(|log| value.hash_repr(log)),
+            "{label}[{i}]: the decoded form's `hash_repr` asks the hasher for something \
+             different from what its `Hash` asks for\n  value: {value:?}"
+        );
+    }
     check_hash(label, values);
 }
 

@@ -126,6 +126,12 @@ fn deserialize(&self, _: &mut D) -> Result<I256Wrapper, D::Error> {
 }
 }
 
+impl dbsp::dynamic::OrdRepr<I256Wrapper> for ArchivedI256Wrapper {
+fn ord_cmp(&self, other: &I256Wrapper) -> std::cmp::Ordering {
+    I256::from_be_bytes(self.bytes).cmp(&other.data)
+}
+}
+
 pub type i128_sum_accumulator_type = I256Wrapper;
 
 pub fn i128_sum_map(val: ByteArray) -> i128_sum_accumulator_type {

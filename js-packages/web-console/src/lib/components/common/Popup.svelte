@@ -1,19 +1,25 @@
 <script lang="ts">
   import type { Snippet } from '$lib/types/svelte'
 
-  const {
+  let {
     trigger,
     content,
-    wrapperClass
+    wrapperClass,
+    isOpen = $bindable(false)
   }: {
     trigger: Snippet<[toggle: () => void, isOpen: boolean]>
     content: Snippet<[close: () => void]>
     wrapperClass?: string
+    /**
+     * Whether the content is shown. Bind to it to open or close the popup from
+     * somewhere other than the trigger's own click handler.
+     * A click outside the popup closes it whether or not anything is bound here.
+     */
+    isOpen?: boolean
   } = $props()
-  let show = $state(false)
   const onClose = () => {
     setTimeout(() => {
-      show = false
+      isOpen = false
     })
   }
   let contentNode = $state<HTMLElement>()
@@ -27,7 +33,7 @@
     onClose()
   }
   $effect(() => {
-    if (show) {
+    if (isOpen) {
       window.addEventListener('click', onclick, { capture: true })
     } else {
       window.removeEventListener('click', onclick)
@@ -38,11 +44,11 @@
 
 <div class="relative {wrapperClass}">
   {@render trigger(() => {
-    show = !show
-  }, show)}
-  {#if show}
+    isOpen = !isOpen
+  }, isOpen)}
+  {#if isOpen}
     <div bind:this={contentNode}>
-      {@render content(() => (show = false))}
+      {@render content(() => (isOpen = false))}
     </div>
   {/if}
 </div>

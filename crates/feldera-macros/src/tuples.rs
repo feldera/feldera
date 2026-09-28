@@ -352,6 +352,37 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         }
     });
 
+    // Cross-comparison of an archived v4 tuple with an unarchived one. The
+    // archived form keeps a `None` field as a bitmap bit with no data, so a
+    // field compares as `Option` does: `None` sorts before `Some`, and two
+    // present values compare through `OrdRepr`.
+    let ord_repr_checks = fields
+        .iter()
+        .enumerate()
+        .zip(self_indexes.iter())
+        .map(|((idx, _), self_idx)| {
+            let get_name = format_ident!("get_t{}", idx);
+            quote! {
+                {
+                    let other_field = &other.#self_idx;
+                    let cmp = match (self.#get_name(), ::dbsp::utils::IsNone::is_none(other_field)) {
+                        (::core::option::Option::None, true) => ::core::cmp::Ordering::Equal,
+                        (::core::option::Option::None, false) => ::core::cmp::Ordering::Less,
+                        (::core::option::Option::Some(_), true) => ::core::cmp::Ordering::Greater,
+                        (::core::option::Option::Some(archived), false) => {
+                            ::dbsp::dynamic::OrdRepr::ord_cmp(
+                                archived,
+                                ::dbsp::utils::IsNone::unwrap_or_self(other_field),
+                            )
+                        }
+                    };
+                    if cmp != ::core::cmp::Ordering::Equal {
+                        return cmp;
+                    }
+                }
+            }
+        });
+
     let legacy_eq_checks = self_indexes
         .iter()
         .map(|idx| quote!(self.#idx == other.#idx));
@@ -418,6 +449,15 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         }
     };
 
+    let legacy_ord_repr_checks = self_indexes.iter().map(|idx| {
+        quote! {
+            let cmp = ::dbsp::dynamic::OrdRepr::ord_cmp(&self.#idx, &other.#idx);
+            if cmp != core::cmp::Ordering::Equal {
+                return cmp;
+            }
+        }
+    });
+
     let legacy_archived_ord_impls = quote! {
         impl<#(#generics),*> core::cmp::PartialEq for #archived_name<#(#generics),*>
         where
@@ -455,6 +495,18 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
             #[inline]
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
                 #(#legacy_cmp_checks)*
+                core::cmp::Ordering::Equal
+            }
+        }
+
+        impl<#(#generics),*> ::dbsp::dynamic::OrdRepr<#name<#(#generics),*>> for #archived_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive,)*
+            #(::rkyv::Archived<#generics>: ::dbsp::dynamic::OrdRepr<#generics>,)*
+        {
+            #[inline]
+            fn ord_cmp(&self, other: &#name<#(#generics),*>) -> core::cmp::Ordering {
+                #(#legacy_ord_repr_checks)*
                 core::cmp::Ordering::Equal
             }
         }
@@ -781,6 +833,20 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
             #[inline]
             fn cmp(&self, other: &Self) -> core::cmp::Ordering {
                 #(#cmp_checks)*
+                core::cmp::Ordering::Equal
+            }
+        }
+
+        impl<#(#generics),*> ::dbsp::dynamic::OrdRepr<#name<#(#generics),*>> for #archived_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+            #(::rkyv::Archived<<#generics as ::dbsp::utils::IsNone>::Inner>:
+                ::dbsp::dynamic::OrdRepr<<#generics as ::dbsp::utils::IsNone>::Inner>,)*
+        {
+            #[inline]
+            fn ord_cmp(&self, other: &#name<#(#generics),*>) -> core::cmp::Ordering {
+                #(#ord_repr_checks)*
                 core::cmp::Ordering::Equal
             }
         }

@@ -1,5 +1,5 @@
 import { createSubscriber } from 'svelte/reactivity'
-import { observeBundleHistory, type BundleHistoryEntry } from '$lib/services/supportBundleHistory'
+import { type BundleHistoryEntry, observeBundleHistory } from '$lib/services/supportBundleHistory'
 
 /**
  * The support bundle history, as state a component can read.

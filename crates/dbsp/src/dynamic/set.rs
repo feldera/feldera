@@ -69,6 +69,7 @@ where
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    feldera_macros::OrdRepr,
 )]
 pub struct BSet<T>(BTreeSet<T>);
 

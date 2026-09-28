@@ -1,6 +1,6 @@
 use dbsp::NumEntries;
 use dbsp::algebra::{HasOne, HasZero, MulByRef, OptionWeightType};
-use dbsp::dynamic::HashRepr;
+use dbsp::dynamic::{HashRepr, OrdRepr};
 use dbsp::utils::{IsNone, SupportsRoaring};
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, serde_config::DecimalFormat,
@@ -30,6 +30,14 @@ impl<const P: usize, const S: usize> HashRepr for Fixed<P, S> {
     #[inline]
     fn hash_repr<H: std::hash::Hasher>(&self, state: &mut H) {
         std::hash::Hash::hash(self, state)
+    }
+}
+
+/// A `Fixed` archives to itself, so the comparison is `Ord` itself.
+impl<const P: usize, const S: usize> OrdRepr<Fixed<P, S>> for Fixed<P, S> {
+    #[inline]
+    fn ord_cmp(&self, other: &Fixed<P, S>) -> core::cmp::Ordering {
+        self.cmp(other)
     }
 }
 

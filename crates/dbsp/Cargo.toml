@@ -164,6 +164,10 @@ name = "window_min"
 harness = false
 
 [[bench]]
+name = "seek_key_exact"
+harness = false
+
+[[bench]]
 name = "filter_predictor"
 harness = false
 

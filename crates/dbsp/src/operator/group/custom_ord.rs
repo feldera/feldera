@@ -169,6 +169,19 @@ where
     }
 }
 
+impl<T, F> crate::dynamic::OrdRepr<WithCustomOrd<T, F>> for ArchivedWithCustomOrd<T, F>
+where
+    T: Archive + Deserializable,
+    F: CmpFunc<T>,
+{
+    fn ord_cmp(&self, other: &WithCustomOrd<T, F>) -> Ordering {
+        // `F` compares unarchived values, so this deserializes just as the
+        // archived `Ord` above does.
+        let real_self: T = self.val.deserialize(&mut Deserializer::default()).unwrap();
+        F::cmp(&real_self, &other.val)
+    }
+}
+
 impl<T, F> PartialOrd for WithCustomOrd<T, F>
 where
     Self: Eq,

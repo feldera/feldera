@@ -106,7 +106,7 @@ jobs:
         run: |
           [ -n "$PROMPT" ] || { echo "vars.FRED_REVIEW_PROMPT is unset or empty"; exit 1; }
 
-      - uses: anthropics/claude-code-action@239e3a730883eeb5c53db12b0fc9573b3024b126 # v1
+      - uses: anthropics/claude-code-action@8cf3482550831fb35a4fc3fbf7ca139cf8028b4c # v1.0.233
         with:
           settings: ${{ vars.CLAUDE_SETTINGS_JSON }}
           anthropic_federation_rule_id: fdrl_0174FBQ1qv4mn5FPEKjDyhea
@@ -125,8 +125,9 @@ jobs:
 
             ${{ vars.FRED_REVIEW_PROMPT }}
           # the deny list is a cost guard
+          # an unset FRED_REVIEW_MODEL falls back to the org-wide FRED_BASE_MODEL
           claude_args: |
-            --model ${{ vars.FRED_REVIEW_MODEL || 'claude-opus-5' }}
+            --model ${{ vars.FRED_REVIEW_MODEL || vars.FRED_BASE_MODEL }}
             --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash,Edit,Write"
             --disallowedTools "Bash(git push:*),Bash(gh pr merge:*),Bash(gh pr close:*),Bash(gh pr edit:*),Bash(gh pr ready:*),Bash(gh run:*),Bash(gh workflow:*),Bash(cargo build --release:*),Bash(docker:*)"
             --max-turns 180

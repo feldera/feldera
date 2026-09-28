@@ -49,6 +49,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
@@ -694,15 +695,26 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                 type.is(DBSPTypeBool.class);
     }
 
+    /** False for the casts that do not preserve order: a cast to TIME keeps the time of day,
+     * which wraps at midnight, and a cast of a number to BOOLEAN is true for both signs. */
+    static boolean castPreservesOrder(DBSPType from, DBSPType to) {
+        if (to.is(DBSPTypeTime.class) && !from.is(DBSPTypeTime.class))
+            return false;
+        if (to.is(DBSPTypeBool.class) && !from.is(DBSPTypeBool.class))
+            return false;
+        return true;
+    }
+
     @Override
     public void postorder(DBSPCastExpression expression) {
         MonotoneExpression source = this.get(expression.source);
         DBSPExpression reduced = null;
 
-        // Casts always preserve monotonicity in SQL, but only if the
-        // result type can represent monotone values.
+        // A cast preserves monotonicity if the result type can represent monotone values
+        // and the cast preserves order.
         boolean outputTypeMayBeMonotone = typeCanBeMonotone(expression.getType());
-        boolean isMonotone = source.mayBeMonotone() && outputTypeMayBeMonotone;
+        boolean isMonotone = source.mayBeMonotone() && outputTypeMayBeMonotone &&
+                castPreservesOrder(expression.source.getType(), expression.getType());
         IMaybeMonotoneType resultType;
         if (isMonotone) {
             reduced = expression.replaceSource(source.getReducedExpression());
@@ -775,6 +787,14 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         this.set(expression, result);
     }
 
+    /** True if every argument of {@code expression} after the first is a constant. */
+    boolean constantAfterFirst(DBSPApplyExpression expression) {
+        for (int i = 1; i < expression.arguments.length; i++)
+            if (!this.constantExpressions.contains(expression.arguments[i]))
+                return false;
+        return true;
+    }
+
     @Override
     public void postorder(DBSPApplyExpression expression) {
         // Monotone functions applied to monotone arguments.
@@ -790,12 +810,19 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             String name = expression.getFunctionName();
             if (name != null) {
                 isDeterministic = !name.equals("now");
+                // Monotone in the first argument only; the others, such as the digits of ROUND
+                // or the sizes of a HOP window, must be constant
+                if ((name.startsWith("round_") ||
+                        name.startsWith("truncate_") ||
+                        name.equals("hop_start_timestamp")) &&
+                        this.constantAfterFirst(expression)) {
+                    resultType = new MonotoneType(expression.getType());
+                    reduced = expression.replaceArguments(reducedArgs);
+                }
                 if (name.startsWith("log10_") ||
                         name.startsWith("ln_") ||
                         name.startsWith("ceil_") ||
                         name.startsWith("sqrt_") ||
-                        name.startsWith("round_") ||
-                        name.startsWith("truncate_") ||
                         name.startsWith("floor_") ||
                         name.startsWith("sign_") ||
                         name.startsWith("numeric_inc") ||
@@ -804,8 +831,6 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                         name.startsWith("extract_century_") ||
                         name.startsWith("extract_epoch_") ||
                         name.startsWith("extract_hour_Time_") ||
-                        name.startsWith("dateadd_") ||
-                        name.equals("hop_start_timestamp") ||
                         name.startsWith("to_bound_") ||
                         name.startsWith("date_trunc_") ||
                         name.startsWith("time_trunc_") ||
@@ -816,13 +841,15 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                     reduced = expression.replaceArguments(reducedArgs);
                 }
 
-                if (name.startsWith("tumble_")
-                        || name.startsWith("datediff_")
-                        || name.startsWith("timestamp_diff_")) {
-                    if (expression.arguments[1].is(DBSPLiteral.class)) {
-                        resultType = new MonotoneType(expression.getType());
-                        reduced = expression.replaceArguments(reducedArgs);
-                    }
+                // tumble_(ts, interval) is monotone in ts for a constant interval
+                if (name.startsWith("tumble_") && this.constantExpressions.contains(expression.arguments[1])) {
+                    resultType = new MonotoneType(expression.getType());
+                    reduced = expression.replaceArguments(reducedArgs);
+                }
+                // datediff_(left, right) computes right - left: monotone in right for a constant left
+                if (name.startsWith("datediff_") && this.constantExpressions.contains(expression.arguments[0])) {
+                    resultType = new MonotoneType(expression.getType());
+                    reduced = expression.replaceArguments(reducedArgs);
                 }
             }
             if (allArgsConstant && isDeterministic) {

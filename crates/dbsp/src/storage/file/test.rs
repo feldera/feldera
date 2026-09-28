@@ -450,6 +450,114 @@ fn test_find<K, A, N, T>(
     assert_eq!(cursor.key(), Some(key.erase()));
 }
 
+/// Seeks one cursor again and again, rather than starting each seek from a
+/// fresh cursor as [`test_find`] does.
+///
+/// A cursor that has already moved resumes its search from the path it holds:
+/// it compares the row it is on, then the last row of its data block, and
+/// only then climbs out through its index blocks and descends again.  A seek
+/// from row 0 reaches those comparisons in one order and with one path; a
+/// sequence of seeks walks a cursor whose path is partly consumed, which is
+/// how a merge uses one.  The targets below are spaced so that consecutive
+/// seeks land in the same data block, in the next one, and several blocks
+/// further on.
+///
+/// A target the cursor has already passed must leave it where it is.  That is
+/// the promise every one of these four makes, and the comparison against the
+/// current row is what keeps it.
+fn test_repeated_seeks<K, A, N, T>(
+    rows: &RowGroup<DynData, DynData, N, T>,
+    offset: u64,
+    n: usize,
+    expected: impl Fn(usize) -> (K, K, K, A),
+) where
+    K: DBData,
+    A: DBData,
+    T: ColumnSpec,
+{
+    if n == 0 {
+        return;
+    }
+    let mut tmp_key = K::default();
+    let mut tmp_aux = A::default();
+    let (tmp_key, tmp_aux): (&mut DynData, &mut DynData) =
+        (tmp_key.erase_mut(), tmp_aux.erase_mut());
+
+    let targets: Vec<usize> = [
+        0, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987,
+    ]
+    .into_iter()
+    .filter(|&row| row < n)
+    .chain([n - 1])
+    .collect();
+
+    // Forward, by key and by predicate, each on a cursor of its own.
+    for by_predicate in [false, true] {
+        let mut cursor = unsafe { rows.first().unwrap() };
+        let mut landed = 0;
+        for &row in &targets {
+            let (_before, mut key, _after, mut aux) = expected(row);
+            if by_predicate {
+                let target = key.clone();
+                unsafe { cursor.seek_forward_until(|k| k >= target.erase()) }.unwrap();
+            } else {
+                unsafe { cursor.advance_to_value_or_larger(key.erase()) }.unwrap();
+            }
+            assert_eq!(cursor.absolute_position(), offset + row as u64);
+            assert_eq!(
+                unsafe { cursor.item((tmp_key, tmp_aux)) },
+                Some((key.erase_mut(), aux.erase_mut()))
+            );
+            assert_eq!(cursor.key(), Some(key.erase()));
+
+            // Seeking back to where it came from leaves it here.
+            let (_before, mut behind, _after, _aux) = expected(landed);
+            if by_predicate {
+                let target = behind.clone();
+                unsafe { cursor.seek_forward_until(|k| k >= target.erase()) }.unwrap();
+            } else {
+                unsafe { cursor.advance_to_value_or_larger(behind.erase_mut()) }.unwrap();
+            }
+            assert_eq!(cursor.absolute_position(), offset + row as u64);
+            assert_eq!(cursor.key(), Some(key.erase()));
+            landed = row;
+        }
+    }
+
+    // Backward, the same way.
+    for by_predicate in [false, true] {
+        let mut cursor = unsafe { rows.last().unwrap() };
+        let mut landed = n - 1;
+        for &row in targets.iter().rev() {
+            let (_before, mut key, _after, mut aux) = expected(row);
+            if by_predicate {
+                let target = key.clone();
+                unsafe { cursor.seek_backward_until(|k| k <= target.erase()) }.unwrap();
+            } else {
+                unsafe { cursor.rewind_to_value_or_smaller(key.erase()) }.unwrap();
+            }
+            assert_eq!(cursor.absolute_position(), offset + row as u64);
+            assert_eq!(
+                unsafe { cursor.item((tmp_key, tmp_aux)) },
+                Some((key.erase_mut(), aux.erase_mut()))
+            );
+            assert_eq!(cursor.key(), Some(key.erase()));
+
+            // And a target ahead of it leaves it here.
+            let (_before, mut ahead, _after, _aux) = expected(landed);
+            if by_predicate {
+                let target = ahead.clone();
+                unsafe { cursor.seek_backward_until(|k| k <= target.erase()) }.unwrap();
+            } else {
+                unsafe { cursor.rewind_to_value_or_smaller(ahead.erase_mut()) }.unwrap();
+            }
+            assert_eq!(cursor.absolute_position(), offset + row as u64);
+            assert_eq!(cursor.key(), Some(key.erase()));
+            landed = row;
+        }
+    }
+}
+
 fn test_out_of_range<K, A, N, T>(
     row_group: &RowGroup<DynData, DynData, N, T>,
     before: &K,
@@ -577,6 +685,8 @@ fn test_cursor_helper<K, A, N, T>(
         test_find(rows, &before, &key, &after, aux.clone());
     }
 
+    test_repeated_seeks(rows, offset, n, &expected);
+
     let mut random = unsafe { rows.before() };
     let mut order: Vec<_> = (0..n + 10).collect();
     order.shuffle(&mut thread_rng());
@@ -664,8 +774,15 @@ fn test_multifetch_zset<K, A>(
 
     let mut keys = keys_factory.default_box();
     for i in 0..n {
+        // `before` sorts between this key and the one before it, so it is in
+        // the file's range and in the block a search would look in, and it is
+        // not in the file.  Asking for it says that a key the file does not
+        // hold is reported as missing rather than as its neighbour.
+        let (before, key, _after, diff) = (expected_fn)(i);
         if rand::random() {
-            let (_before, key, _after, diff) = (expected_fn)(i);
+            keys.push_ref(&before);
+        }
+        if rand::random() {
             keys.push_ref(&key);
             expected.push_val_diff(().erase(), diff.erase());
             expected.push_key(key.erase());

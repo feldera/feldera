@@ -1264,11 +1264,7 @@ Version: {} v{}{}
 ",
             url,
             url,
-            if cfg!(feature = "feldera-enterprise") {
-                "Enterprise"
-            } else {
-                "Open source"
-            },
+            crate::edition(),
             env!("CARGO_PKG_VERSION"),
             if env!("FELDERA_PLATFORM_VERSION_SUFFIX").is_empty() {
                 "".to_string()

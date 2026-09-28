@@ -10,7 +10,7 @@ use crate::{
     timestamp::{extract_epoch_Date, extract_quarter_Date},
 };
 use dbsp::{algebra::F64, num_entries_scalar};
-use feldera_macros::IsNone;
+use feldera_macros::{IsNone, OrdRepr};
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
@@ -44,6 +44,7 @@ use crate::{Time, Timestamp};
     Serialize,
     Deserialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -561,6 +562,7 @@ some_function2!(
     Serialize,
     Deserialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]

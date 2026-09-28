@@ -20,16 +20,18 @@ import {
   isSameHandle,
   type StoredBundleOps
 } from './supportBundleStorage'
+
 export { isPermissionRequired } from './supportBundleStorage'
+
 import {
   deleteBundleRecords,
   getBundleRecord,
   isQuotaExceeded,
   listBundleRecords,
+  type NewSupportBundle,
+  type Observable,
   observeBundleRecords,
   putBundleRecord,
-  type Observable,
-  type NewSupportBundle,
   type StoredSupportBundle,
   type SupportBundleMetadata
 } from './supportBundleStore'

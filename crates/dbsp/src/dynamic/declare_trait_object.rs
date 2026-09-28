@@ -123,7 +123,7 @@ macro_rules! declare_typed_trait_object {
 
 #[cfg(test)]
 mod test {
-    use feldera_macros::IsNone;
+    use feldera_macros::{IsNone, OrdRepr};
     use rkyv::{Archive, Deserialize, Serialize};
     use size_of::SizeOf;
 
@@ -146,6 +146,7 @@ mod test {
         Serialize,
         Deserialize,
         IsNone,
+        OrdRepr,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
     #[archive(compare(PartialEq, PartialOrd))]

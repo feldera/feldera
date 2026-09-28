@@ -1184,7 +1184,9 @@ fn bootstrap(
 fn is_fatal_controller_error(error: &ControllerError) -> bool {
     matches!(
         error,
-        ControllerError::DbspError { .. } | ControllerError::DbspPanic
+        ControllerError::DbspError { .. }
+            | ControllerError::DbspPanic
+            | ControllerError::ControllerPanic
     )
 }
 
@@ -4031,6 +4033,34 @@ outputs:
         let error = get_status(&state, false)
             .expect_err("a pipeline that hit a fatal error must report an error");
         assert_eq!(error.error.error_code.as_ref(), "DbspPanic");
+    }
+
+    /// A panic on the controller's circuit thread must fail the pipeline.
+    ///
+    /// The circuit thread cannot recover from a panic, so a pipeline that kept
+    /// reporting `Running` afterward would hide a dead pipeline from
+    /// orchestration and monitoring.
+    #[test]
+    fn controller_panic_fails_the_pipeline() {
+        let state = WebData::new(ServerState::new(
+            PipelinePhase::Initializing(InitializationState::Starting),
+            String::default(),
+            RuntimeDesiredStatus::Running,
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            Uuid::now_v7(),
+            None,
+            None,
+            None,
+            None,
+        ));
+
+        let weak = Arc::downgrade(&state.clone().into_inner());
+        error_handler(&weak, Arc::new(ControllerError::ControllerPanic), None);
+
+        assert!(matches!(state.phase(), PipelinePhase::Failed(_)));
+        let error = get_status(&state, false)
+            .expect_err("a pipeline whose circuit thread panicked must report an error");
+        assert_eq!(error.error.error_code.as_ref(), "ControllerPanic");
     }
 
     /// A suspend that overlaps a fatal controller error must not report a clean

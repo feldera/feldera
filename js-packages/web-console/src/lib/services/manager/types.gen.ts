@@ -734,7 +734,7 @@ export type Configuration = {
    */
   conceptualhq: string
   /**
-   * Feldera edition: "Open source" or "Enterprise"
+   * Feldera edition: "Open source", "Enterprise" or "EnterpriseDev"
    */
   edition: string
   license_validity?: LicenseValidity | null
@@ -3385,6 +3385,10 @@ export type LicenseInformation = {
    */
   extension_url?: string | null
   /**
+   * Whether the license only permits development use.
+   */
+  is_dev?: boolean
+  /**
    * Whether the license is a trial
    */
   is_trial: boolean
@@ -5928,6 +5932,12 @@ export type StorageAutoscalingConfig = {
    * Usage fraction that triggers expansion. Defaults to 0.8.
    */
   scale_threshold?: number | null
+  /**
+   * Expand storage when available space falls below this many MB, even if
+   * usage is still under `scale_threshold`. Either condition triggers
+   * expansion. Unset by default.
+   */
+  scale_threshold_available_mb?: number | null
 }
 
 /**
@@ -6267,6 +6277,34 @@ export type SyncConfig = {
    */
   standby?: boolean
   start_from_checkpoint?: StartFromCheckpoint | null
+  /**
+   * Take ownership of `bucket` when the pipeline starts, even if another
+   * pipeline owns it.
+   *
+   * A pipeline records its ownership of `bucket` in an `owner.json` file
+   * at the root of `bucket`, and a push fails without writing anything if
+   * that file names a different pipeline.  When this is `true`, the
+   * pipeline takes ownership as it starts (a standby pipeline, when it is
+   * activated): it logs a warning naming the previous and new owners and
+   * overwrites `owner.json`.  The previous owner's later pushes to
+   * `bucket` then fail.
+   *
+   * This only applies at startup.  If another pipeline takes ownership of
+   * `bucket` while this pipeline is running, this pipeline's pushes fail.
+   *
+   * Ownership changes before the pipeline opens its checkpoint, so it
+   * sticks even if the pipeline then fails to start: the previous owner's
+   * pushes keep failing.  To give `bucket` back, start the previous owner
+   * with `take_bucket_ownership` set.
+   *
+   * Use this to hand a checkpoint location over to a pipeline that
+   * replaces another one, e.g., after deleting and recreating a pipeline.
+   * Stop the previous owner first, and set this on only one of the
+   * pipelines that share a `bucket`.
+   *
+   * Default: false
+   */
+  take_bucket_ownership?: boolean
   /**
    * The number of file transfers to run in parallel.
    * Default: 20
@@ -6939,7 +6977,7 @@ export type GetMetricsData = {
 
 export type GetMetricsResponses = {
   /**
-   * Metrics of all running pipelines belonging to this tenant in Prometheus format
+   * Metrics of all pipelines belonging to this tenant in Prometheus format
    */
   200: Blob | File
 }
@@ -8193,7 +8231,6 @@ export type GetPipelineMetricsErrors = {
    */
   404: ErrorResponse
   500: ErrorResponse
-  503: ErrorResponse
 }
 
 export type GetPipelineMetricsError = GetPipelineMetricsErrors[keyof GetPipelineMetricsErrors]

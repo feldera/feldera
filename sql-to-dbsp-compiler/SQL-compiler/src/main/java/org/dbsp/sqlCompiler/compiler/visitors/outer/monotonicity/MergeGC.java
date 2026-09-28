@@ -14,10 +14,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitWithGraphsVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -59,6 +55,26 @@ public class MergeGC extends Passes {
             return super.startVisit(node);
         }
 
+        /** True if {@code left} and {@code right} carry the same values: they are the same port, or
+         * ports of operators whose inputs carry the same values and that are equivalent once one
+         * is rebuilt on the inputs of the other.  InsertLimiters builds a separate chain of
+         * operators computing the bounds of each retain operator.  An operator without inputs,
+         * such as a source, is only the same as itself. */
+        static boolean sameStream(OutputPort left, OutputPort right) {
+            if (left.equals(right))
+                return true;
+            if (left.port() != right.port())
+                return false;
+            DBSPOperator leftNode = left.node();
+            DBSPOperator rightNode = right.node();
+            if (leftNode.inputs.isEmpty() || leftNode.inputs.size() != rightNode.inputs.size())
+                return false;
+            for (int i = 0; i < leftNode.inputs.size(); i++)
+                if (!sameStream(leftNode.inputs.get(i), rightNode.inputs.get(i)))
+                    return false;
+            return leftNode.withInputs(rightNode.inputs, false).equivalent(rightNode);
+        }
+
         @Nullable
         DBSPSimpleOperator getSingleGcSuccessor(DBSPOperator operator) {
             if (!operator.is(DBSPNoopOperator.class))
@@ -94,9 +110,11 @@ public class MergeGC extends Passes {
                     if (gc1 == null)
                         continue;
 
-                    // Cannot call directly gc0.equivalent(gc1),
-                    // since that requires them to already have the same inputs.
-                    if (gc0.getFunction().equivalent(gc1.getFunction())) {
+                    // The data inputs of gc0 and gc1 are different noops, so compare gc0 with gc1
+                    // rebuilt on the inputs of gc0, after checking that the bounds are the same:
+                    // the merged trace keeps gc0 only.
+                    if (sameStream(gc0.inputs.get(1), gc1.inputs.get(1)) &&
+                            gc0.equivalent(gc1.withInputs(gc0.inputs, false))) {
                         Logger.INSTANCE.belowLevel(this, 1)
                                 .append("MergeGC ")
                                 .appendSupplier(compare::toString)
@@ -183,15 +201,7 @@ public class MergeGC extends Passes {
             DBSPIntegrateTraceRetainKeysOperator first = operators.get(0);
             OutputPort left = this.mapped(first.left());
             List<OutputPort> rights = Linq.map(operators, o -> this.mapped(o.right()));
-
-            List<DBSPVariablePath> variables = new ArrayList<>();
-            for (var r: rights)
-                variables.add(r.outputType().to(DBSPTypeTuple.class).getFieldType(1).ref().var());
-
-            List<DBSPExpression> dataFields = Linq.map(variables, DBSPExpression::deref);
-            DBSPVariablePath[] vars = variables.toArray(new DBSPVariablePath[0]);
-            DBSPClosureExpression min = InsertLimiters.combineMin(dataFields).closure(vars);
-            OutputPort apply = InsertLimiters.createApplyN(this.compiler, rights, min);
+            OutputPort apply = InsertLimiters.createMinBound(this.compiler, rights);
             this.addOperator(apply.node());
             return new DBSPIntegrateTraceRetainKeysOperator(
                     first.getRelNode(), first.getClosureFunction(), left, apply, first.accumulate);

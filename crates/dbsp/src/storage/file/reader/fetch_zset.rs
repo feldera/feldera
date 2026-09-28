@@ -10,7 +10,6 @@ use crate::storage::{
 };
 use crate::trace::ord::vec::wset_batch::VecWSetBuilder;
 use crate::trace::{BatchReaderFactories, Builder, VecWSet, VecWSetFactories};
-use smallvec::SmallVec;
 use std::{collections::BTreeMap, fmt::Debug, ops::Range, sync::Arc};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
@@ -123,32 +122,21 @@ where
     /// # Panic
     ///
     /// Panics if results aren't available yet.
-    pub fn results(self, factories: VecWSetFactories<K, A>) -> VecWSet<K, A> {
+    pub fn results(mut self, factories: VecWSetFactories<K, A>) -> VecWSet<K, A> {
         assert!(self.is_done());
         let mut builder = VecWSetBuilder::<K, A>::new_builder(&factories);
         let mut tmp_diff = factories.weight_factory().default_box();
-        let mut index_stack = SmallVec::<[usize; 10]>::new();
-        let mut key_stack = factories.layer_factories.keys.default_box();
-        key_stack.reserve_exact(10);
         for (key_range, data_block) in self.output_blocks.into_values() {
-            key_stack.clear();
-            index_stack.clear();
             for i in key_range {
                 let key = &self.keys[i];
-                if unsafe {
-                    data_block.find_with_cache(
-                        &self.factories,
-                        &mut *key_stack,
-                        &mut index_stack,
-                        key,
-                    )
-                } {
-                    let child_index = index_stack.pop().unwrap();
+                // SAFETY: `data_block` came from this reader's file, whose
+                // column 0 holds archived `(K, A)` items of `self.factories`.
+                if let Some(child_index) =
+                    unsafe { data_block.find(&self.factories, key, &mut self.tmp_key) }
+                {
                     unsafe { data_block.aux(&self.factories, child_index, &mut tmp_diff) };
                     builder.push_val_diff_mut(&mut (), &mut tmp_diff);
-
-                    builder.push_key_mut(key_stack.last_mut().unwrap());
-                    key_stack.truncate(index_stack.len());
+                    builder.push_key_mut(&mut self.tmp_key);
                 }
             }
         }

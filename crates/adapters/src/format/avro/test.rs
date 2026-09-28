@@ -1004,6 +1004,7 @@ fn test_issue4722_issue4837() {
     rkyv::Serialize,
     rkyv::Deserialize,
     feldera_macros::IsNone,
+    feldera_macros::OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 struct TestVariant {

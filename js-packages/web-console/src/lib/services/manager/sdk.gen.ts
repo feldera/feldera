@@ -544,11 +544,7 @@ export const getConfigSession = <ThrowOnError extends boolean = true>(
  *
  * Required role: `read` or higher.
  *
- * Retrieve the metrics of all running pipelines belonging to this tenant.
- *
- * The metrics are collected by making individual HTTP requests to `/metrics`
- * endpoint of each pipeline, of which only successful responses are included
- * in the returned list.
+ * Retrieve the metrics of all pipelines belonging to this tenant.
  */
 export const getMetrics = <ThrowOnError extends boolean = true>(
   options?: Options<GetMetricsData, ThrowOnError>
@@ -1466,7 +1462,7 @@ export const getPipelineLogs = <ThrowOnError extends boolean = true>(
  *
  * Required role: `read` or higher.
  *
- * Retrieve the metrics of a running or paused pipeline.
+ * Retrieve the metrics of a pipeline.
  */
 export const getPipelineMetrics = <ThrowOnError extends boolean = true>(
   options: Options<GetPipelineMetricsData, ThrowOnError>

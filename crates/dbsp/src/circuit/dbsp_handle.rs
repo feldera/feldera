@@ -12,7 +12,7 @@ use crate::{
     profile::Profiler,
 };
 use anyhow::Error as AnyError;
-use crossbeam::channel::{Receiver, Select, Sender, TryRecvError, bounded};
+use crossbeam::channel::{Receiver, RecvTimeoutError, Select, Sender, TryRecvError, bounded};
 use feldera_buffer_cache::ThreadType;
 use feldera_ir::LirCircuit;
 use feldera_storage::{FileCommitter, StorageBackend, StoragePath};
@@ -1549,6 +1549,13 @@ impl DBSPHandle {
             .is_some_and(|runtime| runtime.panicked())
     }
 
+    /// How often to check for a panic while waiting for a worker's reply.
+    ///
+    /// A worker waiting on a background thread that panicked, e.g. a merger
+    /// that ran out of storage, never replies and never exits, so waiting on
+    /// the reply channels alone would block forever.
+    const PANIC_POLL_INTERVAL: Duration = Duration::from_millis(100);
+
     fn broadcast_command<F>(&mut self, command: Command, mut handler: F) -> Result<(), DbspError>
     where
         F: FnMut(usize, Response),
@@ -1589,7 +1596,14 @@ impl DBSPHandle {
 
         // Receive responses.
         for _ in 0..self.status_receivers.len() {
-            let ready = select.select();
+            let ready = loop {
+                if let Ok(ready) = select.select_timeout(Self::PANIC_POLL_INTERVAL) {
+                    break ready;
+                }
+                if self.panicked() {
+                    return handle_panic(self);
+                }
+            };
             let worker = ready.index();
 
             match ready.recv(&self.status_receivers[worker]) {
@@ -1624,7 +1638,13 @@ impl DBSPHandle {
         }
         self.runtime.as_ref().unwrap().unpark_worker(worker);
 
-        let reply = match self.status_receivers[worker].recv() {
+        let reply = loop {
+            match self.status_receivers[worker].recv_timeout(Self::PANIC_POLL_INTERVAL) {
+                Err(RecvTimeoutError::Timeout) if !self.panicked() => (),
+                result => break result,
+            }
+        };
+        let reply = match reply {
             Err(_) => return handle_panic(self),
             Ok(Err(e)) => {
                 let _ = self.kill_inner();
@@ -2816,18 +2836,20 @@ pub(crate) mod tests {
     use std::fs::{File, create_dir_all};
     use std::io;
     use std::path::Path;
+    use std::sync::Arc;
     use std::time::Duration;
     use std::{fs, vec};
 
     use super::CircuitStorageConfig;
+    use crate::algebra::OrdZSet as DynOrdZSet;
     use crate::circuit::CircuitConfig;
     use crate::circuit::checkpointer::Checkpointer;
-    use crate::circuit::runtime::TOKIO_WORKER_INDEX;
+    use crate::circuit::runtime::{TOKIO_WORKER_INDEX, current_thread_type};
     use crate::dynamic::{ClonableTrait, DowncastTrait, DynData, Erase};
     use crate::operator::Generator;
     use crate::operator::TraceBound;
     use crate::storage::backend::StorageError;
-    use crate::trace::BatchReaderFactories;
+    use crate::trace::{BatchReaderFactories, Filter, Spine, Trace, TraceRole};
     use crate::utils::Tup2;
     use crate::{
         Circuit, DBSPHandle, Error as DbspError, IndexedZSetHandle, InputHandle, OrdZSet,
@@ -3057,6 +3079,71 @@ pub(crate) mod tests {
         } else {
             panic!();
         }
+    }
+
+    /// A merger that panics while a worker waits for it must fail the step
+    /// instead of hanging it.
+    ///
+    /// The spine's key filter panics when a merge evaluates it, killing the
+    /// merger in the middle of a merge.  Within the same step, the worker
+    /// keeps inserting batches into the spine until backpressure blocks it on
+    /// merges that will never happen, so the worker never replies.  Only the
+    /// flag that the merger's panic raises can end the wait.
+    #[test]
+    fn test_merger_panic_while_worker_waits_for_merges() {
+        const MERGER_PANIC: &str = "injected merger panic";
+
+        let (mut handle, _) = Runtime::init_circuit(1, |circuit| {
+            let mut spine = Spine::<DynOrdZSet<DynData>>::new(
+                &BatchReaderFactories::new::<u64, (), ZWeight>(),
+                Arc::new(String::from("merger_panic")),
+                TraceRole::Integral,
+            );
+            // Fail only on the merger's thread: a worker evaluates the filter
+            // too, when it spills a batch to storage.
+            spine.retain_keys(Filter::new(Box::new(|_key: &DynData| {
+                if current_thread_type() == Some(ThreadType::Background) {
+                    panic!("{MERGER_PANIC}");
+                }
+                true
+            })));
+
+            let mut next_key = 0u64;
+            circuit.add_source(Generator::new(move || {
+                // A level-0 merge takes at most 128 batches and backpressure
+                // starts at 128 loose ones, so 1000 batches force the worker
+                // to wait for a merge.
+                for _ in 0..1000 {
+                    let batch = OrdZSet::from_keys((), vec![Tup2(next_key, 1)]);
+                    next_key += 1;
+                    // An operator would await the insertion; blocking the
+                    // thread instead withholds the reply just the same.
+                    futures::executor::block_on(spine.insert(batch.into_inner()));
+                }
+            }));
+            Ok(())
+        })
+        .unwrap();
+
+        // Step on another thread, so that a hang fails the test instead of
+        // stalling it forever.
+        let (result_sender, result_receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = result_sender.send(handle.transaction());
+        });
+        let result = result_receiver
+            .recv_timeout(Duration::from_secs(60))
+            .expect("the step hung on a worker waiting for a panicked merger");
+
+        let Err(DbspError::Runtime(RuntimeError::WorkerPanic { panic_info })) = result else {
+            panic!("the step should fail with the merger's panic, but returned {result:?}");
+        };
+        assert!(
+            panic_info.iter().any(|(_worker, thread_type, info)| {
+                *thread_type == ThreadType::Background && info.to_string().contains(MERGER_PANIC)
+            }),
+            "the error should report the merger's panic: {panic_info:?}"
+        );
     }
 
     /// Regression test for the deadlock in `RuntimeHandle::join` (commit 1 of

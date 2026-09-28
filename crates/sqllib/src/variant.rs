@@ -8,7 +8,7 @@ use crate::{
 };
 use dbsp::algebra::{F32, F64};
 use feldera_fxp::DynamicDecimal;
-use feldera_macros::IsNone;
+use feldera_macros::{IsNone, OrdRepr};
 use feldera_types::serde_with_context::serde_config::VariantFormat;
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
@@ -26,19 +26,6 @@ use std::sync::Arc;
 use std::{fmt::Debug, hash::Hash};
 
 /// Represents a Sql value with a VARIANT type.
-/// The legacy variant declines: it is an enum over maps and arrays, so
-/// reproducing the decoded hash means writing the discriminant at the decoded
-/// width and recursing through each arm, which nobody has done.  It
-/// implements the trait all the same, so that a caller bounded on
-/// `Archived<K>: HashRepr` compiles for it and decodes instead of failing to
-/// build.  `FlatVariant`, which supersedes it, hashes faithfully.
-impl crate::__hash_repr::HashRepr for ArchivedVariant {
-    const FAITHFUL: bool = false;
-
-    #[inline]
-    fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
-}
-
 #[derive(
     Debug,
     Default,
@@ -53,6 +40,7 @@ impl crate::__hash_repr::HashRepr for ArchivedVariant {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive(bound(
     serialize = "__S: rkyv::ser::ScratchSpace + rkyv::ser::Serializer + rkyv::ser::SharedSerializeRegistry",
@@ -94,6 +82,19 @@ pub enum Variant {
     TimestampTz(TimestampTz),
     // Note: if you extend this enum, add new labels at the end
     // This will hopefully preserve compatibility of the storage format.
+}
+
+/// The legacy variant declines: it is an enum over maps and arrays, so
+/// reproducing the decoded hash means writing the discriminant at the decoded
+/// width and recursing through each arm, which nobody has done.  It
+/// implements the trait all the same, so that a caller bounded on
+/// `Archived<K>: HashRepr` compiles for it and decodes instead of failing to
+/// build.  `FlatVariant`, which supersedes it, hashes faithfully.
+impl crate::__HashRepr for ArchivedVariant {
+    const FAITHFUL: bool = false;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
 }
 
 /////////////// Variant index

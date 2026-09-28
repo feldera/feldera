@@ -3,7 +3,7 @@ use std::{
     mem::take,
 };
 
-use feldera_macros::IsNone;
+use feldera_macros::{IsNone, OrdRepr};
 use num::PrimInt;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
@@ -30,6 +30,7 @@ use crate::{
     Serialize,
     Deserialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -134,6 +135,7 @@ where
     Serialize,
     Deserialize,
     IsNone,
+    OrdRepr,
 )]
 //#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //#[archive(compare(PartialEq, PartialOrd))]
@@ -333,6 +335,7 @@ where
     Serialize,
     Deserialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(bound(archive = "Option<TreeNode<TS,A>>: DBData, Prefix<TS>: DBData"))]

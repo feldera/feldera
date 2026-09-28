@@ -450,8 +450,15 @@ define 3 Rust objects:
     [`MonoidValue`](https://docs.rs/dbsp/latest/dbsp/algebra/trait.MonoidValue.html).
     `DBData` allows accumulators to be stored in relations which may be
     spilled to disk; among other traits, it requires `Ord` and
-    `ArchivedDBData`.  `MonoidValue` essentially requires the traits
-    `Zero`, `HasZero`, `Add` (and variants such as `AddByRef`).
+    `ArchivedDBData`.  The latter requires the type's archived form to
+    implement
+    [`OrdRepr`](https://docs.rs/dbsp/latest/dbsp/dynamic/trait.OrdRepr.html),
+    which orders an archived value against an unarchived one without
+    deserializing it; storage uses this comparison to search data on disk,
+    so it must agree with `Ord`.  A type whose `Ord` is derived can derive
+    it too, with `#[derive(feldera_macros::OrdRepr)]`.  `MonoidValue`
+    essentially requires the traits `Zero`, `HasZero`, `Add` (and variants
+    such as `AddByRef`).
 
   - [`MulByRef`](https://docs.rs/dbsp/latest/dbsp/algebra/trait.MulByRef.html)
     which allows accumulator values to be multiplied by integer
@@ -628,6 +635,12 @@ impl<D: Fallible + ?Sized> rkyv::Deserialize<I256Wrapper, D> for ArchivedI256Wra
     #[inline]
     fn deserialize(&self, _: &mut D) -> Result<I256Wrapper, D::Error> {
         Ok(I256Wrapper::from(self.bytes))
+    }
+}
+
+impl dbsp::dynamic::OrdRepr<I256Wrapper> for ArchivedI256Wrapper {
+    fn ord_cmp(&self, other: &I256Wrapper) -> std::cmp::Ordering {
+        I256::from_be_bytes(self.bytes).cmp(&other.data)
     }
 }
 

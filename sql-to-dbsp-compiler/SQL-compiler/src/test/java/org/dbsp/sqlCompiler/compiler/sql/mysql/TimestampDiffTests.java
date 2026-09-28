@@ -68,6 +68,18 @@ public class TimestampDiffTests extends SqlIoTest {
                  -5
                 (1 row)
 
+                select timestampdiff(QUARTER, DATE '2020-06-15', DATE '2021-01-01') as a;
+                a
+                -----
+                 2
+                (1 row)
+
+                select timestampdiff(QUARTER, DATE '2021-01-01', DATE '2020-06-15') as a;
+                a
+                -----
+                 -2
+                (1 row)
+
                 select timestampdiff(MONTH, DATE '2000-03-28', DATE '2000-02-29') as a;
                 a
                 -----
@@ -119,6 +131,18 @@ public class TimestampDiffTests extends SqlIoTest {
                 a
                 -----
                  -5
+                (1 row)
+
+                select datediff(QUARTER, DATE '2020-06-15', DATE '2021-01-01') as a;
+                a
+                -----
+                 2
+                (1 row)
+
+                select datediff(QUARTER, DATE '2021-01-01', DATE '2020-06-15') as a;
+                a
+                -----
+                 -2
                 (1 row)
 
                 select datediff(MONTH, DATE '2000-03-28', DATE '2000-02-29') as a;

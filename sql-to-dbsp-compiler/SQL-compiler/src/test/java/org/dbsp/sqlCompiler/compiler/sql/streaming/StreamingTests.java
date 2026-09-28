@@ -1190,7 +1190,8 @@ public class StreamingTests extends StreamingTestBase {
             public void endVisit() {
                 Assert.assertEquals(1, this.rollingWithWaterline);
                 Assert.assertEquals(2, this.retainKeys);
-                Assert.assertEquals(1, this.retainNValues);
+                // MIN and MAX of the session timestamps keep opposite ends of the range
+                Assert.assertEquals(2, this.retainNValues);
             }
         });
         // The waterline is max over all data of (ts - 1 hour); each step is
@@ -4470,7 +4471,7 @@ public class StreamingTests extends StreamingTestBase {
             
             CREATE VIEW v
             WITH ('emit_final' = 'ts')
-            AS SELECT t1.ts
+            AS SELECT t1.ts, t1.x, t2.y
             FROM t1 LEFT JOIN t2 on t1.ts = t2.ts;""";
         this.getCCS(sql);
     }

@@ -76,7 +76,7 @@ pub(crate) struct Configuration {
     pub conceptualhq: String,
     /// Product Fruits workspace code for in-app onboarding. Empty when disabled.
     pub product_fruits: String,
-    /// Feldera edition: "Open source" or "Enterprise"
+    /// Feldera edition: "Open source", "Enterprise" or "EnterpriseDev"
     pub edition: String,
     /// The version corresponding to the type of `edition`.
     /// Format is `x.y.z`.
@@ -115,12 +115,7 @@ impl Configuration {
             posthog: state.config.telemetry.clone(),
             conceptualhq: state.config.conceptualhq.clone(),
             product_fruits: state.config.product_fruits.clone(),
-            edition: if cfg!(feature = "feldera-enterprise") {
-                "Enterprise"
-            } else {
-                "Open source"
-            }
-            .to_string(),
+            edition: crate::edition().to_string(),
             version: version.clone(),
             revision: revision.to_string(),
             runtime_revision: runtime_revision.to_string(),

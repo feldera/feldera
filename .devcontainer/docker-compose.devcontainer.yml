@@ -11,16 +11,23 @@ services:
       - "host.docker.internal:host-gateway"
     pids_limit: -1
     environment:
-      - RUST_VERSION=1.96.1
       - RUST_BACKTRACE=1
       - REDPANDA_BROKERS=redpanda:9092
     volumes:
+      # The repository, at the path devcontainer.json names as workspaceFolder.
+      # Mounting it here rather than from devcontainer.json keeps the compose
+      # file usable on its own, e.g. `podman compose up`.
+      - ../:/workspaces/feldera
       - /var/run/docker.sock:/var/run/docker.sock
     cap_add:
       - PERFMON
       - IPC_LOCK
     security_opt:
       - seccomp:unconfined
+      # Without this an SELinux-enforcing host denies the container access to
+      # the bind-mounted repository. It is a no-op everywhere else, and the
+      # alternative, a `:z` on the mount, relabels the whole tree on the host.
+      - label=disable
     ulimits:
       memlock:
         soft: -1

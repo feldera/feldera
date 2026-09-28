@@ -9,7 +9,7 @@
 use anyhow::Result;
 use clap::Parser;
 use dbsp::{OrdZSet, OutputHandle, Runtime, Stream, typed_batch::IndexedZSetReader};
-use feldera_macros::IsNone;
+use feldera_macros::{IsNone, OrdRepr};
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::hash::Hash;
@@ -33,6 +33,7 @@ type EmployeeID = u64;
     Serialize,
     Deserialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -57,6 +58,7 @@ struct Manages {
     Serialize,
     Deserialize,
     IsNone,
+    OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]

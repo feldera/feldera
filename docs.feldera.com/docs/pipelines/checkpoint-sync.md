@@ -62,6 +62,47 @@ configuration or ownership file is corrected. Pulling checkpoints is less
 strict: if a pipeline pulls from a location owned by another pipeline, Feldera
 logs a warning but does not fail the pull.
 
+### Taking over a checkpoint location
+
+Ownership belongs to the pipeline, identified by its system-generated name,
+not by the name you give it. Stopping and restarting a pipeline, changing its
+program or configuration, or renaming it keeps ownership. Deleting a pipeline
+and creating a new one with the same name does not: the new pipeline is a
+different owner, so its pushes to the old location fail.
+
+To hand a location over to a new pipeline, set `take_bucket_ownership`:
+
+```json
+"sync": {
+  "bucket": "BUCKET_NAME/DIRECTORY_NAME",
+  "provider": "AWS",
+  "access_key": "ACCESS_KEY",
+  "secret_key": "SECRET_KEY",
+  "start_from_checkpoint": "latest",
+  "take_bucket_ownership": true
+}
+```
+
+When the pipeline starts (a standby pipeline, when it is activated), it
+overwrites `owner.json` with its own name and logs a warning that names the
+previous and the new owner. From then on, the previous owner's pushes to the
+location fail.
+
+The takeover happens only at startup. Pushes never take ownership: if another
+pipeline takes the location over while this pipeline is running, this
+pipeline's pushes fail until it is restarted.
+
+- Stop the previous owner before starting the new pipeline. A previous owner
+  that is still running can complete one more push around the takeover.
+- Ownership changes before the new pipeline opens its checkpoint. If the
+  pipeline then fails to start, for example because its program cannot use
+  the checkpoint, it still owns the location and the previous owner's pushes
+  keep failing. To give the location back, start the previous owner with
+  `take_bucket_ownership` set.
+- Set `take_bucket_ownership` on only one of the pipelines that share a
+  location. Two pipelines that both set it take the location from each other
+  whenever one of them restarts.
+
 ## Standby mode
 
 Pipelines can start in **standby** mode by passing `initial=standby` to the
@@ -139,6 +180,7 @@ On its first start **B** pulls from `bucket-a/pipeline-a` (because
 | `endpoint`              | `string`        |             | The S3-compatible object store endpoint (e.g., `http://localhost:9000` for MinIO). For a `gs://` bucket, the Google Cloud Storage JSON API base URL; a bare host gets `/storage/v1/` appended. Leave empty for the public service.                                                                                                                                                                                                                                                                                                  |
 | `bucket` \*             | `string`        |             | The bucket name and optional prefix to store checkpoints (e.g., `mybucket/checkpoints`). Prefix it with `gs://` to sync to Google Cloud Storage through its native API instead of S3; `provider`, `access_key`, and `secret_key` are then ignored and rclone authenticates with Application Default Credentials (for example a GKE Workload Identity). This is the pipeline's read/write checkpoint location and must be unique to this pipeline. See [Bucket ownership](#bucket-ownership).                                                                                                                                                      |
 | `read_bucket`           | `string`        |             | A read-only fallback bucket used to seed the pipeline when `bucket` has no checkpoint. Uses the same connection settings as `bucket` and, for Google Cloud Storage, the same `gs://` prefix (`provider`, `access_key`, `secret_key`, `endpoint`, `region`). The pipeline **never writes** to `read_bucket`. Must point to a different location than `bucket`. See [Seeding from an existing pipeline](#seeding-from-an-existing-pipeline). |
+| `take_bucket_ownership` | `boolean`       | `false`     | When `true`, the pipeline takes ownership of `bucket` as it starts, even if another pipeline owns it, and logs a warning that names both owners. Applies only at startup: if another pipeline takes `bucket` over while this pipeline is running, this pipeline's pushes fail. See [Taking over a checkpoint location](#taking-over-a-checkpoint-location). |
 | `region`                | `string`        | `us-east-1` | The region of the bucket. Leave empty for MinIO. If `provider` is AWS, and no region is specified, `us-east-1` is used.                                                                                                                                                                                                                                                             |
 | `provider` \*           | `string`        |             | The S3 provider identifier. Must match [rclone's list](https://rclone.org/s3/#providers). Case-sensitive. Use `"Other"` if unsure. Not required for `gs://` buckets, which ignore it.                                                                                                                                                                                                                                                  |
 | `access_key`            | `string`        |             | S3 access key. Not required if using environment-based auth (e.g., IRSA).                                                                                                                                                                                                                                                                                                           |

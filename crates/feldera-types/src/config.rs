@@ -709,6 +709,35 @@ pub struct SyncConfig {
     /// Must point to a different location than `bucket`.
     #[serde(default)]
     pub read_bucket: Option<String>,
+
+    /// Take ownership of `bucket` when the pipeline starts, even if another
+    /// pipeline owns it.
+    ///
+    /// A pipeline records its ownership of `bucket` in an `owner.json` file
+    /// at the root of `bucket`, and a push fails without writing anything if
+    /// that file names a different pipeline.  When this is `true`, the
+    /// pipeline takes ownership as it starts (a standby pipeline, when it is
+    /// activated): it logs a warning naming the previous and new owners and
+    /// overwrites `owner.json`.  The previous owner's later pushes to
+    /// `bucket` then fail.
+    ///
+    /// This only applies at startup.  If another pipeline takes ownership of
+    /// `bucket` while this pipeline is running, this pipeline's pushes fail.
+    ///
+    /// Ownership changes before the pipeline opens its checkpoint, so it
+    /// sticks even if the pipeline then fails to start: the previous owner's
+    /// pushes keep failing.  To give `bucket` back, start the previous owner
+    /// with `take_bucket_ownership` set.
+    ///
+    /// Use this to hand a checkpoint location over to a pipeline that
+    /// replaces another one, e.g., after deleting and recreating a pipeline.
+    /// Stop the previous owner first, and set this on only one of the
+    /// pipelines that share a `bucket`.
+    ///
+    /// Default: false
+    #[schema(default = std::primitive::bool::default)]
+    #[serde(default)]
+    pub take_bucket_ownership: bool,
 }
 
 fn default_pull_interval() -> u64 {
@@ -2335,6 +2364,15 @@ pub struct StorageAutoscalingConfig {
     )]
     pub scale_threshold: Option<f64>,
 
+    /// Expand storage when available space falls below this many MB, even if
+    /// usage is still under `scale_threshold`. Either condition triggers
+    /// expansion. Unset by default.
+    #[serde(
+        deserialize_with = "crate::serde_via_value::deserialize",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub scale_threshold_available_mb: Option<u64>,
+
     /// Expansion multiplier. Defaults to 2.0.
     #[serde(
         deserialize_with = "crate::serde_via_value::deserialize",
@@ -2353,7 +2391,13 @@ mod resource_config_tests {
         let input = json!({
             "storage_mb_min": 1000,
             "storage_mb_max": 8000,
-            "autoscaling": { "storage": { "scale_threshold": 0.8, "scale_factor": 2.0 } }
+            "autoscaling": {
+                "storage": {
+                    "scale_threshold": 0.8,
+                    "scale_threshold_available_mb": 10000,
+                    "scale_factor": 2.0
+                }
+            }
         });
         let config: ResourceConfig = serde_json::from_value(input).unwrap();
         assert_eq!(config.storage_mb_min, Some(1000));
@@ -2363,6 +2407,7 @@ mod resource_config_tests {
             Some(AutoscalingConfig {
                 storage: Some(StorageAutoscalingConfig {
                     scale_threshold: Some(0.8),
+                    scale_threshold_available_mb: Some(10000),
                     scale_factor: Some(2.0),
                 }),
             })
@@ -2372,6 +2417,10 @@ mod resource_config_tests {
         assert_eq!(
             output["autoscaling"]["storage"]["scale_threshold"],
             json!(0.8)
+        );
+        assert_eq!(
+            output["autoscaling"]["storage"]["scale_threshold_available_mb"],
+            json!(10000)
         );
         assert_eq!(output["autoscaling"]["storage"]["scale_factor"], json!(2.0));
     }
@@ -2403,6 +2452,8 @@ mod resource_config_tests {
     #[test]
     fn autoscaling_rejects_non_numeric_values() {
         let input = json!({ "autoscaling": { "storage": { "scale_threshold": "high" } } });
+        assert!(serde_json::from_value::<ResourceConfig>(input).is_err());
+        let input = json!({ "autoscaling": { "storage": { "scale_threshold_available_mb": -1 } } });
         assert!(serde_json::from_value::<ResourceConfig>(input).is_err());
         let input = json!({ "storage_mb_min": -1 });
         assert!(serde_json::from_value::<ResourceConfig>(input).is_err());
@@ -2446,5 +2497,16 @@ mod sync_config_tests {
             .unwrap();
         config("ckpts/a", Some("s3://ckpts/b")).validate().unwrap();
         config("gs://ckpts/a", None).validate().unwrap();
+    }
+
+    #[test]
+    fn take_bucket_ownership_defaults_to_false() {
+        let sync: SyncConfig = serde_json::from_str(r#"{"bucket": "ckpts/a"}"#).unwrap();
+        assert!(!sync.take_bucket_ownership);
+
+        let sync: SyncConfig =
+            serde_json::from_str(r#"{"bucket": "ckpts/a", "take_bucket_ownership": true}"#)
+                .unwrap();
+        assert!(sync.take_bucket_ownership);
     }
 }
