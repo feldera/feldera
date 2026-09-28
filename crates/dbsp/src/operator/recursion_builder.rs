@@ -2,18 +2,22 @@ use crate::Timestamp;
 use crate::circuit::Consensus;
 use crate::circuit::checkpointer::Checkpoint;
 use crate::circuit::circuit_builder::{CircuitBase, IterativeCircuit};
+use crate::circuit::{FeedbackConnector, OwnershipPreference};
 use crate::{
     ChildCircuit, Circuit, SchedulerError, Stream, ZWeight,
-    operator::{DelayedFeedback, dynamic::distinct::DistinctFactories},
-    trace::{Batch, Spine},
+    operator::dynamic::{concat::dyn_concat_accumulated, distinct::DistinctFactories},
+    trace::Spine,
     typed_batch::{BatchReader, DynIndexedZSet},
 };
 use impl_trait_for_tuples::impl_for_tuples;
+use iteration_delay::IterationDelay;
 use size_of::SizeOf;
 use std::cell::Cell;
 use std::marker::PhantomData;
 use std::num::NonZeroU64;
 use std::rc::Rc;
+
+mod iteration_delay;
 
 impl<P, T> ChildCircuit<P, T>
 where
@@ -37,9 +41,12 @@ where
         <Self as Circuit>::Parent: Circuit,
     {
         let factories = DistinctFactories::new::<Z::Key, Z::Val>();
-        let feedback =
-            DelayedFeedback::with_default(self, Z::Inner::dyn_empty(&factories.input_factories));
-        let stream = feedback.stream().typed::<Z>();
+        let (delayed, feedback) =
+            self.add_feedback(IterationDelay::new(&factories.input_factories));
+        // The delay outputs an iteration's changes as a single spine; split
+        // them into batches, as for the output of any accumulator.
+        let stream =
+            dyn_concat_accumulated(&factories.input_factories, [(delayed, true)]).typed::<Z>();
 
         RecursiveVar {
             feedback,
@@ -103,7 +110,7 @@ where
     Z: BatchReader,
     Z::Inner: DynIndexedZSet,
 {
-    feedback: DelayedFeedback<C, Z::Inner>,
+    feedback: FeedbackConnector<C, Z::Inner, Option<Spine<Z::Inner>>, IterationDelay<Z::Inner>>,
     factories: DistinctFactories<Z::Inner, C::Time>,
     stream: Stream<C, Z>,
 }
@@ -136,7 +143,7 @@ where
             next
         };
 
-        feedback.connect(&next);
+        feedback.connect_with_preference(&next, OwnershipPreference::STRONGLY_PREFER_OWNED);
         let export = next
             .dyn_integrate_trace(&factories.input_factories)
             .export();
@@ -516,8 +523,8 @@ impl ReportMode for Reporting {
 /// scope are no exception: without one, taking a checkpoint fails with
 /// `NoPersistentId`.  The step closure is responsible for assigning them, by
 /// calling [`set_persistent_id`](crate::circuit::Stream::set_persistent_id) on
-/// * each feedback stream it receives, which names the `z^-1` operator that
-///   closes the loop, and
+/// * each feedback stream it receives, from which the operators built on it
+///   derive their own ids, and
 /// * every stream it creates, including the ones it returns, from which the
 ///   implicit `distinct`, if any, and the integral that exports the result
 ///   derive their own ids.
@@ -532,11 +539,36 @@ impl ReportMode for Reporting {
 /// them from the program (a view name, a hash of the subgraph) rather than from
 /// anything positional.
 ///
+/// # Circuit
+///
+/// ```text
+///      ┌───────────────────────────────────────────────────────────────┐
+///      │                                                               │
+///   i  │               ┌───┐                                           │
+///  ────┼──►δ0─────────►│   │      ┌ ─ ─ ─ ─┐       ┌───────────────┐   │   ┌───────────┐
+///      │               │ f ├─────►│distinct├──┬───►│integrate_trace├───┼──►│consolidate├───────►
+///      │       ┌──────►│   │      └ ─ ─ ─ ─┘  │    └───────────────┘   │   └───────────┘
+///      │       │       └───┘                  │                        │
+///      │  ┌──────────────────┐                │                        │
+///      │  │concat_accumulated│                │                        │
+///      │  └──────────────────┘                │                        │
+///      │       ▲       ┌──────────────┐       │                        │
+///      │       └───────┤IterationDelay│◄──────┘                        │
+///      │               └──────────────┘                                │
+///      │                                                               │
+///      └───────────────────────────────────────────────────────────────┘
+/// ```
+/// where
+/// * `integrate_trace` integrates outputs computed across multiple fixed point
+///   iterations.
+/// * `consolidate` consolidates the output of the nested circuit into a single
+///   batch.
+/// * `distinct` is not inserted if the builder is configured with `without_distinct`.
+///
 /// # Examples
 ///
 /// A single recursive relation (transitive closure), matching the shape handled
 /// by [`recursive`](ChildCircuit::recursive):
-///
 /// ```
 /// use dbsp::{
 ///     operator::Generator,
@@ -614,7 +646,10 @@ where
     /// By default the recursion runs until it converges (see
     /// [`finish`](Self::finish)).  With a bound, iteration also stops once
     /// `max_iterations` nested clock cycles have elapsed, whichever comes
-    /// first.  This is useful to cap the cost of computations that converge
+    /// first.  Each iteration applies the step closure to exactly the changes
+    /// that the previous iteration produced, so a transitive closure bounded to
+    /// `n` iterations, for example, holds exactly the paths of at most `n`
+    /// edges.  This is useful to cap the cost of computations that converge
     /// slowly, or as a safety valve against non-converging steps.  Combine with
     /// [`with_report`](RecursionBuilder::with_report) to learn, per
     /// transaction, whether the bound truncated the result.
@@ -771,6 +806,7 @@ where
 #[cfg(test)]
 mod test {
     use std::{
+        net::TcpListener,
         num::NonZeroU64,
         thread,
         time::{Duration, Instant},
@@ -780,8 +816,13 @@ mod test {
         Edge, checkpoint_and_restart, edges_data, expected_reachable,
     };
     use crate::{
-        Circuit, RootCircuit, Runtime, Stream, operator::Generator, typed_batch::OrdZSet,
-        utils::Tup2, zset,
+        Circuit, RootCircuit, Runtime, Stream,
+        algebra::AddByRef,
+        circuit::{CircuitConfig, Layout},
+        operator::Generator,
+        typed_batch::OrdZSet,
+        utils::Tup2,
+        zset,
     };
 
     /// Transitive closure via [`RecursionBuilder`] over a *single* recursive
@@ -1384,6 +1425,228 @@ mod test {
                     );
                 }
             }
+        }
+    }
+
+    /// Bound on the recursions in the tests of bounded recursions whose
+    /// operators split their outputs.
+    const SPLIT_OUTPUTS_BOUND: u64 = 3;
+
+    /// Paths of at most `max_edges` edges that end in node `i + 1` of the
+    /// chain `0 -> 1 -> ... -> i + 1`.
+    ///
+    /// # Arguments
+    ///
+    /// * `i` - the source node of the chain's last edge.
+    /// * `max_edges` - the maximum number of edges in a path.
+    ///
+    /// # Returns
+    ///
+    /// The paths, as `(from, to)` pairs.
+    fn chain_paths_to(i: u64, max_edges: u64) -> impl Iterator<Item = Tup2<u64, u64>> {
+        ((i + 1).saturating_sub(max_edges)..=i).map(move |from| Tup2(from, i + 1))
+    }
+
+    /// Changes that a transitive closure bounded to [`SPLIT_OUTPUTS_BOUND`]
+    /// iterations makes when edge `i -> i + 1` extends the chain `0 -> ... -> i`.
+    ///
+    /// # Arguments
+    ///
+    /// * `i` - the source node of the new edge.
+    ///
+    /// # Returns
+    ///
+    /// The paths of at most [`SPLIT_OUTPUTS_BOUND`] edges that end in node
+    /// `i + 1`.
+    fn bounded_paths_to(i: u64) -> OrdZSet<Tup2<u64, u64>> {
+        OrdZSet::from_keys(
+            (),
+            chain_paths_to(i, SPLIT_OUTPUTS_BOUND)
+                .map(|path| Tup2(path, 1))
+                .collect(),
+        )
+    }
+
+    /// A bounded recursion stops at its bound in every transaction, even when
+    /// its operators split their outputs into chunks.
+    ///
+    /// Operators that split their outputs spread an iteration over many steps.
+    /// Each iteration must still see exactly the previous iteration's output:
+    /// none of its own, and none of what the last iteration of an earlier
+    /// transaction produced.  A chunk size of one splits every output.  One
+    /// worker exchanges nothing; several workers exchange the chunks.
+    #[test]
+    fn bound_holds_with_split_outputs() {
+        for workers in [1, 2, 4] {
+            for distinct in [true, false] {
+                let config = CircuitConfig::from(workers)
+                    .with_streaming_exchange(true)
+                    .with_splitter_chunk_size_records(1);
+                let (mut handle, (edges, paths)) = Runtime::init_circuit(config, move |circuit| {
+                    let (edges, edges_handle) = circuit.add_input_zset::<Tup2<u64, u64>>();
+                    let bound = NonZeroU64::new(SPLIT_OUTPUTS_BOUND);
+                    let paths = transitive_closure(circuit, &edges, distinct, bound);
+                    Ok((edges_handle, paths.output()))
+                })
+                .unwrap();
+
+                for i in 0..12 {
+                    edges.append(&mut vec![Tup2(Tup2(i, i + 1), 1)]);
+                    handle.transaction().unwrap();
+                    assert_eq!(
+                        paths.consolidate(),
+                        bounded_paths_to(i),
+                        "workers: {workers}, distinct: {distinct}, transaction {i}"
+                    );
+                }
+                handle.kill().unwrap();
+            }
+        }
+    }
+
+    /// A bounded recursion stops all of its variables at the same iteration.
+    ///
+    /// `tagged` receives each path that `paths` feeds to an iteration in two
+    /// ways: directly, through an exchange, and through a join and a
+    /// `distinct` that spread [`FANOUT`] copies of it over many steps.
+    /// Whichever way a path comes, an iteration of `tagged` must see the paths
+    /// that the previous iteration of `paths` produced, and none that the
+    /// same iteration produced.
+    #[test]
+    fn bound_holds_across_variables() {
+        /// Number of copies of each path that go through the `distinct`.
+        const FANOUT: u64 = 20;
+        const TRANSACTIONS: u64 = 10;
+
+        for workers in [1, 2, 4] {
+            for distinct in [true, false] {
+                let config = CircuitConfig::from(workers).with_splitter_chunk_size_records(1);
+                let (mut handle, (edges, tags, paths, tagged)) =
+                    Runtime::init_circuit(config, move |circuit| {
+                        let (edges, edges_handle) = circuit.add_input_zset::<Tup2<u64, u64>>();
+                        let (tags, tags_handle) = circuit.add_input_zset::<Tup2<u64, u64>>();
+
+                        let builder = circuit.recursion_builder(
+                            |child| {
+                                Ok((
+                                    child.recursive_var::<OrdZSet<Tup2<u64, u64>>>(),
+                                    child.recursive_var::<OrdZSet<Tup2<Tup2<u64, u64>, u64>>>(),
+                                ))
+                            },
+                            move |child, (paths, _tagged)| {
+                                let edges = edges.delta0(child);
+                                let tags = tags.delta0(child);
+
+                                let paths_by_end = paths.map_index(|&Tup2(from, to)| (to, from));
+                                let edges_indexed = edges.map_index(|Tup2(from, to)| (*from, *to));
+                                let longer_paths = paths_by_end
+                                    .join(&edges_indexed, |_via, from, to| Tup2(*from, *to));
+
+                                let tags_indexed = tags.map_index(|Tup2(node, tag)| (*node, *tag));
+                                let copied = paths.shard().map(|path| Tup2(*path, 0));
+                                let fanned_out = paths_by_end
+                                    .join(&tags_indexed, |to, from, tag| {
+                                        Tup2(Tup2(*from, *to), *tag)
+                                    })
+                                    .distinct();
+
+                                Ok((edges.plus(&longer_paths), copied.plus(&fanned_out)))
+                            },
+                        );
+                        let builder = if distinct {
+                            builder
+                        } else {
+                            builder.without_distinct()
+                        };
+                        let (paths, tagged) = builder
+                            .with_bound(NonZeroU64::new(SPLIT_OUTPUTS_BOUND).unwrap())
+                            .finish()
+                            .unwrap();
+
+                        Ok((edges_handle, tags_handle, paths.output(), tagged.output()))
+                    })
+                    .unwrap();
+
+                tags.append(
+                    &mut (0..=TRANSACTIONS)
+                        .flat_map(|node| (1..=FANOUT).map(move |tag| Tup2(Tup2(node, tag), 1)))
+                        .collect(),
+                );
+                for i in 0..TRANSACTIONS {
+                    edges.append(&mut vec![Tup2(Tup2(i, i + 1), 1)]);
+                    handle.transaction().unwrap();
+
+                    let context =
+                        format!("workers: {workers}, distinct: {distinct}, transaction {i}");
+                    assert_eq!(paths.consolidate(), bounded_paths_to(i), "{context}");
+                    // Iterations 1 to `SPLIT_OUTPUTS_BOUND` of `tagged` see the
+                    // paths from the iterations before them, which are one edge
+                    // shorter.
+                    let expected_tagged = OrdZSet::from_keys(
+                        (),
+                        chain_paths_to(i, SPLIT_OUTPUTS_BOUND - 1)
+                            .flat_map(|path| (0..=FANOUT).map(move |tag| Tup2(Tup2(path, tag), 1)))
+                            .collect(),
+                    );
+                    assert_eq!(tagged.consolidate(), expected_tagged, "{context}");
+                }
+                handle.kill().unwrap();
+            }
+        }
+    }
+
+    /// [`bound_holds_with_split_outputs`] on two hosts with two workers each,
+    /// whose exchanges carry the chunks over the network.
+    #[test]
+    fn bound_holds_with_split_outputs_multihost() {
+        const HOSTS: usize = 2;
+        const WORKERS_PER_HOST: usize = 2;
+
+        // Bind all of the listeners first, so that each runtime can connect to
+        // the others while they start up one after another.
+        let listeners = (0..HOSTS)
+            .map(|_| TcpListener::bind("127.0.0.1:0").unwrap())
+            .collect::<Vec<_>>();
+        let params = listeners
+            .iter()
+            .map(|listener| (listener.local_addr().unwrap(), WORKERS_PER_HOST))
+            .collect::<Vec<_>>();
+
+        let mut hosts = Vec::with_capacity(HOSTS);
+        for (listener, (address, _)) in listeners.into_iter().zip(&params) {
+            let config = CircuitConfig::from(Layout::new_multihost(&params, *address).unwrap())
+                .with_exchange_listener(listener)
+                .with_streaming_exchange(true)
+                .with_splitter_chunk_size_records(1);
+            hosts.push(
+                Runtime::init_circuit(config, |circuit| {
+                    let (edges, edges_handle) = circuit.add_input_zset::<Tup2<u64, u64>>();
+                    let bound = NonZeroU64::new(SPLIT_OUTPUTS_BOUND);
+                    let paths = transitive_closure(circuit, &edges, true, bound);
+                    Ok((edges_handle, paths.output()))
+                })
+                .unwrap(),
+            );
+        }
+
+        for i in 0..12 {
+            // The input shards the edge across the workers of both hosts.
+            hosts[0].1.0.append(&mut vec![Tup2(Tup2(i, i + 1), 1)]);
+            thread::scope(|scope| {
+                for (handle, _) in &mut hosts {
+                    scope.spawn(|| handle.transaction().unwrap());
+                }
+            });
+            let paths = hosts
+                .iter()
+                .map(|(_, (_, paths))| paths.consolidate())
+                .reduce(|sum, paths| sum.add_by_ref(&paths))
+                .unwrap();
+            assert_eq!(paths, bounded_paths_to(i), "transaction {i}");
+        }
+
+        for (handle, _) in hosts {
+            handle.kill().unwrap();
         }
     }
 }
