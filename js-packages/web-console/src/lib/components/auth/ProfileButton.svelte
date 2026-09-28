@@ -78,13 +78,13 @@
     >
       <div class="flex flex-col gap-3 p-4">
         {#snippet apiKeysIcon()}
-          <div class="fd fd-key text-[20px]"></div>
+          <div class="fd fd-key w-7 text-[20px]"></div>
         {/snippet}
         {#snippet oidcTrustIcon()}
-          <div class="fd fd-user text-[20px]"></div>
+          <div class="fd fd-user w-7 text-[20px]"></div>
         {/snippet}
         {#snippet adminIcon()}
-          <div class="fd fd-shield text-[20px]"></div>
+          <div class="fd fd-shield w-7 text-[20px]"></div>
         {/snippet}
         {#snippet healthIcon()}
           <div
@@ -115,10 +115,10 @@
 
           <div class="hr"></div>
         {/if}
-        <DarkModeSwitch class="pl-7"></DarkModeSwitch>
+        <DarkModeSwitch class="pl-9"></DarkModeSwitch>
         <div class="hr"></div>
         {#if typeof auth === 'object' && 'logout' in auth}
-          <div class="flex gap-1">
+          <div class="flex gap-3">
             {#if auth.profile.picture}
               <img class="h-6 w-6 rounded-full" src={auth.profile.picture} alt="User avatar" />
             {:else}
@@ -134,11 +134,11 @@
         {:else}
           <div class="text-surface-700-300">Authentication is disabled</div>
         {/if}
-        <CurrentTenant class="pl-7"></CurrentTenant>
+        <CurrentTenant class="pl-9"></CurrentTenant>
         {#if typeof auth === 'object' && 'logout' in auth}
           <div class="hr"></div>
           <button
-            class="-ml-4 btn justify-start"
+            class="-ml-2 btn self-start"
             onclick={async () => {
               // Redirect to home page, otherwise the auth client inserts the current page
               // which is not whitelisted by the auth provider

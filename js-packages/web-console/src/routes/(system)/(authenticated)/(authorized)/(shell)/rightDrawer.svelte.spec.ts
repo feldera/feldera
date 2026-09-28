@@ -125,17 +125,50 @@ describe('(authorized) right drawer', () => {
 
     expect(isDrawerOpen(drawer)).toBe(true)
     const bundles = drawer.querySelector<HTMLElement>('[data-testid=btn-open-support-bundle]')!
+    // Labelled in words and as tall as New Pipeline, like the drawer's other buttons.
+    expect(bundles.textContent!.trim()).toBe('Open support bundle')
+    expect(bundles.getBoundingClientRect().height).toBe(
+      labelled(drawer, 'New Pipeline').getBoundingClientRect().height
+    )
     const top = (control: HTMLElement) => control.getBoundingClientRect().top
     expect(top(labelled(drawer, 'New Pipeline'))).toBeLessThan(top(bundles))
     expect(top(bundles)).toBeLessThan(top(labelled(drawer, 'Book a demo')))
     // Centred in the drawer's column like its neighbours, meaning as wide as its own
-    // icon with equal space on either side.
+    // label with equal space on either side.
     const button = bundles.getBoundingClientRect()
     const column = drawer.getBoundingClientRect()
     expect(button.width).toBeLessThan(column.width - 2 * DRAWER_PADDING)
     expect(Math.abs(button.left - column.left - (column.right - button.right))).toBeLessThanOrEqual(
       1
     )
+  })
+
+  it('keeps New Pipeline, Open support bundle and Book a demo one width', async () => {
+    const { drawer } = await renderDrawer()
+    // The icons are a font, and the buttons widen once it loads.
+    await document.fonts.ready
+    const width = (control: HTMLElement) => control.getBoundingClientRect().width
+    const bundles = drawer.querySelector<HTMLElement>('[data-testid=btn-open-support-bundle]')!
+    const shared = width(bundles)
+
+    expect(width(labelled(drawer, 'New Pipeline'))).toBe(shared)
+    expect(width(labelled(drawer, 'Book a demo'))).toBe(shared)
+    // The icons line up at the column's left edge.
+    const iconLeft = (control: HTMLElement) =>
+      control.querySelector<HTMLElement>('.fd')!.getBoundingClientRect().left
+    expect(iconLeft(labelled(drawer, 'New Pipeline'))).toBe(iconLeft(bundles))
+    expect(iconLeft(labelled(drawer, 'Book a demo'))).toBe(iconLeft(bundles))
+
+    // The name input that replaces New Pipeline takes the same width, and leaves the
+    // other two buttons as they were.
+    labelled(drawer, 'New Pipeline').click()
+    const nameInput = () =>
+      drawer.querySelector<HTMLElement>('input[placeholder="New Pipeline Name"]')
+    await expect.poll(nameInput).toBeTruthy()
+    const input = nameInput()!
+    expect(width(input)).toBe(shared)
+    expect(width(bundles)).toBe(shared)
+    expect(width(labelled(drawer, 'Book a demo'))).toBe(shared)
   })
 
   it('retracts when the dialog it opens covers the screen', async () => {

@@ -8,8 +8,8 @@
   import OverlayDrawer from '$lib/components/layout/OverlayDrawer.svelte'
   import AuthErrorToast from '$lib/components/other/AuthErrorToast.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
-  import OpenSupportBundleButton from '$lib/components/other/OpenSupportBundleButton.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
+  import OpenSupportBundleDialog from '$lib/components/supportBundle/OpenSupportBundleDialog.svelte'
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
   import { fetchConfigs } from '$lib/compositions/configCache'
   import {
@@ -18,6 +18,7 @@
   } from '$lib/compositions/health/useClusterHealth.svelte'
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
   import { useContextDrawer } from '$lib/compositions/layout/useContextDrawer.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { useRefreshPipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { useIsEnterprise } from '$lib/compositions/useEdition.svelte'
   import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
@@ -48,6 +49,7 @@
 
   const rightDrawer = useAdaptiveDrawer('right')
   const contextDrawer = useContextDrawer()
+  const globalDialog = useGlobalDialog()
 
   const systemMessages = useSystemMessages()
   const clusterHealth = useClusterHealth()
@@ -139,6 +141,10 @@
   let isFelderaReachable = $derived(api.isNetworkHealthy && api.isAuthHealthy)
 </script>
 
+{#snippet supportBundleDialog()}
+  <OpenSupportBundleDialog></OpenSupportBundleDialog>
+{/snippet}
+
 <SvelteKitTopLoader
   height={2}
   color={'var(--color-primary-500)'}
@@ -229,23 +235,34 @@
     modal={true}
     class="bg-white-dark flex flex-col gap-2 p-4"
   >
-    <div class="relative my-2 mt-4">
-      <CreatePipelineButton
-        btnClass="preset-filled-surface-50-950"
-        onSuccess={() => {
+    <!-- One column as wide as its widest button, with every button stretched to that
+         width. The New Pipeline slot adds no width of its own, so the name input that
+         replaces its button keeps the column as it is. -->
+    <div class="mt-4 flex flex-col gap-2 self-center">
+      <div class="relative [contain:inline-size]">
+        <CreatePipelineButton
+          inputClass="w-full"
+          btnClass="w-full preset-filled-surface-50-950"
+          onSuccess={() => {
+            rightDrawer.value = false
+          }}
+        ></CreatePipelineButton>
+      </div>
+      <button
+        class="btn h-9 preset-tonal-surface"
+        onclick={() => {
+          globalDialog.dialog = supportBundleDialog
           rightDrawer.value = false
         }}
-      ></CreatePipelineButton>
+        data-testid="btn-open-support-bundle"
+      >
+        <span class="fd fd-stethoscope text-2xl"></span>
+        Open support bundle
+      </button>
+      <BookADemo class="btn preset-filled-primary-500" placement="nav_drawer">Book a demo</BookADemo
+      >
     </div>
-    <OpenSupportBundleButton
-      btnClass="self-center"
-      onOpen={() => {
-        rightDrawer.value = false
-      }}
-    ></OpenSupportBundleButton>
-    <BookADemo class="btn self-center preset-filled-primary-500" placement="nav_drawer"
-      >Book a demo</BookADemo
-    >
+    <div class="mt-4"></div>
     <NavigationExtras inline></NavigationExtras>
   </OverlayDrawer>
   <OverlayDrawer

@@ -118,7 +118,9 @@ vi.mock('$lib/compositions/useDemos.svelte', () => ({
 }))
 
 // Imported AFTER vi.mock so the mocks take effect.
+import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
 import { pinnedPeekHeightPixels } from '$lib/components/layout/PinnedSections.svelte'
+import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
 import HomePage from './+page.svelte'
 
 const SCROLL_AREA_HEIGHT = 800
@@ -360,5 +362,22 @@ describe('/ (home) header', () => {
     expect(bundles.getBoundingClientRect().right).toBeLessThanOrEqual(
       labelled('New Pipeline').left + 1
     )
+  })
+  it('opens the support bundle dialog from an icon button with a title', async () => {
+    const { container } = await renderHome()
+    const bundles = container.querySelector<HTMLElement>('[data-testid=btn-open-support-bundle]')!
+
+    // The icon carries no text, so the title is what names the button.
+    expect(bundles.title).toBe('Open support bundle')
+    expect(bundles.textContent!.trim()).toBe('')
+
+    bundles.click()
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const modal = render(GlobalModal, { target, props: { dialog: useGlobalDialog().dialog } })
+    expect(target.querySelector('[data-testid=box-all-bundles]')).toBeTruthy()
+    await modal.unmount()
+    useGlobalDialog().dialog = null
   })
 })

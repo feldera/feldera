@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { fakeHandle } from '$lib/services/testSupportBundleHelpers'
 import {
   bundleOps,
   isPermissionRequired,
@@ -14,19 +15,6 @@ import {
   isSameHandle
 } from './supportBundleStorage'
 import type { StoredSupportBundle } from './supportBundleStore'
-
-/**
- * Stands in for a `FileSystemFileHandle`, which a test cannot construct. It has no
- * permission methods, matching a handle read back out of IndexedDB and any handle in
- * a browser outside Chromium.
- */
-const fakeHandle = (name: string, contents = 'bundle contents') =>
-  ({
-    name,
-    kind: 'file',
-    getFile: async () => new File([contents], name),
-    isSameEntry: async (other: { name: string }) => other.name === name
-  }) as unknown as FileSystemFileHandle
 
 const linked = (handle: FileSystemFileHandle): StoredSupportBundle => ({
   id: 1,
