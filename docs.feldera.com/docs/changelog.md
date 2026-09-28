@@ -10,6 +10,18 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- New connector (`nats_output`): write view output to a NATS subject. The
+  connector publishes to JetStream: each message is acknowledged by the
+  server before the pipeline moves on, every message carries a `Nats-Msg-Id`
+  derived from its content so that output replayed after a restart is
+  deduplicated by the server within the stream's duplicate window, and
+  static headers can be attached to every message. The message size limit is
+  discovered from the bound stream at connect time (the stream's
+  `max_message_size`, else the server's max payload) and can be overridden;
+  a record over the limit fails the pipeline with an error naming the record
+  and the limit, instead of reaching the server. See
+  [NATS output connector](/connectors/sinks/nats).
+
 ## v0.360.0
 
 - Storage now uses LZ4 compression by default, instead of Snappy.  LZ4

@@ -12310,6 +12310,22 @@
           }
         }
       },
+      "NatsHeader": {
+        "type": "object",
+        "description": "A header attached to every message published by `nats_output`.",
+        "required": [
+          "key",
+          "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        }
+      },
       "NatsInputConfig": {
         "type": "object",
         "required": [
@@ -12338,6 +12354,53 @@
           },
           "stream_name": {
             "type": "string"
+          }
+        }
+      },
+      "NatsMessageId": {
+        "type": "string",
+        "description": "How `nats_output` chooses the `Nats-Msg-Id` header of each message.",
+        "enum": [
+          "content_hash",
+          "none"
+        ]
+      },
+      "NatsOutputConfig": {
+        "type": "object",
+        "description": "Configuration for writing data to a NATS subject with `nats_output`.\n\nThe connector publishes to JetStream: each message is published with an\nacknowledgment request and the publish is retried until the server\nacknowledges it or the pipeline shuts down, so data is not lost to a\nserver that is momentarily unavailable. The subject must be bound to a\nJetStream stream; publishing to a subject with no stream raises\n\"no responders\" and the publish fails.",
+        "required": [
+          "connection_config",
+          "subject"
+        ],
+        "properties": {
+          "connection_config": {
+            "$ref": "#/components/schemas/ConnectOptions"
+          },
+          "headers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NatsHeader"
+            },
+            "description": "Headers to add to every message published by this connector, as\nkey/value pairs. Values are UTF-8 strings."
+          },
+          "max_message_size": {
+            "type": "integer",
+            "description": "Override for the maximum message size in bytes the connector offers to\nthe encoder. When unset, the connector discovers the limit at connect\ntime: the bound stream's `max_message_size` when the stream sets one,\nelse the server's max payload. The encoder splits output records across\nmessages by this limit; a record larger than the limit fails the\npipeline with an error naming the record rather than reaching the\nserver.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "message_id": {
+            "$ref": "#/components/schemas/NatsMessageId"
+          },
+          "publish_timeout_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How long to wait for the server's publish acknowledgment before\nretrying the publish. Must be at least 1.",
+            "minimum": 0
+          },
+          "subject": {
+            "type": "string",
+            "description": "NATS subject to publish to (e.g., \"orders.created\"). The subject\nmust be bound to a JetStream stream on the target server."
           }
         }
       },
@@ -16434,6 +16497,24 @@
                 "type": "string",
                 "enum": [
                   "nats_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/NatsOutputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "nats_output"
                 ]
               }
             }

@@ -876,6 +876,7 @@ pub fn generate_program_info(
                 | TransportConfig::KafkaOutput(_)
                 | TransportConfig::DeltaTableOutput(_)
                 | TransportConfig::DynamoDBOutput(_)
+                | TransportConfig::NatsOutput(_)
                 | TransportConfig::RedisOutput(_)
                 | TransportConfig::S2Output(_)
                 | TransportConfig::NullOutput => {}
