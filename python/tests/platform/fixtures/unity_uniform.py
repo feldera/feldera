@@ -41,6 +41,7 @@ from tests.platform.fixtures import unity_api
 
 #: The service principal cannot create schemas, so this one has to exist.
 SCHEMA = os.environ.get("DELTA_TABLE_TEST_UNITY_SCHEMA", "default")
+
 TABLE = "uniform_iceberg"
 
 #: Rows per commit, and the tag their ``batch`` column carries.
@@ -129,6 +130,21 @@ def _row_values(batch: str, n: int) -> str:
     )
 
 
+def column_mapping_mode(host: str, token: str, table: str) -> str | None:
+    """The table's Delta ``columnMapping.mode``, or ``None`` when it has none.
+
+    The table's provider is Iceberg, so `SHOW TBLPROPERTIES` reports its Iceberg
+    properties; the Delta log Unity synthesizes is described only by the catalog.
+
+    :param table: The table's full ``catalog.schema.name``.
+    """
+    return (
+        unity_api.get(host, token, f"/api/2.1/unity-catalog/tables/{table}")
+        .get("properties", {})
+        .get("delta.columnMapping.mode")
+    )
+
+
 def _check(host: str, token: str, warehouse: str, table: str) -> None:
     """Fail unless the table really has the properties the test depends on.
 
@@ -138,11 +154,7 @@ def _check(host: str, token: str, warehouse: str, table: str) -> None:
 
     :param table: The table's full ``catalog.schema.name``.
     """
-    properties = {
-        row[0]: row[1]
-        for row in unity_api.sql(host, token, warehouse, f"SHOW TBLPROPERTIES {table}")
-    }
-    mode = properties.get("delta.columnMapping.mode")
+    mode = column_mapping_mode(host, token, table)
     assert mode == "id", (
         f"{table} has columnMapping.mode = {mode!r}, not 'id'. Only an id-mapped "
         "table reaches the field-id path the test exists to cover; this workspace "
