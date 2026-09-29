@@ -104,6 +104,14 @@ pub(super) enum NatsMockAction {
     },
     /// Assert that the zset contains exactly `n` flushed records (no waiting).
     AssertRecordCount(usize),
+
+    /// Wait until the server reports exactly `count` consumers on the stream.
+    ///
+    /// Verifies that the connector deletes the consumers it abandons instead
+    /// of leaving them for the server's `inactive_threshold` to reap.
+    WaitForConsumerCount { count: usize, timeout: Duration },
+    /// Assert that every consumer on the stream is named `<prefix>_<suffix>`.
+    AssertConsumerNamesStartWith(&'static str),
 }
 
 /// Internal state held by the test runner.
@@ -501,10 +509,13 @@ impl NatsMockRunner {
                 let timeout_ms = timeout.as_millis();
                 let endpoint = self.endpoint();
                 let mock_input_consumer = self.mock_input_consumer();
+                let got_fatal = self.got_fatal.clone();
+                // Wait for the fatal error specifically: retry-mode tests
+                // report retryable errors before the fatal one.
                 wait(
                     || {
                         endpoint.queue(false);
-                        mock_input_consumer.state().endpoint_error.is_some()
+                        got_fatal.load(Ordering::Acquire)
                     },
                     timeout_ms,
                 )
@@ -620,6 +631,47 @@ impl NatsMockRunner {
                     actual, *n,
                     "AssertRecordCount: expected exactly {n} records, got {actual}"
                 );
+            }
+
+            NatsMockAction::WaitForConsumerCount { count, timeout } => {
+                let nats_url = self.nats_url().to_string();
+                let deadline = Instant::now() + *timeout;
+                loop {
+                    let consumers = self
+                        .rt
+                        .block_on(util::list_consumers(&nats_url, STREAM_NAME))?;
+                    if consumers.len() == *count {
+                        break;
+                    }
+                    if Instant::now() >= deadline {
+                        let names: Vec<&str> =
+                            consumers.iter().map(|info| info.name.as_str()).collect();
+                        anyhow::bail!(
+                            "Timed out after {timeout:?} waiting for {count} consumers on stream '{STREAM_NAME}', found {}: {names:?}",
+                            consumers.len()
+                        );
+                    }
+                    sleep(Duration::from_millis(100));
+                }
+            }
+
+            NatsMockAction::AssertConsumerNamesStartWith(prefix) => {
+                let nats_url = self.nats_url().to_string();
+                let consumers = self
+                    .rt
+                    .block_on(util::list_consumers(&nats_url, STREAM_NAME))?;
+                assert!(
+                    !consumers.is_empty(),
+                    "AssertConsumerNamesStartWith: no consumers on stream '{STREAM_NAME}'"
+                );
+                let expected = format!("{prefix}_");
+                for info in &consumers {
+                    assert!(
+                        info.name.starts_with(&expected),
+                        "Consumer '{}' is not named '{expected}<suffix>'",
+                        info.name
+                    );
+                }
             }
         }
         Ok(())
