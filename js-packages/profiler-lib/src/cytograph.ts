@@ -488,21 +488,37 @@ export class CytographRendering {
             }
         },
         {
-            // How to display forward edges that are highlighted
+            // How to display highlighted edges that reach the node
             selector: 'edge.highlight-backward',
             style: {
-                'line-color': 'blue',
-                'target-arrow-color': 'blue',
+                'line-color': '#8080ff',
+                'target-arrow-color': '#8080ff',
                 'width': 3
             }
         },
         {
-            // How to display backward edges that are highlighted
+            // How to display highlighted edges reachable from the node
             selector: 'edge.highlight-forward',
+            style: {
+                'line-color': '#ff8080',
+                'target-arrow-color': '#ff8080',
+                'width': 3
+            }
+        },
+        {
+            // How to display highlighted edges from the immediate predecessors
+            selector: 'edge.highlight-backward.highlight-adjacent',
+            style: {
+                'line-color': 'blue',
+                'target-arrow-color': 'blue',
+            }
+        },
+        {
+            // How to display highlighted edges to the immediate successors
+            selector: 'edge.highlight-forward.highlight-adjacent',
             style: {
                 'line-color': 'red',
                 'target-arrow-color': 'red',
-                'width': 3
             }
         },
     ];
@@ -1020,8 +1036,10 @@ export class CytographRendering {
         // highlight edges
         let reachable = this.reachableFrom(nodeId, true);
         reachable.addClass('highlight-forward');
+        reachable.filter(edge => edge.source().id() === nodeId).addClass('highlight-adjacent');
         reachable = this.reachableFrom(nodeId, false);
         reachable.addClass('highlight-backward');
+        reachable.filter(edge => edge.target().id() === nodeId).addClass('highlight-adjacent');
 
         // Build structured tooltip data
         let visible = false;
@@ -1118,6 +1136,7 @@ export class CytographRendering {
         let reachable = this.cy.edges();
         reachable.removeClass('highlight-forward');
         reachable.removeClass('highlight-backward');
+        reachable.removeClass('highlight-adjacent');
     }
 
     /**

@@ -270,6 +270,23 @@ describe('palettes', () => {
         }
     })
 
+    it('draws the edges adjacent to the hovered node in a stronger shade than the other traced edges', () => {
+        for (const theme of ['light', 'dark'] as const) {
+            const palette = DIAGRAM_PALETTES[theme]
+            const directions = [
+                ['highlight-forward', palette.edgeForward, palette.edgeForwardAdjacent],
+                ['highlight-backward', palette.edgeBackward, palette.edgeBackwardAdjacent]
+            ] as const
+            for (const [highlight, far, adjacent] of directions) {
+                const edge = graph(theme).$id('e').addClass(highlight)
+                expect(edge.style('line-color'), highlight).toBe(hexToRgb(far))
+                edge.addClass('highlight-adjacent')
+                expect(edge.style('line-color'), highlight).toBe(hexToRgb(adjacent))
+                expect(edge.style('target-arrow-color'), highlight).toBe(hexToRgb(adjacent))
+            }
+        }
+    })
+
     it('keeps borders and edges on separate entries, whatever the two hold', () => {
         // They hold the same color today, so nothing above can tell which entry either side reads.
         // Repainting one entry is what shows that: only its own side of the diagram follows.

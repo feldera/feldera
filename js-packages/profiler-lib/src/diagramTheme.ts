@@ -118,6 +118,9 @@ export interface DiagramPalette {
     /** Edges reachable from the hovered node, and edges that reach it. */
     edgeForward: Color;
     edgeBackward: Color;
+    /** Edges from the hovered node to its successors, and from its predecessors to it. */
+    edgeForwardAdjacent: Color;
+    edgeBackwardAdjacent: Color;
     /** Corner chips: background, outline, and glyph. */
     chipFill: Color;
     chipBorder: Color;
@@ -141,8 +144,10 @@ export const DIAGRAM_PALETTES: Record<DiagramTheme, DiagramPalette> = {
         heatHigh: '#ff0000',
         // tertiary-200 of the Feldera theme, the light half of `bg-tertiary-200-800`
         region: '#8cabfa',
-        edgeForward: '#ff0000',
-        edgeBackward: '#0000ff',
+        edgeForward: '#ff8080',
+        edgeBackward: '#8080ff',
+        edgeForwardAdjacent: '#ff0000',
+        edgeBackwardAdjacent: '#0000ff',
         chipFill: '#ffffff',
         chipBorder: '#c7ccd4',
         chipInk: '#2f353c',
@@ -163,8 +168,10 @@ export const DIAGRAM_PALETTES: Record<DiagramTheme, DiagramPalette> = {
         heatHigh: '#e03131',
         // tertiary-800 of the Feldera theme, the dark half of `bg-tertiary-200-800`
         region: '#0f38ad',
-        edgeForward: '#ff6b6b',
-        edgeBackward: '#74a9ff',
+        edgeForward: '#a34d4d',
+        edgeBackward: '#4d6fa6',
+        edgeForwardAdjacent: '#ff6b6b',
+        edgeBackwardAdjacent: '#74a9ff',
         chipFill: '#2c3137',
         chipBorder: '#454b52',
         chipInk: '#e8eaed',
@@ -297,6 +304,20 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
                 'target-arrow-color': p.edgeForward,
                 'width': 3,
                 'z-index': TRACED_EDGE_Z_INDEX
+            }
+        },
+        {
+            selector: 'edge.highlight-backward.highlight-adjacent',
+            style: {
+                'line-color': p.edgeBackwardAdjacent,
+                'target-arrow-color': p.edgeBackwardAdjacent,
+            }
+        },
+        {
+            selector: 'edge.highlight-forward.highlight-adjacent',
+            style: {
+                'line-color': p.edgeForwardAdjacent,
+                'target-arrow-color': p.edgeForwardAdjacent,
             }
         },
     ];
