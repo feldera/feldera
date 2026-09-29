@@ -26,22 +26,22 @@ import java.util.Set;
  *   <li>The tests also assert that the circuit never receives late data: the model and
  *       the circuit agree on the waterlines.</li>
  * </ul>
- * @param <R>  Type of a row. */
-public final class DifferentialTester<R extends Record> {
+ * The pairs can have rows of different types; a change goes to the pairs whose rows have its type. */
+public final class DifferentialTester {
     final CompilerCircuitStream ccs;
-    final List<TablePair<R>> pairs;
+    final List<TablePair<?>> pairs;
     /** Key: a table pair.  Value: the model of the contents and waterlines of its LATE_ table,
      * so that a change is applied to the pair only if it is not late. */
-    final Map<TablePair<R>, LatenessModel<R>> models = new HashMap<>();
+    final Map<TablePair<?>, LatenessModel<?>> models = new HashMap<>();
     /** The expected change of view D in every step: the header of its table and no rows. */
     final String expectedDChange;
 
     /** @param ccs      The stream of a program whose only output is view D.
      *  @param columns  The columns of views LATE_ALL and PLAIN_ALL. */
-    public DifferentialTester(CompilerCircuitStream ccs, List<TablePair<R>> pairs, List<String> columns) {
+    public DifferentialTester(CompilerCircuitStream ccs, List<? extends TablePair<?>> pairs, List<String> columns) {
         this.ccs = ccs.compactAfterEachStep();
-        this.pairs = pairs;
-        for (TablePair<R> pair : pairs)
+        this.pairs = List.copyOf(pairs);
+        for (TablePair<?> pair : pairs)
             this.models.put(pair, new LatenessModel<>(pair.schema));
         this.expectedDChange = " side | " + String.join(" | ", columns) + " | weight\n---";
     }
@@ -76,53 +76,67 @@ public final class DifferentialTester<R extends Record> {
     }
 
     /** Insert {@code rows} in one step. */
-    @SafeVarargs
-    public final void insert(R... rows) {
+    public void insert(Record... rows) {
         this.step(Set.of(), List.of(rows), List.of());
     }
 
     /** Insert {@code rows} in one step, which must reach at least the pairs named {@code mustReach}. */
-    @SafeVarargs
-    public final void insert(Set<String> mustReach, R... rows) {
+    public void insert(Set<String> mustReach, Record... rows) {
         this.step(mustReach, List.of(rows), List.of());
     }
 
     /** Delete {@code rows} in one step. */
-    @SafeVarargs
-    public final void delete(R... rows) {
+    public void delete(Record... rows) {
         this.step(Set.of(), List.of(), List.of(rows));
     }
 
     /** Delete {@code rows} in one step, which must reach at least the pairs named {@code mustReach}. */
-    @SafeVarargs
-    public final void delete(Set<String> mustReach, R... rows) {
+    public void delete(Set<String> mustReach, Record... rows) {
         this.step(mustReach, List.of(), List.of(rows));
     }
 
+    /** The model of the LATE_ table of {@code pair}. */
+    @SuppressWarnings("unchecked")
+    <R extends Record> LatenessModel<R> model(TablePair<R> pair) {
+        // The constructor creates the model of each pair from the schema of the same pair
+        return (LatenessModel<R>) this.models.get(pair);
+    }
+
     /** The statements inserting {@code row} into both tables of {@code pair}, or an empty
-     * string if the row does not fit or is late. */
-    String insert(TablePair<R> pair, R row) {
-        if (!pair.fits(row) || !this.models.get(pair).insert(row))
+     * string if the row belongs to other pairs, does not fit, or is late. */
+    <R extends Record> String insert(TablePair<R> pair, Record row) {
+        if (!pair.rowClass.isInstance(row))
             return "";
-        return pair.statements("INSERT INTO ", row);
+        R typed = pair.rowClass.cast(row);
+        if (!pair.fits(typed) || !this.model(pair).insert(typed))
+            return "";
+        return pair.statements("INSERT INTO ", typed);
     }
 
     /** The statements deleting {@code row} from both tables of {@code pair}, or an empty
-     * string if the row does not fit, is late, or is absent. */
-    String delete(TablePair<R> pair, R row) {
-        if (!pair.fits(row) || !this.models.get(pair).delete(row))
+     * string if the row belongs to other pairs, does not fit, is late, or is absent. */
+    <R extends Record> String delete(TablePair<R> pair, Record row) {
+        if (!pair.rowClass.isInstance(row))
             return "";
-        return pair.statements("REMOVE FROM ", row);
+        R typed = pair.rowClass.cast(row);
+        if (!pair.fits(typed) || !this.model(pair).delete(typed))
+            return "";
+        return pair.statements("REMOVE FROM ", typed);
     }
 
-    void step(Set<String> mustReach, List<R> inserts, List<R> deletes) {
+    /** Run one step: apply {@code inserts} and {@code deletes} to every pair that accepts them,
+     * then check that view D does not change.  Each pair skips the rows of other pairs, the rows
+     * that do not fit, and the rows that are late for its LATE_ table; the changes of the step
+     * then move the waterlines of the next steps.
+     * @param mustReach  Names of the pairs that must receive at least one change of the step. */
+    void step(Set<String> mustReach, List<Record> inserts, List<Record> deletes) {
         StringBuilder sql = new StringBuilder();
         Set<String> reached = new HashSet<>();
-        for (TablePair<R> pair : this.pairs) {
+        for (TablePair<?> pair : this.pairs) {
             StringBuilder changes = new StringBuilder();
-            for (R row : inserts)
+            for (Record row : inserts)
                 changes.append(this.insert(pair, row));
-            for (R row : deletes)
+            for (Record row : deletes)
                 changes.append(this.delete(pair, row));
             // The changes of the step move the waterlines of the next steps
             this.models.get(pair).commit();

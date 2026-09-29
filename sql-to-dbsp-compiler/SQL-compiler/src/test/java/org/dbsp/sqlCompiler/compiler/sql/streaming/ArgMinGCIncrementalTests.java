@@ -135,7 +135,8 @@ public class ArgMinGCIncrementalTests extends StreamingTestBase {
                     for (Aggregate aggregate : aggregates) {
                         String key = grouping.isEmpty() ? "NULL" : grouping;
                         String groupBy = grouping.isEmpty() ? "" : " GROUP BY " + grouping;
-                        // The casts remove the waterlines, so that the difference below keeps all its state
+                        // The casts remove the waterlines, so that GC does not prune the traces of the operators
+                        // that compute view D, which compares the two sides
                         StringBuilder branch = new StringBuilder("SELECT '" + pair.name + "_" + aggregate.name +
                                 "_" + grouping + "' AS agg, CAST(" + key + " AS VARCHAR) AS gkey");
                         for (int i = 0; i < aggregate.results.length; i++)
@@ -182,10 +183,10 @@ public class ArgMinGCIncrementalTests extends StreamingTestBase {
     }
 
     /** A differential program with the views of {@code aggregates} over every table pair. */
-    DifferentialTester<Row> differentialTester(List<Aggregate> aggregates) {
+    DifferentialTester differentialTester(List<Aggregate> aggregates) {
         List<TablePair<Row>> pairs = createTablePairs();
         var ccs = this.getCCS(differentialProgram(pairs, aggregates));
-        return new DifferentialTester<>(ccs, pairs, columns(aggregates));
+        return new DifferentialTester(ccs, pairs, columns(aggregates));
     }
 
     /** The steps move the result of every group below the waterline, where only the rows
@@ -193,7 +194,7 @@ public class ArgMinGCIncrementalTests extends StreamingTestBase {
      * the group; the comment on each step names the case.  All pairs receive the same steps;
      * each pair skips the changes that are late for its LATE_ table.  The waterlines advance
      * in two phases, so the rows that GC keeps must survive more than one compaction. */
-    static void runSteps(DifferentialTester<Row> tester) {
+    static void runSteps(DifferentialTester tester) {
         // One step, before any waterline exists, so that no row is late
         tester.insert(
                 // Group 0: minimum 103 tied at payloads 100 and 104, three NULLs, maximum 108 tied at payloads 105 and 110
