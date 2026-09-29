@@ -52,6 +52,11 @@ pub struct GatherPolicy {
     /// stream can have more than one, because an index gathers under the name
     /// of its view.
     deferred: BTreeMap<String, Vec<EnableCount>>,
+
+    /// For each stream whose deferred gather has started, this host's
+    /// transaction number when it started.  This host's rows are in every
+    /// later transaction's output.
+    started: BTreeMap<String, u64>,
 }
 
 impl GatherPolicy {
@@ -59,6 +64,7 @@ impl GatherPolicy {
         Self {
             eager: None,
             deferred: BTreeMap::new(),
+            started: BTreeMap::new(),
         }
     }
 
@@ -83,25 +89,41 @@ pub static GATHER_POLICY: Mutex<GatherPolicy> = Mutex::new(GatherPolicy::new());
 pub fn configure_gathers(eager: Option<BTreeSet<String>>) {
     *GATHER_POLICY.lock().unwrap() = GatherPolicy {
         eager,
-        deferred: BTreeMap::new(),
+        ..GatherPolicy::new()
     };
 }
 
 /// Starts the deferred gathers of `stream` on this host, if it has any.
 ///
-/// This is idempotent: a second call for the same stream has no effect.  A
-/// gather, once started, runs until the pipeline stops.
+/// Returns the transaction number that `transaction_number` returned when
+/// this host started gathering `stream`: every later transaction's output
+/// includes this host's rows.  A gather that started with the circuit
+/// returns 0.  Returns `None` if `stream` is not an output stream of this
+/// pipeline.
 ///
-/// Returns false if `stream` is not an output stream of this pipeline.
-pub fn enable_deferred_gather(stream: &str) -> bool {
+/// This is idempotent: a second call for the same stream starts nothing and
+/// returns the same number.  A gather, once started, runs until the pipeline
+/// stops.
+///
+/// `transaction_number` must read the transaction number in a way that
+/// orders the read after the gather's enable; see
+/// `Controller::transaction_number_after_enable`.
+pub fn enable_deferred_gather(
+    stream: &str,
+    transaction_number: impl FnOnce() -> u64,
+) -> Option<u64> {
     if !OUTPUT_MAPPING.lock().unwrap().contains_key(stream) {
-        return false;
+        return None;
     }
-    let deferred = GATHER_POLICY.lock().unwrap().deferred.remove(stream);
-    for enable_count in deferred.into_iter().flatten() {
-        enable_count.enable();
+    let mut policy = GATHER_POLICY.lock().unwrap();
+    if let Some(deferred) = policy.deferred.remove(stream) {
+        for enable_count in deferred {
+            enable_count.enable();
+        }
+        let started = transaction_number();
+        policy.started.insert(stream.to_string(), started);
     }
-    true
+    Some(policy.started.get(stream).copied().unwrap_or(0))
 }
 
 impl Catalog {
@@ -1281,7 +1303,7 @@ mod test {
 
             let policy = GatherPolicy {
                 eager: Some(BTreeSet::from(["connected".to_string()])),
-                deferred: BTreeMap::new(),
+                ..GatherPolicy::new()
             };
             assert!(policy.is_eager("connected", true));
             assert!(!policy.is_eager("unread", true));
@@ -1292,7 +1314,8 @@ mod test {
         }
 
         /// Enabling a deferred gather enables every worker's instance once,
-        /// however many times the coordinator asks.
+        /// however many times the coordinator asks, and reports the
+        /// transaction number from when it started.
         #[test]
         fn enable_deferred_gather_is_idempotent() {
             let _guard = GLOBALS.lock().unwrap();
@@ -1308,18 +1331,23 @@ mod test {
                 .insert("unread".to_string(), vec![count.clone(), count.clone()]);
             assert!(!count.is_enabled());
 
-            assert!(enable_deferred_gather("unread"));
-            assert!(count.is_enabled());
-            assert!(enable_deferred_gather("unread"));
+            // The transaction number is read after the enable.
+            let read_after_enable = || {
+                assert!(count.is_enabled());
+                7
+            };
+            assert_eq!(enable_deferred_gather("unread", read_after_enable), Some(7));
+            assert_eq!(enable_deferred_gather("unread", || unreachable!()), Some(7));
 
             // Exactly two enables happened: two disables turn it off again.
             count.disable();
             count.disable();
             assert!(!count.is_enabled());
 
-            // A stream with nothing deferred is fine; an unknown one is not.
-            assert!(enable_deferred_gather("eager"));
-            assert!(!enable_deferred_gather("missing"));
+            // An eager stream gathered from the start; an unknown one is not
+            // a stream.
+            assert_eq!(enable_deferred_gather("eager", || unreachable!()), Some(0));
+            assert_eq!(enable_deferred_gather("missing", || unreachable!()), None);
 
             OUTPUT_MAPPING.lock().unwrap().clear();
             configure_gathers(None);

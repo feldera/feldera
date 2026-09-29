@@ -119,6 +119,32 @@ pub struct CoordinationActivate {
     pub gathered_streams: Option<BTreeSet<String>>,
 }
 
+/// Query parameters for `/coordination/gather/{stream}`.
+#[derive(Debug, Default, Serialize, Deserialize, ToSchema)]
+pub struct GatherArgs {
+    /// If present, a client that later starts to read the stream from this
+    /// host skips the output of this transaction and earlier ones, because
+    /// they might lack some host's rows.
+    ///
+    /// The coordinator sets this, on the stream's assigned host, to the
+    /// largest [GatherStatus::started_after_transaction] among the hosts.
+    #[serde(default)]
+    pub output_after_transaction: Option<u64>,
+}
+
+/// Reply to `/coordination/gather/{stream}`.
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct GatherStatus {
+    /// This host's transaction number when it started gathering the stream,
+    /// or 0 if it gathered the stream from the start.  Every later
+    /// transaction's output includes this host's rows.
+    ///
+    /// This relies on the hosts of a multihost pipeline running the same
+    /// transactions in the same order, so that their transaction numbers
+    /// agree.
+    pub started_after_transaction: u64,
+}
+
 /// A step number.
 pub type Step = u64;
 

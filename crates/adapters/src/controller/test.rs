@@ -2693,6 +2693,101 @@ impl OutputEndpoint for DiscardOutputEndpoint {
     }
 }
 
+/// An output endpoint skips the transactions that
+/// [Controller::set_output_after_transaction] names, so that a listener on a
+/// multihost stream that some host started gathering late never sees output
+/// that lacks that host's rows.  An endpoint that already exists is not
+/// affected.
+#[test]
+fn output_endpoint_skips_through_output_after_transaction() {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let input_path = tempdir.path().join("input.csv");
+    File::create_new(&input_path).unwrap();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": input_path.display().to_string(), "follow": true },
+                },
+                "format": { "name": "csv" },
+            },
+        },
+        "outputs": {},
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &[],
+                &[Some("output")],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+
+    let processed = |n: u64| {
+        wait(
+            || {
+                controller
+                    .status()
+                    .global_metrics
+                    .num_total_processed_records()
+                    >= n
+            },
+            10_000,
+        )
+        .unwrap()
+    };
+    let add = |name: &str| {
+        let endpoint_config: OutputEndpointConfig = serde_json::from_value(json!({
+            "stream": "test_output1",
+            "transport": { "name": "null_output" },
+            "format": { "name": "csv", "config": {} },
+        }))
+        .unwrap();
+        controller
+            .add_output_endpoint(
+                name,
+                &endpoint_config,
+                Box::new(DiscardOutputEndpoint),
+                None,
+            )
+            .unwrap();
+    };
+    let transmitted = |name: &str| output_endpoint_metrics(&controller, name).transmitted_records;
+
+    append_input(&input_path, 0..100);
+    processed(100);
+
+    // `before` is added while the pipeline is idle, so it gets everything
+    // from the next transaction on.  `after` is added once the stream's
+    // output is marked incomplete far into the future.
+    add("before");
+    controller.set_output_after_transaction("test_output1", 1_000_000);
+    add("after");
+
+    append_input(&input_path, 100..200);
+    processed(200);
+    wait(|| transmitted("before") == 100, 10_000).unwrap();
+
+    // Give `after` time to receive anything it wrongly would.
+    sleep(Duration::from_millis(500));
+    assert_eq!(transmitted("after"), 0);
+
+    controller.stop().unwrap();
+}
+
 /// A paused connector cannot push the pipeline into backpressure.
 ///
 /// The circuit thread parks when an output endpoint has more than

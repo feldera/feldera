@@ -1165,6 +1165,30 @@ impl Controller {
         &self.inner.catalog
     }
 
+    /// Returns the current transaction number, read so that it is ordered
+    /// after an accumulator enable that the caller did just before.  Every
+    /// transaction after the returned one samples that enable.
+    pub fn transaction_number_after_enable(&self) -> u64 {
+        self.inner.transaction_number_after_enable()
+    }
+
+    /// Records that the output of `stream` in transaction `transaction` and
+    /// earlier might lack some host's rows, so that an output endpoint added
+    /// later for `stream` skips it.
+    ///
+    /// A host of a multihost pipeline starts gathering a stream at its own
+    /// transaction boundary, so for a while the hosts can disagree about which
+    /// transaction is the first one whose output is complete.  The
+    /// coordinator collects each host's answer and reports the largest one
+    /// here, on the host that the stream is assigned to.
+    ///
+    /// `stream` must be in canonical form, as [SqlIdentifier::name] returns it.
+    pub fn set_output_after_transaction(&self, stream: &str, transaction: u64) {
+        let mut after = self.inner.output_after_transaction.lock().unwrap();
+        let after = after.entry(stream.to_string()).or_default();
+        *after = (*after).max(transaction);
+    }
+
     /// Triggers a dump of the circuit's performance profile to the file system.
     /// The profile will be written asynchronously, probably after this function
     /// returns.
@@ -4778,12 +4802,10 @@ impl CircuitThread {
                     continue;
                 }
 
-                if endpoint.created_during_transaction_number
-                    == self.controller.get_transaction_number()
-                {
+                if endpoint.skip_through_transaction >= self.controller.get_transaction_number() {
                     trace!(
-                        "Output endpoint '{}' was created during the current transaction (seq. number {}) and will not receive any outputs until the next transaction.",
-                        endpoint.endpoint_name, endpoint.created_during_transaction_number
+                        "Output endpoint '{}' will not receive any outputs until the transaction after {}.",
+                        endpoint.endpoint_name, endpoint.skip_through_transaction
                     );
                     // We need to propagate processed_records to the connector for progress tracking.
                     self.controller.enqueue_empty_batch(
@@ -6500,9 +6522,16 @@ struct OutputEndpointDescr {
     /// Stream name that the endpoint is connected to.
     stream_name: String,
 
-    /// Transaction number when the endpoint was created.
-    /// 0 - the endpoint was created before the first transaction performed by the controller.
-    created_during_transaction_number: u64,
+    /// The last transaction whose output the endpoint skips.
+    ///
+    /// An endpoint enables its stream's accumulator when it is created, but
+    /// each worker samples the enable only once per transaction, so the
+    /// transaction in progress at that moment would reach the endpoint with
+    /// only some workers' rows.  This is that transaction's number (0 if the
+    /// endpoint was created before the controller's first transaction), or a
+    /// later one if some host of a multihost pipeline started gathering the
+    /// stream later (see [Controller::set_output_after_transaction]).
+    skip_through_transaction: u64,
 
     /// FIFO queue of batches read from the stream.
     queue: Arc<BatchQueue>,
@@ -6528,7 +6557,6 @@ impl OutputEndpointDescr {
         stream_name: &str,
         send_snapshot: bool,
         snapshot_already_sent: bool,
-        created_during_transaction_number: u64,
         command_handler: Option<Arc<dyn CommandHandler>>,
         unparker: Unparker,
     ) -> Self {
@@ -6542,7 +6570,8 @@ impl OutputEndpointDescr {
                 snapshot_already_sent,
             )),
             disconnect_flag: Arc::new(AtomicBool::new(false)),
-            created_during_transaction_number,
+            // Set by [OutputEndpoints::insert].
+            skip_through_transaction: 0,
             unparker,
         }
     }
@@ -6584,13 +6613,20 @@ impl OutputEndpoints {
             .find(|ep| ep.endpoint_name == endpoint_name)
     }
 
+    /// Adds an endpoint and enables its stream's accumulator.
+    /// `skip_through_transaction` gives the endpoint's
+    /// [OutputEndpointDescr::skip_through_transaction].  It runs after the
+    /// enable, so that every transaction after the one it returns samples the
+    /// enable.
     fn insert(
         &mut self,
         endpoint_id: EndpointId,
         handles: OutputCollectionHandles,
-        endpoint_descr: OutputEndpointDescr,
+        mut endpoint_descr: OutputEndpointDescr,
+        skip_through_transaction: impl FnOnce() -> u64,
     ) {
         handles.enable_count.enable();
+        endpoint_descr.skip_through_transaction = skip_through_transaction();
         self.by_stream
             .entry(endpoint_descr.stream_name.clone())
             .or_insert_with(|| (handles, BTreeSet::new()))
@@ -7297,6 +7333,10 @@ pub struct ControllerInner {
     /// The counter is 0 before the first transaction, 1 during the first transaction, etc.
     transaction_number: AtomicU64,
 
+    /// For each output stream, the last transaction whose output might lack
+    /// some host's rows.  See [Controller::set_output_after_transaction].
+    output_after_transaction: Mutex<BTreeMap<String, u64>>,
+
     /// Is the circuit thread still restoring from a checkpoint (this includes the journal replay phase)?
     restoring: AtomicBool,
 
@@ -7392,6 +7432,7 @@ impl ControllerInner {
                 )),
                 restoring: AtomicBool::new(config.global.fault_tolerance.is_enabled()),
                 transaction_number: AtomicU64::new(transaction_number),
+                output_after_transaction: Mutex::new(BTreeMap::new()),
                 step_receiver,
                 checkpoint_receiver,
                 transaction_receiver,
@@ -7518,6 +7559,21 @@ impl ControllerInner {
 
     fn get_transaction_number(&self) -> u64 {
         self.transaction_number.load(Ordering::Acquire)
+    }
+
+    /// Returns the current transaction number, ordered after the caller's
+    /// earlier write to an accumulator's enable count.
+    ///
+    /// The caller enables an accumulator and then reads the transaction
+    /// number, while the circuit thread increments the transaction number
+    /// and then its workers read the enable count.  With plain loads, both
+    /// reads could see the old values, and the next transaction could miss
+    /// the enable that this read claims it has.  A read-modify-write takes a
+    /// place in the transaction number's modification order: if it reads the
+    /// old number, the circuit thread's increment reads from it and so
+    /// happens after the enable.
+    fn transaction_number_after_enable(&self) -> u64 {
+        self.transaction_number.fetch_add(0, Ordering::AcqRel)
     }
 
     fn increment_transaction_number(&self) {
@@ -8241,7 +8297,6 @@ impl ControllerInner {
             &stream_name,
             endpoint_config.connector_config.send_snapshot,
             snapshot_already_sent,
-            self.get_transaction_number(),
             command_handler,
             parker.unparker().clone(),
         );
@@ -8253,7 +8308,12 @@ impl ControllerInner {
         if outputs.lookup_by_name(endpoint_name).is_some() {
             Err(ControllerError::duplicate_output_endpoint(endpoint_name))?;
         }
-        outputs.insert(endpoint_id, handles.clone(), endpoint_descr);
+        let gathered_stream = SqlIdentifier::from(&endpoint_config.stream).name();
+        outputs.insert(endpoint_id, handles.clone(), endpoint_descr, || {
+            let after = self.output_after_transaction.lock().unwrap();
+            self.transaction_number_after_enable()
+                .max(after.get(&gathered_stream).copied().unwrap_or(0))
+        });
         drop(outputs);
 
         // We succeeded, cancel removal of the endpoint.

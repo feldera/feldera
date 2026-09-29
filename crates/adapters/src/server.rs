@@ -71,7 +71,8 @@ use feldera_types::completion_token::{
 use feldera_types::config::{PipelineIdentity, SyncConfig};
 use feldera_types::constants::STATUS_FILE;
 use feldera_types::coordination::{
-    AdHocScan, CoordinationActivate, CoordinationStatus, Labels, RestartArgs, Step, StepRequest,
+    AdHocScan, CoordinationActivate, CoordinationStatus, GatherArgs, GatherStatus, Labels,
+    RestartArgs, Step, StepRequest,
 };
 use feldera_types::format::json::JsonEncoderConfig;
 use feldera_types::pipeline_diff::PipelineDiff;
@@ -3174,23 +3175,31 @@ async fn coordination_activate_handler(
     Ok(HttpResponse::Ok().finish())
 }
 
-/// Starts gathering output stream `stream` to its assigned host.
+/// Starts gathering output stream `stream` to its assigned host, and replies
+/// with a [GatherStatus].
 ///
 /// The coordinator calls this on every host before a client starts to read a
 /// stream that no output connector reads.  See
-/// [CoordinationActivate::gathered_streams].
+/// [CoordinationActivate::gathered_streams].  Then it calls it again on the
+/// stream's assigned host, with [GatherArgs::output_after_transaction], so
+/// that the client skips any transaction whose output lacks some host's rows.
 #[post("/coordination/gather/{stream}")]
 async fn coordination_gather(
     state: WebData<ServerState>,
     stream: web::Path<String>,
+    args: web::Query<GatherArgs>,
 ) -> Result<HttpResponse, PipelineError> {
     // Only a running circuit has gathers to start.
-    state.controller()?;
-    if enable_deferred_gather(&stream) {
-        Ok(HttpResponse::Ok().finish())
-    } else {
-        Err(ControllerError::unknown_output_stream("coordination", &stream).into())
+    let controller = state.controller()?;
+    let started_after_transaction =
+        enable_deferred_gather(&stream, || controller.transaction_number_after_enable())
+            .ok_or_else(|| ControllerError::unknown_output_stream("coordination", &stream))?;
+    if let Some(transaction) = args.output_after_transaction {
+        controller.set_output_after_transaction(&stream, transaction);
     }
+    Ok(HttpResponse::Ok().json(GatherStatus {
+        started_after_transaction,
+    }))
 }
 
 #[get("/coordination/status")]
