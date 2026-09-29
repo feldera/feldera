@@ -147,7 +147,7 @@ tokio = { workspace = true, features = ["sync", "macros", "fs", "rt", "time"] }
 utoipa = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 colored = { workspace = true }
-uuid = { workspace = true, features = ["v4", "std"] }
+uuid = { workspace = true, features = ["v4", "v7", "std"] }
 rkyv = { workspace = true, features = ["std", "size_64"] }
 csv-core = { workspace = true }
 rand = { workspace = true, features = ["small_rng"] }

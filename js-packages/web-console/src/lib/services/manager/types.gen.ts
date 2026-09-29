@@ -3514,10 +3514,23 @@ export type NatsInputConfig = {
    */
   inactivity_timeout_secs?: number
   /**
-   * Delay between automatic reconnect attempts while in retry mode.
-   * Must be at least 1.
+   * Delay in seconds before the first automatic reconnect attempt after a
+   * failure. The delay doubles on every consecutive failure, up to
+   * `retry_max_interval_secs`, and is jittered to avoid synchronized
+   * retries across connectors. Must be at least 1.
    */
   retry_interval_secs?: number
+  /**
+   * Maximum number of consecutive failed reconnect attempts before the
+   * connector gives up and reports a fatal error. When unset, the connector
+   * retries indefinitely. Must be at least 1 when set.
+   */
+  retry_max_attempts?: number | null
+  /**
+   * Upper bound in seconds on the delay between consecutive reconnect
+   * attempts. Must be at least `retry_interval_secs`.
+   */
+  retry_max_interval_secs?: number
   stream_name: string
 }
 

@@ -48,9 +48,11 @@ fn test_nats_retry_loop_when_server_unavailable() -> AnyResult<()> {
             WaitForRecords(1),
             AssertRecordCount(1),
             KillServer,
+            // Stall detection and the health check take a few seconds, then
+            // the first retry waits the default 5s plus up to 25% jitter.
             WaitForErrorCountAtLeast {
                 count: 2,
-                timeout: Duration::from_secs(12),
+                timeout: Duration::from_secs(15),
             },
             DisconnectAllowNonFatal,
         ],
@@ -465,6 +467,9 @@ format:
 }
 
 /// Test that retry_interval_secs controls retry cadence in ERROR state.
+///
+/// Pinning `retry_max_interval_secs` to `retry_interval_secs` disables the
+/// exponential growth, so retries run at a fixed (jittered) interval.
 #[test]
 fn test_nats_retry_interval_config_is_honored() -> AnyResult<()> {
     use NatsMockAction::*;
@@ -482,6 +487,7 @@ transport:
         stream_name: missing_stream
         inactivity_timeout_secs: 1
         retry_interval_secs: 1
+        retry_max_interval_secs: 1
         consumer_config:
             deliver_policy: All
             subjects: [{SUBJECT_NAME}]
@@ -541,6 +547,272 @@ format:
         ],
     )
     .unwrap();
+}
+
+/// Config for a connector that retries against a stream that does not exist,
+/// so every attempt fails fast and deterministically.
+fn missing_stream_retry_config(
+    nats_url: &str,
+    retry_interval_secs: u64,
+    retry_max_interval_secs: u64,
+    retry_max_attempts: Option<u32>,
+) -> String {
+    let max_attempts = retry_max_attempts
+        .map(|n| format!("retry_max_attempts: {n}"))
+        .unwrap_or_default();
+    format!(
+        r#"
+stream: test_input
+transport:
+    name: nats_input
+    config:
+        connection_config:
+            server_url: {nats_url}
+            request_timeout_secs: 1
+        stream_name: missing_stream
+        inactivity_timeout_secs: 1
+        retry_interval_secs: {retry_interval_secs}
+        retry_max_interval_secs: {retry_max_interval_secs}
+        {max_attempts}
+        consumer_config:
+            deliver_policy: All
+            subjects: [{SUBJECT_NAME}]
+format:
+    name: json
+    config:
+        update_format: raw
+"#
+    )
+}
+
+/// The delay between retries doubles on each consecutive failure.
+///
+/// With `retry_interval_secs: 1`, the third error (initial failure plus two
+/// failed retries) arrives within about three seconds. The next retry is
+/// then at least `nominal(3) / 2 = 2s` away, so no error may appear in the
+/// following 1.5s. A fixed 1s interval would fail this check.
+#[test]
+fn test_nats_retry_backs_off_exponentially() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        |nats_url| missing_stream_retry_config(nats_url, 1, 60, None),
+        &[
+            StartNats,
+            CreatePipeline,
+            Extend,
+            WaitForErrorCountAtLeast {
+                count: 3,
+                timeout: Duration::from_secs(6),
+            },
+            AssertNoErrorCountIncrease {
+                duration: Duration::from_millis(1500),
+            },
+            Pause,
+            DisconnectAllowNonFatal,
+        ],
+    )
+}
+
+/// With `retry_max_attempts` set, the connector gives up with a fatal error
+/// after that many consecutive failed retries instead of retrying forever.
+#[test]
+fn test_nats_retry_max_attempts_ends_in_fatal_error() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        |nats_url| missing_stream_retry_config(nats_url, 1, 1, Some(2)),
+        &[
+            StartNats,
+            CreatePipeline,
+            Extend,
+            ExpectFatalErrorContains {
+                timeout: Duration::from_secs(10),
+                needle: "gave up after 2 consecutive failed attempts (retry_max_attempts=2)",
+            },
+            DisconnectAllowNonFatal,
+        ],
+    )
+}
+
+/// The circuit breaker applies to replay retries too.
+#[test]
+fn test_nats_replay_retry_max_attempts_ends_in_fatal_error() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        |nats_url| missing_stream_retry_config(nats_url, 1, 1, Some(1)),
+        &[
+            StartNats,
+            CreatePipeline,
+            Replay { start: 1, end: 2 },
+            ExpectFatalErrorContains {
+                timeout: Duration::from_secs(10),
+                needle: "NATS replay gave up after",
+            },
+        ],
+    )
+}
+
+/// `retry_max_interval_secs` below `retry_interval_secs` is rejected when the
+/// connector is created.
+#[test]
+fn test_nats_retry_max_interval_below_interval_rejected() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        |_| missing_stream_retry_config("nats://127.0.0.1:4222", 10, 5, None),
+        &[
+            StartNats,
+            CreatePipeline,
+            ExpectFatalErrorContains {
+                timeout: Duration::from_secs(1),
+                needle: "retry_max_interval_secs (5) must be at least retry_interval_secs (10)",
+            },
+        ],
+    )
+}
+
+/// `retry_max_attempts: 0` is rejected when the connector is created.
+#[test]
+fn test_nats_retry_max_attempts_zero_rejected() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        |_| missing_stream_retry_config("nats://127.0.0.1:4222", 1, 1, Some(0)),
+        &[
+            StartNats,
+            CreatePipeline,
+            ExpectFatalErrorContains {
+                timeout: Duration::from_secs(1),
+                needle: "retry_max_attempts must be at least 1",
+            },
+        ],
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Consumer Lifecycle
+// ---------------------------------------------------------------------------
+
+/// Timeout for the server to reflect a consumer being created or deleted.
+///
+/// Well below the 30s `inactive_threshold` of the ordered consumer, so a
+/// passing test proves explicit deletion rather than server-side expiry.
+const CONSUMER_COUNT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Pausing and disconnecting delete the connector's consumer on the server.
+#[test]
+fn test_nats_pause_and_disconnect_delete_consumer() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        basic_nats_config,
+        &[
+            StartNats,
+            CreateStream,
+            Publish(2),
+            CreatePipeline,
+            Extend,
+            WaitForRecords(2),
+            WaitForConsumerCount {
+                count: 1,
+                timeout: CONSUMER_COUNT_TIMEOUT,
+            },
+            Pause,
+            WaitForConsumerCount {
+                count: 0,
+                timeout: CONSUMER_COUNT_TIMEOUT,
+            },
+            Extend,
+            Publish(1),
+            WaitForRecords(3),
+            WaitForConsumerCount {
+                count: 1,
+                timeout: CONSUMER_COUNT_TIMEOUT,
+            },
+            Disconnect,
+            WaitForConsumerCount {
+                count: 0,
+                timeout: CONSUMER_COUNT_TIMEOUT,
+            },
+        ],
+    )
+}
+
+/// A replay consumer is deleted as soon as the replay completes.
+#[test]
+fn test_nats_replay_deletes_consumer() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        basic_nats_config,
+        &[
+            StartNats,
+            CreateStream,
+            Publish(3),
+            CreatePipeline,
+            Replay { start: 1, end: 4 },
+            WaitForReplayedRecords(3),
+            WaitForConsumerCount {
+                count: 0,
+                timeout: CONSUMER_COUNT_TIMEOUT,
+            },
+            Disconnect,
+        ],
+    )
+}
+
+/// Without a configured name, consumers are named after the table. The mock
+/// pipeline's table has an empty name, which falls back to `feldera`.
+#[test]
+fn test_nats_consumer_name_defaults_to_table_prefix() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        basic_nats_config,
+        &[
+            StartNats,
+            CreateStream,
+            Publish(1),
+            CreatePipeline,
+            Extend,
+            WaitForRecords(1),
+            AssertConsumerNamesStartWith("feldera"),
+            Disconnect,
+        ],
+    )
+}
+
+/// A configured consumer name is sanitized and used as the prefix.
+#[test]
+fn test_nats_consumer_name_uses_sanitized_configured_prefix() -> AnyResult<()> {
+    use NatsMockAction::*;
+    run_nats_mock_test(
+        |nats_url| {
+            format!(
+                r#"
+stream: test_input
+transport:
+    name: nats_input
+    config:
+        connection_config:
+            server_url: {nats_url}
+        stream_name: {STREAM_NAME}
+        consumer_config:
+            name: "orders.v1 reader"
+            deliver_policy: All
+            filter_subjects: [{SUBJECT_NAME}]
+format:
+    name: json
+    config:
+        update_format: raw
+"#
+            )
+        },
+        &[
+            StartNats,
+            CreateStream,
+            Publish(1),
+            CreatePipeline,
+            Extend,
+            WaitForRecords(1),
+            AssertConsumerNamesStartWith("orders_v1_reader"),
+            Disconnect,
+        ],
+    )
 }
 
 // ---------------------------------------------------------------------------

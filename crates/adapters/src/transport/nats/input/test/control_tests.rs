@@ -326,3 +326,47 @@ fn test_nats_ft_startup_retries_when_stream_missing() -> AnyResult<()> {
         ],
     )
 }
+
+/// The controller injects the pipeline's `given_name` into the consumer's
+/// metadata under `pipeline`, so consumers are traceable from the NATS side.
+/// Consumers are named after the input table and are deleted when the
+/// pipeline stops.
+#[test]
+fn test_nats_pipeline_metadata_on_consumer() -> AnyResult<()> {
+    use NatsControllerAction::*;
+    run_nats_controller_test(
+        NatsControllerRunner::new()?.with_given_name("orders_pipeline"),
+        &[
+            StartNats,
+            CreateStream,
+            RunAndInspectConsumers {
+                publish: 3,
+                name_prefix: "test_input1",
+                metadata: &[("pipeline", "orders_pipeline")],
+            },
+        ],
+    )
+}
+
+/// A user-supplied `pipeline` metadata value takes precedence over the
+/// injected pipeline name, and other user metadata is preserved.
+#[test]
+fn test_nats_pipeline_metadata_does_not_overwrite_user_value() -> AnyResult<()> {
+    use NatsControllerAction::*;
+    run_nats_controller_test(
+        NatsControllerRunner::new()?
+            .with_given_name("orders_pipeline")
+            .with_consumer_name("orders_reader")
+            .with_consumer_metadata("pipeline", "user_specified")
+            .with_consumer_metadata("team", "ingest"),
+        &[
+            StartNats,
+            CreateStream,
+            RunAndInspectConsumers {
+                publish: 3,
+                name_prefix: "orders_reader",
+                metadata: &[("pipeline", "user_specified"), ("team", "ingest")],
+            },
+        ],
+    )
+}

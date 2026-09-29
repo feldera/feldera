@@ -12310,7 +12310,20 @@
           "retry_interval_secs": {
             "type": "integer",
             "format": "int64",
-            "description": "Delay between automatic reconnect attempts while in retry mode.\nMust be at least 1.",
+            "description": "Delay in seconds before the first automatic reconnect attempt after a\nfailure. The delay doubles on every consecutive failure, up to\n`retry_max_interval_secs`, and is jittered to avoid synchronized\nretries across connectors. Must be at least 1.",
+            "minimum": 0
+          },
+          "retry_max_attempts": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Maximum number of consecutive failed reconnect attempts before the\nconnector gives up and reports a fatal error. When unset, the connector\nretries indefinitely. Must be at least 1 when set.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "retry_max_interval_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Upper bound in seconds on the delay between consecutive reconnect\nattempts. Must be at least `retry_interval_secs`.",
             "minimum": 0
           },
           "stream_name": {
