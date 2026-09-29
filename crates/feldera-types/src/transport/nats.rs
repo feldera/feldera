@@ -103,8 +103,11 @@ pub const DEFAULT_REQUEST_TIMEOUT: ConfigDuration = ConfigDuration::from_secs(10
 /// Default time to wait for the next message before running a health check.
 pub const DEFAULT_INACTIVITY_TIMEOUT: ConfigDuration = ConfigDuration::from_secs(60);
 
-/// Default delay between automatic reconnect attempts.
+/// Default delay before the first automatic reconnect attempt.
 pub const DEFAULT_RETRY_INTERVAL: ConfigDuration = ConfigDuration::from_secs(5);
+
+/// Default upper bound on the delay between reconnect attempts.
+pub const DEFAULT_RETRY_MAX_INTERVAL: ConfigDuration = ConfigDuration::from_secs(300);
 
 // The defaults as the OpenAPI schema shows them, one function per
 // `#[schema(default = ...)]`.
@@ -119,6 +122,9 @@ fn default_inactivity_timeout() -> String {
 }
 fn default_retry_interval() -> String {
     DEFAULT_RETRY_INTERVAL.to_string()
+}
+fn default_retry_max_interval() -> String {
+    DEFAULT_RETRY_MAX_INTERVAL.to_string()
 }
 
 /// Options for connecting to a NATS server.
@@ -249,9 +255,11 @@ pub struct NatsInputConfig {
     #[schema(value_type = Option<String>, default = default_inactivity_timeout)]
     pub inactivity_timeout: Option<ConfigDuration>,
 
-    /// Delay between automatic reconnect attempts while in retry mode, for
-    /// example `5s`. Must be at least one second. Unset selects
-    /// the default, `DEFAULT_RETRY_INTERVAL`.
+    /// Delay before the first automatic reconnect attempt after a failure,
+    /// for example `5s`. The delay doubles on every consecutive failure, up
+    /// to `retry_max_interval`, and is jittered to avoid synchronized retries
+    /// across connectors. Must be at least one second. Unset selects the
+    /// default, `DEFAULT_RETRY_INTERVAL`.
     #[serde(
         default,
         alias = "retry_interval_secs",
@@ -261,6 +269,18 @@ pub struct NatsInputConfig {
     #[schema(value_type = Option<String>, default = default_retry_interval)]
     pub retry_interval: Option<ConfigDuration>,
 
+    /// Upper bound on the delay between consecutive reconnect attempts, for
+    /// example `5m`. Must be at least `retry_interval`. Unset selects the
+    /// default, `DEFAULT_RETRY_MAX_INTERVAL`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schema(value_type = Option<String>, default = default_retry_max_interval)]
+    pub retry_max_interval: Option<ConfigDuration>,
+
+    /// Maximum number of consecutive failed reconnect attempts before the
+    /// connector gives up and reports a fatal error. When unset, the connector
+    /// retries indefinitely. Must be at least 1 when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_max_attempts: Option<u32>,
     pub consumer_config: ConsumerConfig,
 }
 
@@ -370,9 +390,15 @@ impl NatsInputConfig {
             .unwrap_or(DEFAULT_INACTIVITY_TIMEOUT)
     }
 
-    /// The reconnect delay in effect, or [`DEFAULT_RETRY_INTERVAL`].
+    /// The first reconnect delay in effect, or [`DEFAULT_RETRY_INTERVAL`].
     pub fn retry_interval(&self) -> ConfigDuration {
         self.retry_interval.unwrap_or(DEFAULT_RETRY_INTERVAL)
+    }
+
+    /// The reconnect delay bound in effect, or [`DEFAULT_RETRY_MAX_INTERVAL`].
+    pub fn retry_max_interval(&self) -> ConfigDuration {
+        self.retry_max_interval
+            .unwrap_or(DEFAULT_RETRY_MAX_INTERVAL)
     }
 }
 

@@ -5,6 +5,7 @@ use anyhow::{Error as AnyError, anyhow};
 use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::format::BufferSize;
+use feldera_adapterlib::metrics::ConnectorMetrics;
 use feldera_adapterlib::transport::{Resume, Watermark};
 use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::config::FtModel;
@@ -45,6 +46,16 @@ pub struct MockInputConsumerState {
     /// pipeline with no transaction open, so that a connector that requests
     /// a transaction waits for it.
     pub open_transaction: Option<Option<i64>>,
+
+    /// The endpoint's custom metrics, captured from `set_custom_metrics`.
+    ///
+    /// Lets a test read a connector's own in-process counters (e.g. a
+    /// consumer-created/deleted count) instead of polling an external
+    /// service for the same fact. The in-process value is available the
+    /// instant the connector's own call returns, with no network round
+    /// trip, so a test built on it is not sensitive to how fast that
+    /// external service happens to respond under load.
+    custom_metrics: Option<Arc<dyn ConnectorMetrics>>,
 }
 
 impl MockInputConsumerState {
@@ -58,6 +69,7 @@ impl MockInputConsumerState {
             transaction_in_progress: false,
             transaction_on_all_hosts: false,
             open_transaction: None,
+            custom_metrics: None,
         }
     }
 
@@ -68,6 +80,8 @@ impl MockInputConsumerState {
         self.endpoint_error = None;
         self.transaction_in_progress = false;
         self.transaction_on_all_hosts = false;
+        // `custom_metrics` is not reset: the endpoint sets it once, at
+        // `open()`, not on every step.
     }
 }
 
@@ -105,6 +119,22 @@ impl MockInputConsumer {
 
     pub fn get_error(&self) -> Option<String> {
         self.state().endpoint_error.as_ref().map(|e| e.to_string())
+    }
+
+    /// The named value of one of the endpoint's custom metrics, read from
+    /// its own counters rather than from whatever external service it
+    /// talks to.
+    ///
+    /// Returns `None` if the endpoint never called `set_custom_metrics`, or
+    /// if `name` is not one of the metrics it reports.
+    pub fn custom_metric(&self, name: &str) -> Option<f64> {
+        self.state()
+            .custom_metrics
+            .as_ref()?
+            .metrics()
+            .into_iter()
+            .find(|(metric_name, ..)| *metric_name == name)
+            .map(|(_, _, _, value)| value)
     }
 }
 
@@ -170,6 +200,10 @@ impl InputConsumer for MockInputConsumer {
 
     fn open_transaction(&self) -> Option<Option<i64>> {
         self.state().open_transaction
+    }
+
+    fn set_custom_metrics(&self, metrics: Arc<dyn ConnectorMetrics>) {
+        self.state().custom_metrics = Some(metrics);
     }
 
     fn completion_watcher(
