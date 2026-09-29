@@ -1068,6 +1068,10 @@ export type ControllerStatus = {
   checkpoint_activity?: CheckpointActivity | null
   global_metrics: GlobalControllerMetrics
   /**
+   * Resource usage of each host in a multihost pipeline, by ordinal.
+   */
+  host_metrics?: Array<HostMetrics>
+  /**
    * Input endpoint configs and metrics.
    */
   inputs: Array<InputEndpointStatus>
@@ -2647,6 +2651,20 @@ export type HealthStatus = {
    * Age at which monitoring data counts as stale.
    */
   stale_after_seconds: number
+}
+
+/**
+ * Resource usage of one host in a multihost pipeline.
+ */
+export type HostMetrics = {
+  /**
+   * Bytes the host can still write to its storage disk; absent when unknown.
+   */
+  disk_available_bytes?: number | null
+  /**
+   * Capacity of the host's storage disk, in bytes; absent when unknown.
+   */
+  disk_total_bytes?: number | null
 }
 
 /**

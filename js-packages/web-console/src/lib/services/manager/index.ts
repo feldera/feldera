@@ -377,6 +377,7 @@ export type {
   HeaderFilter,
   HeaderMatch,
   HealthStatus,
+  HostMetrics,
   HttpInputConfig,
   HttpInputData,
   HttpInputError,

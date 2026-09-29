@@ -268,7 +268,7 @@ def test_pipeline_stats(pipeline_name):
     assert r_stats.status_code == HTTPStatus.OK, (r_stats.status_code, r_stats.text)
     r_stats_json = r_stats.json()
     keys = sorted(r_stats_json.keys())
-    assert keys == [
+    expected = [
         "checkpoint_activity",
         "global_metrics",
         "inputs",
@@ -276,6 +276,11 @@ def test_pipeline_stats(pipeline_name):
         "permanent_checkpoint_errors",
         "suspend_error",
     ]
+    if FELDERA_TEST_NUM_HOSTS > 1:
+        expected.append("host_metrics")
+    assert keys == sorted(expected)
+    if FELDERA_TEST_NUM_HOSTS > 1:
+        assert len(r_stats_json["host_metrics"]) == FELDERA_TEST_NUM_HOSTS
     stats = PipelineStatistics.from_dict(r_stats_json)
 
     gm = stats.global_metrics
