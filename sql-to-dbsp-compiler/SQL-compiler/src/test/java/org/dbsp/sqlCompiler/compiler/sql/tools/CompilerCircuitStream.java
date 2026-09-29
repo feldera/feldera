@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.sql.tools;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
+import org.dbsp.sqlCompiler.compiler.frontend.TableData;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.TestSerialize;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Linq;
@@ -13,6 +14,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Helper class for testing.  Holds together
@@ -102,6 +104,32 @@ public class CompilerCircuitStream extends CompilerCircuit {
         this.stream.addPair(input, output);
         if (this.compactAfterEachStep)
             this.blockForCompaction();
+    }
+
+    /**
+     * Add a step to a change stream with several output views.
+     * A step is described as an input-output pair.
+     *
+     * @param script   SQL script that describes insertions and deletions into the input tables.
+     * @param expected For each output view, by name, a text representation of the output produced
+     *                 for this step, with a column of weights last.
+     */
+    public void stepMultiView(String script, Map<String, String> expected) {
+        Change input = this.toChange(script);
+        List<DBSPSinkOperator> sinks = Linq.where(
+                Linq.list(this.circuit.sinkOperators.values()), sink -> !sink.metadata.system);
+        if (expected.size() != sinks.size())
+            throw new RuntimeException("Expected outputs for " + expected.keySet() +
+                    ", but the circuit has " + sinks.size() + " output views");
+        TableData[] outputs = new TableData[sinks.size()];
+        for (int i = 0; i < sinks.size(); i++) {
+            DBSPSinkOperator sink = sinks.get(i);
+            String table = expected.get(sink.viewName.name());
+            if (table == null)
+                throw new RuntimeException("No expected output for view " + sink.viewName);
+            outputs[i] = TableParser.parseChangeTable(table, sink.getType(), this.trimStrings).sets[0];
+        }
+        this.step(input, new Change(outputs));
     }
 
     /**
