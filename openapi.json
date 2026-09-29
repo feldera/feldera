@@ -15231,6 +15231,126 @@
           }
         }
       },
+      "S2InputConfig": {
+        "type": "object",
+        "description": "Configuration for reading from an S2 stream.",
+        "required": [
+          "basin",
+          "stream",
+          "auth_token"
+        ],
+        "properties": {
+          "auth_token": {
+            "type": "string",
+            "description": "S2 authentication token."
+          },
+          "basin": {
+            "type": "string",
+            "description": "S2 basin name."
+          },
+          "endpoint": {
+            "type": "string",
+            "description": "Custom S2 endpoint URL (e.g., \"http://localhost:8080\").\nIf not set, uses the default S2 cloud endpoint.",
+            "nullable": true
+          },
+          "start_from": {
+            "$ref": "#/components/schemas/S2StartFrom"
+          },
+          "stream": {
+            "type": "string",
+            "description": "S2 stream name."
+          }
+        }
+      },
+      "S2OutputConfig": {
+        "type": "object",
+        "description": "Configuration for writing to an S2 stream.",
+        "required": [
+          "basin",
+          "stream",
+          "auth_token"
+        ],
+        "properties": {
+          "auth_token": {
+            "type": "string",
+            "description": "S2 authentication token."
+          },
+          "basin": {
+            "type": "string",
+            "description": "S2 basin name."
+          },
+          "endpoint": {
+            "type": "string",
+            "description": "Custom S2 endpoint URL (e.g., \"http://localhost:8080\").\nIf not set, uses the default S2 cloud endpoint.",
+            "nullable": true
+          },
+          "stream": {
+            "type": "string",
+            "description": "S2 stream name."
+          }
+        }
+      },
+      "S2StartFrom": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "SeqNum"
+            ],
+            "properties": {
+              "SeqNum": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Start from a specific sequence number.",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "Timestamp"
+            ],
+            "properties": {
+              "Timestamp": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Start from a specific timestamp (milliseconds since epoch).",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "TailOffset"
+            ],
+            "properties": {
+              "TailOffset": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Start from N records before the tail.",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "string",
+            "description": "Start from the beginning (sequence number 0).",
+            "enum": [
+              "Beginning"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "Start from the tail (new records only).",
+            "enum": [
+              "Tail"
+            ]
+          }
+        ],
+        "description": "Where to start reading from the S2 stream."
+      },
       "S3InputConfig": {
         "type": "object",
         "description": "Configuration for reading data from AWS S3.",
@@ -16624,6 +16744,42 @@
                 "type": "string",
                 "enum": [
                   "clock_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/S2InputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "s2_input"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/S2OutputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "s2_output"
                 ]
               }
             }
