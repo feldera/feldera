@@ -254,7 +254,8 @@ public class RollingAggregateGCIncrementalTests extends StreamingTestBase {
                         sums.add("CAST(SUM(x) OVER (PARTITION BY p ORDER BY " + ordering[2] +
                                 " RANGE BETWEEN " + FRAMES[i] + ") AS VARCHAR) AS s" + i);
                 }
-                // The casts remove the waterlines, so that the difference below keeps all its state
+                // The casts remove the waterlines, so that GC does not prune the traces of the operators
+                // that compute view D, which compares the two sides
                 branches.add("SELECT '" + ordering[0] + "' AS ordering, CAST(p AS VARCHAR) AS p, " +
                         "CAST(ts AS VARCHAR) AS ts, CAST(x AS VARCHAR) AS x, " + String.join(", ", sums) +
                         " FROM " + prefix + ordering[1]);
@@ -271,7 +272,7 @@ public class RollingAggregateGCIncrementalTests extends StreamingTestBase {
     @Test
     public void sameOutputWithoutLateness() {
         List<TablePair<Row>> pairs = createTablePairs();
-        var tester = new DifferentialTester<>(this.getCCS(differentialProgram(pairs)), pairs, columns());
+        var tester = new DifferentialTester(this.getCCS(differentialProgram(pairs)), pairs, columns());
         // A dense grid in partition 0, a sparse one in partition 1, and a NULL ts in each
         List<Row> grid = new ArrayList<>();
         for (int ts = 100; ts < 200; ts++) {

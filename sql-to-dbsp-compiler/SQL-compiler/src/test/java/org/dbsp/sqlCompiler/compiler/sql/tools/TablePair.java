@@ -39,6 +39,8 @@ public final class TablePair<R extends Record> {
     }
 
     public final String name;
+    /** The class of the rows of the tables. */
+    final Class<R> rowClass;
     /** True if the boxed columns of the tables accept NULL. */
     public final boolean nullable;
     final List<Column> columns = new ArrayList<>();
@@ -52,6 +54,7 @@ public final class TablePair<R extends Record> {
      *  @param lateness     The LATENESS of these columns. */
     public TablePair(String name, boolean nullable, Class<R> rowClass, Set<String> lateColumns, int lateness) {
         this.name = name;
+        this.rowClass = rowClass;
         this.nullable = nullable;
         for (RecordComponent component : rowClass.getRecordComponents()) {
             // The row records are nested in the test classes, which are in another package
