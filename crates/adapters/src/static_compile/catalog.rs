@@ -21,7 +21,7 @@ use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
 use std::any::TypeId;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::mem::transmute;
 use std::sync::{Arc, Mutex};
@@ -36,6 +36,73 @@ pub type OutputMapping = BTreeMap<String, usize>;
 /// It would be better if we could pass this in to the circuit instead of having
 /// a global.
 pub static OUTPUT_MAPPING: Mutex<OutputMapping> = Mutex::new(BTreeMap::new());
+
+/// Controls which output streams a multihost pipeline gathers to their
+/// assigned hosts.
+///
+/// Gathering a stream copies all of it to one host, so a stream that nothing
+/// reads should not be gathered.  Each gather starts either at circuit
+/// construction ("eager") or when the coordinator asks for it ("deferred").
+#[derive(Debug, Default)]
+pub struct GatherPolicy {
+    /// The streams to gather eagerly, or `None` to gather all of them eagerly.
+    eager: Option<BTreeSet<String>>,
+
+    /// The gathers that wait for [enable_deferred_gather], by stream name.  A
+    /// stream can have more than one, because an index gathers under the name
+    /// of its view.
+    deferred: BTreeMap<String, Vec<EnableCount>>,
+}
+
+impl GatherPolicy {
+    const fn new() -> Self {
+        Self {
+            eager: None,
+            deferred: BTreeMap::new(),
+        }
+    }
+
+    /// Returns true if `stream` must be gathered from the start.  `assigned`
+    /// says whether the coordinator assigned `stream` to a host.
+    ///
+    /// A stream that the coordinator did not assign to a host is always
+    /// gathered eagerly, because the coordinator cannot ask for it later.
+    fn is_eager(&self, stream: &str, assigned: bool) -> bool {
+        self.eager
+            .as_ref()
+            .is_none_or(|eager| !assigned || eager.contains(stream))
+    }
+}
+
+/// Global [GatherPolicy], set with [OUTPUT_MAPPING] before the circuit is
+/// built.
+pub static GATHER_POLICY: Mutex<GatherPolicy> = Mutex::new(GatherPolicy::new());
+
+/// Sets [GATHER_POLICY] for the circuit about to be built, so that it gathers
+/// only the streams in `eager` at first (or all streams, if `eager` is `None`).
+pub fn configure_gathers(eager: Option<BTreeSet<String>>) {
+    *GATHER_POLICY.lock().unwrap() = GatherPolicy {
+        eager,
+        deferred: BTreeMap::new(),
+    };
+}
+
+/// Starts the deferred gathers of `stream` on this host, if it has any.
+///
+/// This is idempotent: a second call for the same stream has no effect.  A
+/// gather, once started, runs until the pipeline stops.
+///
+/// Returns false if `stream` is not an output stream of this pipeline.
+pub fn enable_deferred_gather(stream: &str) -> bool {
+    if !OUTPUT_MAPPING.lock().unwrap().contains_key(stream) {
+        return false;
+    }
+    let deferred = GATHER_POLICY.lock().unwrap().deferred.remove(stream);
+    for enable_count in deferred.into_iter().flatten() {
+        enable_count.enable();
+    }
+    true
+}
 
 impl Catalog {
     fn parse_relation_schema(schema: &str) -> Result<Relation, ControllerError> {
@@ -90,12 +157,9 @@ impl Catalog {
             && let layout = runtime.layout()
             && let Layout::Multihost { hosts, .. } = layout
         {
-            let ordinal = OUTPUT_MAPPING
-                .lock()
-                .unwrap()
-                .get(&name.name())
-                .copied()
-                .unwrap_or_default();
+            let stream_name = name.name();
+            let assignment = OUTPUT_MAPPING.lock().unwrap().get(&stream_name).copied();
+            let ordinal = assignment.unwrap_or_default();
 
             let (accumulated_stream, enabled_count) = stream
                 .shard_workers_accumulate(hosts[ordinal].workers.clone())
@@ -113,11 +177,24 @@ impl Catalog {
             //
             // Enable the accumulator on every host so the gather is always
             // complete. Materialized views already get this via the integral's
-            // `into_enabled_stream`; do the same for the delta gather. This
-            // gathers a view even when it has no connector; a future
-            // optimization could propagate the owning host's connector state to
-            // the other hosts to skip that work.
-            enabled_count.enable();
+            // `into_enabled_stream`; do the same for the delta gather.
+            //
+            // Gathering a stream that nothing reads wastes storage and memory
+            // on its host, so the coordinator lists the streams that output
+            // connectors read.  Every host gathers those from the start.  It
+            // defers the others until the coordinator asks for them, for
+            // example when an HTTP client starts to read one.
+            let mut policy = GATHER_POLICY.lock().unwrap();
+            if policy.is_eager(&stream_name, assignment.is_some()) {
+                enabled_count.enable();
+            } else {
+                policy
+                    .deferred
+                    .entry(stream_name)
+                    .or_default()
+                    .push(enabled_count.clone());
+            }
+            drop(policy);
 
             let integral = if integrate {
                 Some(
@@ -1176,5 +1253,76 @@ mod test {
             r#"-1: {"id":2,"b":true,"i":null,"s":"2"}
 "#
         );
+    }
+
+    mod gather_policy {
+        use std::collections::{BTreeMap, BTreeSet};
+        use std::sync::Mutex;
+
+        use dbsp::operator::dynamic::accumulator::EnableCount;
+
+        use super::super::{
+            GATHER_POLICY, GatherPolicy, OUTPUT_MAPPING, configure_gathers, enable_deferred_gather,
+        };
+
+        /// Serializes the tests that change the global gather state.
+        static GLOBALS: Mutex<()> = Mutex::new(());
+
+        fn mapping(names: &[&str]) -> BTreeMap<String, usize> {
+            names.iter().map(|name| (name.to_string(), 0)).collect()
+        }
+
+        #[test]
+        fn is_eager() {
+            // An old coordinator sends no set, so every stream is eager.
+            let legacy = GatherPolicy::new();
+            assert!(legacy.is_eager("connected", true));
+            assert!(legacy.is_eager("unread", true));
+
+            let policy = GatherPolicy {
+                eager: Some(BTreeSet::from(["connected".to_string()])),
+                deferred: BTreeMap::new(),
+            };
+            assert!(policy.is_eager("connected", true));
+            assert!(!policy.is_eager("unread", true));
+
+            // The coordinator cannot start a gather for a stream it did not
+            // assign, so such a stream is eager.
+            assert!(policy.is_eager("unassigned", false));
+        }
+
+        /// Enabling a deferred gather enables every worker's instance once,
+        /// however many times the coordinator asks.
+        #[test]
+        fn enable_deferred_gather_is_idempotent() {
+            let _guard = GLOBALS.lock().unwrap();
+            *OUTPUT_MAPPING.lock().unwrap() = mapping(&["unread", "eager"]);
+            configure_gathers(Some(BTreeSet::from(["eager".to_string()])));
+
+            // Two workers share one enable count per host.
+            let count = EnableCount::new();
+            GATHER_POLICY
+                .lock()
+                .unwrap()
+                .deferred
+                .insert("unread".to_string(), vec![count.clone(), count.clone()]);
+            assert!(!count.is_enabled());
+
+            assert!(enable_deferred_gather("unread"));
+            assert!(count.is_enabled());
+            assert!(enable_deferred_gather("unread"));
+
+            // Exactly two enables happened: two disables turn it off again.
+            count.disable();
+            count.disable();
+            assert!(!count.is_enabled());
+
+            // A stream with nothing deferred is fine; an unknown one is not.
+            assert!(enable_deferred_gather("eager"));
+            assert!(!enable_deferred_gather("missing"));
+
+            OUTPUT_MAPPING.lock().unwrap().clear();
+            configure_gathers(None);
+        }
     }
 }

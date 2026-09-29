@@ -7,7 +7,7 @@ use crate::panic::enable_counting_panics;
 use crate::server::metrics::{
     JsonFormatter, LabelStack, MetricsFormatter, MetricsWriter, PrometheusFormatter,
 };
-use crate::static_compile::catalog::OUTPUT_MAPPING;
+use crate::static_compile::catalog::{OUTPUT_MAPPING, configure_gathers, enable_deferred_gather};
 use crate::transport::http::HttpOutputFormat;
 use crate::util::{
     LongOperationWarning, RateLimitCheckResult, TokenBucketRateLimiter,
@@ -1290,6 +1290,7 @@ fn do_bootstrap(
             RuntimeDesiredStatus::Coordination => {
                 if let Some(mut ca) = state.coordination_activate.lock().unwrap().take() {
                     *OUTPUT_MAPPING.lock().unwrap() = take(&mut ca.output_assignment);
+                    configure_gathers(ca.gathered_streams.take());
 
                     builder = builder.with_layout(
                         Layout::new_multihost(&ca.exchanges, ca.local_address).map_err(|e| {
@@ -1459,6 +1460,7 @@ where
         .service(coordination_activate_handler)
         .service(coordination_status)
         .service(coordination_step_request)
+        .service(coordination_gather)
         .service(coordination_step_status)
         .service(coordination_checkpoint_status)
         .service(coordination_checkpoint_prepare)
@@ -3170,6 +3172,25 @@ async fn coordination_activate_handler(
     *state.coordination_activate.lock().unwrap() = Some(args.into_inner());
     state.desired_status_change.notify_waiters();
     Ok(HttpResponse::Ok().finish())
+}
+
+/// Starts gathering output stream `stream` to its assigned host.
+///
+/// The coordinator calls this on every host before a client starts to read a
+/// stream that no output connector reads.  See
+/// [CoordinationActivate::gathered_streams].
+#[post("/coordination/gather/{stream}")]
+async fn coordination_gather(
+    state: WebData<ServerState>,
+    stream: web::Path<String>,
+) -> Result<HttpResponse, PipelineError> {
+    // Only a running circuit has gathers to start.
+    state.controller()?;
+    if enable_deferred_gather(&stream) {
+        Ok(HttpResponse::Ok().finish())
+    } else {
+        Err(ControllerError::unknown_output_stream("coordination", &stream).into())
+    }
 }
 
 #[get("/coordination/status")]

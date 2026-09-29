@@ -53,7 +53,7 @@
 
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     net::SocketAddr,
 };
 
@@ -106,6 +106,17 @@ pub struct CoordinationActivate {
 
     /// Global assignment of output streams to workers.
     pub output_assignment: BTreeMap<String, usize>,
+
+    /// The output streams that every host gathers to its assigned host from
+    /// the start, because an output connector reads them.
+    ///
+    /// A host gathers a stream that is not in this set only after the
+    /// coordinator asks it to, at `/coordination/gather/{stream}`, for example
+    /// when an HTTP client starts to read the stream.  If this is `None`, then
+    /// every host gathers every stream from the start, which is the behavior
+    /// of coordinators that predate this field.
+    #[serde(default)]
+    pub gathered_streams: Option<BTreeSet<String>>,
 }
 
 /// A step number.
