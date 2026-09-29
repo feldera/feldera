@@ -287,6 +287,9 @@ pub struct RelationPropertiesOnly {
     pub name: SqlIdentifier,
     #[serde(default)]
     pub properties: BTreeMap<String, PropertyValue>,
+    /// Whether the relation is declared `MATERIALIZED`.
+    #[serde(default)]
+    pub materialized: bool,
 }
 
 /// A SQL field.
