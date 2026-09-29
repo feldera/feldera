@@ -104,6 +104,14 @@ pub(super) enum NatsMockAction {
     },
     /// Assert that the zset contains exactly `n` flushed records (no waiting).
     AssertRecordCount(usize),
+
+    /// Wait until the server reports exactly `count` consumers on the stream.
+    ///
+    /// Verifies that the connector deletes the consumers it abandons instead
+    /// of leaving them for the server's `inactive_threshold` to reap.
+    WaitForConsumerCount { count: usize, timeout: Duration },
+    /// Assert that every consumer on the stream is named `<prefix>_<suffix>`.
+    AssertConsumerNamesStartWith(&'static str),
 }
 
 /// Internal state held by the test runner.
@@ -501,10 +509,13 @@ impl NatsMockRunner {
                 let timeout_ms = timeout.as_millis();
                 let endpoint = self.endpoint();
                 let mock_input_consumer = self.mock_input_consumer();
+                let got_fatal = self.got_fatal.clone();
+                // Wait for the fatal error specifically: retry-mode tests
+                // report retryable errors before the fatal one.
                 wait(
                     || {
                         endpoint.queue(false);
-                        mock_input_consumer.state().endpoint_error.is_some()
+                        got_fatal.load(Ordering::Acquire)
                     },
                     timeout_ms,
                 )
@@ -620,6 +631,90 @@ impl NatsMockRunner {
                     actual, *n,
                     "AssertRecordCount: expected exactly {n} records, got {actual}"
                 );
+            }
+
+            NatsMockAction::WaitForConsumerCount { count, timeout } => {
+                // The connector's own `created - deleted` counter is updated
+                // the instant its create/delete call returns, in process,
+                // with no network round trip. NATS acks a create or delete
+                // only after applying it server-side (confirmed with
+                // Synadia), so this counter is never ahead of the server's
+                // real state. Polling it instead of the server itself turns
+                // a test that raced a live network round trip under
+                // whatever load the CI host was under into one bounded only
+                // by how long our own code takes, which is normally
+                // microseconds. `timeout` is a backstop against a genuinely
+                // stuck connector, not a budget this loop is expected to
+                // spend.
+                //
+                // A fully event-driven wait (e.g. a `Notify` the connector
+                // signals on every create/delete) would remove the poll
+                // loop entirely; tracked as a possible follow-up. The other
+                // alternative, `tokio::time::pause`, doesn't apply here:
+                // that would make our own `sleep`/`sleep_until` calls
+                // deterministic, but this wait is bounded by the
+                // connector's real work finishing, not by one of its
+                // timers.
+                let mock_input_consumer = self.mock_input_consumer().clone();
+                let net_consumers = |consumer: &MockInputConsumer| -> Option<i64> {
+                    let created =
+                        consumer.custom_metric("input_connector_nats_consumers_created_total")?;
+                    let deleted =
+                        consumer.custom_metric("input_connector_nats_consumers_deleted_total")?;
+                    Some((created - deleted).round() as i64)
+                };
+                let deadline = Instant::now() + *timeout;
+                loop {
+                    if net_consumers(&mock_input_consumer) == Some(*count as i64) {
+                        break;
+                    }
+                    if Instant::now() >= deadline {
+                        anyhow::bail!(
+                            "Timed out after {timeout:?} waiting for the connector's own count to \
+                             reach {count} consumers on stream '{STREAM_NAME}', last seen: {:?}",
+                            net_consumers(&mock_input_consumer)
+                        );
+                    }
+                    sleep(Duration::from_millis(1));
+                }
+
+                // One real check, not a retry loop: the in-process count
+                // above is already known to match the server (see above),
+                // so this exists only to catch a bug in that reasoning, not
+                // to wait out a race.
+                let nats_url = self.nats_url().to_string();
+                let consumers = self
+                    .rt
+                    .block_on(util::list_consumers(&nats_url, STREAM_NAME))?;
+                anyhow::ensure!(
+                    consumers.len() == *count,
+                    "Connector's own count reached {count}, but the server disagrees: found {} \
+                     consumers on stream '{STREAM_NAME}': {:?}",
+                    consumers.len(),
+                    consumers
+                        .iter()
+                        .map(|info| info.name.as_str())
+                        .collect::<Vec<_>>()
+                );
+            }
+
+            NatsMockAction::AssertConsumerNamesStartWith(prefix) => {
+                let nats_url = self.nats_url().to_string();
+                let consumers = self
+                    .rt
+                    .block_on(util::list_consumers(&nats_url, STREAM_NAME))?;
+                assert!(
+                    !consumers.is_empty(),
+                    "AssertConsumerNamesStartWith: no consumers on stream '{STREAM_NAME}'"
+                );
+                let expected = format!("{prefix}_");
+                for info in &consumers {
+                    assert!(
+                        info.name.starts_with(&expected),
+                        "Consumer '{}' is not named '{expected}<suffix>'",
+                        info.name
+                    );
+                }
             }
         }
         Ok(())
