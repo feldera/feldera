@@ -144,6 +144,11 @@ Source edition can be found on github.
   mode, because its fields were paired by name and such a file shares no field
   name with the table's schema.
 
+- Bug fix (Delta Lake input connector, `snapshot` mode): a struct nested in an
+  array or a map of an id-mapped table read its fields exchanged when the log
+  listed them in a different order than the data file.  A container's children
+  are now relabeled by field id before the struct cast pairs them (#7279).
+
 - Incompatible change (Delta Lake input connector): in `follow` and `cdc` mode
   a data file holding a null element of an array or a map the Delta table
   declares `NOT NULL` is now rejected.  Such a file used to read through, so a
