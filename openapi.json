@@ -9857,6 +9857,13 @@
           "global_metrics": {
             "$ref": "#/components/schemas/GlobalControllerMetrics"
           },
+          "host_metrics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HostMetrics"
+            },
+            "description": "Resource usage of each host in a multihost pipeline, by ordinal."
+          },
           "inputs": {
             "type": "array",
             "items": {
@@ -11433,6 +11440,26 @@
             "type": "integer",
             "format": "int64",
             "description": "Age at which monitoring data counts as stale.",
+            "minimum": 0
+          }
+        }
+      },
+      "HostMetrics": {
+        "type": "object",
+        "description": "Resource usage of one host in a multihost pipeline.",
+        "properties": {
+          "disk_available_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Bytes the host can still write to its storage disk; absent when unknown.",
+            "nullable": true,
+            "minimum": 0
+          },
+          "disk_total_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Capacity of the host's storage disk, in bytes; absent when unknown.",
+            "nullable": true,
             "minimum": 0
           }
         }
