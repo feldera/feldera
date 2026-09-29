@@ -69,7 +69,7 @@ const badgeWidth = (glyphs: number): number =>
 /** The counter canvas is sized for the widest label `formatLeafCount` can produce, and its pill drawn
  *  right-aligned inside it, so a wider count grows leftward from a fixed corner anchor. The rest of the
  *  canvas is transparent. */
-export const BADGE_CANVAS_WIDTH = badgeWidth('1000M'.length);
+export const BADGE_CANVAS_WIDTH = badgeWidth('9.9K'.length);
 
 /** Width of the pill drawn in the counter slot, as opposed to its canvas: what is seen, and what
  *  `chipButtons.ts` treats as the button. */
@@ -189,20 +189,24 @@ const controlGlyph = (
 
 /** Scale prefixes for a count, one per power of a thousand. The last one covers
  *  `Number.MAX_SAFE_INTEGER`, which is what holds every label to the width the canvas is sized for. */
-const COUNT_PREFIXES = ['', 'K', 'M', 'B', 'T'];
+const COUNT_PREFIXES = ['', 'K', 'M', 'B', 'T', 'Q'];
 
-/** Compact label for a leaf count, so the counter stays inside `BADGE_CANVAS_WIDTH`. */
+/** Compact label for a leaf count, so the counter stays inside `BADGE_CANVAS_WIDTH`: the count rounded
+ *  half up to two significant digits, then scaled to its prefix. A count whose leading group of three
+ *  digits is full keeps all three, since they fit without a decimal point: `1.5K` and `12K`, but `123K`. */
 export function formatLeafCount(count: number): string {
-    let scaled = count;
+    const digits = String(count).length;
+    const significant = digits % 3 === 0 ? 3 : 2;
+    // Rounded in whole numbers before it is scaled, so a carry moves to the next prefix: 999_999 reads
+    // `1M`, not `1000K`.
+    const step = 10 ** Math.max(digits - significant, 0);
+    const rest = count % step;
+    const rounded = count - rest + (rest >= step / 2 ? step : 0);
     let prefix = 0;
-    while (scaled >= 1000 && prefix < COUNT_PREFIXES.length - 1) {
-        scaled /= 1000;
+    while (rounded >= 1000 ** (prefix + 1) && prefix < COUNT_PREFIXES.length - 1) {
         prefix++;
     }
-    // One decimal below ten of a scaled unit, none above it: `1.5K` reads at a glance, `12.3K` does
-    // not fit the pill.
-    const decimals = prefix > 0 && scaled < 10 ? 1 : 0;
-    return `${round(scaled, decimals)}${COUNT_PREFIXES[prefix]}`;
+    return `${rounded / 1000 ** prefix}${COUNT_PREFIXES[prefix]}`;
 }
 
 /** What the counter slot shows: how many primitive operators a composite holds, or - while that
