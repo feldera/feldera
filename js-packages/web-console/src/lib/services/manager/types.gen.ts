@@ -5632,6 +5632,78 @@ export type RustCompilationInfo = {
 }
 
 /**
+ * Configuration for reading from an S2 stream.
+ */
+export type S2InputConfig = {
+  /**
+   * S2 authentication token.
+   */
+  auth_token: string
+  /**
+   * S2 basin name.
+   */
+  basin: string
+  /**
+   * Custom S2 endpoint URL (e.g., "http://localhost:8080").
+   * If not set, uses the default S2 cloud endpoint.
+   */
+  endpoint?: string | null
+  start_from?: S2StartFrom
+  /**
+   * S2 stream name.
+   */
+  stream: string
+}
+
+/**
+ * Configuration for writing to an S2 stream.
+ */
+export type S2OutputConfig = {
+  /**
+   * S2 authentication token.
+   */
+  auth_token: string
+  /**
+   * S2 basin name.
+   */
+  basin: string
+  /**
+   * Custom S2 endpoint URL (e.g., "http://localhost:8080").
+   * If not set, uses the default S2 cloud endpoint.
+   */
+  endpoint?: string | null
+  /**
+   * S2 stream name.
+   */
+  stream: string
+}
+
+/**
+ * Where to start reading from the S2 stream.
+ */
+export type S2StartFrom =
+  | {
+      /**
+       * Start from a specific sequence number.
+       */
+      SeqNum: number
+    }
+  | {
+      /**
+       * Start from a specific timestamp (milliseconds since epoch).
+       */
+      Timestamp: number
+    }
+  | {
+      /**
+       * Start from N records before the tail.
+       */
+      TailOffset: number
+    }
+  | 'Beginning'
+  | 'Tail'
+
+/**
  * Configuration for reading data from AWS S3.
  */
 export type S3InputConfig = {
@@ -6532,6 +6604,14 @@ export type TransportConfig =
   | {
       config: ClockConfig
       name: 'clock_input'
+    }
+  | {
+      config: S2InputConfig
+      name: 's2_input'
+    }
+  | {
+      config: S2OutputConfig
+      name: 's2_output'
     }
   | {
       name: 'null_output'
