@@ -272,6 +272,21 @@ mod util {
         Ok(())
     }
 
+    /// Lists the consumers that currently exist on `stream`, as seen by the
+    /// server.
+    pub async fn list_consumers(
+        nats_url: &str,
+        stream: &str,
+    ) -> AnyResult<Vec<jetstream::consumer::Info>> {
+        use futures::TryStreamExt;
+
+        let client = wait_for_nats_ready(nats_url, Duration::from_secs(5)).await?;
+        let js = jetstream::new(client);
+        let stream = js.get_stream(stream).await?;
+        let consumers = stream.consumers().try_collect().await?;
+        Ok(consumers)
+    }
+
     /// Tests for the server-spawning helpers themselves. Every NATS test depends
     /// on them, so a silent failure here surfaces as an unrelated timeout in
     /// whichever test happened to run.
