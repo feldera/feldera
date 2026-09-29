@@ -42,7 +42,11 @@ from tests.platform.fixtures import unity_api
 #: The service principal cannot create schemas, so this one has to exist.
 SCHEMA = os.environ.get("DELTA_TABLE_TEST_UNITY_SCHEMA", "default")
 
-TABLE = "uniform_iceberg"
+#: Bump whenever the schema or the rows below change. The table outlives any one
+#: run, so a reader has no way to tell a stale table from a current one; a new
+#: version is a new table, and the old name simply stops being used.
+FIXTURE_VERSION = "v1"
+TABLE = f"uniform_iceberg_{FIXTURE_VERSION}"
 
 #: Rows per commit, and the tag their ``batch`` column carries.
 BATCHES = ["b0", "b1"]

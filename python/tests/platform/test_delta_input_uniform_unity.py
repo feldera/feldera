@@ -65,6 +65,26 @@ pytestmark = pytest.mark.skipif(
     ),
 )
 
+
+@pytest.fixture(scope="module", autouse=True)
+def require_id_mapped_table():
+    """Fail the module unless the table under test is really id-mapped.
+
+    Databricks is the oracle, so it reads whatever table this points at and
+    agrees with the pipeline about it. A table that lost the mapping, or an
+    environment left pointing at an older fixture, would pass every case below
+    while covering none of what they exist to cover.
+    """
+    host = os.environ["DELTA_TABLE_TEST_UNITY_HOST"].rstrip("/")
+    table = os.environ["DELTA_TABLE_TEST_UNITY_UNIFORM_TABLE"].removeprefix("uc://")
+    mode = fixture.column_mapping_mode(host, unity_api.token_from_env(host), table)
+    assert mode == "id", (
+        f"{table} has columnMapping.mode = {mode!r}, not 'id'. Rebuild the "
+        "fixture with `python -m tests.platform.fixtures.unity_uniform` and set "
+        "DELTA_TABLE_TEST_UNITY_UNIFORM_TABLE to the name it prints."
+    )
+
+
 # One aggregate per row: (alias, Feldera SQL, Databricks SQL). They differ only
 # where the dialects do -- the length of an array is `CARDINALITY` against
 # `size`.
