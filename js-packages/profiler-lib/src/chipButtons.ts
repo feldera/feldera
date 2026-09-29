@@ -1,7 +1,6 @@
 // The code chip reveals the SQL source of the node it sits on. The counter chip expands or collapses
 // the composite node it is on; it shows leaf child node count, and when the node is hovered it shows
-// the matching window control in place of the count. Only a top-level composite has that control: a
-// region nested in another is drawn expanded whenever its parent is, so its counter only counts.
+// the matching window control in place of the count.
 //
 // Chips are cytoscape background images, so cytoscape knows nothing about them: it hit-tests a node by
 // the node's own shape and ignores `bounds-expansion`, which leaves the code chip resting above the top
@@ -68,9 +67,8 @@ const imageInset = (boxSize: number, imageSize: number, position: string, offset
 /** Primitive operators inside `node`, 0 for one that holds none. */
 const counted = (node: NodeSingular): number => Number(node.data('leaf_count')) || 0;
 
-/** Whether `node` expands and collapses: a composite that no region holds. */
-export const isToggleable = (node: NodeSingular): boolean =>
-    Boolean(node.data('has_children')) && !node.isChild();
+/** Whether `node` expands and collapses: any composite, nested in a region or not. */
+export const isToggleable = (node: NodeSingular): boolean => Boolean(node.data('has_children'));
 
 /** Width of the pill actually drawn in a slot. The code chip fills its canvas, while the counter's
  *  canvas is sized for the widest count there can be and its pill only for the count it carries. */
@@ -139,7 +137,6 @@ export function hitTestChips(cy: Core, x: number, y: number): ChipHit | null {
             continue;
         }
         const slot = chipAt(node, x, y);
-        // The counter of a nested region is not a button, so a press on it goes to the region.
         if (slot === null || (slot === 'counter' && !isToggleable(node))) {
             continue;
         }
