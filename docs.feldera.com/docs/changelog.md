@@ -19,6 +19,12 @@ Source edition can be found on github.
   for example with `WHERE ts IS NOT NULL`.  See [Unsupported
   operations](/sql/unsupported-operations#range-frames-with-offsets-over-nullable-columns).
 
+- Bug fix (Python SDK): `Pipeline.listen()` and `Pipeline.foreach_chunk()`
+  returned a `NULL` value of a `CHAR` or `VARCHAR` column as the string
+  `'None'`.  These columns now have the pandas type `string`, so a `NULL`
+  value is a missing value (`None` in `to_dict()`), and `pandas.isna()`
+  finds it.
+
 ## v0.356.0
 
 - Bug fix (SQL): `DATEDIFF(QUARTER, left, right)` mixed whole years with
