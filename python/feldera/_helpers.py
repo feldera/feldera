@@ -31,9 +31,9 @@ def sql_type_to_pandas_type(sql_type: str):
         case "DECIMAL":
             return None
         case "CHAR":
-            return "str"
+            return "string"
         case "VARCHAR":
-            return "str"
+            return "string"
         case "DATE" | "TIMESTAMP":
             return "datetime64[ns]"
         case "TIME" | "INTERVAL":
