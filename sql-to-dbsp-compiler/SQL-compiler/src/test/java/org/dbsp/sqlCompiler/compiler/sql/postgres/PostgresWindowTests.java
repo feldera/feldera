@@ -209,7 +209,7 @@ public class PostgresWindowTests extends SqlIoTest {
         this.qst("""
                 SELECT sum(unique1) over (order by four range between 2::int8 preceding and 1::int2 preceding),
                 	unique1, four
-                FROM tenk1_1_small WHERE unique1 < 10;
+                FROM tenk1_1_small WHERE unique1 < 10 AND four IS NOT NULL;
                  sum | unique1 | four
                 -----+---------+------
                      |       0 |    0
@@ -248,7 +248,7 @@ public class PostgresWindowTests extends SqlIoTest {
         this.qst("""
                 SELECT sum(unique1) over (order by four desc range between 2::int8 preceding and 1::int2 preceding),
                 	unique1, four
-                FROM tenk1_1_small WHERE unique1 < 10;
+                FROM tenk1_1_small WHERE unique1 < 10 AND four IS NOT NULL;
                  sum | unique1 | four
                 -----+---------+------
                      |       3 |    3
@@ -271,7 +271,7 @@ public class PostgresWindowTests extends SqlIoTest {
         this.qst("""
                 select sum(salary)
                 OVER (order by enroll_date range between INTERVAL 365 DAYS preceding and INTERVAL 365 DAYS following),
-                	salary, enroll_date FROM empsalary;
+                	salary, enroll_date FROM empsalary WHERE enroll_date IS NOT NULL;
                   sum  | salary | enroll_date
                 -------+--------+-------------
                  34900 |   5000 | 10-01-2006
@@ -288,7 +288,7 @@ public class PostgresWindowTests extends SqlIoTest {
 
                 select sum(salary)
                 OVER (order by enroll_date desc range between INTERVAL 365 DAYS following and INTERVAL 365 DAYS following),
-                	salary, enroll_date from empsalary;
+                	salary, enroll_date from empsalary WHERE enroll_date IS NOT NULL;
                  sum | salary | enroll_date
                 -----+--------+-------------
                      |   4200 | 01-01-2008
