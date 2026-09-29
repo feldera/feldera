@@ -602,6 +602,14 @@ where
         }
     }
 
+    fn add_negative_weights(&mut self, n: u64) {
+        match &mut self.inner {
+            BuilderInner::File(file) => file.add_negative_weights(n),
+            // Only a file builder is ever given a raw run to account for.
+            BuilderInner::Vec(_) | BuilderInner::Threshold { .. } => {}
+        }
+    }
+
     fn push_raw_vals(&mut self, items: &RawItems<'_>) -> usize {
         match &mut self.inner {
             // Only a file builder can take bytes; the other two hold decoded

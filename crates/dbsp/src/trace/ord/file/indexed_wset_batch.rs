@@ -764,16 +764,28 @@ where
     }
 
     fn raw_values(&self) -> Option<RawItems<'_>> {
-        // A copy never decodes the weights it moves, so it cannot count the
-        // negative ones, and the batch it builds reports that count.  Where
-        // the source holds none, no run of it holds any either, so the
-        // destination's count is right without the copy inspecting a single
-        // weight.  Where the source holds some, this declines and the merge
-        // decodes them as it always did.
-        if self.wset.metadata().negative_weight_count != 0 {
-            return None;
-        }
         self.val_cursor.raw_run()
+    }
+
+    fn negative_weights(&mut self, n: u64) -> u64 {
+        if TypeId::of::<R>() != TypeId::of::<DynZWeight>() {
+            // Nothing counts these, so nothing need read them.
+            return 0;
+        }
+        if self.wset.metadata().negative_weight_count == 0 {
+            // Shortcut if we know the entire batch doesn't have any negative weights.
+            return 0;
+        }
+        let mut count = 0;
+        for offset in 0..n {
+            if !unsafe { self.val_cursor.aux_at(offset, self.diff.as_mut()) } {
+                break;
+            }
+            if is_counted_negative(self.diff.as_ref()) {
+                count += 1;
+            }
+        }
+        count
     }
 
     fn take_values(&mut self, n: u64) {
@@ -934,12 +946,26 @@ where
     R: WeightTrait + ?Sized,
 {
     fn update_stats(&mut self, weight: &R) {
-        if TypeId::of::<R>() == TypeId::of::<DynZWeight>()
-            && unsafe { *weight.downcast::<ZWeight>() } < 0
-        {
+        if is_counted_negative(weight) {
             self.stats.negative_weight_count += 1;
         }
     }
+}
+
+/// Whether `weight` is a negative ZWeight.
+///
+/// # Arguments
+///
+/// * `weight` - the weight to test.
+///
+/// # Returns
+///
+/// True for a negative `ZWeight`, false for every other weight and type.
+fn is_counted_negative<R>(weight: &R) -> bool
+where
+    R: WeightTrait + ?Sized,
+{
+    TypeId::of::<R>() == TypeId::of::<DynZWeight>() && unsafe { *weight.downcast::<ZWeight>() } < 0
 }
 
 /// The touched-window counter to give a builder over keys of type `K`, or
@@ -1107,10 +1133,14 @@ where
         taken > 0
     }
 
+    fn add_negative_weights(&mut self, n: u64) {
+        self.stats.negative_weight_count += n;
+    }
+
     fn push_raw_vals(&mut self, items: &RawItems<'_>) -> usize {
-        // The weights ride along in the bytes, so nothing here calls
-        // `update_stats`: the cursor offers a run only from a batch with no
-        // negative weights, which is the only thing `update_stats` counts.
+        // The weights ride along in the bytes and are never decoded here, so
+        // the caller counts the negative ones and reports them through
+        // `add_negative_weights`.
         let taken = self.writer.write1_raw(items).unwrap_storage();
         self.num_tuples += taken;
         #[cfg(test)]

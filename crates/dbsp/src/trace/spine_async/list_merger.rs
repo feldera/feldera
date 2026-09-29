@@ -466,6 +466,10 @@ where
             if taken == 0 {
                 break;
             }
+            // The bytes went in without being decoded, so the output's count
+            // of negative weights has to come from the cursor that held them.
+            let negative = self.cursors[index].negative_weights(taken as u64);
+            builder.add_negative_weights(negative);
             self.cursors[index].take_values(taken as u64);
             *fuel -= taken as isize;
             wrote = true;

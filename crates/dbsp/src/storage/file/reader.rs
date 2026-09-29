@@ -2850,6 +2850,38 @@ where
         unsafe { self.position.aux(&self.row_group.factories, aux) }
     }
 
+    /// The auxiliary data `offset` rows past the current one, or `false` where
+    /// that row is outside the data block this cursor is reading.
+    ///
+    /// Can be used to read only the weights without deserializing entire values.
+    ///
+    /// # Arguments
+    ///
+    /// * `offset` - how many rows past the current one to read.
+    /// * `aux` - filled in with that row's auxiliary data.
+    ///
+    /// # Returns
+    ///
+    /// Whether `aux` was filled in.
+    ///
+    /// # Safety
+    ///
+    /// Unsafe because `rkyv` deserialization is unsafe.
+    pub unsafe fn aux_at(&self, offset: u64, aux: &mut A) -> bool {
+        let Position::Row(path) = &self.position else {
+            return false;
+        };
+        let block_rows = path.data.rows();
+        let Some(row) = path.row.checked_add(offset) else {
+            return false;
+        };
+        if row >= block_rows.end.min(self.row_group.rows.end) {
+            return false;
+        }
+        unsafe { path.data.aux_for_row(&self.row_group.factories, row, aux) };
+        true
+    }
+
     /// Returns the key and auxiliary data in the current row, or `None` if the
     /// cursor is before or after the row group.
     ///

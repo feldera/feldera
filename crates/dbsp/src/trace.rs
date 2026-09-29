@@ -1233,6 +1233,21 @@ where
         panic!("push_raw_vals on a builder that does not take raw values: ask takes_raw_vals first")
     }
 
+    /// Adds `n` to the count of negative weights the batch being built will
+    /// report.
+    ///
+    /// Updates pushed through [`push_raw_vals`](Self::push_raw_vals) report their
+    /// negative weights using this function.
+    /// Updated pushed through [`push_val`](Self::push_val) shouldn't call this
+    /// function.
+    ///
+    /// # Arguments
+    ///
+    /// * `n` - how many copied records carried a negative weight.
+    fn add_negative_weights(&mut self, n: u64) {
+        let _ = n;
+    }
+
     /// Adds value `val`.
     fn push_val_mut(&mut self, val: &mut Output::Val) {
         self.push_val(val);

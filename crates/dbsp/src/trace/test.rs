@@ -2794,6 +2794,88 @@ fn a_merge_splices_values_it_does_not_have_to_decode() {
     });
 }
 
+/// A merge that copies values still reports how many negative weights it
+/// wrote.
+///
+/// The count drives the spine's merge heuristic, and a copy never decodes the
+/// weights it moves, so the cursor tallies them for the run it hands over.
+/// Ground truth is the output itself: the batch's count has to equal the
+/// negative weights a walk of it finds.  Both inputs hold negatives and their
+/// key ranges are disjoint, so every key is copied rather than merged, which
+/// is the case that used to refuse to splice at all.
+#[test]
+fn a_spliced_merge_counts_the_negative_weights_it_wrote() {
+    use crate::trace::ord::file::indexed_wset_batch::SPLICED_VALUES;
+
+    let _temp_dir = tempdir().expect("Can't create temp dir for storage");
+    let mut config = mkconfig(_temp_dir.path());
+    config.storage.as_mut().unwrap().options.min_storage_bytes = Some(0);
+
+    run_in_circuit_with_storage_config(config, move || {
+        // Every third record retracts, so both inputs carry negatives and no
+        // key of one appears in the other.
+        let weight = |k: i32| if k % 3 == 0 { -1 } else { 1 };
+        let left: Vec<Tup2<Tup2<i32, i32>, ZWeight>> = (0..400i32)
+            .map(|k| Tup2(Tup2(k * 2, k), weight(k)))
+            .collect();
+        let right: Vec<Tup2<Tup2<i32, i32>, ZWeight>> = (0..400i32)
+            .map(|k| Tup2(Tup2(k * 2 + 1, k), weight(k + 1)))
+            .collect();
+        let expected_negative = left
+            .iter()
+            .chain(right.iter())
+            .filter(|Tup2(_, w)| *w < 0)
+            .count() as u64;
+        assert!(expected_negative > 0, "the inputs hold no negative weights");
+
+        let factories =
+            <crate::trace::FallbackIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+        let inputs: Vec<_> = [left, right]
+            .into_iter()
+            .map(|t| build_fallback_indexed_wset_i32_at(t, BatchLocation::Storage))
+            .collect();
+        let input_refs: Vec<&_> = inputs.iter().collect();
+        let builder = <crate::trace::FallbackIndexedWSet<DynI32, DynI32, DynZWeight> as Batch>::Builder::for_merge(
+            &factories,
+            input_refs,
+            Some(BatchLocation::Storage),
+        );
+        let cursors: Vec<_> = inputs.iter().map(|b| b.merge_cursor(None, None)).collect();
+
+        let before = SPLICED_VALUES.with(|count| count.get());
+        let merged: crate::trace::FallbackIndexedWSet<DynI32, DynI32, DynZWeight> =
+            ListMerger::merge(&factories, builder, cursors);
+        let spliced = SPLICED_VALUES.with(|count| count.get()) - before;
+        assert!(
+            spliced > 0,
+            "nothing was copied, so this says nothing about counting a copy",
+        );
+
+        // What the output actually holds, which is what the count must say.
+        let mut walked = 0u64;
+        let mut cursor = merged.cursor();
+        while cursor.key_valid() {
+            while cursor.val_valid() {
+                if **cursor.weight() < 0 {
+                    walked += 1;
+                }
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+        assert_eq!(walked, expected_negative, "the merge lost a retraction");
+        assert_eq!(
+            merged.negative_weight_count(),
+            Some(walked),
+            "the batch's negative-weight count disagrees with what it holds",
+        );
+    });
+}
+
 /// A value run too long for one block goes in over several calls, and the
 /// cursor advances by exactly what each call took.
 ///

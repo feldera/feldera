@@ -161,6 +161,23 @@ pub trait Cursor<K: ?Sized, V: ?Sized, T, R: ?Sized> {
         None
     }
 
+    /// How many of the next `n` values of the current key carry negative
+    /// weights.
+    ///
+    /// # Arguments
+    ///
+    /// * `n` - how many of the current key's values to account for, no more
+    ///   than the run [`raw_values`](Self::raw_values) handed out.
+    ///
+    /// # Returns
+    ///
+    /// The count, or zero from a cursor that offers no bytes and so can never
+    /// have had a run taken from it.
+    fn negative_weights(&mut self, n: u64) -> u64 {
+        let _ = n;
+        0
+    }
+
     /// Moves past `n` values of the current key, which a caller took from
     /// [`raw_values`](Self::raw_values).
     ///
@@ -821,6 +838,28 @@ where
         None
     }
 
+    /// How many of the next `n` values of the current key carry negative
+    /// weights.
+    ///
+    /// A batch counts these for the spine's merge heuristic, and a copy never
+    /// decodes the weights it moves, so a merge that copied a run asks for the
+    /// tally rather than working it out from what it wrote.  Only the weights
+    /// are read, never the values.
+    ///
+    /// # Arguments
+    ///
+    /// * `n` - how many of the current key's values to account for, no more
+    ///   than the run [`raw_values`](Self::raw_values) handed out.
+    ///
+    /// # Returns
+    ///
+    /// The count, or zero from a cursor that offers no bytes and so can never
+    /// have had a run taken from it.
+    fn negative_weights(&mut self, n: u64) -> u64 {
+        let _ = n;
+        0
+    }
+
     /// Moves past `n` values of the current key, which a merge took from
     /// [`raw_values`](Self::raw_values).
     ///
@@ -896,6 +935,10 @@ where
 
     fn raw_values(&self) -> Option<RawItems<'_>> {
         (**self).raw_values()
+    }
+
+    fn negative_weights(&mut self, n: u64) -> u64 {
+        (**self).negative_weights(n)
     }
 
     fn take_values(&mut self, n: u64) {
@@ -1497,6 +1540,10 @@ where
 
     fn raw_values(&self) -> Option<RawItems<'_>> {
         self.cursor.raw_values()
+    }
+
+    fn negative_weights(&mut self, n: u64) -> u64 {
+        self.cursor.negative_weights(n)
     }
 
     fn take_values(&mut self, n: u64) {
