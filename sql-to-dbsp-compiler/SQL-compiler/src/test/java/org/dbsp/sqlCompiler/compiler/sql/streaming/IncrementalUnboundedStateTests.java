@@ -8,7 +8,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.FindUnboundedState;
 import org.junit.Assert;
 import org.junit.Test;
 
-
 /** Tests for the {@link FindUnboundedState#WARNING} warnings.
  * Only incremental circuits contain the garbage collection operators that bound state,
  * so these tests compile incrementally, like the pipeline manager does. */
@@ -67,6 +66,12 @@ public class IncrementalUnboundedStateTests extends StreamingTestBase {
     }
 
     // ---- Programs that must not produce warnings ----
+
+    /** Issue 7086: deduplication of a CDC stream bounds all of its state. */
+    @Test
+    public void deduplicationIsBounded() {
+        this.assertNoUnboundedStateWarnings(DeduplicationIncrementalTests.DEDUP);
+    }
 
     /** A view with an 'emit_final' builds a Window operator. */
     @Test
