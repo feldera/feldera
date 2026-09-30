@@ -1,7 +1,7 @@
+import { ClipboardCopyButton } from 'common-ui'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import ClipboardCopyButton from './ClipboardCopyButton.svelte'
 
 describe('ClipboardCopyButton', () => {
   beforeEach(() => {
