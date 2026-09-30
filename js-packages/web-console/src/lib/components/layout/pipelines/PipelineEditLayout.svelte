@@ -1,5 +1,7 @@
 <script lang="ts">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
+  import { singleton } from 'common-lib/array'
+  import { nonNull } from 'common-lib/function'
   import { Tooltip } from 'common-ui'
   import { Pane, type PaneAPI, PaneGroup, PaneResizer } from 'paneforge'
   import { untrack } from 'svelte'
@@ -34,8 +36,6 @@
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
-  import { singleton } from '$lib/functions/common/array'
-  import { nonNull } from '$lib/functions/common/function'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import { parsePipelineDiff } from '$lib/functions/pipelines/pipelineDiff'
   import { isPipelineCodeEditable } from '$lib/functions/pipelines/status'

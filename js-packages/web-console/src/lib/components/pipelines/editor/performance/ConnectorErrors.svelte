@@ -1,10 +1,10 @@
 <script lang="ts">
+  import { getCaseDependentName } from 'common-lib/felderaRelation'
+  import { formatDateTime } from 'common-lib/format'
   import { SegmentedControl, Tooltip } from 'common-ui'
   import Dayjs from 'dayjs'
   import { fade, slide } from 'svelte/transition'
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
-  import { getCaseDependentName } from '$lib/functions/felderaRelation'
-  import { formatDateTime } from '$lib/functions/format'
   import {
     type ConnectorError,
     type InputEndpointStatus,

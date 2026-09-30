@@ -47,8 +47,8 @@
   import { untrack } from 'svelte'
   import { DecoupledStateProxy } from '$lib/compositions/decoupledState.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
-  import { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
-  import { MonacoEditor, setSelections as setEditorSelections } from 'common-ui'
+  import { isMonacoEditorDisabled } from '$lib/functions/monacoEditor'
+  import { getThemeColor, MonacoEditor, setSelections as setEditorSelections } from 'common-ui'
   import * as MonacoImports from 'monaco-editor'
   import { editor, KeyCode, KeyMod } from 'monaco-editor'
   import type { EditorLanguage } from 'monaco-editor/esm/metadata.js'
@@ -56,7 +56,6 @@
   import { effectMonacoContentPlaceholder } from '$lib/components/monacoEditor/effectMonacoContentPlaceholder.svelte'
   import { GenericOverlayWidget } from '$lib/components/monacoEditor/GenericOverlayWidget'
   import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
-  import { getThemeColor } from '$lib/functions/common/color'
   import { felderaCompilerMarkerSource } from '$lib/functions/pipelines/monaco'
   import type { Snippet } from '$lib/types/svelte'
 

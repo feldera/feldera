@@ -1,4 +1,4 @@
-import { closedIntervalAction } from '$lib/functions/common/promise'
+import { closedIntervalAction } from 'common-lib/promise'
 
 /**
  * Runs `f` immediately, then repeatedly on an interval, exposing the latest return value

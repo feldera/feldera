@@ -1,8 +1,8 @@
+import { findSplice, nubLast, singleton } from 'common-lib/array'
 import { untrack } from 'svelte'
 import { match, P } from 'ts-pattern'
 import { initSystemMessages, type SystemMessage } from '$lib/compositions/initSystemMessages'
 import { useLocalStorage } from '$lib/compositions/localStore.svelte'
-import { findSplice, nubLast, singleton } from '$lib/functions/common/array'
 
 type ShownSystemMessage = {
   id: string

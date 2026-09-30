@@ -1,6 +1,7 @@
 <script lang="ts">
   import triagePlugins, { createBundle, TriageResults } from 'virtual:feldera-triage-plugins'
   import { Progress } from '@skeletonlabs/skeleton-svelte'
+  import { enclosure, nonNull } from 'common-lib/function'
   import {
     createLoadGuard,
     type GlobalMetrics,
@@ -24,7 +25,6 @@
   import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
-  import { enclosure, nonNull } from '$lib/functions/common/function'
   import { resolve } from '$lib/functions/svelte'
   import {
     type BundleHistoryEntry,

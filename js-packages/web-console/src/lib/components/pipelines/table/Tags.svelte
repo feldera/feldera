@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { partition } from 'common-lib/array'
+  import { promisePool } from 'common-lib/promise'
   import { Tooltip } from 'common-ui'
   import { slide } from 'svelte/transition'
   import Popup from '$lib/components/common/Popup.svelte'
@@ -10,8 +12,6 @@
   import { usePermission } from '$lib/compositions/usePermission.svelte'
   import type { PipelineManagerApi } from '$lib/compositions/usePipelineManager.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
-  import { partition } from '$lib/functions/common/array'
-  import { promisePool } from '$lib/functions/common/promise'
   import {
     parseTag,
     tagColorOf,
