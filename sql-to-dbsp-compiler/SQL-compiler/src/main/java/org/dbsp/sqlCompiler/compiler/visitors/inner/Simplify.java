@@ -30,6 +30,7 @@ import org.apache.calcite.util.TimestampString;
 import org.apache.commons.lang3.StringUtils;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.intern.InternInner;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -56,7 +57,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDateLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI128Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDoubleLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
@@ -64,14 +65,10 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPISizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPRealLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU128Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU16Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
-import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU8Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVoidLiteral;
@@ -82,9 +79,11 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeISize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
@@ -206,6 +205,46 @@ public class Simplify extends ExpressionTranslator {
                     expression.getNode(), expression.getType(), source.to(DBSPFailExpression.class).message);
         }
         this.map(expression, result);
+    }
+
+    /** True if the floating point number {@code fp} is exactly {@code value}. */
+    static boolean isExactly(double fp, BigInteger value) {
+        return Double.isFinite(fp) && new BigDecimal(fp).compareTo(new BigDecimal(value)) == 0;
+    }
+
+    /** The literal that {@code cast} produces from the integer {@code value}, or null if the runtime
+     * cast fails or rounds the value. */
+    @Nullable
+    DBSPLiteral castInteger(DBSPCastExpression cast, BigInteger value) {
+        CalciteObject node = cast.source.getNode();
+        DBSPType type = cast.getType();
+        if (type.is(DBSPTypeInteger.class))
+            return type.to(DBSPTypeInteger.class).getLiteral(node, value);
+        if (type.is(DBSPTypeDecimal.class)) {
+            DBSPTypeDecimal decType = type.to(DBSPTypeDecimal.class);
+            BigDecimal decimal = new BigDecimal(value).setScale(decType.scale);
+            if (decimal.precision() > decType.precision) {
+                // The runtime cast fails; keep the cast so the error surfaces at runtime
+                this.compiler.reportWarning(cast.getSourcePosition(), "Invalid DECIMAL",
+                        "cannot represent " + value + " as DECIMAL(" + decType.precision + ", " + decType.scale +
+                                "): precision of DECIMAL type too small to represent value");
+                return null;
+            }
+            return new DBSPDecimalLiteral(node, type, decimal);
+        }
+        if (type.is(DBSPTypeDouble.class)) {
+            double fp = value.doubleValue();
+            return isExactly(fp, value) ? new DBSPDoubleLiteral(node, type, fp) : null;
+        }
+        if (type.is(DBSPTypeReal.class)) {
+            float fp = value.floatValue();
+            return isExactly(fp, value) ? new DBSPRealLiteral(node, type, fp) : null;
+        }
+        if (type.is(DBSPTypeISize.class))
+            return value.bitLength() < Long.SIZE ? new DBSPISizeLiteral(node, type, value.longValueExact()) : null;
+        if (type.is(DBSPTypeUSize.class))
+            return value.signum() >= 0 && value.bitLength() <= Long.SIZE ? new DBSPUSizeLiteral(node, type, value) : null;
+        return null;
     }
 
     @Override
@@ -396,65 +435,15 @@ public class Simplify extends ExpressionTranslator {
                         }
                     }
                 }
-            } else if (lit.is(DBSPI32Literal.class)) {
-                DBSPI32Literal i = lit.to(DBSPI32Literal.class);
-                Objects.requireNonNull(i.value);
-                if (type.is(DBSPTypeDecimal.class)) {
-                    result = new DBSPDecimalLiteral(source.getNode(), type, new BigDecimal(i.value));
-                } else if (type.is(DBSPTypeInteger.class)) {
-                    switch (type.code) {
-                        case INT8:
-                            if (i.value >= Byte.MIN_VALUE && i.value <= Byte.MAX_VALUE) {
-                                result = new DBSPI8Literal(source.getNode(), type, i.value.byteValue());
-                            }
-                            break;
-                        case INT16:
-                            if (i.value >= Short.MIN_VALUE && i.value <= Short.MAX_VALUE) {
-                                result = new DBSPI16Literal(source.getNode(), type, i.value.shortValue());
-                            }
-                            break;
-                        case INT64:
-                            result = new DBSPI64Literal(source.getNode(), type, i.value.longValue());
-                            break;
-                        case INT128:
-                            result = new DBSPI128Literal(source.getNode(), type, BigInteger.valueOf(i.value));
-                            break;
-                        case UINT8:
-                            if (i.value >= 0 && i.value <= 255) {
-                                result = new DBSPU8Literal(source.getNode(), type, i.value);
-                            }
-                            break;
-                        case UINT16:
-                            if (i.value >= 0 && i.value <= 65535) {
-                                result = new DBSPU16Literal(source.getNode(), type, i.value);
-                            }
-                            break;
-                        case UINT32:
-                            if (i.value >= 0) {
-                                result = new DBSPU32Literal(source.getNode(), type, i.value.longValue());
-                            }
-                            break;
-                        case UINT64:
-                            if (i.value >= 0) {
-                                result = new DBSPU64Literal(source.getNode(), type, BigInteger.valueOf(i.value));
-                            }
-                            break;
-                        case UINT128:
-                            if (i.value >= 0) {
-                                result = new DBSPU128Literal(source.getNode(), type, BigInteger.valueOf(i.value));
-                            }
-                            break;
-                    }
-                } else if (type.is(DBSPTypeISize.class)) {
-                    result = new DBSPISizeLiteral(source.getNode(), type, i.value.longValue());
-                } else if (type.is(DBSPTypeUSize.class)) {
-                    if (i.value >= 0) {
-                        result = new DBSPUSizeLiteral(source.getNode(), type, i.value.longValue());
-                    }
-                }
+            } else if (lit.is(DBSPIntLiteral.class)) {
+                BigInteger value = Objects.requireNonNull(lit.to(DBSPIntLiteral.class).getValue());
+                DBSPLiteral folded = this.castInteger(expression, value);
+                if (folded != null)
+                    result = folded;
             } else if (lit.is(DBSPDecimalLiteral.class)) {
                 DBSPDecimalLiteral dec = lit.to(DBSPDecimalLiteral.class);
                 BigDecimal value = Objects.requireNonNull(dec.value);
+                // TODO: fold casts to DOUBLE and REAL
                 if (type.is(DBSPTypeDecimal.class)) {
                     // must adjust precision and scale; the runtime truncates excess digits
                     DBSPTypeDecimal decType = type.to(DBSPTypeDecimal.class);

@@ -133,7 +133,7 @@ public class CastTests extends SqlIoTest {
     @Test
     public void decimalOutOfRange() {
         this.runtimeFail("SELECT CAST(100103123 AS DECIMAL(10, 4))",
-                "Could not convert 100103123 to DECIMAL(10, 4)",
+                "Error converting 100103123 to DECIMAL(10, 4): Value out of range",
                 this.streamWithEmptyChanges());
     }
 
