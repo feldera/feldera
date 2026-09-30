@@ -1,13 +1,13 @@
 <script lang="ts">
+  import { uuidV7Timestamp } from 'common-lib/date'
+  import { formatDateTime } from 'common-lib/format'
+  import { humanSize } from 'common-lib/string'
   import { slide } from 'svelte/transition'
   import ClickFeedback from '$lib/components/common/ClickFeedback.svelte'
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
   import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { usePermission } from '$lib/compositions/usePermission.svelte'
-  import { uuidV7Timestamp } from '$lib/functions/common/date'
-  import { humanSize } from '$lib/functions/common/string'
-  import { formatDateTime } from '$lib/functions/format'
   import type { CheckpointMetadata } from '$lib/services/manager'
   import CheckpointDialog from './CheckpointDialog.svelte'
 

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { getThemeColor } from 'common-lib/color'
+  import { formatQty } from 'common-lib/format'
   import type { EChartsOption } from 'echarts'
   import { LineChart } from 'echarts/charts'
   import { GridComponent, TitleComponent, TooltipComponent } from 'echarts/components'
@@ -6,8 +8,6 @@
   import { CanvasRenderer } from 'echarts/renderers'
   import { Chart } from 'svelte-echarts'
   import { ServerDate } from '$lib/compositions/serverTime'
-  import { getThemeColor } from '$lib/functions/common/color'
-  import { formatQty } from '$lib/functions/format'
   import {
     calcPipelineThroughput,
     type PipelineMetrics,

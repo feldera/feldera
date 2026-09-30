@@ -1,4 +1,4 @@
-import { nonNull } from '$lib/functions/common/function'
+import { nonNull } from './function.ts'
 
 /**
  * Group elements into two based on a binary predicate

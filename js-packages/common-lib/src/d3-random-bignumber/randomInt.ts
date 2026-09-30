@@ -1,6 +1,6 @@
 import { BigNumber } from 'bignumber.js'
 
-import type { RandomBigNumberGenerationSource } from './generationSource'
+import type { RandomBigNumberGenerationSource } from './generationSource.ts'
 
 /**
  * A configurable random integer generator for the uniform distribution.

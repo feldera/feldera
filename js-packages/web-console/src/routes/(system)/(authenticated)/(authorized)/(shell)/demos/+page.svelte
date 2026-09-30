@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { nubLast } from 'common-lib/array'
   import { SegmentedControl } from 'common-ui'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
   import Footer from '$lib/components/layout/Footer.svelte'
@@ -9,7 +10,6 @@
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
   import { useDemos } from '$lib/compositions/useDemos.svelte'
-  import { nubLast } from '$lib/functions/common/array'
   import { resolve } from '$lib/functions/svelte'
 
   let demosType = $state('All')

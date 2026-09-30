@@ -73,6 +73,7 @@
 </script>
 
 <script lang="ts">
+  import { unionName, type NamesInUnion } from 'common-lib/union'
   import LogsStreamList from '$lib/components/pipelines/editor/LogsStreamList.svelte'
   import { emptySearchState, type SearchState } from 'common-ui'
 
@@ -87,7 +88,6 @@
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
   import Dayjs from 'dayjs'
-  import { unionName, type NamesInUnion } from '$lib/functions/common/union'
   import { match } from 'ts-pattern'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { Ref } from '$lib/compositions/ref.svelte'

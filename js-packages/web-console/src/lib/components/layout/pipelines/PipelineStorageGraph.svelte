@@ -1,4 +1,7 @@
 <script lang="ts">
+  import { getThemeColor } from 'common-lib/color'
+  import { humanSize } from 'common-lib/string'
+  import { tuple } from 'common-lib/tuple'
   import type { EChartsOption } from 'echarts'
   import { LineChart } from 'echarts/charts'
   import {
@@ -12,9 +15,6 @@
   import type { ECMouseEvent } from 'svelte-echarts'
   import { Chart } from 'svelte-echarts'
   import { ServerDate } from '$lib/compositions/serverTime'
-  import { getThemeColor } from '$lib/functions/common/color'
-  import { humanSize } from '$lib/functions/common/string'
-  import { tuple } from '$lib/functions/common/tuple'
   import { timeSeriesAxisMax } from '$lib/functions/pipelineMetrics'
   import type { Pipeline } from '$lib/services/pipelineManager'
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'

@@ -1,9 +1,9 @@
+import type { NamesInUnion } from 'common-lib/union'
+import { unionName } from 'common-lib/union'
 import invariant from 'tiny-invariant'
 import { match } from 'ts-pattern'
 import { page } from '$app/state'
 import { hasSelectedRelations } from '$lib/components/pipelines/editor/TabChangeStream.svelte'
-import type { NamesInUnion } from '$lib/functions/common/union'
-import { unionName } from '$lib/functions/common/union'
 import type {
   ExtendedPipeline,
   PipelineAction,
