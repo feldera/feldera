@@ -8782,6 +8782,377 @@ async fn delta_table_snapshot_id_mapped_reordered_nested_fields_test() {
     assert_eq!(snapshot_of(in_order.path()).await, rows.to_vec());
 }
 
+/// A date statistic Arrow cannot parse must not fail the read.
+///
+/// The kernel parses `maxValues` when it opens the table, so one row Spark
+/// wrote with a long year makes the whole table unreadable.
+///
+/// arrow-json 58 rejects a 7-digit year; 59 accepts it. The arrow bump fixes
+/// this.
+#[ignore = "#5717, #5722: needs arrow-json 59, which the dep bump brings"]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_snapshot_out_of_range_date_stats_test() {
+    init_logging();
+
+    let relation_schema = DeltaTestStruct::schema();
+    let arrow_schema = ArrowSchema::new(relation_to_arrow_fields(
+        &relation_schema,
+        delta_schema_options(),
+    ));
+    let struct_fields: Vec<StructField> = arrow_schema
+        .fields
+        .iter()
+        .map(|f| {
+            StructField::new(
+                f.name(),
+                DataType::try_from_arrow(f.data_type()).unwrap(),
+                f.is_nullable(),
+            )
+        })
+        .collect();
+
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let table = create_table(&table_uri, &HashMap::new(), &struct_fields).await;
+    let records: Vec<DeltaTestStruct> = (0..10).map(|i| delta_test_record(i * 2)).collect();
+    write_data_to_table(table, &arrow_schema, &records).await;
+
+    // Rewrite the statistic delta-rs wrote with the one Spark leaves behind.
+    let log_dir = table_dir.path().join("_delta_log");
+    for entry in std::fs::read_dir(&log_dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension() != Some(OsStr::new("json")) {
+            continue;
+        }
+        let rewritten: Vec<String> = std::fs::read_to_string(&path)
+            .unwrap()
+            .lines()
+            .map(|line| {
+                let mut action: Value = serde_json::from_str(line).unwrap();
+                if let Some(add) = action.get_mut("add") {
+                    add["stats"] = json!({
+                        "numRecords": records.len(),
+                        "minValues": {"date": "1970-01-01"},
+                        "maxValues": {"date": "+2012017-10-26"},
+                        "nullCount": {},
+                    })
+                    .to_string()
+                    .into();
+                }
+                action.to_string()
+            })
+            .collect();
+        std::fs::write(&path, rewritten.join("\n") + "\n").unwrap();
+    }
+
+    let output_file = NamedTempFile::new().unwrap();
+    let output_path = output_file.path().display().to_string();
+    let rows = tokio::task::spawn_blocking(move || {
+        use dbsp::typed_batch::IndexedZSetReader;
+
+        let pipeline = delta_table_input_pipeline::<DeltaTestStruct>(
+            &table_uri,
+            &relation_schema,
+            &HashMap::from([("mode".to_string(), json!("snapshot"))]),
+            &output_path,
+        );
+        pipeline.start();
+        wait(|| pipeline.pipeline_complete(), 60_000).expect("timeout ingesting the table");
+        pipeline.stop().unwrap();
+        let mut rows: Vec<DeltaTestStruct> =
+            file_to_zset::<DeltaTestStruct>(&mut File::open(output_file.path()).unwrap())
+                .iter()
+                .map(|(row, (), _weight): (DeltaTestStruct, (), _)| row)
+                .collect();
+        rows.sort();
+        rows
+    })
+    .await
+    .unwrap();
+
+    let mut expected = records;
+    expected.sort();
+    assert_eq!(
+        rows, expected,
+        "a `maxValues` date Arrow cannot represent must not fail the read"
+    );
+}
+
+/// CRC-32/ISO-HDLC, the trailer of a deletion-vector file.
+///
+/// Written out here because the workspace's `crc32c` uses a different
+/// polynomial.
+fn crc32_iso_hdlc(bytes: &[u8]) -> u32 {
+    let mut crc = 0xFFFF_FFFFu32;
+    for byte in bytes {
+        crc ^= *byte as u32;
+        for _ in 0..8 {
+            crc = (crc >> 1) ^ (0xEDB8_8320 & (0u32.wrapping_sub(crc & 1)));
+        }
+    }
+    !crc
+}
+
+/// Build one deletion vector file in the layout the Delta protocol specifies,
+/// and return it with the `sizeInBytes` its descriptor must carry.
+///
+/// ```text
+/// 1 byte    version (1)
+/// 4 bytes   dv_size, big endian      <- the descriptor's offset points here
+/// 4 bytes   magic, little endian
+/// n bytes   portable Roaring bitmap
+/// 4 bytes   CRC-32/ISO-HDLC over magic..=bitmap, big endian
+/// ```
+fn deletion_vector_file(deleted_rows: &[u64]) -> (Vec<u8>, i32) {
+    /// Delta marks a deletion vector's bitmap with this, in little-endian bytes.
+    const PORTABLE_ROARING_MAGIC: u32 = 1681511377;
+
+    let bitmap: RoaringTreemap = deleted_rows.iter().copied().collect();
+    let mut bitmap_bytes = Vec::new();
+    bitmap.serialize_into(&mut bitmap_bytes).unwrap();
+
+    // `dv_size` covers the magic and the bitmap, but not the CRC.
+    let mut checksummed = PORTABLE_ROARING_MAGIC.to_le_bytes().to_vec();
+    checksummed.extend_from_slice(&bitmap_bytes);
+    let dv_size = checksummed.len() as u32;
+
+    let mut bytes = vec![1u8];
+    bytes.extend_from_slice(&dv_size.to_be_bytes());
+    bytes.extend_from_slice(&checksummed);
+    bytes.extend_from_slice(&crc32_iso_hdlc(&checksummed).to_be_bytes());
+
+    (bytes, dv_size as i32)
+}
+
+/// Scan planning must not need a blocking thread per deletion vector.
+///
+/// Loading a vector held a blocking thread while it waited on the kernel's
+/// sync-over-async bridge, which needs a second one. Once the loads reached
+/// `max_blocking_threads` the pool deadlocked, with no error. The fork's
+/// `943cf48b` fixes it; eight vectors against four threads reproduce it.
+/// The scan reports through a channel, so a regression fails here rather than
+/// hanging the suite.
+#[test]
+fn delta_table_deletion_vector_scan_without_blocking_pool_test() {
+    use deltalake::kernel::{Action, Add, DeletionVectorDescriptor, PrimitiveType, StorageType};
+
+    const FILES: usize = 8;
+    const ROWS_PER_FILE: i64 = 4;
+
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().to_path_buf();
+
+    let arrow_schema = Arc::new(ArrowSchema::new(vec![
+        arrow::datatypes::Field::new("id", ArrowDataType::Int64, false),
+        arrow::datatypes::Field::new("val", ArrowDataType::Utf8, true),
+    ]));
+
+    // Written by hand: delta-rs reads deletion vectors but cannot write them.
+    // Each file hides its second row.
+    let mut adds = Vec::with_capacity(FILES);
+    for index in 0..FILES {
+        let file_name = format!("part-{index:05}.parquet");
+        let first_id = index as i64 * ROWS_PER_FILE;
+        let ids: Vec<i64> = (first_id..first_id + ROWS_PER_FILE).collect();
+        let vals: Vec<String> = ids.iter().map(|id| format!("v{id}")).collect();
+        let batch = arrow::record_batch::RecordBatch::try_new(
+            arrow_schema.clone(),
+            vec![
+                Arc::new(arrow::array::Int64Array::from(ids)) as Arc<dyn arrow::array::Array>,
+                Arc::new(arrow::array::StringArray::from(vals)),
+            ],
+        )
+        .unwrap();
+        let path = root.join(&file_name);
+        let mut writer = parquet::arrow::ArrowWriter::try_new(
+            File::create(&path).unwrap(),
+            arrow_schema.clone(),
+            None,
+        )
+        .unwrap();
+        writer.write(&batch).unwrap();
+        writer.close().unwrap();
+
+        let uuid = uuid::Uuid::new_v4();
+        let (dv_bytes, size_in_bytes) = deletion_vector_file(&[1]);
+        std::fs::write(root.join(format!("deletion_vector_{uuid}.bin")), dv_bytes).unwrap();
+
+        adds.push(Add {
+            path: file_name,
+            size: std::fs::metadata(&path).unwrap().len() as i64,
+            modification_time: 1_700_000_000_000,
+            data_change: true,
+            stats: Some(json!({ "numRecords": ROWS_PER_FILE }).to_string()),
+            deletion_vector: Some(DeletionVectorDescriptor {
+                storage_type: StorageType::UuidRelativePath,
+                path_or_inline_dv: z85_encode(uuid.as_bytes()),
+                offset: Some(1),
+                size_in_bytes,
+                cardinality: 1,
+            }),
+            ..Default::default()
+        });
+    }
+
+    let table_uri = root.to_str().unwrap().to_string();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        CreateBuilder::new()
+            .with_location(&table_uri)
+            .with_columns([
+                StructField::new("id", DataType::Primitive(PrimitiveType::Long), false),
+                StructField::new("val", DataType::Primitive(PrimitiveType::String), true),
+            ])
+            .with_configuration_property(TableProperty::EnableDeletionVectors, Some("true"))
+            .with_actions(adds.into_iter().map(Action::Add))
+            .await
+            .unwrap();
+    });
+
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        // Snapshot loading blocks a pooled thread and then waits on the same
+        // pool, so four leaves room for that but not for eight vectors.
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .max_blocking_threads(4)
+            .enable_all()
+            .build()
+            .unwrap();
+        let rows = runtime.block_on(async {
+            let table: DeltaTable =
+                DeltaTableBuilder::from_url(ensure_table_uri(&table_uri).unwrap())
+                    .unwrap()
+                    .load()
+                    .await
+                    .unwrap();
+            let ctx = SessionContext::new();
+            let log_store = table.log_store();
+            ctx.runtime_env()
+                .register_object_store(log_store.root_url(), log_store.root_object_store(None));
+            ctx.register_table("snapshot", table.table_provider().await.unwrap())
+                .unwrap();
+            ctx.sql("select \"id\" from snapshot")
+                .await
+                .unwrap()
+                .collect()
+                .await
+                .unwrap()
+                .iter()
+                .map(|batch| batch.num_rows())
+                .sum::<usize>()
+        });
+        let _ = tx.send(rows);
+        // Dropping a runtime joins its blocking threads. A regression leaves
+        // one wedged, which would hang the suite's exit instead of failing.
+        forget(runtime);
+    });
+
+    let rows = rx
+        .recv_timeout(Duration::from_secs(120))
+        .expect("scan planning wedged: the deletion vectors exhausted the blocking pool");
+    assert_eq!(
+        rows,
+        FILES * (ROWS_PER_FILE as usize - 1),
+        "every file's second row is deleted by its vector"
+    );
+}
+
+/// A reader feature the kernel implements but delta-rs does not list must not
+/// make a table unreadable.
+///
+/// Delta 3.x stamps `vacuumProtocolCheck` on ordinary tables, and delta-rs
+/// rejects any reader feature it does not list. The fork's `7f8bb445`
+/// downgrades that rejection to a warning.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_snapshot_unlisted_reader_feature_test() {
+    init_logging();
+
+    let relation_schema = DeltaTestStruct::schema();
+    let arrow_schema = ArrowSchema::new(relation_to_arrow_fields(
+        &relation_schema,
+        delta_schema_options(),
+    ));
+    let struct_fields: Vec<StructField> = arrow_schema
+        .fields
+        .iter()
+        .map(|f| {
+            StructField::new(
+                f.name(),
+                DataType::try_from_arrow(f.data_type()).unwrap(),
+                f.is_nullable(),
+            )
+        })
+        .collect();
+
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let table = create_table(&table_uri, &HashMap::new(), &struct_fields).await;
+
+    let records: Vec<DeltaTestStruct> = (0..10).map(|i| delta_test_record(i * 2)).collect();
+    write_data_to_table(table, &arrow_schema, &records).await;
+
+    // Stamped last: delta-rs refuses to write through a protocol it cannot
+    // read.
+    let log_dir = table_dir.path().join("_delta_log");
+    let next_version = std::fs::read_dir(&log_dir)
+        .unwrap()
+        .filter_map(|entry| {
+            let path = entry.unwrap().path();
+            (path.extension()? == "json")
+                .then(|| path.file_stem()?.to_str()?.parse::<u64>().ok())
+                .flatten()
+        })
+        .max()
+        .unwrap()
+        + 1;
+    let mut commit = File::create(log_dir.join(format!("{next_version:020}.json"))).unwrap();
+    writeln!(
+        commit,
+        "{}",
+        json!({"protocol": {
+            "minReaderVersion": 3,
+            "minWriterVersion": 7,
+            "readerFeatures": ["vacuumProtocolCheck"],
+            "writerFeatures": ["vacuumProtocolCheck"],
+        }})
+    )
+    .unwrap();
+    drop(commit);
+
+    let output_file = NamedTempFile::new().unwrap();
+    let output_path = output_file.path().display().to_string();
+    let rows = tokio::task::spawn_blocking(move || {
+        use dbsp::typed_batch::IndexedZSetReader;
+
+        let pipeline = delta_table_input_pipeline::<DeltaTestStruct>(
+            &table_uri,
+            &relation_schema,
+            &HashMap::from([("mode".to_string(), json!("snapshot"))]),
+            &output_path,
+        );
+        pipeline.start();
+        wait(|| pipeline.pipeline_complete(), 60_000).expect("timeout ingesting the table");
+        pipeline.stop().unwrap();
+        let mut rows: Vec<DeltaTestStruct> =
+            file_to_zset::<DeltaTestStruct>(&mut File::open(output_file.path()).unwrap())
+                .iter()
+                .map(|(row, (), _weight): (DeltaTestStruct, (), _)| row)
+                .collect();
+        rows.sort();
+        rows
+    })
+    .await
+    .unwrap();
+
+    let mut expected = records;
+    expected.sort();
+    assert_eq!(
+        rows, expected,
+        "a table declaring a reader feature delta-rs does not list must still \
+         read; without the fork patch delta-rs refuses the whole table"
+    );
+}
+
 /// The two readers a `snapshot_and_follow` read uses must agree.
 ///
 /// The snapshot half goes through delta-rs and the follow half through
