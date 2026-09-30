@@ -435,7 +435,7 @@ impl Display for StorageBackendConfig {
 #[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum StorageCompression {
-    /// Use Feldera's default compression algorithm.
+    /// Use Feldera's default compression algorithm, currently [`Self::Lz4`].
     ///
     /// The default may change as Feldera's performance is tuned and new
     /// algorithms are introduced.

@@ -10,6 +10,10 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Storage now uses LZ4 compression by default, instead of Snappy.  LZ4
+  compresses better in about the same amount of time and decompresses
+  several times faster.
+
 ## v0.358.0
 
 - Incompatible change (SQL): a `RANGE` window frame with a bound of the

@@ -1365,16 +1365,19 @@ impl Runtime {
             .unwrap()
             .options
             .clone();
-        let compression = options.compression;
-        let compression = match compression {
-            StorageCompression::Default | StorageCompression::Snappy => Some(Compression::Snappy),
-            StorageCompression::None => None,
-            StorageCompression::Lz4 => Some(Compression::Lz4),
-            StorageCompression::Zstd => Some(Compression::Zstd),
-        };
         Parameters::default()
-            .with_compression(compression)
+            .with_compression(Self::file_compression(options.compression))
             .with_compression_level(options.compression_level)
+    }
+
+    /// Maps the configured storage compression to the file-format algorithm.
+    fn file_compression(compression: StorageCompression) -> Option<Compression> {
+        match compression {
+            StorageCompression::Snappy => Some(Compression::Snappy),
+            StorageCompression::None => None,
+            StorageCompression::Default | StorageCompression::Lz4 => Some(Compression::Lz4),
+            StorageCompression::Zstd => Some(Compression::Zstd),
+        }
     }
 
     fn inner(&self) -> &RuntimeInner {
@@ -1875,6 +1878,26 @@ pub(crate) mod tests {
         thread::sleep,
         time::{Duration, Instant},
     };
+
+    #[test]
+    fn file_compression_mapping() {
+        use crate::storage::file::format::Compression;
+        use feldera_types::config::StorageCompression;
+
+        for (configured, expected) in [
+            (StorageCompression::Default, Some(Compression::Lz4)),
+            (StorageCompression::None, None),
+            (StorageCompression::Snappy, Some(Compression::Snappy)),
+            (StorageCompression::Lz4, Some(Compression::Lz4)),
+            (StorageCompression::Zstd, Some(Compression::Zstd)),
+        ] {
+            assert_eq!(
+                Runtime::file_compression(configured),
+                expected,
+                "{configured:?}"
+            );
+        }
+    }
 
     struct TestCacheEntry(usize);
 
