@@ -529,6 +529,67 @@ public class AggregateTests extends SqlIoTest {
                   array
                 ----------
                  {0}
+                (1 row)
+
+                SELECT ARRAY_AGG(CASE WHEN id <> 20 THEN id END ORDER BY id),
+                       SUM(CASE WHEN id <> 20 THEN id END),
+                       COUNT(CASE WHEN id <> 20 THEN id END)
+                FROM warehouse;
+                  array                  | s  | c
+                ----------------------------------
+                 {1, 3, 5, 10, NULL, 30} | 49 | 5
+                (1 row)""");
+    }
+
+    @Test
+    public void arrayAggIgnoreNullsOrderBy() {
+        // validated using Postgres; IGNORE NULLS as FILTER (WHERE J IS NOT NULL)
+        this.qst("""
+                SELECT ARRAY_AGG(J IGNORE NULLS ORDER BY I DESC)
+                FROM NN;
+                  array
+                ----------
+                 {1, 0}
+                (1 row)
+
+                SELECT K, ARRAY_AGG(J IGNORE NULLS ORDER BY I)
+                FROM NN GROUP BY K;
+                 k | array
+                -----------
+                 0 | {0}
+                 1 | {1}
+                (2 rows)
+
+                SELECT ARRAY_AGG(J IGNORE NULLS ORDER BY J)
+                FROM NN;
+                  array
+                ----------
+                 {0, 1}
+                (1 row)""");
+    }
+
+    @Test
+    public void arrayAggNoValues() {
+        // Feldera returns an empty array where Postgres returns NULL
+        this.qst("""
+                SELECT I / 2, ARRAY_AGG(J IGNORE NULLS ORDER BY I)
+                FROM NN GROUP BY I / 2;
+                 g | array
+                -----------
+                 0 | {0, 1}
+                 1 | {}
+                (2 rows)
+
+                SELECT ARRAY_AGG(J) FROM NN WHERE I > 10;
+                  array
+                ----------
+                 {}
+                (1 row)
+
+                SELECT ARRAY_AGG(J) FROM NN WHERE FALSE;
+                  array
+                ----------
+                 {}
                 (1 row)""");
     }
 

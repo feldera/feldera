@@ -40,7 +40,9 @@ in the size of input values, such as `VAR_*` or `REGR_*`.
   </tr>
   <tr>
      <td><a id="array_agg"></a><code>ARRAY_AGG([ ALL | DISTINCT ] value [ RESPECT NULLS | IGNORE NULLS ] [ORDER BY orderItem [, orderItem]*] )</code></td>
-     <td>Gathers all values in an array.  If <code>ORDER BY</code> is not present, the order of the values in the array is unspecified (but it is deterministic).</td>
+     <td>Gathers all values in an array.  If <code>ORDER BY</code> is not present, the order of the values in the array is unspecified (but it is deterministic).
+         The array keeps <code>NULL</code> values, unless <code>IGNORE NULLS</code> is specified.
+         Returns an empty array if there are no rows, or if <code>FILTER</code> or <code>IGNORE NULLS</code> removes all values.</td>
   </tr>
   <tr>
      <td><a id="avg"></a><code>AVG( [ ALL | DISTINCT ] numeric)</code></td>
