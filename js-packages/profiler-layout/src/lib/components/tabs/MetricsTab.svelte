@@ -1,12 +1,13 @@
 <script lang="ts" module>
+  import type { ConnectorMetrics } from 'common-lib/connectorMetrics'
   import type { TriageResults } from 'triage-types'
   import type { GlobalMetrics } from '../../functions/globalMetrics'
   import type { LookupCoordinator } from '../../functions/lookup'
   import type { MetricsMode } from '../MetricsView.svelte'
   import type { TooltipData } from '../ProfilerTooltip.svelte'
 
-  /** Shared bag of props passed to every analysis-panel tab (Metrics / Logs / Issues). Each tab
-   *  uses a subset; declared uniformly so `TabsPanel<T>` can type-check with a single T. */
+  /** Props of every analysis-panel tab (Metrics / Connectors / Logs / Config / Issues). Each tab
+   *  uses a subset. All tabs share this type so that `TabsPanel<T>` type-checks with a single T. */
   export type AnalysisTabProps = {
     metricsMode: MetricsMode
     tooltipData: TooltipData | null
@@ -16,6 +17,9 @@
     /** Cumulative pipeline-wide metrics from `stats.json`, shown as a tile in the overview.
      *  `undefined` when the bundle carried no stats. */
     globalMetrics: GlobalMetrics | undefined
+    /** Input and output connector statistics from `stats.json`, grouped by table and view, shown
+     *  in the Connectors tab. `undefined` when the bundle has no connector statistics. */
+    connectorMetrics: ConnectorMetrics | undefined
     /** Pipeline runtime configuration shown in the Config tab. `undefined` when the bundle carried
      *  no `pipeline_config.json` */
     runtimeConfig: unknown

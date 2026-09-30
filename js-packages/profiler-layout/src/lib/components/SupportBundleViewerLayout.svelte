@@ -1,6 +1,7 @@
 <script lang="ts">
   import { Switch } from '@skeletonlabs/skeleton-svelte'
   import type { ZipItem } from 'but-unzip'
+  import { aggregateConnectorMetrics, type ConnectorStatus } from 'common-lib/connectorMetrics'
   import {
     isFindShortcut,
     PersistentContent,
@@ -37,12 +38,13 @@
   import MetricSelect from './MetricSelect.svelte'
   import ProfileTimestampSelector from './ProfileTimestampSelector.svelte'
   import ConfigTab from './tabs/ConfigTab.svelte'
+  import ConnectorsTab from './tabs/ConnectorsTab.svelte'
   import IssuesTab from './tabs/IssuesTab.svelte'
   import LogsTab from './tabs/LogsTab.svelte'
   import MetricsTab, { type AnalysisTabProps } from './tabs/MetricsTab.svelte'
   import SqlTab, { type SqlTabProps } from './tabs/SqlTab.svelte'
 
-  const TABS = ['Metrics', 'Logs', 'Config', 'Issues'] as const
+  const TABS = ['Metrics', 'Connectors', 'Logs', 'Config', 'Issues'] as const
   type AnalysisTab = (typeof TABS)[number]
 
   interface Props {
@@ -53,6 +55,9 @@
     logText?: string
     /** Cumulative pipeline-wide metrics from the bundle's `stats.json`; shown in the overview. */
     globalMetrics?: GlobalMetrics
+    /** Input and output connector statistics from the bundle's `stats.json`, shown in the
+     *  Connectors tab. Absent when the bundle has no connector statistics. */
+    connectorStatus?: ConnectorStatus
     /** Pipeline runtime configuration from the bundle's `pipeline_config.json`; shown in the Config
      *  tab. Absent when the bundle carried no config. */
     runtimeConfig?: unknown
@@ -81,6 +86,7 @@
     programCode,
     logText,
     globalMetrics,
+    connectorStatus,
     runtimeConfig,
     triageResults,
     theme = 'light',
@@ -95,6 +101,10 @@
   }: Props = $props()
 
   const hasProfile = $derived(profileData !== undefined)
+  // A bundle holds one `/stats` sample, so `io_active` is false for all connectors.
+  const connectorMetrics = $derived(
+    connectorStatus ? aggregateConnectorMetrics(connectorStatus) : undefined
+  )
 
   const graphPaneDefaultSize = 55
   const graphPaneMinSize = 20
@@ -133,7 +143,8 @@
   let nodeSearchInput: HTMLInputElement | undefined = $state()
 
   // Ctrl/Cmd-F targets the "Search node" input while focused on the circuit diagram, otherwise the
-  // active tab's search. Inactive on Config (no in-tab search), so native find runs there.
+  // active tab's search. Inactive on Connectors and Config (no in-tab search), so native find runs
+  // there.
   useShortcut(
     isFindShortcut,
     () => {
@@ -144,7 +155,7 @@
         searchBar?.activate()
       }
     },
-    () => currentTab !== 'Config'
+    () => currentTab !== 'Connectors' && currentTab !== 'Config'
   )
   let highlightRanges: SourcePositionRange[] = $state([])
 
@@ -302,12 +313,13 @@
     { id: 'SQL', label: sqlLabel, panel: SqlTab, keepAlive: false, tabBarEnd: sqlTabBarEnd }
   ])
 
-  // Analysis panel (Metrics / Logs / Issues) tab spec.
+  // Analysis panel (Metrics / Connectors / Logs / Config / Issues) tab spec.
   const analysisTabProps = $derived<AnalysisTabProps>({
     metricsMode,
     tooltipData,
     rootNodeId: diagramRootNodeId,
     globalMetrics,
+    connectorMetrics,
     runtimeConfig,
     showAdvancedMetrics,
     lookup,
@@ -324,6 +336,14 @@
       panel: MetricsTab,
       keepAlive: true,
       tabBarEnd: metricsTabBarEnd
+    },
+    {
+      id: 'Connectors',
+      label: connectorsLabel,
+      panel: ConnectorsTab,
+      keepAlive: true,
+      // The tab stays visible, but is disabled when the bundle has no connector statistics.
+      disabled: connectorMetrics === undefined
     },
     {
       id: 'Logs',
@@ -430,6 +450,7 @@
 
 <!-- ── Analysis panel labels and tab-bar-end snippets ────────────────────────── -->
 {#snippet metricsLabel()}Metrics{/snippet}
+{#snippet connectorsLabel()}Connectors{/snippet}
 {#snippet logsLabel()}Logs{/snippet}
 {#snippet configLabel()}Config{/snippet}
 {#snippet issuesLabel()}
