@@ -10,7 +10,6 @@ using the following grammar:
 ```
 aggregateCall:
       agg '(' [ ALL | DISTINCT ] value [, value ]* ')'
-      [ WITHIN DISTINCT '(' expression [, expression ]* ')' ]
       [ FILTER '(' WHERE condition ')' ]
   |   agg '(' '*' ')' [ FILTER (WHERE condition) ]
 ```
@@ -22,10 +21,6 @@ which condition evaluates to `TRUE`.
 
 If `DISTINCT` is present, duplicate argument values are eliminated
 before being passed to the aggregate function.
-
-If `WITHIN DISTINCT` is present, argument values are made distinct
-within each value of specified keys before being passed to the
-aggregate function.
 
 Most aggregation functions produce results of the same type as the
 input data, but compute using higher precision intermediate data
