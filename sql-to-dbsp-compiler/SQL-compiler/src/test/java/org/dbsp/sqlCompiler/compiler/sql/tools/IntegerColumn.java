@@ -25,4 +25,9 @@ public final class IntegerColumn<R> extends ColumnWithLateness<R, Integer> {
     protected String latenessSql() {
         return "LATENESS " + this.lateness;
     }
+
+    @Override
+    protected String sqlType() {
+        return "INT";
+    }
 }

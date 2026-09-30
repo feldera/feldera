@@ -613,6 +613,20 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         this.set(expression, result);
     }
 
+    /** True if {@code expression} is never NULL: its type is not nullable, or it is a CAST of an
+     * expression that is never NULL.  A SAFE_CAST returns NULL when it fails. */
+    static boolean neverNull(DBSPExpression expression) {
+        if (!expression.getType().mayBeNull)
+            return true;
+        DBSPCastExpression cast = expression.as(DBSPCastExpression.class);
+        return cast != null && cast.safe == DBSPCastExpression.CastType.SqlUnsafe && neverNull(cast.source);
+    }
+
+    /** True if {@code expression} is a literal with a positive value. */
+    boolean isPositiveLiteral(DBSPExpression expression) {
+        return expression.is(DBSPLiteral.class) && this.positiveExpressions.contains(expression);
+    }
+
     @Override
     public void postorder(DBSPBinaryExpression expression) {
         MonotoneExpression left = this.get(expression.left);
@@ -635,14 +649,20 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
             reduced = expression.replaceSources(
                     left.getReducedExpression(), right.getReducedExpression());
         }
-        if (expression.opcode == DBSPOpcode.MAX && (lm || rm)) {
-            // The result of MAX is monotone if either expression is monotone
+        // MAX and MAX_NULL_WINS are NULL when either argument is NULL, so either monotone argument
+        // bounds the result.  MAX_IGNORE_NULLS returns the other argument when one is NULL, so only
+        // a monotone argument that is never NULL bounds it.
+        boolean isMax = expression.opcode == DBSPOpcode.MAX || expression.opcode == DBSPOpcode.MAX_NULL_WINS;
+        boolean isMaxIgnoreNulls = expression.opcode == DBSPOpcode.MAX_IGNORE_NULLS;
+        boolean leftBounds = isMax ? lm : isMaxIgnoreNulls && lm && neverNull(expression.left);
+        boolean rightBounds = isMax ? rm : isMaxIgnoreNulls && rm && neverNull(expression.right);
+        if (leftBounds || rightBounds) {
             resultType = new MonotoneType(expression.type);
-            if (!lm) {
+            if (!leftBounds) {
                 reduced = right.getReducedExpression()
                         // must preserve type
                         .cast(expression.getNode(), expression.getType(), DBSPCastExpression.CastType.SqlUnsafe);
-            } else if (!rm) {
+            } else if (!rightBounds) {
                 reduced = left.getReducedExpression()
                         .cast(expression.getNode(), expression.getType(), DBSPCastExpression.CastType.SqlUnsafe);
             } else {
@@ -650,7 +670,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                         left.getReducedExpression(),
                         right.getReducedExpression());
             }
-        } else if (expression.opcode == DBSPOpcode.MIN && lm && rm) {
+        } else if ((expression.opcode == DBSPOpcode.MIN || expression.opcode == DBSPOpcode.MIN_IGNORE_NULLS)
+                && lm && rm) {
             // The result of MIN is monotone if both expressions are monotone
             resultType = new MonotoneType(expression.type);
             reduced = expression.replaceSources(
@@ -666,24 +687,24 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                         left.getReducedExpression(), right.getReducedExpression());
             }
         }
-        if (left.mayBeMonotone() &&
+        if (left.mayBeMonotone() && this.isPositiveLiteral(expression.right) &&
                 (expression.opcode == DBSPOpcode.DIV ||
                         expression.opcode == DBSPOpcode.MUL ||
                         expression.opcode == DBSPOpcode.MUL_INTERVAL ||
                         expression.opcode == DBSPOpcode.DIV_INTERVAL)) {
             // Multiplying or dividing a monotone expression by
             // a positive constant produces a monotone result
-            // TODO: multiplication is commutative.
-            if (expression.right.is(DBSPLiteral.class)) {
-                if (this.positiveExpressions.contains(expression.right)) {
-                    if (expression.right.to(IsNumericLiteral.class).gt0()) {
-                        Utilities.enforce(right.getReducedExpression() == expression.right);
-                        resultType = left.copyMonotonicity(expression.type);
-                        reduced = expression.replaceSources(
-                                left.getReducedExpression(), right.getReducedExpression());
-                    }
-                }
-            }
+            resultType = left.copyMonotonicity(expression.type);
+            reduced = expression.replaceSources(
+                    left.getReducedExpression(), right.getReducedExpression());
+        }
+        // MUL_INTERVAL always has the number on the right
+        if (right.mayBeMonotone() && this.isPositiveLiteral(expression.left) &&
+                expression.opcode == DBSPOpcode.MUL) {
+            // Multiplying a positive constant by a monotone expression produces a monotone result
+            resultType = right.copyMonotonicity(expression.type);
+            reduced = expression.replaceSources(
+                    left.getReducedExpression(), right.getReducedExpression());
         }
         MonotoneExpression result = new MonotoneExpression(expression, resultType, reduced);
         this.set(expression, result);
@@ -802,40 +823,67 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         return true;
     }
 
+    /** The reduced form of argument {@code index} of {@code expression}: the monotone part of a
+     * monotone argument, or a copy of a constant argument. */
+    DBSPExpression reducedArgument(DBSPApplyExpression expression, MonotoneExpression[] arguments, int index) {
+        if (arguments[index].mayBeMonotone())
+            return arguments[index].getReducedExpression();
+        Utilities.enforce(this.constantExpressions.contains(expression.arguments[index]),
+                () -> "Argument " + expression.arguments[index] + " is neither monotone nor constant");
+        return expression.arguments[index].deepCopy();
+    }
+
     @Override
     public void postorder(DBSPApplyExpression expression) {
-        // Monotone functions applied to monotone arguments.
         MonotoneExpression[] arguments = Linq.map(expression.arguments, this::get, MonotoneExpression.class);
         boolean allArgsMonotone = Linq.all(arguments, MonotoneExpression::mayBeMonotone);
         boolean allArgsConstant = Linq.all(expression.arguments, this.constantExpressions::contains);
         DBSPExpression reduced = null;
         IMaybeMonotoneType resultType = NonMonotoneType.nonMonotone(expression.getType());
-        boolean isDeterministic = true;
-        if (allArgsMonotone || allArgsConstant) {
-            DBSPExpression[] reducedArgs = Linq.map(
-                    arguments, MonotoneExpression::getReducedExpression, DBSPExpression.class);
-            String name = expression.getFunctionName();
-            if (name != null) {
-                isDeterministic = !name.equals("now");
-                // Monotone in the first argument only; the others, such as the digits of ROUND
-                // or the sizes of a HOP window, must be constant
-                if ((name.startsWith("round_") ||
-                        name.startsWith("truncate_") ||
-                        name.equals("hop_start_timestamp")) &&
-                        this.constantAfterFirst(expression)) {
-                    resultType = new MonotoneType(expression.getType());
-                    reduced = expression.replaceArguments(reducedArgs);
-                }
+        String name = expression.getFunctionName();
+        boolean isDeterministic = name == null || !name.equals("now");
+        if (name != null) {
+            // Monotone in the first argument only; the others, such as the digits of ROUND
+            // or the sizes of a HOP or TUMBLE window, must be constant
+            if ((name.startsWith("round_") ||
+                    name.startsWith("bround_") ||
+                    name.startsWith("truncate_") ||
+                    name.startsWith("trunc_") ||
+                    name.startsWith("tumble_") ||
+                    name.equals("hop_start_timestamp")) &&
+                    arguments.length > 0 && arguments[0].mayBeMonotone() &&
+                    this.constantAfterFirst(expression)) {
+                DBSPExpression[] reducedArgs = new DBSPExpression[arguments.length];
+                for (int i = 0; i < arguments.length; i++)
+                    reducedArgs[i] = this.reducedArgument(expression, arguments, i);
+                resultType = new MonotoneType(expression.getType());
+                reduced = expression.replaceArguments(reducedArgs);
+            }
+            if (allArgsMonotone) {
+                DBSPExpression[] reducedArgs = Linq.map(
+                        arguments, MonotoneExpression::getReducedExpression, DBSPExpression.class);
+                // Monotone functions applied to monotone arguments.
                 if (name.startsWith("log10_") ||
                         name.startsWith("ln_") ||
                         name.startsWith("ceil_") ||
-                        name.startsWith("sqrt_") ||
+                        // Not sqrt_: it returns NaN, the largest value, for a negative argument
+                        // name.startsWith("sqrt_") ||
+                        name.startsWith("cbrt_") ||
+                        name.startsWith("exp_") ||
+                        name.startsWith("atan_") ||
+                        name.startsWith("sinh_") ||
+                        name.startsWith("asinh_") ||
+                        name.startsWith("tanh_") ||
+                        name.startsWith("degrees_") ||
+                        name.startsWith("radians_") ||
                         name.startsWith("floor_") ||
                         name.startsWith("sign_") ||
                         name.startsWith("numeric_inc") ||
                         name.startsWith("extract_year_") ||
                         name.startsWith("extract_millennium_") ||
                         name.startsWith("extract_century_") ||
+                        name.startsWith("extract_decade_") ||
+                        name.startsWith("extract_isoyear_") ||
                         name.startsWith("extract_epoch_") ||
                         name.startsWith("extract_hour_Time_") ||
                         name.startsWith("to_bound_") ||
@@ -847,21 +895,15 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
                     resultType = new MonotoneType(expression.getType());
                     reduced = expression.replaceArguments(reducedArgs);
                 }
-
-                // tumble_(ts, interval) is monotone in ts for a constant interval
-                if (name.startsWith("tumble_") && this.constantExpressions.contains(expression.arguments[1])) {
-                    resultType = new MonotoneType(expression.getType());
-                    reduced = expression.replaceArguments(reducedArgs);
-                }
                 // datediff_(left, right) computes right - left: monotone in right for a constant left
                 if (name.startsWith("datediff_") && this.constantExpressions.contains(expression.arguments[0])) {
                     resultType = new MonotoneType(expression.getType());
                     reduced = expression.replaceArguments(reducedArgs);
                 }
             }
-            if (allArgsConstant && isDeterministic) {
-                this.constantExpressions.add(expression);
-            }
+        }
+        if (allArgsConstant && isDeterministic) {
+            this.constantExpressions.add(expression);
         }
         MonotoneExpression result = new MonotoneExpression(expression, resultType, reduced);
         this.set(expression, result);

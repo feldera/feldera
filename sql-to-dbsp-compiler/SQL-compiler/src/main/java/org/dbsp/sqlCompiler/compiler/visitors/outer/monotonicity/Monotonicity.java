@@ -171,6 +171,10 @@ public class Monotonicity extends CircuitVisitor {
     void set(DBSPSimpleOperator operator, @Nullable MonotoneExpression value) {
         if (value == null || !value.mayBeMonotone())
             return;
+        DBSPType bodyType = getBodyType(value).getType();
+        DBSPType rowType = operator.outputPort().getOutputRowType();
+        Utilities.enforce(bodyType.sameType(rowType),
+                () -> "Monotonicity of " + operator + " has type\n" + bodyType + " but its rows have type\n" + rowType);
         Logger.INSTANCE.belowLevel(this, 2)
                 .append(operator.operation)
                 .append(" ")
@@ -232,12 +236,16 @@ public class Monotonicity extends CircuitVisitor {
 
         DBSPVariablePath var = new DBSPVariablePath(varType.ref());
         DBSPExpression[] fields = new DBSPExpression[varType.size() + 2];
-        DBSPType timestampType = varType.tupFields[node.timestampIndex];
+        DBSPTypeTupleBase outputType = node.getOutputZSetElementType().to(DBSPTypeTupleBase.class);
+        DBSPType windowType = outputType.tupFields[varType.size()];
         for (int i = 0; i < varType.size(); i++) {
             fields[i] = var.deepCopy().deref().field(i);
         }
-        fields[varType.size()] = new DBSPApplyExpression("hop_start_timestamp",  timestampType,
-                fields[node.timestampIndex].deepCopy(), node.interval, node.size, node.start);
+        // HOP drops the rows with a NULL timestamp
+        DBSPExpression timestamp = fields[node.timestampIndex].deepCopy()
+                .unwrapIfNullable(node.getNode(), "HOP of a NULL timestamp");
+        fields[varType.size()] = new DBSPApplyExpression("hop_start_timestamp", windowType,
+                timestamp, node.interval, node.size, node.start);
         fields[varType.size() + 1] = fields[varType.size()].deepCopy();
         DBSPExpression body = new DBSPTupleExpression(fields);
         DBSPClosureExpression closure = body.closure(var);
