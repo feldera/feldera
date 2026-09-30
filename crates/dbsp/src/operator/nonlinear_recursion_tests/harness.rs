@@ -44,7 +44,7 @@ impl Config {
     /// # Returns
     ///
     /// A configuration with the number of workers and chunk size of `self`.
-    fn circuit_config(&self) -> CircuitConfig {
+    pub(super) fn circuit_config(&self) -> CircuitConfig {
         let config = CircuitConfig::from(self.workers);
         match self.chunk_size {
             Some(records) => config.with_splitter_chunk_size_records(records as u64),

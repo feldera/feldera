@@ -1278,37 +1278,6 @@ mod test {
         }
     }
 
-    /// Without the implicit `distinct`, the recursive fixed point over Z-sets
-    /// does not converge and the circuit iterates forever.  We therefore assert
-    /// only that [`without_distinct`](RecursionBuilder::without_distinct)
-    /// type-checks and builds; convergence is exercised by the tests above.
-    #[test]
-    fn without_distinct_builds() {
-        let config = recursion_test_config(1);
-        let (_handle, _) = Runtime::init_circuit(config, move |circuit| {
-            let (edges, edges_handle) = circuit.add_input_zset::<Edge>();
-
-            // A step that stabilizes on its own (a plain map), so dropping the
-            // `distinct` is safe: the output weights do not grow unboundedly.
-            let closure = circuit
-                .recursion_builder(
-                    |child| Ok(child.recursive_var::<OrdZSet<Edge>>()),
-                    move |child, _reachable| {
-                        let edges = edges.delta0(child);
-                        Ok(edges.map(|&Tup2(x, y)| Tup2(x, y)))
-                    },
-                )
-                .without_distinct()
-                .finish()
-                .unwrap();
-
-            closure.output();
-
-            Ok(edges_handle)
-        })
-        .unwrap();
-    }
-
     /// Transitive closure of `edges`, built with the recursion builder.
     ///
     /// # Arguments

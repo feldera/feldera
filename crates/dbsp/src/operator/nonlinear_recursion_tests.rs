@@ -12,10 +12,13 @@
 //! plain Rust.  A scripted workload runs its program with both recursion APIs,
 //! [`recursive`](crate::ChildCircuit::recursive) and the
 //! [recursion builder](crate::ChildCircuit::recursion_builder); a random one
-//! picks an API at random.
+//! picks an API at random.  The [`bounded`] module tests recursions that the
+//! recursion builder stops after a bounded number of iterations, short of the
+//! fixed point.
 //!
 //! The [`harness`] module contains common test harness for these tests.
 mod bill_of_materials;
+mod bounded;
 mod closure;
 mod galen;
 mod harness;
