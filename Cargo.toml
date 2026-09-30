@@ -138,8 +138,10 @@ deadpool-postgres = "0.14.1"
 # Feldera fork of delta-rs: upstream tag `rust-v0.32.3` + 7 patches, on branch
 # `field-id-nested-containers-0.32.3`. When bumping the pinned revision, preserve
 # these patches:
-#   - 7f8bb445 "Disable unsupported feature check." — relax the writer-side
-#     protocol-feature gate so we can write tables produced by newer clients.
+#   - 7f8bb445 "Disable unsupported feature check." — downgrade the reader-side
+#     check in `can_read_from_protocol` to a warning, so a table declaring a
+#     feature delta-rs does not list still reads. Guarded by
+#     `delta_table_snapshot_unlisted_reader_feature_test`.
 #   - 297f2dd1 "delta-rs: resolve column-mapped Uniform/Iceberg columns by
 #     Parquet field id." — fixes `col-<id> is missing from the physical schema`
 #     when reading UC-Uniform-over-Iceberg tables (columnMapping.mode=id). #6557.
@@ -152,6 +154,7 @@ deadpool-postgres = "0.14.1"
 #     so a table with enough vectors deadlocked Tokio's pool for good. Reported
 #     upstream with a standalone reproduction:
 #     https://github.com/ryzhyk/delta-rs-dv-deadlock
+#     Guarded by `delta_table_deletion_vector_scan_without_blocking_pool_test`.
 #   - 78a5d066 "delta-rs: regression test for the deletion-vector blocking-pool
 #     deadlock": eight vectors against four blocking threads, which wedges
 #     without the patch above.
