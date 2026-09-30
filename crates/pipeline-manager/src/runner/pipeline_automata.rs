@@ -1023,11 +1023,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
         // Validate that the backing compute and storage resources, if they were attempted to be
         // provisioned, can be managed
-        if let Err(e) = self
-            .pipeline_handle
-            .can_provision(&deployment_config, &pipeline.runtime_config)
-            .await
-        {
+        if let Err(e) = self.pipeline_handle.can_provision(&deployment_config).await {
             return Action::RemainStoppedUpdateError { error: e.into() };
         }
 
@@ -1404,7 +1400,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 &program_binary_url,
                 &program_info_url,
                 pipeline.program_version,
-                &pipeline.runtime_config,
                 engine_is_gen2,
             )
             .await
@@ -1472,11 +1467,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         };
 
         // Check whether the pipeline has finished provisioning the resources
-        let provision_status = match self
-            .pipeline_handle
-            .is_provisioned(&pipeline.runtime_config)
-            .await
-        {
+        let Some(deployment_config) = &pipeline.deployment_config else {
+            return Action::TransitionToStopping {
+                error: Some(RunnerError::AutomatonMissingDeploymentConfig.into()),
+                storage_status_details: None,
+            };
+        };
+        let provision_status = match self.pipeline_handle.is_provisioned(deployment_config).await {
             Ok(provision_status) => provision_status,
             Err(e) => {
                 error!(
@@ -1710,8 +1707,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> Action {
         // Retrieve latest resources status details
+        let Some(deployment_config) = &pipeline.deployment_config else {
+            return Action::TransitionToStopping {
+                error: Some(RunnerError::AutomatonMissingDeploymentConfig.into()),
+                storage_status_details: None,
+            };
+        };
         let latest_resources_status_details =
-            match self.pipeline_handle.check(&pipeline.runtime_config).await {
+            match self.pipeline_handle.check(deployment_config).await {
                 Ok(details) => details,
                 Err(e) => {
                     return Action::TransitionToStopping {
@@ -1843,7 +1846,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         &mut self,
         pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> Action {
-        if let Err(e) = self.pipeline_handle.stop(&pipeline.runtime_config).await {
+        // A missing deployment config must not block stopping. The runtime config fields are at
+        // the top level of both, which is all the runner reads.
+        let deployment_config = pipeline
+            .deployment_config
+            .as_ref()
+            .unwrap_or(&pipeline.runtime_config);
+        if let Err(e) = self.pipeline_handle.stop(deployment_config).await {
             let message = format!("Pipeline could not be stopped (will retry): {e}");
             error!(
                 pipeline_id = %pipeline.id,
@@ -1896,7 +1905,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         &mut self,
         pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> Action {
-        if let Err(e) = self.pipeline_handle.clear(&pipeline.runtime_config).await {
+        // Pipelines stopped before `deployment_config` was kept after stop have none.
+        // The runtime config fields are at the top level of both, which is all the runner reads.
+        // TODO: remove this fallback once no pipeline stopped before that change remains.
+        let deployment_config = pipeline
+            .deployment_config
+            .as_ref()
+            .unwrap_or(&pipeline.runtime_config);
+        if let Err(e) = self.pipeline_handle.clear(deployment_config).await {
             error!(
                 pipeline_id = %pipeline.id,
                 pipeline = %pipeline.name,
@@ -1915,11 +1931,12 @@ mod test {
     use crate::config::CommonConfig;
     use crate::db::storage::Storage;
     use crate::db::storage_postgres::StoragePostgres;
-    use crate::db::types::pipeline::{PipelineDescr, PipelineId};
+    use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineDescr, PipelineId};
     use crate::db::types::program::{
         ProgramInfo, ProgramStatus, RustCompilationInfo, SqlCompilationInfo,
     };
     use crate::db::types::resources_status::ResourcesStatus;
+    use crate::db::types::storage::StorageStatus;
     use crate::db::types::version::Version;
     use crate::error::ManagerError;
     use crate::logging;
@@ -1944,6 +1961,8 @@ mod test {
 
     struct MockRunner {
         deployment_location: String,
+        /// The config each of `is_provisioned`, `check`, `stop` and `clear` received.
+        received: Arc<std::sync::Mutex<Vec<(&'static str, serde_json::Value)>>>,
     }
 
     #[async_trait]
@@ -1968,11 +1987,7 @@ mod test {
             }
         }
 
-        async fn can_provision(
-            &self,
-            _: &PipelineConfig,
-            _: &serde_json::Value,
-        ) -> Result<(), ManagerError> {
+        async fn can_provision(&self, _: &PipelineConfig) -> Result<(), ManagerError> {
             Ok(())
         }
 
@@ -1986,7 +2001,6 @@ mod test {
             _: &str,
             _: &str,
             _: Version,
-            _: &serde_json::Value,
             _is_gen2: bool,
         ) -> Result<(), ManagerError> {
             Ok(())
@@ -1994,8 +2008,12 @@ mod test {
 
         async fn is_provisioned(
             &mut self,
-            _runtime_config: &serde_json::Value,
+            deployment_config: &serde_json::Value,
         ) -> Result<ProvisionStatus, ManagerError> {
+            self.received
+                .lock()
+                .unwrap()
+                .push(("is_provisioned", deployment_config.clone()));
             Ok(ProvisionStatus::Provisioned {
                 location: self.deployment_location.clone(),
                 details: json!(""),
@@ -2004,16 +2022,34 @@ mod test {
 
         async fn check(
             &mut self,
-            _runtime_config: &serde_json::Value,
+            deployment_config: &serde_json::Value,
         ) -> Result<serde_json::Value, ManagerError> {
+            self.received
+                .lock()
+                .unwrap()
+                .push(("check", deployment_config.clone()));
             Ok(json!(""))
         }
 
-        async fn stop(&mut self, _runtime_config: &serde_json::Value) -> Result<(), ManagerError> {
+        async fn stop(
+            &mut self,
+            deployment_config: &serde_json::Value,
+        ) -> Result<(), ManagerError> {
+            self.received
+                .lock()
+                .unwrap()
+                .push(("stop", deployment_config.clone()));
             Ok(())
         }
 
-        async fn clear(&mut self, _runtime_config: &serde_json::Value) -> Result<(), ManagerError> {
+        async fn clear(
+            &mut self,
+            deployment_config: &serde_json::Value,
+        ) -> Result<(), ManagerError> {
+            self.received
+                .lock()
+                .unwrap()
+                .push(("clear", deployment_config.clone()));
             Ok(())
         }
     }
@@ -2022,6 +2058,7 @@ mod test {
         db: Arc<Mutex<StoragePostgres>>,
         automaton: PipelineAutomaton<MockRunner>,
         _follow_request_sender: Sender<FollowRequest>,
+        received: Arc<std::sync::Mutex<Vec<(&'static str, serde_json::Value)>>>,
     }
 
     impl AutomatonTest {
@@ -2114,6 +2151,44 @@ mod test {
 
         async fn tick(&mut self) {
             self.automaton.do_run().await.unwrap();
+        }
+
+        async fn pipeline(&self) -> ExtendedPipelineDescr {
+            let automaton = &self.automaton;
+            self.db
+                .lock()
+                .await
+                .get_pipeline_by_id(automaton.tenant_id, automaton.pipeline_id)
+                .await
+                .unwrap()
+        }
+
+        async fn tick_until(
+            &mut self,
+            resources_status: ResourcesStatus,
+            storage_status: StorageStatus,
+        ) {
+            for _ in 0..10 {
+                let pipeline = self.pipeline().await;
+                if pipeline.deployment_resources_status == resources_status
+                    && pipeline.storage_status == storage_status
+                {
+                    return;
+                }
+                self.tick().await;
+            }
+            panic!("did not reach {resources_status:?} with storage {storage_status:?}");
+        }
+
+        async fn clear_storage(&self) {
+            let automaton = &self.automaton;
+            let name = self.pipeline().await.name;
+            self.db
+                .lock()
+                .await
+                .transit_storage_status_to_clearing_if_not_cleared(automaton.tenant_id, &name)
+                .await
+                .unwrap();
         }
     }
 
@@ -2220,6 +2295,7 @@ mod test {
             .map(|(host, port)| (host.to_string(), port.parse().unwrap_or(8085)))
             .unwrap_or_else(|| ("127.0.0.1".to_string(), 8085));
 
+        let received = Arc::new(std::sync::Mutex::new(vec![]));
         let automaton = PipelineAutomaton::new(
             CommonConfig {
                 platform_version: "v0".to_string(),
@@ -2248,6 +2324,7 @@ mod test {
             client,
             MockRunner {
                 deployment_location,
+                received: received.clone(),
             },
             Duration::from_secs(1),
             follow_request_receiver,
@@ -2258,6 +2335,7 @@ mod test {
             db: db.clone(),
             automaton,
             _follow_request_sender,
+            received,
         }
     }
 
@@ -2444,6 +2522,107 @@ mod test {
         test.tick().await;
         assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
         assert_eq!(test.runtime_status().await, None);
+    }
+
+    /// `stop()` and `clear()` receive the stored deployment config, which is kept after stop and
+    /// after storage is cleared, and a restart builds the same one again.
+    #[tokio::test]
+    async fn runner_receives_the_stored_deployment_config() {
+        let (mut server, _temp, mut test) = setup_complete().await;
+        let artifacts_path = artifacts_path(test.automaton.pipeline_id);
+        mock_endpoints(
+            &mut server,
+            vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))],
+        )
+        .await;
+        assert_eq!(test.pipeline().await.deployment_config, None);
+
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick_until(ResourcesStatus::Provisioning, StorageStatus::InUse)
+            .await;
+        let deployment_config = test.pipeline().await.deployment_config.unwrap();
+        assert_ne!(deployment_config, test.pipeline().await.runtime_config);
+
+        test.desire_stopped().await;
+        test.tick_until(ResourcesStatus::Stopped, StorageStatus::InUse)
+            .await;
+        assert_eq!(
+            test.pipeline().await.deployment_config.as_ref(),
+            Some(&deployment_config)
+        );
+
+        test.clear_storage().await;
+        test.tick_until(ResourcesStatus::Stopped, StorageStatus::Cleared)
+            .await;
+        assert_eq!(
+            test.pipeline().await.deployment_config.as_ref(),
+            Some(&deployment_config)
+        );
+
+        let received = test.received.lock().unwrap().clone();
+        let names: Vec<_> = received.iter().map(|(name, _)| *name).collect();
+        assert!(
+            names.contains(&"stop") && names.contains(&"clear"),
+            "{names:?}"
+        );
+        for (name, config) in &received {
+            assert_eq!(config, &deployment_config, "{name}");
+        }
+
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick_until(ResourcesStatus::Provisioning, StorageStatus::InUse)
+            .await;
+        assert_eq!(
+            test.pipeline().await.deployment_config,
+            Some(deployment_config)
+        );
+    }
+
+    /// Without a stored deployment config, `stop()` and `clear()` receive the runtime config
+    /// instead of blocking the pipeline in `Stopping` or `Clearing`.
+    #[tokio::test]
+    async fn stop_and_clear_fall_back_to_the_runtime_config() {
+        let (mut server, _temp, mut test) = setup_complete().await;
+        let artifacts_path = artifacts_path(test.automaton.pipeline_id);
+        mock_endpoints(
+            &mut server,
+            vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))],
+        )
+        .await;
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick_until(ResourcesStatus::Provisioning, StorageStatus::InUse)
+            .await;
+        test.db
+            .lock()
+            .await
+            .pool
+            .get()
+            .await
+            .unwrap()
+            .execute(
+                "UPDATE pipeline SET deployment_config = NULL WHERE id = $1",
+                &[&test.automaton.pipeline_id.0],
+            )
+            .await
+            .unwrap();
+
+        test.desire_stopped().await;
+        test.tick_until(ResourcesStatus::Stopped, StorageStatus::InUse)
+            .await;
+        test.clear_storage().await;
+        test.tick_until(ResourcesStatus::Stopped, StorageStatus::Cleared)
+            .await;
+
+        let runtime_config = test.pipeline().await.runtime_config;
+        let received = test.received.lock().unwrap().clone();
+        assert!(
+            received.contains(&("stop", runtime_config.clone())),
+            "{received:?}"
+        );
+        assert!(
+            received.contains(&("clear", runtime_config)),
+            "{received:?}"
+        );
     }
 
     #[tokio::test]
