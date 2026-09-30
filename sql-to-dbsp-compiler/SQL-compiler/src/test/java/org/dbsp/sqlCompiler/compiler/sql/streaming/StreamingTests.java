@@ -3969,6 +3969,49 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void nowFilterNextToArrayAgg() {
+        // AggregateCaseToFilterRule leaves the ARRAY_AGG call alone, but still
+        // rewrites the SUM, so AggregateNowFilterRule creates a window.
+        String sql = """
+                CREATE TABLE T(k VARCHAR, tt TIMESTAMP, v INT);
+                CREATE VIEW V AS
+                SELECT k,
+                       ARRAY_AGG(CASE WHEN v > 1 THEN v END ORDER BY v) AS a,
+                       SUM(CASE WHEN tt >= NOW() - INTERVAL 1 DAY THEN v END) AS s
+                FROM T GROUP BY k;""";
+        var ccs = this.getCCS(sql).withStringTrim();
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            int window = 0;
+
+            @Override
+            public void postorder(DBSPWindowOperator operator) {
+                this.window++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.window);
+            }
+        };
+        ccs.visit(visitor);
+        ccs.step("""
+                INSERT INTO NOW VALUES('2020-01-01 00:00:00');
+                INSERT INTO T VALUES('a', '2020-01-01 00:00:00', 1);
+                INSERT INTO T VALUES('a', '2019-12-30 00:00:00', 2);
+                INSERT INTO T VALUES('b', '2019-12-30 00:00:00', 3);""", """
+                 k | a           | s    | weight
+                ----------------------------------
+                 a | { NULL, 2 } | 1    | 1
+                 b | { 3 }       |NULL  | 1""");
+        // Two days later the row with v = 1 leaves the window
+        ccs.step("INSERT INTO NOW VALUES('2020-01-03 00:00:00')", """
+                 k | a           | s    | weight
+                ----------------------------------
+                 a | { NULL, 2 } | 1    | -1
+                 a | { NULL, 2 } |NULL  | 1""");
+    }
+
+    @Test
     public void issue6655a() {
         // Aggregates with two different temporal conditions:
         // AggregateNowFilterRule peels one condition per application,

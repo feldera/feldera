@@ -48,6 +48,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlArrayAggFunction;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlUserDefinedAggregationFunction;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
@@ -366,10 +367,7 @@ public class AggregateCompiler implements ICompilerComponent {
         }
     }
 
-    void processArrayAgg(SqlBasicAggFunction function) {
-        SqlKind kind = function.getKind();
-        Utilities.enforce(kind == SqlKind.ARRAY_AGG);
-
+    void processArrayAgg(SqlArrayAggFunction function) {
         boolean ignoreNulls = this.call.ignoreNulls();
         boolean distinct = this.call.isDistinct();
         // The result type is ARRAY, but the accumulator is just Vec.
@@ -489,14 +487,9 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processBasic(SqlBasicAggFunction function) {
-        // ARRAY_AGG or
-        // ARG_MAX(value, compared).
-        // For ARG_MAX first argument is the output, and has type `this.returnType`
+        // ARG_MAX(value, compared) or ARG_MIN(value, compared).
+        // The first argument is the output, and has type `this.returnType`
         SqlKind kind = function.getKind();
-        if (kind == SqlKind.ARRAY_AGG) {
-            this.processArrayAgg(function);
-            return;
-        }
         MinMaxAggregate.Operation operation;
         DBSPOpcode opcode;
         String semigroupName;
@@ -1253,7 +1246,8 @@ public class AggregateCompiler implements ICompilerComponent {
     public IAggregate compile() {
         boolean success =
                 this.process(this.aggFunction, SqlCountAggFunction.class, this::processCount) ||
-                this.process(this.aggFunction, SqlBasicAggFunction.class, this::processBasic) || // arg_max or array_agg
+                this.process(this.aggFunction, SqlArrayAggFunction.class, this::processArrayAgg) ||
+                this.process(this.aggFunction, SqlBasicAggFunction.class, this::processBasic) || // arg_max, arg_min
                 this.process(this.aggFunction, SqlMinMaxAggFunction.class, this::processMinMax) ||
                 this.process(this.aggFunction, SqlSumAggFunction.class, this::processSum) ||
                 this.process(this.aggFunction, SqlSumEmptyIsZeroAggFunction.class, this::processSumZero) ||

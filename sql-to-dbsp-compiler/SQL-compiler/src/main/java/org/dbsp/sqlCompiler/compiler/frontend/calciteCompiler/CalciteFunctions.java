@@ -570,7 +570,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     runtime_aggtest/aggregate_tests3/test_un_int_countif.py|
                     runtime_aggtest/illarg_tests/test_agg.py
                     """, true),
-            new Func(SqlLibraryOperators.ARRAY_AGG, "ARRAY_AGG", SqlLibrary.BIG_QUERY, "aggregates#array_agg",
+            new Func(SqlArrayAggFunction.INSTANCE, "ARRAY_AGG", SqlLibrary.BIG_QUERY, "aggregates#array_agg",
                     """
                     runtime_aggtest/aggregate_tests/test_{decimal_arr_agg,empty_set,row_arr_agg}.py|
                     runtime_aggtest/aggregate_tests2/test_{timestamp_arr_agg,charn_arr_agg,time_arr_agg,date_arr_agg}.py|
