@@ -498,4 +498,10 @@ public class AggregateTests extends SqlIoTest {
         };
         cc.visit(visitor);
     }
+
+    @Test
+    public void withinDistinctRejected() {
+        this.queryFailingInCompilation("SELECT SUM(J) WITHIN DISTINCT (K) FROM NN",
+                "WITHIN DISTINCT is not supported");
+    }
 }
