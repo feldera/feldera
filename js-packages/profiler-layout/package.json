@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "but-unzip": "^0.1.7",
+    "common-lib": "workspace:*",
     "common-ui": "workspace:*",
     "paneforge": "1.0.2",
     "profiler-lib": "workspace:*",
