@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { ConnectorStatus } from 'common-lib/connectorMetrics'
   import {
     createLoadGuard,
     getSuitableProfiles,
@@ -25,6 +26,7 @@
     sources: string[] | undefined
     logText: string | undefined
     globalMetrics: GlobalMetrics | undefined
+    connectorStatus: ConnectorStatus | undefined
     runtimeConfig: unknown
   } | null = $state(null)
 
@@ -49,6 +51,7 @@
       sources: data.sources,
       logText: data.logText,
       globalMetrics: data.globalMetrics,
+      connectorStatus: data.connectorStatus,
       runtimeConfig: data.runtimeConfig
     }
   }
@@ -117,6 +120,7 @@
       programCode={profileData.sources}
       logText={profileData.logText}
       globalMetrics={profileData.globalMetrics}
+      connectorStatus={profileData.connectorStatus}
       runtimeConfig={profileData.runtimeConfig}
       triageResults={new TriageResults()}
       {profileFiles}
