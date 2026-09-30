@@ -434,25 +434,19 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPExpression empty = DBSPArrayExpression.emptyWithElementType(elementType, this.resultType.mayBeNull);
         DBSPExpression zero = accumulatorType.emptyVector();
         DBSPVariablePath accumulator = accumulatorType.var();
-        String functionName;
-        DBSPExpression[] arguments;
-        if (ignoreNulls && elementType.mayBeNull) {
-            functionName = "array_agg_opt" + this.resultType.nullableSuffix();
-            arguments = new DBSPExpression[6];
-        } else {
-            functionName = "array_agg" + this.resultType.nullableSuffix();
-            arguments = new DBSPExpression[5];
-        }
-        arguments[0] = accumulator.borrow(true);
-        arguments[1] = ExpressionCompiler.expandTuple(this.node, aggregatedValue);
-        arguments[2] = this.compiler.weightVar;
-        arguments[3] = new DBSPBoolLiteral(distinct);
-        arguments[4] = this.filterArgument >= 0 ? this.filterArgument() : new DBSPBoolLiteral(true);
-        if (arguments.length == 6) {
-            arguments[5] = new DBSPBoolLiteral(ignoreNulls);
-        }
+        String functionName = "array_agg" + this.resultType.nullableSuffix();
+        DBSPExpression keep;
+        if (ignoreNulls && elementType.mayBeNull)
+            keep = this.combinedFilter();
+        else
+            keep = this.filterArgument >= 0 ? this.filterArgument() : new DBSPBoolLiteral(true);
         DBSPExpression increment = new DBSPApplyExpression(
-                node, functionName, DBSPTypeVoid.INSTANCE, arguments);
+                node, functionName, DBSPTypeVoid.INSTANCE,
+                accumulator.borrow(true),
+                ExpressionCompiler.expandTuple(this.node, aggregatedValue),
+                this.compiler.weightVar,
+                new DBSPBoolLiteral(distinct),
+                keep);
         DBSPTypeUser semigroup = new DBSPTypeUser(
                 node, SEMIGROUP, "ConcatSemigroup", false, accumulatorType);
         DBSPVariablePath p = accumulatorType.var();
