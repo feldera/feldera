@@ -73,6 +73,7 @@ use tokio::{
         mpsc,
         watch::{channel, Receiver, Sender},
     },
+    task::JoinHandle,
     time::sleep,
 };
 use url::Url;
@@ -2472,10 +2473,11 @@ impl IcebergInputEndpointInner {
     /// resulting buffers to the input queue in enqueue order.
     ///
     /// Shared by the snapshot read path ([`execute_df_inner`]) and the follow
-    /// read path ([`push_changed_files`]). Blocks while the pipeline is paused.
+    /// read path ([`push_changed_files`]). While paused, parsing stops and the
+    /// scan reads ahead at most `num_parsers` batches.
     async fn drain_batch_stream(
         &self,
-        mut stream: stream::BoxStream<'static, Result<RecordBatch, String>>,
+        stream: stream::BoxStream<'static, Result<RecordBatch, String>>,
         polarity: bool,
         transaction: Option<Option<String>>,
         input_stream: &mut dyn ArrowStream,
@@ -2486,6 +2488,7 @@ impl IcebergInputEndpointInner {
 
         let queue = self.queue.clone();
         let num_parsers = self.config.num_parsers as usize;
+        let mut stream = prefetch(stream, num_parsers);
 
         // Job queue that parses record batches on a pool of tasks and pushes the
         // resulting buffers to the input queue in enqueue order.
@@ -2580,6 +2583,46 @@ impl IcebergInputEndpointInner {
     }
 }
 
+/// Polls `stream` on its own task, so the scan keeps decoding Parquet while the parsers are busy.
+fn prefetch<T: Send + 'static>(
+    mut stream: stream::BoxStream<'static, Result<T, String>>,
+    capacity: usize,
+) -> stream::BoxStream<'static, Result<T, String>> {
+    let (sender, receiver) = mpsc::channel(capacity.max(1));
+    let reader = AbortOnDrop(TOKIO.spawn(async move {
+        while let Some(item) = stream.next().await {
+            if sender.send(item).await.is_err() {
+                break;
+            }
+        }
+    }));
+    stream::unfold(
+        (receiver, Some(reader)),
+        |(mut receiver, mut reader)| async move {
+            if let Some(item) = receiver.recv().await {
+                return Some((item, (receiver, reader)));
+            }
+            // The channel also closes when the reader dies; re-raise a panic as DataFusion does.
+            let error = match (&mut reader.take()?.0).await {
+                Ok(()) => return None,
+                Err(e) if e.is_panic() => std::panic::resume_unwind(e.into_panic()),
+                Err(e) => format!("the Iceberg scan task failed: {e}"),
+            };
+            Some((Err(error), (receiver, None)))
+        },
+    )
+    .boxed()
+}
+
+/// Aborts a task when dropped.
+struct AbortOnDrop(JoinHandle<()>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 /// Block until the state is `Running`.
 async fn wait_running(receiver: &mut Receiver<PipelineState>) {
     // An error indicates that the channel was closed.  It's ok to ignore
@@ -2602,6 +2645,101 @@ mod tests {
     fn storage_factory_constructs() {
         // Smoke test; scheme dispatch is covered upstream in iceberg-rust.
         let _factory = storage_factory();
+    }
+
+    /// Counts how many items have been pulled from the source.
+    fn counted_source(
+        len: usize,
+        pulled: Arc<AtomicUsize>,
+    ) -> stream::BoxStream<'static, Result<usize, String>> {
+        stream::iter(0..len)
+            .map(move |i| {
+                pulled.fetch_add(1, Ordering::SeqCst);
+                Ok(i)
+            })
+            .boxed()
+    }
+
+    /// Waits up to 10 seconds for `done` to hold.
+    async fn wait_until(done: impl Fn() -> bool) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !done() && std::time::Instant::now() < deadline {
+            sleep(std::time::Duration::from_millis(10)).await;
+        }
+    }
+
+    #[test]
+    fn prefetch_reads_ahead_while_consumer_is_idle() {
+        TOKIO.block_on(async {
+            let pulled = Arc::new(AtomicUsize::new(0));
+            let mut prefetched = prefetch(counted_source(10, pulled.clone()), 2);
+            assert_eq!(prefetched.next().await, Some(Ok(0)));
+
+            // One item consumed, two buffered, one held by the blocked send.
+            wait_until(|| pulled.load(Ordering::SeqCst) >= 4).await;
+            assert_eq!(pulled.load(Ordering::SeqCst), 4);
+
+            // Order is preserved and the stream ends with the source.
+            assert_eq!(
+                prefetched.collect::<Vec<_>>().await,
+                (1..10).map(Ok).collect::<Vec<_>>()
+            );
+        });
+    }
+
+    #[test]
+    #[should_panic(expected = "decode failed")]
+    fn prefetch_propagates_a_panicking_source() {
+        TOKIO.block_on(async {
+            let source = stream::iter(0..3)
+                .map(|i| {
+                    assert!(i < 2, "decode failed");
+                    Ok::<_, String>(i)
+                })
+                .boxed();
+            // A swallowed panic would end the stream early and look like the end of the table.
+            let _ = prefetch(source, 2).collect::<Vec<_>>().await;
+        });
+    }
+
+    #[test]
+    fn prefetch_passes_source_errors_through_in_order() {
+        TOKIO.block_on(async {
+            // Scan I/O errors reach `drain_batch_stream` this way.
+            let source = stream::iter(vec![Ok(0), Err("boom".to_string()), Ok(2)]).boxed();
+            assert_eq!(
+                prefetch(source, 1).collect::<Vec<_>>().await,
+                vec![Ok(0), Err("boom".to_string()), Ok(2)]
+            );
+        });
+    }
+
+    #[test]
+    fn prefetch_drop_stops_the_reader() {
+        struct SetOnDrop(Arc<std::sync::atomic::AtomicBool>);
+        impl Drop for SetOnDrop {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::SeqCst);
+            }
+        }
+
+        TOKIO.block_on(async {
+            let dropped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let guard = SetOnDrop(dropped.clone());
+            // A source that never yields, like a scan stuck on I/O.
+            let source = stream::pending::<Result<usize, String>>()
+                .inspect(move |_| {
+                    let _ = &guard;
+                })
+                .boxed();
+            drop(prefetch(source, 2));
+
+            wait_until(|| dropped.load(Ordering::SeqCst)).await;
+            assert!(
+                dropped.load(Ordering::SeqCst),
+                "reader task still owns the source"
+            );
+        });
     }
 
     #[test]
