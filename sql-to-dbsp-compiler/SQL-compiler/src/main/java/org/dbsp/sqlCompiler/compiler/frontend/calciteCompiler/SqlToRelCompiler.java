@@ -105,6 +105,7 @@ import org.apache.calcite.sql.SqlWithItem;
 import org.apache.calcite.sql.SqlWriter;
 import org.apache.calcite.sql.dialect.OracleSqlDialect;
 import org.apache.calcite.sql.fun.SqlDatetimeSubtractionOperator;
+import org.apache.calcite.sql.fun.SqlLibraryOperators;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql.parser.SqlParserPos;
@@ -869,6 +870,18 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
     }
 
+    /** Replace calls to Calcite's ARRAY_AGG with calls to {@link SqlArrayAggFunction} */
+    static class ReplaceArrayAgg extends SqlShuttle {
+        @Override
+        public @org.checkerframework.checker.nullness.qual.Nullable SqlNode visit(SqlCall call) {
+            SqlCall newCall = Objects.requireNonNull((SqlCall) super.visit(call));
+            if (newCall.getOperator() == SqlLibraryOperators.ARRAY_AGG)
+                return SqlArrayAggFunction.INSTANCE.createCall(newCall.getFunctionQuantifier(),
+                        newCall.getParserPosition(), newCall.getOperandList());
+            return newCall;
+        }
+    }
+
     SqlNode postParsingProcess(SqlNode node, boolean saveLines) {
         node.accept(this.getExtraValidator());
         if (this.options.languageOptions.unaryPlusNoop) {
@@ -879,6 +892,8 @@ public class SqlToRelCompiler implements IWritesLogs {
         node = Objects.requireNonNull(replace.visitNode(node));
         ReplaceSafeCasts replace1 = new ReplaceSafeCasts();
         node = Objects.requireNonNull(replace1.visitNode(node));
+        ReplaceArrayAgg replace2 = new ReplaceArrayAgg();
+        node = Objects.requireNonNull(replace2.visitNode(node));
         return node;
     }
 

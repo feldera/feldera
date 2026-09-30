@@ -500,6 +500,39 @@ public class AggregateTests extends SqlIoTest {
     }
 
     @Test
+    public void issue7330() {
+        // validated using Postgres; IGNORE NULLS as FILTER (WHERE ... IS NOT NULL)
+        this.qst("""
+                SELECT ARRAY_AGG(CASE WHEN id <> 20 THEN id END ORDER BY id)
+                FROM warehouse;
+                  array
+                ----------
+                 {1, 3, 5, 10, NULL, 30}
+                (1 row)
+
+                SELECT ARRAY_AGG(n ORDER BY id)
+                FROM (SELECT id, CASE WHEN id <> 20 THEN id END AS n FROM warehouse);
+                  array
+                ----------
+                 {1, 3, 5, 10, NULL, 30}
+                (1 row)
+
+                SELECT ARRAY_AGG(CASE WHEN I <> 1 THEN J END ORDER BY I)
+                FROM NN;
+                  array
+                ----------
+                 {0, NULL, NULL, NULL}
+                (1 row)
+
+                SELECT ARRAY_AGG(CASE WHEN I <> 1 THEN J END IGNORE NULLS)
+                FROM NN;
+                  array
+                ----------
+                 {0}
+                (1 row)""");
+    }
+
+    @Test
     public void withinDistinctRejected() {
         this.queryFailingInCompilation("SELECT SUM(J) WITHIN DISTINCT (K) FROM NN",
                 "WITHIN DISTINCT is not supported");
