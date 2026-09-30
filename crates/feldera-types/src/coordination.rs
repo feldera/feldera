@@ -53,7 +53,7 @@
 
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     net::SocketAddr,
 };
 
@@ -106,6 +106,17 @@ pub struct CoordinationActivate {
 
     /// Global assignment of output streams to workers.
     pub output_assignment: BTreeMap<String, usize>,
+
+    /// The output streams that every host gathers to its assigned host from
+    /// the start, because an output connector reads them.
+    ///
+    /// A host gathers any other stream only in the transactions that start at
+    /// a step whose [StepRequest::gathers] lists it, for example while an HTTP
+    /// client reads the stream.  If this is `None`, then every host gathers
+    /// every stream from the start, which is the behavior of coordinators
+    /// that predate this field.
+    #[serde(default)]
+    pub gathered_streams: Option<BTreeSet<String>>,
 }
 
 /// A step number.
@@ -187,6 +198,22 @@ pub struct StepRequest {
     ///
     /// This is not significant for [StepAction::Idle].
     pub inputs: StepInputs,
+
+    /// The output streams, beyond [CoordinationActivate::gathered_streams],
+    /// that every host gathers to its assigned host in a transaction that
+    /// starts at `step`.
+    ///
+    /// Each host samples this when it starts a transaction, so the set has to
+    /// be the same on every host that starts `step`.  The coordinator
+    /// therefore changes it for a given step only after every host has
+    /// canceled that step, and it keeps it unchanged while it forces a step
+    /// that some host already started.
+    ///
+    /// A host also lets an output endpoint attach to a stream listed in its
+    /// latest request, even an [StepAction::Idle] one, before the stream's
+    /// gather starts.  The endpoint skips output until then.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub gathers: BTreeSet<String>,
 }
 
 impl StepRequest {
@@ -195,8 +222,15 @@ impl StepRequest {
             step,
             action,
             inputs,
+            gathers: BTreeSet::new(),
         }
     }
+
+    /// Returns this request with [Self::gathers] set to `gathers`.
+    pub fn with_gathers(self, gathers: BTreeSet<String>) -> Self {
+        Self { gathers, ..self }
+    }
+
     pub fn new_idle(step: Step) -> Self {
         Self::new(step, StepAction::Idle, StepInputs::All)
     }

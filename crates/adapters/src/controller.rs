@@ -33,6 +33,7 @@ use crate::controller::sync::{
 use crate::panic::N_PANICS;
 use crate::server::metrics::{HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, Value};
 use crate::server::{InitializationState, ServerState};
+use crate::static_compile::catalog::{GatherState, apply_gathers, gather_states};
 use crate::transport::Step;
 use crate::transport::clock::now_endpoint_config;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
@@ -2804,6 +2805,16 @@ struct CircuitThread {
     /// Whether to suppress output connector records during bootstrapping.
     silent_bootstrap: bool,
 
+    /// The on-request gathers that the coordinator's step request asked for
+    /// when this thread decided to take the current step.  A transaction
+    /// that starts in this step gathers exactly these (see [apply_gathers]).
+    /// This is `None` without a coordinator, which leaves the gathers alone.
+    ///
+    /// This is captured when the thread decides to step, not when the
+    /// transaction starts, because the coordinator can replace the request
+    /// in between, for example to cancel the step.
+    step_gathers: Option<BTreeSet<String>>,
+
     checkpoint_delay_warning: Option<LongOperationWarning>,
     checkpoint_requests: Vec<CheckpointRequest>,
     running_checkpoint: Option<RunningCheckpoint>,
@@ -3328,6 +3339,7 @@ impl CircuitThread {
             silent_bootstrap: state
                 .map(|state| state.bootstrap_config().silent_bootstrap)
                 .unwrap_or(false),
+            step_gathers: None,
             checkpoint_delay_warning: None,
             checkpoint_requests: Vec::new(),
             running_checkpoint: None,
@@ -3471,6 +3483,9 @@ impl CircuitThread {
 
             let coordination_request = self.controller.coordination_request.lock().unwrap().clone();
             let step_selection = self.next_step_selection(coordination_request.as_ref());
+            let step_gathers = coordination_request
+                .as_ref()
+                .map(|request| request.gathers.clone());
             match trigger.trigger(
                 self.last_checkpoint(),
                 self.last_checkpoint_sync(),
@@ -3493,6 +3508,7 @@ impl CircuitThread {
                 self.step,
             ) {
                 Action::Step => {
+                    self.step_gathers = step_gathers;
                     // During the synchronize (cutover) window the main circuit
                     // must not step: inputs are paused and the engine rejects
                     // main transactions. Drive only the bootstrap circuit.
@@ -3867,17 +3883,57 @@ impl CircuitThread {
         Ok(true)
     }
 
+    /// Advances the transaction number for a transaction that is about to
+    /// start, and starts and stops on-request gathers to match
+    /// [Self::step_gathers].
+    ///
+    /// An endpoint whose stream would lack some host's rows from now on is
+    /// an orphan, so this disconnects it (see [is_orphaned_endpoint]).  The
+    /// coordinator stops a gather only after its last client goes away, so
+    /// such an endpoint should be on its way out already.
+    fn start_transaction_number(&mut self) {
+        self.controller.increment_transaction_number();
+        let Some(step_gathers) = &self.step_gathers else {
+            return;
+        };
+        let transaction = self.controller.get_transaction_number();
+        let stopped = apply_gathers(step_gathers, transaction);
+        let states = gather_states();
+        if states.is_empty() {
+            return;
+        }
+        let requested = self.controller.requested_gathers();
+        let orphans = self
+            .controller
+            .outputs
+            .read()
+            .unwrap()
+            .by_id
+            .iter()
+            .filter(|(_, endpoint)| {
+                is_orphaned_endpoint(&endpoint.gathered_stream, &stopped, &states, &requested)
+            })
+            .map(|(endpoint_id, endpoint)| (*endpoint_id, endpoint.endpoint_name.clone()))
+            .collect::<Vec<_>>();
+        for (endpoint_id, endpoint_name) in orphans {
+            warn!(
+                "Disconnecting output endpoint '{endpoint_name}' because the coordinator stopped gathering its stream"
+            );
+            self.controller.disconnect_output(&endpoint_id);
+        }
+    }
+
     /// Starts or commits a transaction in the circuit, if the controller's
     /// transaction state calls for it.
     fn advance_transaction(&mut self) -> Result<(), DbspError> {
         match self.controller.advance_transaction_state() {
             Some(AdvanceTransaction::Start) => {
-                self.controller.increment_transaction_number();
+                self.start_transaction_number();
                 self.circuit.start_transaction()
             }
             Some(AdvanceTransaction::Commit) => self.circuit.start_commit_transaction(),
             Some(AdvanceTransaction::StartAndCommit) => {
-                self.controller.increment_transaction_number();
+                self.start_transaction_number();
                 self.circuit.start_transaction()?;
                 self.circuit.start_commit_transaction()
             }
@@ -3984,7 +4040,7 @@ impl CircuitThread {
             }
         } else {
             debug!("circuit thread: calling 'circuit.transaction'");
-            self.controller.increment_transaction_number();
+            self.start_transaction_number();
             Span::new("step")
                 .with_category("Step")
                 .with_tooltip(|| format!("step {}", self.step))
@@ -4704,6 +4760,11 @@ impl CircuitThread {
                         | ConcurrentPhase::Synchronize
                 ));
 
+        // In a multihost pipeline, the output of a stream that is gathered on
+        // request lacks some host's rows except in the transactions that
+        // `gather_states` reports as complete.
+        let gather_states = gather_states();
+
         let outputs = self.controller.outputs.read().unwrap();
         for (_stream, (output_handles, endpoints)) in outputs.iter_by_stream() {
             let (mut delta_batch, num_delta_records) = if silent_bootstrap {
@@ -4762,12 +4823,12 @@ impl CircuitThread {
                     continue;
                 }
 
-                if endpoint.created_during_transaction_number
-                    == self.controller.get_transaction_number()
-                {
+                if endpoint.skips(transaction, gather_states.get(&endpoint.gathered_stream)) {
                     trace!(
-                        "Output endpoint '{}' was created during the current transaction (seq. number {}) and will not receive any outputs until the next transaction.",
-                        endpoint.endpoint_name, endpoint.created_during_transaction_number
+                        "Output endpoint '{}' skips transaction {transaction} (it was created during transaction {}, gather state {:?}).",
+                        endpoint.endpoint_name,
+                        endpoint.created_during_transaction_number,
+                        gather_states.get(&endpoint.gathered_stream)
                     );
                     // We need to propagate processed_records to the connector for progress tracking.
                     self.controller.enqueue_empty_batch(
@@ -6490,6 +6551,11 @@ struct OutputEndpointDescr {
     /// 0 - the endpoint was created before the first transaction performed by the controller.
     created_during_transaction_number: u64,
 
+    /// The name under which the endpoint's stream is gathered to its assigned
+    /// host in a multihost pipeline.  This is the view's name, even for an
+    /// endpoint that reads an index of the view.
+    gathered_stream: String,
+
     /// FIFO queue of batches read from the stream.
     queue: Arc<BatchQueue>,
 
@@ -6529,9 +6595,57 @@ impl OutputEndpointDescr {
             )),
             disconnect_flag: Arc::new(AtomicBool::new(false)),
             created_during_transaction_number,
+            // Set by [ControllerInner::add_output_endpoint].
+            gathered_stream: String::new(),
             unparker,
         }
     }
+
+    /// Returns true if the endpoint must skip the output of `transaction`,
+    /// given the state of its stream's on-request gather (`None` if the
+    /// stream is gathered eagerly, or the pipeline has only one host).
+    ///
+    /// An endpoint created during a transaction skips that transaction,
+    /// because its workers sampled the stream's enable before the endpoint
+    /// existed.
+    fn skips(&self, transaction: u64, gather_state: Option<&GatherState>) -> bool {
+        transaction == self.created_during_transaction_number
+            || gather_state.is_some_and(|state| !state.is_complete(transaction))
+    }
+}
+
+/// Returns true if an output endpoint may attach to a stream whose on-request
+/// gather is in `state` (`None` for a stream gathered eagerly).  `requested`
+/// says whether the coordinator's latest step request asks for the gather.
+///
+/// A stopped gather admits an endpoint only if the coordinator requested it,
+/// because then it starts before any transaction whose output the endpoint
+/// reads (see [OutputEndpointDescr::skips]).
+fn gather_admits_endpoint(state: Option<&GatherState>, requested: bool) -> bool {
+    state != Some(&GatherState::Stopped) || requested
+}
+
+/// Returns true if an output endpoint that reads `stream` must be
+/// disconnected as a transaction starts, given the streams whose gathers
+/// stopped at that start, the gather states afterward, and the gathers that
+/// the coordinator's latest step request asks for.
+///
+/// This is true in two cases:
+///
+/// - The stream's gather just stopped.  The endpoint has already received
+///   output, so a later restart would leave a gap in it.
+///
+/// - The gather is stopped and no longer requested.  This happens when the
+///   coordinator withdraws a request before the gather ever started.
+///   Otherwise, the endpoint would skip all output while it stayed connected.
+fn is_orphaned_endpoint(
+    stream: &str,
+    stopped: &[String],
+    states: &BTreeMap<String, GatherState>,
+    requested: &BTreeSet<String>,
+) -> bool {
+    stopped.iter().any(|name| name == stream)
+        || !gather_admits_endpoint(states.get(stream), requested.contains(stream))
 }
 
 type StreamEndpointMap = BTreeMap<String, (OutputCollectionHandles, BTreeSet<EndpointId>)>;
@@ -7553,6 +7667,17 @@ impl ControllerInner {
         self.transaction_number.load(Ordering::Acquire)
     }
 
+    /// Returns the streams that the coordinator's latest step request asks
+    /// every host to gather.
+    fn requested_gathers(&self) -> BTreeSet<String> {
+        self.coordination_request
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|request| request.gathers.clone())
+            .unwrap_or_default()
+    }
+
     fn increment_transaction_number(&self) {
         self.transaction_number.fetch_add(1, Ordering::AcqRel);
     }
@@ -8053,6 +8178,8 @@ impl ControllerInner {
             )
         };
 
+        let gathered_stream = SqlIdentifier::from(&endpoint_config.stream).name();
+
         if endpoint_config.connector_config.send_snapshot && handles.integrate_handle.is_none() {
             return Err(ControllerError::invalid_transport_configuration(
                 endpoint_name,
@@ -8278,7 +8405,7 @@ impl ControllerInner {
         };
 
         let parker = Parker::new();
-        let endpoint_descr = OutputEndpointDescr::new(
+        let mut endpoint_descr = OutputEndpointDescr::new(
             endpoint_name,
             &stream_name,
             endpoint_config.connector_config.send_snapshot,
@@ -8295,6 +8422,26 @@ impl ControllerInner {
         if outputs.lookup_by_name(endpoint_name).is_some() {
             Err(ControllerError::duplicate_output_endpoint(endpoint_name))?;
         }
+
+        // In a multihost pipeline, the coordinator requests the gather of a
+        // stream that no connector reads before a client attaches to it.  If
+        // it did not, this endpoint would get only this host's rows.  A
+        // requested gather that has not started yet is fine: the endpoint
+        // skips output until it does.
+        //
+        // This check holds the `outputs` lock, so a gather that stops after
+        // it passes stops before the circuit thread looks for orphans (see
+        // [CircuitThread::start_transaction_number]), which then finds this
+        // endpoint.
+        if !gather_admits_endpoint(
+            gather_states().get(&gathered_stream),
+            self.requested_gathers().contains(&gathered_stream),
+        ) {
+            Err(ControllerError::not_supported(&format!(
+                "cannot read output stream '{gathered_stream}' because this host is not gathering it from the other hosts yet; please retry the request"
+            )))?;
+        }
+        endpoint_descr.gathered_stream = gathered_stream;
         outputs.insert(endpoint_id, endpoint_descr)?;
         drop(outputs);
 

@@ -1,7 +1,10 @@
-use super::OutputEndpointControl;
+use super::{
+    OutputEndpointControl, OutputEndpointDescr, gather_admits_endpoint, is_orphaned_endpoint,
+};
+use crate::static_compile::catalog::{GatherState, register_on_request_gather_for_test};
 use crate::{
-    Controller, InputConsumer, InputEndpoint, OutputEndpoint, PipelineConfig,
-    TransportInputEndpoint,
+    Catalog, CircuitCatalog, Controller, InputConsumer, InputEndpoint, OutputEndpoint,
+    PipelineConfig, TransportInputEndpoint,
     controller::{ControllerStatusContext, TransactionInfo, TransactionState},
     preprocess::{DecryptionPreprocessorFactory, PassthroughPreprocessorFactory},
     test::{
@@ -24,6 +27,7 @@ use feldera_types::{
     checkpoint::CheckpointMetadata,
     config::{FtModel, InputEndpointConfig, OutputEndpointConfig},
     constants::{CHECKPOINT_FILE_NAME, STATE_FILE},
+    coordination::{StepAction, StepInputs, StepRequest},
     memory_pressure::MemoryPressure,
     program_schema::Relation,
 };
@@ -31,7 +35,7 @@ use serde_json::json;
 use std::{
     borrow::Cow,
     cmp::min,
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     fs::{File, create_dir, remove_file},
     io::{ErrorKind, Write},
     iter::repeat_n,
@@ -52,7 +56,7 @@ use uuid::Uuid;
 
 use arrow::array::{Array, Int64Array};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use dbsp::{DetailedError, circuit::tokio::TOKIO};
+use dbsp::{DetailedError, Runtime, circuit::tokio::TOKIO};
 use proptest::prelude::*;
 
 #[test]
@@ -2692,6 +2696,217 @@ impl OutputEndpoint for DiscardOutputEndpoint {
     fn is_fault_tolerant(&self) -> bool {
         false
     }
+}
+
+/// An output endpoint skips the transaction during which it was created, and
+/// in a multihost pipeline also every transaction whose output of an
+/// on-request stream lacks some host's rows.
+#[test]
+fn output_endpoint_skips() {
+    let endpoint = OutputEndpointDescr::new(
+        "endpoint",
+        "stream",
+        false,
+        false,
+        3,
+        None,
+        Parker::new().unparker().clone(),
+    );
+
+    // Eager (or single-host) stream: only the transaction of creation is
+    // skipped.
+    assert!(endpoint.skips(3, None));
+    assert!(!endpoint.skips(4, None));
+
+    // A gather that started at transaction 6 makes the endpoint wait for it.
+    let since_6 = GatherState::Since(6);
+    assert!(endpoint.skips(5, Some(&since_6)));
+    assert!(!endpoint.skips(6, Some(&since_6)));
+
+    // A gather that started earlier leaves only the endpoint's own skip.
+    let since_1 = GatherState::Since(1);
+    assert!(endpoint.skips(3, Some(&since_1)));
+    assert!(!endpoint.skips(4, Some(&since_1)));
+
+    // A stopped gather skips everything.
+    assert!(endpoint.skips(1_000, Some(&GatherState::Stopped)));
+}
+
+/// An on-request gather admits an output endpoint while it runs or while the
+/// coordinator requests it.  An endpoint is orphaned when its gather stops, or
+/// when the coordinator withdraws the request before the gather starts.
+#[test]
+fn gather_admits_and_orphans_endpoints() {
+    let since = GatherState::Since(1);
+    let stopped = GatherState::Stopped;
+
+    assert!(gather_admits_endpoint(None, false));
+    assert!(gather_admits_endpoint(Some(&since), false));
+    assert!(gather_admits_endpoint(Some(&stopped), true));
+    assert!(!gather_admits_endpoint(Some(&stopped), false));
+
+    let names = |names: &[&str]| -> BTreeSet<String> {
+        names.iter().map(|name| name.to_string()).collect()
+    };
+    let states = BTreeMap::from([
+        ("running".to_string(), since),
+        ("stopped".to_string(), stopped),
+    ]);
+    let no_stops: &[String] = &[];
+
+    // Eager and running streams are never orphaned, and neither is a stopped
+    // one that the coordinator still requests.
+    assert!(!is_orphaned_endpoint(
+        "eager",
+        no_stops,
+        &states,
+        &names(&[])
+    ));
+    assert!(!is_orphaned_endpoint(
+        "running",
+        no_stops,
+        &states,
+        &names(&[])
+    ));
+    assert!(!is_orphaned_endpoint(
+        "stopped",
+        no_stops,
+        &states,
+        &names(&["stopped"])
+    ));
+
+    // A request withdrawn before the gather started.
+    assert!(is_orphaned_endpoint(
+        "stopped",
+        no_stops,
+        &states,
+        &names(&[])
+    ));
+
+    // A gather that just stopped, even if the latest request asks for it
+    // again, because its endpoints would miss the transactions in between.
+    let just_stopped = &["stopped".to_string()];
+    assert!(is_orphaned_endpoint(
+        "stopped",
+        just_stopped,
+        &states,
+        &names(&["stopped"])
+    ));
+}
+
+/// Drives a controller through coordinator step requests that start and stop
+/// the on-request gather of its one view, and checks which output endpoints it
+/// admits and which it disconnects.
+#[test]
+fn on_request_gather_endpoints() {
+    init_test_logger();
+
+    // `GATHER_POLICY` is global, so use a view name that no other test uses.
+    const VIEW: &str = "on_request_gather_view";
+    let _gather = register_on_request_gather_for_test(VIEW);
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 2,
+        "inputs": {},
+        "outputs": {},
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            let (circuit, catalog) = Runtime::init_circuit(circuit_config, |circuit| {
+                let schema = |name: &str| {
+                    serde_json::to_string(&Relation::new(
+                        name.into(),
+                        Vec::new(),
+                        false,
+                        BTreeMap::new(),
+                    ))
+                    .unwrap()
+                };
+                let mut catalog = Catalog::new();
+                let (input, hinput) = circuit.add_input_zset::<TestStruct>();
+                catalog.register_materialized_input_zset::<_, TestStruct>(
+                    input.clone(),
+                    hinput,
+                    &schema("on_request_gather_input"),
+                );
+                catalog.register_output_zset::<_, TestStruct>(input, &schema(VIEW));
+                Ok(catalog)
+            })
+            .unwrap();
+            Ok((circuit, Box::new(catalog) as Box<dyn CircuitCatalog>))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+
+    let request = |action: StepAction, gathers: &[&str]| {
+        let step = controller.step_watcher().borrow().step;
+        let gathers = gathers.iter().map(|name| name.to_string()).collect();
+        controller.set_coordination_request(
+            StepRequest::new(step, action, StepInputs::All).with_gathers(gathers),
+        );
+        step
+    };
+    // Runs one step, and with it one transaction, that gathers `gathers`.
+    let step = |gathers: &[&str]| {
+        let step = request(StepAction::Step, gathers);
+        wait(
+            || {
+                let status = *controller.step_watcher().borrow();
+                status.step > step && status.action == StepAction::Idle
+            },
+            DEFAULT_TIMEOUT_MS,
+        )
+        .unwrap();
+    };
+    let endpoint_config: OutputEndpointConfig = serde_json::from_value(json!({
+        "stream": VIEW,
+        "transport": { "name": "null_output" },
+        "format": { "name": "csv", "config": {} },
+    }))
+    .unwrap();
+    let attach = |name: &str| {
+        controller.add_output_endpoint(
+            name,
+            &endpoint_config,
+            Box::new(DiscardOutputEndpoint),
+            None,
+        )
+    };
+    let is_attached = |name: &str| controller.inner.output_endpoint_id_by_name(name).is_ok();
+
+    // Nothing gathers the view or requests it, so no endpoint may attach.
+    request(StepAction::Idle, &[]);
+    let error = attach("rejected").unwrap_err();
+    assert!(
+        error.to_string().contains("retry the request"),
+        "unexpected error: {error}"
+    );
+
+    // An endpoint may attach once the coordinator requests the gather, even
+    // before it starts.  If the coordinator withdraws the request before the
+    // gather starts, the next transaction disconnects the endpoint.
+    request(StepAction::Idle, &[VIEW]);
+    attach("withdrawn").unwrap();
+    request(StepAction::Idle, &[]);
+    step(&[]);
+    assert!(!is_attached("withdrawn"));
+
+    // An endpoint attached to a running gather stays attached while it runs
+    // and is disconnected when it stops.  Then no endpoint may attach.
+    step(&[VIEW]);
+    attach("running").unwrap();
+    step(&[VIEW]);
+    assert!(is_attached("running"));
+    step(&[]);
+    assert!(!is_attached("running"));
+    attach("rejected").unwrap_err();
+
+    controller.stop().unwrap();
 }
 
 /// A paused connector cannot push the pipeline into backpressure.

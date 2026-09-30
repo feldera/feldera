@@ -21,10 +21,11 @@ use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
 use std::any::TypeId;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Debug;
 use std::mem::transmute;
 use std::sync::{Arc, Mutex};
+use tracing::debug;
 
 const INTERNED_STRING_RELATION_NAME: &str = "feldera_interned_strings";
 
@@ -36,6 +37,187 @@ pub type OutputMapping = BTreeMap<String, usize>;
 /// It would be better if we could pass this in to the circuit instead of having
 /// a global.
 pub static OUTPUT_MAPPING: Mutex<OutputMapping> = Mutex::new(BTreeMap::new());
+
+/// Controls which output streams a multihost pipeline gathers to their
+/// assigned hosts.
+///
+/// Gathering a stream copies all of it to one host, so a stream that nothing
+/// reads should not be gathered.  A stream that an output connector reads is
+/// gathered from circuit construction ("eager").  Any other stream is gathered
+/// "on request": only in the transactions that start at a step whose
+/// [StepRequest::gathers](feldera_types::coordination::StepRequest::gathers)
+/// lists it.
+#[derive(Debug, Default)]
+pub struct GatherPolicy {
+    /// The streams to gather eagerly, or `None` to gather all of them eagerly.
+    eager: Option<BTreeSet<String>>,
+
+    /// The streams gathered on request, by name.
+    on_request: BTreeMap<String, OnRequestGather>,
+}
+
+/// A stream that [GatherPolicy] gathers on request.
+#[derive(Debug, Default)]
+struct OnRequestGather {
+    /// The stream's gathers.  There can be more than one, because an index
+    /// gathers under the name of its view.
+    enable_counts: Vec<EnableCount>,
+
+    /// While the gather runs, the first transaction whose output has every
+    /// host's rows.
+    since: Option<u64>,
+}
+
+/// Which transactions' output of a stream has every host's rows.  See
+/// [gather_states].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum GatherState {
+    /// Transaction number `since` and every later one, as long as the gather
+    /// keeps running.
+    Since(u64),
+
+    /// No transaction, because the gather is not running.
+    Stopped,
+}
+
+impl GatherState {
+    /// Returns true if the output of `transaction` has every host's rows.
+    pub fn is_complete(&self, transaction: u64) -> bool {
+        match self {
+            GatherState::Since(since) => transaction >= *since,
+            GatherState::Stopped => false,
+        }
+    }
+}
+
+impl GatherPolicy {
+    const fn new() -> Self {
+        Self {
+            eager: None,
+            on_request: BTreeMap::new(),
+        }
+    }
+
+    /// Returns true if `stream` must be gathered from the start.  `assigned`
+    /// says whether the coordinator assigned `stream` to a host.
+    ///
+    /// A stream that the coordinator did not assign to a host is always
+    /// gathered eagerly, because the coordinator cannot ask for it later.
+    fn is_eager(&self, stream: &str, assigned: bool) -> bool {
+        self.eager
+            .as_ref()
+            .is_none_or(|eager| !assigned || eager.contains(stream))
+    }
+
+    /// See [apply_gathers].
+    fn apply(&mut self, requested: &BTreeSet<String>, transaction: u64) -> Vec<String> {
+        let mut stopped = Vec::new();
+        for (stream, gather) in &mut self.on_request {
+            match (requested.contains(stream), gather.since) {
+                (true, None) => {
+                    for enable_count in &gather.enable_counts {
+                        enable_count.enable();
+                    }
+                    gather.since = Some(transaction);
+                    // Tests read this line; see `test_multihost.py`.
+                    debug!(
+                        "started gathering output stream '{stream}' at transaction {transaction}"
+                    );
+                }
+                (false, Some(_)) => {
+                    for enable_count in &gather.enable_counts {
+                        enable_count.disable();
+                    }
+                    gather.since = None;
+                    stopped.push(stream.clone());
+                    // Tests read this line; see `test_multihost.py`.
+                    debug!(
+                        "stopped gathering output stream '{stream}' at transaction {transaction}"
+                    );
+                }
+                (true, Some(_)) | (false, None) => (),
+            }
+        }
+        stopped
+    }
+
+    /// See [gather_states].
+    fn states(&self) -> BTreeMap<String, GatherState> {
+        self.on_request
+            .iter()
+            .map(|(stream, gather)| {
+                let state = match gather.since {
+                    Some(since) => GatherState::Since(since),
+                    None => GatherState::Stopped,
+                };
+                (stream.clone(), state)
+            })
+            .collect()
+    }
+}
+
+/// Global [GatherPolicy], set with [OUTPUT_MAPPING] before the circuit is
+/// built.
+pub static GATHER_POLICY: Mutex<GatherPolicy> = Mutex::new(GatherPolicy::new());
+
+/// Sets [GATHER_POLICY] for the circuit about to be built, so that it gathers
+/// only the streams in `eager` at first (or all streams, if `eager` is `None`).
+pub fn configure_gathers(eager: Option<BTreeSet<String>>) {
+    *GATHER_POLICY.lock().unwrap() = GatherPolicy {
+        eager,
+        ..GatherPolicy::new()
+    };
+}
+
+/// Starts and stops this host's on-request gathers as transaction number
+/// `transaction` starts, so that exactly the streams in `requested` are
+/// gathered during it.  Returns the streams whose gathers stopped.
+///
+/// Call this before the transaction's first step.  Each worker samples its
+/// gather once per transaction, so a change at any other time would reach
+/// only some workers.  Every host must pass the same `requested` for the same
+/// transaction, which is why it comes from the coordinator's step request.
+///
+/// A name in `requested` that is not an on-request stream has no effect.
+pub fn apply_gathers(requested: &BTreeSet<String>, transaction: u64) -> Vec<String> {
+    GATHER_POLICY.lock().unwrap().apply(requested, transaction)
+}
+
+/// Returns the state of each stream that this host gathers on request.  A
+/// stream not in the map is gathered eagerly, so every transaction's output
+/// of it is complete.
+pub fn gather_states() -> BTreeMap<String, GatherState> {
+    GATHER_POLICY.lock().unwrap().states()
+}
+
+/// Makes this host gather `stream` on request, starting out stopped, as if a
+/// multihost circuit had registered it, until the returned guard drops.
+///
+/// This lets a test drive [apply_gathers] from a single-host controller.
+/// [GATHER_POLICY] is global to the process, so `stream` should be a name
+/// that no other test uses.
+#[cfg(test)]
+pub(crate) fn register_on_request_gather_for_test(stream: &str) -> OnRequestGatherGuard {
+    GATHER_POLICY.lock().unwrap().on_request.insert(
+        stream.to_string(),
+        OnRequestGather {
+            enable_counts: vec![EnableCount::new()],
+            since: None,
+        },
+    );
+    OnRequestGatherGuard(stream.to_string())
+}
+
+/// See [register_on_request_gather_for_test].
+#[cfg(test)]
+pub(crate) struct OnRequestGatherGuard(String);
+
+#[cfg(test)]
+impl Drop for OnRequestGatherGuard {
+    fn drop(&mut self) {
+        GATHER_POLICY.lock().unwrap().on_request.remove(&self.0);
+    }
+}
 
 impl Catalog {
     fn parse_relation_schema(schema: &str) -> Result<Relation, ControllerError> {
@@ -90,12 +272,9 @@ impl Catalog {
             && let layout = runtime.layout()
             && let Layout::Multihost { hosts, .. } = layout
         {
-            let ordinal = OUTPUT_MAPPING
-                .lock()
-                .unwrap()
-                .get(&name.name())
-                .copied()
-                .unwrap_or_default();
+            let stream_name = name.name();
+            let assignment = OUTPUT_MAPPING.lock().unwrap().get(&stream_name).copied();
+            let ordinal = assignment.unwrap_or_default();
 
             let (accumulated_stream, enabled_count) = stream
                 .shard_workers_accumulate(hosts[ordinal].workers.clone())
@@ -113,11 +292,25 @@ impl Catalog {
             //
             // Enable the accumulator on every host so the gather is always
             // complete. Materialized views already get this via the integral's
-            // `into_enabled_stream`; do the same for the delta gather. This
-            // gathers a view even when it has no connector; a future
-            // optimization could propagate the owning host's connector state to
-            // the other hosts to skip that work.
-            enabled_count.enable();
+            // `into_enabled_stream`; do the same for the delta gather.
+            //
+            // Gathering a stream that nothing reads wastes storage and memory
+            // on its host, so the coordinator lists the streams that output
+            // connectors read.  Every host gathers those from the start.  It
+            // gathers the others only while the coordinator asks for them, for
+            // example while an HTTP client reads one.
+            let mut policy = GATHER_POLICY.lock().unwrap();
+            if policy.is_eager(&stream_name, assignment.is_some()) {
+                enabled_count.enable();
+            } else {
+                policy
+                    .on_request
+                    .entry(stream_name)
+                    .or_default()
+                    .enable_counts
+                    .push(enabled_count.clone());
+            }
+            drop(policy);
 
             let integral = if integrate {
                 Some(
@@ -1176,5 +1369,157 @@ mod test {
             r#"-1: {"id":2,"b":true,"i":null,"s":"2"}
 "#
         );
+    }
+
+    mod gather_policy {
+        use std::collections::{BTreeMap, BTreeSet};
+
+        use dbsp::operator::dynamic::accumulator::EnableCount;
+        use proptest::prelude::*;
+
+        use super::super::{GatherPolicy, GatherState, OnRequestGather};
+
+        fn names(names: &[&str]) -> BTreeSet<String> {
+            names.iter().map(|name| name.to_string()).collect()
+        }
+
+        /// A policy that gathers each of `streams` on request.  Each stream
+        /// has two workers, which share one enable count, as the workers of
+        /// one host do.
+        fn on_request(streams: &[&str]) -> (GatherPolicy, BTreeMap<String, EnableCount>) {
+            let mut policy = GatherPolicy {
+                eager: Some(BTreeSet::new()),
+                ..GatherPolicy::new()
+            };
+            let mut counts = BTreeMap::new();
+            for stream in streams {
+                let count = EnableCount::new();
+                policy.on_request.insert(
+                    stream.to_string(),
+                    OnRequestGather {
+                        enable_counts: vec![count.clone(), count.clone()],
+                        since: None,
+                    },
+                );
+                counts.insert(stream.to_string(), count);
+            }
+            (policy, counts)
+        }
+
+        #[test]
+        fn is_eager() {
+            // An old coordinator sends no set, so every stream is eager.
+            let legacy = GatherPolicy::new();
+            assert!(legacy.is_eager("connected", true));
+            assert!(legacy.is_eager("unread", true));
+
+            let policy = GatherPolicy {
+                eager: Some(names(&["connected"])),
+                ..GatherPolicy::new()
+            };
+            assert!(policy.is_eager("connected", true));
+            assert!(!policy.is_eager("unread", true));
+
+            // The coordinator cannot request a gather for a stream it did not
+            // assign, so such a stream is eager.
+            assert!(policy.is_eager("unassigned", false));
+        }
+
+        #[test]
+        fn gather_state_is_complete() {
+            assert!(!GatherState::Stopped.is_complete(0));
+            assert!(!GatherState::Since(5).is_complete(4));
+            assert!(GatherState::Since(5).is_complete(5));
+            assert!(GatherState::Since(5).is_complete(6));
+        }
+
+        /// A gather starts in the first transaction that requests it, keeps
+        /// its start while the requests continue, and stops in the first
+        /// transaction that does not request it.
+        #[test]
+        fn apply_starts_and_stops() {
+            let (mut policy, counts) = on_request(&["v"]);
+            let v = &counts["v"];
+            assert_eq!(policy.states()["v"], GatherState::Stopped);
+
+            // Names that are not on-request streams have no effect.
+            assert_eq!(
+                policy.apply(&names(&["eager", "missing"]), 1),
+                Vec::<String>::new()
+            );
+            assert!(!v.is_enabled());
+
+            assert_eq!(policy.apply(&names(&["v"]), 2), Vec::<String>::new());
+            assert!(v.is_enabled());
+            assert_eq!(policy.states()["v"], GatherState::Since(2));
+
+            // Requesting a running gather again changes nothing.
+            policy.apply(&names(&["v"]), 3);
+            assert_eq!(policy.states()["v"], GatherState::Since(2));
+
+            assert_eq!(policy.apply(&names(&[]), 4), vec!["v".to_string()]);
+            assert!(!v.is_enabled());
+            assert_eq!(policy.states()["v"], GatherState::Stopped);
+
+            // A restarted gather is complete only from its new start.
+            policy.apply(&names(&["v"]), 9);
+            assert_eq!(policy.states()["v"], GatherState::Since(9));
+        }
+
+        /// An output endpoint also enables its stream's gather on its own
+        /// host.  Stopping the on-request gather must leave that enable
+        /// alone.
+        #[test]
+        fn apply_keeps_other_enables() {
+            let (mut policy, counts) = on_request(&["v"]);
+            let v = &counts["v"];
+            v.enable();
+            policy.apply(&names(&["v"]), 1);
+            policy.apply(&names(&[]), 2);
+            assert!(v.is_enabled());
+            v.disable();
+            assert!(!v.is_enabled());
+        }
+
+        proptest! {
+            /// Against a model: after each transaction, a stream's gather runs
+            /// exactly if that transaction requested it, it is complete since
+            /// the first transaction of the current run of requests, and the
+            /// stopped streams are the ones whose run just ended.
+            #[test]
+            fn apply_matches_model(requests in prop::collection::vec(
+                prop::collection::btree_set(prop::sample::select(vec!["a", "b", "c"]), 0..=3),
+                1..20,
+            )) {
+                let (mut policy, counts) = on_request(&["a", "b"]);
+                let mut model: BTreeMap<&str, Option<u64>> =
+                    BTreeMap::from([("a", None), ("b", None)]);
+                for (transaction, requested) in (1..).zip(requests) {
+                    let requested_names =
+                        requested.iter().map(|name| name.to_string()).collect();
+                    let stopped = policy.apply(&requested_names, transaction);
+
+                    let mut expected_stopped = Vec::new();
+                    for (stream, since) in &mut model {
+                        match (requested.contains(stream), *since) {
+                            (true, None) => *since = Some(transaction),
+                            (false, Some(_)) => {
+                                *since = None;
+                                expected_stopped.push(stream.to_string());
+                            }
+                            _ => (),
+                        }
+                    }
+                    prop_assert_eq!(stopped, expected_stopped);
+
+                    let states = policy.states();
+                    for (stream, since) in &model {
+                        prop_assert_eq!(counts[*stream].is_enabled(), since.is_some());
+                        let expected = since.map_or(GatherState::Stopped, GatherState::Since);
+                        prop_assert_eq!(states[*stream], expected);
+                    }
+                }
+            }
+        }
     }
 }

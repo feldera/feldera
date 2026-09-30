@@ -7,7 +7,7 @@ use crate::panic::enable_counting_panics;
 use crate::server::metrics::{
     JsonFormatter, LabelStack, MetricsFormatter, MetricsWriter, PrometheusFormatter,
 };
-use crate::static_compile::catalog::OUTPUT_MAPPING;
+use crate::static_compile::catalog::{OUTPUT_MAPPING, configure_gathers};
 use crate::transport::http::HttpOutputFormat;
 use crate::util::{
     LongOperationWarning, RateLimitCheckResult, TokenBucketRateLimiter,
@@ -1290,6 +1290,7 @@ fn do_bootstrap(
             RuntimeDesiredStatus::Coordination => {
                 if let Some(mut ca) = state.coordination_activate.lock().unwrap().take() {
                     *OUTPUT_MAPPING.lock().unwrap() = take(&mut ca.output_assignment);
+                    configure_gathers(ca.gathered_streams.take());
 
                     builder = builder.with_layout(
                         Layout::new_multihost(&ca.exchanges, ca.local_address).map_err(|e| {
