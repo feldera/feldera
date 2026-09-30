@@ -1,6 +1,6 @@
 import { microseconds } from 'common-lib/duration'
+import { ConnectorMetricsTables } from 'common-ui'
 import { describe, expect, it, vi } from 'vitest'
-
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
 import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
@@ -13,7 +13,6 @@ import type {
   OutputEndpointMetrics,
   OutputEndpointStatus
 } from '$lib/services/manager'
-import MetricsTables from './MetricsTables.svelte'
 
 // --- Factories ---
 
@@ -106,7 +105,7 @@ async function renderComponent(
   metrics: { current: PipelineMetrics },
   onConnectorSelect?: (...args: any[]) => void
 ) {
-  return render(MetricsTables, {
+  return render(ConnectorMetricsTables, {
     metrics,
     onConnectorSelect: onConnectorSelect ?? vi.fn()
   })
@@ -118,7 +117,7 @@ async function clickHealthFilter(value: string) {
 
 // --- Tests ---
 
-describe('MetricsTables.svelte', () => {
+describe('ConnectorMetricsTables.svelte', () => {
   describe('A. Basic rendering', () => {
     it('renders nothing when tables and views are empty', async () => {
       await renderComponent(buildMetrics(makeStatus()))
@@ -561,6 +560,18 @@ describe('MetricsTables.svelte', () => {
       await expect.element(outputIcon).toBeInTheDocument()
       ;(outputIcon.element() as HTMLElement).click()
       expect(onConnectorSelect).toHaveBeenCalledWith('vw', 'oep', 'output', 'all')
+    })
+
+    it('error counts and icons are not clickable without onConnectorSelect', async () => {
+      const status = makeStatus(
+        [makeOutputStatus('v1', { metrics: makeOutputMetrics({ num_encode_errors: 1 }) })],
+        [makeInputStatus('t1', { metrics: makeInputMetrics({ num_parse_errors: 1 }) })]
+      )
+      render(ConnectorMetricsTables, { metrics: buildMetrics(status) })
+      await expect.element(page.getByTestId('btn-parse-errors')).not.toBeInTheDocument()
+      await expect.element(page.getByTestId('btn-encode-errors')).not.toBeInTheDocument()
+      await expect.element(page.getByTestId('btn-icon-input-errors')).not.toHaveAttribute('role')
+      await expect.element(page.getByTestId('btn-icon-output-errors')).not.toHaveAttribute('role')
     })
   })
 

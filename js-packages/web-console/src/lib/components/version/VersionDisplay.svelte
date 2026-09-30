@@ -1,6 +1,6 @@
 <script lang="ts">
+  import { ClipboardCopyButton } from 'common-ui'
   import { page } from '$app/state'
-  import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
 
   const versionText = $derived(
     page.data.feldera

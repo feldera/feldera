@@ -1,8 +1,8 @@
 <script lang="ts">
+  import { ClipboardCopyButton } from 'common-ui'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { displaySQLValue, serializeSQLValue } from '$lib/functions/sql'
   import type { SQLValueJS } from '$lib/types/sql'
-  import ClipboardCopyButton from './ClipboardCopyButton.svelte'
 
   let {
     popupRef = $bindable(),
