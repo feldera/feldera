@@ -1,5 +1,6 @@
 //! Trait to report object size as the number of entries.
 
+use crate::algebra::{F32, F64};
 use impl_trait_for_tuples::impl_for_tuples;
 use std::{
     num::{
@@ -137,6 +138,8 @@ num_entries_scalar! {
     NonZeroIsize,
 
     String,
+    F32,
+    F64,
 }
 
 num_entries_scalar_test! {
@@ -155,6 +158,8 @@ num_entries_scalar_test! {
     isize,
 
     String,
+    F32,
+    F64,
 }
 
 // FIXME: This is incorrect, it doesn't take into account any entries

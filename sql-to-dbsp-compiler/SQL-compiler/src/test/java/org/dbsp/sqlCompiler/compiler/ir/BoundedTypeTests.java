@@ -62,11 +62,11 @@ public class BoundedTypeTests {
                         .to(DBSPIntLiteral.class)
                         .getValue());
         Assert.assertEquals(
-                Double.MAX_VALUE,
+                Double.NaN,
                 DBSPTypeDouble.INSTANCE.getMaxValue().to(DBSPDoubleLiteral.class).value,
                 0.0);
         Assert.assertEquals(
-                Double.MIN_VALUE,
+                Double.NEGATIVE_INFINITY,
                 DBSPTypeDouble.INSTANCE.getMinValue().to(DBSPDoubleLiteral.class).value,
                 0.0);
         Assert.assertEquals(

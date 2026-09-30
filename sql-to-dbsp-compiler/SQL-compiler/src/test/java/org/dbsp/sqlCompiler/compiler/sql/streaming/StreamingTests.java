@@ -103,6 +103,38 @@ public class StreamingTests extends StreamingTestBase {
     }
 
     @Test
+    public void negativeFloatingPointLateness() {
+        String sql = """
+                CREATE TABLE T(d DOUBLE NOT NULL LATENESS 10, r REAL NOT NULL LATENESS 10);
+                CREATE VIEW V AS SELECT CAST(d AS INT) AS d, CAST(r AS INT) AS r FROM T;""";
+        var ccs = this.getCCS(sql);
+        ccs.stepWeightOne("INSERT INTO T VALUES(-5, -6);",
+                """
+                         d  | r
+                        ---------
+                         -5 | -6""");
+    }
+
+    @Test
+    public void floatingPointTemporalFilter() {
+        // The window has no upper bound; the largest value, NaN, is its upper end
+        String sql = """
+                CREATE TABLE T(d DOUBLE NOT NULL);
+                CREATE VIEW V AS SELECT CAST(d AS VARCHAR) AS d FROM T
+                WHERE d >= CAST(EXTRACT(EPOCH FROM NOW()) AS DOUBLE);""";
+        var ccs = this.getCCS(sql);
+        ccs.stepWeightOne("""
+                INSERT INTO T VALUES (-1), (5), (CAST('Infinity' AS DOUBLE)), (CAST('NaN' AS DOUBLE));
+                INSERT INTO now VALUES ('1970-01-01 00:00:00');""",
+                """
+                 d
+                -----
+                 5.0
+                 inf
+                 NaN""");
+    }
+
+    @Test
     public void issue3465() {
         String sql = """
                 CREATE TABLE T(TS INT LATENESS 100, X INT) WITH ('append_only' = 'true');

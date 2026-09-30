@@ -24,7 +24,15 @@ An operation with a `NaN` input yields `NaN`.  The only exception
 is when the operation's output does not depend on the `NaN` value:
 an example is `NaN` raised to the zero power yields one.
 
-In sorting order `NaN` is considered greater than all other values.
+Unlike IEEE 754, which leaves `NaN` unordered, Feldera SQL orders all
+floating point values, both when sorting and when comparing them with
+`=`, `<`, `>`, and the other comparison operators.  This is the same
+order as in PostgreSQL:
+
+- `-Infinity` is smaller than every other value.
+- `NaN` is greater than every other value, including `Infinity`.
+- All `NaN` values are equal to each other: `NaN = NaN` is `true`.
+- `-0e0` and `0e0` are equal.
 
 Rounding makes floating point values unreliable operands for equality
 tests, `GROUP BY`, and `DISTINCT`; the compiler warns about such uses.
@@ -190,7 +198,7 @@ REAL '1.23'  -- string style
   <tr>
     <td><a id="is_nan"></a><code>IS_NAN(value)</code></td>
     <td><code>REAL</code>, <code>DOUBLE</code></td>
-    <td>Returns true if the value is NaN. Note that two NaN values may not be equal.</td>
+    <td>Returns true if the value is NaN.</td>
   </tr>
   <tr>
     <td><a id="ln"></a><code>LN(value)</code></td>
