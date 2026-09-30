@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
-  import { humanSize } from '$lib/functions/common/string'
+  import { humanSize } from 'common-lib/string'
 
   const {
     progress,

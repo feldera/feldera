@@ -1,3 +1,5 @@
+import { singleton } from 'common-lib/array'
+import { tuple } from 'common-lib/tuple'
 import {
   addTenantUser as _addTenantUser,
   type CombinedDesiredStatus as _CombinedDesiredStatus,
@@ -94,8 +96,6 @@ export type { ProgramSchema } from '$lib/services/manager'
 export type ProgramStatus = _ProgramStatus
 
 import JSONbig from 'true-json-bigint'
-import { singleton } from '$lib/functions/common/array'
-import { tuple } from '$lib/functions/common/tuple'
 import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
 import { applyAuthToRequest, getAuthorizationHeaders, handleAuthResponse } from '$lib/services/auth'
 import { createClient } from '$lib/services/manager/client'

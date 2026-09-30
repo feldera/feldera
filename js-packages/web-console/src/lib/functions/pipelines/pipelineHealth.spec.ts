@@ -4,8 +4,8 @@
  * `PipelineMonitorEventSelectedInfo`, so the tests construct minimal events
  * inline rather than mocking the API.
  */
+import { partition } from 'common-lib/array'
 import { describe, expect, it } from 'vitest'
-import { partition } from '$lib/functions/common/array'
 import type {
   PipelineMonitorEventSelectedInfo,
   ProgramStatus,
