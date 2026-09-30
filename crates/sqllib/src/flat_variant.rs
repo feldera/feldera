@@ -2671,10 +2671,13 @@ mod tests {
         }
     }
 
-    /// PARSE_JSON agrees with the enum on valid and invalid input.
+    /// PARSE_JSON and TRY_PARSE_JSON agree with the enum on valid input;
+    /// TRY_PARSE_JSON returns SQL NULL on invalid input in both grids.
     #[test]
     fn parse_json_matches_enum() {
-        let cases = [
+        use crate::flat_variant::functions as f2;
+
+        let valid = [
             r#"null"#,
             r#"true"#,
             r#"-5"#,
@@ -2683,23 +2686,41 @@ mod tests {
             r#""hello""#,
             r#"[1, "two", null, {"a": false}]"#,
             r#"{"b": 1, "a": [2.5]}"#,
-            // Invalid inputs; both grids return SQL NULL.
-            "",
-            "{",
-            "nul",
-            "[1,",
-            "\"unterminated",
-            "not json at all",
         ];
-        for case in cases {
+        for case in valid {
             let v1 = crate::string::parse_json_s(SqlString::from_ref(case));
-            let v2 = crate::flat_variant::functions::parse_json_fv_s(SqlString::from_ref(case));
+            let v2 = f2::parse_json_fv_s(SqlString::from_ref(case));
             assert_eq!(
                 FlatVariant::from(&v1),
                 v2,
                 "parse_json diverges for {case:?}"
             );
+            let t1 = crate::string::try_parse_json_s(SqlString::from_ref(case));
+            let t2 = f2::try_parse_json_fv_s(SqlString::from_ref(case));
+            assert_eq!(t1.as_ref().map(FlatVariant::from), t2);
+            assert_eq!(t2, Some(v2), "try_parse_json diverges for {case:?}");
         }
+        let invalid = ["", "{", "nul", "[1,", "\"unterminated", "not json at all"];
+        for case in invalid {
+            assert_eq!(
+                crate::string::try_parse_json_s(SqlString::from_ref(case)),
+                None
+            );
+            assert_eq!(f2::try_parse_json_fv_s(SqlString::from_ref(case)), None);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "PARSE_JSON: invalid JSON 'nul'")]
+    fn parse_json_fails_on_invalid_input() {
+        use crate::flat_variant::functions as f2;
+        f2::parse_json_fv_s(SqlString::from_ref("nul"));
+    }
+
+    #[test]
+    #[should_panic(expected = "PARSE_JSON: invalid JSON 'nul'")]
+    fn parse_json_enum_fails_on_invalid_input() {
+        crate::string::parse_json_s(SqlString::from_ref("nul"));
     }
 
     /// Both types render identical JSON under every serde config whose

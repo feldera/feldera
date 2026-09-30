@@ -14,6 +14,14 @@ Source edition can be found on github.
   compresses better in about the same amount of time and decompresses
   several times faster.
 
+- Incompatible change (SQL): `PARSE_JSON` now fails at runtime if its
+  argument is not valid JSON.  It used to return a value that `IS NULL`
+  did not recognize as `NULL`, although the documentation promised a SQL
+  `NULL`.  The new function `TRY_PARSE_JSON` returns a SQL `NULL` for
+  invalid JSON; replace `PARSE_JSON` with `TRY_PARSE_JSON` in programs
+  whose input may hold invalid JSON.  See
+  [`TRY_PARSE_JSON`](/sql/json#try_parse_json).
+
 ## v0.358.0
 
 - Incompatible change (SQL): a `RANGE` window frame with a bound of the
