@@ -33,6 +33,8 @@ Install dependencies (needs to be done whenever package.json depencies change):
 bun install
 ```
 
+This also builds the workspace libraries (`common-ui`, `profiler-lib`, `profiler-layout` and others).
+
 Start the development server:
 
 ```bash
@@ -42,7 +44,17 @@ bun run dev
 Build & export static website:
 
 ```bash
-bun build
+bun run build
+```
+
+`dev`, `build`, `check`, `test-unit` and `test-integration` first run `bun run deps`, which rebuilds
+the workspace libraries.
+
+Run `bunx svelte-kit sync` before `bun run check` if you added or renamed a route, or changed
+`svelte.config.js`, and no dev server runs:
+
+```bash
+bunx svelte-kit sync
 ```
 
 Format the code & linting:
