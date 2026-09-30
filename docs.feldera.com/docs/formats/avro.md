@@ -100,7 +100,7 @@ A SQL column and a field in the Avro schema are compatible if the following cond
 
 When `update_format` is set to `debezium`, the connector additionally recognizes
 Debezium's temporal and decimal
-[semantic types](https://debezium.io/documentation/reference/stable/connectors/postgresql.html#postgresql-data-types).
+[semantic types](https://debezium.io/documentation/reference/connectors/postgresql.html#postgresql-data-types).
 Debezium encodes these as plain Avro types annotated with a `connect.name`
 attribute rather than as native Avro logical types. The connector converts each
 value into the matching SQL column type:

@@ -698,7 +698,7 @@ The program assumes the following about the CDC stream of changes:
 The stream `orders_cdc` simulates the way a CDC stream would look for an
 `orders` table.  Its shape follows the change event that
 [Debezium](https://debezium.io/documentation/reference/) produces, e.g., for
-[PostgreSQL](https://debezium.io/documentation/reference/stable/connectors/postgresql.html):
+[PostgreSQL](https://debezium.io/documentation/reference/connectors/postgresql.html):
 
 ```sql
 CREATE TABLE orders_cdc (
