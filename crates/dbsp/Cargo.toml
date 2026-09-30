@@ -187,6 +187,10 @@ name = "splice_copy"
 harness = false
 
 [[bench]]
+name = "spine_merge"
+harness = false
+
+[[bench]]
 name = "filter_predictor"
 harness = false
 
