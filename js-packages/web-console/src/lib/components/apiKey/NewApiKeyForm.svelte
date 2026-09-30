@@ -1,10 +1,9 @@
 <script lang="ts">
-  import { Select, Tooltip } from 'common-ui'
+  import { ClipboardCopyButton, Select, Tooltip } from 'common-ui'
   import { Control, Field, FieldErrors, Label } from 'formsnap'
   import { setError, superForm } from 'sveltekit-superforms'
   import { valibot } from 'sveltekit-superforms/adapters'
   import * as va from 'valibot'
-  import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
   const { onSubmit, onSuccess }: { onSubmit?: () => void; onSuccess?: () => void } = $props()
