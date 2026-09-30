@@ -156,46 +156,52 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
         throw this.unsupported();
     }
 
-    @Override
-    public DBSPExpression getMaxValue() {
+    /** The smallest value of the type. */
+    public BigInteger minimum() {
+        if (!this.signed)
+            return BigInteger.ZERO;
+        return BigInteger.ONE.shiftLeft(this.width - 1).negate();
+    }
+
+    /** The largest value of the type. */
+    public BigInteger maximum() {
+        int valueBits = this.signed ? this.width - 1 : this.width;
+        return BigInteger.ONE.shiftLeft(valueBits).subtract(BigInteger.ONE);
+    }
+
+    /** A literal of this type with the specified value, or null if the type cannot represent the value. */
+    @Nullable
+    public DBSPLiteral getLiteral(CalciteObject node, BigInteger value) {
+        if (value.compareTo(this.minimum()) < 0 || value.compareTo(this.maximum()) > 0)
+            return null;
         if (this.signed) {
             switch (this.width) {
-                case 8: return new DBSPI8Literal(Byte.MAX_VALUE, this.mayBeNull);
-                case 16: return new DBSPI16Literal(Short.MAX_VALUE, this.mayBeNull);
-                case 32: return new DBSPI32Literal(Integer.MAX_VALUE, this.mayBeNull);
-                case 64: return new DBSPI64Literal(Long.MAX_VALUE, this.mayBeNull);
-                case 128: return new DBSPI128Literal(
-                        BigInteger.ONE.shiftLeft(127).subtract(BigInteger.ONE), this.mayBeNull);
+                case 8: return new DBSPI8Literal(node, this, value.byteValueExact());
+                case 16: return new DBSPI16Literal(node, this, value.shortValueExact());
+                case 32: return new DBSPI32Literal(node, this, value.intValueExact());
+                case 64: return new DBSPI64Literal(node, this, value.longValueExact());
+                case 128: return new DBSPI128Literal(node, this, value);
             }
         } else {
             switch (this.width) {
-                case 8: return new DBSPU8Literal(0xFF, this.mayBeNull);
-                case 16: return new DBSPU16Literal(0xFFFF, this.mayBeNull);
-                case 32: return new DBSPU32Literal(Integer.toUnsignedLong(-1), this.mayBeNull);
-                case 64: return new DBSPU64Literal(
-                        BigInteger.ONE.shiftLeft(64).subtract(BigInteger.ONE), this.mayBeNull);
-                case 128: return new DBSPU128Literal(
-                        BigInteger.ONE.shiftLeft(128).subtract(BigInteger.ONE), this.mayBeNull);
+                case 8: return new DBSPU8Literal(node, this, value.intValueExact());
+                case 16: return new DBSPU16Literal(node, this, value.intValueExact());
+                case 32: return new DBSPU32Literal(node, this, value.longValueExact());
+                case 64: return new DBSPU64Literal(node, this, value);
+                case 128: return new DBSPU128Literal(node, this, value);
             }
         }
         throw this.unsupported();
     }
 
     @Override
+    public DBSPExpression getMaxValue() {
+        return Objects.requireNonNull(this.getLiteral(CalciteObject.EMPTY, this.maximum()));
+    }
+
+    @Override
     public DBSPExpression getMinValue() {
-        if (this.signed) {
-            switch (this.width) {
-                case 8: return new DBSPI8Literal(Byte.MIN_VALUE, this.mayBeNull);
-                case 16: return new DBSPI16Literal(Short.MIN_VALUE, this.mayBeNull);
-                case 32: return new DBSPI32Literal(Integer.MIN_VALUE, this.mayBeNull);
-                case 64: return new DBSPI64Literal(Long.MIN_VALUE, this.mayBeNull);
-                case 128: return new DBSPI128Literal(
-                        BigInteger.ONE.shiftLeft(128).negate(), this.mayBeNull);
-            }
-        } else {
-            return this.getZero();
-        }
-        throw this.unsupported();
+        return Objects.requireNonNull(this.getLiteral(CalciteObject.EMPTY, this.minimum()));
     }
 
     @Override
