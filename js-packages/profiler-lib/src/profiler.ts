@@ -189,8 +189,6 @@ export class Visualizer {
                     }
                     this.config.callbacks.onNodeDoubleClick?.(node, type)
                 },
-                // The code chip asks for the same source lookup a double click on an operator does, so
-                // consumers see one callback either way.
                 onShowSource: (node) => this.config.callbacks.onNodeDoubleClick?.(node, 'leaf')
             });
 

@@ -1,13 +1,13 @@
-// What a click on the diagram reports. profiler-lib decides that, but only a real pointer over a real
-// canvas produces the events it decides from: a corner chip is hit-tested by hand, and an expanded
-// region is hit-tested by cytoscape over everything it holds. See `test-support/mountDiagram.ts` for
-// the harness, whose `reported` records what reached the application.
+// Browser tests for what a click on the diagram reports to the application. profiler-lib decides this,
+// but the tests need real mouse events on a real canvas: `chipButtons.ts` finds the chip under the
+// pointer itself, and cytoscape finds an expanded region under the pointer anywhere inside the region.
+// `reported` in `test-support/mountDiagram.ts` records what reached the application.
 
 import { describe, expect, it } from 'vitest'
 import { colorDistance, mountDiagram, settle, WITH_SOURCE } from '../test-support/mountDiagram.js'
 
-/** A region `outer` holding an operator and a region `sub`, which holds one operator. A circuit this
- *  small opens with every region expanded. */
+/** A region `outer` that holds an operator and a region `sub`, which holds one operator. In a
+ *  circuit this small, all regions are expanded at the start. */
 const NESTED = {
   metrics: [],
   worker_profiles: [{ metadata: {} }],
@@ -35,8 +35,8 @@ const NESTED = {
 const mount = (keepOpeningView = false) =>
   mountDiagram('light', WITH_SOURCE.profile, keepOpeningView, WITH_SOURCE.dataflow)
 
-/** A rendered point inside the code chip, which rests on the node's top edge from outside: half a
- *  chip's height above that edge, and half a chip's width in from the right one. */
+/** A rendered point inside the code chip, which is above the top edge of the node: half a chip
+ *  height above that edge, and half a chip width in from the right edge. */
 // biome-ignore lint/suspicious/noExplicitAny: the cytoscape instance the harness hands back
 const codePoint = (cy: any, id: string) => {
   const node = cy.$id(id)
@@ -48,8 +48,8 @@ const codePoint = (cy: any, id: string) => {
   }
 }
 
-/** A rendered point in the padding band down the left side of a region: inside the region, outside
- *  every node it holds, and nowhere near either of its chips. */
+/** A rendered point in the padding at the left side of a region: inside the region, but outside all
+ *  the nodes in it and far from its chips. */
 // biome-ignore lint/suspicious/noExplicitAny: the cytoscape instance the harness hands back
 const regionPoint = (cy: any, id: string) => {
   const node = cy.$id(id)
@@ -57,7 +57,8 @@ const regionPoint = (cy: any, id: string) => {
   return { x: x - node.renderedOuterWidth() / 2 + 5 * cy.zoom(), y }
 }
 
-/** Press at a point and drag `by` pixels from it, as a mouse with a hand on it does. */
+/** Press the mouse button at `from`, move the mouse `by` pixels in two steps, and release the
+ *  button. */
 const drag = async (
   pointer: (type: 'mousemove' | 'mousedown' | 'mouseup', x: number, y: number) => void,
   from: { x: number, y: number },
@@ -75,24 +76,23 @@ const drag = async (
 const highlighted = (cy: any) =>
   cy.edges('.highlight-forward, .highlight-backward').map((e: { id(): string }) => e.id())
 
-describe('a press on a corner chip', () => {
+describe('a click on a corner chip', () => {
   it('reports on the node the chip belongs to, not on what is behind it', async () => {
-    // The code chip hangs above its node's top edge, outside the shape cytoscape hit-tests, so the press
-    // lands on the region around that node too, which would report the region while the source of the
-    // node the chip belongs to opens beside it.
-    const { cy, press, reported, cleanup } = await mount()
+    // The code chip is above the top edge of its node, outside the node shape that cytoscape uses. So
+    // cytoscape would get the click on the region around the node, and report the region while the
+    // source of the node opens.
+    const { cy, click, reported, cleanup } = await mount()
     expect(cy.$id('n1').data('has_source')).toBe(true)
     expect(cy.$id('region').isParent()).toBe(true)
     cy.center(cy.$id('n1'))
     await settle()
 
     const chip = codePoint(cy, 'n1')
-    await press(chip.x, chip.y)
-    // The source lookup a press on the code chip asks for, which reaches consumers as the one a
-    // double click on an operator asks for.
+    await click(chip.x, chip.y)
+    // A click on the code chip asks for the source of the node. The application gets this as the same
+    // event that a double click on an operator sends.
     expect(reported.doubleClicks).toEqual([{ nodeId: 'n1', type: 'leaf' }])
-    // And the node the chip belongs to is the node reported on, marked and traced - the press is a
-    // click on it as much as it is a button.
+    // The click on the chip is also a click on its node: the node is reported, marked and traced.
     expect(reported.nodeClicks).toEqual(['n1'])
     expect(reported.attributes.filter((a) => a.isSticky)).toEqual([
       { nodeId: 'n1', isSticky: true }
@@ -102,11 +102,10 @@ describe('a press on a corner chip', () => {
     cleanup()
   })
 
-  it('leaves the counter chip a toggle, reporting nothing', async () => {
-    // Pressing the counter is what expands or collapses the composite, and the graph is rebuilt under
-    // whatever it would have reported - so it reports nothing rather than something with one frame to
-    // live.
-    const { cy, press, reported, cleanup } = await mount()
+  it('expands or collapses the region on a counter click, and reports nothing', async () => {
+    // A click on the counter expands or collapses the circuit region, and then the graph is made again.
+    // A report would be out of date one frame later, so the click reports nothing.
+    const { cy, click, reported, cleanup } = await mount()
     const region = cy.$id('region')
     cy.center(region)
     await settle()
@@ -116,21 +115,22 @@ describe('a press on a corner chip', () => {
       x: x + region.renderedOuterWidth() / 2 - 6 * cy.zoom(),
       y: y - region.renderedOuterHeight() / 2 + 8 * cy.zoom()
     }
-    await press(counter.x, counter.y)
+    await click(counter.x, counter.y)
     expect(cy.$id('region').isParent()).toBe(false)
     expect(reported.nodeClicks).toEqual([])
     expect(reported.attributes.filter((a) => a.isSticky)).toEqual([])
     cleanup()
   })
 
-  it('paints no press feedback on what it is drawn over', async () => {
-    // Cytoscape marks whatever it hit-tested under a press as active and paints its own gray overlay
-    // over the whole of it - a region reporting a press aimed at a button that happens to be drawn in
-    // its top band, and the one thing the user sees while the button is held down.
+  it('does not paint the cytoscape press overlay on the node under the chip', async () => {
+    // On `mousedown`, cytoscape makes the node under the pointer active and paints a gray overlay on
+    // all of it. For a code chip in the top band of a region, that is the whole region, and the user
+    // sees the overlay while the button is down.
     const { cy, pixelAt, pointer, reported, cleanup } = await mount()
     cy.center(cy.$id('n1'))
     await settle()
-    // In the region's padding band, well inside the overlay and outside every node it holds.
+    // A point in the padding of the region: inside the gray overlay, and outside all nodes in the
+    // region.
     const region = cy.$id('region')
     const band = {
       x: region.renderedPosition().x - region.renderedOuterWidth() / 2 + 5 * cy.zoom(),
@@ -145,18 +145,18 @@ describe('a press on a corner chip', () => {
     expect(cy.nodes(':active').map((n: { id(): string }) => n.id())).toEqual([])
     expect(colorDistance(pixelAt(band.x, band.y), before)).toBe(0)
 
-    // And the press is a press: letting go of it presses the button, so none of the above is a dead
-    // gesture that nothing would have reacted to anyway.
+    // Check that the click still works: the `mouseup` clicks the chip. Otherwise the checks above could
+    // pass only because nothing reacts to the `mousedown`.
     pointer('mouseup', chip.x, chip.y)
     await settle()
     expect(reported.nodeClicks).toEqual(['n1'])
     cleanup()
   })
 
-  it('does not pan the view from a chip resting over the background', async () => {
-    // A code chip on a node that is not inside a region hangs over the empty canvas, which cytoscape
-    // hit-tests as a press on the background: it answers that with a gray dot of its own and, as soon
-    // as the hand moves, by panning the whole diagram out from under the button.
+  it('does not pan the view when a chip over the background is dragged', async () => {
+    // The code chip of a node that is not in a region is over the empty canvas. Cytoscape treats a
+    // `mousedown` there as a press on the background: it shows a gray dot, and when the mouse moves, it
+    // pans the whole diagram.
     const { cy, pointer, reported, cleanup } = await mount()
     expect(cy.$id('n0').data('has_source')).toBe(true)
     expect(cy.$id('n0').isChild()).toBe(false)
@@ -166,16 +166,16 @@ describe('a press on a corner chip', () => {
 
     await drag(pointer, codePoint(cy, 'n0'), { x: 90, y: 40 })
     expect(cy.pan()).toEqual(pan)
-    // A press dragged off the button is a cancelled press, as it is for every other button.
+    // As with any button, a drag off the chip cancels the click.
     expect(reported.doubleClicks).toEqual([])
     expect(reported.nodeClicks).toEqual([])
     cleanup()
   })
 
-  it('does not drag what cytoscape hit-tests behind it', async () => {
-    // Cytoscape decides at the press what a gesture drags, by the node's own shape, so a press on the
-    // code chip would take hold of the region behind it and carry it, and every node inside it, off its
-    // laid-out position on the smallest movement of the hand.
+  it('does not drag the node under the chip', async () => {
+    // At `mousedown`, cytoscape uses the node shape to decide what a drag moves. So a drag that starts
+    // on a code chip would move the region under it, and all nodes in the region, away from their
+    // layout positions.
     const { cy, pointer, cleanup } = await mount()
     cy.center(cy.$id('n1'))
     await settle()
@@ -185,8 +185,8 @@ describe('a press on a corner chip', () => {
     expect(cy.$id('region').position()).toEqual(before.region)
     expect(cy.$id('n1').position()).toEqual(before.n1)
 
-    // A node dragged by its own body still moves: what a chip press takes away, it takes away for
-    // the press it belongs to and nothing else.
+    // A drag on the body of a node still moves the node. Only a drag that starts on a chip is hidden
+    // from cytoscape.
     const outside = cy.$id('n0')
     const start = { ...outside.position() }
     await drag(pointer, outside.renderedPosition(), { x: 40, y: 30 })
@@ -194,34 +194,34 @@ describe('a press on a corner chip', () => {
     cleanup()
   })
 
-  it('does not select what cytoscape hit-tests behind it', async () => {
-    // Cytoscape's own selection, which the diagram does not use and does not paint - but it decides
-    // what a later drag carries, so a chip press must not hand it the region either.
-    const { cy, press, cleanup } = await mount()
+  it('does not select the node under the chip', async () => {
+    // The diagram does not use or show the cytoscape selection, but cytoscape uses it to decide what a
+    // later drag moves. So a click on a chip must not select the region either.
+    const { cy, click, cleanup } = await mount()
     cy.center(cy.$id('n1'))
     await settle()
 
     const chip = codePoint(cy, 'n1')
-    await press(chip.x, chip.y)
+    await click(chip.x, chip.y)
     expect(cy.$('node:selected').map((n: { id(): string }) => n.id())).toEqual([])
 
-    // And a press on the region itself still selects it, as any press on a node does.
+    // A click on the region itself still selects it, as a click on any node does.
     const point = regionPoint(cy, 'region')
-    await press(point.x, point.y)
+    await click(point.x, point.y)
     expect(cy.$('node:selected').map((n: { id(): string }) => n.id())).toEqual(['region'])
     cleanup()
   })
 
-  it('leaves the region it is drawn over expanded when pressed twice', async () => {
-    // Two presses inside the double click interval, which cytoscape reports as a double click on
-    // whatever is behind the chip - and a double click on a region collapses it.
-    const { cy, press, reported, cleanup } = await mount()
+  it('does not collapse the region under the chip on a double click', async () => {
+    // Cytoscape reports two quick clicks as a double click on the node under the chip, and a double
+    // click on a region collapses it.
+    const { cy, click, reported, cleanup } = await mount()
     cy.center(cy.$id('n1'))
     await settle()
 
     const chip = codePoint(cy, 'n1')
-    await press(chip.x, chip.y)
-    await press(chip.x, chip.y)
+    await click(chip.x, chip.y)
+    await click(chip.x, chip.y)
     await settle()
     expect(cy.$id('region').isParent()).toBe(true)
     expect(reported.doubleClicks).toEqual([
@@ -234,12 +234,12 @@ describe('a press on a corner chip', () => {
 
 describe('a click on an expanded region', () => {
   it('reports the metrics of the region', async () => {
-    // A region holds the aggregate of everything inside it, and clicking it is how that is asked for.
-    // The guard that keeps a hover from reporting every region the pointer crosses must not swallow the
-    // click as well.
-    const { cy, press, reported, cleanup } = await mount(true)
+    // A region holds the total metrics of all nodes in it, and a click on the region shows them. The
+    // check that stops a hover from reporting each region that the pointer moves across must not also
+    // block the click.
+    const { cy, click, reported, cleanup } = await mount(true)
     const point = regionPoint(cy, 'region')
-    await press(point.x, point.y)
+    await click(point.x, point.y)
 
     expect(reported.nodeClicks).toEqual(['region'])
     expect(reported.attributes.filter((a) => a.isSticky)).toEqual([
@@ -248,51 +248,51 @@ describe('a click on an expanded region', () => {
     cleanup()
   })
 
-  it('marks nothing and colors no edge, which an operator does', async () => {
-    // A region stands in for every node inside it, so tracing it would color every edge in it, and
-    // there is nothing for the mark to draw on - a region never glows.
-    const { cy, press, cleanup } = await mount(true)
+  it('marks nothing and colors no edges, unlike a click on an operator', async () => {
+    // A region contains many nodes, so a trace from it would color all edges in it. Also, a region
+    // cannot show the mark, because a region never glows.
+    const { cy, click, cleanup } = await mount(true)
     const point = regionPoint(cy, 'region')
-    await press(point.x, point.y)
+    await click(point.x, point.y)
     expect(cy.nodes('.selected-node').length).toBe(0)
     expect(highlighted(cy)).toEqual([])
 
-    // The operator inside it, for contrast: the mark and the trace are what a click on a node does, the
-    // region being the exception.
+    // Compare with a click on the operator inside the region: the click marks the operator and traces
+    // its edges.
     const node = cy.$id('n1')
-    await press(node.renderedPosition().x, node.renderedPosition().y)
+    await click(node.renderedPosition().x, node.renderedPosition().y)
     expect(cy.nodes('.selected-node').map((n: { id(): string }) => n.id())).toEqual(['n1'])
     expect(highlighted(cy).length).toBeGreaterThan(0)
     cleanup()
   })
 
-  it('does not take over from a report already asked for', async () => {
-    // The hover path and the click path end in the same place, so the one thing that keeps them apart
-    // is that a report asked for by a click stays until it is dismissed.
-    const { cy, press, reported, cleanup } = await mount(true)
+  it('keeps its report when the pointer then moves over an operator', async () => {
+    // A hover and a click both show their report in the same place. The only difference is that a
+    // report from a click stays until the user closes it.
+    const { cy, click, reported, cleanup } = await mount(true)
     const node = cy.$id('n1')
     node.emit('mouseover')
     await settle()
     expect(reported.attributes.at(-1)).toEqual({ nodeId: 'n1', isSticky: false })
 
     const point = regionPoint(cy, 'region')
-    await press(point.x, point.y)
+    await click(point.x, point.y)
     expect(reported.attributes.at(-1)).toEqual({ nodeId: 'region', isSticky: true })
 
-    // A pointer crossing an operator afterwards leaves the region's report where it is.
+    // A hover on an operator after the click does not replace the region report.
     node.emit('mouseover')
     await settle()
     expect(reported.attributes.at(-1)).toEqual({ nodeId: 'region', isSticky: true })
     cleanup()
   })
 
-  it('leaves the pointer free to mark and trace the operators it crosses', async () => {
-    // The report holds no mark and colors no edge, so it leaves the diagram itself blank. Silencing the
-    // pointer on top of that would turn every hover in the graph off, and the click would look like it
-    // had done nothing at all.
-    const { cy, press, reported, cleanup } = await mount(true)
+  it('still lets a hover mark and trace operators', async () => {
+    // The region report does not mark a node or color edges, so the diagram shows nothing for it. If
+    // the report also blocked hovers, the graph would stop reacting to the pointer, and the click would
+    // look like it did nothing.
+    const { cy, click, reported, cleanup } = await mount(true)
     const point = regionPoint(cy, 'region')
-    await press(point.x, point.y)
+    await click(point.x, point.y)
     expect(cy.nodes('.selected-node').length).toBe(0)
 
     const node = cy.$id('n1')
@@ -300,10 +300,10 @@ describe('a click on an expanded region', () => {
     await settle()
     expect(cy.nodes('.selected-node').map((n: { id(): string }) => n.id())).toEqual(['n1'])
     expect(highlighted(cy).length).toBeGreaterThan(0)
-    // And it took nothing away from what the click reported, which stays until it is dismissed.
+    // The hover does not change the report from the click, which stays until the user closes it.
     expect(reported.attributes.at(-1)).toEqual({ nodeId: 'region', isSticky: true })
 
-    // The mark goes with the pointer, the report stays behind it.
+    // The mark goes away with the pointer, but the report stays.
     node.emit('mouseout')
     await settle()
     expect(cy.nodes('.selected-node').length).toBe(0)
@@ -312,12 +312,12 @@ describe('a click on an expanded region', () => {
     cleanup()
   })
 
-  it('which a click on an operator does not, its own mark being what a hover would take', async () => {
-    // The other half of the rule: a report that does hold a mark keeps it against the pointer, or
-    // clicking an operator would only mark it until the mouse moved on.
-    const { cy, press, cleanup } = await mount(true)
+  it('keeps the mark of a clicked operator when the pointer moves to another node', async () => {
+    // The opposite case: a report that marks a node keeps that mark during hovers. Otherwise a click on
+    // an operator would mark it only until the pointer moved to another node.
+    const { cy, click, cleanup } = await mount(true)
     const node = cy.$id('n1')
-    await press(node.renderedPosition().x, node.renderedPosition().y)
+    await click(node.renderedPosition().x, node.renderedPosition().y)
     expect(cy.nodes('.selected-node').map((n: { id(): string }) => n.id())).toEqual(['n1'])
 
     cy.$id('n2').emit('mouseover')
@@ -326,9 +326,9 @@ describe('a click on an expanded region', () => {
     cleanup()
   })
 
-  it('still says nothing when the pointer only crosses it', async () => {
-    // The reason the guard is there: a region covers everything it holds, so following the pointer
-    // into one would report the region on the way to whatever the user was heading for.
+  it('reports nothing when the pointer only moves across it', async () => {
+    // This is why the check exists: a region covers all nodes in it, so without the check, the user
+    // would see a region report each time the pointer moved into a region on the way to a node.
     const { cy, pointer, reported, cleanup } = await mount(true)
     const point = regionPoint(cy, 'region')
     pointer('mousemove', point.x, point.y)
@@ -340,10 +340,10 @@ describe('a click on an expanded region', () => {
 })
 
 describe('the overview report a profile opens with', () => {
-  it('leaves the pointer free to mark and trace the operators it crosses', async () => {
-    // The overview is a sticky report on the root node, which is invisible and so carries no mark. The
-    // application asks for it as soon as a profile is loaded, so a hover silenced by it would leave the
-    // whole diagram dead until the user dismissed a report they never asked for.
+  it('still lets a hover mark and trace operators', async () => {
+    // The overview is a sticky report on the root node. The root node is invisible, so it has no mark.
+    // The application shows the overview when a profile loads. If the overview blocked hovers, the
+    // diagram would not react to the pointer until the user closed a report that they did not ask for.
     const { cy, diagram, reported, cleanup } = await mount(true)
     diagram.showGlobalMetrics(true)
     await settle()
@@ -355,7 +355,7 @@ describe('the overview report a profile opens with', () => {
     expect(cy.nodes('.selected-node').map((n: { id(): string }) => n.id())).toEqual(['n1'])
     expect(highlighted(cy).length).toBeGreaterThan(0)
 
-    // The mark goes with the pointer; the overview stays, being a report that was asked for.
+    // The mark goes away with the pointer, but the overview stays, because it is a sticky report.
     node.emit('mouseout')
     await settle()
     expect(cy.nodes('.selected-node').length).toBe(0)
@@ -376,7 +376,7 @@ describe('a double click on a nested region', () => {
     expect(cy.$id('sub').isParent()).toBe(true)
     expect(reported.doubleClicks).toEqual([])
 
-    // The region around it still collapses, and takes the nested one with it.
+    // The top-level region still collapses, and the nested region is no longer shown.
     await toggle('outer')
     expect(cy.$id('outer').isParent()).toBe(false)
     expect(cy.$id('sub').length).toBe(0)

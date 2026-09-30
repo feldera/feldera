@@ -1,14 +1,16 @@
-// What is on screen between a graph change and the layout that follows it. The states are a handful of
-// DOM moves over cytoscape's canvases, so the canvases are stood in for here and asked what was done to
-// them. That the copy looks like the diagram needs a renderer, and belongs to profiler-layout's browser
-// suite; that the copy goes up, stays up and comes down again is this file's.
+// Unit tests for `FrozenLayout`, which shows a still copy of the diagram while the graph changes and
+// a new layout is calculated. `FrozenLayout` only adds, removes, hides and shows canvas elements. So
+// these tests give it fake canvases, and then check what it did to them. These tests check when the
+// copy is added and removed. The browser tests in profiler-layout check that the copy looks the same
+// as the diagram, because that needs a real renderer.
 
 import { describe, expect, it } from 'vitest'
 
 import type { Core } from 'cytoscape'
 import { FrozenLayout } from './frozenLayout.js'
 
-/** Device pixels of cytoscape's layers, which the copy has to match to be as sharp as they are. */
+/** The size of cytoscape's canvases in device pixels. The copy must have the same size, so that it is
+ *  as sharp as the canvases. */
 const LAYER_WIDTH = 1600
 const LAYER_HEIGHT = 1200
 
@@ -21,8 +23,9 @@ interface FakeCanvas {
     remove(): void
 }
 
-/** Cytoscape's three canvases inside the wrapper it positions them in, and enough of a document to make
- *  one more. `blits` records what was drawn into the copy, in order. */
+/** A fake container with cytoscape's three canvases in a wrapper element, as cytoscape makes them. Its
+ *  `ownerDocument` can make one more canvas, for the copy. `blits` records the names of the canvases
+ *  that were drawn into the copy, in order. */
 function fakeDiagram({ headless = false } = {}) {
     const blits: string[] = []
     const overlays: FakeCanvas[] = []
@@ -48,7 +51,8 @@ function fakeDiagram({ headless = false } = {}) {
         style: { visibility: '' },
         firstElementChild: layers,
         ownerDocument: { createElement: () => canvas('copy') },
-        // The copy is a canvas too, and lands in the same container, so a query after it goes up finds it.
+        // The copy is also a canvas in the container. So after the copy is added, a query for canvases
+        // finds it too.
         querySelectorAll: () => [...canvases, ...overlays]
     }
 
@@ -56,7 +60,7 @@ function fakeDiagram({ headless = false } = {}) {
     return { cy, container, canvases, overlays, blits }
 }
 
-/** A diagram past its first layout, which is the point at which there is something to hold over. */
+/** A diagram that has finished its first layout. Before that, there is no picture to copy. */
 function shownOnce(options?: { headless: boolean }) {
     const diagram = fakeDiagram(options)
     const frozen = new FrozenLayout(diagram.cy)
@@ -87,12 +91,13 @@ describe('a layout after that', () => {
         frozen.graphWillChange()
 
         expect(overlays).toHaveLength(1)
-        // Every layer, bottom to top, into a copy the size of the layers themselves.
+        // All three canvases are drawn into the copy, from bottom to top. The copy has the same size as
+        // the canvases.
         expect(blits).toEqual(['background', 'nodes', 'drag'])
         expect(overlays[0]!.width).toBe(LAYER_WIDTH)
         expect(overlays[0]!.height).toBe(LAYER_HEIGHT)
         expect(hidden(canvases)).toEqual(['hidden', 'hidden', 'hidden'])
-        // The copy is the one canvas that has to stay visible, though it is in the container too.
+        // The copy is a canvas in the same container, but it is the one canvas that must stay visible.
         expect(overlays[0]!.style.visibility).toBe('')
     })
 
@@ -101,8 +106,8 @@ describe('a layout after that', () => {
         frozen.graphWillChange()
         frozen.graphWillChange()
 
-        // A second copy would be of the canvases hidden behind the first one, which hold the layout the
-        // user never saw finish.
+        // A second copy would show the hidden canvases behind the first copy, and those show a layout
+        // that is not finished. The first copy shows the last layout that the user saw.
         expect(overlays).toHaveLength(1)
         expect(blits).toEqual(['background', 'nodes', 'drag'])
     })
@@ -121,8 +126,8 @@ describe('a layout after that', () => {
         frozen.graphWillChange()
         frozen.layoutFailed()
 
-        // Nothing else is coming to do it: without this the user is left looking at an image that
-        // answers no clicks, the live canvases being hidden behind it.
+        // No `layoutSettled` call will come to remove the copy. Without this call, the user sees an
+        // image that ignores clicks, and the real canvases stay hidden behind it.
         expect(overlays).toHaveLength(0)
         expect(hidden(canvases)).toEqual(['', '', ''])
     })

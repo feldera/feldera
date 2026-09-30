@@ -1,15 +1,16 @@
-// The corner chips of a node are buttons (profiler-lib's `chipButtons.ts`), which cytoscape itself
-// knows nothing about: they are background images, and their boxes are hit-tested by hand. What only
-// a real browser can say is checked here - that a real pointer over the chip reaches that hit test,
-// that the cursor says the chip is pressable, and that pressing it expands or collapses the composite.
-// Which of the two controls a chip shows, and that a control keeps the width of the count it stands
-// in for, are pinned in profiler-lib's own suites.
+// The corner chips on a node are buttons (see profiler-lib's `chipButtons.ts`). Cytoscape does not know
+// about them: each chip is drawn as a background image, and custom event listeners find which chip
+// the pointer is on.
+// This file checks the things that need a real browser:
+//   - moving the pointer over a chip reaches our listener,
+//   - the cursor changes to show that you can click the chip,
+//   - clicking the chip expands or collapses the group.
 //
-// The counter chip is the one exercised: it is the only chip the fixtures can carry, since a code chip
+// The counter chip is the one exercised: it is the only chip the fixtures can mock, since a code chip
 // needs source positions, which arrive from a dataflow graph rather than from a profile.
 
 import { describe, expect, it } from 'vitest'
-import { COMPOSITE, mountDiagram, type Rgba, settle } from '../test-support/mountDiagram.js'
+import { CIRCUIT_REGION, mountDiagram, type Rgba, settle } from '../test-support/mountDiagram.js'
 
 const WHITE: Rgba = { r: 255, g: 255, b: 255, a: 1 }
 
@@ -26,8 +27,8 @@ const counterPoint = (cy: any, id: string) => {
   }
 }
 
-/** Ink of the counter row of a collapsed composite, the row above its text: the chip is the only thing
- *  drawn there. */
+/** Ink of the counter row of a collapsed circuit region, the row above its text: the chip is the only
+ *  thing drawn there. */
 const counterInk = (
   inkColumns: (
     id: string,
@@ -43,7 +44,7 @@ describe('chip buttons', () => {
   it('draws the network icon beside the count', async () => {
     // The icon is an SVG group scaled down inside the chip image, so only a real render says it came
     // out as strokes on the pill rather than as nothing at all.
-    const { cy, inkColumns, toggle, cleanup } = await mountDiagram('light', COMPOSITE)
+    const { cy, inkColumns, toggle, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
     // Collapsed, so the counter chip has a row of the node to itself.
     await toggle('region')
     cy.center(cy.$id('region'))
@@ -59,7 +60,7 @@ describe('chip buttons', () => {
   })
 
   it('points the cursor at the chip and nowhere else', async () => {
-    const { cy, container, pointer, cleanup } = await mountDiagram('light', COMPOSITE)
+    const { cy, container, pointer, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
     const region = cy.$id('region')
     cy.center(region)
     await settle()
@@ -75,39 +76,39 @@ describe('chip buttons', () => {
     cleanup()
   })
 
-  it('collapses a region when its counter is pressed, and expands it again', async () => {
-    const { cy, press, cleanup } = await mountDiagram('light', COMPOSITE)
+  it('collapses a region when its counter is clicked, and expands it again', async () => {
+    const { cy, click, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
     const region = cy.$id('region')
     cy.center(region)
     await settle()
     expect(region.isParent()).toBe(true)
 
-    await press(counterPoint(cy, 'region').x, counterPoint(cy, 'region').y)
+    await click(counterPoint(cy, 'region').x, counterPoint(cy, 'region').y)
     expect(cy.$id('region').isParent()).toBe(false)
 
     // The chip is in the same corner of the collapsed node, so the same button undoes it.
     cy.center(cy.$id('region'))
     await settle()
-    await press(counterPoint(cy, 'region').x, counterPoint(cy, 'region').y)
+    await click(counterPoint(cy, 'region').x, counterPoint(cy, 'region').y)
     expect(cy.$id('region').isParent()).toBe(true)
     cleanup()
   })
 
-  it('leaves the node alone when pressed elsewhere', async () => {
-    // The press has to reach the chip, not merely the node it sits on.
-    const { cy, press, cleanup } = await mountDiagram('light', COMPOSITE)
+  it('leaves the node alone when it is clicked outside the chip', async () => {
+    // Only a click on the chip toggles the region, not a click on another part of the node.
+    const { cy, click, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
     const region = cy.$id('region')
     cy.center(region)
     await settle()
 
     const { x, y } = region.renderedPosition()
-    await press(x, y)
+    await click(x, y)
     expect(cy.$id('region').isParent()).toBe(true)
     cleanup()
   })
 
-  it('draws a control in place of the count while the composite is hovered', async () => {
-    const { cy, inkColumns, pointer, toggle, cleanup } = await mountDiagram('light', COMPOSITE)
+  it('draws a control in place of the count while the circuit region is hovered', async () => {
+    const { cy, inkColumns, pointer, toggle, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
     // Collapsed, so the counter chip has a row of the node to itself.
     await toggle('region')
     cy.center(cy.$id('region'))
@@ -137,7 +138,7 @@ describe('chip buttons', () => {
   })
 
   it('shows the count again once the pointer leaves', async () => {
-    const { cy, inkColumns, pointer, toggle, cleanup } = await mountDiagram('light', COMPOSITE)
+    const { cy, inkColumns, pointer, toggle, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
     await toggle('region')
     cy.center(cy.$id('region'))
     await settle()
