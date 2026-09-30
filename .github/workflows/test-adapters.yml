@@ -54,6 +54,23 @@ jobs:
           --health-retries 5
       dynamodb:
         image: amazon/dynamodb-local:latest
+      iceberg-rest:
+        image: apache/iceberg-rest-fixture:1.9.1@sha256:1cd0b86579b423cf260508bc8bdbb0220268f2447b86ddef71482baf74aca1d7
+        env:
+          CATALOG_WAREHOUSE: gs://feldera-ci-test-feldera-ci/iceberg-follow
+          # Keep this on a file. In-memory sqlite gives each connection its own
+          # empty database, and the catalog loses its tables.
+          CATALOG_URI: jdbc:sqlite:file:/tmp/iceberg_rest.db
+          CATALOG_IO__IMPL: org.apache.iceberg.gcp.gcs.GCSFileIO
+          # Java takes a quarter of `--memory` as heap, and 128m killed this
+          # catalog. `JAVA_OPTS` does nothing: the entrypoint is `java -jar`.
+          JAVA_TOOL_OPTIONS: -Xmx512m
+        options: >-
+          --memory=1g
+          --health-cmd "curl -fsS 'http://localhost:8181/v1/config?warehouse=gs://feldera-ci-test-feldera-ci/iceberg-follow' || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
@@ -122,6 +139,13 @@ jobs:
           DYNAMODB_ENDPOINT: http://dynamodb:8000
           POSTGRES_URL: postgres://postgres:password@postgres:5432
           REDPANDA_BROKERS: redpanda
+          FELDERA_ICEBERG_REST_URI: http://iceberg-rest:8181
+          FELDERA_ICEBERG_WAREHOUSE: gs://feldera-ci-test-feldera-ci/iceberg-follow
+          # The bucket is shared and both matrix legs run at once.
+          FELDERA_ICEBERG_NAMESPACE: follow_${{ github.run_id }}_${{ matrix.arch }}
+          # The tests shell out to a pyiceberg writer; `python3` on PATH
+          # lacks pyiceberg.
+          FELDERA_ICEBERG_PYTHON: ${{ github.workspace }}/crates/adapters/.venv/bin/python
           # No pubsub emulator runs in this job; the probe sees
           # connection-refused here and the pubsub tests skip.
           PUBSUB_EMULATOR_HOST: 127.0.0.1:8681
