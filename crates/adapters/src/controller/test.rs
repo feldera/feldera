@@ -1,4 +1,4 @@
-use super::OutputEndpointControl;
+use super::{OutputEndpointControl, OutputEndpointDescr};
 use crate::{
     Controller, InputConsumer, InputEndpoint, OutputEndpoint, PipelineConfig,
     TransportInputEndpoint,
@@ -6,8 +6,8 @@ use crate::{
     preprocess::{DecryptionPreprocessorFactory, PassthroughPreprocessorFactory},
     test::{
         DEFAULT_TIMEOUT_MS, TestStruct, generate_test_batch, init_test_logger, test_circuit,
-        test_circuit_with_aggregate, test_circuit_with_aliased_index,
-        test_circuit_without_persistent_ids, wait,
+        test_circuit_not_materialized, test_circuit_with_aggregate,
+        test_circuit_with_aliased_index, test_circuit_without_persistent_ids, wait,
     },
     transport::{
         InputQueue, InputQueueEntry, InputReader, InputReaderCommand,
@@ -19,6 +19,7 @@ use chrono::Utc;
 use crossbeam::sync::Parker;
 use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
 use feldera_adapterlib::format::{BufferSize, InputBuffer, Parser};
+use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::{
     adapter_stats::ExternalOutputEndpointMetrics,
     checkpoint::CheckpointMetadata,
@@ -2698,6 +2699,70 @@ impl OutputEndpoint for DiscardOutputEndpoint {
     fn is_fault_tolerant(&self) -> bool {
         false
     }
+}
+
+/// An output endpoint records the transaction it was created during only
+/// after it enables its stream's accumulator.  Recording it first would let a
+/// transaction that starts in between miss the enable, and yet reach the
+/// endpoint as if its output were complete.
+///
+/// The view is not materialized, because a materialized view's accumulator
+/// is always enabled.
+#[test]
+fn output_endpoint_records_transaction_after_enable() {
+    init_test_logger();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "inputs": {},
+        "outputs": {},
+    }))
+    .unwrap();
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit_not_materialized::<TestStruct>(
+                circuit_config,
+                &[],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    let catalog = controller.catalog().clone();
+    let enable_count = &catalog
+        .output_handles(&SqlIdentifier::from("test_output1"))
+        .unwrap()
+        .enable_count;
+    assert!(!enable_count.is_enabled());
+
+    let endpoint = OutputEndpointDescr::new(
+        "endpoint",
+        "test_output1",
+        false,
+        false,
+        None,
+        Parker::new().unparker().clone(),
+    );
+    let mut outputs = controller.inner.outputs.write().unwrap();
+    outputs
+        .insert(12345, endpoint, || {
+            assert!(enable_count.is_enabled());
+            7
+        })
+        .unwrap();
+    assert_eq!(
+        outputs
+            .lookup_by_id(&12345)
+            .unwrap()
+            .created_during_transaction_number,
+        7
+    );
+    outputs.remove(&12345);
+    drop(outputs);
+    assert!(!enable_count.is_enabled());
+
+    controller.stop().unwrap();
 }
 
 /// A paused connector cannot push the pipeline into backpressure.

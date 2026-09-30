@@ -313,7 +313,25 @@ where
         input_properties,
         persistent_output_ids,
         true,
+        true,
     )
+}
+
+/// Like [`test_circuit`] with one stream, but neither the input nor the
+/// output is materialized, like a SQL table and view declared without
+/// `MATERIALIZED`.  The output's accumulator is then enabled only while an
+/// output endpoint reads it.
+pub fn test_circuit_not_materialized<T>(
+    config: CircuitConfig,
+    schema: &[Field],
+) -> (DBSPHandle, Box<dyn CircuitCatalog>)
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+{
+    test_circuit_inner::<T>(config, schema, &[], &[None], true, false)
 }
 
 /// Creates a one-stream test circuit that cannot be checkpointed.
@@ -332,18 +350,20 @@ where
         + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
 {
-    test_circuit_inner::<T>(config, schema, &[], &[None], false)
+    test_circuit_inner::<T>(config, schema, &[], &[None], false, true)
 }
 
 /// The body of [`test_circuit_with_properties`] and
 /// [`test_circuit_without_persistent_ids`].  `persistent_ids` says whether the
 /// input operators get persistent ids, which is what a checkpoint needs.
+/// `materialized` says whether the inputs and outputs are materialized.
 fn test_circuit_inner<T>(
     config: CircuitConfig,
     schema: &[Field],
     input_properties: &[(&str, &str)],
     persistent_output_ids: &[Option<&str>],
     persistent_ids: bool,
+    materialized: bool,
 ) -> (DBSPHandle, Box<dyn CircuitCatalog>)
 where
     T: DBData
@@ -407,13 +427,26 @@ where
             ))
             .unwrap();
 
-            catalog.register_materialized_input_zset(input.clone(), hinput, &input_schema);
+            if materialized {
+                catalog.register_materialized_input_zset(input.clone(), hinput, &input_schema);
+            } else {
+                catalog.register_input_zset(input.clone(), hinput, &input_schema);
+            }
 
-            catalog.register_materialized_output_zset_persistent(
-                persistent_output_id.as_ref().map(|s| s.as_str()),
-                input,
-                &output_schema,
-            );
+            let persistent_output_id = persistent_output_id.as_ref().map(|s| s.as_str());
+            if materialized {
+                catalog.register_materialized_output_zset_persistent(
+                    persistent_output_id,
+                    input,
+                    &output_schema,
+                );
+            } else {
+                catalog.register_output_zset_persistent(
+                    persistent_output_id,
+                    input,
+                    &output_schema,
+                );
+            }
         }
         Ok(catalog)
     })
