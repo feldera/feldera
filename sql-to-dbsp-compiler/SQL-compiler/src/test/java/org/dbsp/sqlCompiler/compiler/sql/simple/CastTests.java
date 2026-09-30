@@ -92,13 +92,14 @@ public class CastTests extends SqlIoTest {
 
     @Test
     public void castFailPosition() {
-        // use bround to inhibit compile-time optimization
+        // use bround to inhibit compile-time optimization;
+        // line numbers include the 2 lines of DDL from prepareInputs
         this.runtimeConstantFail("""
                         SELECT
                             CAST(bround(100000, 0)
                             AS DECIMAL
                                (3,2))""",
-                "line 2 column 5: Cannot represent 100000 as DECIMAL(3, 2): " +
+                "line 4 column 5: Cannot represent 100000 as DECIMAL(3, 2): " +
                         "precision of DECIMAL type too small to represent value");
     }
 

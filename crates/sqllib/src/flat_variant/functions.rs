@@ -60,9 +60,15 @@ where
 
 // JSON functions and TYPEOF
 
+/// Panics on invalid JSON.
 #[doc(hidden)]
 pub fn parse_json_fv_s(value: SqlString) -> FlatVariant {
-    serde_json::from_str::<FlatVariant>(value.str()).unwrap_or_default()
+    serde_json::from_str::<FlatVariant>(value.str()).unwrap_or_else(|e| {
+        panic!(
+            "PARSE_JSON: invalid JSON '{}': {e}; use TRY_PARSE_JSON to return NULL for invalid input",
+            value.str()
+        )
+    })
 }
 
 #[doc(hidden)]
@@ -72,6 +78,22 @@ pub fn parse_json_fv_sN(value: Option<SqlString>) -> Option<FlatVariant> {
 
 #[doc(hidden)]
 pub fn parse_json_fv_nullN(_value: Option<()>) -> Option<FlatVariant> {
+    None
+}
+
+/// Returns None on invalid JSON.
+#[doc(hidden)]
+pub fn try_parse_json_fv_s(value: SqlString) -> Option<FlatVariant> {
+    serde_json::from_str::<FlatVariant>(value.str()).ok()
+}
+
+#[doc(hidden)]
+pub fn try_parse_json_fv_sN(value: Option<SqlString>) -> Option<FlatVariant> {
+    value.and_then(try_parse_json_fv_s)
+}
+
+#[doc(hidden)]
+pub fn try_parse_json_fv_nullN(_value: Option<()>) -> Option<FlatVariant> {
     None
 }
 

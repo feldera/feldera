@@ -106,6 +106,7 @@ public class CustomFunctions {
         this.functions.add(SplitPartFunction.INSTANCE);
         this.functions.add(ToIntFunction.INSTANCE);
         this.functions.add(ToJsonFunction.INSTANCE);
+        this.functions.add(TryParseJsonFunction.INSTANCE);
         this.functions.add(VariantFilterFunction.DEEP);
         this.functions.add(VariantFilterFunction.INSTANCE);
         this.functions.add(VariantMapFunction.DEEP);
@@ -393,6 +394,18 @@ public class CustomFunctions {
                     ReturnTypes.VARIANT.andThen(SqlTypeTransforms.TO_NULLABLE),
                     OperandTypes.STRING,
                     SqlFunctionCategory.STRING, "json#parse_json", FunctionDocumentation.NO_FILE);
+        }
+    }
+
+    /** Like PARSE_JSON, but returns NULL on invalid input, so the result is always nullable. */
+    static class TryParseJsonFunction extends NonOptimizedFunction {
+        static final TryParseJsonFunction INSTANCE = new TryParseJsonFunction();
+
+        private TryParseJsonFunction() {
+            super("TRY_PARSE_JSON",
+                    ReturnTypes.VARIANT.andThen(SqlTypeTransforms.FORCE_NULLABLE),
+                    OperandTypes.STRING,
+                    SqlFunctionCategory.STRING, "json#try_parse_json", FunctionDocumentation.NO_FILE);
         }
     }
 

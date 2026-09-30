@@ -1633,15 +1633,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                                 node, type, ops, 1);
                     case "to_int":
                         return compileFunction(call, node, type, ops, 1);
-                    case "parse_json": {
+                    case "parse_json":
+                    case "try_parse_json": {
                         DBSPExpression expr = this.strictnessCheck(ops, type);
                         if (expr != null)
                             return expr;
                         // The argument is a string, so the polymorphic suffix
                         // cannot distinguish the variant representation.
-                        return compilePolymorphicFunction(false,
-                                VariantMode.isEnabled() ? "parse_json_fv" : "parse_json",
-                                node, type, ops, 1);
+                        String baseName = VariantMode.isEnabled() ? opName + "_fv" : opName;
+                        return compilePolymorphicFunction(false, baseName, node, type, ops, 1);
                     }
                     case "to_json":
                     case "json_each_bigint":

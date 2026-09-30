@@ -734,6 +734,85 @@ public class VariantTests extends SqlIoTest {
     }
 
     @Test
+    public void parseJsonInvalidInputFails() {
+        this.runtimeConstantFail("SELECT PARSE_JSON('nul')", "PARSE_JSON: invalid JSON 'nul'");
+    }
+
+    @Test
+    public void tryParseJsonTests() {
+        // Issue 7324: invalid JSON must produce a SQL NULL, visible to IS NULL and COALESCE
+        this.qst("""
+                SELECT TRY_PARSE_JSON('nul') IS NULL AS r;
+                 r
+                ---
+                true
+                (1 row)
+
+                SELECT COALESCE(TO_JSON(TRY_PARSE_JSON('{')), 'invalid') AS r;
+                 r
+                ---
+                 invalid
+                (1 row)
+
+                SELECT TRY_PARSE_JSON('null') IS NULL AS r;
+                 r
+                ---
+                false
+                (1 row)
+
+                SELECT TRY_PARSE_JSON(NULL) IS NULL AS r;
+                 r
+                ---
+                true
+                (1 row)
+
+                SELECT TO_JSON(TRY_PARSE_JSON('{"a": [1, null]}')) AS r;
+                 r
+                ---
+                 {"a":[1,null]}
+                (1 row)""");
+    }
+
+    /** TRY_PARSE_JSON on a nullable column. */
+    static final String TRY_PARSE_JSON_PROGRAM = """
+            CREATE TABLE jsrc(s VARCHAR);
+            CREATE VIEW V AS SELECT s, TRY_PARSE_JSON(s) IS NULL AS n,
+                TO_JSON(TRY_PARSE_JSON(s)) AS j FROM jsrc;""";
+    static final String TRY_PARSE_JSON_INPUT =
+            "INSERT INTO jsrc VALUES ('{\"a\":1}'), ('{'), (NULL), ('null'), ('')";
+    static final String TRY_PARSE_JSON_OUTPUT = """
+             s       | n     | j
+            -------------------------
+             {"a":1} | false | {"a":1}
+             {       | true  |NULL
+            NULL     | true  |NULL
+             null    | false | null
+                     | true  |NULL""";
+
+    /** PARSE_JSON on a column holding invalid JSON. */
+    static final String PARSE_JSON_FAIL_PROGRAM = """
+            CREATE TABLE jsrc(s VARCHAR NOT NULL);
+            CREATE VIEW V AS SELECT PARSE_JSON(s) AS j FROM jsrc;""";
+    static final String PARSE_JSON_FAIL_INPUT = "INSERT INTO jsrc VALUES ('{');";
+    static final String PARSE_JSON_FAIL_MESSAGE =
+            "PARSE_JSON: invalid JSON '{': EOF while parsing an object at line 1 column 1; " +
+                    "use TRY_PARSE_JSON to return NULL for invalid input";
+
+    @Test
+    public void tryParseJsonColumn() {
+        var ccs = this.getCCS(TRY_PARSE_JSON_PROGRAM).withStringTrim();
+        ccs.stepWeightOne(TRY_PARSE_JSON_INPUT, TRY_PARSE_JSON_OUTPUT);
+    }
+
+    @Test
+    public void parseJsonColumnFails() {
+        DBSPCompiler compiler = this.testCompiler();
+        this.prepareInputs(compiler);
+        compiler.submitStatementsForCompilation(PARSE_JSON_FAIL_PROGRAM);
+        this.runtimeFail(compiler, PARSE_JSON_FAIL_INPUT, PARSE_JSON_FAIL_MESSAGE);
+    }
+
+    @Test
     public void testCastVec() {
         this.testQuery("""
                 SELECT CAST(PARSE_JSON('["10:10:10"]') AS TIME ARRAY)""",
