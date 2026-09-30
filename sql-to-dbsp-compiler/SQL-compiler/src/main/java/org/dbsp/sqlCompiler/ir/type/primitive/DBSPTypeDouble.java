@@ -89,14 +89,15 @@ public class DBSPTypeDouble extends DBSPTypeFP implements IsNumericType {
         return 15;
     }
 
+    /** In OrderedFloat NaN is larger than every other value. */
     @Override
     public DBSPExpression getMaxValue() {
-        return new DBSPDoubleLiteral(Double.MAX_VALUE, this.mayBeNull);
+        return new DBSPDoubleLiteral(Double.NaN, this.mayBeNull);
     }
 
     @Override
     public DBSPExpression getMinValue() {
-        return new DBSPDoubleLiteral(Double.MIN_VALUE, this.mayBeNull);
+        return new DBSPDoubleLiteral(Double.NEGATIVE_INFINITY, this.mayBeNull);
     }
 
     @Override
