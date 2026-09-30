@@ -57,8 +57,8 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
             new JoinShape("left_kt", "LEFT JOIN R r ON l.k = r.k AND l.t = r.t", true),
             new JoinShape("left_k", "LEFT JOIN R r ON l.k = r.k", true),
             new JoinShape("left_filter_anti", "LEFT JOIN R r ON l.k = r.k AND l.t >= r.t", true),
-            new JoinShape("right_t_anti", "RIGHT JOIN R r ON l.t = r.t", true),
-            new JoinShape("right_k_anti", "RIGHT JOIN R r ON l.k = r.k", true),
+            new JoinShape("right_t", "RIGHT JOIN R r ON l.t = r.t", true),
+            new JoinShape("right_k", "RIGHT JOIN R r ON l.k = r.k", true),
             new JoinShape("full_t_anti", "FULL JOIN R r ON l.t = r.t", true),
             new JoinShape("full_k_anti", "FULL JOIN R r ON l.k = r.k", true),
             new JoinShape("asof", "LEFT ASOF JOIN R r MATCH_CONDITION (l.t >= r.t) ON l.k = r.k", true),
@@ -392,36 +392,36 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
              not_exists_t     | 0    |NULL  | 6    |NULL  |NULL  |NULL
              not_exists_t     | 1    | 103  | 4    |NULL  |NULL  |NULL
              not_exists_t     | 2    | 105  | 5    |NULL  |NULL  |NULL
-             right_k_anti     | 0    | 100  | 1    | 0    | 100  | 10
-             right_k_anti     | 0    | 100  | 1    | 0    | 102  | 14
-             right_k_anti     | 0    | 100  | 1    | 0    | 111  | 17
-             right_k_anti     | 0    | 101  | 2    | 0    | 100  | 10
-             right_k_anti     | 0    | 101  | 2    | 0    | 102  | 14
-             right_k_anti     | 0    | 101  | 2    | 0    | 111  | 17
-             right_k_anti     | 0    | 110  | 7    | 0    | 100  | 10
-             right_k_anti     | 0    | 110  | 7    | 0    | 102  | 14
-             right_k_anti     | 0    | 110  | 7    | 0    | 111  | 17
-             right_k_anti     | 0    |NULL  | 6    | 0    | 100  | 10
-             right_k_anti     | 0    |NULL  | 6    | 0    | 102  | 14
-             right_k_anti     | 0    |NULL  | 6    | 0    | 111  | 17
-             right_k_anti     | 1    | 100  | 3    | 1    | 100  | 11
-             right_k_anti     | 1    | 100  | 3    | 1    | 104  | 13
-             right_k_anti     | 1    | 100  | 3    | 1    | 99   | 12
-             right_k_anti     | 1    | 103  | 4    | 1    | 100  | 11
-             right_k_anti     | 1    | 103  | 4    | 1    | 104  | 13
-             right_k_anti     | 1    | 103  | 4    | 1    | 99   | 12
-             right_k_anti     | 2    | 105  | 5    | 2    |NULL  | 15
-             right_k_anti     |NULL  |NULL  |NULL  | 3    | 106  | 16
-             right_t_anti     | 0    | 100  | 1    | 0    | 100  | 10
-             right_t_anti     | 0    | 100  | 1    | 1    | 100  | 11
-             right_t_anti     | 1    | 100  | 3    | 0    | 100  | 10
-             right_t_anti     | 1    | 100  | 3    | 1    | 100  | 11
-             right_t_anti     |NULL  |NULL  |NULL  | 0    | 102  | 14
-             right_t_anti     |NULL  |NULL  |NULL  | 0    | 111  | 17
-             right_t_anti     |NULL  |NULL  |NULL  | 1    | 104  | 13
-             right_t_anti     |NULL  |NULL  |NULL  | 1    | 99   | 12
-             right_t_anti     |NULL  |NULL  |NULL  | 2    |NULL  | 15
-             right_t_anti     |NULL  |NULL  |NULL  | 3    | 106  | 16""");
+             right_k          | 0    | 100  | 1    | 0    | 100  | 10
+             right_k          | 0    | 100  | 1    | 0    | 102  | 14
+             right_k          | 0    | 100  | 1    | 0    | 111  | 17
+             right_k          | 0    | 101  | 2    | 0    | 100  | 10
+             right_k          | 0    | 101  | 2    | 0    | 102  | 14
+             right_k          | 0    | 101  | 2    | 0    | 111  | 17
+             right_k          | 0    | 110  | 7    | 0    | 100  | 10
+             right_k          | 0    | 110  | 7    | 0    | 102  | 14
+             right_k          | 0    | 110  | 7    | 0    | 111  | 17
+             right_k          | 0    |NULL  | 6    | 0    | 100  | 10
+             right_k          | 0    |NULL  | 6    | 0    | 102  | 14
+             right_k          | 0    |NULL  | 6    | 0    | 111  | 17
+             right_k          | 1    | 100  | 3    | 1    | 100  | 11
+             right_k          | 1    | 100  | 3    | 1    | 104  | 13
+             right_k          | 1    | 100  | 3    | 1    | 99   | 12
+             right_k          | 1    | 103  | 4    | 1    | 100  | 11
+             right_k          | 1    | 103  | 4    | 1    | 104  | 13
+             right_k          | 1    | 103  | 4    | 1    | 99   | 12
+             right_k          | 2    | 105  | 5    | 2    |NULL  | 15
+             right_k          |NULL  |NULL  |NULL  | 3    | 106  | 16
+             right_t          | 0    | 100  | 1    | 0    | 100  | 10
+             right_t          | 0    | 100  | 1    | 1    | 100  | 11
+             right_t          | 1    | 100  | 3    | 0    | 100  | 10
+             right_t          | 1    | 100  | 3    | 1    | 100  | 11
+             right_t          |NULL  |NULL  |NULL  | 0    | 102  | 14
+             right_t          |NULL  |NULL  |NULL  | 0    | 111  | 17
+             right_t          |NULL  |NULL  |NULL  | 1    | 104  | 13
+             right_t          |NULL  |NULL  |NULL  | 1    | 99   | 12
+             right_t          |NULL  |NULL  |NULL  | 2    |NULL  | 15
+             right_t          |NULL  |NULL  |NULL  | 3    | 106  | 16""");
     }
 
     /** Records the GC operators of a circuit, and its star joins. */
@@ -489,8 +489,8 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
             left_kt          | -        | K        | KK       | KK
             left_k           | -        | -        | -        | -
             left_filter_anti | -        | V        | V        | V
-            right_t_anti     | K        | K        | KK       | KK
-            right_k_anti     | -        | -        | -        | -
+            right_t          | K        | -        | KK       | KK
+            right_k          | -        | -        | -        | -
             full_t_anti      | K        | K        | KK       | KK
             full_k_anti      | -        | -        | -        | -
             asof             | -        | -        | NV       | NV
