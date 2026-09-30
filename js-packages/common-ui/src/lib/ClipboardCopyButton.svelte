@@ -1,7 +1,7 @@
 <script lang="ts">
   import { clipboard, type Parameter } from '@svelte-bin/clipboard'
-  import ClickFeedback from '$lib/components/common/ClickFeedback.svelte'
-  import type { Snippet } from '$lib/types/svelte'
+  import type { Snippet } from 'svelte'
+  import ClickFeedback from './ClickFeedback.svelte'
 
   const {
     value,

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { ConnectorErrorFilter } from 'common-lib/connectorMetrics'
   import { getCaseDependentName } from 'common-lib/felderaRelation'
   import { formatDateTime } from 'common-lib/format'
   import { SegmentedControl, Tooltip } from 'common-ui'
@@ -11,8 +12,6 @@
     type OutputEndpointStatus
   } from '$lib/services/manager'
   import { getInputConnectorStatus, getOutputConnectorStatus } from '$lib/services/pipelineManager'
-
-  export type ConnectorErrorFilter = 'all' | 'parse' | 'transport' | 'encode'
 
   const inputFilterOptions = ['all', 'parse', 'transport'] as const
   const outputFilterOptions = ['all', 'encode', 'transport'] as const

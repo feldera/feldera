@@ -43,3 +43,6 @@ export {
 export { default as SearchBar } from './SearchBar.svelte'
 export { useShortcut } from './useShortcut.svelte'
 export { sliceLinesForCopy, type CopySlice } from './logCopy'
+export { default as ClickFeedback } from './ClickFeedback.svelte'
+export { default as ClipboardCopyButton } from './ClipboardCopyButton.svelte'
+export { default as ConnectorMetricsTables } from './ConnectorMetricsTables.svelte'

@@ -1,31 +1,31 @@
 <script lang="ts">
   import { count } from 'common-lib/array'
-  import { formatDuration, formatQty } from 'common-lib/format'
-  import {
-    defaultLatencyColorSpread,
-    latencyColor,
-    latencyColorScale
-  } from 'common-lib/latencyColor'
-  import { humanSize } from 'common-lib/string'
-  import { Popover, SegmentedControl, Tooltip } from 'common-ui'
-  import type { HTMLAttributes } from 'svelte/elements'
-  import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import type {
     AggregatedInputEndpointMetrics,
     AggregatedMetrics,
     AggregatedOutputEndpointMetrics,
-    PipelineMetrics
-  } from '$lib/functions/pipelineMetrics'
-  import type { InputEndpointMetrics, OutputEndpointMetrics } from '$lib/services/manager'
-  import type { Snippet } from '$lib/types/svelte'
-  import type { ConnectorErrorFilter } from './ConnectorErrors.svelte'
+    ConnectorErrorFilter,
+    ConnectorMetrics,
+    InputEndpointMetrics,
+    OutputEndpointMetrics
+  } from 'common-lib/connectorMetrics'
+  import { formatDuration, formatQty } from 'common-lib/format'
+  import { defaultLatencyColorSpread, latencyColor, latencyColorScale } from 'common-lib/latencyColor'
+  import { humanSize } from 'common-lib/string'
+  import type { Snippet } from 'svelte'
+  import type { HTMLAttributes } from 'svelte/elements'
+  import ClipboardCopyButton from './ClipboardCopyButton.svelte'
+  import Popover from './Popover.svelte'
+  import SegmentedControl from './SegmentedControl.svelte'
+  import Tooltip from './Tooltip.svelte'
 
   let {
     metrics,
     onConnectorSelect
   }: {
-    metrics: { current: PipelineMetrics }
-    onConnectorSelect: (
+    metrics: { current: ConnectorMetrics }
+    /** Opens the errors of a connector. Without it, error counts and icons are not clickable. */
+    onConnectorSelect?: (
       relationName: string,
       connectorName: string,
       direction: 'input' | 'output',
@@ -162,7 +162,7 @@
   {:else if hasErrors}
     <span
       data-testid="btn-icon-input-errors"
-      class="fd fd-circle-alert cursor-pointer text-[16px] text-error-500"
+      class="fd fd-circle-alert text-[16px] text-error-500 {onErrorClick ? 'cursor-pointer' : ''}"
       {...gotoErrorsBtnProps}
     ></span>
     <Tooltip placement="top"
@@ -227,7 +227,7 @@
       data-testid="btn-icon-output-errors"
       class="fd {hasFatalError
         ? 'fd-circle-x'
-        : 'fd-circle-alert'} cursor-pointer text-[16px] text-error-500"
+        : 'fd-circle-alert'} text-[16px] text-error-500 {onErrorClick ? 'cursor-pointer' : ''}"
       {...onErrorClick
         ? {
             onclick: (e) => {
@@ -305,7 +305,9 @@
           hasFatalError: connector.fatal_error != null,
           barrier: connector.barrier,
           endOfInput: connector.metrics.end_of_input,
-          onErrorClick: () => onConnectorSelect(relation, connector.endpointName, 'input', 'all')
+          onErrorClick: onConnectorSelect
+            ? () => onConnectorSelect(relation, connector.endpointName, 'input', 'all')
+            : undefined
         })}
       </span>
       {#snippet end()}
@@ -331,7 +333,9 @@
           paused: connector.paused,
           hasErrors: outputHasErrors(connector),
           hasFatalError: connector.fatal_error != null,
-          onErrorClick: () => onConnectorSelect(relation, connector.endpointName, 'output', 'all')
+          onErrorClick: onConnectorSelect
+            ? () => onConnectorSelect(relation, connector.endpointName, 'output', 'all')
+            : undefined
         })}
       </span>
       {#snippet end()}
@@ -433,7 +437,7 @@
     {/if}
   </td>
   <td class="text-end font-dm-mono text-nowrap {m.num_parse_errors > 0 ? 'text-error-500' : ''}">
-    {#if m.num_parse_errors > 0 && relation && connectorEndpointName}
+    {#if m.num_parse_errors > 0 && relation && connectorEndpointName && onConnectorSelect}
       <button
         data-testid="btn-parse-errors"
         class="-m-2 cursor-pointer p-2 font-dm-mono text-error-500 hover:underline"
@@ -449,7 +453,7 @@
   <td
     class="text-end font-dm-mono text-nowrap {m.num_transport_errors > 0 ? 'text-error-500' : ''}"
   >
-    {#if m.num_transport_errors > 0 && relation && connectorEndpointName}
+    {#if m.num_transport_errors > 0 && relation && connectorEndpointName && onConnectorSelect}
       <button
         data-testid="btn-input-transport-errors"
         class="-m-2 cursor-pointer p-2 font-dm-mono text-error-500 hover:underline"
@@ -518,7 +522,7 @@
   <td class="text-end font-dm-mono text-nowrap">{formatQty(m.queued_records)}</td>
   <td class="text-end font-dm-mono text-nowrap">{formatQty(m.queued_batches)}</td>
   <td class="text-end font-dm-mono text-nowrap">
-    {#if m.num_encode_errors > 0 && relation && connectorEndpointName}
+    {#if m.num_encode_errors > 0 && relation && connectorEndpointName && onConnectorSelect}
       <button
         data-testid="btn-encode-errors"
         class="-m-2 cursor-pointer p-2 font-dm-mono text-error-500 hover:underline"
@@ -532,7 +536,7 @@
     {/if}
   </td>
   <td class="text-end font-dm-mono text-nowrap">
-    {#if m.num_transport_errors > 0 && relation && connectorEndpointName}
+    {#if m.num_transport_errors > 0 && relation && connectorEndpointName && onConnectorSelect}
       <button
         data-testid="btn-output-transport-errors"
         class="-m-2 cursor-pointer p-2 font-dm-mono text-error-500 hover:underline"

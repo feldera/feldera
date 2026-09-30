@@ -1,8 +1,7 @@
 <script lang="ts">
-  import { Popover, Tooltip } from 'common-ui'
+  import { ClipboardCopyButton, Popover, Tooltip } from 'common-ui'
   import { page } from '$app/state'
   import FelderaModernLogomarkBlack from '$assets/images/feldera-modern/Feldera Logomark Black.svg?component'
-  import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
 
   const versionText = $derived(
     page.data.feldera

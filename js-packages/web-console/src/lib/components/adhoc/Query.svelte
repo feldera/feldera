@@ -40,11 +40,15 @@
   import SqlColumnHeader from '$lib/components/relationData/SQLColumnHeader.svelte'
   import { usePopoverTooltip } from '$lib/compositions/common/usePopoverTooltip.svelte'
   import List from '$lib/components/common/virtualList/HeadlessVirtualList.svelte'
-  import { ScrollDownFab, selectScope, useReverseScrollContainer } from 'common-ui'
+  import {
+    ClipboardCopyButton,
+    ScrollDownFab,
+    selectScope,
+    useReverseScrollContainer
+  } from 'common-ui'
   import type { Snippet } from '$lib/types/svelte'
   import type { UIEventHandler } from 'svelte/elements'
   import { Progress } from '@skeletonlabs/skeleton-svelte'
-  import ClipboardCopyButton from '../other/ClipboardCopyButton.svelte'
   import SQLValueTooltip from '../other/SQLValueTooltip.svelte'
   import { tableToCSJV } from '$lib/functions/sql'
 
