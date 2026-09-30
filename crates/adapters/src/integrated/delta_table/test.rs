@@ -3924,6 +3924,141 @@ async fn delta_table_completed_frontier_null_version_after_resume() {
     pipeline.stop().unwrap();
 }
 
+/// An ordered snapshot suspended between slices resumes from its checkpoint and
+/// reads the rest of the table.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_ordered_snapshot_resume_test() {
+    run_ordered_snapshot_resume_test(false).await;
+}
+
+/// The same from a checkpoint that holds the resume point as a SQL expression,
+/// as older connectors wrote it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn delta_table_ordered_snapshot_resume_legacy_checkpoint_test() {
+    run_ordered_snapshot_resume_test(true).await;
+}
+
+/// Calls `f` on every `snapshot_timestamp` in the checkpoints under
+/// `storage_dir`, saving what it changes, and returns how many it found.
+fn visit_checkpointed_snapshot_timestamps(
+    storage_dir: &Path,
+    f: &mut dyn FnMut(&mut String),
+) -> usize {
+    fn visit(value: &mut Value, f: &mut dyn FnMut(&mut String)) -> usize {
+        match value {
+            Value::Object(map) => map
+                .iter_mut()
+                .map(|(key, value)| match value {
+                    Value::String(ts) if key == "snapshot_timestamp" => {
+                        f(ts);
+                        1
+                    }
+                    _ => visit(value, f),
+                })
+                .sum(),
+            Value::Array(values) => values.iter_mut().map(|value| visit(value, f)).sum(),
+            _ => 0,
+        }
+    }
+
+    let mut found = 0;
+    let mut dirs = vec![storage_dir.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                dirs.push(path);
+            } else if path.file_name() == Some(OsStr::new("state.json")) {
+                let mut state: Value =
+                    serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+                found += visit(&mut state, f);
+                std::fs::write(&path, serde_json::to_vec(&state).unwrap()).unwrap();
+            }
+        }
+    }
+    found
+}
+
+/// Suspends an ordered snapshot after its first slice and resumes it, wrapping
+/// the checkpointed resume point first if `legacy_checkpoint`.
+async fn run_ordered_snapshot_resume_test(legacy_checkpoint: bool) {
+    init_logging();
+
+    // One row per day and a 10-day lateness give 60 slices.
+    const ROWS: i64 = 600;
+    const DAY_MS: i64 = 86_400_000;
+    const JAN_1_2024_MS: i64 = 1_704_067_200_000;
+
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+    let storage_dir = TempDir::new().unwrap();
+
+    let arrow_schema = ArrowSchema::new(relation_to_arrow_fields(
+        &DeltaTestStruct::schema(),
+        delta_schema_options(),
+    ));
+    let data: Vec<DeltaTestStruct> = (0..ROWS)
+        .map(|i| {
+            let mut record = delta_test_record(i);
+            record.timestamp_ntz =
+                feldera_sqllib::Timestamp::from_milliseconds(JAN_1_2024_MS + i * DAY_MS);
+            record
+        })
+        .collect();
+    let table = create_table_from_arrow(&table_uri, &arrow_schema, &[]).await;
+    write_data_to_table(table, &arrow_schema, &data).await;
+
+    // One transaction per slice, so a checkpoint lands on a slice boundary.
+    let config = json!({
+        "mode": "snapshot",
+        "timestamp_column": "timestamp_ntz",
+        "transaction_mode": "snapshot",
+    });
+    let errors: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let start = async || {
+        let pipeline = delta_input_controller::<DeltaTestStruct>(
+            &table_uri,
+            config.clone(),
+            &DeltaTestStruct::schema_with_lateness(),
+            storage_dir.path(),
+            &errors,
+        )
+        .await
+        .unwrap();
+        pipeline.start();
+        pipeline
+    };
+    let snapshot_records = |pipeline: &Controller| {
+        delta_connector_counter(pipeline, "input_connector_delta_snapshot_records_total")
+    };
+
+    let pipeline = start().await;
+    wait(|| snapshot_records(&pipeline) > 0, 20_000)
+        .expect("timeout waiting for the first snapshot slice");
+    suspend_pipeline(pipeline).await;
+    let found = visit_checkpointed_snapshot_timestamps(storage_dir.path(), &mut |ts| {
+        assert!(
+            !ts.starts_with("timestamp '"),
+            "resume point stored as SQL: {ts}"
+        );
+        if legacy_checkpoint {
+            *ts = format!("timestamp '{ts}'");
+        }
+    });
+    assert!(found > 0, "the checkpoint must be taken mid-snapshot");
+
+    let pipeline = start().await;
+    let output = SqlIdentifier::from("test_output1");
+    wait_or_connector_error(&pipeline, &output, &data, &errors).await;
+
+    let resumed = snapshot_records(&pipeline);
+    assert!(
+        resumed > 0 && resumed < ROWS as u64,
+        "the resumed run must read only the rows after the checkpoint, read {resumed} of {ROWS}"
+    );
+    pipeline.stop().unwrap();
+}
+
 #[cfg(feature = "delta-s3-test")]
 async fn delta_table_follow_s3_test_common(snapshot: bool, suspend: bool) {
     crate::integrated::delta_table::register_storage_handlers();

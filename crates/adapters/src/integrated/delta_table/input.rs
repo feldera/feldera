@@ -1060,6 +1060,18 @@ impl Drop for DeltaTableInputReader {
     }
 }
 
+/// Strips the `timestamp '...'` or `date '...'` that older checkpoints stored.
+fn raw_resume_timestamp(stored: &str) -> &str {
+    for prefix in ["timestamp '", "date '"] {
+        if let Some(rest) = stored.strip_prefix(prefix)
+            && let Some(raw) = rest.strip_suffix('\'')
+        {
+            return raw;
+        }
+    }
+    stored
+}
+
 /// Resume info stored in each checkpoint for the DeltaTableInputEndpoint.
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 struct DeltaResumeInfo {
@@ -1075,7 +1087,7 @@ struct DeltaResumeInfo {
     /// and if `timestamp_column` is set in the configuration.
     ///
     /// The connector will resume loading the snapshot from this timestamp after
-    /// resuming from a checkpoint.
+    /// resuming from a checkpoint. Stored raw, as `cast(<ts> as string)` returns it.
     snapshot_timestamp: Option<String>,
 
     /// True if the connector reached the end-of-input state.
@@ -1119,7 +1131,7 @@ impl DeltaResumeInfo {
     /// Checkpoint taken while the connector is ingesting the initial snapshot.
     ///
     /// * `version` is the version of the table being snapshotted.
-    /// * `timestamp` is the timestamp of the last record ingested as part of the initial snapshot.
+    /// * `timestamp` is the raw start of the next slice to ingest.
     fn snapshot_mode(version: i64, timestamp: &str) -> Self {
         Self {
             version: Some(version),
@@ -2047,7 +2059,7 @@ impl DeltaTableInputEndpointInner {
             snapshot_timestamp: Some(snapshot_timestamp),
             ..
         }) => {
-            snapshot_timestamp.clone()
+            raw_resume_timestamp(snapshot_timestamp).to_string()
         } _ => {
             array_to_string(bounds[0].column(0))
             .ok_or_else(|| anyhow!("internal error: cannot retrieve the first column in the output of query '{bounds_query}' as a string"))?
@@ -2079,12 +2091,12 @@ impl DeltaTableInputEndpointInner {
 
         loop {
             // Evaluate SQL expression for the new end of the interval.
-            let end = execute_singleton_query(
+            let end_raw = execute_singleton_query(
                 &self.datafusion,
                 &format!("select cast(({start} + {lateness}) as string)"),
             )
             .await?;
-            let end = timestamp_to_sql_expression(&timestamp_field.columntype, &end);
+            let end = timestamp_to_sql_expression(&timestamp_field.columntype, &end_raw);
 
             // Query the table for the range.
             let mut range_query = format!(
@@ -2126,7 +2138,7 @@ impl DeltaTableInputEndpointInner {
                     QueueEntry::ResumeInfo(Some(DeltaResumeInfo::snapshot_mode(
                         // We verified that the table version is not None in the open_table method.
                         table.version().unwrap() as i64,
-                        &start,
+                        &end_raw,
                     ))),
                 )
                 // If we started a transaction while processing the range query, commit it now.
@@ -4658,6 +4670,23 @@ async fn wait_running(receiver: &mut Receiver<PipelineState>) {
     let _ = receiver
         .wait_for(|state| state == &PipelineState::Running)
         .await;
+}
+
+#[cfg(test)]
+mod resume_timestamp_tests {
+    use super::raw_resume_timestamp;
+
+    #[test]
+    fn raw_resume_timestamp_strips_only_a_sql_literal() {
+        for (stored, raw) in [
+            ("2024-01-02T03:00:00", "2024-01-02T03:00:00"),
+            ("1704067200000", "1704067200000"),
+            ("timestamp '2024-01-02T03:00:00'", "2024-01-02T03:00:00"),
+            ("date '2024-01-02'", "2024-01-02"),
+        ] {
+            assert_eq!(raw_resume_timestamp(stored), raw);
+        }
+    }
 }
 
 #[cfg(test)]
