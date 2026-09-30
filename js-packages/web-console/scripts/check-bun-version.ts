@@ -1,7 +1,7 @@
 import { $ } from 'bun'
 import semver from 'semver'
 
-const MIN_BUN_VERSION = '1.3.3'
+const MIN_BUN_VERSION = '1.3.10'
 
 async function checkBunVersion() {
   try {
