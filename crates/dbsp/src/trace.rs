@@ -220,10 +220,10 @@ pub trait BatchFactories<K: DataTrait + ?Sized, V: DataTrait + ?Sized, T, R: Wei
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TraceRole {
     /// Nothing searches the trace until its contents are output, so it can
-    /// merge less eagerly; see `dev_tweaks.min_accumulator_merge_batches`.
+    /// merge less eagerly; see `dev_tweaks.accumulator_merge_threshold_batches`.
     Accumulator,
     /// The trace is searched continuously, so it merges eagerly; see
-    /// `dev_tweaks.min_integral_merge_batches`.
+    /// `dev_tweaks.integral_merge_threshold_batches`.
     Integral,
 }
 

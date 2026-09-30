@@ -10394,6 +10394,14 @@
         "type": "object",
         "description": "Optional settings for tweaking Feldera internals.\n\nThese settings reflect experiments that may come and go and change from\nversion to version.  Users should not consider them to be stable.",
         "properties": {
+          "accumulator_merge_threshold_batches": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Merge threshold of an accumulator's spine: how many batches each\nlevel above level 1 waits for before it merges them.\n\nZero restores the built-in minimum.  A spine that garbage-collects old\nrecords always uses the built-in minimum.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
           "adaptive_joins": {
             "type": "boolean",
             "description": "Enable adaptive joins.\n\nAdaptive joins dynamically change their partitioning policy to avoid skew.\n\nAdaptive joins are disabled by default.",
@@ -10505,6 +10513,14 @@
             "default": null,
             "nullable": true
           },
+          "integral_merge_threshold_batches": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Merge threshold of an integral's spine: how many batches each level\nabove level 1 waits for before it merges them.\n\nThe default is ten.  Zero restores the built-in minimum.  A spine\nthat garbage-collects old records always uses the built-in minimum.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
           "max_level0_batch_size_records": {
             "type": "integer",
             "format": "int32",
@@ -10526,22 +10542,6 @@
             "type": "integer",
             "format": "int32",
             "description": "The number of merger threads.\n\nThe default value is equal to the number of worker threads.",
-            "default": null,
-            "nullable": true,
-            "minimum": 0
-          },
-          "min_accumulator_merge_batches": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Minimum number of batches an accumulator's spine merges at once,\nat every level above level 1.\n\nZero restores the built-in minimum.",
-            "default": null,
-            "nullable": true,
-            "minimum": 0
-          },
-          "min_integral_merge_batches": {
-            "type": "integer",
-            "format": "int32",
-            "description": "Minimum number of batches an integral's spine merges at once, at\nevery level above level 1.\n\nUnset or zero keeps the built-in minimum.",
             "default": null,
             "nullable": true,
             "minimum": 0
@@ -10598,6 +10598,13 @@
           "streaming_exchange": {
             "type": "boolean",
             "description": "Enable streaming exchange.",
+            "default": null,
+            "nullable": true
+          },
+          "top_level_negative_weight_fraction": {
+            "type": "number",
+            "format": "double",
+            "description": "The share of the records at a spine's highest level with negative\nweights above which the level merges its batches.\n\nA spine keeps most of its records at its highest level.  When many of\nthem are retractions, merging the level's batches cancels them against\nthe records they retract, which shrinks the spine's storage.  The level\nmerges for this reason only when no other rule starts a merge, no\nhigher level holds batches, and it holds more than one.\n\nA fraction from 0 through 1; the default is 0.2.  At 1 the level never\nmerges for this reason.",
             "default": null,
             "nullable": true
           }

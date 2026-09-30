@@ -631,19 +631,19 @@ mod tests {
         // accepted.
         assert!(matches!(
             validate_runtime_config(
-                &json!({ "dev_tweaks": { "min_integral_merge_batches": 16 } }),
+                &json!({ "dev_tweaks": { "integral_merge_threshold_batches": 16 } }),
                 true
             ),
-            Err(ValidationError::InvalidDevTweaks(s)) if s.contains("min_integral_merge_batches")
+            Err(ValidationError::InvalidDevTweaks(s)) if s.contains("integral_merge_threshold_batches")
         ));
         assert_eq!(
             validate_runtime_config(
-                &json!({ "dev_tweaks": { "min_accumulator_merge_batches": 15 } }),
+                &json!({ "dev_tweaks": { "accumulator_merge_threshold_batches": 15 } }),
                 true
             )
             .unwrap()
             .dev_tweaks
-            .min_accumulator_merge_batches,
+            .accumulator_merge_threshold_batches,
             Some(15)
         );
     }
