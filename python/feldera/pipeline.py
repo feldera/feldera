@@ -1547,8 +1547,9 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         an exception will be raised.
 
         Important:
-            If you try to ``INSERT`` or ``DELETE`` data from a table while the
-            pipeline is paused, it will block until the pipeline is resumed.
+            If you try to ``INSERT`` data into a table while the pipeline is
+            paused, it will block until the pipeline is resumed.  Ad-hoc
+            queries cannot delete data.
 
         :param query: The SQL query to be executed.
         :param wait: When ``True``, block until the query's writes have been
