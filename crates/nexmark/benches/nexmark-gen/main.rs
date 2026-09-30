@@ -2,14 +2,10 @@ use anyhow::Result;
 
 use rand::rngs::{SmallRng, mock::StepRng};
 
-use dbsp::mimalloc::MiMalloc;
 use dbsp_nexmark::{
     config::GeneratorOptions,
     generator::{NexmarkGenerator, config::Config},
 };
-
-#[global_allocator]
-static ALLOC: MiMalloc = MiMalloc;
 
 use rand::SeedableRng;
 

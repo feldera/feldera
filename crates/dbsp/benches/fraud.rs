@@ -80,7 +80,6 @@ use csv::Reader as CsvReader;
 use dbsp::dynamic::{DynData, DynDataTyped};
 use dbsp::{
     algebra::F64,
-    mimalloc::MiMalloc,
     operator::{
         time_series::{OrdPartitionedIndexedZSet, RelOffset, RelRange},
         Avg,
@@ -100,9 +99,6 @@ use std::{
 use time::Instant;
 
 // TODO: add a test harness.
-
-#[global_allocator]
-static ALLOC: MiMalloc = MiMalloc;
 
 const DEFAULT_BATCH_SIZE: &str = "10000";
 
