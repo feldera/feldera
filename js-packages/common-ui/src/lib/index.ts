@@ -43,3 +43,4 @@ export {
 export { default as SearchBar } from './SearchBar.svelte'
 export { useShortcut } from './useShortcut.svelte'
 export { sliceLinesForCopy, type CopySlice } from './logCopy'
+export { getThemeColor } from './themeColor'

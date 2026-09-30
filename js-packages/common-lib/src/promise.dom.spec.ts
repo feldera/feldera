@@ -1,6 +1,5 @@
-// Named `.svelte.spec.ts` so it runs under the `client` project (real browser via
-// Playwright) — the test needs `document`, `visibilitychange` events, and worker-timers'
-// Web Worker. No Svelte component is rendered here.
+// @vitest-environment jsdom
+// The test dispatches `visibilitychange` events on `document`, so it runs in jsdom.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -12,7 +11,7 @@ vi.mock('worker-timers', () => ({
     globalThis.clearTimeout(id as unknown as ReturnType<typeof setTimeout>)
 }))
 
-import { closedIntervalAction } from './promise'
+import { closedIntervalAction } from './promise.ts'
 
 const setHidden = (hidden: boolean) => {
   Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })

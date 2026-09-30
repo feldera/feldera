@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { matchesSubstring } from './string'
+import { matchesSubstring } from './string.ts'
 
 describe('matchesSubstring', () => {
   it('returns true when search is empty', () => {

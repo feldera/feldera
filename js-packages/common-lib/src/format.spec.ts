@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { microseconds } from './common/duration'
-import { formatDuration, formatQty } from './format'
+import { microseconds } from './duration.ts'
+import { formatDuration, formatQty } from './format.ts'
 
 describe('formatQty', () => {
   it('returns em dash for null', () => {

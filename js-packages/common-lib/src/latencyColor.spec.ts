@@ -4,7 +4,7 @@ import {
   latencyColor,
   latencyColorFraction,
   latencyColorScale
-} from './latencyColor'
+} from './latencyColor.ts'
 
 describe('latencyColorScale', () => {
   it('returns undefined when no connector reports a latency', () => {

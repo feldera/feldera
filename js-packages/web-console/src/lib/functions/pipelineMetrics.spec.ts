@@ -1,7 +1,7 @@
+import { formatDuration } from 'common-lib/format'
 import { describe, expect, it } from 'vitest'
 import type { ControllerStatus, InputEndpointStatus } from '$lib/services/manager'
 import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
-import { formatDuration } from './format'
 import {
   accumulatePipelineMetrics,
   calcPipelineThroughput,
