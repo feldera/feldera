@@ -1,8 +1,8 @@
+import { microseconds } from 'common-lib/duration'
 import { describe, expect, it, vi } from 'vitest'
 
 import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
-import { microseconds } from '$lib/functions/common/duration'
 import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
 import { accumulatePipelineMetrics } from '$lib/functions/pipelineMetrics'
 import type {

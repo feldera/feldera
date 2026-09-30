@@ -3,9 +3,9 @@
 </script>
 
 <script lang="ts">
+  import { matchesSubstring } from 'common-lib/string'
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatusDot.svelte'
   import { resolve } from '$lib/functions/svelte'
-  import { matchesSubstring } from '$lib/functions/common/string'
   import { type PipelineThumb } from '$lib/services/pipelineManager'
 
   let {

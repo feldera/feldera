@@ -1,6 +1,6 @@
 import { format } from 'd3-format'
 import Dayjs from 'dayjs'
-import type { Microseconds } from '$lib/functions/common/duration'
+import type { Microseconds } from './duration.ts'
 
 export const formatDateTime = (
   timestamp: Date | Dayjs.Dayjs | { ms: number },

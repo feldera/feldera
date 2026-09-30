@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { type Microseconds, microseconds } from './duration'
+import { type Microseconds, microseconds } from './duration.ts'
 
 describe('microseconds', () => {
   it('carries the value through unchanged', () => {

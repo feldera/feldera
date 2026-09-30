@@ -14,7 +14,7 @@
 </script>
 
 <script lang="ts" generics="S extends string">
-  import { formatDateTime, formatDateTimeRange } from '$lib/functions/format'
+  import { formatDateTime, formatDateTimeRange } from 'common-lib/format'
   import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
 
   interface Props {

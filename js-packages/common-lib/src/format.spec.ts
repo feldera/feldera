@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { microseconds } from './common/duration'
-import { formatDuration, formatQty, formatServerTime } from './format'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { microseconds } from './duration.ts'
+import { formatDuration, formatQty, formatServerTime } from './format.ts'
 
 describe('formatQty', () => {
   it('returns em dash for null', () => {
@@ -99,22 +99,17 @@ describe('formatDuration', () => {
 })
 
 describe('formatServerTime', () => {
-  const tz = process.env.TZ
   afterEach(() => {
-    if (tz === undefined) {
-      delete process.env.TZ
-    } else {
-      process.env.TZ = tz
-    }
+    vi.unstubAllEnvs()
   })
 
   it('appends the short zone name to the local time of day', () => {
-    process.env.TZ = 'America/Los_Angeles'
+    vi.stubEnv('TZ', 'America/Los_Angeles')
     expect(formatServerTime('2026-10-15T08:39:53Z')).toBe('01:39:53 PDT')
   })
 
   it('accepts a Date', () => {
-    process.env.TZ = 'UTC'
+    vi.stubEnv('TZ', 'UTC')
     expect(formatServerTime(new Date('2026-10-15T08:39:53Z'))).toBe('08:39:53 UTC')
   })
 })

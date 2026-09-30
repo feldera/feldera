@@ -1,8 +1,8 @@
 <script lang="ts">
+  import { formatServerTime } from 'common-lib/format'
   import { Tooltip } from 'common-ui'
   import Dayjs from 'dayjs'
   import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
-  import { formatServerTime } from '$lib/functions/format'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import type { CheckpointStatus } from '$lib/services/manager'
 

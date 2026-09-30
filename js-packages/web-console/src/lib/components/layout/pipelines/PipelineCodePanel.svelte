@@ -3,6 +3,7 @@
 </script>
 
 <script lang="ts">
+  import { nonNull } from 'common-lib/function'
   import PipelineActions from '$lib/components/pipelines/list/Actions.svelte'
   import {
     extractProgramErrors,
@@ -24,7 +25,6 @@
   import UnsavedPipelineChanges from './UnsavedPipelineChanges.svelte'
   import type { Snippet } from '$lib/types/svelte'
   import { getRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'
-  import { nonNull } from '$lib/functions/common/function'
   import { isUpgradeRequired, isPipelineCodeEditable } from '$lib/functions/pipelines/status'
   import FocusBanner from '$lib/components/pipelines/editor/FocusBanner.svelte'
   import StorageInUseBanner from '$lib/components/pipelines/editor/StorageInUseBanner.svelte'

@@ -9,7 +9,7 @@
     "split-claude": "bun scripts/claude.js split",
     "merge-claude": "bun scripts/claude.js merge",
     "clean": "rm -rf node_modules js-packages/*/node_modules js-packages/*/dist js-packages/*/build js-packages/*/.svelte-kit target/debug/build/pipeline-manager-* target/release/build/pipeline-manager-*",
-    "build:libs": "bun scripts/check-bun-version.ts && bun run --filter triage-types --filter profiler-lib --filter common-ui --filter profiler-layout --filter @feldera/vite-plugin-monaco-editor build:self",
+    "build:libs": "bun scripts/check-bun-version.ts && bun run --filter common-lib --filter triage-types --filter profiler-lib --filter common-ui --filter profiler-layout --filter @feldera/vite-plugin-monaco-editor build:self",
     "check": "bun run build:libs && bun run --filter '*' check:self"
   },
   "workspaces": ["js-packages/*"]
