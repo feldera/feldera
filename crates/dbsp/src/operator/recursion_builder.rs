@@ -836,7 +836,7 @@ mod test {
         algebra::AddByRef,
         circuit::{CircuitConfig, Layout},
         operator::Generator,
-        typed_batch::OrdZSet,
+        typed_batch::{OrdIndexedZSet, OrdZSet},
         utils::Tup2,
         zset,
     };
@@ -889,14 +889,15 @@ mod test {
     /// of two recursive variables, checkpointed and restarted halfway through.
     /// Unlike [`recursive_dynamic`](crate::ChildCircuit::recursive_dynamic), the
     /// arity (2) is inferred from the vector returned by the init closure.  Must
-    /// match the tuple/dynamic implementations.
+    /// match the tuple/dynamic implementations, and the recursion must report
+    /// convergence in every transaction, before and after the restart.
     #[test]
     fn reachability2_builder() {
         checkpoint_and_restart(|circuit, skip| {
             let mut edges = edges_data().into_iter().skip(skip);
             let edges = circuit.add_source(Generator::new(move || edges.next().unwrap()));
 
-            let mut reachable = circuit
+            let (mut reachable, report) = circuit
                 .recursion_builder(
                     |child| {
                         Ok(vec![
@@ -942,8 +943,13 @@ mod test {
                         Ok(vec![reachable_next, reachable_reverse_next])
                     },
                 )
+                .with_report()
                 .finish()
                 .unwrap();
+
+            report.inspect(|report| {
+                assert!(report.converged());
+            });
 
             let reachable_reverse = reachable.pop().unwrap();
             let reachable = reachable.pop().unwrap();
@@ -1029,6 +1035,92 @@ mod test {
                 reachable_reverse.accumulate_output_persistent(Some("reachable_reverse_out")),
             ]
         });
+    }
+
+    /// Reachability via [`RecursionBuilder`] over a tuple of recursive variables
+    /// of different batch types, checkpointed and restarted halfway through:
+    /// `reachable` holds the reachable pairs as a Z-set, and `by_end` holds the
+    /// same pairs as an indexed Z-set, keyed by the node they reach.  Each
+    /// variable's next value comes from the other's current one:
+    ///
+    /// ```text
+    /// reachable(x, y) :- edges(x, y).
+    /// reachable(x, z) :- by_end(y, x), edges(y, z).
+    /// by_end(y, x)    :- reachable(x, y).
+    /// ```
+    #[test]
+    fn reachability2_builder_mixed_tuple() {
+        checkpoint_and_restart(|circuit, skip| {
+            let mut edges = edges_data().into_iter().skip(skip);
+            let edges = circuit.add_source(Generator::new(move || edges.next().unwrap()));
+
+            let (reachable, by_end) = circuit
+                .recursion_builder(
+                    |child| {
+                        Ok((
+                            child.recursive_var::<OrdZSet<Edge>>(),
+                            child.recursive_var::<OrdIndexedZSet<usize, usize>>(),
+                        ))
+                    },
+                    |child, (reachable, by_end)| {
+                        reachable.set_persistent_id(Some("reachable"));
+                        by_end.set_persistent_id(Some("by_end"));
+
+                        let edges = edges.delta0(child);
+                        let edges_indexed = edges
+                            .map_index(|Tup2(x, y)| (*x, *y))
+                            .set_persistent_id(Some("edges_indexed"));
+
+                        let reachable_next = edges
+                            .plus(&by_end.join(&edges_indexed, |_via, from, to| Tup2(*from, *to)));
+                        reachable_next.set_persistent_id(Some("reachable_next"));
+                        let by_end_next = reachable
+                            .map_index(|&Tup2(x, y)| (y, x))
+                            .set_persistent_id(Some("by_end_next"));
+
+                        Ok((reachable_next, by_end_next))
+                    },
+                )
+                .finish()
+                .unwrap();
+
+            let by_end = by_end.map(|(end, start)| Tup2(*start, *end));
+
+            vec![
+                reachable.accumulate_output_persistent(Some("reachable_out")),
+                by_end.accumulate_output_persistent(Some("by_end_out")),
+            ]
+        });
+    }
+
+    /// A step that returns a different number of streams than there are
+    /// recursive variables in a `Vec` makes building the circuit fail.
+    #[test]
+    fn vec_length_mismatch_is_rejected() {
+        let result = Runtime::init_circuit(recursion_test_config(1), |circuit| {
+            let (edges, _edges_handle) = circuit.add_input_zset::<Edge>();
+            circuit
+                .recursion_builder(
+                    |child| {
+                        Ok(vec![
+                            child.recursive_var::<OrdZSet<Edge>>(),
+                            child.recursive_var::<OrdZSet<Edge>>(),
+                        ])
+                    },
+                    |child, _reachable| Ok(vec![edges.delta0(child)]),
+                )
+                .finish()
+                .unwrap();
+            Ok(())
+        });
+
+        let error = result.expect_err("the circuit must not build");
+        assert!(
+            error.to_string().contains(
+                "the recursive step must return exactly one stream per recursive variable"
+            ),
+            "{error}"
+        );
     }
 
     /// A bound larger than the number of iterations needed to converge must not
