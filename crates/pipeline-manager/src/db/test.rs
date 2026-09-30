@@ -3766,11 +3766,24 @@ async fn pipeline_deployment() {
             .refresh_version,
         Version(10)
     );
+    let before_stop = handle
+        .db
+        .get_pipeline_by_id(tenant_id, pipeline1.id)
+        .await
+        .unwrap();
+    assert!(before_stop.deployment_config.is_some());
     handle
         .db
         .transit_deployment_resources_status_to_stopped(tenant_id, pipeline1.id, Version(1))
         .await
         .unwrap();
+    let stopped = handle
+        .db
+        .get_pipeline_by_id(tenant_id, pipeline1.id)
+        .await
+        .unwrap();
+    assert_eq!(stopped.deployment_config, before_stop.deployment_config);
+    assert_eq!(stopped.deployment_location, None);
     handle
         .db
         .set_deployment_resources_desired_status_provisioned(
@@ -3911,6 +3924,15 @@ async fn pipeline_deployment() {
         .transit_storage_status_to_cleared(tenant_id, pipeline1.id)
         .await
         .unwrap();
+    assert!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline1.id)
+            .await
+            .unwrap()
+            .deployment_config
+            .is_some()
+    );
     handle
         .db
         .set_deployment_resources_desired_status_provisioned(
@@ -7002,6 +7024,7 @@ fn convert_descriptor_to_monitoring(
         program_status: pipeline.program_status,
         program_status_since: pipeline.program_status_since,
         deployment_error: pipeline.deployment_error.clone(),
+        deployment_config: pipeline.deployment_config.clone(),
         deployment_location: pipeline.deployment_location.clone(),
         refresh_version: pipeline.refresh_version,
         storage_status: pipeline.storage_status,
@@ -8782,7 +8805,7 @@ impl Storage for Mutex<DbModel> {
         // and clears it at Stopped.
         pipeline.deployment_initial = None;
         pipeline.bootstrap_policy = None;
-        pipeline.deployment_config = None;
+        // Retain: pipeline.deployment_config
         pipeline.deployment_location = None;
         pipeline.deployment_error = deployment_error;
         pipeline.deployment_resources_status = new_resources_status;
@@ -8837,7 +8860,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.deployment_id = None;
         pipeline.deployment_initial = None;
         pipeline.bootstrap_policy = None;
-        pipeline.deployment_config = None;
+        // Retain: pipeline.deployment_config
         pipeline.deployment_location = None;
         pipeline.deployment_error = Some(deployment_error);
         pipeline.deployment_resources_status = new_resources_status;
@@ -8906,7 +8929,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.deployment_id = None;
         pipeline.deployment_initial = None;
         pipeline.bootstrap_policy = None;
-        pipeline.deployment_config = None;
+        // Retain: pipeline.deployment_config
         pipeline.deployment_location = None;
         // Retain: pipeline.deployment_error
         pipeline.deployment_resources_status = new_resources_status;
