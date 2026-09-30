@@ -20,7 +20,7 @@ use feldera_storage::{StorageBackend, StoragePath};
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::config::DevTweaks;
 use feldera_types::config::dev_tweaks::{
-    BufferCacheAllocationStrategy, BufferCacheStrategy, MAX_MIN_MERGE_BATCHES,
+    BufferCacheAllocationStrategy, BufferCacheStrategy, MAX_MERGE_THRESHOLD_BATCHES,
 };
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use feldera_types::transaction::CommitProgressSummary;
@@ -28,8 +28,8 @@ use itertools::{Either, Itertools as _};
 use std::collections::BTreeMap;
 use std::net::TcpListener;
 use std::num::NonZeroUsize;
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex, Once};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{
     collections::HashSet,
@@ -450,28 +450,29 @@ pub fn max_level0_batch_size_records() -> usize {
     max_level0_batch_size_records
 }
 
-/// Minimum number of batches an accumulator's spine merges at once above
-/// level 1; zero means the built-in minimum.
+/// Merge threshold of an accumulator's spine: how many batches each level
+/// above level 1 waits for before it merges them; zero means the built-in
+/// minimum.
 ///
-/// Configurable via `dev_tweaks.min_accumulator_merge_batches`.
-pub fn min_accumulator_merge_batches() -> usize {
-    static WARNED: Once = Once::new();
-    checked_min_merge_batches(
-        Runtime::with_dev_tweaks(|d| d.min_accumulator_merge_batches()),
-        "min_accumulator_merge_batches",
+/// Configurable via `dev_tweaks.accumulator_merge_threshold_batches`.
+pub fn accumulator_merge_threshold_batches() -> usize {
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    checked_merge_threshold_batches(
+        Runtime::with_dev_tweaks(|d| d.accumulator_merge_threshold_batches()),
+        "accumulator_merge_threshold_batches",
         &WARNED,
     )
 }
 
-/// Minimum number of batches an integral's spine merges at once above level
-/// 1; zero means the built-in minimum.
+/// Merge threshold of an integral's spine: how many batches each level above
+/// level 1 waits for before it merges them; zero means the built-in minimum.
 ///
-/// Configurable via `dev_tweaks.min_integral_merge_batches`.
-pub fn min_integral_merge_batches() -> usize {
-    static WARNED: Once = Once::new();
-    checked_min_merge_batches(
-        Runtime::with_dev_tweaks(|d| d.min_integral_merge_batches()),
-        "min_integral_merge_batches",
+/// Configurable via `dev_tweaks.integral_merge_threshold_batches`.
+pub fn integral_merge_threshold_batches() -> usize {
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    checked_merge_threshold_batches(
+        Runtime::with_dev_tweaks(|d| d.integral_merge_threshold_batches()),
+        "integral_merge_threshold_batches",
         &WARNED,
     )
 }
@@ -479,19 +480,43 @@ pub fn min_integral_merge_batches() -> usize {
 /// Clamps a value that slipped past `DevTweaks::validate`, warning once per
 /// setting.  This function runs on worker threads, where a panic would abort
 /// the pipeline, so it does not assert.
-fn checked_min_merge_batches(batches: u16, name: &str, warned: &Once) -> usize {
-    if batches > MAX_MIN_MERGE_BATCHES {
-        warned.call_once(|| {
-            warn!(
-                "dev_tweaks.{name} is {batches}, past the largest value accepted, {MAX_MIN_MERGE_BATCHES}; using {MAX_MIN_MERGE_BATCHES}"
-            );
-        });
+fn checked_merge_threshold_batches(batches: u16, name: &str, warned: &AtomicBool) -> usize {
+    if batches > MAX_MERGE_THRESHOLD_BATCHES && !warned.swap(true, Ordering::Relaxed) {
+        warn!(
+            "dev_tweaks.{name} is {batches}, past the largest value accepted, {MAX_MERGE_THRESHOLD_BATCHES}; using {MAX_MERGE_THRESHOLD_BATCHES}"
+        );
     }
-    usize::from(batches.min(MAX_MIN_MERGE_BATCHES))
+    usize::from(batches.min(MAX_MERGE_THRESHOLD_BATCHES))
 }
 
 pub fn negative_weight_multiplier() -> u16 {
     Runtime::with_dev_tweaks(|d| d.negative_weight_multiplier())
+}
+
+/// The share of the records at a spine's highest level with negative weights
+/// above which the level merges its batches.
+///
+/// Configurable via `dev_tweaks.top_level_negative_weight_fraction`.  A value
+/// that slipped past `DevTweaks::validate` is brought into range with a
+/// warning rather than asserted, because this runs on worker threads, where a
+/// panic aborts the pipeline.
+pub fn top_level_negative_weight_fraction() -> f64 {
+    static WARNED: AtomicBool = AtomicBool::new(false);
+    let fraction = Runtime::with_dev_tweaks(|d| d.top_level_negative_weight_fraction());
+    if (0.0..=1.0).contains(&fraction) {
+        return fraction;
+    }
+    let used = if fraction.is_nan() {
+        1.0
+    } else {
+        fraction.clamp(0.0, 1.0)
+    };
+    if !WARNED.swap(true, Ordering::Relaxed) {
+        warn!(
+            "dev_tweaks.top_level_negative_weight_fraction is {fraction}, outside 0 through 1; using {used}"
+        );
+    }
+    used
 }
 
 /// Configuration for storage in a [Runtime]-hosted circuit.

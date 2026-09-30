@@ -41,10 +41,11 @@ pub use circuit_builder::{
 pub use dbsp_handle::{
     CheckpointCommitter, CheckpointPublisher, CircuitConfig, CircuitStorageConfig, DBSPHandle,
     Host, Layout, LayoutError, Mode, StepSize, StorageCacheConfig, StorageConfig, StorageOptions,
-    adaptive_joins_enabled, balancer_balance_tax, balancer_key_distribution_refresh_threshold,
-    balancer_min_absolute_improvement_threshold, balancer_min_relative_improvement_threshold,
-    max_level0_batch_size_records, min_accumulator_merge_batches, min_integral_merge_batches,
-    negative_weight_multiplier, splitter_output_chunk_size, splitter_output_first_chunk_size,
+    accumulator_merge_threshold_batches, adaptive_joins_enabled, balancer_balance_tax,
+    balancer_key_distribution_refresh_threshold, balancer_min_absolute_improvement_threshold,
+    balancer_min_relative_improvement_threshold, integral_merge_threshold_batches,
+    max_level0_batch_size_records, negative_weight_multiplier, splitter_output_chunk_size,
+    splitter_output_first_chunk_size, top_level_negative_weight_fraction,
 };
 pub use runtime::{
     Consensus, Error as RuntimeError, LocalStore, LocalStoreMarker, Runtime, RuntimeGuard,

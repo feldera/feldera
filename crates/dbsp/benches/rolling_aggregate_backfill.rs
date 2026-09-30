@@ -487,7 +487,7 @@ fn main() {
     let mut config = CircuitConfig::with_workers(args.workers)
         .with_storage(Some(storage))
         .with_max_rss_bytes(Some(args.max_rss_gib << 30));
-    config.dev_tweaks.min_integral_merge_batches = args.merge_threshold;
+    config.dev_tweaks.integral_merge_threshold_batches = args.merge_threshold;
 
     println!(
         "rolling aggregate backfill: {} records in steps of {}, then {} steps of {} records; \

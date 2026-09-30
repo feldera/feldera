@@ -1705,6 +1705,14 @@ export type Demo = {
  */
 export type DevTweaks = {
   /**
+   * Merge threshold of an accumulator's spine: how many batches each
+   * level above level 1 waits for before it merges them.
+   *
+   * Zero restores the built-in minimum.  A spine that garbage-collects old
+   * records always uses the built-in minimum.
+   */
+  accumulator_merge_threshold_batches?: number | null
+  /**
    * Enable adaptive joins.
    *
    * Adaptive joins dynamically change their partitioning policy to avoid skew.
@@ -1860,6 +1868,14 @@ export type DevTweaks = {
    */
   fetch_join?: boolean | null
   /**
+   * Merge threshold of an integral's spine: how many batches each level
+   * above level 1 waits for before it merges them.
+   *
+   * The default is ten.  Zero restores the built-in minimum.  A spine
+   * that garbage-collects old records always uses the built-in minimum.
+   */
+  integral_merge_threshold_batches?: number | null
+  /**
    * Maximum batch size in records for level 0 merges.
    */
   max_level0_batch_size_records?: number | null
@@ -1870,20 +1886,6 @@ export type DevTweaks = {
    * The default value is equal to the number of worker threads.
    */
   merger_threads?: number | null
-  /**
-   * Minimum number of batches an accumulator's spine merges at once,
-   * at every level above level 1.
-   *
-   * Zero restores the built-in minimum.
-   */
-  min_accumulator_merge_batches?: number | null
-  /**
-   * Minimum number of batches an integral's spine merges at once, at
-   * every level above level 1.
-   *
-   * Unset or zero keeps the built-in minimum.
-   */
-  min_integral_merge_batches?: number | null
   /**
    * Additional bias the merger assigns to records with negative weights
    * (retractions) to promote them to higher levels of the LSM tree sooner.
@@ -1958,6 +1960,20 @@ export type DevTweaks = {
    * Enable streaming exchange.
    */
   streaming_exchange?: boolean | null
+  /**
+   * The share of the records at a spine's highest level with negative
+   * weights above which the level merges its batches.
+   *
+   * A spine keeps most of its records at its highest level.  When many of
+   * them are retractions, merging the level's batches cancels them against
+   * the records they retract, which shrinks the spine's storage.  The level
+   * merges for this reason only when no other rule starts a merge, no
+   * higher level holds batches, and it holds more than one.
+   *
+   * A fraction from 0 through 1; the default is 0.2.  At 1 the level never
+   * merges for this reason.
+   */
+  top_level_negative_weight_fraction?: number | null
   [key: string]: unknown
 }
 

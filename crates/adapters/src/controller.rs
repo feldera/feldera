@@ -10219,7 +10219,7 @@ mod controller_init_tests {
         let config = pipeline_config(RuntimeConfig {
             workers: 1,
             dev_tweaks: DevTweaks {
-                min_accumulator_merge_batches: Some(16),
+                accumulator_merge_threshold_batches: Some(16),
                 ..Default::default()
             },
             ..Default::default()
@@ -10231,7 +10231,10 @@ mod controller_init_tests {
         match err {
             ControllerError::Config { config_error } => match *config_error {
                 ConfigError::InvalidDevTweaks { error } => {
-                    assert!(error.contains("min_accumulator_merge_batches"), "{error}");
+                    assert!(
+                        error.contains("accumulator_merge_threshold_batches"),
+                        "{error}"
+                    );
                 }
                 other => panic!("expected InvalidDevTweaks, got {other:?}"),
             },

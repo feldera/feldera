@@ -775,7 +775,7 @@ fn main() {
         .expect("failed to configure POSIX storage"),
     ));
     // The widest the levels allow, so the layout under measurement stays put.
-    config.dev_tweaks.min_integral_merge_batches = Some(64);
+    config.dev_tweaks.integral_merge_threshold_batches = Some(64);
     config.dev_tweaks.merger_threads = Some(2);
     // With the filter off, a lookup for a key a batch does not hold costs the
     // same descent as one it does, which is what a spine keyed by anything a
