@@ -15,6 +15,14 @@ export class MetadataSelection {
 }
 
 /** UI elements and state for selecting the profile metadata to display. */
+/** The name of a metric in the selector. If the id has `key:value` labels, the name starts at the
+ *  first label: `input_batches_stats.input:0.avg_size` becomes "Input:0 avg size". */
+export function optionLabel(metric: string): string {
+    const parts = metric.split(".");
+    const firstLabel = parts.findIndex(part => part.includes(":"));
+    return measurementLabel(firstLabel > 0 ? parts.slice(firstLabel).join(".") : metric);
+}
+
 export class MetadataSelector {
     private workersVisible: Array<boolean>;
     private readonly allMetrics: Set<string>;
@@ -66,7 +74,7 @@ export class MetadataSelector {
         // Ordered the way the metrics tables order their rows: by the name shown, and by id
         // where two ids spell the same name.
         const metrics: MetricOption[] = Array.from(this.allMetrics)
-            .map(metric => ({ id: metric, label: measurementLabel(metric) }))
+            .map(metric => ({ id: metric, label: optionLabel(metric) }))
             .sort(compareMetrics);
         this.callbacks.onMetricsChanged(metrics, this.selectedMetric);
     }

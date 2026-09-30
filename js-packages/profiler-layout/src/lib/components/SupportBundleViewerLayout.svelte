@@ -34,6 +34,7 @@
   import type { MetricsMode } from './MetricsView.svelte'
   import ProfilerDiagram from './ProfilerDiagram.svelte'
   import type { TooltipData } from './ProfilerTooltip.svelte'
+  import MetricSelect from './MetricSelect.svelte'
   import ProfileTimestampSelector from './ProfileTimestampSelector.svelte'
   import ConfigTab from './tabs/ConfigTab.svelte'
   import IssuesTab from './tabs/IssuesTab.svelte'
@@ -443,15 +444,7 @@
 {#snippet commonTabBarEnd()}
   <div class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
     {#if metrics.length > 0}
-      <Select
-        bind:value={selectedMetricId}
-        class="px-2 w-42"
-        title="Select metric"
-      >
-        {#each metrics as metric (metric.id)}
-          <option class="text-base" value={metric.id}>{metric.label}</option>
-        {/each}
-      </Select>
+      <MetricSelect bind:value={selectedMetricId} {metrics} class="w-42" title="Select metric" />
     {/if}
     <SearchBar
       bind:this={searchBar}

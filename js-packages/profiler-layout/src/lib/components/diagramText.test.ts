@@ -2,11 +2,11 @@
 // semibold, then the operator name in a muted color, which one cytoscape label could not carry. See
 // `test-support/mountDiagram.ts` for why these live here. What only pixels can say is checked here -
 // that the text is drawn at all, that the two runs are drawn differently, and that a collapsed
-// composite keeps its text in the first of its two rows.
+// circuit region keeps its text in the second of its two rows.
 
 import { describe, expect, it } from 'vitest'
 import {
-  COMPOSITE,
+  CIRCUIT_REGION,
   colorDistance,
   mountDiagram,
   type Rgba,
@@ -66,13 +66,13 @@ describe('node text', () => {
     cleanup()
   })
 
-  it('keeps the text of a collapsed composite in its second row, below the counter chip', async () => {
-    // A circuit this small renders its regions expanded, so the composite has to be collapsed first.
-    const { cy, inkColumns, toggle, cleanup } = await mountDiagram('light', COMPOSITE)
+  it('keeps the text of a collapsed region in its second row, below the counter chip', async () => {
+    // A circuit this small renders its regions expanded, so the region has to be collapsed first.
+    const { cy, inkColumns, toggle, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
     await toggle('region')
-    const composite = cy.$id('region')
-    expect(composite.isParent()).toBe(false)
-    cy.center(composite)
+    const region = cy.$id('region')
+    expect(region.isParent()).toBe(false)
+    cy.center(region)
     await settle()
 
     // The chip in the upper row, text in the lower one, and both of them ink.
@@ -87,7 +87,7 @@ describe('node text', () => {
     )
     // And the text really is in the second row rather than centered over both: on the node's own center
     // line, left of the chip, nothing is drawn at all.
-    const centerX = composite.renderedPosition().x
+    const centerX = region.renderedPosition().x
     const middle = inkColumns('region', 0.5, WHITE, 0.12).filter((c) => c.x < centerX)
     expect(strongest(middle)).toBeLessThan(40)
     cleanup()

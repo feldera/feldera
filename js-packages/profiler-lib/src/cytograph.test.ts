@@ -38,8 +38,8 @@ const collapsedGraph = () => {
 }
 
 describe('node definitions', () => {
-    it('marks a collapsed composite as such at insert time', () => {
-        // The stylesheet gives composites their own corner radius via `node[?has_children]`. That
+    it('marks a collapsed circuit region as such at insert time', () => {
+        // The stylesheet gives circuit regions their own corner radius via `node[?has_children]`. That
         // has to be part of the node definition: an attribute written only by a later graph update
         // would leave the first paint styled as a plain operator.
         const nodes = collapsedGraph().nodes
@@ -67,7 +67,7 @@ describe('node definitions', () => {
         expect(byId.get('region')!.operator).toBe('region')
     })
 
-    it('gives a composite a floor under the width it is drawn at while expanded', () => {
+    it('gives a circuit region a floor under the width it is drawn at while expanded', () => {
         // An expanded region is sized by the nodes it holds, so the room its own name needs has to
         // travel with the node definition: see `regionSize.ts`. An operator is sized by its text
         // directly and needs no floor.

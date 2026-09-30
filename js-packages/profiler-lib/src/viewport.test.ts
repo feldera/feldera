@@ -1,12 +1,13 @@
-// The view's policy, reachable here because it lives in an observer: the decisions it makes at
-// `layoutSettled` are arithmetic over a viewport and a node box, so they can be asked directly rather
-// than only through a mounted diagram. Where the view actually lands on screen is profiler-layout's
-// browser suite to say - that needs a renderer.
+// Unit tests for how `Viewport` moves and zooms the view when a layout finishes. To decide this,
+// `Viewport` only reads positions and sizes: the visible area and the nodes' boxes. So these tests give
+// it a cytoscape stub with fixed numbers instead of a real diagram. The browser tests in
+// profiler-layout check where the view actually lands on screen, because that needs a renderer.
 
 import { describe, expect, it, vi } from 'vitest'
 
-// The minimap builds DOM in its constructor, and this is about geometry, not about what it draws. What it
-// is asked to do is recorded all the same: how often the picture is redrawn is this file's decision.
+// Replace the minimap with a mock, so that these tests do not need a DOM. The mock adds the name of
+// each `showGraph` and `showView` call to `minimap`. The minimap test at the end of this file reads
+// that list.
 const minimap = vi.hoisted(() => [] as string[])
 vi.mock('./navigator.js', () => ({
     ViewNavigator: class {
@@ -23,16 +24,18 @@ import type { NodeId } from './profile.js'
 import { Option } from './util.js'
 import { Viewport } from './viewport.js'
 
-/** A node's own box, in model coordinates. */
+/** A node box: center `x`, `y` and size `w`, `h` (`outerWidth()` / `outerHeight()`), in model
+ *  coordinates. */
 interface Box { x: number, y: number, w: number, h: number }
 
-/** The viewport is 100x100 and shows model coordinates 0..100 at zoom 1, so a box is on screen exactly
- *  when it overlaps that square. */
+/** The view is 100x100 px and shows model coordinates 0..100 at zoom 1. A box is on screen only when
+ *  it overlaps this square. */
 const VIEW = { x1: 0, y1: 0, x2: 100, y2: 100 }
 
-/** How much of the model the whole graph takes up. Given one, the stub has a container as well, and the
- *  viewport can work out the zoom that fits the graph - the floor it never goes below. Left out, there
- *  is no container and no floor, so a test says where a node lands without that getting in the way. */
+/** A cytoscape stub that holds `boxes`. `graph` is the size of the full graph. If it is given, the stub
+ *  also has a container, so `Viewport` can calculate the zoom that fits the graph, which is the minimum
+ *  zoom. If it is not given, there is no minimum zoom, so a test can check where a node lands without
+ *  that limit. */
 function cyStub(boxes: Record<string, Box>, graph?: { w: number, h: number }) {
     const pan = { x: 0, y: 0 }
     let zoom = 1
@@ -44,10 +47,7 @@ function cyStub(boxes: Record<string, Box>, graph?: { w: number, h: number }) {
         nonempty: () => true,
         position: () => ({ x: box.x, y: box.y }),
         outerWidth: () => box.w,
-        outerHeight: () => box.h,
-        // Rendered pixels rather than model units, which is what cytoscape reports and what the zoom a
-        // node is read at is chosen against.
-        renderedHeight: () => box.h * zoom
+        outerHeight: () => box.h
     })
     return {
         pan: (to?: { x: number, y: number }) => (to === undefined ? pan : Object.assign(pan, to)),
@@ -55,8 +55,8 @@ function cyStub(boxes: Record<string, Box>, graph?: { w: number, h: number }) {
             if (to === undefined) {
                 return zoom
             }
-            // Cytoscape keeps the zoom within the two limits below; a test on either of them needs the
-            // stub to do the same.
+            // Cytoscape keeps the zoom between the minimum and maximum set below. The stub does the
+            // same, because some tests check these limits.
             const level = typeof to === 'number' ? to : to.level
             zoom = Math.min(ceiling, Math.max(floor, level))
             return zoom
@@ -76,7 +76,7 @@ function cyStub(boxes: Record<string, Box>, graph?: { w: number, h: number }) {
         on: (events: string, run: () => void) => handlers.push({ events, run }),
         fit: () => { fitted += 1 },
         fitCount: () => fitted,
-        /** Not cytoscape's `emit`: the stub's own way of raising an event the viewport subscribed to. */
+        /** Not cytoscape's `emit`. Sends an event to the handlers that `Viewport` registered. */
         fire: (event: string) => {
             for (const handler of handlers) {
                 if (handler.events.split(' ').includes(event)) {
@@ -87,8 +87,8 @@ function cyStub(boxes: Record<string, Box>, graph?: { w: number, h: number }) {
     }
 }
 
-/** A viewport over `boxes`, past its first layout - the one that places the initial view, which every
- *  layout after leaves alone. */
+/** A viewport over `boxes`, after its first layout. The first layout places the initial view, and
+ *  later layouts do not do that again. */
 function viewportOver(boxes: Record<string, Box>, firstNode?: NodeId, graph?: { w: number, h: number }) {
     const cy = cyStub(boxes, graph)
     const viewport = new Viewport(
@@ -104,37 +104,38 @@ function viewportOver(boxes: Record<string, Box>, firstNode?: NodeId, graph?: { 
 /** Where the pan has to be for `box` to be centered in a 100x100 view at zoom 1. */
 const centeredOn = (box: Box) => ({ x: 50 - box.x, y: 50 - box.y })
 
-describe('the view after a layout that toggled a composite', () => {
-    it('leaves the pan alone while any part of the composite is still on screen', () => {
-        // Overlapping the right edge by five model px: still something to look at, so the view that the
-        // user set is the view that stays.
+describe('the view after a layout that toggled a circuit region', () => {
+    it('leaves the pan alone while any part of the circuit region is still on screen', () => {
+        // The box overlaps the right edge of the view by 5 units. A part of the region is still
+        // visible, so the view that the user set does not change.
         const box = { x: 105, y: 50, w: 20, h: 20 }
         const { cy, viewport } = viewportOver({ region: box })
-        viewport.compositeToggled('region')
+        viewport.circuitRegionToggled('region')
         viewport.layoutSettled()
         expect(cy.pan()).toEqual({ x: 0, y: 0 })
     })
 
     it('pans to it once the layout has pushed it off screen entirely', () => {
-        // The same node one pixel further right, so its left edge clears the viewport.
+        // The same box, 6 units further right. Its left edge is now 1 unit past the right edge of the
+        // view.
         const box = { x: 111, y: 50, w: 20, h: 20 }
         const { cy, viewport } = viewportOver({ region: box })
-        viewport.compositeToggled('region')
+        viewport.circuitRegionToggled('region')
         viewport.layoutSettled()
         expect(cy.pan()).toEqual(centeredOn(box))
-        // Only the pan: the zoom is the user's.
+        // Only the pan changes. The zoom stays where the user set it.
         expect(cy.zoom()).toBe(1)
     })
 
     it('gives an explicit request the last word over a toggle', () => {
-        // Both pending at once: a search that expanded ancestors on the way to a node, and the toggle
-        // that expanding them came down to. The user asked for one of the two.
+        // Both are pending at the same time: a search expanded the ancestors of a node, and each
+        // expansion is a toggle. The user asked for the node, so the view goes there.
         const asked = { x: 400, y: 400, w: 20, h: 20 }
         const { cy, viewport } = viewportOver({
             region: { x: 900, y: 900, w: 20, h: 20 },
             asked
         })
-        viewport.compositeToggled('region')
+        viewport.circuitRegionToggled('region')
         viewport.centerOnNextLayout(Option.some('asked'))
         viewport.layoutSettled()
         expect(cy.pan()).toEqual(centeredOn(asked))
@@ -143,21 +144,21 @@ describe('the view after a layout that toggled a composite', () => {
     it('forgets the toggle after the layout it belongs to', () => {
         const box = { x: 111, y: 50, w: 20, h: 20 }
         const { cy, viewport } = viewportOver({ region: box })
-        viewport.compositeToggled('region')
+        viewport.circuitRegionToggled('region')
         viewport.layoutSettled()
 
-        // A later layout - a metric change, a resize - must not drag the view back to a node the user
-        // has since panned away from.
+        // A later layout (for example, after a metric change or a resize) must not move the view back
+        // to a node that the user has since panned away from.
         cy.pan({ x: 0, y: 0 })
         viewport.layoutSettled()
         expect(cy.pan()).toEqual({ x: 0, y: 0 })
     })
 
     it('ignores a node that is no longer drawn', () => {
-        // Collapsing an ancestor can take the toggled node off the graph, and a missing element has no
-        // position to ask for.
+        // Collapsing an ancestor can remove the toggled node from the graph. A missing element has no
+        // position.
         const { cy, viewport } = viewportOver({})
-        viewport.compositeToggled('gone')
+        viewport.circuitRegionToggled('gone')
         expect(() => viewport.layoutSettled()).not.toThrow()
         expect(cy.pan()).toEqual({ x: 0, y: 0 })
     })
@@ -174,10 +175,10 @@ describe('the first layout', () => {
             'light'
         )
         viewport.layoutSettled()
-        // 7.5 model px per 8 px of node box: the zoom a search stops at, so opening a profile and
-        // finding a node in it leave the diagram at the same scale.
+        // The focus zoom: `FOCUS_FONT_SIZE` (11.25) divided by `NODE_FONT_SIZE` (12). A search uses
+        // the same zoom, so opening a profile and searching for a node in it give the same scale.
         const zoom = cy.zoom()
-        expect(zoom).toBeCloseTo(7.5 / 8, 5)
+        expect(zoom).toBeCloseTo(11.25 / 12, 5)
         expect(cy.pan()).toEqual({ x: 50 - first.x * zoom, y: 50 - first.y * zoom })
     })
 
@@ -190,8 +191,8 @@ describe('the first layout', () => {
     })
 
     it('falls back to the whole graph when there is no node to open on', () => {
-        // A circuit that is nothing but its root. The layout does not fit the graph itself any more, so
-        // without this the view would sit at whatever pan and zoom it started at.
+        // A circuit that has only its root node. The layout does not fit the graph in the view, so
+        // without this call the view stays at its initial pan and zoom.
         const { cy } = viewportOver({}, undefined)
         expect(cy.fitCount()).toBe(1)
     })
@@ -202,24 +203,24 @@ describe('the first layout', () => {
     })
 
     it('does not open further out than the whole circuit takes', () => {
-        // A circuit that takes up four fifths of the viewport fits at zoom 1.25, and no zoom goes below
-        // what fits the graph, so a small one opens closer in than the focus zoom asks for.
+        // The graph is 80x80 in a 100x100 view, so it fits at zoom 1.25. The zoom never goes below the
+        // zoom that fits the graph, so a small circuit opens closer than the focus zoom.
         const { cy } = viewportOver({ n0: { x: 40, y: 40, w: 10, h: 10 } }, 'n0', { w: 80, h: 80 })
         expect(cy.zoom()).toBe(1.25)
     })
 })
 
 describe('a search', () => {
-    it('zooms in until the node is the height a label is read at', () => {
+    it('zooms in until the node text is the size it is read at', () => {
         const { cy, viewport } = viewportOver({ n0: { x: 300, y: 300, w: 60, h: 8 } })
         cy.zoom(0.5)
         viewport.center('n0')
-        // 7.5 rendered px per 8 px of node box, the same zoom a profile opens at, so a search inside a
-        // profile leaves the diagram at the scale the user was already reading it at.
-        expect(cy.zoom()).toBeCloseTo(7.5 / 8, 5)
+        // The focus zoom (11.25 / 12), which is also the zoom that a profile opens at. So a search
+        // gives the same scale that the user saw when the profile opened.
+        expect(cy.zoom()).toBeCloseTo(11.25 / 12, 5)
     })
 
-    it('does not zoom out from a node already larger than that', () => {
+    it('does not zoom out when the view is already closer than that', () => {
         const box = { x: 300, y: 300, w: 60, h: 20 }
         const { cy, viewport } = viewportOver({ n0: box })
         viewport.center('n0')
@@ -236,8 +237,8 @@ describe('a search', () => {
 
 describe('the minimap', () => {
     it('redraws its picture once a layout has settled, and never while the view moves', () => {
-        // The picture costs a pass over every element, so it is taken where the elements have just
-        // stopped moving. A pan or a zoom only moves the outline over it.
+        // Drawing the picture reads every element, so it happens only at the end of a layout, when the
+        // elements stop moving. A pan or a zoom only moves the view outline on the picture.
         minimap.length = 0
         const { cy } = viewportOver({ n0: { x: 300, y: 300, w: 60, h: 20 } })
         expect(minimap.filter((call) => call === 'showGraph')).toHaveLength(1)
@@ -246,6 +247,7 @@ describe('the minimap', () => {
             cy.fire(event)
         }
         expect(minimap.filter((call) => call === 'showGraph')).toHaveLength(1)
+        // One call from the layout, and one for each of the four events.
         expect(minimap.filter((call) => call === 'showView')).toHaveLength(5)
     })
 })

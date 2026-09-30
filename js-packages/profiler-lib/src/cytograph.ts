@@ -414,10 +414,10 @@ export class CytographRendering {
     stickyInformation: boolean;
     // Current node that has tooltip displayed (for refreshing on metadata changes)
     private currentTooltipNode: NodeId | null = null;
-    /** Where the view is; also the one observer this class asks things of directly. */
+    /** Where the view is. */
     private readonly viewport: Viewport;
-    /** Everything that reacts to the diagram's lifecycle rather than driving it, in call order: the
-     *  view settles before the picture held over the layout comes down. */
+    /** Everything that reacts to the diagram's lifecycle rather than driving it.
+     * The observers are called in the same order they have in the array. */
     private readonly observers: Array<DiagramObserver>;
     // True between `initiateLayout` and its matching `layoutComplete`. Used so `dispose()`
     // can fire a final `onRenderingChange(false)` if the layout was still in flight when the
@@ -454,6 +454,8 @@ export class CytographRendering {
             navigatorContainer,
             () => this.currentGraph?.nodes.find((node) => node.getId() !== this.rootNodeId)?.getId(),
             this.theme);
+        // `FrozenLayout` must be last. At `layoutSettled`, the other observers then change the view
+        // while the copy of the old layout still hides the diagram.
         this.observers = [this.viewport, new FrozenLayout(this.cy)];
     }
 
@@ -801,14 +803,14 @@ export class CytographRendering {
         // Called here rather than in the constructor because this is where the chips' actions arrive;
         // `setEvents` runs once per instance.
         installChipButtons(this.cy, () => this.theme, {
-            // A code chip press is also a click on the node it belongs to: report on that node, then
-            // show its source. The counter is a toggle instead, and `toggleComposite` clears the
-            // report, the graph being about to change under it.
+            // A click on a code chip also pins the information of its node, and then shows its source.
+            // A click on the counter chip expands or collapses the region. `toggleCircuitRegion` hides
+            // the node information, because the graph changes.
             onSource: (id) => {
-                this.reportOn(id);
+                this.pinNodeInformation(id);
                 callbacks.onShowSource?.(id);
             },
-            onToggle: (id) => this.toggleComposite(id, callbacks.onNodeDoubleClick)
+            onToggle: (id) => this.toggleCircuitRegion(id, callbacks.onNodeDoubleClick)
         });
         this.cy
             //.on('render', () => console.log("rendering"))
@@ -816,7 +818,7 @@ export class CytographRendering {
             .on('layoutstop', () => this.layoutComplete())
             .on('mouseover', 'node', event => this.hoverNode(event))
             .on('mouseout', 'node', event => this.mouseOut(event))
-            .on('click', 'node', (e) => this.reportOn(e.target.id()))
+            .on('click', 'node', (e) => this.pinNodeInformation(e.target.id()))
             .on('dblclick', 'node', (e) => {
                 let node = e.target as NodeSingular;
                 let id = e.target.id();
@@ -832,25 +834,25 @@ export class CytographRendering {
                 }
 
                 // Group node - toggle expand/collapse and dispatch dedicated double click
-                this.toggleComposite(id, callbacks.onNodeDoubleClick);
+                this.toggleCircuitRegion(id, callbacks.onNodeDoubleClick);
             });
     }
 
-    /** Report on a node: what a click on it, or a press of its code chip, comes down to. */
-    private reportOn(id: NodeId) {
-        // Whatever was reported before goes first, so nothing of it survives into this node's report.
+    /** Show the information of a node, and keep it on screen when the pointer moves to other nodes.
+     *  A click on the node and a click on its code chip both call this. */
+    private pinNodeInformation(id: NodeId) {
+        // Hide the information of the previous node first, so that none of it stays.
         this.hideNodeInformation();
-        // Fires before the attributes, so a consumer can tell a click from a programmatic refresh.
+        // Call `onNodeClick` before `displayNodeAttributes`, so that a consumer can tell a click from a
+        // refresh after a metric change.
         this.callbacks.onNodeClick?.(id);
-        // A click is deliberate, so what it reports stays on screen, and an expanded region reports as
-        // readily as an operator. A hover does neither, see `hoverNode`.
         this.setStickyNodeInformation(true);
         this.displayNodeAttributes(this.getRenderedNode(id));
     }
 
-    /** Expand or collapse a composite: what a double click on it, or a press of its counter chip,
-     *  comes down to. */
-    private toggleComposite(
+    /** Expand or collapse a circuit region. A double click on the region and a click on its counter
+     *  chip both call this. */
+    private toggleCircuitRegion(
         id: NodeId,
         onNodeDoubleClick?: ((node: NodeId, type: 'group' | 'leaf') => void) | undefined
     ) {
@@ -859,7 +861,7 @@ export class CytographRendering {
         // Not centered on afterwards: the layout that follows keeps the viewport (`layoutOptions.fit`
         // is false), so what the user was looking at stays where it was. The view pans to the node only
         // if that layout leaves it off screen.
-        notifyObservers(this.observers, (observer) => observer.compositeToggled?.(id));
+        notifyObservers(this.observers, (observer) => observer.circuitRegionToggled?.(id));
         onNodeDoubleClick?.(id, 'group');
     }
 
@@ -928,12 +930,12 @@ export class CytographRendering {
         this.displayNodeAttributes(node);
     }
 
-    /** Whether the node the metrics report is about is the node the diagram marks with the glow and
-     * traces with the colored edges. When it is not, the mark is the pointer's to move: neither an
-     * expanded region nor the root node get marked, and neither has a report whose node
-     * a graph update has removed.
+    /** True if the node whose information is shown also has the selection mark (see `markSelected`).
+     *  It is false if no information is shown, or if the shown node cannot have the
+     *  mark: an expanded region, the root node, or a node that a graph update removed. Then, while
+     *  the information is pinned, a hover moves the mark (see `hoverNode` and `mouseOut`).
      *
-     * Asked of the mark itself, so the two can never disagree about who holds it. */
+     *  This reads the class on the node, so the result always agrees with what is on screen. */
     private reportIsMarked(): boolean {
         if (this.currentTooltipNode === null) {
             return false;
@@ -941,9 +943,9 @@ export class CytographRendering {
         return this.getRenderedNode(this.currentTooltipNode).hasClass(SELECTED_NODE_CLASS);
     }
 
-    /** Mark `node` as the one the diagram reports on, whether reached by click, hover or search. At most
-     *  one node is marked, and `nodeShadow.ts` paints the mark as an accent glow in place of the node's
-     *  ambient shadow. */
+    /** Give `node` the selection mark (`SELECTED_NODE_CLASS`), and remove the mark from all other
+     *  nodes. `null` removes the mark from all nodes. A click, a hover and a search all mark the node
+     *  they reach. `nodeShadow.ts` paints the mark as an accent glow. */
     markSelected(node: NodeSingular | NodeCollection | null) {
         this.cy.nodes(`.${SELECTED_NODE_CLASS}`).removeClass(SELECTED_NODE_CLASS);
         node?.addClass(SELECTED_NODE_CLASS);
