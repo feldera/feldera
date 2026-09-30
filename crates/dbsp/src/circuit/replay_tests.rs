@@ -1375,6 +1375,73 @@ fn test_recursion_builder_circuit1() {
     );
 }
 
+/// Builds a transitive closure, cut off after `bound` iterations, of the edges
+/// in `input1`.
+///
+/// # Arguments
+///
+/// * `circuit` - circuit to build in.
+/// * `bound` - the maximum number of iterations in a run of the recursion.
+/// * `output_id` - persistent id of the output.
+///
+/// # Returns
+///
+/// The edges' input handle and the output handle for the changes to the paths.
+fn bounded_paths_circuit(
+    circuit: &mut RootCircuit,
+    bound: u64,
+    output_id: &str,
+) -> (
+    ZSetHandle<Tup2<u64, u64>>,
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, u64>>>>,
+) {
+    let (edges, edges_handle) = circuit.add_input_zset::<Tup2<u64, u64>>();
+    edges.set_persistent_id(Some("input1"));
+
+    edges.integrate_trace();
+
+    let paths = recursion_builder_paths(circuit, &edges, NonZeroU64::new(bound));
+    (
+        edges_handle,
+        paths.accumulate_output_persistent(Some(output_id)),
+    )
+}
+
+#[test]
+fn test_recursion_builder_bound_change() {
+    // Circuit 1 cuts the closure off after 2 iterations.  Circuit 2 raises the
+    // bound to 3 and renames the output, so the restart rebuilds the recursion
+    // under the new bound.  Deleting old edges after the restart retracts
+    // paths of 3 edges, which only a rebuilt recursion knows.
+    let after_restart = vec![
+        vec![Tup2(Tup2(2, 3), -1)],
+        vec![Tup2(Tup2(5, 6), 1)],
+        vec![Tup2(Tup2(2, 3), 1)],
+        vec![Tup2(Tup2(0, 1), -1)],
+    ];
+    test_replay::<
+        (),
+        TestData1<Tup2<u64, u64>>,
+        (),
+        TestData1<Tup2<u64, u64>>,
+        (),
+        TestData1<Tup2<u64, u64>>,
+    >(
+        Arc::new(|circuit: &mut RootCircuit| {
+            let (edges, paths) = bounded_paths_circuit(circuit, 2, "paths_bound2");
+            ((), edges, paths, ())
+        }),
+        Arc::new(|circuit: &mut RootCircuit| {
+            let (edges, paths) = bounded_paths_circuit(circuit, 3, "paths_bound3");
+            (edges, (), (), paths)
+        }),
+        std::iter::repeat_n((), 5).collect(),
+        chain(0, 5),
+        after_restart.clone(),
+        std::iter::repeat_n((), after_restart.len()).collect(),
+    );
+}
+
 // Circuit with lag:
 //
 // Pipeline 1:

@@ -546,6 +546,14 @@ impl ReportMode for Reporting {
 /// them from the program (a view name, a hash of the subgraph) rather than from
 /// anything positional.
 ///
+/// The bound set with [`with_bound`](RecursionBuilder::with_bound) is part of
+/// the computation, so a restart that changes it must also change persistent
+/// ids: those of the recursion's streams, or those of the stateful operators
+/// that consume its output, such as the output itself.  Either way, the
+/// restart rebuilds the recursion from its inputs.  A restart that keeps the
+/// ids resumes the recursion from state computed under the old bound, and its
+/// results are wrong.
+///
 /// # Circuit
 ///
 /// ```text
