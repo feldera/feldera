@@ -217,14 +217,14 @@ pub trait RecursionVars<C: Circuit> {
     /// Consolidate the exported traces into the final output streams.
     fn consolidate(exports: Self::Export) -> Self::Output;
 
-    /// Produce a per-transaction [`RecursionReport`] stream by sampling
-    /// `outcome` once the nested epoch has finished.
+    /// Produce a [`RecursionReport`] stream by sampling `outcome` in every
+    /// step, once the nested epoch has finished.
     ///
     /// The sampler is attached to one of the recursion's *existing* export
     /// streams (never a fresh in-loop operator, which — by changing every
     /// iteration — would prevent the fixed-point check from ever succeeding),
-    /// so the sample is naturally scheduled after the recursion has run for the
-    /// transaction.  Any group with at least one variable can report.
+    /// so the sample is naturally scheduled after the recursion has run in the
+    /// step.  Any group with at least one variable can report.
     fn report<G>(exports: &Self::Export, outcome: G) -> Stream<C::Parent, RecursionReport>
     where
         G: Fn() -> RecursionReport + 'static;
@@ -344,27 +344,26 @@ impl<C: Circuit> RecursionVars<C> for Tuple {
     }
 }
 
-/// A report on a recursive computation for a single transaction, produced when
-/// reporting is enabled via [`with_report`](RecursionBuilder::with_report).
+/// A report on one run of a recursion, produced when reporting is enabled via
+/// [`with_report`](RecursionBuilder::with_report).
 ///
-/// One value is emitted per transaction on the stream returned alongside the
-/// recursion's output.
+/// The recursion runs once in every step of the parent circuit, propagating
+/// the changes of that step, and the stream returned alongside the output
+/// carries one report per step.  A transaction may take several steps,
+/// including the steps that commit it, so the report read after a transaction
+/// describes only the run in its last step.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct RecursionReport {
-    /// Number of fixed-point iterations performed this transaction.
+    /// Number of iterations the run took.
     iterations: u64,
 
-    /// Whether the recursion reached a fixed point.  `false` means it was cut
-    /// short by the bound set with [`with_bound`](RecursionBuilder::with_bound),
-    /// i.e. the result is a truncated approximation.
+    /// Whether the run converged, as opposed to being truncated by the bound.
     converged: bool,
 }
 
 impl RecursionReport {
-    /// Returns `Some(iterations)` if the computation naturally reached
-    /// a fixed point without being cut short by a bound set with
-    /// [`with_bound`](RecursionBuilder::with_bound).
-    /// In the latter case, `None` is returned.
+    /// Returns the number of iterations the run took if it converged, or
+    /// `None` if the bound truncated it.
     pub fn converged_iterations(&self) -> Option<u64> {
         if self.converged {
             Some(self.iterations)
@@ -372,18 +371,26 @@ impl RecursionReport {
             None
         }
     }
-    /// Returns `true` if the computation did converge and any bound set with
-    /// [`with_bound`](RecursionBuilder::with_bound) was *not* effective.
+    /// Returns `true` if the run converged: the changes that it propagated
+    /// stopped producing new ones within the bound set with
+    /// [`with_bound`](RecursionBuilder::with_bound).
+    ///
+    /// A run propagates only the changes of its own step, so its convergence
+    /// does not mean that the output is the recursion's fixed point: results
+    /// that need more iterations than the bound allows are missing from the
+    /// output after every run.  The output is the fixed point if no run so far
+    /// has been truncated.
     pub fn converged(&self) -> bool {
         self.converged
     }
-    /// Returns `true` if the computation did not converge but short-circuited
-    /// by the bound set with [`with_bound`](RecursionBuilder::with_bound).
-    /// Note that the computation result is a truncated, partial result.
+    /// Returns `true` if the bound set with
+    /// [`with_bound`](RecursionBuilder::with_bound) stopped the run while the
+    /// changes that it propagated were still producing new ones, so the output
+    /// may lack results that further iterations would derive.
     pub fn truncated(&self) -> bool {
         !self.converged
     }
-    /// Reports back the number of iterations the computation took.
+    /// Returns the number of iterations the run took.
     pub fn iterations(&self) -> u64 {
         self.iterations
     }
@@ -419,7 +426,7 @@ pub trait ReportMode: sealed::Sealed + Clone + 'static {
     /// Build the reporting stream from the exported traces, before the exports
     /// are consolidated.  Returns `None` under [`NoReport`] and `Some(stream)`
     /// under [`Reporting`], where it samples the recorded outcome once per
-    /// transaction.
+    /// step.
     fn build_report<C, V>(&self, exports: &V::Export) -> Option<Stream<C, RecursionReport>>
     where
         C: Circuit,
@@ -510,11 +517,11 @@ impl ReportMode for Reporting {
 /// from the parent circuit with [`delta0`](crate::circuit::Stream::delta0),
 /// which injects them once at the first iteration.
 ///
-/// [`with_report`](RecursionBuilder::with_report) opts into per-transaction
-/// [`RecursionReport`] reporting: `finish` then also returns a stream of
-/// outcomes (iteration count and whether the recursion converged), which is
-/// especially useful together with [`with_bound`](RecursionBuilder::with_bound)
-/// to detect truncated results.
+/// [`with_report`](RecursionBuilder::with_report) opts into
+/// [`RecursionReport`]s: `finish` then also returns a stream that reports, for
+/// the recursion's run in each step, how many iterations it took and whether
+/// the bound set with [`with_bound`](RecursionBuilder::with_bound) truncated
+/// it.
 ///
 /// # Persistent ids
 ///
@@ -651,15 +658,15 @@ where
     /// `n` iterations, for example, holds exactly the paths of at most `n`
     /// edges.  This is useful to cap the cost of computations that converge
     /// slowly, or as a safety valve against non-converging steps.  Combine with
-    /// [`with_report`](RecursionBuilder::with_report) to learn, per
-    /// transaction, whether the bound truncated the result.
+    /// [`with_report`](RecursionBuilder::with_report) to learn whether the bound
+    /// truncated a run of the recursion.
     pub fn with_bound<T: Into<NonZeroU64>>(mut self, max_iterations: T) -> Self {
         self.bounded = Some(max_iterations.into());
         self
     }
 
     /// Build the recursion, returning the consolidated output streams together
-    /// with an optional per-transaction [`RecursionReport`] stream.
+    /// with an optional stream of [`RecursionReport`]s.
     ///
     /// Both the bounded and unbounded variants are driven through
     /// [`Circuit::iterate`], differing only in the termination check.  The
@@ -741,11 +748,11 @@ impl<'a, C, F1, F2> RecursionBuilder<'a, C, F1, F2, NoReport>
 where
     C: Circuit,
 {
-    /// Emit a per-transaction [`RecursionReport`] alongside the recursion's
+    /// Emit a [`RecursionReport`] for every run of the recursion alongside its
     /// output.
     ///
     /// After calling this, [`finish`](Self::finish) returns a tuple whose second
-    /// element is a stream carrying one [`RecursionReport`] per transaction.
+    /// element is a stream carrying one [`RecursionReport`] per step.
     pub fn with_report(self) -> RecursionBuilder<'a, C, F1, F2, Reporting> {
         RecursionBuilder {
             circuit: self.circuit,
@@ -781,12 +788,12 @@ where
     C: Circuit,
 {
     /// Build the recursive computation, returning its output streams together
-    /// with a per-transaction [`RecursionReport`] stream.
+    /// with a stream of [`RecursionReport`]s.
     ///
     /// Like [`finish`](RecursionBuilder::finish) on the non-reporting builder,
     /// but the returned tuple's second element is a `Stream` that carries one
-    /// [`RecursionReport`] per transaction (iteration count and whether the
-    /// recursion converged).
+    /// [`RecursionReport`] per step: the number of iterations the recursion's
+    /// run took and whether it converged.
     #[track_caller]
     pub fn finish<V>(self) -> Result<(V::Output, Stream<C, RecursionReport>), SchedulerError>
     where
