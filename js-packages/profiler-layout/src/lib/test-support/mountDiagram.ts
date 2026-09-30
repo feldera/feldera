@@ -21,9 +21,9 @@ export const OPERATORS = {
   }
 }
 
-/** One operator inside a region, which a circuit this small renders expanded - `collapse()` is what
- *  turns the region into a collapsed composite. */
-export const COMPOSITE = {
+/** One operator inside a region, which a circuit this small renders expanded - call `collapse()`
+ *  to collapse the region. */
+export const CIRCUIT_REGION = {
   metrics: [],
   worker_profiles: [{ metadata: {} }],
   graph: {
@@ -51,11 +51,11 @@ export const WIDE_REGION = {
   }
 }
 
-/** Two operators with SQL source attached, which is what puts a code chip on each: one inside a region,
- *  where a press on the chip could fall through to the region behind it, and one on the graph itself,
- *  where the same press could fall through to the background. Source positions come from a dataflow graph
- *  matched to the profile by persistent id, not from the profile, so this fixture is the two of them
- *  together. The edges are there for what a click must not color. */
+/** Two operators with SQL source, so each one has a code chip. One is inside a region, where a click
+ *  on the chip could also reach the region behind it. The other is not in a region, where the same
+ *  click could reach the background. The source positions come from a dataflow graph that is matched
+ *  to the profile by persistent id, so this fixture holds both. The edges let the tests check which
+ *  clicks color edges. */
 export const WITH_SOURCE = {
   profile: {
     metrics: [],
@@ -396,7 +396,7 @@ export async function mountDiagram(
     await settle()
   }
 
-  /** Expand or collapse a composite, the way a double click on it does. */
+  /** Expand or collapse a circuit region, the way a double click on it does. */
   const toggle = async (id: string) => {
     cy.$id(id).emit('dblclick')
     await settle()
@@ -421,8 +421,8 @@ export async function mountDiagram(
     )
   }
 
-  /** Move onto a rendered position and press it, the way a mouse click does. */
-  const press = async (x: number, y: number) => {
+  /** Click at a rendered position: move the mouse there, then press and release the left button. */
+  const click = async (x: number, y: number) => {
     pointer('mousemove', x, y)
     pointer('mousedown', x, y)
     pointer('mouseup', x, y)
@@ -441,7 +441,7 @@ export async function mountDiagram(
     setTheme,
     minimap,
     pointer,
-    press,
+    click,
     diagram: component,
     cleanup: () => wrapper.remove()
   }

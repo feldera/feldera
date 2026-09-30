@@ -1,40 +1,39 @@
-// Logic related to where the view is: the zoom a node is read at, where a profile opens,
-// what a search moves to, what happens to a composite the layout moved off screen, and the minimap
-// that reports all of it.
-//
-// It's a `DiagramObserver` (see `diagramObserver.ts`), because its logic and state could be decoupled from
-// `CytographRendering`: the diagram tells it a layout finished, a composite was toggled or the palette
-// changed, and everything the view does follows from those three plus the two requests it takes
-// directly, `center` and `centerOnNextLayout`.
+
 
 import type { Core, NodeSingular, Position } from 'cytoscape';
 import type { DiagramObserver } from './diagramObserver.js';
-import { NODE_INNER_HEIGHT, type DiagramTheme } from './diagramTheme.js';
+import { NODE_FONT_SIZE, type DiagramTheme } from './diagramTheme.js';
 import { ViewNavigator } from './navigator.js';
 import type { NodeId } from './profile.js';
 import { Option } from './util.js';
 
+/**
+ * Controls the position of the view on the diagram: the zoom level, where the view starts when a
+ * profile opens, where a search moves the view, and the minimap that shows the view. When the user
+ * expands or collapses a circuit region, the new layout can move that region off screen. Then this
+ * class pans the view back to it.
+ */
 export class Viewport implements DiagramObserver {
-    /** Rendered height a node's own box is brought to when the view moves to it. Measured on the box
-     *  cytoscape's `renderedHeight` reports, which is the node without the padding around it. */
-    private static readonly FOCUS_NODE_HEIGHT = 7.5;
-    /** The zoom that gives a node that height: where a profile opens, and where a search stops zooming
-     *  in. One number for both, so opening a profile and finding a node in it leave the diagram at the
-     *  same scale. */
-    private static readonly FOCUS_ZOOM = Viewport.FOCUS_NODE_HEIGHT / NODE_INNER_HEIGHT;
+    /** The font size of the node text on screen, in CSS pixels, at `FOCUS_ZOOM`. */
+    private static readonly FOCUS_FONT_SIZE = 12;
+    /** The zoom level at which the node text is `FOCUS_FONT_SIZE` CSS pixels.
+     *  A profile opens at this zoom, and a search does not zoom in more than this.
+     *  An exception: if the full graph fits in the view at a higher zoom,
+     *  the profile opens at that zoom. */
+    private static readonly FOCUS_ZOOM = Viewport.FOCUS_FONT_SIZE / NODE_FONT_SIZE;
 
-    /** Minimap of the graph and of this viewport within it. */
+    /** Minimap that shows the full graph and the viewport outline. */
     readonly navigator: ViewNavigator;
 
-    /** False until the first layout has placed the view; every layout after that leaves it alone. */
+    /** False until the first layout places the view on the first node. Only the first layout does this. */
     private placed = false;
-    /** A node to center on when the layout in flight finishes, set by `centerOnNextLayout`. */
-    private requested: Option<NodeId> = Option.none();
-    /** A composite just expanded or collapsed, to be brought back on screen if the layout that
-     *  follows puts it outside the viewport. */
+    /** The node to center on when the current layout finishes. `centerOnNextLayout` sets it. */
+    private nodeToCenterOn: Option<NodeId> = Option.none();
+    /** The circuit region that the user just expanded or collapsed. If the next layout moves it off
+     *  screen, the view pans back to it. */
     private toggled: Option<NodeId> = Option.none();
 
-    /** @param firstNode The node a profile opens on, asked for when the first layout finishes. */
+    /** @param firstNode Gives the node that the view shows when the first layout finishes. */
     constructor(
         private readonly cy: Core,
         navigatorContainer: HTMLElement,
@@ -47,30 +46,26 @@ export class Viewport implements DiagramObserver {
         this.cy.on('zoom pan resize', () => this.syncNavigator());
     }
 
-    /** Center the view on this node once the layout that is about to run has finished. */
+    /** Center the view on this node when the next layout finishes. */
     centerOnNextLayout(node: Option<NodeId>): void {
-        this.requested = node;
+        this.nodeToCenterOn = node;
     }
 
-    /** Move to a node now: centered, and zoomed in to `FOCUS_NODE_HEIGHT` if it is smaller than that.
-     *  Never zooms out - a view already closer in than the focus height stays there. */
+    /** Move the view to a node now. Center the node, and if the zoom is less than `FOCUS_ZOOM`, zoom
+     *  in to `FOCUS_ZOOM`. This never zooms out: if the view is already closer, the zoom does not
+     *  change. */
     center(id: NodeId): void {
         const el = this.cy.getElementById(id);
         if (!el.nonempty()) {
             return;
         }
-        // The node's height is what the zoom is chosen by, being the dimension tied to the font size.
-        const size = el.renderedHeight();
-        if (size < Viewport.FOCUS_NODE_HEIGHT) {
-            this.cy.zoom({
-                level: this.cy.zoom() * Viewport.FOCUS_NODE_HEIGHT / size,
-                position: el.position()
-            });
+        if (this.cy.zoom() < Viewport.FOCUS_ZOOM) {
+            this.cy.zoom({ level: Viewport.FOCUS_ZOOM, position: el.position() });
         }
         this.centerOn(el);
     }
 
-    compositeToggled(node: NodeId): void {
+    circuitRegionToggled(node: NodeId): void {
         this.toggled = Option.some(node);
     }
 
@@ -79,27 +74,28 @@ export class Viewport implements DiagramObserver {
     }
 
     layoutSettled(): void {
-        // Where the minimap's picture is taken: every node has just landed where it belongs.
+        // Update the minimap here, because all nodes are now at their final positions.
         this.navigator.showGraph(this.cy);
         this.syncNavigator();
-        // Before any centering below, so that every zoom set here is clamped by them.
+        // Set the zoom limits before the code below centers the view, so that the limits apply to
+        // each zoom it sets.
         this.clampZoom();
         if (!this.placed) {
             this.placed = true;
             this.placeInitialView();
         }
-        if (this.requested.isSome()) {
-            // An explicit request to go to a node outranks keeping a toggled one in view.
-            this.center(this.requested.unwrap());
-            this.requested = Option.none();
+        if (this.nodeToCenterOn.isSome()) {
+            // A request to go to a node has priority over keeping a toggled circuit region in view.
+            this.center(this.nodeToCenterOn.unwrap());
+            this.nodeToCenterOn = Option.none();
         } else if (this.toggled.isSome()) {
             this.revealToggled(this.toggled.unwrap());
         }
         this.toggled = Option.none();
     }
 
-    /** How far in and out the user may go: no closer than a node needs to be legible, no further out
-     *  than fitting the whole graph takes. */
+    /** Set the zoom limits. The user cannot zoom in more than 1.5, and cannot zoom out more than
+     *  the zoom that fits the full graph in the view. */
     private clampZoom(): void {
         this.cy.maxZoom(1.5);
         const rect = this.cy.container()?.getBoundingClientRect();
@@ -109,15 +105,15 @@ export class Viewport implements DiagramObserver {
         }
     }
 
-    /** Place the view the first time a profile is laid out: on its first node, at the zoom a search
-     *  moves to, since fitting a large circuit on screen leaves nothing on it legible. Every layout after
-     *  this one leaves the viewport alone. */
+    /** Place the view after the first layout of a profile: center it on the first node at
+     *  `FOCUS_ZOOM`. Do not fit the full circuit in the view, because the text of a large circuit is
+     *  then too small to read. */
     private placeInitialView(): void {
         const first = this.firstNode();
         const el = first === undefined ? undefined : this.cy.getElementById(first);
         if (el === undefined || !el.nonempty()) {
-            // A circuit with nothing in it but its root. There is no node to open on, and the layout no
-            // longer fits the graph itself, so this is the only thing left that puts the view somewhere.
+            // The circuit has only its root node, so there is no node to open on. The layout does not
+            // fit the graph in the view, so this call must do it.
             this.cy.fit();
             return;
         }
@@ -125,17 +121,17 @@ export class Viewport implements DiagramObserver {
         this.centerOn(el as NodeSingular);
     }
 
-    /** Pan to the composite the user just expanded or collapsed, but only if the layout that followed put
-     *  it outside the viewport. ELK moves every node, so a composite that grew or shrank can end up off
-     *  screen, leaving no sign of where the node they pressed went. While any part of it is still visible
-     *  the view stays exactly where it was. Only the pan moves; the zoom is the user's. */
+    /** Pan to the circuit region that the user just expanded or collapsed, if the new layout moved
+     *  it fully off screen. When a region grows or shrinks, ELK moves all nodes, so the region that
+     *  the user clicked can move out of view. If a part of the region is still visible, the view does
+     *  not move. This changes only the pan, not the zoom. */
     private revealToggled(id: NodeId): void {
         const el = this.cy.getElementById(id);
         if (!el.nonempty()) {
             return;
         }
-        // Model coordinates on both sides. The node's own box rather than `boundingBox()`, which
-        // reaches above a node to cover its code chip.
+        // Both boxes use model coordinates. Use the node box (`outerWidth()` / `outerHeight()`), not
+        // `boundingBox()`, because `boundingBox()` also includes the code chip above the node.
         const view = this.cy.extent();
         const position = el.position();
         const halfWidth = el.outerWidth() / 2;
@@ -147,14 +143,14 @@ export class Viewport implements DiagramObserver {
         }
     }
 
-    /** Pan so that the center of `el` is the center of the view. Not cytoscape's own `center`, which
-     *  works off the element's bounding box - that box reaches above a node to cover its code chip, so
-     *  centering by it leaves the node itself half a chip off center. */
+    /** Pan so that the center of `el` is at the center of the view. We do not use cytoscape's own
+     *  `center`, because it uses the bounding box, which includes the code chip above the node. That
+     *  puts the node half a chip height off center. */
     private centerOn(el: { position(): Position }): void {
         this.panTo(el.position());
     }
 
-    /** Pan so that this model point is the center of the view. */
+    /** Pan so that this model point is at the center of the view. */
     private panTo(point: Position): void {
         const zoom = this.cy.zoom();
         this.cy.pan({
@@ -163,11 +159,11 @@ export class Viewport implements DiagramObserver {
         });
     }
 
-    /** Tell the minimap where the view is. Runs on every pan and zoom, so it only moves an outline. */
+    /** Send the view position to the minimap. This runs on each pan and zoom, so it only moves the
+     *  viewport outline. */
     private syncNavigator(): void {
-        // Cytoscape's resize observer is debounced, so a `resize` fired on the way out arrives after
-        // the instance has been destroyed - and a destroyed instance has no renderer left to answer
-        // `extent()`.
+        // Cytoscape delays its resize observer, so a `resize` event can arrive after the instance is
+        // destroyed. A destroyed instance has no renderer, so we guard the `extent()` call.
         if (this.cy.destroyed()) {
             return;
         }

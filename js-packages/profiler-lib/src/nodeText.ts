@@ -1,15 +1,22 @@
-// Node text: the two runs a node's text is made of - its id, then the operator name - painted on the
-// canvas. Every node carries it, an expanded region included: a region shows its name in the band
-// along its top edge, where it names what it contains without covering any of it.
+// Draws the text of each circuit diagram node on the canvas. The text has two parts, called runs,
+// and each run has its own style, so that the id is easy to see next to the operator name:
 //
-// A cytoscape label is one run of one style, and the id has to stand out from the operator name it
-// precedes. So the label is kept for measurement only (`text-opacity: 0`, measured at the id's heavier
-// weight so the node is never sized smaller than what is drawn) and the runs are drawn here, through the
-// same kind of renderer tap `nodeShadow.ts` uses: `drawNodeOverlay`, which runs after the node body with
-// the context in graph coordinates.
+//   Run             Font weight   Color
+//   node id         semibold      normal text color
+//   operator name   normal        muted text color
+//
+// A cytoscape label has only one style, so the cytoscape label of each node is invisible
+// (`text-opacity: 0`). This file paints the runs with `fillText` on the cytoscape canvas, in the same
+// frame as the node, in the `drawNodeOverlay` layer of `cytoscapeRenderer.ts`, above the node body and
+// its chips.
+//
+// The node width is calculated from the full text in the semibold font weight (`labelWidth` in
+// `diagramTheme.ts`). Semibold text is wider than normal text, so the drawn text is never wider than
+// the calculated width.
 
-import type { Core, NodeSingular } from 'cytoscape';
+import type { Core } from 'cytoscape';
 import { BADGE_HEIGHT, CHIP_INSET } from './chips.js';
+import { paintNodeLayer } from './cytoscapeRenderer.js';
 import {
     DIAGRAM_PALETTES,
     type DiagramTheme,
@@ -18,18 +25,17 @@ import {
     NODE_OUTER_HEIGHT
 } from './diagramTheme.js';
 
-/** One styled run of a node's text. */
+/** One part of a node's text, drawn in one font weight and one color. */
 export interface TextRun {
     text: string;
-    /** CSS font weight, as it goes into the canvas font shorthand. Weight is what separates the id
-     *  from the operator name at a glance. */
+    /** CSS font weight, in the format of the canvas `font` property. */
     weight: string;
     color: string
 }
 
-/** The runs of a node's text, in drawing order. `heat` is the node's metric value on the 0-100 scale the
- *  fill is mapped from, and `isRegion` says whether the node is an expanded region, which is drawn in the
- *  region tint whatever its metric. */
+/** The runs of a node's text, in the order to draw them: the id, then the operator name if there is
+ *  one. `heat` is the metric value of the node, from 0 to 100. `isRegion` is true for an expanded
+ *  circuit region. */
 export function nodeTextRuns(
     id: string,
     operator: string,
@@ -38,8 +44,9 @@ export function nodeTextRuns(
     isRegion: boolean
 ): TextRun[] {
     const p = DIAGRAM_PALETTES[theme];
-    // Only text drawn on the heat fill flips. A region carries the metric of everything inside it but
-    // keeps the region tint, so one hot descendant must not turn its name white.
+    // Above `HEAT_TEXT_FLIP`, the node background is a strong red, so the text is white (`textOnHeat`).
+    // The background of an expanded region is always the `region` color, so its text keeps the normal
+    // colors, also when `heat` is high.
     const onHeat = !isRegion && heat > HEAT_TEXT_FLIP;
     const runs: TextRun[] = [
         { text: id, weight: `${ID_FONT_WEIGHT}`, color: onHeat ? p.textOnHeat : p.text }
@@ -54,12 +61,10 @@ export function nodeTextRuns(
     return runs;
 }
 
-/** Where the text of a node is centered, in graph coordinates.
- *
- *  An expanded region carries its name in the band along its top edge, on the line of its counter chip:
- *  the interior belongs to the nodes it contains. Every other node keeps its text in the bottom
- *  `NODE_OUTER_HEIGHT` of itself, which is all of an operator and the second row of a collapsed
- *  composite. */
+/** The center of a node's text, in graph coordinates. An expanded circuit region shows its name along
+ *  its top edge, level with its counter chip, because the nodes inside the region fill the rest of it.
+ *  Other nodes show their text in their bottom `NODE_OUTER_HEIGHT`. For an operator, that is the full
+ *  node. For a collapsed region, that is the row below the counter chip. */
 export function textCenter(
     position: { x: number, y: number },
     outerHeight: number,
@@ -71,8 +76,8 @@ export function textCenter(
     return { x: position.x, y: position.y + (outerHeight - NODE_OUTER_HEIGHT) / 2 };
 }
 
-/** The slice of the canvas API the painter needs. Narrower than `CanvasRenderingContext2D` so the
- *  measuring can be exercised without one. */
+/** The part of `CanvasRenderingContext2D` that `paintTextRuns` uses, so that tests can use a simple
+ *  mock instead of a real canvas. */
 export interface TextContext {
     font: string;
     fillStyle: string | CanvasGradient | CanvasPattern;
@@ -85,8 +90,9 @@ export interface TextContext {
     restore(): void;
 }
 
-/** Paint `runs` as one line, centered on (`centerX`, `centerY`), separated by the width of a space -
- *  the same separator the measured label carries between id and operator name. */
+/** Draw `runs` on one line, centered on (`centerX`, `centerY`). The gap between two runs is one space
+ *  in the normal font weight. The calculated node width also includes one space between the id and the
+ *  operator name. */
 export function paintTextRuns(
     context: TextContext,
     runs: TextRun[],
@@ -118,50 +124,24 @@ export function paintTextRuns(
     context.restore();
 }
 
-/** Renderer entry point wrapped by `installNodeText`: `(context, node, pos?, w?, h?)`, called once
- *  per node per frame, after the node's body and its chips. */
-type DrawNodeOverlay = (
-    context: CanvasRenderingContext2D,
-    node: NodeSingular,
-    pos?: { x: number, y: number },
-    w?: number,
-    h?: number
-) => void;
-
-/** Start painting node text on `cy`. Call once per instance, after construction. `theme` is read on
- *  every frame, so switching the palette needs no more than the repaint it already does. */
+/** Start to draw node text on `cy`. Call this one time for each cytoscape instance, after you create
+ *  it. Each frame reads `theme`, so the first repaint after a theme change uses the new colors. */
 export function installNodeText(cy: Core, theme: () => DiagramTheme): void {
-    // As in `nodeShadow.ts`: not a documented API, so only the first two arguments are read and the
-    // rest are passed straight through.
-    const renderer = (cy as unknown as { renderer(): Record<string, unknown> }).renderer();
-    const original = renderer['drawNodeOverlay'] as DrawNodeOverlay | undefined;
-    if (typeof original !== 'function') {
-        // A headless instance has no canvas renderer, and so nothing to draw text on.
-        return;
-    }
-    renderer['drawNodeOverlay'] = function (
-        this: unknown,
-        context: CanvasRenderingContext2D,
-        node: NodeSingular,
-        ...rest: [({ x: number, y: number } | undefined)?, (number | undefined)?, (number | undefined)?]
-    ): void {
-        if (node.visible()) {
-            const isRegion = node.isParent();
-            const center = textCenter(rest[0] ?? node.position(), node.outerHeight(), isRegion);
-            paintTextRuns(
-                context,
-                nodeTextRuns(
-                    node.id(),
-                    String(node.data('operator') ?? ''),
-                    Number(node.data('value')) || 0,
-                    theme(),
-                    isRegion),
-                Number(node.numericStyle('font-size')),
-                String(node.style('font-family')),
-                center.x,
-                center.y
-            );
-        }
-        original.call(this, context, node, ...rest);
-    } as DrawNodeOverlay;
+    paintNodeLayer(cy, 'drawNodeOverlay', (context, node, body) => {
+        const isRegion = node.isParent();
+        const center = textCenter(body.center, node.outerHeight(), isRegion);
+        paintTextRuns(
+            context,
+            nodeTextRuns(
+                node.id(),
+                String(node.data('operator') ?? ''),
+                Number(node.data('value')) || 0,
+                theme(),
+                isRegion),
+            Number(node.numericStyle('font-size')),
+            String(node.style('font-family')),
+            center.x,
+            center.y
+        );
+    });
 }

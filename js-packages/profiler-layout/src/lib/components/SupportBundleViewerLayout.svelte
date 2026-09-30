@@ -34,6 +34,7 @@
   import type { MetricsMode } from './MetricsView.svelte'
   import ProfilerDiagram from './ProfilerDiagram.svelte'
   import type { TooltipData } from './ProfilerTooltip.svelte'
+  import MetricSelect from './MetricSelect.svelte'
   import ProfileTimestampSelector from './ProfileTimestampSelector.svelte'
   import ConfigTab from './tabs/ConfigTab.svelte'
   import IssuesTab from './tabs/IssuesTab.svelte'
@@ -363,12 +364,7 @@
       {@render loadProfileControl?.()}
       <ProfileTimestampSelector {profileFiles} {selectedTimestamp} {onSelectTimestamp} />
       {#if hasProfile}
-        <!-- The search icon sits inside the field, before the text. -->
-        <div class="relative ml-auto flex items-center">
-          <span
-            class="fd fd-search pointer-events-none absolute left-2 text-[16px] text-surface-500"
-            aria-hidden="true"
-          ></span>
+        <div class="ml-auto">
           <input
             bind:this={nodeSearchInput}
             bind:value={nodeSearchQuery}
@@ -382,7 +378,7 @@
                 nodeSearchInput?.blur()
               }
             }}
-            class="input h-6 w-36 pl-7! text-sm"
+            class="input h-6 w-36 text-sm"
           />
         </div>
       {:else}
@@ -439,7 +435,7 @@
 {#snippet issuesLabel()}
   Issues &amp; Suggestions
   {#if triageResults.results.length > 0}
-    <span class="ml-1 inline-block min-w-5 rounded-[3px] bg-status-warning-subtle px-1 text-center font-medium text-status-warning">
+    <span class="ml-1 inline-block min-w-5 rounded px-1 font-medium preset-filled-warning-200-800">
       {triageResults.results.length}
     </span>
   {/if}
@@ -448,15 +444,7 @@
 {#snippet commonTabBarEnd()}
   <div class="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
     {#if metrics.length > 0}
-      <Select
-        bind:value={selectedMetricId}
-        class="select-sm w-42 bg-transparent! preset-outlined-surface-200-800"
-        title="Select metric"
-      >
-        {#each metrics as metric (metric.id)}
-          <option class="text-base" value={metric.id}>{metric.label}</option>
-        {/each}
-      </Select>
+      <MetricSelect bind:value={selectedMetricId} {metrics} class="w-42" title="Select metric" />
     {/if}
     <SearchBar
       bind:this={searchBar}
@@ -472,7 +460,6 @@
       onprevious={() => handleLookup('prev')}
       onclear={resetLookup}
       inputClass="h-8 w-40 text-sm"
-      buttonClass="btn-icon-sm preset-outlined-surface-200-800"
     />
   </div>
 {/snippet}
@@ -481,7 +468,7 @@
   <div class="flex items-center gap-2 px-2">
     <Select
       bind:value={issueSeverityFilter}
-      class="select-sm w-32"
+      class="select h-6 min-h-0 px-2 py-0! text-sm w-32"
       title="Filter by severity"
     >
       <option class="text-base" value="all">All severity</option>
@@ -491,7 +478,7 @@
     </Select>
     <Select
       bind:value={issueCategoryFilter}
-      class="select-sm w-32"
+      class="select h-6 min-h-0 px-2 py-0! text-sm w-32"
       title="Filter by category"
     >
       <option value="all">Category</option>
@@ -512,7 +499,7 @@
       { value: 'node', label: 'Node', disabled: !lastNodeData },
       { value: 'top-nodes', label: 'Top nodes', disabled: !hasProfile }
     ]}
-    size="sm"
+    class="px-2"
   />
   {#if metricsMode !== 'top-nodes'}
     <label class="flex h-6 cursor-pointer items-center gap-2 text-sm">

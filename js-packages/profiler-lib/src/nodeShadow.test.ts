@@ -15,8 +15,8 @@ const graph = () =>
         elements: {
             nodes: [
                 { data: { id: 'plain' } },
-                // A composite that is still collapsed: it has children, but none of them are on the
-                // graph, so cytoscape does not see it as a parent.
+                // A circuit region that is still collapsed: it has children, but none of them are on
+                // the graph, so cytoscape does not see it as a parent.
                 { data: { id: 'collapsed', has_children: true } },
                 { data: { id: 'region', has_children: true } },
                 { data: { id: 'inside', parent: 'region' } }

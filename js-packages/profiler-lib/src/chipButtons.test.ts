@@ -1,8 +1,8 @@
-// The chip boxes are exercised through a headless cytoscape instance carrying the real stylesheet:
-// they are computed from the resolved style, so a placement change in `chips.ts` has to move them
-// too. A headless instance measures no text, which leaves every node as wide as its padding - that
-// affects where a box sits, never how it is built, and every assertion below is written against the
-// edges the chips are anchored to.
+// Unit tests for the chip boxes and the chip buttons. The tests use a headless cytoscape instance with
+// the real stylesheet, because the chip boxes are calculated from the node style. So if `chips.ts`
+// moves a chip, the boxes move too. A headless instance does not measure text, so each node is only as
+// wide as its padding. This changes where a box is, but not how it is calculated. The assertions below
+// compare each box with the node edges that the chip is attached to.
 
 import cytoscape, { type Core, type NodeSingular } from 'cytoscape'
 import { describe, expect, it, vi } from 'vitest'
@@ -21,9 +21,8 @@ import { buildGraphStyle, type DiagramTheme } from './diagramTheme.js'
 
 const COUNT = 7
 
-/** Nodes are spread out after construction: a headless instance runs no layout, so every position
- *  given in an element definition stays where cytoscape put it - all of them on the origin, one on
- *  top of another. */
+/** A headless instance does not run a layout, so all nodes start at the origin, on top of each
+ *  other. `graph` moves them to these positions after it makes them. */
 const POSITIONS: Record<string, { x: number, y: number }> = {
     code: { x: 0, y: 0 },
     bare: { x: 200, y: 0 },
@@ -38,15 +37,15 @@ const graph = (theme: DiagramTheme = 'light') => {
         style: buildGraphStyle(theme),
         elements: {
             nodes: [
-                // An operator with source and nothing to count: code chip only.
+                // An operator with SQL source and no count: only the code chip.
                 {
                     data: { id: 'code', label: 'code', has_source: true, leaf_count: 0, chips: nodeChips(true, 0, theme) }
                 },
-                // An operator with neither.
+                // An operator with no chips.
                 {
                     data: { id: 'bare', label: 'bare', leaf_count: 0, chips: nodeChips(false, 0, theme) }
                 },
-                // A collapsed composite carrying both.
+                // A collapsed circuit region with both chips.
                 {
                     data: {
                         id: 'collapsed',
@@ -57,7 +56,7 @@ const graph = (theme: DiagramTheme = 'light') => {
                         chips: nodeChips(true, COUNT, theme)
                     }
                 },
-                // An expanded region and the operator inside it, both carrying chips.
+                // An expanded region with a counter chip, and an operator inside it with a code chip.
                 {
                     data: {
                         id: 'region',
@@ -87,8 +86,8 @@ const graph = (theme: DiagramTheme = 'light') => {
     return cy
 }
 
-/** A region `outer` holding a region `sub`, which holds the operator `deep`. Both regions are drawn
- *  expanded, the only way a nested region is drawn. */
+/** A region `outer` that holds a region `sub`, which holds the operator `deep`. Both regions are
+ *  expanded, because a nested region is always expanded. */
 const nestedGraph = (theme: DiagramTheme = 'light') => {
     const region = (id: string, parent?: string) => ({
         data: {
@@ -115,14 +114,14 @@ const nestedGraph = (theme: DiagramTheme = 'light') => {
     })
 }
 
-/** Which node's chip is at a point, as plain strings: a failing `expect` prints what it received,
- *  and a cytoscape element carries the whole graph with it. */
+/** The chip at a point as a string, for example `collapsed:counter`. A failing `expect` prints what
+ *  it got, and a string is easy to read. A cytoscape element would print the whole graph. */
 const under = (cy: Core, x: number, y: number): string => {
     const hit = hitTestChips(cy, x, y)
     return hit === null ? 'nothing' : `${hit.node.id()}:${hit.slot}`
 }
 
-/** The node's own box, the one cytoscape draws and places background images against. */
+/** The edges of the node body. Cytoscape places background images relative to this box. */
 const body = (node: NodeSingular) => {
     const padding = Number(node.numericStyle('padding'))
     const position = node.position()
@@ -156,63 +155,66 @@ describe('chipBox', () => {
         expect(counter.y1).toBeCloseTo(top + CHIP_INSET, 5)
         expect(counter.y2 - counter.y1).toBeCloseTo(BADGE_HEIGHT, 5)
         expect(counter.x2).toBeCloseTo(right - CHIP_INSET, 5)
-        // Stacked, with the gap the inset is: the two never touch.
+        // The code chip is above the counter, with a gap of `CHIP_INSET`, so the two chips do not
+        // touch.
         expect(counter.y1 - code.y2).toBeCloseTo(CHIP_INSET, 5)
         expect(counter.x2).toBeCloseTo(code.x2, 5)
     })
 
-    it('measures the counter by its pill, not by the canvas it is drawn on', () => {
-        // The canvas is sized for the widest count there can be and the rest of it is transparent;
-        // treating the canvas as the button would put the cursor on empty space left of the pill.
+    it('measures the counter by its pill, not by its whole image', () => {
+        // The counter image is wide enough for the longest count, and the part outside the pill is
+        // transparent. If the whole image were the button, the pointer cursor would show on the empty
+        // space left of the pill.
         const box = chipBox(graph().$id('collapsed'), 'counter')!
         expect(box.x2 - box.x1).toBeCloseTo(badgePillWidth(String(COUNT)), 5)
         expect(box.x2 - box.x1).toBeLessThan(BADGE_CANVAS_WIDTH)
     })
 
-    it('reports no box for a slot that carries no image', () => {
+    it('returns no box for a chip that the node does not show', () => {
         const cy = graph()
         expect(chipBox(cy.$id('code'), 'counter')).toBeNull()
         expect(chipBox(cy.$id('bare'), 'code')).toBeNull()
         expect(chipBox(cy.$id('bare'), 'counter')).toBeNull()
-        // Which is what the stylesheet leaves in an empty slot.
+        // `CHIP_NONE` is the value that the stylesheet uses when a node does not show a chip.
         expect(nodeChips(false, 0, 'light')).toEqual([CHIP_NONE, CHIP_NONE])
     })
 
-    it('follows the box of the region whose padding band the counter sits in', () => {
+    it('places the counter of an expanded region against the region box', () => {
         const cy = graph()
         const region = cy.$id('region')
         const box = chipBox(region, 'counter')!
         const { right, top } = body(region)
         expect(box.x2).toBeCloseTo(right - CHIP_INSET, 5)
         expect(box.y1).toBeCloseTo(top + CHIP_INSET, 5)
-        // A region is sized by its children, so this is a different box from any node's above.
+        // The size of a region comes from its children, so its box is different from the box of the
+        // node inside it.
         expect(box.x2).not.toBeCloseTo(chipBox(cy.$id('inside'), 'code')!.x2, 5)
     })
 })
 
 describe('chipAt', () => {
-    it('hits a chip over its pill and nowhere else', () => {
+    it('finds a chip only over its pill', () => {
         const node = graph().$id('collapsed')
         const counter = chipBox(node, 'counter')!
         expect(chipAt(node, center(counter).x, center(counter).y)).toBe('counter')
         const code = chipBox(node, 'code')!
         expect(chipAt(node, center(code).x, center(code).y)).toBe('code')
-        // In the gap between the two, and in the node's own text row below them.
+        // Not in the gap between the two chips, and not in the text row below them.
         expect(chipAt(node, center(counter).x, code.y2 + CHIP_INSET / 2)).toBeNull()
         expect(chipAt(node, center(counter).x, counter.y2 + 1)).toBeNull()
     })
 
-    it('misses the transparent part of the counter canvas', () => {
+    it('ignores the transparent part of the counter image', () => {
         const node = graph().$id('collapsed')
         const counter = chipBox(node, 'counter')!
-        // Left of the pill, still inside the canvas that carries it.
+        // Left of the pill, but still inside the counter image.
         expect(BADGE_CANVAS_WIDTH).toBeGreaterThan(counter.x2 - counter.x1)
         expect(chipAt(node, counter.x1 - 2, center(counter).y)).toBeNull()
     })
 })
 
 describe('hitTestChips', () => {
-    it('finds the chip whatever node it belongs to', () => {
+    it('finds the chip on any node', () => {
         const cy = graph()
         for (const [id, slot] of [['code', 'code'], ['collapsed', 'counter'], ['region', 'counter']] as const) {
             const box = chipBox(cy.$id(id), slot)!
@@ -220,16 +222,16 @@ describe('hitTestChips', () => {
         }
     })
 
-    it('prefers a child over the region around it, the order the two are drawn in', () => {
-        // A region's counter shares the padding band above its children with the code chips those
-        // children hang into it; the child is drawn over the region, so the child's chip is the one
-        // the pointer is on.
+    it('prefers the chip of a node over the chip of the region around it', () => {
+        // Near the top edge of a region, the counter of the region can overlap the code chip of a node
+        // inside it. The node is drawn on top of the region, so the pointer is on the chip of the node.
         const cy = graph()
         const code = chipBox(cy.$id('inside'), 'code')!
         const counter = chipBox(cy.$id('region'), 'counter')!
         const x = (Math.max(code.x1, counter.x1) + Math.min(code.x2, counter.x2)) / 2
         const y = (Math.max(code.y1, counter.y1) + Math.min(code.y2, counter.y2)) / 2
-        // The fixture has to actually overlap here, or the preference is untested.
+        // Check that the two chips really overlap at this point. If they do not, this test checks
+        // nothing.
         expect(chipAt(cy.$id('inside'), x, y)).toBe('code')
         expect(chipAt(cy.$id('region'), x, y)).toBe('counter')
         expect(under(cy, x, y)).toBe('inside:code')
@@ -243,7 +245,7 @@ describe('hitTestChips', () => {
     })
 
     it('ignores a node that is not on screen', () => {
-        // The circuit's root node is one of those: the stylesheet gives it `display: none`.
+        // For example the root node of the circuit, which the stylesheet hides with `display: none`.
         for (const hide of [{ visibility: 'hidden' }, { display: 'none' }]) {
             const cy = graph()
             const box = chipBox(cy.$id('collapsed'), 'counter')!
@@ -255,7 +257,7 @@ describe('hitTestChips', () => {
 })
 
 describe('isToggleable', () => {
-    it('holds for a composite no region holds, and for nothing else', () => {
+    it('is true only for a top-level circuit region', () => {
         const cy = graph()
         expect(isToggleable(cy.$id('collapsed'))).toBe(true)
         expect(isToggleable(cy.$id('region'))).toBe(true)
@@ -274,17 +276,18 @@ describe('refreshChips', () => {
         expect(node.data('chips')).toEqual(nodeChips(true, COUNT, 'light'))
     })
 
-    it('offers a collapsed composite the expand control and an expanded region the collapse one', () => {
+    it('shows the expand icon on a collapsed region, the collapse icon on an expanded one', () => {
         const cy = graph()
         refreshChips(cy.$id('collapsed'), 'light', true)
         expect(cy.$id('collapsed').data('chips')[1]).toBe(nodeChips(false, COUNT, 'light', 'expand')[1])
         refreshChips(cy.$id('region'), 'light', true)
         expect(cy.$id('region').data('chips')[1]).toBe(nodeChips(false, COUNT, 'light', 'collapse')[1])
-        // The two controls are not the same image, or the button would say nothing about direction.
+        // The two icons must be different images, or the user cannot tell what a click on the chip
+        // does.
         expect(cy.$id('collapsed').data('chips')[1]).not.toBe(cy.$id('region').data('chips')[1])
     })
 
-    it('keeps the count on a hovered nested region, which only its parent collapses', () => {
+    it('keeps the count on a nested region, because only its parent collapses', () => {
         const cy = nestedGraph()
         refreshChips(cy.$id('sub'), 'light', true)
         expect(cy.$id('sub').data('chips')).toEqual(nodeChips(false, 1, 'light'))
@@ -292,23 +295,24 @@ describe('refreshChips', () => {
         expect(cy.$id('outer').data('chips')[1]).toBe(nodeChips(false, 1, 'light', 'collapse')[1])
     })
 
-    it('leaves a node with nothing to count without a control', () => {
+    it('shows no icon on a node without a counter', () => {
         const node = graph().$id('code')
         refreshChips(node, 'light', true)
         expect(node.data('chips')[1]).toBe(CHIP_NONE)
     })
 
-    it('rewrites the images for the palette, which each chip carries inside it', () => {
+    it('makes the images again for a new theme, because each image contains its colors', () => {
         const node = graph().$id('collapsed')
         refreshChips(node, 'dark')
         expect(node.data('chips')).toEqual(nodeChips(true, COUNT, 'dark'))
     })
 })
 
-/** A core that records what `installChipButtons` binds, delegating the graph itself to a real headless
- *  instance. Cytoscape's own emitter cannot deliver a synthetic pointer position, and the press is bound
- *  to the container rather than to the emitter at all. The renderer projects a client position onto the
- *  graph unchanged, so a test presses at the coordinates a chip box is given in. */
+/** A fake cytoscape core that records the listeners that `installChipButtons` adds, and uses a real
+ *  headless instance for the graph. The tests cannot use the cytoscape event emitter: it cannot send
+ *  a fake pointer position, and the `mousedown` and `mouseup` listeners are on the container, not on
+ *  the emitter. The fake renderer returns client positions unchanged, so a test can click at the
+ *  coordinates of a chip box. */
 const harness = (cy: Core) => {
     const listeners: Record<string, (event: unknown) => void> = {}
     const container = {
@@ -335,8 +339,8 @@ const harness = (cy: Core) => {
                 (entry.handler as (e: unknown) => void)(event)
             }
         },
-        /** A mouse press or release at a point on the graph, returning what the handler was allowed to
-         *  do with it: whether it was kept from cytoscape, whose own listener is bound behind this one. */
+        /** Send a `mousedown` or `mouseup` at a point on the graph. `stopped` is true if the
+         *  listener stopped the event, so that the cytoscape listener behind it does not get it. */
         mouse: (type: 'mousedown' | 'mouseup', point: { x: number, y: number }, button = 0) => {
             const event = {
                 clientX: point.x,
@@ -359,7 +363,7 @@ const at = (cy: Core, id: string, slot: 'code' | 'counter') => {
 describe('installChipButtons', () => {
     const actions = () => ({ onSource: vi.fn(), onToggle: vi.fn() })
 
-    it('points the cursor at a chip and leaves it alone everywhere else', () => {
+    it('shows the pointer cursor only over a chip', () => {
         const cy = graph()
         const { core, container, fire } = harness(cy)
         installChipButtons(core, () => 'light', actions())
@@ -370,10 +374,11 @@ describe('installChipButtons', () => {
         expect(container.style.cursor).toBe('')
     })
 
-    it('presses the chip on release, and keeps the press from cytoscape', () => {
-        // Cytoscape hit-tests a press by the node's own shape, and every chip is drawn outside one: a
-        // press that reached cytoscape would land on whatever the chip is drawn over - a whole region,
-        // for a code chip resting in its top band - which it would then mark, select and drag.
+    it('clicks the chip on mouseup, and hides the mousedown from cytoscape', () => {
+        // Cytoscape finds the node under the pointer by the node shape, and the chips are outside that
+        // shape. If cytoscape got the `mousedown`, it would treat it as a mouse button press on the
+        // node under the chip (for a code chip, this can be a whole region), and select and drag that
+        // node.
         const cy = graph()
         const { core, mouse } = harness(cy)
         const handlers = actions()
@@ -381,14 +386,14 @@ describe('installChipButtons', () => {
         const chip = at(cy, 'collapsed', 'code').position
 
         expect(mouse('mousedown', chip).stopped).toBe(true)
-        // Nothing is pressed until it is let go of, as it is for every other button.
+        // As with any button, nothing happens before `mouseup`.
         expect(handlers.onSource).not.toHaveBeenCalled()
         mouse('mouseup', chip)
         expect(handlers.onSource).toHaveBeenCalledWith('collapsed')
         expect(handlers.onToggle).not.toHaveBeenCalled()
     })
 
-    it('leaves a press that is not on a chip to cytoscape', () => {
+    it('lets cytoscape handle a mousedown that is not on a chip', () => {
         const cy = graph()
         const { core, mouse } = harness(cy)
         const handlers = actions()
@@ -397,14 +402,14 @@ describe('installChipButtons', () => {
 
         expect(mouse('mousedown', elsewhere).stopped).toBe(false)
         mouse('mouseup', elsewhere)
-        // And a press of another button, which is not what a button answers.
+        // Also a click with a button other than the left button, which chips ignore.
         expect(mouse('mousedown', at(cy, 'collapsed', 'counter').position, 2).stopped).toBe(false)
         mouse('mouseup', at(cy, 'collapsed', 'counter').position, 2)
         expect(handlers.onSource).not.toHaveBeenCalled()
         expect(handlers.onToggle).not.toHaveBeenCalled()
     })
 
-    it('cancels a press let go of anywhere but the chip it started on', () => {
+    it('cancels the click when the mouseup is not on the chip of the mousedown', () => {
         const cy = graph()
         const { core, mouse } = harness(cy)
         const handlers = actions()
@@ -412,16 +417,16 @@ describe('installChipButtons', () => {
 
         mouse('mousedown', at(cy, 'collapsed', 'code').position)
         mouse('mouseup', { x: 10_000, y: 10_000 })
-        // Including the other chip of the same node, which is a different button.
+        // This includes the other chip of the same node, which is a different button.
         mouse('mousedown', at(cy, 'collapsed', 'code').position)
         mouse('mouseup', at(cy, 'collapsed', 'counter').position)
         expect(handlers.onSource).not.toHaveBeenCalled()
         expect(handlers.onToggle).not.toHaveBeenCalled()
     })
 
-    it('dispatches the action of the chip tapped, and only over a chip', () => {
-        // The tap is touch and pen: cytoscape routes both through its own touch handling and reports
-        // them as one, and a press it never saw reports nothing to answer here.
+    it('runs the action of a tapped chip, and ignores a tap outside the chips', () => {
+        // Cytoscape reports a tap for touch and pen input. A mouse click does not cause a tap here,
+        // because the `mousedown` listener hides it from cytoscape.
         const cy = graph()
         const { core, fire } = harness(cy)
         const handlers = actions()
@@ -440,7 +445,7 @@ describe('installChipButtons', () => {
         expect(handlers.onToggle).toHaveBeenCalledTimes(1)
     })
 
-    it('swaps the count for a control while the node is hovered', () => {
+    it('shows an icon instead of the count while the pointer is on the node', () => {
         const cy = graph()
         const { core, fire } = harness(cy)
         installChipButtons(core, () => 'light', actions())
@@ -452,9 +457,9 @@ describe('installChipButtons', () => {
         expect(node.data('chips')[1]).toBe(nodeChips(false, COUNT, 'light')[1])
     })
 
-    it('shows the count again after a layout, which moves the node out from under the pointer', () => {
-        // Pressing the control is what runs a layout, and cytoscape only resolves what is hovered on
-        // the next pointer move - so nothing else would take the stale control off the node.
+    it('shows the count again after a layout moves the node away from the pointer', () => {
+        // A click on the icon starts a layout, and cytoscape finds the node under the pointer again
+        // only when the pointer moves. So only the `layoutstop` listener can remove the old icon.
         const cy = graph()
         const { core, fire } = harness(cy)
         installChipButtons(core, () => 'light', actions())
@@ -466,7 +471,7 @@ describe('installChipButtons', () => {
         expect(node.data('chips')[1]).toBe(nodeChips(false, COUNT, 'light')[1])
     })
 
-    it('makes the counter of a nested region no button, and never swaps its count', () => {
+    it('does not make the counter of a nested region a button, and always shows its count', () => {
         const cy = nestedGraph()
         const { core, container, fire, mouse } = harness(cy)
         const handlers = actions()
@@ -481,7 +486,7 @@ describe('installChipButtons', () => {
         fire('tap', { position: counter })
         expect(handlers.onToggle).not.toHaveBeenCalled()
 
-        // The pointer on the nested region is on it alone: neither region shows a control.
+        // A pointer on the nested region shows no icon on it, and no icon on the region around it.
         fire('mouseover', { target: cy.$id('sub') })
         expect(cy.$id('sub').data('chips')[1]).toBe(nodeChips(false, 1, 'light')[1])
         expect(cy.$id('outer').data('chips')[1]).toBe(nodeChips(false, 1, 'light')[1])
@@ -489,7 +494,7 @@ describe('installChipButtons', () => {
         expect(cy.$id('outer').data('chips')[1]).toBe(nodeChips(false, 1, 'light', 'collapse')[1])
     })
 
-    it('survives an instance with no container to set a cursor on', () => {
+    it('works on an instance with no container', () => {
         const cy = graph()
         const bound: Array<(e: unknown) => void> = []
         const core = {

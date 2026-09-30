@@ -1,38 +1,36 @@
-// An interface for observers of the diagram's lifecycle, for behaviours that react to it.
+// The interface for code that reacts to events in the diagram's lifecycle.
 //
-// `CytographRendering` runs the diagram: it holds the graph, diffs it, lays it out, colors it and answers
-// questions about nodes. A few behaviours only need to be told when those things happen - where the view
-// belongs once a layout finishes, what covers the screen while one is computed. Each of those is a
-// `DiagramObserver`: its own file, its own state, reached only through the hooks below.
+// `CytographRendering` controls the diagram: it keeps the graph, updates it, runs the layout, sets the
+// colors and gives information about nodes. Some features only need to know when these events occur,
+// for example to move the view when a layout is finished, or to hide the diagram while a layout runs.
+// Each such feature is a `DiagramObserver` in its own file, with its own state. `CytographRendering`
+// calls it only through the hooks below.
 //
-// Data flows one way: `CytographRendering` tells the observers what happened, and never reads anything
-// back from them. What an observer does with a hook is its own business, so the diagram cannot come to
-// depend on it. They are notified in the order `CytographRendering` lists them, which matters at
-// `layoutSettled`: the view settles the zoom and the pan before the picture held over the layout comes
-// down onto it.
+// The hooks return nothing: `CytographRendering` tells the observers about events and gets no data
+// back from them.
 
 import type { DiagramTheme } from './diagramTheme.js';
 import type { NodeId } from './profile.js';
 
-/** Every hook is optional; an observer implements the ones it has an opinion about. */
+/** All hooks are optional. An observer implements only the hooks it needs. */
 export interface DiagramObserver {
-    /** The graph is about to be rebuilt: elements added or removed, then a layout run over them. */
+    /** The graph is about to change: elements are added or removed, then a layout runs. */
     graphWillChange?(): void;
-    /** A layout has finished and every node is in its final position. */
+    /** A layout is finished and all nodes are at their final positions. */
     layoutSettled?(): void;
-    /** A layout could not be started, so no `layoutSettled` follows the graph change before it. */
+    /** `layout(...).run()` threw, so `layoutSettled` is not called for the last graph change. */
     layoutFailed?(): void;
-    /** The user expanded or collapsed a composite. The layout for it has not run yet. */
-    compositeToggled?(node: NodeId): void;
-    /** The palette changed. Nothing moves. */
+    /** The user expanded or collapsed a circuit region. The layout for it has not run yet. */
+    circuitRegionToggled?(node: NodeId): void;
+    /** The theme changed. No node moves. */
     themeChanged?(theme: DiagramTheme): void;
-    /** The diagram is going away, while cytoscape is still alive. */
+    /** The diagram is about to be destroyed. Cytoscape is still available. */
     dispose?(): void;
 }
 
-/** Tell every observer, in the order given, that something happened. One that throws does not cost the
- *  rest their turn: the observers know nothing about each other, and the one notified last holds a
- *  picture over the diagram that only its own `layoutSettled` takes down. */
+/** Call `hook` on each observer, in array order. If an observer throws, the error is logged and the
+ *  next observers are still called. The observers are independent, so one failure must not stop the
+ *  others. */
 export function notifyObservers(
     observers: Iterable<DiagramObserver>,
     hook: (observer: DiagramObserver) => void

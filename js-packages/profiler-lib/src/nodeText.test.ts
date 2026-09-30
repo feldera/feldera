@@ -2,7 +2,7 @@ import cytoscape from 'cytoscape'
 import { describe, expect, it } from 'vitest'
 import { BADGE_HEIGHT, CHIP_INSET } from './chips.js'
 import {
-    COMPOSITE_OUTER_HEIGHT,
+    COLLAPSED_REGION_OUTER_HEIGHT,
     DIAGRAM_PALETTES,
     HEAT_TEXT_FLIP,
     ID_FONT_WEIGHT,
@@ -93,12 +93,12 @@ describe('textCenter', () => {
         expect(textCenter(position, NODE_OUTER_HEIGHT, false)).toEqual(position)
     })
 
-    it('puts it in the second row of a collapsed composite, the first being the counter chip', () => {
-        const center = textCenter(position, COMPOSITE_OUTER_HEIGHT, false)
+    it('puts it in the second row of a collapsed region, the first being the counter chip', () => {
+        const center = textCenter(position, COLLAPSED_REGION_OUTER_HEIGHT, false)
         expect(center.x).toBe(position.x)
         // The text row is the bottom `NODE_OUTER_HEIGHT` of the node: its center sits half a row above
         // the bottom edge, wherever the extra height went.
-        expect(center.y).toBe(position.y + COMPOSITE_OUTER_HEIGHT / 2 - NODE_OUTER_HEIGHT / 2)
+        expect(center.y).toBe(position.y + COLLAPSED_REGION_OUTER_HEIGHT / 2 - NODE_OUTER_HEIGHT / 2)
     })
 
     it('puts the name of an expanded region in the band along its top edge', () => {

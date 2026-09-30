@@ -4,9 +4,10 @@
 // the graph on screen takes, which is why they run over a graph too tall to fit.
 
 import { describe, expect, it } from 'vitest'
-import { COMPOSITE, MANY, mountDiagram, settle } from '../test-support/mountDiagram.js'
+import { CIRCUIT_REGION, MANY, mountDiagram, settle } from '../test-support/mountDiagram.js'
 
-/** Rendered height of a node's own box, which is what the view's zoom is chosen by. */
+/** Rendered height of a node's own box. All operators have the same height and font size, so the same
+ *  height on screen means the same text size on screen. */
 // biome-ignore lint/suspicious/noExplicitAny: the cytoscape instance the harness hands back
 const height = (cy: any, id: string) => cy.$id(id).renderedHeight()
 
@@ -50,10 +51,10 @@ describe('the view', () => {
     cleanup()
   })
 
-  it('leaves the view where it is when a composite is expanded or collapsed', async () => {
-    // Centering the view on the composite instead would move everything the user was looking at, the
-    // node they pressed included.
-    const { cy, toggle, cleanup } = await mountDiagram('light', COMPOSITE)
+  it('leaves the view where it is when a circuit region is expanded or collapsed', async () => {
+    // Centering the view on the circuit region instead would move everything the user was looking at,
+    // the node they clicked included.
+    const { cy, toggle, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
     await settle()
     const before = { pan: { ...cy.pan() }, zoom: cy.zoom() }
 
@@ -69,11 +70,11 @@ describe('the view', () => {
     cleanup()
   })
 
-  it('pans to a toggled composite when the new layout leaves it off screen', async () => {
-    // Leaving the view alone is only right while the node is still in it. A layout can move a composite
-    // that grew or shrank clear off screen, and the user is then looking at somewhere else entirely,
-    // with nothing to say where the node they pressed went.
-    const { cy, container, toggle, cleanup } = await mountDiagram('light', COMPOSITE)
+  it('pans to a toggled circuit region when the new layout leaves it off screen', async () => {
+    // Leaving the view alone is only right while the node is still in it. A layout can move a circuit
+    // region that grew or shrank clear off screen, and the user is then looking at somewhere else
+    // entirely, with nothing to say where the node they clicked went.
+    const { cy, container, toggle, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
     await settle()
     const zoom = cy.zoom()
 
@@ -91,7 +92,7 @@ describe('the view', () => {
   })
 
   it('holds the last layout on screen while the next one is computed', async () => {
-    const { cy, container, cleanup } = await mountDiagram('light', COMPOSITE)
+    const { cy, container, cleanup } = await mountDiagram('light', CIRCUIT_REGION)
     await settle()
     // Cytoscape's own canvases. The copy held over them is one more canvas alongside, so anything here
     // that is not one of these is the copy.
