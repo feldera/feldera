@@ -553,10 +553,6 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                      runtime_aggtest/illarg_tests/test_cmp_operators.py|
                      runtime_aggtest/unsigned_int_tests/test_un_int_arith_fn.py
                      """, false),
-            new Func(SqlLibraryOperators.REGEXP_REPLACE_2, "REGEXP_REPLACE", SqlLibrary.REDSHIFT, "string#regexp_replace",
-                    "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
-            new Func(SqlLibraryOperators.REGEXP_REPLACE_3, "REGEXP_REPLACE", SqlLibrary.REDSHIFT, "string#regexp_replace",
-                    "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py", false),
 
             // More aggregates
             new Func(SqlLibraryOperators.BOOL_AND, "BOOL_AND", SqlLibrary.POSTGRESQL, "aggregates#logical_and",

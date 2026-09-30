@@ -100,6 +100,7 @@ public class CustomFunctions {
         this.functions.add(ParseJsonFunction.INSTANCE);
         this.functions.add(ParseTimeFunction.INSTANCE);
         this.functions.add(ParseTimestampFunction.INSTANCE);
+        this.functions.add(RegexpReplaceFunction.INSTANCE);
         this.functions.add(RlikeFunction.INSTANCE);
         this.functions.add(SqlSafeCastFunction.INSTANCE);
         this.functions.add(SequenceFunction.INSTANCE);
@@ -734,6 +735,18 @@ public class CustomFunctions {
                     ReturnTypes.BOOLEAN_NULLABLE,
                     OperandTypes.STRING_STRING,
                     SqlFunctionCategory.STRING, "string#rlike-function", FunctionDocumentation.NO_FILE);
+        }
+    }
+
+    static class RegexpReplaceFunction extends NonOptimizedFunction {
+        static final RegexpReplaceFunction INSTANCE = new RegexpReplaceFunction();
+
+        private RegexpReplaceFunction() {
+            super("REGEXP_REPLACE",
+                    ReturnTypes.VARCHAR_NULLABLE,
+                    OperandTypes.STRING_STRING.or(OperandTypes.STRING_STRING_STRING),
+                    SqlFunctionCategory.STRING, "string#regexp_replace",
+                    "runtime_aggtest/illarg_tests/test_{str_bin_type_fn,str_unicode_fn}.py");
         }
     }
 

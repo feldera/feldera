@@ -940,8 +940,24 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         operandCount + " arguments is unknown", node);
     }
 
+    /** Warn if {@code arg} is a constant pattern that the Rust regex crate rejects for sure;
+     * the warning points at {@code call}, since literals carry no source position */
+    void checkRegexLiteral(CalciteObject call, DBSPExpression arg) {
+        if (!arg.is(DBSPStringLiteral.class))
+            return;
+        String pattern = arg.to(DBSPStringLiteral.class).value;
+        if (pattern == null)
+            return;
+        String construct = RustRegexChecker.unsupportedConstruct(pattern);
+        if (construct != null)
+            this.compiler.reportWarning(call.getPositionRange(), RustRegexChecker.WARNING,
+                    RustRegexChecker.message(pattern, construct));
+    }
+
+    /** Parse the regular expression {@code arg} of {@code call} */
     @Nullable
-    DBSPExpression makeRegex(DBSPExpression arg) {
+    DBSPExpression makeRegex(CalciteObject call, DBSPExpression arg) {
+        this.checkRegexLiteral(call, arg);
         DBSPType argType = arg.getType();
         if (!argType.is(DBSPTypeString.class)) {
             this.compiler.reportWarning(arg.getSourcePosition(),
@@ -1681,7 +1697,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             if (i != 1)
                                 this.ensureString(ops, i);
                         }
-                        ops.set(1, this.makeRegex(ops.get(1)));
+                        ops.set(1, this.makeRegex(node, ops.get(1)));
                         return compileStrictFunction(call, node, type, ops, 2, 3);
                     }
                     case "parse_date":
@@ -1943,7 +1959,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 validateArgCount(node, operationName, ops.size(), 2);
                 // Calcite does not enforce the type of the arguments, why?
                 this.ensureString(ops, 0);
-                ops.set(1, this.makeRegex(ops.get(1)));
+                ops.set(1, this.makeRegex(node, ops.get(1)));
                 return compileFunction(call, node, type, ops, 2);
             }
             case POSITION: {
