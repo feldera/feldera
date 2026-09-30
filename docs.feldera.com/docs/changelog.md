@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+## v0.358.0
+
 - Incompatible change (SQL): a `RANGE` window frame with a bound of the
   form `n PRECEDING` or `n FOLLOWING` now requires an `ORDER BY` column
   that cannot be `NULL`.  A program using e.g.,
