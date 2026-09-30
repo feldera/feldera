@@ -264,6 +264,7 @@ nix = { workspace = true, features = ["signal", "mman", "feature"] }
 vergen-gitcl = { workspace = true }
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
 # Test key generation only; runtime signing goes through aws-lc-rs.
 nkeys = { workspace = true }
 actix-test = { workspace = true }

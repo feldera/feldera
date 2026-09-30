@@ -325,7 +325,7 @@ async fn queue_responds_while_retrying() {
     handle.await.unwrap().unwrap();
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn pause_cancels_retry_backoff_and_extend_restarts() {
     let stream = Arc::new(FakeS2Stream::new(vec![
         FakeAction::Session(Err(retryable_error())),
@@ -334,21 +334,36 @@ async fn pause_cancels_retry_backoff_and_extend_restarts() {
     let (sender, receiver) = unbounded_channel();
     let consumer = RecordingConsumer::new();
     consumer.allow_errors();
-    let handle = spawn_worker(
-        stream.clone(),
-        consumer,
-        receiver,
+    // Use the production backoff with a virtual clock. The other tests' 1 ms
+    // backoff can expire while wait_for() advances time by its 1 ms poll interval.
+    let handle = tokio::spawn(S2Reader::worker_task_with_backoff(
+        Arc::new(basic_config(S2StartFrom::Beginning)),
         S2CheckpointMetadata {
             seq_num_range: 0..0,
             position_resolved: true,
         },
-        S2StartFrom::Beginning,
-    );
+        stream.clone(),
+        Box::new(consumer.clone()),
+        Box::new(RecordingParser::new()),
+        receiver,
+        BackoffConfig::default(),
+    ));
 
     sender.send(InputReaderCommand::Extend).unwrap();
-    wait_for(|| stream.session_attempts() == 1).await;
+    // An attempted session alone does not mean the worker has handled its error
+    // and entered ErrorRetrying. Wait for the error to reach the consumer first.
+    wait_for(|| consumer.error_count() == 1).await;
+    assert_eq!(stream.session_attempts(), 1);
     sender.send(InputReaderCommand::Pause).unwrap();
-    tokio::time::sleep(Duration::from_millis(10)).await;
+    // Commands are processed in order, so this Queue's completion acknowledges
+    // that the preceding Pause has been handled before we advance past the retry.
+    sender
+        .send(InputReaderCommand::Queue {
+            checkpoint_requested: false,
+        })
+        .unwrap();
+    wait_for(|| consumer.extended().len() == 1).await;
+    tokio::time::sleep(RECONNECT_MAX_BACKOFF * 2).await;
     assert_eq!(stream.session_attempts(), 1);
     sender.send(InputReaderCommand::Extend).unwrap();
     wait_for(|| stream.session_attempts() == 2).await;
