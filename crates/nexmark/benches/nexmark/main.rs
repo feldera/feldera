@@ -10,10 +10,7 @@ use dbsp::circuit::{
 };
 use dbsp::storage::backend::tempdir_for_thread;
 use dbsp::utils::Tup2;
-use dbsp::{
-    DBSPHandle, RootCircuit, Runtime, ZSetHandle, ZWeight,
-    mimalloc::{AllocStats, MiMalloc},
-};
+use dbsp::{DBSPHandle, RootCircuit, Runtime, ZSetHandle, ZWeight, process_stats::ProcessStats};
 use dbsp_nexmark::{
     NexmarkSource,
     config::Config as NexmarkConfig,
@@ -35,9 +32,6 @@ use std::{
 use tracing_log::LogTracer;
 use tracing_subscriber::EnvFilter;
 
-#[global_allocator]
-static ALLOC: MiMalloc = MiMalloc;
-
 /// Currently just the elapsed time, but later add CPU and Mem.
 #[serde_as]
 #[derive(Default, Serialize)]
@@ -47,8 +41,8 @@ struct NexmarkResult {
     num_events: u64,
     #[serde_as(as = "DurationSecondsWithFrac<String>")]
     elapsed: Duration,
-    before_stats: AllocStats,
-    after_stats: AllocStats,
+    before_stats: ProcessStats,
+    after_stats: ProcessStats,
 }
 
 struct InputStats {
@@ -296,8 +290,7 @@ fn run_query(config: &NexmarkConfig, query: Query) -> NexmarkResult {
         source_exhausted_tx,
     );
 
-    ALLOC.reset_stats();
-    let before_stats = ALLOC.stats();
+    let before_stats = ProcessStats::current();
     let start = Instant::now();
 
     let input_stats = coordinate_input_and_steps(
@@ -313,7 +306,7 @@ fn run_query(config: &NexmarkConfig, query: Query) -> NexmarkResult {
     .unwrap();
 
     let elapsed = start.elapsed();
-    let after_stats = ALLOC.stats();
+    let after_stats = ProcessStats::current();
 
     // Return the user/system CPU overhead from the generator/input thread.
     NexmarkResult {
@@ -363,11 +356,11 @@ fn main() -> Result<()> {
             ),
             format!(
                 "{:#.3?}",
-                Duration::from_millis((after.user_ms - before.user_ms) as u64),
+                Duration::from_millis(after.user_ms - before.user_ms),
             ),
             format!(
                 "{:#.3?}",
-                Duration::from_millis((after.system_ms - before.system_ms) as u64),
+                Duration::from_millis(after.system_ms - before.system_ms),
             ),
             format!("{}", HumanBytes::from(after.peak_rss)),
             format!("{}", after.page_faults - before.page_faults),
@@ -392,21 +385,13 @@ fn main() -> Result<()> {
                 "num_cores",
                 "num_events",
                 "elapsed",
-                "allocstats_before_elapsed_ms",
                 "allocstats_before_user_ms",
                 "allocstats_before_system_ms",
-                "allocstats_before_current_rss",
                 "allocstats_before_peak_rss",
-                "allocstats_before_current_commit",
-                "allocstats_before_peak_commit",
                 "allocstats_before_page_faults",
-                "allocstats_after_elapsed_ms",
                 "allocstats_after_user_ms",
                 "allocstats_after_system_ms",
-                "allocstats_after_current_rss",
                 "allocstats_after_peak_rss",
-                "allocstats_after_current_commit",
-                "allocstats_after_peak_commit",
                 "allocstats_after_page_faults",
             ])?;
         }

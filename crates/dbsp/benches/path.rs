@@ -1,10 +1,7 @@
 use dbsp::{
-    Circuit, OrdZSet, RootCircuit, Runtime, Stream, mimalloc::MiMalloc, operator::Generator,
+    Circuit, OrdZSet, RootCircuit, Runtime, Stream, operator::Generator,
     typed_batch::DynBatchReader, utils::Tup2,
 };
-
-#[global_allocator]
-static ALLOC: MiMalloc = MiMalloc;
 
 fn main() {
     let hruntime = Runtime::run(16, |_parker| {
