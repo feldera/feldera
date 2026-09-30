@@ -28,6 +28,9 @@ public abstract class ColumnWithLateness<R, V> {
     /** The LATENESS clause of the column in a CREATE TABLE statement. */
     protected abstract String latenessSql();
 
+    /** The SQL type of the column. */
+    protected abstract String sqlType();
+
     @Override
     public String toString() {
         return this.name;
