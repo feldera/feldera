@@ -61,6 +61,18 @@ frame over a nullable column, filter out the `NULL` values first, for
 example with `WHERE ts IS NOT NULL`.
 See [#7277](https://github.com/feldera/feldera/issues/7277).
 
+### `DISTINCT` in window aggregates
+
+Window aggregates cannot use `DISTINCT`; for example,
+`COUNT(DISTINCT x) OVER (PARTITION BY p ORDER BY ts RANGE BETWEEN
+INTERVAL 1 HOUR PRECEDING AND CURRENT ROW)` is rejected.  The
+exceptions are the aggregates whose results are the same with or
+without `DISTINCT`: `MIN`, `MAX`, `BIT_AND`, `BIT_OR`, `EVERY`,
+`SOME`, `BOOL_AND`, `BOOL_OR`, `LOGICAL_AND`, and `LOGICAL_OR`.  An
+aggregate over a whole partition,
+such as `COUNT(DISTINCT x) OVER (PARTITION BY p)`, can be computed with
+`GROUP BY p` and joined back on `p`.
+
 ### Constant Window Boundaries
 
 Window boundaries must be constant expressions. For example, `RANGE

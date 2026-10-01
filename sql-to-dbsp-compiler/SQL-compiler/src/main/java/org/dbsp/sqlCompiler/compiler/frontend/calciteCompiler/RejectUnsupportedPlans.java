@@ -30,6 +30,7 @@ import org.dbsp.util.Utilities;
  * <ul>
  *   <li>equality comparisons applied to ROW values;</li>
  *   <li>{@code MODE(DISTINCT value)};</li>
+ *   <li>window aggregates with {@code DISTINCT}, such as {@code COUNT(DISTINCT x) OVER (...)};</li>
  *   <li>RANGE window frames with an offset bound over a nullable ORDER BY expression.</li>
  * </ul>
  *
@@ -55,6 +56,8 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
     public static final Documentation.Link WINDOW_DOCUMENTATION =
             new Documentation.Link("sql/unsupported-operations",
                     "range-frames-with-offsets-over-nullable-columns");
+    public static final Documentation.Link DISTINCT_WINDOW_DOCUMENTATION =
+            new Documentation.Link("sql/unsupported-operations", "distinct-in-window-aggregates");
 
     private final CheckExpression checker;
 
@@ -105,8 +108,17 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
 
         @Override
         public RexNode visitOver(RexOver over) {
+            checkDistinct(over);
             this.checkRangeFrame(over);
             return super.visitOver(over);
+        }
+
+        /** Throw if a window aggregate uses DISTINCT; the plan cannot be translated */
+        static void checkDistinct(RexOver over) {
+            if (over.isDistinct())
+                throw new UnsupportedException("Window aggregates do not support DISTINCT.\n" +
+                        DISTINCT_WINDOW_DOCUMENTATION.citation(),
+                        new SourcePositionRange(over.getParserPosition()));
         }
 
         /** Report an error if a RANGE frame with an offset bound orders by an expression that
