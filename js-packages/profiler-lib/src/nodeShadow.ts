@@ -1,11 +1,12 @@
-// Paints an accent glow around the node whose metrics are shown. Other nodes have no glow or shadow:
-// the border of an operator is enough to show it on the canvas.
+// Paints an accent glow around the node whose metrics are shown. The node can be an operator or a
+// circuit region. Other nodes have no glow or shadow, because their border is enough to make them
+// visible on the canvas.
 //
 // Cytoscape has no shadow style. The `underlay` style draws a filled shape with hard edges, which
 // looks like a second border, not a glow. So this file paints the glow with the canvas shadow API.
 // It paints in the `drawNodeUnderlay` layer of `cytoscapeRenderer.ts`, below the node body and its
-// chips. That layer is not part of the cached image of the node, so a glow that is larger than the
-// bounding box of the node is not clipped.
+// chips. That layer is not part of the cached image of the node, so the glow can extend past the
+// bounding box of the node. The glow is painted only outside the node body.
 
 import type { Core, NodeSingular } from 'cytoscape';
 import { paintNodeLayer } from './cytoscapeRenderer.js';
@@ -35,10 +36,9 @@ export const SELECTION_GLOW: NodeShadow = {
     offsetY: 0
 };
 
-/** The glow of `node`, or `null` if `node` is not the selected node. An expanded region has no glow,
- *  because the glow would show along the inside of its border and look like a second border. */
+/** The glow of `node`, or `null` if `node` is not the selected node. */
 export function nodeShadow(node: NodeSingular): NodeShadow | null {
-    return !node.isParent() && node.hasClass(SELECTED_NODE_CLASS) ? SELECTION_GLOW : null;
+    return node.hasClass(SELECTED_NODE_CLASS) ? SELECTION_GLOW : null;
 }
 
 /** How far the glow extends past the node, in graph units. */
@@ -49,8 +49,8 @@ export const shadowReach = (s: NodeShadow): number =>
  *  than any diagram, so the box is never in view. */
 const OFF_CANVAS = 1e6;
 
-/** Paint `shadow` for a `w` by `h` box centered on `pos`, with the corner radius of `node`. Only the
- *  shadow is painted, not the box. `context` is in graph coordinates. */
+/** Paint the part of `shadow` that is outside a `w` by `h` box centered on `pos`. The box has the
+ *  corner radius of `node`. `context` is in graph coordinates. */
 function paintShadow(
     context: CanvasRenderingContext2D,
     node: NodeSingular,
@@ -65,7 +65,19 @@ function paintShadow(
     const scale = context.getTransform().a;
     const radius = Number.parseFloat(node.style('corner-radius')) || 0;
 
+    const left = pos.x - w / 2;
+    const top = pos.y - h / 2;
+
     context.save();
+    // Clip to a frame around the box: a large rectangle with a hole in the shape of the box. The path
+    // has the two shapes, one inside the other, and the `evenodd` rule makes the inner one a hole.
+    // The frame is two times as wide as the shadow reach, so it does not cut off the edge of the blur.
+    const reach = 2 * shadowReach(shadow);
+    context.beginPath();
+    context.rect(left - reach, top - reach, w + 2 * reach, h + 2 * reach);
+    context.roundRect(left, top, w, h, radius);
+    context.clip('evenodd');
+
     context.fillStyle = shadow.color;
     context.shadowColor = shadow.color;
     context.shadowBlur = shadow.blur * scale;
@@ -75,7 +87,7 @@ function paintShadow(
     context.shadowOffsetX = (OFF_CANVAS + shadow.offsetX) * scale;
     context.shadowOffsetY = shadow.offsetY * scale;
     context.beginPath();
-    context.roundRect(pos.x - OFF_CANVAS - w / 2, pos.y - h / 2, w, h, radius);
+    context.roundRect(left - OFF_CANVAS, top, w, h, radius);
     context.fill();
     context.restore();
 }

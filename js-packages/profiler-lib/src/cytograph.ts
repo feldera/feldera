@@ -912,28 +912,28 @@ export class CytographRendering {
         return result;
     }
 
-    /** A callback that reports metrics of the node the pointer moved onto: its attributes, the edges that reach it,
-     * and its source position. `mouseOut` reports when the pointer leaves.
-     *
-     *  Two cases when a hover is ignored: an expanded node, and anything if a user selected a node with a click. */
+    /** Called when the pointer hovers a node.
+     */
     private hoverNode(event: EventObject) {
         const node: NodeSingular = event.target;
-        if (node.isParent()) {
-            return;
-        }
         if (this.stickyInformation) {
             if (!this.reportIsMarked()) {
                 this.traceSelection(node);
             }
             return;
         }
+        if (node.isParent()) {
+            // Mark the region, so that it glows. Early return to not show its information.
+            this.traceSelection(node);
+            return;
+        }
         this.displayNodeAttributes(node);
     }
 
     /** True if the node whose information is shown also has the selection mark (see `markSelected`).
-     *  It is false if no information is shown, or if the shown node cannot have the
-     *  mark: an expanded region, the root node, or a node that a graph update removed. Then, while
-     *  the information is pinned, a hover moves the mark (see `hoverNode` and `mouseOut`).
+     *  False if no information is shown, or if the shown node cannot have the mark: the root node, or a
+     *  node that a graph update removed. In these cases, while the information is pinned, a hover moves
+     *  the mark (see `hoverNode` and `mouseOut`).
      *
      *  This reads the class on the node, so the result always agrees with what is on screen. */
     private reportIsMarked(): boolean {
@@ -951,14 +951,18 @@ export class CytographRendering {
         node?.addClass(SELECTED_NODE_CLASS);
     }
 
-    /** Mark the node whose metrics are on display and color the edges reaching it.
-     * An expanded region and the root node can not be marked. */
+    /** Mark the node whose information is shown, and color the edges that reach it. The root node is
+     *  not marked. An expanded region is marked, but its edges are not colored: a region contains many
+     *  nodes, and all edges between them would be colored. */
     private traceSelection(node: NodeSingular) {
         this.clearTrace();
-        if (node.isParent() || node.id() === this.rootNodeId) {
+        if (node.id() === this.rootNodeId) {
             return;
         }
         this.markSelected(node);
+        if (node.isParent()) {
+            return;
+        }
         this.reachableFrom(node.id(), true).addClass('highlight-forward');
         this.reachableFrom(node.id(), false).addClass('highlight-backward');
     }
