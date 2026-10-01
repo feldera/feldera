@@ -36,7 +36,9 @@ use crate::server::{InitializationState, ServerState};
 use crate::transport::Step;
 use crate::transport::clock::now_endpoint_config;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
-use crate::util::{LongOperationWarning, missing_pipeline_identity_message, run_on_thread_pool};
+use crate::util::{
+    LongOperationWarning, MemoryUseReporter, missing_pipeline_identity_message, run_on_thread_pool,
+};
 use crate::{
     CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint, ParseError,
     PipelineError, PipelineState, TransportInputEndpoint,
@@ -6383,6 +6385,7 @@ impl StatisticsThread {
     ) {
         let mut last = Instant::now();
         let mut storage_byte_msecs = 0;
+        let mut memory_use_reporter = MemoryUseReporter::new("RSS", 512 * 1024 * 1024);
         while !exit.load(Ordering::Acquire) {
             let storage_bytes = if let Some(storage_backend) = &storage_backend {
                 // Measure.
@@ -6409,13 +6412,14 @@ impl StatisticsThread {
                 0
             };
 
-            // Update time series..
+            // Update time series.
+            let memory_bytes = process_rss_bytes().unwrap_or_default();
             let sample = SampleStatistics {
                 time: Utc::now(),
                 total_processed_records: controller_status
                     .global_metrics
                     .num_total_processed_records(),
-                memory_bytes: process_rss_bytes().unwrap_or_default(),
+                memory_bytes,
                 storage_bytes,
             };
             let mut time_series = controller_status.time_series.lock().unwrap();
@@ -6424,6 +6428,9 @@ impl StatisticsThread {
             }
             time_series.push_back(sample);
             drop(time_series);
+
+            // Log RSS growth.
+            memory_use_reporter.update(memory_bytes);
 
             // Notify subscribers about the new time series data
             let _ = controller_status.time_series_notifier.send(sample);
