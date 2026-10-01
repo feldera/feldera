@@ -36,6 +36,7 @@ use std::{
     io::{ErrorKind, Write},
     iter::repeat_n,
     ops::Range,
+    panic::resume_unwind,
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
@@ -258,7 +259,12 @@ fn test_circuit_thread_panic_is_reported() {
     controller.start();
 
     // The circuit thread runs this callback, so the panic unwinds through it.
-    controller.start_graph_profile(Box::new(|_| panic!("injected circuit thread panic")));
+    // `resume_unwind` skips the panic hook.  With `RUST_BACKTRACE=1`, the hook
+    // resolves a backtrace under a process-wide lock that other panicking
+    // tests share, which can delay the report past the timeout below.
+    controller.start_graph_profile(Box::new(|_| {
+        resume_unwind(Box::new("injected circuit thread panic"))
+    }));
 
     // A short timeout: without the fix the report never arrives.
     wait(|| !errors.lock().unwrap().is_empty(), 10_000)
