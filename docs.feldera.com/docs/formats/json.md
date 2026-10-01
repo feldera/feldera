@@ -293,7 +293,7 @@ in use.  Specify `"json_flavor"` as one of the following:
   of SQL BINARY includes the `0x` prefix.
 
 [Debezium input connector]: /connectors/sources/debezium
-[Kafka Connect connector]: https://debezium.io/documentation/reference/stable/connectors/mysql.html#mysql-data-types
+[Kafka Connect connector]: https://debezium.io/documentation/reference/connectors/mysql.html#mysql-data-types
 
 ## Configuring JSON event streams
 

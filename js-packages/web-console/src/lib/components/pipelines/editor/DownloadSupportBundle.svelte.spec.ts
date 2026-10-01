@@ -65,18 +65,8 @@ vi.mock('$lib/compositions/usePipelineManager.svelte', () => ({
 // These imports come after the vi.mock calls above, so that the mocks are in place.
 import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
 import { clearBundleHistory, listBundleHistory } from '$lib/services/supportBundleHistory'
+import { fakeHandle } from '$lib/services/testSupportBundleHelpers'
 import DownloadSupportBundle from './DownloadSupportBundle.svelte'
-
-/**
- * Stands in for a `FileSystemFileHandle`. Its methods are put on the prototype: the
- * history writes a handle with structured clone, which copies only an object's own
- * properties and turns down functions among them.
- */
-const fakeHandle = (name: string) =>
-  Object.create(
-    { getFile: async () => new File(['bundle contents'], name) },
-    { name: { value: name, enumerable: true }, kind: { value: 'file', enumerable: true } }
-  ) as FileSystemFileHandle
 
 const PIPELINE = 'my-pipeline'
 

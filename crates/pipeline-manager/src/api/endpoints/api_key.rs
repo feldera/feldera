@@ -1,6 +1,5 @@
 // API to create and delete API keys
 use crate::api::main::ServerState;
-use crate::api::util::parse_url_parameter;
 use crate::auth::AuthenticatedPrincipal;
 use crate::db::error::DBError;
 use crate::db::types::api_key::ApiKeyId;
@@ -9,7 +8,7 @@ use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use crate::{api::examples, db::storage::Storage};
 use actix_web::{
-    HttpRequest, HttpResponse, delete, get,
+    HttpResponse, delete, get,
     http::header::{CacheControl, CacheDirective},
     post,
     web::{self, Data as WebData, ReqData},
@@ -102,9 +101,9 @@ pub(crate) async fn list_api_keys(
 pub(crate) async fn get_api_key(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    req: HttpRequest,
+    path: web::Path<String>,
 ) -> Result<HttpResponse, ManagerError> {
-    let name = parse_url_parameter(&req, "api_key_name")?;
+    let name = path.into_inner();
     let api_key = state.db.lock().await.get_api_key(*tenant_id, &name).await?;
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -191,9 +190,9 @@ pub(crate) async fn post_api_key(
 pub(crate) async fn delete_api_key(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
-    req: HttpRequest,
+    path: web::Path<String>,
 ) -> Result<HttpResponse, ManagerError> {
-    let name = parse_url_parameter(&req, "api_key_name")?;
+    let name = path.into_inner();
     let resp = state
         .db
         .lock()

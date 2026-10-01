@@ -23,4 +23,3 @@ mod examples;
 pub mod main;
 pub mod rbac;
 pub mod support_data_collector;
-pub mod util;

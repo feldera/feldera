@@ -28,6 +28,7 @@ vi.mock('./supportBundleStore', async (importOriginal) => ({
   putBundleRecord
 }))
 
+import { fakeHandle } from '$lib/services/testSupportBundleHelpers'
 // These imports follow the vi.mock call above, so that the mock is in place.
 import {
   addToBundleHistory,
@@ -50,27 +51,6 @@ import type { Observable, StoredSupportBundle } from './supportBundleStore'
 /** The unwrapped store module, to restore real behaviour after a test faked it. */
 const actualStore =
   await vi.importActual<typeof import('./supportBundleStore')>('./supportBundleStore')
-
-/**
- * Stands in for a `FileSystemFileHandle`, which a test cannot construct.
- *
- * The two methods sit on the prototype rather than on the object itself. IndexedDB
- * writes a handle through structured clone, which copies an object's own properties
- * only and rejects functions among them with a `DataCloneError`. A stand-in read back
- * out of the database therefore has the name and the kind and none of the methods,
- * while a real handle keeps its methods.
- */
-const fakeHandle = (name: string, contents = 'bundle contents') =>
-  Object.create(
-    {
-      getFile: async () => new File([contents], name),
-      isSameEntry: async (other: { name: string }) => other.name === name
-    },
-    {
-      name: { value: name, enumerable: true },
-      kind: { value: 'file', enumerable: true }
-    }
-  ) as FileSystemFileHandle
 
 /**
  * A record whose cached copy claims to be `size` bytes. Working out the budget reads

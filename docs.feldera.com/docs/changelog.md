@@ -10,6 +10,27 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Storage now uses LZ4 compression by default, instead of Snappy.  LZ4
+  compresses better in about the same amount of time and decompresses
+  several times faster.
+
+## v0.358.0
+
+- Incompatible change (SQL): a `RANGE` window frame with a bound of the
+  form `n PRECEDING` or `n FOLLOWING` now requires an `ORDER BY` column
+  that cannot be `NULL`.  A program using e.g.,
+  `RANGE BETWEEN INTERVAL 1 DAY PRECEDING AND CURRENT ROW`
+  over a nullable timestamp, now fails to compile.  This can be worked around
+  by declaring the column `NOT NULL`, or by filtering out the `NULL` values first,
+  for example with `WHERE ts IS NOT NULL`.  See [Unsupported
+  operations](/sql/unsupported-operations#range-frames-with-offsets-over-nullable-columns).
+
+- Bug fix (Python SDK): `Pipeline.listen()` and `Pipeline.foreach_chunk()`
+  returned a `NULL` value of a `CHAR` or `VARCHAR` column as the string
+  `'None'`.  These columns now have the pandas type `string`, so a `NULL`
+  value is a missing value (`None` in `to_dict()`), and `pandas.isna()`
+  finds it.
+
 ## v0.356.0
 
 - Bug fix (SQL): `DATEDIFF(QUARTER, left, right)` mixed whole years with
@@ -120,6 +141,30 @@ Source edition can be found on github.
   that rewrote a file while changing only such a column: its `add` and
   `remove` actions did not cancel, and the connector re-emitted the
   rewritten rows as inserts (#7116).
+
+- Bug fix (Delta Lake input connector): a Unity Catalog Uniform table read
+  every column as NULL in `follow` and `cdc` mode and in the follow half of
+  `snapshot_and_follow`.  Its columns are now matched by field id.
+
+- Bug fix (Delta Lake input connector, `cdc` mode): a `uc://` table read no
+  rows from a commit's files unless they carried a deletion vector.  Such a
+  table's location is path-less, so the listing the read planned resolved to
+  nothing (#7112).
+
+- Bug fix (Delta Lake input connector): a struct nested in an array or a map
+  of a column-mapped table read its neighbor's values in `follow` and `cdc`
+  mode, because its fields were paired by name and such a file shares no field
+  name with the table's schema.
+
+- Bug fix (Delta Lake input connector, `snapshot` mode): a struct nested in an
+  array or a map of an id-mapped table read its fields exchanged when the log
+  listed them in a different order than the data file.  A container's children
+  are now relabeled by field id before the struct cast pairs them (#7279).
+
+- Incompatible change (Delta Lake input connector): in `follow` and `cdc` mode
+  a data file holding a null element of an array or a map the Delta table
+  declares `NOT NULL` is now rejected.  Such a file used to read through, so a
+  pipeline ingesting one now fails where it did not before.
 
 - Incompatible change (SQL compiler): the `WATERMARK` column annotation is
   removed, and a table that declares one no longer compiles.  There is no

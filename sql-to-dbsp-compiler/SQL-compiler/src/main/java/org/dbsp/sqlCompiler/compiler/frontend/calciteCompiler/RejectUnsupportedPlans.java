@@ -1,14 +1,22 @@
 package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
+import org.apache.calcite.plan.RelOptPredicateList;
+import org.apache.calcite.plan.Strong;
 import org.apache.calcite.rel.RelHomogeneousShuttle;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.Aggregate;
 import org.apache.calcite.rel.core.AggregateCall;
+import org.apache.calcite.rel.core.Project;
 import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.rex.RexOver;
 import org.apache.calcite.rex.RexShuttle;
 import org.apache.calcite.rex.RexSubQuery;
+import org.apache.calcite.rex.RexWindow;
+import org.apache.calcite.rex.RexWindowBound;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.sqlCompiler.compiler.Documentation;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
@@ -18,8 +26,12 @@ import org.dbsp.util.Utilities;
 
 /** Rejects plans that the Calcite validator accepts but that Feldera does not support.
  *
- * <p>Two constructs are rejected: equality comparisons applied to ROW values, and
- * {@code MODE(DISTINCT value)}.
+ * <p>The rejected constructs are:
+ * <ul>
+ *   <li>equality comparisons applied to ROW values;</li>
+ *   <li>{@code MODE(DISTINCT value)};</li>
+ *   <li>RANGE window frames with an offset bound over a nullable ORDER BY expression.</li>
+ * </ul>
  *
  * <p>The SQL standard gives ROW comparisons a meaning that may be surprising:
  * fields are compared pairwise using three-valued logic, so
@@ -40,6 +52,9 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
 
     public static final Documentation.Link ROW_DOCUMENTATION =
             new Documentation.Link("sql/comparisons", "comparing-row-values");
+    public static final Documentation.Link WINDOW_DOCUMENTATION =
+            new Documentation.Link("sql/unsupported-operations",
+                    "range-frames-with-offsets-over-nullable-columns");
 
     private final CheckExpression checker;
 
@@ -52,8 +67,15 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
         RelNode node = super.visitChildren(other);
         if (node instanceof Aggregate aggregate)
             checkAggregates(aggregate);
+        // OVER only appears in a Project; the predicates of its input can prove a column NOT NULL
+        RelOptPredicateList enclosingPredicates = this.checker.inputPredicates;
+        this.checker.inputPredicates = node instanceof Project project ?
+                project.getCluster().getMetadataQuery().getPulledUpPredicates(project.getInput()) :
+                RelOptPredicateList.EMPTY;
         // The shuttle only reports errors, so the node is returned unchanged
-        return node.accept(this.checker);
+        RelNode result = node.accept(this.checker);
+        this.checker.inputPredicates = enclosingPredicates;
+        return result;
     }
 
     /** MODE is rather useless with DISTINCT */
@@ -65,9 +87,11 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
         }
     }
 
-    /** Reports the offending comparisons found in an expression. */
+    /** Reports the offending comparisons and window frames found in an expression. */
     class CheckExpression extends RexShuttle {
         private final IErrorReporter reporter;
+        /** Predicates that hold for every row of the input of the expression. */
+        RelOptPredicateList inputPredicates = RelOptPredicateList.EMPTY;
 
         CheckExpression(IErrorReporter reporter) {
             this.reporter = reporter;
@@ -77,6 +101,57 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
         public RexNode visitSubQuery(RexSubQuery subQuery) {
             subQuery.rel.accept(RejectUnsupportedPlans.this);
             return super.visitSubQuery(subQuery);
+        }
+
+        @Override
+        public RexNode visitOver(RexOver over) {
+            this.checkRangeFrame(over);
+            return super.visitOver(over);
+        }
+
+        /** Report an error if a RANGE frame with an offset bound orders by an expression that
+         * can be NULL.  The runtime computes such frames from distances between the encoded
+         * values, and the encoding of NULL does not preserve distances. */
+        void checkRangeFrame(RexOver over) {
+            RexWindow window = over.getWindow();
+            if (window.isRows() || window.orderKeys.isEmpty())
+                return;
+            if (!hasOffset(window.getLowerBound()) && !hasOffset(window.getUpperBound()))
+                return;
+            RexNode key = window.orderKeys.get(0).left;
+            if (this.excludesNull(key))
+                return;
+            this.reporter.reportError(new SourcePositionRange(over.getParserPosition()),
+                    UnsupportedException.KIND,
+                    "A RANGE window frame with a PRECEDING or FOLLOWING offset requires an " +
+                    "ORDER BY expression that cannot be NULL; consider filtering out the NULL values, " +
+                    "for example with 'WHERE column IS NOT NULL'.\n" + WINDOW_DOCUMENTATION.citation());
+        }
+
+        /** True if the input rows cannot have a NULL {@code key}: its type is NOT NULL, a
+         * predicate on the input is not true when {@code key} is NULL, or {@code key} is NULL
+         * only when one of its operands is NULL and no operand can be NULL. */
+        boolean excludesNull(RexNode key) {
+            if (this.inputPredicates.isEffectivelyNotNull(key))
+                return true;
+            if (key instanceof RexInputRef ref) {
+                ImmutableBitSet nullColumns = ImmutableBitSet.of(ref.getIndex());
+                for (RexNode predicate : this.inputPredicates.pulledUpPredicates)
+                    if (Strong.isNotTrue(predicate, nullColumns))
+                        return true;
+                return false;
+            }
+            if (key instanceof RexCall call && Strong.policy(call) == Strong.Policy.ANY) {
+                for (RexNode operand : call.getOperands())
+                    if (!this.excludesNull(operand))
+                        return false;
+                return true;
+            }
+            return false;
+        }
+
+        static boolean hasOffset(RexWindowBound bound) {
+            return !bound.isUnbounded() && !bound.isCurrentRow();
         }
 
         @Override

@@ -1,5 +1,5 @@
 /**
- * Home page scroll layout.
+ * Home page scroll layout, and the order of the header's controls.
  *
  * The page is the only scroll container. The pipelines table is laid out at full
  * height, and `PinnedSections` holds the sections below it at the bottom of the screen
@@ -10,7 +10,8 @@
  * browser's scrollbar metrics are.
  */
 
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { page } from 'vitest/browser'
 import { render } from 'vitest-browser-svelte'
 import type { Demo, PipelineThumb } from '$lib/services/pipelineManager'
 
@@ -33,17 +34,6 @@ const thumb = (name: string): PipelineThumb =>
     deploymentRuntimeStatusDetails: { connector_stats: { num_errors: 0 } },
     connectors: { numErrors: 0 }
   }) as unknown as PipelineThumb
-
-// The page reads `pipelines` on every reactive pass. Returning the same array for the
-// same names keeps the table from rebuilding its rows on each read, which leaves fewer
-// of `TableHandler`'s deferred scroll writes pending at teardown.
-let cachedThumbs: { names: string[]; thumbs: PipelineThumb[] } | undefined
-const thumbsFor = (names: string[]) => {
-  if (cachedThumbs?.names !== names) {
-    cachedThumbs = { names, thumbs: names.map(thumb) }
-  }
-  return cachedThumbs.thumbs
-}
 
 // The mocked composition below reads `list.names`. A test sets it before rendering to
 // control how tall the table is.
@@ -98,7 +88,7 @@ vi.mock('$lib/components/other/OidcTrustMenu.svelte', () => ({ default: () => {}
 vi.mock('$lib/compositions/pipelines/usePipelineList.svelte', () => ({
   usePipelineList: () => ({
     get pipelines() {
-      return thumbsFor(list.names)
+      return list.names.map(thumb)
     }
   }),
   useUpdatePipelineList: () => ({
@@ -117,7 +107,9 @@ vi.mock('$lib/compositions/useDemos.svelte', () => ({
 }))
 
 // Imported AFTER vi.mock so the mocks take effect.
+import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
 import { pinnedPeekHeightPixels } from '$lib/components/layout/PinnedSections.svelte'
+import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
 import HomePage from './+page.svelte'
 
 const SCROLL_AREA_HEIGHT = 800
@@ -331,5 +323,50 @@ describe('/ (home) scroll layout', () => {
     click(demosHeader(section))
 
     await expect.poll(() => section.textContent).not.toContain('Demo 0')
+  })
+})
+
+describe('/ (home) header', () => {
+  // Below 1280px the header collapses into a single drawer button, and the test iframe
+  // is narrower than that by default. These tests widen the iframe and restore it for
+  // whatever runs next.
+  const narrow = { width: window.innerWidth, height: window.innerHeight }
+  beforeEach(() => page.viewport(1400, 900))
+  afterEach(() => page.viewport(narrow.width, narrow.height))
+
+  it('offers the support bundle dialog between the community menu and New Pipeline', async () => {
+    const { container } = await renderHome()
+
+    // The button is a direct child of the header row, which distinguishes the header's
+    // New Pipeline button from the table's.
+    const bundles = container.querySelector<HTMLElement>('[data-testid=btn-open-support-bundle]')!
+    const header = bundles.parentElement!
+    const labelled = (text: string) =>
+      [...header.querySelectorAll<HTMLElement>('button')]
+        .find((button) => button.textContent?.includes(text))!
+        .getBoundingClientRect()
+    expect(labelled('Community').right).toBeLessThanOrEqual(
+      bundles.getBoundingClientRect().left + 1
+    )
+    expect(bundles.getBoundingClientRect().right).toBeLessThanOrEqual(
+      labelled('New Pipeline').left + 1
+    )
+  })
+  it('opens the support bundle dialog from an icon button with a title', async () => {
+    const { container } = await renderHome()
+    const bundles = container.querySelector<HTMLElement>('[data-testid=btn-open-support-bundle]')!
+
+    // The icon carries no text, so the title is what names the button.
+    expect(bundles.title).toBe('Open support bundle')
+    expect(bundles.textContent!.trim()).toBe('')
+
+    bundles.click()
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    const modal = render(GlobalModal, { target, props: { dialog: useGlobalDialog().dialog } })
+    expect(target.querySelector('[data-testid=box-all-bundles]')).toBeTruthy()
+    await modal.unmount()
+    useGlobalDialog().dialog = null
   })
 })

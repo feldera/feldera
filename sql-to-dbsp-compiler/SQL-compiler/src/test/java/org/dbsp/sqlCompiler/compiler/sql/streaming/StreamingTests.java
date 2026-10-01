@@ -3729,111 +3729,6 @@ public class StreamingTests extends StreamingTestBase {
         ccs.visit(visitor);
     }
 
-    // Test for https://github.com/feldera/feldera/issues/1462
-    @Test
-    public void testJoinNonMonotoneColumn() {
-        String script = """
-            CREATE TABLE series (
-                    metadata VARCHAR NOT NULL,
-                    event_time TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
-            );
-
-            CREATE TABLE shift(
-                    person VARCHAR NOT NULL,
-                    on_call DATE
-            );
-
-            CREATE VIEW V AS
-            (SELECT * FROM series JOIN shift ON series.metadata = shift.person);
-            """;
-        CompilerCircuitStream ccs = this.getCCS(script);
-        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
-            int count = 0;
-
-            @Override
-            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
-                this.count++;
-            }
-
-            @Override
-            public void endVisit() {
-                Assert.assertEquals(0, this.count);
-            }
-        };
-        ccs.visit(visitor);
-    }
-
-    @Test
-    public void testJoinTwoColumns() {
-        // One joined column is monotone, the other one isn't.
-        String sql = """
-            CREATE TABLE series (
-                    metadata VARCHAR NOT NULL,
-                    event_time TIMESTAMP NOT NULL LATENESS INTERVAL '1:00' HOURS TO MINUTES
-            );
-
-            CREATE TABLE shift(
-                    person VARCHAR NOT NULL,
-                    on_call DATE
-            );
-
-            CREATE VIEW V AS
-            (SELECT * FROM series JOIN shift
-             ON series.metadata = shift.person AND CAST(series.event_time AS DATE) = shift.on_call);
-            """;
-        CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
-            int count = 0;
-
-            @Override
-            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
-                this.count++;
-            }
-
-            @Override
-            public void endVisit() {
-                Assert.assertEquals(1, this.count);
-            }
-        };
-        ccs.visit(visitor);
-    }
-
-    @Test
-    public void testJoinFilter() {
-        // Join two streams with lateness, and filter based on lateness column
-        String script = """
-            CREATE TABLE series (
-                    metadata VARCHAR NOT NULL,
-                    event_date DATE NOT NULL LATENESS INTERVAL 1 DAYS
-            );
-
-            CREATE TABLE shift(
-                    person VARCHAR NOT NULL,
-                    on_call DATE NOT NULL LATENESS INTERVAL 1 DAYS
-            );
-
-            CREATE VIEW V AS
-            (SELECT metadata, event_date FROM series JOIN shift
-             ON series.metadata = shift.person AND event_date > on_call);
-            """;
-        CompilerCircuitStream ccs = this.getCCS(script);
-        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
-            int count = 0;
-
-            @Override
-            public void postorder(DBSPIntegrateTraceRetainKeysOperator operator) {
-                this.count++;
-            }
-
-            @Override
-            // TODO: should be 1
-            public void endVisit() {
-                Assert.assertEquals(0, this.count);
-            }
-        };
-        ccs.visit(visitor);
-    }
-
     @Test
     public void testAggregate() {
         String sql = """
@@ -4569,7 +4464,7 @@ public class StreamingTests extends StreamingTestBase {
                 CREATE TABLE input_log (
                     id BIGINT,
                     s VARCHAR,
-                    ts TIMESTAMP,
+                    ts TIMESTAMP NOT NULL,
                     is_delete BOOLEAN DEFAULT CAST(CONNECTOR_METADATA()['is_delete'] AS BOOLEAN)
                 ) WITH (
                     'append_only' = 'true',

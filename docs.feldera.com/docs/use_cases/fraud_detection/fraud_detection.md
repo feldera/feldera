@@ -92,7 +92,7 @@ def build_program(transactions_connectors: str, demographics_connectors: str, fe
         category STRING,
         amt DECIMAL(38, 2),
         trans_num STRING,
-        unix_time BIGINT,
+        unix_time BIGINT NOT NULL,
         merch_lat DOUBLE,
         merch_long DOUBLE,
         is_fraud BIGINT

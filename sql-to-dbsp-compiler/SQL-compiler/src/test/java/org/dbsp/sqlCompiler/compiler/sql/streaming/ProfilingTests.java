@@ -297,6 +297,122 @@ public class ProfilingTests extends StreamingTestBase {
         Assert.assertEquals(0L, (long)p1[2]);
     }
 
+    /** Issue 7086: the state of a deduplicated CDC stream stops growing once the
+     * deduplication window is full. */
+    @Test
+    public void profileDeduplication() throws IOException, InterruptedException, SQLException {
+        if (BaseSQLTests.skipRust)
+            return;
+        // The database records a change every second.  The connector sends one change in
+        // ten a second time, one hour after the first copy.  The one day lateness of
+        // recorded_at keeps 86400 changes live, so both measurements see a full window.
+        String main = """
+                #![allow(unused_imports)]
+
+                use dbsp::{
+                    circuit::{CircuitConfig, metrics::TOTAL_LATE_RECORDS},
+                    utils::{Tup2, Tup3, Tup6},
+                    zset,
+                };
+                use feldera_sqllib::{
+                    append_to_collection_handle, read_output_spine,
+                    decimal::SqlDecimal, string::SqlString, Timestamp,
+                };
+
+                use std::fs::File;
+                use std::io::Write;
+                use std::sync::atomic::Ordering;
+                use std::time::Duration;
+                use temp::circuit;
+
+                const CHANGES: i64 = 300000;
+                // The state is measured here and at the end of the stream
+                const HALF: i64 = CHANGES / 2;
+                const MILLISECONDS_PER_SECOND: i64 = 1000;
+                const SECONDS_PER_HOUR: i64 = 3600;
+                // One change in REPEAT_FRACTION arrives a second time
+                const REPEAT_FRACTION: i64 = 10;
+                // Milliseconds of the first change
+                const START_MS: i64 = 1788858000000;
+
+                type OrderRow =
+                    Tup3<Option<SqlString>, Option<SqlDecimal<12, 2>>, Option<SqlString>>;
+                type Row = Tup6<Option<OrderRow>, Option<OrderRow>,
+                    Option<Tup2<Option<Timestamp>, Option<i64>>>,
+                    Option<SqlString>, Option<Timestamp>, Option<i64>>;
+
+                /// A message about change `change`, processed while change `now` is recorded.
+                fn message(change: i64, now: i64) -> Row {
+                    let recorded =
+                        Timestamp::from_milliseconds(START_MS + change * MILLISECONDS_PER_SECOND);
+                    let processed =
+                        Timestamp::from_milliseconds(START_MS + now * MILLISECONDS_PER_SECOND);
+                    let text = |s: String| Some(SqlString::from_ref(s.as_str()));
+                    Tup6::new(
+                        // An insert carries no before values
+                        None,
+                        Some(Tup3::new(
+                            text(format!("order-{change:012}")),
+                            SqlDecimal::<12, 2>::new((change % 1000000) as i128, 2),
+                            text("approved".to_string()))),
+                        Some(Tup2::new(Some(recorded), Some(change))),
+                        text("c".to_string()),
+                        Some(processed),
+                        Some(now))
+                }
+
+                #[test]
+                pub fn test() {
+                    let (mut circuit, streams) = circuit(
+                        CircuitConfig::with_workers(3)).expect("could not build circuit");
+                    let mut half: u64 = 0;
+                    // The database records one change every second, so the loop index
+                    // counts both changes and seconds.  A second copy of a change arrives
+                    // one hour after the first copy.
+                    for i in 0..CHANGES {
+                        let batch = if i >= SECONDS_PER_HOUR && i % REPEAT_FRACTION == 0 {
+                            zset!(message(i, i) => 1, message(i - SECONDS_PER_HOUR, i) => 1)
+                        } else {
+                            zset!(message(i, i) => 1)
+                        };
+                        append_to_collection_handle(&batch, &streams.0);
+                        if i % 100 == 99 {
+                            let _ = circuit.transaction().expect("could not run circuit");
+                            let _ = &read_output_spine(&streams.1);
+                        }
+                        if i == HALF - 1 {
+                            half = state(&mut circuit);
+                        }
+                    }
+                    let full = state(&mut circuit);
+                    let late = TOTAL_LATE_RECORDS.load(Ordering::Relaxed);
+                    let data = format!("{},{},{}\n", half, full, late);
+                    let mut file = File::create("mem.txt").expect("Could not create file");
+                    file.write_all(data.as_bytes()).expect("Could not write data");
+                }
+
+                /// The size of the circuit state, in bytes.
+                fn state(circuit: &mut dbsp::DBSPHandle) -> u64 {
+                    circuit.start_compaction().expect("could not start compaction");
+                    circuit.wait_for_compaction(Duration::from_secs(600))
+                        .expect("compaction did not converge");
+                    let profile = circuit.retrieve_profile().expect("could not get profile");
+                    profile.total_used_bytes().unwrap().bytes as u64
+                }""";
+        // The three numbers are the bytes at half the stream, the bytes at the end, and
+        // the late messages.
+        Long[] measured = this.measure(DeduplicationIncrementalTests.DEDUP, main);
+        // The window holds the same changes at both points, so the two sizes agree to
+        // within the noise of the spine layout.
+        if (measured[1] > 1.05 * measured[0]) {
+            System.err.println("State after half the stream and after all of it:");
+            System.err.println(Arrays.toString(measured));
+            Assert.fail("Deduplication state grew with the stream");
+        }
+        // Every message is inside both lateness windows.
+        Assert.assertEquals(0L, (long) measured[2]);
+    }
+
     @Test
     public void profileRetainValues() throws IOException, InterruptedException, SQLException {
         // Based on Q9.  Check whether integrate_trace_retain_values works as expected.

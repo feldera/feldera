@@ -21,6 +21,7 @@ use crate::{
     },
 };
 use core_affinity::{CoreId, get_core_ids};
+use crossbeam::channel::{Receiver, Sender, TryRecvError, bounded};
 use crossbeam::sync::{Parker, Unparker};
 use enum_map::{Enum, EnumMap, enum_map};
 use feldera_buffer_cache::ThreadType;
@@ -41,7 +42,7 @@ use std::net::TcpListener;
 use std::ops::{Index, Range};
 use std::path::Path;
 use std::sync::atomic::{AtomicU8, AtomicU64, AtomicUsize};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, Mutex, PoisonError};
 use std::time::Duration;
 use std::{
     backtrace::Backtrace,
@@ -309,7 +310,7 @@ struct RuntimeInner {
     worker_sequence_numbers: Vec<AtomicUsize>,
     /// Panic info collected from failed worker threads.
     panic_info: Vec<EnumMap<ThreadType, RwLock<Option<WorkerPanicInfo>>>>,
-    panicked: AtomicBool,
+    panic_signal: PanicSignal,
 
     /// Tokio runtime that runs async merger tasks (see `AsyncMerger`).
     tokio_merger_runtime: Mutex<Option<TokioRuntime>>,
@@ -448,6 +449,52 @@ impl KillSignal {
     }
 }
 
+/// The runtime's "a thread panicked" latch.
+///
+/// Unlike a flag, it can be waited on in a crossbeam [Select] next to the
+/// workers' reply channels.  A panic on a thread that is not a worker, e.g. a
+/// merger that a worker is blocked on, then still wakes the waiter.
+///
+/// Nothing is ever sent on the channel: raising the signal drops the only
+/// sender, and a disconnected channel stays ready for every receiver.
+///
+/// [Select]: crossbeam::channel::Select
+#[derive(Debug)]
+struct PanicSignal {
+    sender: Mutex<Option<Sender<()>>>,
+    receiver: Receiver<()>,
+}
+
+impl PanicSignal {
+    fn new() -> Self {
+        let (sender, receiver) = bounded(0);
+        Self {
+            sender: Mutex::new(Some(sender)),
+            receiver,
+        }
+    }
+
+    /// Raises the signal.  Idempotent, and never lowered again.
+    ///
+    /// Runs in the panic hook, so it must not panic itself.
+    fn raise(&self) {
+        self.sender
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+    }
+
+    /// Whether the signal is raised.
+    fn is_raised(&self) -> bool {
+        matches!(self.receiver.try_recv(), Err(TryRecvError::Disconnected))
+    }
+
+    /// A receiver that is ready once the signal is raised.
+    fn receiver(&self) -> Receiver<()> {
+        self.receiver.clone()
+    }
+}
+
 impl RuntimeInner {
     /// Wakes every aux thread so that it can notice the kill signal.
     fn unpark_aux_threads(&self) {
@@ -580,7 +627,7 @@ impl RuntimeInner {
             panic_info: (0..nworkers)
                 .map(|_| EnumMap::from_fn(|_| RwLock::new(None)))
                 .collect(),
-            panicked: AtomicBool::new(false),
+            panic_signal: PanicSignal::new(),
             tokio_merger_runtime: Mutex::new(None),
             exchange_listener: Mutex::new(config.exchange_listener),
         })
@@ -1256,31 +1303,28 @@ impl Runtime {
     ///
     /// # Returns
     ///
-    /// - `None` - if this thread doesn't have a Runtime or if it doesn't have storage configured.
+    /// - `None` - if this `Runtime` doesn't have storage configured.
     /// - `Some(0)` - spill all batches to storage.
     /// - `Some(N)` - spill batches with size >= N to storage.
-    pub fn min_insert_storage_bytes() -> Option<usize> {
-        RUNTIME.with(|rt| {
-            let rt = rt.borrow();
-            let inner = rt.as_ref()?.inner();
-            let storage = inner.storage.as_ref()?;
+    pub fn min_insert_storage_bytes(&self) -> Option<usize> {
+        let inner = &self.0;
+        let storage = inner.storage.as_ref()?;
 
-            if inner.memory_pressure() >= MemoryPressure::High {
-                Some(0)
-            } else if inner.memory_pressure() >= MemoryPressure::Moderate {
-                // Moderate pressure: spill large batches to storage in the foreground; the merger will take care of the rest.
-                Some(
-                    storage
-                        .options
-                        .min_storage_bytes
-                        .unwrap_or(10 * 1024 * 1024),
-                )
-            } else {
-                // When there is no memory pressure, we leave it to the merger to write the batches to storage
-                // eventually.
-                Some(usize::MAX)
-            }
-        })
+        if inner.memory_pressure() >= MemoryPressure::High {
+            Some(0)
+        } else if inner.memory_pressure() >= MemoryPressure::Moderate {
+            // Moderate pressure: spill large batches to storage in the foreground; the merger will take care of the rest.
+            Some(
+                storage
+                    .options
+                    .min_storage_bytes
+                    .unwrap_or(10 * 1024 * 1024),
+            )
+        } else {
+            // When there is no memory pressure, we leave it to the merger to write the batches to storage
+            // eventually.
+            Some(usize::MAX)
+        }
     }
 
     /// Returns the minimum number of bytes in a transient batch exchanged between DBSP operators during a step of the
@@ -1318,16 +1362,19 @@ impl Runtime {
             .unwrap()
             .options
             .clone();
-        let compression = options.compression;
-        let compression = match compression {
-            StorageCompression::Default | StorageCompression::Snappy => Some(Compression::Snappy),
-            StorageCompression::None => None,
-            StorageCompression::Lz4 => Some(Compression::Lz4),
-            StorageCompression::Zstd => Some(Compression::Zstd),
-        };
         Parameters::default()
-            .with_compression(compression)
+            .with_compression(Self::file_compression(options.compression))
             .with_compression_level(options.compression_level)
+    }
+
+    /// Maps the configured storage compression to the file-format algorithm.
+    fn file_compression(compression: StorageCompression) -> Option<Compression> {
+        match compression {
+            StorageCompression::Snappy => Some(Compression::Snappy),
+            StorageCompression::None => None,
+            StorageCompression::Default | StorageCompression::Lz4 => Some(Compression::Lz4),
+            StorageCompression::Zstd => Some(Compression::Zstd),
+        }
     }
 
     fn inner(&self) -> &RuntimeInner {
@@ -1437,7 +1484,7 @@ impl Runtime {
         let _ = self.inner().panic_info[local_worker_offset][thread_type]
             .write()
             .map(|mut guard| *guard = Some(panic_info));
-        self.inner().panicked.store(true, Ordering::Release);
+        self.inner().panic_signal.raise();
     }
 
     /// Handle to the tokio merger runtime associated with this DBSP runtime.
@@ -1703,7 +1750,13 @@ impl RuntimeHandle {
 
     /// Returns true if any worker has panicked.
     pub fn panicked(&self) -> bool {
-        self.runtime.inner().panicked.load(Ordering::Acquire)
+        self.runtime.inner().panic_signal.is_raised()
+    }
+
+    /// Returns a receiver that becomes ready, as disconnected, once any
+    /// runtime thread has panicked.
+    pub(crate) fn panic_receiver(&self) -> Receiver<()> {
+        self.runtime.inner().panic_signal.receiver()
     }
 }
 
@@ -1823,6 +1876,26 @@ pub(crate) mod tests {
         time::{Duration, Instant},
     };
 
+    #[test]
+    fn file_compression_mapping() {
+        use crate::storage::file::format::Compression;
+        use feldera_types::config::StorageCompression;
+
+        for (configured, expected) in [
+            (StorageCompression::Default, Some(Compression::Lz4)),
+            (StorageCompression::None, None),
+            (StorageCompression::Snappy, Some(Compression::Snappy)),
+            (StorageCompression::Lz4, Some(Compression::Lz4)),
+            (StorageCompression::Zstd, Some(Compression::Zstd)),
+        ] {
+            assert_eq!(
+                Runtime::file_compression(configured),
+                expected,
+                "{configured:?}"
+            );
+        }
+    }
+
     struct TestCacheEntry(usize);
 
     impl CacheEntry for TestCacheEntry {
@@ -1867,10 +1940,13 @@ pub(crate) mod tests {
             "memory-pressure-test-query",
             super::Parker::new(),
             move |_parker| {
+                let runtime = Runtime::runtime().expect("query thread should run inside runtime");
                 let _ = sender.send((
                     Runtime::memory_pressure().expect("query thread should run inside runtime"),
                     Runtime::min_merge_storage_bytes().expect("runtime has storage configured"),
-                    Runtime::min_insert_storage_bytes().expect("runtime has storage configured"),
+                    runtime
+                        .min_insert_storage_bytes()
+                        .expect("runtime has storage configured"),
                     Runtime::min_step_storage_bytes().expect("runtime has storage configured"),
                 ));
             },
@@ -2359,7 +2435,8 @@ pub(crate) mod tests {
         hruntime.kill().unwrap();
     }
 
-    // Test the memory pressure thresholds and how merger threads behave under different memory pressure levels.
+    /// Test the memory pressure thresholds and how merger threads behave
+    /// under different memory pressure levels.
     #[test]
     fn memory_pressure_thresholds_and_spill_behavior() {
         const GIB: u64 = 1024 * 1024 * 1024;

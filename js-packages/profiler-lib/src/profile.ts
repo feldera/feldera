@@ -1628,11 +1628,22 @@ export class ComplexNode extends SimpleNode {
     /** Label to display when the node is drawn collapsed:
      * the operation plus the names of the tables and views hidden inside. */
     collapsedOperation(): string {
-        if (this.containedNames.length === 0) {
+        // Regions such as `create view v` already carry the name in their label.
+        const label = ` ${this.operation.toLowerCase()} `;
+        // Match the whole name: a quoted SQL name may contain spaces
+        const namesNotInLabel = this.containedNames.filter(name => !label.includes(` ${name.toLowerCase()} `));
+        if (namesNotInLabel.length === 0) {
             return this.operation;
         }
-        return this.operation + " " + this.containedNames.join(", ");
+        // The adapters register a materialized view together with its first index in one
+        // region, so the only other name inside is that index, whatever the user named it.
+        if (ComplexNode.MATERIALIZED_VIEW_REGION.test(this.operation)) {
+            return this.operation + " with index";
+        }
+        return this.operation + " " + namesNotInLabel.join(", ");
     }
+
+    static readonly MATERIALIZED_VIEW_REGION = /\bmaterialized view\b/i;
 
     addChild(node: SimpleNode) {
         this.children.push(node.id);

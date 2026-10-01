@@ -44,7 +44,7 @@ deleted.  For tables with `LATENESS` this may cause surprising
 effects: the `DELETE` needs to delete the previous version of the
 record, with the old timestamp; if this timestamp is behind the
 `LATENESS` threshold, the entire INSERT or UPDATE is considered late
-and is thus ignored.  This effectivelly means that "old" records in
+and is thus ignored.  This effectively means that "old" records in
 such a table can never be updated or deleted.
 
 :::
@@ -59,7 +59,7 @@ which users can efficiently compute over timeseries data.
 
 The last part of this guide lists [SQL patterns](#sql-for-time-series-analytics)
 frequently used in time series analysis. Feldera supports garbage collection for
-most of these patterns, meaning that the can be evaluated efficiently using
+most of these patterns, meaning that they can be evaluated efficiently using
 bounded memory.
 
 ## Timestamp columns and lateness
@@ -296,7 +296,7 @@ By default, Feldera updates SQL views incrementally whenever new
 inputs arrive. Such incremental updates include deleting existing
 rows and inserting new rows into the view.  By monitoring these
 updates, the user can observe the most up-to-date results of the
-computation.  However, some applications only need to observe its
+computation.  However, some applications only need to observe their
 final outputs, i.e., rows that are guaranteed to
 never get deleted or updated.
 
@@ -540,15 +540,15 @@ a laptop.
 
 #### Garbage collection
 
-GC for rolling aggregates works similar to regular aggregates (see [above](#aggregating-time-series-data-over-fixed-size-time-intervals)):
+GC for rolling aggregates works similarly to regular aggregates (see [above](#aggregating-time-series-data-over-fixed-size-time-intervals)):
 
 * Old input records are discarded if the `ORDER BY` expression is a monotonic function
   of a timestamp column, for which the query engine can establish a waterline.  For
-  instance, in the `rolling_daily_max` view above, the `purchase.ts` column, used in the
+  instance, in the `daily_max_rolling` view above, the `purchase.ts` column, used in the
   `ORDER BY` clause, has a waterline.
 
 * Old output records get discarded if at least one of the output columns
-  has a waterline.  In the `rolling_daily_max` view, the `ts` column copied
+  has a waterline.  In the `daily_max_rolling` view, the `ts` column copied
   from the input table has a waterline.
 
 ### Join over timestamp columns
@@ -653,6 +653,229 @@ FROM
 GC for `LAG` and `LEAD` functions has not been implemented yet (see our
 GC feature [roadmap](https://github.com/feldera/feldera/issues/1850)).
 [Let us know](https://github.com/feldera/feldera/issues/new/) if you are interested in this feature.
+
+### Deduplicating a CDC stream
+
+A change data capture connector can deliver the same change more than once: it
+replays part of a partition after a restart, or a producer retries.  The task in
+this section is to implement a SQL program which preserves the first version of
+each change, and ignores the copies that follow it.  Moreover, we want to
+minimize memory use: do not hold all the information in a change, but only
+enough information to uniquely identify the change, and discard this information
+when we know more copies of the change cannot arrive.
+
+The changes come from this table, which lives in the database and is not part of
+the Feldera program:
+
+```sql
+CREATE TABLE orders (
+    order_id VARCHAR NOT NULL PRIMARY KEY,
+    amount DECIMAL(12, 2),
+    status VARCHAR
+    -- additional columns omitted
+);
+```
+
+The program assumes that the source database records the time of every change to
+a row, and the position of the change in its log.  Each change is uniquely
+identified by the primary key, a record time and a log position.  The CDC stream
+from the database exposes this information.
+
+#### Feldera's table: the CDC stream from the database
+
+The program assumes the following about the CDC stream of changes:
+
+* The original table has inserts, updates and deletes.  Each of those changes
+  appends one message to the CDC stream, so the stream itself is append-only.
+* A change is uniquely identified by the key, the record time and the log
+  position.  A change can appear multiple times in the CDC log.
+* Any two different copies of a change arrive within a bounded time of each
+  other.
+* The first copy of a change is the copy that entered Kafka first.
+* A change that deletes a row carries its values in `before`, every other change
+  in `after`.
+
+The stream `orders_cdc` simulates the way a CDC stream would look for an
+`orders` table.  Its shape follows the change event that
+[Debezium](https://debezium.io/documentation/reference/) produces, e.g., for
+[PostgreSQL](https://debezium.io/documentation/reference/connectors/postgresql.html):
+
+```sql
+CREATE TABLE orders_cdc (
+    -- The row before the change, NULL for an insert.  Same columns as after
+    before ROW(
+        order_id VARCHAR NULL,
+        amount DECIMAL(12, 2) NULL,
+        status VARCHAR NULL
+        -- additional columns of the orders table omitted
+    ) NULL,
+    -- The row after the change, NULL for a delete
+    after ROW(
+        -- The primary key of the orders table (but not a PK of the CDC stream)
+        order_id VARCHAR NULL,
+        amount DECIMAL(12, 2) NULL,
+        status VARCHAR NULL
+        -- additional columns of the orders table omitted
+    ) NULL,
+    source ROW(
+        -- When the database recorded the change
+        ts_ms TIMESTAMP NULL,
+        -- Position of the change in the write-ahead log of the database
+        lsn BIGINT NULL
+        -- additional fields of the Debezium source block omitted
+    ) NULL,
+    -- 'c' for an insert, 'u' for an update, 'd' for a delete, 'r' for a snapshot read
+    op VARCHAR NULL,
+    kafka_timestamp TIMESTAMP DEFAULT CAST(CONNECTOR_METADATA()['kafka_timestamp'] AS TIMESTAMP),
+    kafka_offset BIGINT DEFAULT CAST(CONNECTOR_METADATA()['kafka_offset'] AS BIGINT)
+) WITH (
+    'append_only' = 'true',
+    'connectors' = '[{
+        "name": "orders",
+        "transport": {
+            "name": "kafka_input",
+            "config": {
+                "topic": "orders",
+                "bootstrap.servers": "broker:9092",
+                "include_timestamp": true,
+                "include_offset": true,
+                "synchronize_partitions": true
+            }
+        },
+        "format": {
+            "name": "json",
+            "config": { "update_format": "raw" }
+        }
+    }]'
+);
+```
+
+Four options of the connector matter to this program:
+
+* `include_timestamp` and `include_offset` make the Kafka timestamp and the
+  Kafka offset of a record available to
+  [`CONNECTOR_METADATA()`](/connectors/sources/kafka#metadata).  Without them
+  the two corresponding columns are always NULL.
+* [`synchronize_partitions`](/connectors/sources/kafka#synchronize_partitions)
+  makes the connector ingest records in the order of their Kafka timestamps
+  across the partitions of the topic.  Without this option the connector reads
+  the partitions in parallel and may reorder rows.
+* The format is `json` with `update_format` set to
+  [`raw`](/formats/json#the-raw-format), so each message becomes one row of
+  `orders_cdc`.
+
+#### Flattening the stream
+
+The following local view simplifies the structure of the stream and discards
+malformed records (without a timestamp or primary key):
+
+```sql
+CREATE LOCAL VIEW changes AS
+SELECT
+    -- Flatten the messages into top-level columns
+    source.ts_ms AS recorded_at,
+    kafka_timestamp,
+    -- A delete describes the row removed in 'before', other changes are in 'after'
+    (CASE WHEN op = 'd' THEN before ELSE after END).order_id AS order_id,
+    (CASE WHEN op = 'd' THEN before ELSE after END).amount AS amount,
+    (CASE WHEN op = 'd' THEN before ELSE after END).status AS status,
+    op,
+    -- A snapshot read carries no log position
+    COALESCE(source.lsn, 0) AS lsn,
+    kafka_offset
+FROM orders_cdc
+WHERE
+  -- drop rows without a key
+  (CASE WHEN op = 'd' THEN before ELSE after END).order_id IS NOT NULL
+  -- drop rows without timestamps
+  AND source.ts_ms IS NOT NULL
+  AND kafka_timestamp IS NOT NULL;
+```
+
+#### Bounding the state
+
+The following `LATENESS` declarations are applied to this view and are used to
+bound the state kept by the pipeline.
+
+```sql
+LATENESS changes.recorded_at INTERVAL 1 DAY;
+LATENESS changes.kafka_timestamp INTERVAL 0 SECONDS;
+```
+
+`recorded_at` is the timestamp the database wrote in its log for each change.
+Its values may be out of order for several reasons: - the partitions of
+the stream advance at different rates, - a replay after any system (debezium,
+Kafka, Feldera) restart re-reads positions the connector already delivered.
+`recorded_at` records the same timestamp for all changes within a transaction,
+so it could have the same value for multiple rows.  The LATENESS value should be
+chosen as the largest of those. In this program the LATENESS value will be used
+to remember how long after the original a copy is recognized.
+
+`kafka_timestamp` is a timestamp set when the record enters Kafka.  A replayed
+write from the database gets a new, higher timestamp.  How the timestamp is
+created is decided by the Kakfa setting
+[`message.timestamp.type`](https://kafka.apache.org/documentation/#topicconfigs_message.timestamp.type)
+of the topic.  Use `LogAppendTime`, to make the broker stamp the record as it appends it
+to the partition; timestamps within a partition will have increasing timestamps.(The default value for this setting, `CreateTime` may produce timestamps out of order).
+
+#### Keeping the first copy
+
+The following view keeps just enough information to detect the first copy of
+each arriving row:
+
+```sql
+-- The processing time of the first copy of each change
+CREATE LOCAL VIEW first_arrival AS
+SELECT order_id, recorded_at, lsn, MIN(kafka_timestamp) AS kafka_timestamp
+FROM changes
+GROUP BY order_id, recorded_at, lsn;
+```
+
+The `GROUP BY` includes `recorded_at` as well as the original `PRIMARY KEY` from
+table `orders`.  Among duplicates of a row, the one with the smallest kafka
+timestamp is preserved.  Warning: two copies that enter Kafka with the same timestamp
+are indistinguishable here and both reach the output.  To breaking such ties you needs to compare on a column that differs between the copies, e.g., `kafka_offset`.
+
+The following `LOCAL VIEW` uses a join to extract from the original row the
+remaining fields:
+
+```sql
+-- The first copy of each change, with its values
+CREATE LOCAL VIEW deduplicated AS
+SELECT changes.order_id, changes.amount, changes.status, changes.op,
+    changes.recorded_at, changes.kafka_timestamp, changes.kafka_offset
+FROM first_arrival JOIN changes
+  ON changes.order_id = first_arrival.order_id
+ AND changes.recorded_at = first_arrival.recorded_at
+ AND changes.lsn = first_arrival.lsn
+ AND changes.kafka_timestamp = first_arrival.kafka_timestamp;
+```
+
+#### Garbage collection
+
+The pipeline stores three collections, and discards old records from all of
+them:
+
+* `first_arrival` stores one timestamp for each group.  Feldera discards a group
+  when its `recorded_at` falls below the waterline, one day after the database
+  recorded the change.
+* The join stores both of its inputs, keyed by
+  `(order_id, recorded_at, lsn, kafka_timestamp)`.  `MIN(kafka_timestamp)` has
+  the waterline of `kafka_timestamp`.  Each side discards a record when either
+  timestamp in its key falls below its waterline.  With a lateness of 0 the
+  waterline of `kafka_timestamp` is the newest timestamp seen, so each side keeps
+  only a small set of the most recent records.
+
+At this point `deduplicated` is itself a log of deduplicated changes: one
+row for each change the database recorded, with `op` marking a deletion.  The
+section
+[Soft deletes with temporal filters](/sql/streaming#soft-deletes-with-temporal-filters)
+shows how one can reconstruct the content of table `orders` from such a log, by
+ranking the changes of each key and keeping the latest one: you can order by
+`recorded_at` and `lsn`.
+
+(If the primary key of the collection is large, a hash of the primary key --
+e.g., MD5 -- can be kept instead and used to deduplicate keys.)
 
 ## `NOW()` and temporal filters
 

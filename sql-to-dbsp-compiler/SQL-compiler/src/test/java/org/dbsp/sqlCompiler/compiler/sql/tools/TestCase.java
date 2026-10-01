@@ -214,8 +214,10 @@ public class TestCase {
                     // Currently we don't have any tests with this case.
 
                     TableData expected = outputs.getSet(i);
-                    DBSPExpression viewContents = expected.createOutput(this.ccs.compiler, "out" + testNumber,
-                            codeDirectory, executionDirectory);
+                    // A large output is written to a file, which must not be shared
+                    // with another step or output of the same test.
+                    DBSPExpression viewContents = expected.createOutput(this.ccs.compiler,
+                            "out" + testNumber + "_" + pair + "_" + i, codeDirectory, executionDirectory);
                     DBSPExpression actual = new DBSPApplyExpression("read_output_spine", DBSPTypeAny.getDefault(),
                             streams.getVarReference().field(change.inputs.getSetCount() + i + skippedOutputs).borrow());
                     var produced = new DBSPLetStatement("produced_result", actual);

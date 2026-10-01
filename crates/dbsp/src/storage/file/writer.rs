@@ -188,7 +188,7 @@ impl Default for Parameters {
             min_branch: 32,
             #[cfg(test)]
             max_branch: usize::MAX,
-            compression: Some(Compression::Snappy),
+            compression: Some(Compression::Lz4),
             compression_level: None,
         }
     }

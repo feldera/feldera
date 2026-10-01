@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Datatable, TableHandler } from '@vincjo/datatables'
+  import { TableHandler } from '@vincjo/datatables'
   import { Popover, Select, Tooltip } from 'common-ui'
   import { match } from 'ts-pattern'
   import { page } from '$app/state'
@@ -11,8 +11,8 @@
   import { dateMax } from '$lib/functions/common/date'
   import { matchesSubstring } from '$lib/functions/common/string'
   import { type NamesInUnion, unionName } from '$lib/functions/common/union'
-  import { resolve } from '$lib/functions/svelte'
   import { formatDateTime } from '$lib/functions/format'
+  import { resolve } from '$lib/functions/svelte'
   import type {
     PipelineStatus as PipelineStatusType,
     PipelineThumb
@@ -152,9 +152,9 @@
       </div>
     </div>
   </div>
-  <Datatable headless {table}>
-    <table class="bg-inherit md:px-6">
-      <thead style="top: {controlsHeight}px; z-index: 1;">
+  <div class="flex md:px-6">
+    <table class="w-full border-separate border-spacing-0">
+      <thead class="bg-white-dark sticky" style="top: {controlsHeight}px; z-index: 1;">
         <tr>
           <th class="w-10 px-3 text-left"
             ><div class="flex h-full items-center">
@@ -320,13 +320,5 @@
         {/each}
       </tbody>
     </table>
-  </Datatable>
+  </div>
 </div>
-
-<style>
-  /* Datatable wraps our <table> in an <article class="thin-scrollbar"> whose default
-     overflow:auto would clip the sticky header. Reach in via :global to override. */
-  .pipeline-table-wrapper :global(article.thin-scrollbar) {
-    overflow: visible !important;
-  }
-</style>

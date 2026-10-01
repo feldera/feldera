@@ -849,32 +849,34 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 .appendSupplier(function::toString)
                 .newline();
 
-        // The bound for the output is different from the waterline
-        DBSPExpression body0;
-        DBSPType keyType = operator.getOutputIndexedZSetType().keyType;
-        if (keyType.is(DBSPTypeTupleBase.class) && keyType.to(DBSPTypeTupleBase.class).size() == 0) {
-            // Special case when the key of the operator is an empty tuple.
-            // The Tup0 tuple is always monotone, so we have to include it in the output of the bound.
-            body0 = new DBSPRawTupleExpression(
-                    new DBSPTupleExpression(),
-                    new DBSPTupleExpression(var.field(0).deref()));
-        } else {
-            body0 = new DBSPRawTupleExpression(new DBSPTupleExpression(var.field(0).deref()));
+        if (!operator.upper.isFollowing()) {
+            // A new row at t changes only the outputs of the rows at t or later
+            DBSPExpression body0;
+            DBSPType keyType = operator.getOutputIndexedZSetType().keyType;
+            if (keyType.is(DBSPTypeTupleBase.class) && keyType.to(DBSPTypeTupleBase.class).size() == 0) {
+                // Special case when the key of the operator is an empty tuple.
+                // The Tup0 tuple is always monotone, so we have to include it in the output of the bound.
+                body0 = new DBSPRawTupleExpression(
+                        new DBSPTupleExpression(),
+                        new DBSPTupleExpression(var.field(0).deref()));
+            } else {
+                body0 = new DBSPRawTupleExpression(new DBSPTupleExpression(var.field(0).deref()));
+            }
+            DBSPClosureExpression closure0 = body0.closure(var);
+            analyzer = new MonotoneTransferFunctions(
+                    this.compiler(), operator, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
+            MonotoneExpression monotone0 = analyzer.applyAnalysis(closure0);
+            Objects.requireNonNull(monotone0);
+
+            DBSPClosureExpression function0 = monotone0.getReducedExpression().to(DBSPClosureExpression.class);
+            Logger.INSTANCE.belowLevel(this, 2)
+                    .append("BOUND FUNCTION: ")
+                    .appendSupplier(function0::toString)
+                    .newline();
+
+            OutputPort bound = this.createApply(boundSource, function0);
+            this.markBound(expanded.replacement.outputPort(), bound);
         }
-        DBSPClosureExpression closure0 = body0.closure(var);
-        analyzer = new MonotoneTransferFunctions(
-                this.compiler(), operator, MonotoneTransferFunctions.ArgumentKind.IndexedZSet, projection);
-        MonotoneExpression monotone0 = analyzer.applyAnalysis(closure0);
-        Objects.requireNonNull(monotone0);
-
-        DBSPClosureExpression function0 = monotone0.getReducedExpression().to(DBSPClosureExpression.class);
-        Logger.INSTANCE.belowLevel(this, 2)
-                .append("BOUND FUNCTION: ")
-                .appendSupplier(function0::toString)
-                .newline();
-
-        OutputPort bound = this.createApply(boundSource, function0);
-        this.markBound(expanded.replacement.outputPort(), bound);
 
         // Drop the boolean flag from the waterline
         DBSPVariablePath tmp = waterline.outputType().ref().var();

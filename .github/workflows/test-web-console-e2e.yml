@@ -2,7 +2,20 @@ name: Web Console Integration Tests
 
 on:
   workflow_call:
+    inputs:
+      image_tag:
+        description: "Image tag to test. Empty means this ref's own sha- tag."
+        required: false
+        type: string
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: >-
+          Tag of an already-built image to test, e.g. sha-<40-char-sha> from an
+          earlier run. Leave empty to use this ref's own sha- tag, which only
+          exists if the image was built for exactly this commit.
+        required: false
+        type: string
 
 jobs:
   web-console-integration-tests:
@@ -15,7 +28,7 @@ jobs:
 
     services:
       pipeline-manager:
-        image: ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
+        image: ${{ vars.FELDERA_IMAGE_NAME }}:${{ inputs.image_tag || format('sha-{0}', github.sha) }}
         env:
           AUTH_PROVIDER: none
           RUST_LOG: info
@@ -78,4 +91,124 @@ jobs:
         env:
           PLAYWRIGHT_API_ORIGIN: http://localhost:8080
           PLAYWRIGHT_APP_ORIGIN: http://localhost:8080
+
+  # The console against a manager that requires a login. The provider is
+  # scripts/dummy_oidc.py, which needs no secrets: its login page grants the
+  # chosen identity on click. The browser and the manager must reach the
+  # provider at the same issuer URL. On the host network, all three share
+  # localhost; a service container would need a host alias on both sides.
+  web-console-e2e-auth:
+    if: ${{ !contains(vars.CI_SKIP_JOBS, 'web-console-e2e-auth') }}
+    name: Web Console E2E Tests (OIDC login)
+    runs-on: ubuntu-latest-amd64
+    timeout-minutes: 20
+    env:
+      FELDERA_IMAGE: ${{ vars.FELDERA_IMAGE_NAME }}:${{ inputs.image_tag || format('sha-{0}', github.sha) }}
+      OIDC_ISSUER: http://localhost:9876
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+
+      - name: Login to GHCR with GITHUB_TOKEN
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Start the dummy OIDC provider
+        run: |
+          nohup uv run scripts/dummy_oidc.py --port 9876 --issuer "$OIDC_ISSUER" > dummy-oidc.log 2>&1 &
+          echo "DUMMY_OIDC_PID=$!" >> "$GITHUB_ENV"
+          curl -fsS --retry 60 --retry-delay 1 --retry-connrefused "$OIDC_ISSUER/.well-known/openid-configuration" > /dev/null
+
+      - name: Start pipeline-manager with OIDC authentication
+        run: |
+          docker run -d \
+            --pull missing \
+            --name pipeline-manager-auth \
+            --network host \
+            -e AUTH_PROVIDER=generic-oidc \
+            -e FELDERA_AUTH_CLIENT_ID=feldera \
+            -e FELDERA_AUTH_ISSUER="$OIDC_ISSUER" \
+            -e FELDERA_AUTH_AUDIENCE=feldera-api \
+            -e RUST_LOG=info \
+            -e RUST_BACKTRACE=1 \
+            "$FELDERA_IMAGE"
+          curl -fsS --retry 60 --retry-delay 2 --retry-connrefused http://localhost:8080/healthz
+
+      # Runs as the runner's user so nothing root-owned is left in the workspace.
+      - name: Run Playwright e2e tests with OIDC login
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: |
+          docker run --rm \
+            --network host \
+            --ipc host \
+            --user "$(id -u):$(id -g)" \
+            -e HOME=/tmp/home \
+            -e CI \
+            -e PLAYWRIGHT_API_ORIGIN=http://localhost:8080 \
+            -e PLAYWRIGHT_APP_ORIGIN=http://localhost:8080 \
+            -v "$GITHUB_WORKSPACE:/work" \
+            -w /work \
+            mcr.microsoft.com/playwright:v1.58.2-noble \
+            bash -euo pipefail -c '
+              npm install -g --prefix /tmp/bun bun@1.3.10
+              export PATH="/tmp/bun/bin:$PATH"
+              bun install --frozen-lockfile
+              cd js-packages/web-console
+              bunx svelte-kit sync
+              bun run test-e2e-auth
+            '
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: web-console-e2e-auth-traces
+          path: js-packages/web-console/test-results
+          if-no-files-found: ignore
+
+      - name: Logs & Cleanup
+        if: always()
+        run: |
+          docker logs pipeline-manager-auth || true
+          docker rm -f pipeline-manager-auth || true
+          cat dummy-oidc.log || true
+          if [ -n "${DUMMY_OIDC_PID:-}" ]; then kill "$DUMMY_OIDC_PID" || true; fi
+
+  # One cancel sentinel per job above, following the scheme ci.yml documents.
+  # ci.yml's cancel-if-tests-web-console-integration-failed watches the
+  # caller-side job, which reports failure only once every job here has
+  # finished. These watch a single job each and cancel the run as soon as it
+  # fails. `github.run_id` is the caller's run, so the whole run goes down.
+  cancel-if-web-console-integration-tests-failed:
+    name: Cancel if Web Console Integration Tests Failed
+    needs: [web-console-integration-tests]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
+
+  cancel-if-web-console-e2e-auth-failed:
+    name: Cancel if Web Console E2E Tests (OIDC login) Failed
+    needs: [web-console-e2e-auth]
+    if: failure()
+    runs-on: ubuntu-latest-amd64
+    permissions:
+      actions: write
+    steps:
+      - name: Cancel workflow
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/cancel"
 

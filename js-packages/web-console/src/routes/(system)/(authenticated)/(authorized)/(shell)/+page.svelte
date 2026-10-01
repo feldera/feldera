@@ -18,7 +18,9 @@
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import PipelineTable from '$lib/components/pipelines/Table.svelte'
   import AvailableActions from '$lib/components/pipelines/table/AvailableActions.svelte'
+  import OpenSupportBundleDialog from '$lib/components/supportBundle/OpenSupportBundleDialog.svelte'
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
@@ -58,7 +60,12 @@
   const drawer = useAdaptiveDrawer('right')
 
   const demos = useDemos()
+  const globalDialog = useGlobalDialog()
 </script>
+
+{#snippet supportBundleDialog()}
+  <OpenSupportBundleDialog></OpenSupportBundleDialog>
+{/snippet}
 
 <AppHeader>
   {#snippet beforeEnd()}
@@ -71,6 +78,13 @@
       </button>
     {:else}
       <NavigationExtras></NavigationExtras>
+      <button
+        class="fd fd-stethoscope btn-icon preset-tonal-surface text-[24px]"
+        onclick={() => (globalDialog.dialog = supportBundleDialog)}
+        title="Open support bundle"
+        data-testid="btn-open-support-bundle"
+      >
+      </button>
       <div class="relative">
         <CreatePipelineButton inputClass="max-w-64" btnClass="preset-filled-surface-50-950"
         ></CreatePipelineButton>

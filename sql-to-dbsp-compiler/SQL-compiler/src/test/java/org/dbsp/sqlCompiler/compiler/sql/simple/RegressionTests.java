@@ -1559,7 +1559,7 @@ public class RegressionTests extends SqlIoTest {
                 CREATE TABLE T (
                    id INT,
                    amt INT,
-                   ts TIMESTAMP
+                   ts TIMESTAMP NOT NULL
                 );
 
                 CREATE VIEW V AS SELECT
