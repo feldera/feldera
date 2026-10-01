@@ -11,7 +11,88 @@ use dashmap::DashMap;
 use feldera_adapterlib::catalog::SerCursor;
 use feldera_types::program_schema::SqlIdentifier;
 use itertools::Itertools;
-use tracing::warn;
+use size_of::HumanBytes;
+use tracing::{info, warn};
+
+/// Tracks and reports memory use.
+pub(crate) struct MemoryUseReporter {
+    /// When we were created.
+    ///
+    /// We don't want to report on memory use for a while afterward, since it
+    /// will take some time to reach what we hope is a steady state.
+    start: Instant,
+
+    /// The most recently measured memory use, in bytes.
+    current: u64,
+
+    /// The peak memory use we last reported, in bytes, and when we reported it.
+    ///
+    /// This is a peak value: we only ever report a new value when the usage
+    /// increases substantially from the previously reported value.
+    peak: Option<(Instant, u64)>,
+
+    /// Minimum amount of memory to report on, in bytes.
+    min_memory: u64,
+
+    /// Name of the resource being reported, for use in log messages.
+    name: &'static str,
+}
+
+impl MemoryUseReporter {
+    pub(crate) fn new(name: &'static str, min_memory: u64) -> Self {
+        Self {
+            start: Instant::now(),
+            current: 0,
+            peak: None,
+            min_memory,
+            name,
+        }
+    }
+
+    /// The most recent measured memory use in bytes.
+    pub(crate) fn current(&self) -> usize {
+        self.current as usize
+    }
+
+    /// Updates the record of memory in use to `memory`, in bytes, and logs the
+    /// change if appropriate, which means either:
+    ///
+    /// - Over `min_memory`, after 60 seconds from initialization, or
+    ///
+    /// - Over 10% growth since the previous report.
+    pub(crate) fn update(&mut self, memory: u64) {
+        /// Minimum time before first report.
+        const REPORT_DELAY: Duration = Duration::from_secs(60);
+
+        self.current = memory;
+        if self.start.elapsed() < REPORT_DELAY {
+            return;
+        }
+
+        match &self.peak {
+            None if memory > self.min_memory => {
+                info!(
+                    "{}: {} after {} seconds",
+                    self.name,
+                    HumanBytes::new(memory),
+                    self.start.elapsed().as_secs()
+                );
+            }
+            Some((last_time, last_memory)) if memory > *last_memory * 11 / 10 => {
+                info!(
+                    "{}: Grew {:.0}%, from {} to {}, in last {} seconds",
+                    self.name,
+                    memory as f64 / *last_memory as f64 * 100.0 - 100.0,
+                    HumanBytes::new(*last_memory),
+                    HumanBytes::new(memory),
+                    last_time.elapsed().as_secs()
+                );
+            }
+            _ => return,
+        }
+        self.peak = Some((Instant::now(), memory));
+    }
+}
 
 /// Operations over an indexed view.
 #[derive(Debug)]
