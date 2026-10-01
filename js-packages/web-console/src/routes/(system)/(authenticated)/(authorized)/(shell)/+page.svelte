@@ -140,7 +140,8 @@
           </div>
         </div>
       {/if}
-      <div class="flex flex-col" data-testid="box-pipelines-section">
+      <!-- Without the banner, pad the section so it starts 40px below the header logo. -->
+      <div class="flex flex-col" class:pt-4={welcomed.value} data-testid="box-pipelines-section">
         {#snippet header()}
           <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
             <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
