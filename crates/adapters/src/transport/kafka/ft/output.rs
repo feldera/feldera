@@ -1,7 +1,8 @@
 use crate::transport::kafka::{
-    MemoryUseReporter, OauthbearerAuth, build_headers, generate_oauthbearer_token, kafka_send,
+    OauthbearerAuth, buffered_bytes, build_headers, generate_oauthbearer_token, kafka_send,
     resolve_oauthbearer_auth,
 };
+use crate::util::MemoryUseReporter;
 use crate::{AsyncErrorCallback, OutputEndpoint, transport::kafka::DeferredLogging};
 use anyhow::{Context, Error as AnyError, Result as AnyResult, anyhow, bail};
 use feldera_adapterlib::transport::OutputBatchType;
@@ -404,7 +405,7 @@ impl DataProducerContext {
             deferred_logging: DeferredLogging::new(),
             oauthbearer_config,
             topic: kafka_config.topic.clone(),
-            memory_use_reporter: Mutex::new(MemoryUseReporter::new()),
+            memory_use_reporter: Mutex::new(MemoryUseReporter::new("buffers", 1024 * 1024)),
         })
     }
 }
@@ -437,7 +438,10 @@ impl ClientContext for DataProducerContext {
 
     fn stats(&self, statistics: rdkafka::Statistics) {
         let _guard = span(&self.topic);
-        self.memory_use_reporter.lock().unwrap().update(&statistics);
+        self.memory_use_reporter
+            .lock()
+            .unwrap()
+            .update(buffered_bytes(&statistics));
     }
 }
 
@@ -488,7 +492,7 @@ where
             deferred_logging: DeferredLogging::new(),
             oauthbearer_config,
             topic: kafka_config.topic.clone(),
-            memory_use_reporter: Mutex::new(MemoryUseReporter::new()),
+            memory_use_reporter: Mutex::new(MemoryUseReporter::new("buffers", 1024 * 1024)),
         })
     }
 }
@@ -521,7 +525,10 @@ where
 
     fn stats(&self, statistics: rdkafka::Statistics) {
         let _guard = span(&self.topic);
-        self.memory_use_reporter.lock().unwrap().update(&statistics);
+        self.memory_use_reporter
+            .lock()
+            .unwrap()
+            .update(buffered_bytes(&statistics));
     }
 }
 

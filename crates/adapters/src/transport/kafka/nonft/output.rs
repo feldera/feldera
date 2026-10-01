@@ -1,7 +1,8 @@
 use crate::transport::kafka::{
-    DeferredLogging, MemoryUseReporter, OauthbearerAuth, PemToLocation, build_headers,
+    DeferredLogging, OauthbearerAuth, PemToLocation, buffered_bytes, build_headers,
     generate_oauthbearer_token, kafka_send, rdkafka_loglevel_from, resolve_oauthbearer_auth,
 };
+use crate::util::MemoryUseReporter;
 use crate::{AsyncErrorCallback, OutputEndpoint};
 use anyhow::{Error as AnyError, Result as AnyResult, anyhow, bail};
 use feldera_types::transport::kafka::KafkaOutputConfig;
@@ -56,7 +57,7 @@ impl KafkaOutputContext {
             async_error_callback: RwLock::new(None),
             deferred_logging: DeferredLogging::new(),
             topic: kafka_config.topic.clone(),
-            memory_use_reporter: Mutex::new(MemoryUseReporter::new()),
+            memory_use_reporter: Mutex::new(MemoryUseReporter::new("buffers", 1024 * 1024)),
         })
     }
 }
@@ -91,7 +92,10 @@ impl ClientContext for KafkaOutputContext {
 
     fn stats(&self, statistics: rdkafka::Statistics) {
         let _guard = span(&self.topic);
-        self.memory_use_reporter.lock().unwrap().update(&statistics);
+        self.memory_use_reporter
+            .lock()
+            .unwrap()
+            .update(buffered_bytes(&statistics));
     }
 }
 

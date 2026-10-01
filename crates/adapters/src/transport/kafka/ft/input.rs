@@ -1,9 +1,10 @@
 use crate::transport::InputCommandReceiver;
-use crate::transport::kafka::MemoryUseReporter;
+use crate::transport::kafka::buffered_bytes;
 use crate::transport::kafka::ft::count_partitions_in_topic;
 use crate::transport::kafka::{
     OauthbearerAuth, generate_oauthbearer_token, resolve_oauthbearer_auth,
 };
+use crate::util::MemoryUseReporter;
 use crate::{InputBuffer, Parser};
 use crate::{
     InputConsumer, TransportInputEndpoint,
@@ -120,7 +121,7 @@ impl KafkaFtInputContext {
             deferred_logging: DeferredLogging::new(),
             oauthbearer_config,
             topic: kafka_config.topic.clone(),
-            memory_use_reporter: Mutex::new(MemoryUseReporter::new()),
+            memory_use_reporter: Mutex::new(MemoryUseReporter::new("buffers", 1024 * 1024)),
         })
     }
 }
@@ -145,7 +146,10 @@ impl ClientContext for KafkaFtInputContext {
 
     fn stats(&self, statistics: rdkafka::Statistics) {
         let _guard = span(&self.topic);
-        self.memory_use_reporter.lock().unwrap().update(&statistics);
+        self.memory_use_reporter
+            .lock()
+            .unwrap()
+            .update(buffered_bytes(&statistics));
     }
 }
 
