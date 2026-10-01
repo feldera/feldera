@@ -193,7 +193,7 @@
           </ThSort>
           <ThSort
             {table}
-            class="h-10 w-20 justify-end px-3 xl:w-32"
+            class="h-10 w-20 px-3 xl:w-32"
             field={(p) => p.connectors?.numErrors}
             {...sortColumn('numErrors')}
           >
@@ -243,7 +243,7 @@
               <div
                 class="fd {pipeline.storageStatus === 'Cleared'
                   ? 'fd-database-off text-surface-500'
-                  : 'fd-database'} text-center text-[20px]"
+                  : 'fd-database'} text-center text-[16px]"
               ></div>
               <Tooltip
                 >{match(pipeline.storageStatus)
@@ -291,21 +291,21 @@
               </div>
             </td>
             <td class="{rowTd} border-surface-100-900 px-3 group-hover:bg-surface-50-950">
-              <div class="text-right text-nowrap">
+              <div class="text-nowrap">
                 {pipeline.connectors?.numErrors ?? '-'}
               </div>
             </td>
             <td
               class="{rowTd} relative w-28 border-surface-100-900 px-3 group-hover:bg-surface-50-950"
             >
-              <div class="w-32 text-right text-nowrap">
+              <div class="text-nowrap">
                 {formatElapsedTime(pipeline.lastStatusSince, 'dhm')} ago
               </div>
             </td>
             <td
               class="{rowTd} relative w-40 border-surface-100-900 px-3 group-hover:bg-surface-50-950"
             >
-              <div class="text-right text-nowrap">
+              <div class="text-nowrap">
                 {pipeline.deploymentResourcesStatus === 'Provisioned'
                   ? formatDateTime(pipeline.deploymentResourcesStatusSince)
                   : ''}

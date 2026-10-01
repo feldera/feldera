@@ -28,17 +28,11 @@
   )
 </script>
 
-{#if status === 'update_available'}
-  <div class="fd fd-info pb-0.5 text-[20px] text-tertiary-700-300"></div>
-{:else if status === 'custom'}
-  <div class="fd fd-info pb-0.5 text-[20px] text-warning-500"></div>
-{:else}
-  <div class="w-5"></div>
-{/if}
-<PipelineVersionTooltip {pipelineName} {status} {baseRuntimeVersion} />
-
+<!-- The version comes first so it lines up with the left-aligned column
+  header; the status icon, when there is one, trails it. The tooltip must
+  directly follow the icon, since it anchors to its previous sibling. -->
 {#if version.length < 11}
-  <span class="text-sm">{version}</span>
+  <span>{version}</span>
 {:else}
   <div class="flex flex-nowrap items-center">
     {version.slice(0, 7)}
@@ -46,3 +40,10 @@
     <ClipboardCopyButton value={version}></ClipboardCopyButton>
   </div>
 {/if}
+
+{#if status === 'update_available'}
+  <div class="fd fd-info pb-0.5 text-[20px] text-tertiary-700-300"></div>
+{:else if status === 'custom'}
+  <div class="fd fd-info pb-0.5 text-[20px] text-warning-500"></div>
+{/if}
+<PipelineVersionTooltip {pipelineName} {status} {baseRuntimeVersion} />
