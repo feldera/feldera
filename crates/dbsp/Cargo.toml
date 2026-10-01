@@ -151,6 +151,10 @@ name = "spine_batches"
 harness = false
 
 [[bench]]
+name = "rolling_aggregate_backfill"
+harness = false
+
+[[bench]]
 name = "input_map_ingest"
 harness = false
 
