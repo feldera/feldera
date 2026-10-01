@@ -57,6 +57,14 @@ jobs:
     name: Adapter Tests
     needs: [invoke-build-rust]
     uses: ./.github/workflows/test-adapters.yml
+    # A called workflow gets no more than the calling job grants, and the
+    # Unity Catalog tests authenticate to Databricks with an OIDC token (see
+    # the comment on invoke-tests-integration-runtime above for the same
+    # requirement). A workflow_dispatch run gets a richer default token than
+    # a merge_group run does, so this gap didn't surface in manual testing.
+    permissions:
+      contents: read
+      id-token: write
     secrets: inherit
 
   invoke-build-docker:
