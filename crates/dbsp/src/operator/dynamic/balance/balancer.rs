@@ -1051,9 +1051,10 @@ impl BalancerInner {
         });
 
         // If at least one worker has flushed the current transaction, then the policy cannot change until the
-        // next transaction. Special case if this is the first step of a new transaction or we are between transactions
-        // (i.e., when set_hint is called) and workers have not had a chance to exchange metadata yet (an alternative
-        // is to introduce another round of metadata exchange after transaction commit).
+        // next transaction. Special case if we are between transactions (i.e., when set_hint is called): the
+        // metadata still describes the previous transaction, whose flush state does not constrain the next one.
+        // The first step of a transaction solves before `start_step` sets `transaction_in_progress`, but by then
+        // the metadata already reflects `start_transaction` (see `MetadataExchange`).
         let fixed_policy = if any_flushed && self.transaction_in_progress {
             // println!("{} metadata: {:?}", Runtime::worker_index(), metadata);
             // All workers must have the same policy.
