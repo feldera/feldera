@@ -34,11 +34,13 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 
 import javax.annotation.Nullable;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -91,12 +93,23 @@ public final class FelderaJsonEncoder {
     }
 
     /** {@code declared} carries the SQL field names of ROW values; the literal's own type does not.
-     * A string column only accepts JSON strings, so a value of another type keeps its text. */
+     * The pipeline decodes a JSON value only into a matching column type, so a value cast from
+     * another type is converted the way SQL's CAST converts it: to its text for a string
+     * column, and from trimmed text to a number for a numeric column. */
     static JsonNode encodeValue(DBSPExpression value, @Nullable DBSPType declared) {
         JsonNode encoded = encodeLiteral(value, declared);
         boolean isStringColumn = declared != null && declared.is(DBSPTypeString.class);
         if (isStringColumn && encoded.isValueNode() && !encoded.isNull() && !encoded.isTextual())
             return NODES.textNode(encoded.asText());
+        boolean isNumericColumn = declared != null && declared.is(IsNumericType.class);
+        if (isNumericColumn && encoded.isTextual()) {
+            try {
+                return NODES.numberNode(new BigDecimal(encoded.asText().trim()));
+            } catch (NumberFormatException notANumber) {
+                // NaN and infinity stay text; the pipeline parses those spellings itself.
+                return encoded;
+            }
+        }
         return encoded;
     }
 
@@ -129,9 +142,9 @@ public final class FelderaJsonEncoder {
         if (value instanceof DBSPDateLiteral date)
             return NODES.textNode(date.getDateString().toString());
         if (value instanceof DBSPTimeLiteral time)
-            return NODES.textNode(String.valueOf(time.value));
+            return NODES.textNode(withoutTrailingDot(String.valueOf(time.value)));
         if (value instanceof DBSPTimestampLiteral timestamp)
-            return NODES.textNode(timestamp.getTimestampString().toString());
+            return NODES.textNode(withoutTrailingDot(timestamp.getTimestampString().toString()));
         if (value instanceof DBSPTimestampTzLiteral timestamp)
             return NODES.textNode(timestamp.getTimestampTzString().toString());
         if (value instanceof DBSPUuidLiteral uuid)
@@ -151,6 +164,11 @@ public final class FelderaJsonEncoder {
             return encodeStruct(tuple, declared);
         throw new UnsupportedException("Value is not a literal: " + value.getClass().getSimpleName(),
                 value.getNode());
+    }
+
+    /** Calcite prints a time with an empty fraction as {@code 12:00:00.}, which the pipeline rejects. */
+    private static String withoutTrailingDot(String temporal) {
+        return temporal.endsWith(".") ? temporal.substring(0, temporal.length() - 1) : temporal;
     }
 
     /** JSON has no NaN or infinity, so those travel as the strings Rust's float parser accepts. */
