@@ -248,17 +248,16 @@ describe('a click on an expanded region', () => {
     cleanup()
   })
 
-  it('marks nothing and colors no edges, unlike a click on an operator', async () => {
-    // A region contains many nodes, so a trace from it would color all edges in it. Also, a region
-    // cannot show the mark, because a region never glows.
+  it('marks the region but colors no edges, unlike a click on an operator', async () => {
+    // The edges of a region are not colored. A region contains many nodes, and all edges between them
+    // would be colored.
     const { cy, click, cleanup } = await mount(true)
     const point = regionPoint(cy, 'region')
     await click(point.x, point.y)
-    expect(cy.nodes('.selected-node').length).toBe(0)
+    expect(cy.nodes('.selected-node').map((n: { id(): string }) => n.id())).toEqual(['region'])
     expect(highlighted(cy)).toEqual([])
 
-    // Compare with a click on the operator inside the region: the click marks the operator and traces
-    // its edges.
+    // A click on the operator inside the region marks the operator and colors its edges.
     const node = cy.$id('n1')
     await click(node.renderedPosition().x, node.renderedPosition().y)
     expect(cy.nodes('.selected-node').map((n: { id(): string }) => n.id())).toEqual(['n1'])
@@ -286,28 +285,22 @@ describe('a click on an expanded region', () => {
     cleanup()
   })
 
-  it('still lets a hover mark and trace operators', async () => {
-    // The region report does not mark a node or color edges, so the diagram shows nothing for it. If
-    // the report also blocked hovers, the graph would stop reacting to the pointer, and the click would
-    // look like it did nothing.
+  it('keeps the mark of a clicked region when the pointer moves over an operator', async () => {
+    // A hover does not move the mark away from a clicked region. The same is true for a clicked
+    // operator.
     const { cy, click, reported, cleanup } = await mount(true)
     const point = regionPoint(cy, 'region')
     await click(point.x, point.y)
-    expect(cy.nodes('.selected-node').length).toBe(0)
 
     const node = cy.$id('n1')
     node.emit('mouseover')
     await settle()
-    expect(cy.nodes('.selected-node').map((n: { id(): string }) => n.id())).toEqual(['n1'])
-    expect(highlighted(cy).length).toBeGreaterThan(0)
-    // The hover does not change the report from the click, which stays until the user closes it.
-    expect(reported.attributes.at(-1)).toEqual({ nodeId: 'region', isSticky: true })
+    expect(cy.nodes('.selected-node').map((n: { id(): string }) => n.id())).toEqual(['region'])
+    expect(highlighted(cy)).toEqual([])
 
-    // The mark goes away with the pointer, but the report stays.
     node.emit('mouseout')
     await settle()
-    expect(cy.nodes('.selected-node').length).toBe(0)
-    expect(highlighted(cy)).toEqual([])
+    expect(cy.nodes('.selected-node').map((n: { id(): string }) => n.id())).toEqual(['region'])
     expect(reported.attributes.at(-1)).toEqual({ nodeId: 'region', isSticky: true })
     cleanup()
   })
