@@ -244,6 +244,12 @@ public class BaseSQLTests {
             className = className.substring(className.lastIndexOf('.') + 1);
             BaseSQLTests.this.currentTestInformation  = className + "#" + methodName;
         }
+
+        @Override
+        protected void failed(Throwable error, Description description) {
+            if (CrucibleCaseExport.isEnabled())
+                CrucibleCaseExport.recordFailedTest(BaseSQLTests.this.currentTestInformation, error);
+        }
     };
 
     public static final String PROJECT_DIRECTORY = "..";
@@ -290,6 +296,11 @@ public class BaseSQLTests {
         if (ExpressionOracleHarvest.isEnabled())
             // A harvest run's circuits keep their aggregate lists, which have no Rust rendering.
             testsToRun.clear();
+        if (CrucibleCaseExport.isEnabled()) {
+            // The cases run on the forge pipeline binary, not as Rust tests.
+            CrucibleCaseExport.exportAll(testsToRun);
+            testsToRun.clear();
+        }
         if (testsToRun.isEmpty())
             return;
 
@@ -440,6 +451,7 @@ public class BaseSQLTests {
     /** Return the default compiler used for testing. */
     public final DBSPCompiler testCompiler() {
         CompilerOptions options = this.testOptions();
+        CrucibleCaseExport.adjustOptions(options);
         return new DBSPCompiler(options);
     }
 
