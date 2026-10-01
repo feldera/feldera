@@ -29,9 +29,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.annotation.RegionAnnotation;
 import org.dbsp.sqlCompiler.circuit.annotation.JoinStrategy;
 import org.dbsp.sqlCompiler.circuit.operator.*;
-import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
-import org.dbsp.sqlCompiler.circuit.annotation.Recursive;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -75,7 +73,6 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
@@ -93,6 +90,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -103,6 +101,8 @@ public class ToRustVisitor extends CircuitVisitor {
     protected final IIndentStream builder;
     public final ToRustInnerVisitor innerVisitor;
     final boolean useHandles;
+    /** Controls code generation for recursive components. */
+    public static boolean useTupleRecursionApi = false;
     /** How are nodes named in Rust?  false - human-friendly, true - compiler-friendly */
     boolean preferHash = false;
     final CompilerOptions options;
@@ -423,110 +423,18 @@ public class ToRustVisitor extends CircuitVisitor {
             return operator.inputs.get(input).getName(false);
     }
 
+    /** Writer for a recursive component, as {@link #useTupleRecursionApi} selects it.
+     * It emits to the same builder as this visitor. */
+    public RecursiveComponentGenerator getRecursiveComponentsGenerator(
+        DBSPNestedOperator operator, Consumer<DBSPOperator> emitChild) {
+        if (useTupleRecursionApi)
+            return new TupleRecursiveComponentGenerator(this.builder, this.innerVisitor, operator, emitChild);
+        return new VectorRecursiveComponentGenerator(this.builder, this.innerVisitor, operator, emitChild);
+    }
+
     @Override
     public VisitDecision preorder(DBSPNestedOperator operator) {
-        boolean recursive = operator.hasAnnotation(a -> a.is(Recursive.class));
-        if (!recursive)
-            throw new InternalCompilerError("NestedOperator not recursive");
-
-        this.builder.append("let (");
-        for (int i = 0; i < operator.outputCount(); i++) {
-            OutputPort port = operator.internalOutputs.get(i);
-            if (port == null)
-                this.builder.append("_, ");
-            else
-                this.builder.append(port.getName(this.preferHash)).append(", ");
-        }
-        this.builder.append(") = ")
-                .append("circuit.recursive(|circuit, (");
-        for (int i = 0; i < operator.outputCount(); i++) {
-            ProgramIdentifier view = operator.outputViews.get(i);
-            DBSPViewDeclarationOperator decl = operator.declarationByName.get(view);
-            if (decl != null) {
-                this.builder.append(decl.getNodeName(this.preferHash)).append(", ");
-            } else {
-                // view is not really recursive.
-                if (operator.internalOutputs.get(i) != null) {
-                    // It is not used in recursion,
-                    // but it must be an output of the recursive component, and we
-                    // want to assign it a persistent ID.
-                    this.builder.append("unused_").append(i).append(", ");
-                } else {
-                    // This output doesn't even exist
-                    this.builder.append("_, ");
-                }
-            }
-        }
-        this.builder.append("): (");
-        this.innerVisitor.setOperatorContext(operator);
-        for (int i = 0; i < operator.outputCount(); i++) {
-            if (operator.internalOutputs.get(i) == null) {
-                this.builder.append("()").append(", ");
-            } else {
-                // The streams produced inside the nested circuit
-                DBSPType streamType = operator.internalOutputs.get(i).streamType(1);
-                streamType.accept(this.innerVisitor);
-                this.builder.append(", ");
-            }
-        }
-        this.innerVisitor.setOperatorContext(null);
-        this.builder.append(")| {").increase();
-
-        // Name the recursive streams before the operators of the scope are created.
-        // An operator that maintains state over a stream copies that stream's
-        // persistent id when it is constructed, so a name assigned later (after the
-        // subcircuit is constructed) would leave the integrals over the recursive
-        // streams without an id, and checkpointing the circuit would fail.
-        for (int i = 0; i < operator.outputCount(); i++) {
-            ProgramIdentifier view = operator.outputViews.get(i);
-            DBSPViewDeclarationOperator decl = operator.declarationByName.get(view);
-            OutputPort port = operator.internalOutputs.get(i);
-            if (decl != null) {
-                this.computeHash(decl);
-                this.tagStream(decl);
-            } else if (port != null) {
-                this.builder.append("let hash = ");
-                HashString hash = OperatorHash.getHash(port.operator, true);
-                if (hash == null) {
-                    this.builder.append("None;").newline();
-                } else {
-                    this.builder.append("Some(concat!(")
-                            .append(hash.toQuotedString())
-                            .append(", \".delay\"));")
-                            .newline();
-                }
-                this.builder
-                        .append("unused_")
-                        .append(i)
-                        .append(".set_persistent_id(hash);");
-            }
-            this.builder.newline();
-        }
-
-        for (IDBSPNode node : operator.getAllOperators())
-            this.processNode(node);
-
-        this.builder.append("Ok((");
-        for (int i = 0; i < operator.outputCount(); i++) {
-            OutputPort port = operator.internalOutputs.get(i);
-            if (port != null)
-                this.builder.append(port.getName(this.preferHash));
-            else
-                this.builder.append("()");
-            this.builder.append(", ");
-        }
-        this.builder.append("))").newline()
-                .decrease()
-                .append("}).unwrap();")
-                .newline();
-        for (int i = 0; i < operator.outputCount(); i++) {
-            OutputPort port = operator.internalOutputs.get(i);
-            if (port != null) {
-                this.computeExportedHash(port.operator);
-                this.tagStream(port.operator.to(DBSPSimpleOperator.class));
-            }
-        }
-
+        this.getRecursiveComponentsGenerator(operator, this::processNode).emit();
         return VisitDecision.STOP;
     }
 
@@ -618,28 +526,6 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.newline()
                 .append(operator.getNodeName(this.preferHash))
                 .append(".set_persistent_id(hash);");
-    }
-
-    /** Emit the id of a stream that leaves a recursive circuit.
-     *
-     * <p>It must not be the operator's own id: that id already names the stream
-     * inside the scope, and the two are separate streams whose operators keep
-     * separate state.  Sharing it makes an inner trace and an outer one write
-     * the same file, and whichever restores second reads a batch that was
-     * written with the other's layout. */
-    void computeExportedHash(DBSPOperator operator) {
-        if (this.preferHash)
-            return;
-        this.builder.append("let hash = ");
-        HashString hash = OperatorHash.getHash(operator, true);
-        if (hash == null) {
-            this.builder.append("None;").newline();
-        } else {
-            this.builder.append("Some(concat!(")
-                    .append(hash.toQuotedString())
-                    .append(", \".export\"));")
-                    .newline();
-        }
     }
 
     void computeHash(DBSPOperator operator) {

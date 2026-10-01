@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.StubsWriter;
+import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCrates;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCratesWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
@@ -260,6 +261,9 @@ public class BaseSQLTests {
     public static void prepareTests() {
         testsToRun.clear();
         SqlIoTest.cachedChangeList.clear();
+        // JUnit runs this once per test class; tests that change this 
+        // setting have to do it in their @BeforeClass method
+        ToRustVisitor.useTupleRecursionApi = false;
     }
 
     public static Path getTestFilePath() {
