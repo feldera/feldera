@@ -712,6 +712,14 @@ windowRange
 Where `agg` is a window aggregate function as described in the [section
 on aggregation](aggregates.md#window-aggregate-functions).
 
+Window aggregates generally do not support `DISTINCT` qualifiers, e.g.:
+`SELECT COUNT(DISTINCT x) OVER (PARTITION BY p ORDER BY ts RANGE BETWEEN
+INTERVAL 1 HOUR PRECEDING AND CURRENT ROW)` is rejected.
+However, for the following aggregate functions the result is the same with or
+without the `DISTINCT` qualifier, and thus the compiler accepts them
+in even in a window with `DISTINCT`: `MIN`, `MAX`, `BIT_AND`, `BIT_OR`, `EVERY`,
+`SOME`, `BOOL_AND`, `BOOL_OR`, `LOGICAL_AND`, and `LOGICAL_OR`.
+
 Currently we require window ranges to have constant values.  This
 precludes ranges such as `INTERVAL 1 YEAR`, which have variable sizes.
 The window bounds must be non-negative constant values.

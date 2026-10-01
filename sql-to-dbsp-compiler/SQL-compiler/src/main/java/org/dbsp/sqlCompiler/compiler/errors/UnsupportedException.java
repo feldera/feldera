@@ -41,6 +41,10 @@ public class UnsupportedException extends BaseCompilerException {
         super(msg + ": " + obj, obj);
     }
 
+    public UnsupportedException(String msg, SourcePositionRange range) {
+        super(msg, range);
+    }
+
     public UnsupportedException(String msg, IHasCalciteObject obj) {
         this(msg, obj.getNode());
     }

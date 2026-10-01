@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.quidem.ScottBaseTests;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
@@ -794,5 +795,65 @@ public class WindowTests extends ScottBaseTests {
                  3
                  3
                 (14 rows)""");
+    }
+
+    /** Issue 7337: DISTINCT in a window aggregate is rejected. */
+    @Test
+    public void distinctWindowAggregateRejected() {
+        String program = """
+                CREATE TABLE T (
+                    p0 VARCHAR NOT NULL,
+                    ts TIMESTAMP NOT NULL,
+                    p1 VARCHAR
+                );
+
+                CREATE VIEW V AS
+                SELECT
+                    COUNT(DISTINCT p1) OVER w AS dp
+                FROM T
+                WINDOW w AS (
+                    PARTITION BY p0
+                    ORDER BY ts
+                    RANGE BETWEEN INTERVAL '1' HOUR PRECEDING AND CURRENT ROW
+                );""";
+        this.statementsFailingInCompilation(program, """
+                56:5: error: Not supported: Window aggregates do not support DISTINCT.
+                See https://docs.feldera.com/sql/unsupported-operations#distinct-in-window-aggregates
+                   56|    COUNT(DISTINCT p1) OVER w AS dp
+                          ^^^^^^^^^^^^^^^^^^""");
+        // Compilation stops at the unsupported construct, so it is the only error,
+        // even with an index on the rejected view, a view that reads it, and a valid view
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.languageOptions.throwOnError = false;
+        compiler.submitStatementsForCompilation(program + """
+                
+                CREATE INDEX IV ON V(dp);
+                CREATE VIEW W AS SELECT * FROM V WHERE dp > 1;
+                CREATE VIEW X AS SELECT p0 FROM T;
+                CREATE INDEX IX ON X(p0);""");
+        compiler.getFinalCircuit(true);
+        Assert.assertEquals(compiler.messages.toString(), 1, compiler.messages.errorCount());
+        Assert.assertTrue(compiler.messages.toString(),
+                compiler.messages.toString().contains("Window aggregates do not support DISTINCT"));
+        // Calcite expands SUM into SUM0 and COUNT; the error marks the SUM call
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T (p INT NOT NULL, x INT);
+                CREATE VIEW V AS SELECT p, SUM(DISTINCT x) OVER (PARTITION BY p) AS s FROM T;""", """
+                49:28: error: Not supported: Window aggregates do not support DISTINCT.
+                See https://docs.feldera.com/sql/unsupported-operations#distinct-in-window-aggregates
+                   48|CREATE TABLE T (p INT NOT NULL, x INT);
+                   49|CREATE VIEW V AS SELECT p, SUM(DISTINCT x) OVER (PARTITION BY p) AS s FROM T;
+                                                 ^^^^^^^^^^^^^^^""");
+        // DISTINCT does not change the result of these aggregates
+        this.getCC("""
+                CREATE TABLE T (p INT NOT NULL, ts INT NOT NULL, x INT, b BOOLEAN);
+                CREATE VIEW V AS SELECT
+                  MIN(DISTINCT x) OVER w, MAX(DISTINCT x) OVER w,
+                  BIT_AND(DISTINCT x) OVER w, BIT_OR(DISTINCT x) OVER w,
+                  EVERY(DISTINCT b) OVER w, SOME(DISTINCT b) OVER w,
+                  BOOL_AND(DISTINCT b) OVER w, BOOL_OR(DISTINCT b) OVER w,
+                  LOGICAL_AND(DISTINCT b) OVER w, LOGICAL_OR(DISTINCT b) OVER w
+                FROM T
+                WINDOW w AS (PARTITION BY p ORDER BY ts ROWS BETWEEN 2 PRECEDING AND CURRENT ROW);""");
     }
     }
