@@ -205,6 +205,10 @@ The following window aggregate functions are supported:
     <th>Description</th>
   </tr>
   <tr>
+    <td><a id="window-array_agg"></a><code>ARRAY_AGG(</code>value [ RESPECT NULLS | IGNORE NULLS ]<code>)</code></td>
+    <td>Returns an array with the values in window; with <code>IGNORE NULLS</code>, the array omits <code>NULL</code> values</td>
+  </tr>
+  <tr>
     <td><a id="window-avg"></a><code>AVG(</code>numeric<code>)</code></td>
     <td>Returns the average (arithmetic mean) of numeric across all values in window</td>
   </tr>
