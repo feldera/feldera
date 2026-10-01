@@ -141,7 +141,10 @@ jobs:
       - name: Get GitHub OIDC token for Databricks federation
         id: github-oidc
         if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
         run: |
+          set -euo pipefail
+          : "${ACTIONS_ID_TOKEN_REQUEST_URL:?no OIDC token URL -- the calling job is missing permissions: id-token: write}"
           token=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
               "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=feldera-databricks-unity-test" \
               | jq -r '.value')
@@ -152,7 +155,11 @@ jobs:
       - name: Exchange for a Databricks access token
         id: databricks-oidc
         if: ${{ vars.CI_DRY_RUN != 'true' }}
+        shell: bash
         run: |
+          set -euo pipefail
+          : "${DATABRICKS_HOST:?DATABRICKS_WORKSPACE_HOST repo variable is not set}"
+          : "${UNITY_CI_SERVICE_PRINCIPAL_APPLICATION_ID:?UNITY_CI_SERVICE_PRINCIPAL_APPLICATION_ID repo variable is not set}"
           db_token=$(curl -sS -X POST "$DATABRICKS_HOST/oidc/v1/token" \
               -H 'Content-Type: application/x-www-form-urlencoded' \
               --data-urlencode 'grant_type=urn:ietf:params:oauth:grant-type:token-exchange' \
