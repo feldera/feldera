@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { pipelineStatusColor } from '$lib/functions/pipelineStatusColor'
+  import { pipelineStatusColor, statusChipClass } from '$lib/functions/pipelineStatusColor'
   import { getPipelineStatusLabel } from '$lib/functions/pipelines/status'
   import type { PipelineStatus } from '$lib/services/pipelineManager'
 
@@ -17,9 +17,6 @@
   const chipClass = $derived(pipelineStatusColor(deleted ? 'SystemError' : status).chip)
 </script>
 
-<div
-  data-testid={testid}
-  class={'chip min-w-28 px-1 font-medium uppercase transition-none ' + chipClass + ' ' + _class}
->
+<div data-testid={testid} class="{statusChipClass} {chipClass} {_class}">
   {deleted ? 'Deleted' : getPipelineStatusLabel(status)}
 </div>
