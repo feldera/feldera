@@ -147,6 +147,10 @@ name = "list_merger"
 harness = false
 
 [[bench]]
+name = "spine_batches"
+harness = false
+
+[[bench]]
 name = "input_map_ingest"
 harness = false
 
