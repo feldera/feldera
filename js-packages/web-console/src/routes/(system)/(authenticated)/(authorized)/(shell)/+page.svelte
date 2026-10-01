@@ -85,10 +85,6 @@
         data-testid="btn-open-support-bundle"
       >
       </button>
-      <div class="relative">
-        <CreatePipelineButton inputClass="max-w-64" btnClass="preset-filled-surface-50-950"
-        ></CreatePipelineButton>
-      </div>
       <BookADemo class="btn preset-filled-primary-500" placement="home">Book a demo</BookADemo>
     {/if}
   {/snippet}
