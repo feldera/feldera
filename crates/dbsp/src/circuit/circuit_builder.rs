@@ -1719,6 +1719,11 @@ pub struct MetadataExchangeInner {
 /// and receives their metadata. As a result all workers have identical metadata
 /// snapshots during the step and can make deterministic decisions based on it, such
 /// as choosing a balancing policy for a stream.
+///
+/// The first step of a transaction exchanges metadata after every worker has
+/// started the transaction, so its snapshot includes the metadata that operators
+/// publish in [`Operator::start_transaction`](crate::circuit::operator_traits::Operator::start_transaction).
+/// Each later step uses the snapshot exchanged at the end of the step before it.
 #[derive(Default, Debug, Clone)]
 pub struct MetadataExchange {
     inner: Rc<MetadataExchangeInner>,
