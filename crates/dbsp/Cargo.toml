@@ -159,6 +159,10 @@ name = "window_retractions"
 harness = false
 
 [[bench]]
+name = "join_updates"
+harness = false
+
+[[bench]]
 name = "input_map_ingest"
 harness = false
 
