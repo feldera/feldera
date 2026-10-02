@@ -20,6 +20,7 @@
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import { receiveUploadedBundle, storedBundleUrl } from '$lib/compositions/profileBundleHandoff'
   import { type PickedBundle, useBundlePicker } from '$lib/compositions/useBundlePicker'
+  import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import { useDownloadProgress } from '$lib/compositions/useDownloadProgress.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
@@ -39,6 +40,7 @@
   const toast = useToast()
   const layoutSettings = useLayoutSettings()
   const picker = useBundlePicker()
+  const darkMode = useDarkMode()
 
   let downloadProgress = useDownloadProgress()
   // If the URL provides no pipelineName, the remote-download path has no
@@ -407,6 +409,7 @@
         {globalMetrics}
         {runtimeConfig}
         {triageResults}
+        theme={darkMode.current}
         profileFiles={getProfileFiles()}
         selectedTimestamp={selectedProfile}
         onSelectTimestamp={handleSelectTimestamp}

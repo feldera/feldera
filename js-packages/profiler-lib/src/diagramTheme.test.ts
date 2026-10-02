@@ -15,10 +15,10 @@ import {
 } from './chips.js'
 import {
     buildGraphStyle,
+    COLLAPSED_REGION_CORNER_RADIUS,
+    COLLAPSED_REGION_OUTER_HEIGHT,
     DIAGRAM_PALETTES,
     type DiagramTheme,
-    COMPOSITE_CORNER_RADIUS,
-    COMPOSITE_OUTER_HEIGHT,
     ID_FONT_WEIGHT,
     labelWidth,
     NODE_CORNER_RADIUS,
@@ -41,7 +41,7 @@ const graph = (theme: DiagramTheme) =>
                 { data: { id: 'cool', label: 'cool', value: 5, chips: nodeChips(false, 0, theme) } },
                 { data: { id: 'hot', label: 'hot', value: 99, chips: nodeChips(false, 0, theme) } },
                 { data: { id: 'both', label: 'both', has_source: true, chips: nodeChips(true, 9, theme) } },
-                // A composite that is still collapsed: children exist but are not on the graph.
+                // A circuit region that is still collapsed: children exist but are not on the graph.
                 {
                     data: {
                         id: 'collapsed',
@@ -208,29 +208,29 @@ describe('node geometry', () => {
         expect(node.outerHeight()).toBe(NODE_OUTER_HEIGHT)
     })
 
-    it('gives a collapsed composite a first row for its counter chip', () => {
+    it('gives a collapsed circuit region a first row for its counter chip', () => {
         // The chip sits inside the node, in a row of its own above the text, so the node is taller
         // than an operator by that row.
         const cy = graph('light')
-        expect(cy.$id('collapsed').outerHeight()).toBe(COMPOSITE_OUTER_HEIGHT)
-        expect(COMPOSITE_OUTER_HEIGHT).toBeGreaterThan(NODE_OUTER_HEIGHT)
+        expect(cy.$id('collapsed').outerHeight()).toBe(COLLAPSED_REGION_OUTER_HEIGHT)
+        expect(COLLAPSED_REGION_OUTER_HEIGHT).toBeGreaterThan(NODE_OUTER_HEIGHT)
         // Tall enough for the chip and the gap around it. The stylesheet cannot read chip geometry,
         // the two modules importing each other, so this is where the two are held together.
-        expect(COMPOSITE_OUTER_HEIGHT - NODE_OUTER_HEIGHT)
+        expect(COLLAPSED_REGION_OUTER_HEIGHT - NODE_OUTER_HEIGHT)
             .toBeGreaterThanOrEqual(BADGE_HEIGHT + 2 * CHIP_INSET)
         // An expanded region ignores `height` and sizes itself to its children instead.
-        expect(cy.$id('region').outerHeight()).not.toBe(COMPOSITE_OUTER_HEIGHT)
+        expect(cy.$id('region').outerHeight()).not.toBe(COLLAPSED_REGION_OUTER_HEIGHT)
     })
 
-    it('rounds a composite more softly than the operators it holds', () => {
+    it('rounds a circuit region more softly than the operators it holds', () => {
         const cy = graph('light')
         expect(cy.$id('plain').style('shape')).toBe('round-rectangle')
         expect(cy.$id('plain').style('corner-radius')).toBe(`${NODE_CORNER_RADIUS}px`)
-        expect(cy.$id('collapsed').style('corner-radius')).toBe(`${COMPOSITE_CORNER_RADIUS}px`)
+        expect(cy.$id('collapsed').style('corner-radius')).toBe(`${COLLAPSED_REGION_CORNER_RADIUS}px`)
         expect(cy.$id('region').style('corner-radius')).toBe(`${REGION_CORNER_RADIUS}px`)
         // Every node is a round rectangle, so the radius is one of the two things that separate an
-        // operator from a composite, the border style below being the other.
-        expect(NODE_CORNER_RADIUS).toBeLessThan(COMPOSITE_CORNER_RADIUS)
+        // operator from a circuit region, the border style below being the other.
+        expect(NODE_CORNER_RADIUS).toBeLessThan(COLLAPSED_REGION_CORNER_RADIUS)
     })
 
     it('dashes the region border and leaves operator borders solid', () => {

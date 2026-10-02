@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { MetadataSelector } from './metadataSelection.js'
+import { MetadataSelector, optionLabel } from './metadataSelection.js'
 import { CircuitProfile, compareMetrics, type JsonProfiles } from './profile.js'
 import type { MetricOption, ProfilerCallbacks } from './profiler.js'
 
@@ -68,5 +68,17 @@ describe('MetadataSelector metric options', () => {
     it('lists the metrics in the order the tables use', () => {
         const listed = options().map((o) => ({ id: o.id, label: o.label }))
         expect(listed).toEqual([...listed].sort(compareMetrics))
+    })
+})
+
+describe('optionLabel', () => {
+    it('starts the name at the first label', () => {
+        expect(optionLabel('input_batches_stats.input:0.avg_size')).toBe('Input:0 avg size')
+        expect(optionLabel('input_batches_stats.input:12.count')).toBe('Input:12 count')
+    })
+
+    it('spells an id without labels the way the tables do', () => {
+        expect(optionLabel('input_batches_stats.avg_size')).toBe('Input batches stats avg size')
+        expect(optionLabel('runtime_percent')).toBe('Runtime percent')
     })
 })

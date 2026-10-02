@@ -161,8 +161,8 @@ describe('counter controls', () => {
     })
 
     it('centers the control in the pill, the icon giving way to it', () => {
-        // A pill under the pointer is a button about to be pressed, so it carries the one glyph that
-        // says what pressing it does and nothing else.
+        // When the pointer is on the pill, the pill shows only the icon of the action that a click
+        // does.
         for (const glyph of ['expand', 'collapse'] as const) {
             const svg = counter(7, glyph)
             expect(svg, glyph).not.toContain('<g')
@@ -186,7 +186,7 @@ describe('counter controls', () => {
     })
 
     it('leaves an empty counter slot empty, control or not', () => {
-        // A primitive operator counts nothing, so it has no control to press either.
+        // An operator has no counter chip, so it has no expand or collapse icon either.
         expect(nodeChips(true, 0, 'light', 'expand')[1]).toBe(CHIP_NONE)
     })
 

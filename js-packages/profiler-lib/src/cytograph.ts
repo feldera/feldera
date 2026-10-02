@@ -1,20 +1,24 @@
 // A cytograph is a graph representation suitable for the cytoscape graph layout and rendering tool
 
-import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeDefinition, type NodeSingular } from 'cytoscape';
+import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeCollection, type NodeDefinition, type NodeSingular } from 'cytoscape';
 import dblclick from 'cytoscape-dblclick';
-import { assert, displaysNodeInformation, Graph, OMap, Option, type EncodableAsString, NumericRange, Edge } from './util.js';
+import { assert, Graph, OMap, Option, type EncodableAsString, NumericRange, Edge } from './util.js';
 import { categoryShares, CircuitProfile, ComplexNode, NodeAndMetric, PropertyValue, totalShare, type DisplayScales, type NodeId } from './profile.js';
 import { CircuitSelection } from './selection.js';
 import elk from 'cytoscape-elk';
 import { Sources } from './dataflow.js';
-import { Point, Size } from "./planar.js";
-import { ViewNavigator } from './navigator.js';
 import { ZSet } from "./zset.js";
 import { MetadataSelection } from './metadataSelection.js';
 import { type NodeAttributes, type TooltipCell, type ProfilerCallbacks } from './profiler.js';
 import { buildGraphStyle, type DiagramTheme, labelWidth } from './diagramTheme.js';
+import { installNodeShadows, SELECTED_NODE_CLASS } from './nodeShadow.js';
+import { installNodeText } from './nodeText.js';
 import { nodeChips } from './chips.js';
 import { elkNodeLayoutOptions, regionMinWidth } from './regionSize.js';
+import { installChipButtons, isToggleable, refreshChips } from './chipButtons.js';
+import { notifyObservers, type DiagramObserver } from './diagramObserver.js';
+import { Viewport } from './viewport.js';
+import { FrozenLayout } from './frozenLayout.js';
 
 /** A measurement together with a normalized [0, 100] percentile for color scaling. The original
  * `PropertyValue` is preserved so consumers can format on demand (via `.toString()`) or compute
@@ -404,15 +408,17 @@ class GraphDiff {
 export class CytographRendering {
     currentGraph: Cytograph | null;
     readonly cy: cytoscape.Core;
-    readonly navigator: ViewNavigator;
     /**
      * If true do not remove the node information from the screen on mouse leave
      */
     stickyInformation: boolean;
-    // Last node that triggered a recomputation of the layout
-    lastNode: Option<NodeId>;
     // Current node that has tooltip displayed (for refreshing on metadata changes)
     private currentTooltipNode: NodeId | null = null;
+    /** Where the view is. */
+    private readonly viewport: Viewport;
+    /** Everything that reacts to the diagram's lifecycle rather than driving it.
+     * The observers are called in the same order they have in the array. */
+    private readonly observers: Array<DiagramObserver>;
     // True between `initiateLayout` and its matching `layoutComplete`. Used so `dispose()`
     // can fire a final `onRenderingChange(false)` if the layout was still in flight when the
     // visualizer is torn down — otherwise a consumer's progress bar would stick on screen.
@@ -433,7 +439,6 @@ export class CytographRendering {
         cytoscape.use(elk);
         cytoscape.use(dblclick);
 
-        this.navigator = new ViewNavigator(navigatorContainer);
         this.currentGraph = null;
         this.stickyInformation = false;
         // Start with an empty graph
@@ -441,10 +446,36 @@ export class CytographRendering {
             container: graphContainer,
             elements: [],
         });
-        // double-clicking on the navigator will adjust the graph to fit
-        this.navigator.setOnDoubleClick(() => this.cy.fit());
+        installNodeShadows(this.cy);
+        installNodeText(this.cy, () => this.theme);
         this.cy.style(buildGraphStyle(this.theme));
-        this.lastNode = Option.none();
+        this.viewport = new Viewport(
+            this.cy,
+            navigatorContainer,
+            () => this.currentGraph?.nodes.find((node) => node.getId() !== this.rootNodeId)?.getId(),
+            this.theme);
+        // `FrozenLayout` must be last. At `layoutSettled`, the other observers then change the view
+        // while the copy of the old layout still hides the diagram.
+        this.observers = [this.viewport, new FrozenLayout(this.cy)];
+    }
+
+    /** Redraw the diagram with a different palette. Restyling never moves a node, so this
+     *  costs a restyle and a repaint, not a layout. */
+    setTheme(theme: DiagramTheme) {
+        if (theme === this.theme) {
+            return;
+        }
+        this.theme = theme;
+        this.cy.style(buildGraphStyle(theme));
+        notifyObservers(this.observers, (observer) => observer.themeChanged?.(theme));
+        // Chip images carry the palette inside them, so they are the one piece of per-node data
+        // that a theme change has to rewrite. The graph diff keys nodes by id alone, so this
+        // cannot ride along on the next `updateGraph`.
+        this.cy.startBatch();
+        for (const node of this.cy.nodes().toArray()) {
+            refreshChips(node, theme);
+        }
+        this.cy.endBatch();
     }
 
     /** Metric chosen by the user to drive the color of the nodes. */
@@ -454,7 +485,7 @@ export class CytographRendering {
 
     /** Center the view on this node after the next layout completes. */
     centerOnNextLayout(node: Option<NodeId>) {
-        this.lastNode = node;
+        this.viewport.centerOnNextLayout(node);
     }
 
     /** Search a node by ID, return 'true' if found. */
@@ -464,7 +495,8 @@ export class CytographRendering {
         if (!el.nonempty()) {
             return false;
         }
-        this.center(Option.some(value));
+        this.viewport.center(value);
+        this.markSelected(el.nodes());
         return true;
     }
 
@@ -472,7 +504,9 @@ export class CytographRendering {
     readonly initialLayout = {
         animate: false,
         nodeLayoutOptions: elkNodeLayoutOptions,
-        fit: true,
+        // The view is placed on the first node at `FOCUS_ZOOM` instead, so a profile opens at the same
+        // zoom a search moves to rather than at whatever fits a whole circuit on screen.
+        fit: false,
         nodeDimensionsIncludeLabels: true,
         name: 'elk',
         elk: {
@@ -502,8 +536,8 @@ export class CytographRendering {
 
     /** The graph has changed; adjust the display; this completes asynchronously */
     updateGraph(newGraph: Cytograph) {
+        notifyObservers(this.observers, (observer) => observer.graphWillChange?.());
         this.cy.startBatch();
-        this.cy.container()!.style.visibility = "hidden";
         if (this.currentGraph === null) {
             // This is the first graph displayed.
             this.currentGraph = newGraph;
@@ -518,27 +552,6 @@ export class CytographRendering {
             this.cy.endBatch();
             return this.initiateLayout(this.layoutOptions);
         }
-    }
-
-    /** Center the visualization around the node with the specified id. */
-    center(node: Option<NodeId>): void {
-        if (!node.isSome()) {
-            return;
-        }
-
-        const el = this.cy.getElementById(node.unwrap());
-        let size = el.renderedHeight();
-        let desiredSize = 15;
-        // We determine the minimum size of found node by its height, because it is tied to font size
-        if (size < desiredSize) {
-            let zoom = this.cy.zoom();
-            let targetZoom = zoom * desiredSize / size;
-            this.cy.zoom({
-                level: targetZoom,
-                position: el.position()
-            });
-        }
-        this.cy.center(el);
     }
 
     topNodes(profile: CircuitProfile, metric: string): Array<NodeAndMetric> {
@@ -705,6 +718,9 @@ export class CytographRendering {
         } catch (e) {
             this.renderingInFlight = false;
             this.callbacks.onRenderingChange?.(false);
+            // No `layoutstop` will arrive either, so whatever the observers put up to cover the change
+            // has to come down here or it never will.
+            notifyObservers(this.observers, (observer) => observer.layoutFailed?.());
             throw e;
         }
     }
@@ -780,25 +796,29 @@ export class CytographRendering {
     }
 
     setEvents(callbacks: {
-        onNodeDoubleClick?: ((node: NodeId, type: 'group' | 'leaf') => void) | undefined
+        onNodeDoubleClick?: ((node: NodeId, type: 'group' | 'leaf') => void) | undefined,
+        onShowSource?: ((node: NodeId) => void) | undefined
     }) {
         document.addEventListener('keyup', (e) => this.keyup(e));
+        // Called here rather than in the constructor because this is where the chips' actions arrive;
+        // `setEvents` runs once per instance.
+        installChipButtons(this.cy, () => this.theme, {
+            // A click on a code chip also pins the information of its node, and then shows its source.
+            // A click on the counter chip expands or collapses the region. `toggleCircuitRegion` hides
+            // the node information, because the graph changes.
+            onSource: (id) => {
+                this.pinNodeInformation(id);
+                callbacks.onShowSource?.(id);
+            },
+            onToggle: (id) => this.toggleCircuitRegion(id, callbacks.onNodeDoubleClick)
+        });
         this.cy
             //.on('render', () => console.log("rendering"))
             //.on('layoutstart', () => console.log("start layout"))
             .on('layoutstop', () => this.layoutComplete())
-            .on('mouseover', 'node', event => this.displayEventTargetAttributes(event, false))
+            .on('mouseover', 'node', event => this.hoverNode(event))
             .on('mouseout', 'node', event => this.mouseOut(event))
-            .on('zoom pan resize', () => this.updateNavigator(this.navigator))
-            .on('click', 'node', (e) => {
-                // Hide previous node information if any
-                this.hideNodeInformation();
-                // Fires before the attrs payload so consumers can switch view state without
-                // inferring it from data (distinguishes a click from a programmatic refresh).
-                this.callbacks.onNodeClick?.(e.target.id());
-                // Display current node
-                this.displayEventTargetAttributes(e, true);
-            })
+            .on('click', 'node', (e) => this.pinNodeInformation(e.target.id()))
             .on('dblclick', 'node', (e) => {
                 let node = e.target as NodeSingular;
                 let id = e.target.id();
@@ -808,55 +828,50 @@ export class CytographRendering {
                     callbacks.onNodeDoubleClick?.(id, 'leaf');
                     return
                 }
+                if (!isToggleable(node)) {
+                    // A nested region expands and collapses with the region around it
+                    return;
+                }
 
                 // Group node - toggle expand/collapse and dispatch dedicated double click
-                this.hideNodeInformation();
-                this.setStickyNodeInformation(false);
-                this.lastNode = Option.some(id);
-                callbacks.onNodeDoubleClick?.(id, 'group');
+                this.toggleCircuitRegion(id, callbacks.onNodeDoubleClick);
             });
+    }
+
+    /** Show the information of a node, and keep it on screen when the pointer moves to other nodes.
+     *  A click on the node and a click on its code chip both call this. */
+    private pinNodeInformation(id: NodeId) {
+        // Hide the information of the previous node first, so that none of it stays.
+        this.hideNodeInformation();
+        // Call `onNodeClick` before `displayNodeAttributes`, so that a consumer can tell a click from a
+        // refresh after a metric change.
+        this.callbacks.onNodeClick?.(id);
+        this.setStickyNodeInformation(true);
+        this.displayNodeAttributes(this.getRenderedNode(id));
+    }
+
+    /** Expand or collapse a circuit region. A double click on the region and a click on its counter
+     *  chip both call this. */
+    private toggleCircuitRegion(
+        id: NodeId,
+        onNodeDoubleClick?: ((node: NodeId, type: 'group' | 'leaf') => void) | undefined
+    ) {
+        this.hideNodeInformation();
+        this.setStickyNodeInformation(false);
+        // Not centered on afterwards: the layout that follows keeps the viewport (`layoutOptions.fit`
+        // is false), so what the user was looking at stays where it was. The view pans to the node only
+        // if that layout leaves it off screen.
+        notifyObservers(this.observers, (observer) => observer.circuitRegionToggled?.(id));
+        onNodeDoubleClick?.(id, 'group');
     }
 
     layoutComplete() {
         this.clearMessage();
         this.renderingInFlight = false;
         this.callbacks.onRenderingChange?.(false);
-        this.cy.container()!.style.visibility = "visible";
-        this.updateNavigator(this.navigator);
-        if (this.lastNode.isSome()) {
-            this.center(this.lastNode);
-            this.lastNode = Option.none();
-        }
-        // Set minimum/maximum zoom levels
-        // Do not allow to zoom in more than 1.5; this should be enough to make any node visible
-        this.cy.maxZoom(1.5);
-        const rect = this.cy.container()?.getBoundingClientRect();
-        if (rect !== undefined) {
-            const bb = this.cy.elements().boundingBox();
-            let maxRatio = Math.min(rect.height / bb.h, rect.width / bb.w);
-            // Do not allow zoom out more than required to fit the entire graph
-            this.cy.minZoom(maxRatio);
-        }
-    }
-
-    // The user has panned/zoomed => tell the navigator about it.
-    updateNavigator(navigator: ViewNavigator) {
-        if (this.cy === null) {
-            return;
-        }
-        const container = this.cy.container();
-        if (container === null) {
-            return;
-        }
-
-        let rect = container.getBoundingClientRect();
-        const zoom = this.cy.zoom();
-        const pan = this.cy.pan();
-        const bb = this.cy.elements().boundingBox();
-        navigator.setViewParameters(
-            new Size(rect.width, rect.height),
-            new Point(pan.x, pan.y),
-            new Size(bb.w * zoom, bb.h * zoom));
+        // In order: the viewport settles zoom and pan, then the picture held over the layout comes down
+        // onto the finished one.
+        notifyObservers(this.observers, (observer) => observer.layoutSettled?.());
     }
 
     getActualEdgeId(e: Edge<NodeId>): string {
@@ -897,22 +912,61 @@ export class CytographRendering {
         return result;
     }
 
-    // Called when someone hovers over or clicks a node.
-    // Currently it displays
-    // (1) the attributes of the node,
-    // (2) it highlights the edges reaching the node,
-    // (3) it displays the source position of the node.
-    displayEventTargetAttributes(event: EventObject, isSticky: boolean) {
-        let node: NodeSingular = event.target;
-        if (!displaysNodeInformation(
-            isSticky, node.data("expanded") === true, this.stickyInformation)) {
+    /** A callback that reports metrics of the node the pointer moved onto: its attributes, the edges that reach it,
+     * and its source position. `mouseOut` reports when the pointer leaves.
+     *
+     *  Two cases when a hover is ignored: an expanded node, and anything if a user selected a node with a click. */
+    private hoverNode(event: EventObject) {
+        const node: NodeSingular = event.target;
+        if (node.isParent()) {
             return;
         }
-
-        // Keep the information after mouse out
-        this.setStickyNodeInformation(isSticky);
-
+        if (this.stickyInformation) {
+            if (!this.reportIsMarked()) {
+                this.traceSelection(node);
+            }
+            return;
+        }
         this.displayNodeAttributes(node);
+    }
+
+    /** True if the node whose information is shown also has the selection mark (see `markSelected`).
+     *  It is false if no information is shown, or if the shown node cannot have the
+     *  mark: an expanded region, the root node, or a node that a graph update removed. Then, while
+     *  the information is pinned, a hover moves the mark (see `hoverNode` and `mouseOut`).
+     *
+     *  This reads the class on the node, so the result always agrees with what is on screen. */
+    private reportIsMarked(): boolean {
+        if (this.currentTooltipNode === null) {
+            return false;
+        }
+        return this.getRenderedNode(this.currentTooltipNode).hasClass(SELECTED_NODE_CLASS);
+    }
+
+    /** Give `node` the selection mark (`SELECTED_NODE_CLASS`), and remove the mark from all other
+     *  nodes. `null` removes the mark from all nodes. A click, a hover and a search all mark the node
+     *  they reach. `nodeShadow.ts` paints the mark as an accent glow. */
+    markSelected(node: NodeSingular | NodeCollection | null) {
+        this.cy.nodes(`.${SELECTED_NODE_CLASS}`).removeClass(SELECTED_NODE_CLASS);
+        node?.addClass(SELECTED_NODE_CLASS);
+    }
+
+    /** Mark the node whose metrics are on display and color the edges reaching it.
+     * An expanded region and the root node can not be marked. */
+    private traceSelection(node: NodeSingular) {
+        this.clearTrace();
+        if (node.isParent() || node.id() === this.rootNodeId) {
+            return;
+        }
+        this.markSelected(node);
+        this.reachableFrom(node.id(), true).addClass('highlight-forward');
+        this.reachableFrom(node.id(), false).addClass('highlight-backward');
+    }
+
+    /** Take the mark and the edge coloring off the diagram, leaving what is reported where it is. */
+    private clearTrace() {
+        this.markSelected(null);
+        this.cy.edges().removeClass('highlight-forward highlight-backward');
     }
 
     displayNodeAttributes(node: NodeSingular) {
@@ -926,12 +980,7 @@ export class CytographRendering {
         // Track the current tooltip node for refreshing on metadata changes
         this.currentTooltipNode = nodeId;
         this.onTooltipContextChanged()
-
-        // highlight edges
-        let reachable = this.reachableFrom(nodeId, true);
-        reachable.addClass('highlight-forward');
-        reachable = this.reachableFrom(nodeId, false);
-        reachable.addClass('highlight-backward');
+        this.traceSelection(node);
 
         // Build structured tooltip data
         let visible = false;
@@ -1014,20 +1063,25 @@ export class CytographRendering {
         this.callbacks.displayNodeAttributes(Option.some(tooltipData), this.stickyInformation);
     }
 
-    // hide the information shown when hovering
+    /** The other half of a hover (see `hoverNode`): a report the pointer brought with it goes when the
+     *  pointer does. */
     mouseOut(_event: EventObject) {
         if (!this.stickyInformation) {
             this.hideNodeInformation();
+            return;
+        }
+        // What the pointer marked and traced goes with the pointer; the report itself was asked for,
+        // and stays.
+        if (!this.reportIsMarked()) {
+            this.clearTrace();
         }
     }
 
     hideNodeInformation() {
         this.currentTooltipNode = null;
+        this.clearTrace();
         this.onTooltipContextChanged()
         this.callbacks.displayNodeAttributes(Option.none(), false);
-        let reachable = this.cy.edges();
-        reachable.removeClass('highlight-forward');
-        reachable.removeClass('highlight-backward');
     }
 
     /**
@@ -1041,6 +1095,7 @@ export class CytographRendering {
             this.renderingInFlight = false;
             this.callbacks.onRenderingChange?.(false);
         }
+        notifyObservers(this.observers, (observer) => observer.dispose?.());
 
         // Destroy the Cytoscape instance
         if (this.cy) {
