@@ -29,8 +29,8 @@ use std::collections::BTreeSet;
 use proptest::prelude::*;
 
 use super::harness::{
-    Program, Transaction, ZSet, any_config, apply_proposals, check, configs, fixpoint, map_steps,
-    proposals, read_zset, set_after, set_zset, workloads,
+    Program, RecursionApi, RecursiveWith, Transaction, ZSet, any_config, apply_proposals, check,
+    configs, fixpoint, map_steps, proposals, read_zset, set_after, set_zset, workloads,
 };
 use crate::{
     OutputHandle, RootCircuit, Stream, ZSetHandle, ZWeight,
@@ -57,10 +57,10 @@ impl Program for StateMachine {
     );
     type Output = ZSet<Version>;
 
-    fn build(&self, circuit: &mut RootCircuit) -> Self::Handles {
+    fn build(&self, circuit: &mut RootCircuit, api: RecursionApi) -> Self::Handles {
         let (actions, actions_handle) = circuit.add_input_zset::<Version>();
         let state = circuit
-            .recursive(|child, state: Stream<_, OrdZSet<Version>>| {
+            .recursive_with(api, |child, state: Stream<_, OrdZSet<Version>>| {
                 let actions = actions.delta0(child);
                 let state_by_id = state.map_index(|Tup2(id, version)| (*id, *version));
                 let next_state = state

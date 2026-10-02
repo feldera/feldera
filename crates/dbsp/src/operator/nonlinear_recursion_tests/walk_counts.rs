@@ -22,20 +22,23 @@
 //! `ceil(log2(L))`.
 //!
 //! [`recursive`](crate::ChildCircuit::recursive) applies `distinct`, which
-//! would turn every count into 1, so the recursion is built from
-//! [`fixedpoint`](crate::Circuit::fixedpoint) instead.  It reaches a fixed
-//! point only on acyclic graphs.
+//! would turn every count into 1, so in its place the recursion is built from
+//! [`fixedpoint`](crate::Circuit::fixedpoint).  The
+//! [recursion builder](crate::ChildCircuit::recursion_builder) leaves the
+//! `distinct` out when asked to with
+//! [`without_distinct`](crate::operator::RecursionBuilder::without_distinct).
+//! The recursion reaches a fixed point only on acyclic graphs.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use proptest::prelude::*;
 
 use super::harness::{
-    Program, Transaction, ZSet, add_changes, any_config, apply_proposals, check, configs, fixpoint,
-    map_steps, proposals, read_zset, set_after, workloads,
+    Program, RecursionApi, Transaction, ZSet, add_changes, any_config, apply_proposals, check,
+    configs, fixpoint, map_steps, proposals, read_zset, set_after, workloads,
 };
 use crate::{
-    Circuit, FallbackZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+    Circuit, FallbackZSet, NestedCircuit, OutputHandle, RootCircuit, Stream, ZSetHandle, ZWeight,
     operator::DelayedFeedback,
     typed_batch::{OrdZSet, Spine, SpineSnapshot},
     utils::{Tup2, Tup3, test::CIRCUIT_CASES},
@@ -51,6 +54,35 @@ type Walks = Tup3<u64, u64, u64>;
 /// Changes to edges in one step.
 type EdgeChanges = Vec<(Edge, ZWeight)>;
 
+/// Computes the recursion's next walks: the edges, and every walk that joins
+/// two current walks whose lengths differ by at most one.
+///
+/// # Arguments
+///
+/// * `edges` - the graph's edges.
+/// * `walks` - the current walks.
+///
+/// # Returns
+///
+/// The next walks, weighted by their number.
+fn next_walks(
+    edges: &Stream<NestedCircuit, OrdZSet<Edge>>,
+    walks: &Stream<NestedCircuit, OrdZSet<Walks>>,
+) -> Stream<NestedCircuit, OrdZSet<Walks>> {
+    // Both inputs depend on the recursion.
+    let squared = walks
+        .map_index(|Tup3(from, via, a)| (*via, Tup2(*from, *a)))
+        .join_flatmap(
+            &walks.map_index(|Tup3(via, to, b)| (*via, Tup2(*to, *b))),
+            |_via, Tup2(from, a), Tup2(to, b)| {
+                (*a == *b || *a == b + 1).then(|| Tup3(*from, *to, a + b))
+            },
+        );
+    edges
+        .map(|Tup2(from, to)| Tup3(*from, *to, 1))
+        .plus(&squared)
+}
+
 /// Walk counts by repeated squaring.
 #[derive(Clone)]
 struct WalkCounts;
@@ -63,37 +95,32 @@ impl Program for WalkCounts {
     );
     type Output = ZSet<Walks>;
 
-    fn build(&self, circuit: &mut RootCircuit) -> Self::Handles {
+    fn build(&self, circuit: &mut RootCircuit, api: RecursionApi) -> Self::Handles {
         let (edges, edges_handle) = circuit.add_input_zset::<Edge>();
-        let walks = circuit
-            .fixedpoint(|child| {
-                let edges = edges.delta0(child);
-                let walks = <DelayedFeedback<_, OrdZSet<Walks>>>::new(child);
-                // Both inputs depend on the recursion.
-                let squared = walks
-                    .stream()
-                    .map_index(|Tup3(from, via, a)| (*via, Tup2(*from, *a)))
-                    .join_flatmap(
-                        &walks
-                            .stream()
-                            .map_index(|Tup3(via, to, b)| (*via, Tup2(*to, *b))),
-                        |_via, Tup2(from, a), Tup2(to, b)| {
-                            (*a == *b || *a == b + 1).then(|| Tup3(*from, *to, a + b))
-                        },
-                    );
-                let next = edges
-                    .map(|Tup2(from, to)| Tup3(*from, *to, 1))
-                    .plus(&squared);
-                walks.connect(&next);
-                Ok(next
-                    .integrate_trace()
-                    .inner()
-                    .export()
-                    .typed::<Spine<FallbackZSet<Walks>>>())
-            })
-            .unwrap()
-            .consolidate()
-            .map(|walks| *walks);
+        let walks = match api {
+            RecursionApi::Recursive => circuit
+                .fixedpoint(|child| {
+                    let walks = <DelayedFeedback<_, OrdZSet<Walks>>>::new(child);
+                    let next = next_walks(&edges.delta0(child), walks.stream());
+                    walks.connect(&next);
+                    Ok(next
+                        .integrate_trace()
+                        .inner()
+                        .export()
+                        .typed::<Spine<FallbackZSet<Walks>>>())
+                })
+                .unwrap()
+                .consolidate()
+                .map(|walks| *walks),
+            RecursionApi::Builder => circuit
+                .recursion_builder(
+                    |child| Ok(child.recursive_var::<OrdZSet<Walks>>()),
+                    |child, walks| Ok(next_walks(&edges.delta0(child), &walks)),
+                )
+                .without_distinct()
+                .finish()
+                .unwrap(),
+        };
         (
             edges_handle,
             walks.accumulate_integrate().accumulate_output(),

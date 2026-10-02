@@ -63,8 +63,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use proptest::prelude::*;
 
 use super::harness::{
-    Program, Transaction, ZSet, any_config, check, configs, fixpoint, map_steps, read_zset,
-    set_after, set_zset, workloads,
+    Program, RecursionApi, RecursiveWith, Transaction, ZSet, any_config, check, configs, fixpoint,
+    map_steps, read_zset, set_after, set_zset, workloads,
 };
 use crate::{
     OutputHandle, RootCircuit, Stream, ZSetHandle, ZWeight,
@@ -152,13 +152,14 @@ impl Program for TreeEvaluation {
     /// Every node's value and every tree's total.
     type Output = (ZSet<Value>, ZSet<Total>);
 
-    fn build(&self, circuit: &mut RootCircuit) -> Self::Handles {
+    fn build(&self, circuit: &mut RootCircuit, api: RecursionApi) -> Self::Handles {
         let (leaves, leaves_handle) = circuit.add_input_zset::<Leaf>();
         let (inner, inner_handle) = circuit.add_input_zset::<Inner>();
         let (refs, refs_handle) = circuit.add_input_zset::<Ref>();
         let (roots, roots_handle) = circuit.add_input_zset::<Root>();
         let (values, totals) = circuit
-            .recursive(
+            .recursive_with(
+                api,
                 |child, (values, totals): (Stream<_, OrdZSet<Value>>, Stream<_, OrdZSet<Total>>)| {
                     let values_by_node =
                         values.map_index(|Tup3(tree, node, value)| (Tup2(*tree, *node), *value));
