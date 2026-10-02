@@ -1,6 +1,6 @@
 <script lang="ts">
+  import { ClipboardCopyButton } from 'common-ui'
   import { page } from '$app/state'
-  import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import PipelineVersionTooltip from '$lib/components/pipelines/table/PipelineVersionTooltip.svelte'
   import { getRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'
   import type { ProgramStatus } from '$lib/services/pipelineManager'
