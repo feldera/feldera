@@ -416,14 +416,14 @@
         {#snippet loadProfileControl()}
           <Popup>
             {#snippet trigger(toggle)}
-              <button class="btn h-6 !bg-surface-100-900 px-3 text-sm" onclick={toggle}>
+              <button class="btn preset-outlined-surface-200-800 btn-sm" onclick={toggle}>
                 Load profile
               </button>
             {/snippet}
             {#snippet content(close)}
               <div
                 transition:fade={{ duration: 100 }}
-                class="absolute top-10 left-0 z-30 w-max min-w-[200px]"
+                class="absolute top-full left-0 z-30 mt-2 w-max min-w-[200px]"
               >
                 <div class="bg-white-dark flex flex-col overflow-hidden rounded shadow-md">
                   <SupportBundleMenu

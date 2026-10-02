@@ -197,7 +197,7 @@
     class="bg-white-dark absolute z-30 flex min-w-[220px] flex-col overflow-hidden rounded shadow-md {align ===
     'right'
       ? 'right-0'
-      : 'left-0'} {drop === 'up' ? 'bottom-10' : 'top-10'}"
+      : 'left-0'} {drop === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'}"
     data-testid="box-support-bundle-menu"
   >
     {#if mode === 'pick'}

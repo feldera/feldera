@@ -58,14 +58,14 @@
         <span class="hidden {compactBreakpoint}block">Logged in</span>
         <div class="hidden {compactBreakpoint}block w-1"></div>
 
-        <div class="fd fd-circle-user btn-icon preset-tonal-surface text-[20px]">
+        <div class="fd fd-circle-user btn-icon preset-tonal-surface text-[16px]">
           <div class="hidden {compactBreakpoint}block w-2"></div>
         </div>
       </button>
     {:else}
       <button
         onclick={toggle}
-        class="fd fd-lock-open btn-icon preset-tonal-surface text-[20px]"
+        class="fd fd-lock-open btn-icon preset-tonal-surface text-[16px]"
         aria-label="Open settings popup"
       >
       </button>
@@ -122,7 +122,9 @@
             {#if auth.profile.picture}
               <img class="h-6 w-6 rounded-full" src={auth.profile.picture} alt="User avatar" />
             {:else}
-              <div class="fd fd-circle-user h-6 w-6 rounded-full text-[24px]"></div>
+              <div
+                class="fd fd-circle-user flex h-6 w-6 items-center justify-center rounded-full text-[16px]"
+              ></div>
             {/if}
             <div class="">
               <div class="h4 font-normal break-all" class:italic={!auth.profile.name}>

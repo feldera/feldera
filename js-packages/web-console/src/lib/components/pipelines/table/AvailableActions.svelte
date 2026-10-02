@@ -163,37 +163,37 @@
 
 {#snippet btnStart()}
   <button class="btn preset-tonal-surface" onclick={() => postPipelinesAction('start')}>
-    <span class="fd fd-play text-[20px]"></span>
+    <span class="fd fd-play"></span>
     Start
   </button>
 {/snippet}
 {#snippet btnResume()}
   <button class="btn preset-tonal-surface" onclick={() => postPipelinesAction('resume')}>
-    <span class="fd fd-play text-[20px]"></span>
+    <span class="fd fd-play"></span>
     Resume
   </button>
 {/snippet}
 {#snippet btnPause()}
   <button class="btn preset-tonal-surface" onclick={() => postPipelinesAction('pause')}>
-    <span class="fd fd-pause text-[20px]"></span>
+    <span class="fd fd-pause"></span>
     Pause
   </button>
 {/snippet}
 {#snippet btnStop()}
   <button class="btn preset-tonal-surface" onclick={() => (globalDialog.dialog = stopDialog)}>
-    <span class="fd fd-square text-[20px]"></span>
+    <span class="fd fd-square"></span>
     Stop
   </button>
 {/snippet}
 {#snippet btnKill()}
   <button class="btn preset-tonal-surface" onclick={() => (globalDialog.dialog = killDialog)}>
-    <span class="fd fd-square-power text-[20px]"></span>
+    <span class="fd fd-square-power"></span>
     Force Stop
   </button>
 {/snippet}
 {#snippet btnDelete()}
   <button class="btn preset-tonal-surface" onclick={() => (globalDialog.dialog = deleteDialog)}>
-    <span class="fd fd-trash-2 text-[20px]"></span>
+    <span class="fd fd-trash-2"></span>
     Delete
   </button>
 {/snippet}
@@ -203,13 +203,13 @@
     title={duplicatePipelineTooltip}
     onclick={() => void duplicateSelectedPipeline()}
   >
-    <span class="fd fd-copy-plus text-[20px]"></span>
+    <span class="fd fd-copy-plus"></span>
     Duplicate
   </button>
 {/snippet}
 {#snippet btnClear()}
   <button class="btn preset-tonal-surface" onclick={() => (globalDialog.dialog = clearDialog)}>
-    <span class="fd fd-eraser text-[20px]"></span>
+    <span class="fd fd-eraser"></span>
     Clear storage
   </button>
 {/snippet}

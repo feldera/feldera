@@ -218,7 +218,7 @@
       >
         {#snippet titleEnd()}
           <button
-            class="fd fd-x btn-icon btn text-[24px]"
+            class="fd fd-x btn-icon btn text-[20px]"
             aria-label="Close"
             onclick={() => (contextDrawer.content = null)}
           ></button>
@@ -302,7 +302,7 @@
       {#if drawer.isMobileDrawer}
         <button
           onclick={() => (drawer.value = !drawer.value)}
-          class="fd fd-book-open btn-icon flex preset-tonal-surface text-[20px]"
+          class="fd fd-book-open btn-icon flex preset-tonal-surface text-[16px]"
           aria-label="Open the right navigation drawer"
         >
         </button>
@@ -468,13 +468,13 @@
     {#each layoutControls as { icon, text, value, show }}
       {#if show !== false}
         <button
-          class="btn gap-2 p-2 text-surface-700-300 !brightness-100 hover:preset-tonal-surface"
+          class="btn btn-sm text-surface-700-300 !brightness-100 hover:preset-tonal-surface"
           onclick={() => (value.value = !value.value)}
         >
           <span class="hidden sm:inline">
             {text}
           </span>
-          <div class="{icon} text-[20px] {value.value ? 'text-primary-500' : ''}"></div>
+          <div class="{icon} {value.value ? 'text-primary-500' : ''}"></div>
         </button>
         <div class="pointer-events-none w-0 -translate-x-0.5">|</div>
       {/if}

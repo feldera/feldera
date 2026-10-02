@@ -9,7 +9,7 @@
     programStatus: ProgramStatus | undefined
   } = $props()
 
-  const spinnerClass = 'animate-spin h-5 fill-surface-950-50'
+  const spinnerClass = 'animate-spin h-4 fill-surface-950-50'
   const sqlClass = $derived(
     match(programStatus)
       .with(
@@ -17,20 +17,20 @@
         'SqlCompiled',
         'CompilingRust',
         'RustError',
-        () => 'fd fd-circle-check-big text-[20px] text-success-500'
+        () => 'fd fd-circle-check-big text-[16px] text-success-500'
       )
       .with('Pending', 'CompilingSql', undefined, () => spinnerClass)
       .with(
         'SqlError',
         'SystemError',
-        () => 'fd fd-circle-x inline-block text-[20px] text-error-500'
+        () => 'fd fd-circle-x inline-block text-[16px] text-error-500'
       )
       .exhaustive()
   )
   const rustClass = $derived(
     match(programStatus)
       .with('CompilingRust', () => spinnerClass)
-      .with('RustError', () => 'fd fd-circle-x text-[20px] text-error-500')
+      .with('RustError', () => 'fd fd-circle-x text-[16px] text-error-500')
       .with(
         'Success',
         'Pending',

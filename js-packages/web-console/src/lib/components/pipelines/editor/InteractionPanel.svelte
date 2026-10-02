@@ -75,7 +75,7 @@
 
 {#snippet TabBarEndClose()}
   <button
-    class="fd fd-x ml-auto btn-icon text-[24px]"
+    class="fd fd-x ml-auto btn-icon text-[20px]"
     onclick={() => {
       _currentTab = null
       showInteractionPanel.value = false
