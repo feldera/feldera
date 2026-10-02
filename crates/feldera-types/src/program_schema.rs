@@ -197,7 +197,11 @@ pub struct ProgramSchemaPropertiesOnly {
 #[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
 pub struct PropertyValue {
     pub value: String,
+    #[serde(default)]
+    #[schema(required = true)]
     pub key_position: SourcePosition,
+    #[serde(default)]
+    #[schema(required = true)]
     pub value_position: SourcePosition,
 }
 
