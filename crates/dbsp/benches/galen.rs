@@ -6,7 +6,6 @@ use clap::Parser;
 use csv::ReaderBuilder;
 use dbsp::{
     Circuit, OrdZSet, RootCircuit, Runtime, Stream,
-    mimalloc::MiMalloc,
     monitor::TraceMonitor,
     operator::CsvSource,
     typed_batch::DynBatchReader,
@@ -20,9 +19,6 @@ use std::{
     time::Instant,
 };
 use zip::ZipArchive;
-
-#[global_allocator]
-static ALLOC: MiMalloc = MiMalloc;
 
 /*
 .decl p(X: Number, Z: Number)

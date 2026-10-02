@@ -450,6 +450,9 @@ It contains the following fields:
         feldera_types::transport::nats::Tls,
         feldera_types::transport::nats::UserAndPassword,
         feldera_types::transport::pubsub::PubSubInputConfig,
+        feldera_types::transport::s2::S2InputConfig,
+        feldera_types::transport::s2::S2OutputConfig,
+        feldera_types::transport::s2::S2StartFrom,
         feldera_types::transport::s3::S3InputConfig,
         feldera_types::transport::datagen::DatagenStrategy,
         feldera_types::transport::datagen::RngFieldSettings,
@@ -528,6 +531,7 @@ It contains the following fields:
         feldera_types::adapter_stats::ExternalControllerStatus,
         feldera_types::memory_pressure::MemoryPressure,
         feldera_types::adapter_stats::ExternalGlobalControllerMetrics,
+        feldera_types::adapter_stats::HostMetrics,
         feldera_types::adapter_stats::ConnectorError,
         feldera_types::adapter_stats::ConnectorHealth,
         feldera_types::adapter_stats::ConnectorHealthStatus,
@@ -560,7 +564,7 @@ pub struct ApiDoc;
 #[cfg(test)]
 mod api_doc_tests {
     //! Invariants the generated OpenAPI document must satisfy for the Rust
-    //! client to build.
+    //! and TypeScript clients to build.
 
     use super::ApiDoc;
     use utoipa::OpenApi;
@@ -574,6 +578,39 @@ mod api_doc_tests {
         "text/plain",
         "text/x-markdown",
     ];
+
+    /// Utoipa requires referenced schemas to be registered explicitly. Missing
+    /// S2 schemas leave dangling references in the generated API clients.
+    #[test]
+    fn s2_transport_schema_references_resolve() {
+        let document = serde_json::to_value(ApiDoc::openapi()).unwrap();
+        let schemas = &document["components"]["schemas"];
+        let transports = schemas["TransportConfig"]["oneOf"].as_array().unwrap();
+
+        for (transport, config) in [
+            ("s2_input", "S2InputConfig"),
+            ("s2_output", "S2OutputConfig"),
+        ] {
+            let variant = transports
+                .iter()
+                .find(|variant| variant["properties"]["name"]["enum"][0] == transport)
+                .unwrap_or_else(|| panic!("missing transport variant: {transport}"));
+            assert_eq!(
+                variant["properties"]["config"]["$ref"],
+                format!("#/components/schemas/{config}")
+            );
+            assert!(schemas[config].is_object(), "unregistered schema: {config}");
+        }
+
+        assert_eq!(
+            schemas["S2InputConfig"]["properties"]["start_from"]["$ref"],
+            "#/components/schemas/S2StartFrom"
+        );
+        assert!(
+            schemas["S2StartFrom"].is_object(),
+            "unregistered schema: S2StartFrom"
+        );
+    }
 
     /// Checks that every request body in `ApiDoc`'s OpenAPI document offers
     /// exactly one media type, and that the media type is in
@@ -1264,11 +1301,7 @@ Version: {} v{}{}
 ",
             url,
             url,
-            if cfg!(feature = "feldera-enterprise") {
-                "Enterprise"
-            } else {
-                "Open source"
-            },
+            crate::edition(),
             env!("CARGO_PKG_VERSION"),
             if env!("FELDERA_PLATFORM_VERSION_SUFFIX").is_empty() {
                 "".to_string()

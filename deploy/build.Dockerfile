@@ -60,7 +60,7 @@ RUN curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main
 # Install docker cli tool
 RUN  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
-        | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null \
+    | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null \
     && apt-get update \
     && apt-get install -y docker-ce-cli
 
@@ -159,7 +159,8 @@ ENV PATH="/home/ubuntu/.local/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.cargo/bin:
 # Install rust
 ENV RUSTUP_HOME=/home/ubuntu/.rustup
 ENV CARGO_HOME=/home/ubuntu/.cargo
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile default --default-toolchain 1.96.1
+COPY rust-toolchain.toml /tmp/rust-toolchain.toml
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile default --default-toolchain $(sed -n 's/^channel *= *"\(.*\)"/\1/p' /tmp/rust-toolchain.toml)
 RUN cargo install --locked cargo-machete@0.9.2 cargo-edit@0.13.13 just@1.58.0
 
 # Install uv

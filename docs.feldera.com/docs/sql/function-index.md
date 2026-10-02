@@ -270,6 +270,7 @@
 * `TRIM`: [string](string.md#trim)
 * `TRUNC`: [decimal](decimal.md#trunc), [float](float.md#trunc)
 * `TRUNCATE`: [decimal](decimal.md#truncate), [decimal](decimal.md#truncate2), [float](float.md#truncate), [float](float.md#truncate2)
+* `TRY_PARSE_JSON`: [json](json.md#try_parse_json)
 * `TUMBLE`: [table](table.md#tumble)
 * `TYPEOF`: [json](json.md#functions-that-operate-on-variant-values)
 * `UNION`: [grammar](grammar.md#setop)

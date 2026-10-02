@@ -236,10 +236,11 @@ currently only the Delta table and Iceberg connectors can take
 advantage of this feature.
 
 Note: The simplest way to exclude unused columns is to omit them from
-the Feldera SQL table declaration. The connector never reads columns
-that aren't declared in the SQL schema. Additionally, the SQL compiler
-emits warnings for declared but unused columns—use these as a guide to
-optimize your schema.
+the Feldera SQL table declaration. A connector may still read an
+undeclared column that its own configuration names, such as the Delta
+connector's `filter`; that connector's documentation gives the exact
+rule. Additionally, the SQL compiler emits warnings for declared but
+unused columns—use these as a guide to optimize your schema.
 
 Why not always skip unused columns?  When a table is materialized, the
 pipeline stores internally the contents of the table ingested so far.
@@ -710,6 +711,14 @@ windowRange
 
 Where `agg` is a window aggregate function as described in the [section
 on aggregation](aggregates.md#window-aggregate-functions).
+
+Window aggregates generally do not support `DISTINCT` qualifiers, e.g.:
+`SELECT COUNT(DISTINCT x) OVER (PARTITION BY p ORDER BY ts RANGE BETWEEN
+INTERVAL 1 HOUR PRECEDING AND CURRENT ROW)` is rejected.
+However, for the following aggregate functions the result is the same with or
+without the `DISTINCT` qualifier, and thus the compiler accepts them
+in even in a window with `DISTINCT`: `MIN`, `MAX`, `BIT_AND`, `BIT_OR`, `EVERY`,
+`SOME`, `BOOL_AND`, `BOOL_OR`, `LOGICAL_AND`, and `LOGICAL_OR`.
 
 Currently we require window ranges to have constant values.  This
 precludes ranges such as `INTERVAL 1 YEAR`, which have variable sizes.

@@ -21,15 +21,12 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use dbsp::{
     Circuit, CircuitBase, Consensus, DBSPHandle, NestedCircuit, NumEntries, OrdIndexedZSet,
-    OrdZSet, OutputHandle, Runtime, Stream, ZSetHandle, ZWeight, mimalloc::MiMalloc, operator::Z1,
+    OrdZSet, OutputHandle, Runtime, Stream, ZSetHandle, ZWeight, operator::Z1,
     trace::BatchReaderFactories, typed_batch::SpineSnapshot, utils::Tup2,
 };
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use std::cell::Cell;
-
-#[global_allocator]
-static ALLOC: MiMalloc = MiMalloc;
 
 type NodeId = u64;
 type Edge = Tup2<NodeId, NodeId>;

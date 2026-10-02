@@ -1702,6 +1702,7 @@ impl ControllerStatus {
             permanent_checkpoint_errors: ctx.permanent_checkpoint_errors,
             inputs,
             outputs,
+            host_metrics: Vec::new(),
         }
     }
 }

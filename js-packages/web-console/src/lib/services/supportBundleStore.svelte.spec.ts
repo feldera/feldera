@@ -8,6 +8,7 @@
 
 import Dexie from 'dexie'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fakeHandle } from '$lib/services/testSupportBundleHelpers'
 import {
   clearBundleRecords,
   deleteBundleRecords,
@@ -18,27 +19,6 @@ import {
   observeBundleRecords,
   putBundleRecord
 } from './supportBundleStore'
-
-/**
- * Stands in for a `FileSystemFileHandle`, which a test cannot construct.
- *
- * The two methods sit on the prototype rather than on the object itself. IndexedDB
- * writes a handle through structured clone, which copies an object's own properties
- * only and rejects functions among them with a `DataCloneError`. A stand-in read back
- * out of the database therefore has the name and the kind and none of the methods,
- * while a real handle keeps its methods.
- */
-const fakeHandle = (name: string, contents = 'bundle contents') =>
-  Object.create(
-    {
-      getFile: async () => new File([contents], name),
-      isSameEntry: async (other: { name: string }) => other.name === name
-    },
-    {
-      name: { value: name, enumerable: true },
-      kind: { value: 'file', enumerable: true }
-    }
-  ) as FileSystemFileHandle
 
 const linkedRecord = (name: string, openedAt: number) => ({
   name,

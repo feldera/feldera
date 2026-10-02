@@ -68,7 +68,7 @@ use dbsp::{
     circuit::{CircuitConfig, Layout},
     profile::{DbspProfile, GraphProfile},
 };
-use dbsp::{Runtime, WeakRuntime};
+use dbsp::{Error as DbspError, Runtime, WeakRuntime};
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::soft_delete::SoftDeleteHandle;
@@ -350,6 +350,40 @@ impl ControllerBuilder {
         Err(ControllerError::EnterpriseFeature("standby"))
     }
 
+    /// Takes ownership of the sync bucket as the pipeline starts, if the sync
+    /// config sets `take_bucket_ownership`.
+    ///
+    /// Every way of starting a pipeline opens it through exactly one of the
+    /// `open_*` methods below: a single host after its initial pull, a
+    /// standby pipeline after activation, and a multihost host after the
+    /// coordinator activates it.  Calling this from them takes ownership once
+    /// per run, before any push, and never mid-run.  Every host of a
+    /// multihost pipeline takes ownership; the hosts share one identity, so
+    /// they agree on the owner.
+    ///
+    /// Ownership changes before the checkpoint is opened, so a pipeline that
+    /// then fails to start keeps the bucket.
+    ///
+    /// # Returns
+    /// `Ok(())` if ownership was taken or not requested; otherwise the error
+    /// that fails startup.
+    fn take_bucket_ownership(&self) -> Result<(), ControllerError> {
+        #[cfg(feature = "feldera-enterprise")]
+        if let Some(storage) = &self.storage
+            && let Some(sync) = self.sync_config()
+            && sync.take_bucket_ownership
+        {
+            let pipeline = self.config.pipeline_identity().ok_or_else(|| {
+                ControllerError::checkpoint_push_error(missing_pipeline_identity_message(
+                    "cannot take ownership of object store bucket",
+                ))
+            })?;
+            sync::take_bucket_ownership(storage.backend.clone(), &sync, &pipeline)?;
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn with_layout(self, layout: Layout) -> Self {
         Self {
             layout: Some(layout),
@@ -363,6 +397,7 @@ impl ControllerBuilder {
         self,
         checkpoint_uuid: Uuid,
     ) -> Result<ControllerInit, ControllerError> {
+        self.take_bucket_ownership()?;
         ControllerInit::with_checkpoint(
             self.layout,
             self.config.clone(),
@@ -374,12 +409,14 @@ impl ControllerBuilder {
     /// Creates a [ControllerInit] that will start fresh without using a
     /// checkpoint.
     pub(crate) fn open_without_checkpoint(self) -> Result<ControllerInit, ControllerError> {
+        self.take_bucket_ownership()?;
         ControllerInit::without_checkpoint(self.layout, self.config.clone(), self.storage.clone())
     }
 
     /// Creates a [ControllerInit] that will start from the latest checkpoint,
     /// if there is one, or start fresh without a checkpoint otherwise.
     pub(crate) fn open_latest_checkpoint(self) -> Result<ControllerInit, ControllerError> {
+        self.take_bucket_ownership()?;
         ControllerInit::with_latest_checkpoint(
             self.layout,
             self.config.clone(),
@@ -776,21 +813,48 @@ impl Controller {
                             Ok(())
                         }
                         Ok(mut circuit_thread) => {
-                            if let Err(error) = circuit_thread.run(init_status_sender) {
-                                circuit_thread.controller.error(error, None);
+                            let run_result = catch_unwind(AssertUnwindSafe(|| {
+                                circuit_thread.run(&init_status_sender)
+                            }));
+                            let panicked = run_result.is_err();
+                            match run_result {
+                                Ok(Ok(())) => (),
+                                Ok(Err(error)) => circuit_thread.controller.error(error, None),
+                                Err(_) => {
+                                    // The panic hook already logged the message
+                                    // and backtrace.  Without this report, the
+                                    // pipeline would keep reporting `Running`.
+                                    //
+                                    // Before initialization completes, `build`
+                                    // is still waiting on the channel and reports
+                                    // the failure itself; afterward it has dropped
+                                    // the receiver, so `send` fails and the error
+                                    // callback is the only way out.
+                                    let error = ControllerError::controller_panic();
+                                    if let Err(SendError(Err(error))) =
+                                        init_status_sender.send(Err(error))
+                                    {
+                                        circuit_thread.controller.error(error, None);
+                                    }
+                                }
                             }
-                            circuit_thread.finish().inspect_err(|error| {
+                            let finish_result = circuit_thread.finish().inspect_err(|error| {
                                 // Log the error before returning it from the
                                 // thread: otherwise, only [Controller::stop]
                                 // will join the thread and report the error.
                                 error!("circuit thread died with error: {error}")
-                            })
+                            });
+                            if panicked {
+                                Err(ControllerError::controller_panic())
+                            } else {
+                                finish_result
+                            }
                         }
                     }
                 })
                 .expect("failed to spawn circuit-thread");
             // If `recv` fails, it indicates that the circuit thread panicked
-            // during initialization.
+            // while constructing the circuit.
             let inner = init_status_receiver
                 .recv()
                 .map_err(|_| ControllerError::dbsp_panic())??;
@@ -3291,7 +3355,7 @@ impl CircuitThread {
     ///   The circuit is considered fully initialized after executing the first step.
     fn run(
         &mut self,
-        init_status_sender: SyncSender<Result<Arc<ControllerInner>, ControllerError>>,
+        init_status_sender: &SyncSender<Result<Arc<ControllerInner>, ControllerError>>,
     ) -> Result<(), ControllerError> {
         let config = &self.controller.status.pipeline_config;
 
@@ -3803,6 +3867,24 @@ impl CircuitThread {
         Ok(true)
     }
 
+    /// Starts or commits a transaction in the circuit, if the controller's
+    /// transaction state calls for it.
+    fn advance_transaction(&mut self) -> Result<(), DbspError> {
+        match self.controller.advance_transaction_state() {
+            Some(AdvanceTransaction::Start) => {
+                self.controller.increment_transaction_number();
+                self.circuit.start_transaction()
+            }
+            Some(AdvanceTransaction::Commit) => self.circuit.start_commit_transaction(),
+            Some(AdvanceTransaction::StartAndCommit) => {
+                self.controller.increment_transaction_number();
+                self.circuit.start_transaction()?;
+                self.circuit.start_commit_transaction()
+            }
+            None => Ok(()),
+        }
+    }
+
     /// Evaluate the circuit for a single step or a single transaction.
     ///
     /// When processing a transaction, perform a single step within the transaction.
@@ -3812,28 +3894,12 @@ impl CircuitThread {
     /// When not processing a transaction, call `circuit.transaction` to start and
     /// instantly commit a transaction.
     fn step_circuit(&mut self) {
-        match self.controller.advance_transaction_state() {
-            Some(AdvanceTransaction::Start) => {
-                self.controller.increment_transaction_number();
-                self.circuit
-                    .start_transaction()
-                    .expect("should have been able to start transaction");
-            }
-            Some(AdvanceTransaction::Commit) => {
-                self.circuit
-                    .start_commit_transaction()
-                    .expect("should have been able to start transaction commit");
-            }
-            Some(AdvanceTransaction::StartAndCommit) => {
-                self.controller.increment_transaction_number();
-                self.circuit
-                    .start_transaction()
-                    .expect("should have been able to start transaction");
-                self.circuit
-                    .start_commit_transaction()
-                    .expect("should have been able to start transaction commit");
-            }
-            None => (),
+        // A worker that died, e.g. on a full disk, fails these calls.  Report
+        // its error rather than panicking, so the pipeline fails with the
+        // worker's explanation instead of a bare controller panic.
+        if let Err(error) = self.advance_transaction() {
+            self.controller.error(Arc::new(error.into()), None);
+            return;
         }
 
         let transaction_state = self.controller.get_transaction_state();
@@ -3941,23 +4007,7 @@ impl CircuitThread {
         let mut snapshot = BTreeMap::new();
         for (name, clh) in self.controller.catalog.output_iter() {
             if let Some(ih) = &clh.integrate_handle {
-                let batches = ih.take_from_all();
-
-                // The first index of a materialized view registers its
-                // integral under the view name with `alias_as_index =
-                // Some(index)` (see
-                // `register_materialized_output_map_persistent`). Also
-                // publish the snapshot under the alias so a connector
-                // configured with `index: <alias>` finds it via
-                // `enqueue_latest_snapshot`'s name lookup.
-                if let Some(alias) = &clh.alias_as_index {
-                    debug_assert_ne!(
-                        alias, name,
-                        "alias_as_index must differ from the catalog name",
-                    );
-                    snapshot.insert(alias.clone(), batches.clone());
-                }
-                snapshot.insert(name.clone(), batches);
+                snapshot.insert(name.clone(), ih.take_from_all());
             }
         }
 
@@ -4119,19 +4169,42 @@ impl CircuitThread {
                 });
 
             // Let the coordinator know what's going on.
-            let barrier = reasons
-                .iter()
-                .any(|r| matches!(r, TemporarySuspendError::InputEndpointBarrier(_)));
-            let other = reasons.iter().any(|r| {
-                !matches!(
-                    r,
-                    TemporarySuspendError::InputEndpointBarrier(_)
-                        | TemporarySuspendError::Coordination,
-                )
-            });
-            let checkpoint_coordination = Some(if other {
+            let mut delayed = false;
+            let mut barriers = false;
+            for reason in &reasons {
+                match reason {
+                    TemporarySuspendError::Replaying | TemporarySuspendError::Bootstrapping => {
+                        delayed = true
+                    }
+                    TemporarySuspendError::TransactionInProgress => {
+                        // An ongoing transaction means different things
+                        // depending on the transaction state:
+                        //
+                        // - If the transaction hasn't started committing, then
+                        //   the coordinator needs to commit the transaction
+                        //   before it can consider checkpointing.
+                        //
+                        // - If the transaction is committing, then the
+                        //   coordinator needs to step the pipeline until commit
+                        //   is complete.
+                        match self.controller.get_transaction_state() {
+                            TransactionState::None => {
+                                warn!("Reached unreachable code in checkpoint()");
+
+                                // Seems like the best of some bad choices.
+                                delayed = true;
+                            }
+                            TransactionState::Started { .. } => delayed = true,
+                            TransactionState::Committing { .. } => barriers = true,
+                        }
+                    }
+                    TemporarySuspendError::InputEndpointBarrier(_) => barriers = true,
+                    TemporarySuspendError::Coordination => (),
+                }
+            }
+            let checkpoint_coordination = Some(if delayed {
                 CheckpointCoordination::Delayed(reasons)
-            } else if barrier {
+            } else if barriers {
                 CheckpointCoordination::Barriers(reasons)
             } else {
                 // [TemporarySuspendError::Coordination] must be the holdup.
@@ -6408,7 +6481,9 @@ struct OutputEndpointDescr {
     /// Endpoint name.
     endpoint_name: String,
 
-    /// Stream name that the endpoint is connected to.
+    /// Name of the output handles the endpoint reads from: the name of the
+    /// stream, or of the index for an endpoint on an index with handles of
+    /// its own.  See [`OutputEndpoints`].
     stream_name: String,
 
     /// Transaction number when the endpoint was created.
@@ -6461,16 +6536,48 @@ impl OutputEndpointDescr {
 
 type StreamEndpointMap = BTreeMap<String, (OutputCollectionHandles, BTreeSet<EndpointId>)>;
 
+/// The controller's output endpoints.
+///
+/// `push_output` reads the delta handle of each group in `by_stream` once per
+/// step and hands the batch to every endpoint in the group.  Reading a handle
+/// removes the batch from it, so no two groups may share a handle: the group
+/// read second would find it empty, and its endpoints would never receive
+/// output.  The first index of a materialized view shares the view's handles,
+/// so endpoints on that index join the view's group.
+///
+/// Every output handle in the catalog has a group from the start, so
+/// `push_output` reads every handle after every step, whether or not the
+/// handle has endpoints.  A handle keeps its output until someone reads it,
+/// and the handle of a materialized view receives output even without
+/// endpoints, so a handle that nobody read could pass stale output to the
+/// first endpoint attached to it.
 struct OutputEndpoints {
     by_id: BTreeMap<EndpointId, OutputEndpointDescr>,
+
+    /// The endpoints of each output handle in the catalog, keyed by the
+    /// handle's name in canonical form.
     by_stream: StreamEndpointMap,
 }
 
 impl OutputEndpoints {
-    fn new() -> Self {
+    /// Creates a group with no endpoints for each output handle in `catalog`.
+    ///
+    /// # Arguments
+    ///
+    /// * `catalog` - The circuit's catalog.
+    ///
+    /// # Returns
+    ///
+    /// Output endpoints with no endpoint attached.
+    fn new(catalog: &dyn CircuitCatalog) -> Self {
+        let by_stream = catalog
+            .output_iter()
+            .map(|(name, handles)| (name.name(), (handles.clone(), BTreeSet::new())))
+            .collect();
+
         Self {
             by_id: BTreeMap::new(),
-            by_stream: BTreeMap::new(),
+            by_stream,
         }
     }
 
@@ -6495,19 +6602,33 @@ impl OutputEndpoints {
             .find(|ep| ep.endpoint_name == endpoint_name)
     }
 
+    /// Adds an endpoint to the group of the output handles it reads from.
+    ///
+    /// # Arguments
+    ///
+    /// * `endpoint_id` - Id of the endpoint.
+    /// * `endpoint_descr` - The endpoint.  Its `stream_name` names the group.
+    ///
+    /// # Returns
+    ///
+    /// An error if no group has that name.  The endpoint's handles then came
+    /// from the catalog under another name, and reading them in a new group
+    /// would starve the group that already reads them.
     fn insert(
         &mut self,
         endpoint_id: EndpointId,
-        handles: OutputCollectionHandles,
         endpoint_descr: OutputEndpointDescr,
-    ) {
+    ) -> Result<(), ControllerError> {
+        let Some((handles, endpoints)) = self.by_stream.get_mut(&endpoint_descr.stream_name) else {
+            return Err(ControllerError::unknown_output_stream(
+                &endpoint_descr.endpoint_name,
+                &endpoint_descr.stream_name,
+            ));
+        };
         handles.enable_count.enable();
-        self.by_stream
-            .entry(endpoint_descr.stream_name.clone())
-            .or_insert_with(|| (handles, BTreeSet::new()))
-            .1
-            .insert(endpoint_id);
+        endpoints.insert(endpoint_id);
         self.by_id.insert(endpoint_id, endpoint_descr);
+        Ok(())
     }
 
     fn remove(&mut self, endpoint_id: &EndpointId) -> Option<OutputEndpointDescr> {
@@ -7273,6 +7394,7 @@ impl ControllerInner {
         let session_ctxt = create_session_context(&config, datafusion_runtime_env.clone());
         let controller = Arc::new_cyclic(|weak| {
             let adhoc_tables = Self::initialize_adhoc_queries(&session_ctxt, &*catalog, weak);
+            let outputs = OutputEndpoints::new(&*catalog);
             Self {
                 status,
                 secrets_dir: config.secrets_dir().to_path_buf(),
@@ -7285,7 +7407,7 @@ impl ControllerInner {
                 lir,
                 trace_snapshots: Default::default(),
                 next_input_id: Atomic::new(0),
-                outputs: ShardedLock::new(OutputEndpoints::new()),
+                outputs: ShardedLock::new(outputs),
                 next_output_id: Atomic::new(0),
                 layout: runtime.layout().clone(),
                 runtime: runtime.downgrade(),
@@ -7907,7 +8029,16 @@ impl ControllerInner {
                 &SqlIdentifier::from(index),
             )?;
 
-            (handles, index.clone())
+            // The first index of a materialized view shares the view's output
+            // handles (see `alias_as_index`), so the endpoint joins the view's
+            // group in `OutputEndpoints`.
+            let stream_name = if handles.alias_as_index.is_some() {
+                endpoint_config.stream.to_string()
+            } else {
+                index.clone()
+            };
+
+            (handles, stream_name)
         } else {
             (
                 self.catalog
@@ -8164,7 +8295,7 @@ impl ControllerInner {
         if outputs.lookup_by_name(endpoint_name).is_some() {
             Err(ControllerError::duplicate_output_endpoint(endpoint_name))?;
         }
-        outputs.insert(endpoint_id, handles.clone(), endpoint_descr);
+        outputs.insert(endpoint_id, endpoint_descr)?;
         drop(outputs);
 
         // We succeeded, cancel removal of the endpoint.

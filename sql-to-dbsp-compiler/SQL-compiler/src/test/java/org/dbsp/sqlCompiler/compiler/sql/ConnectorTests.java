@@ -912,6 +912,33 @@ public class ConnectorTests extends BaseSQLTests {
     }
 
     @Test
+    public void postgresCdcReaderRunSourceMigrations() {
+        for (String option : new String[]{"", ", \"run_source_migrations\": true",
+                ", \"run_source_migrations\": false"}) {
+            cleanTableConnectorTest("""
+                "transport": {
+                  "name": "postgres_cdc_input",
+                  "config": {
+                    "uri": "postgres://localhost/db",
+                    "publication": "my_pub",
+                    "source_table": "public.orders"%s
+                  }
+                }""".formatted(option));
+        }
+        tableConnectorTest("""
+                "transport": {
+                  "name": "postgres_cdc_input",
+                  "config": {
+                    "uri": "postgres://localhost/db",
+                    "publication": "my_pub",
+                    "source_table": "public.orders",
+                    "run_source_migrations": "no"
+                  }
+                }""",
+                "Cannot deserialize value of type `java.lang.Boolean` from String \"no\"");
+    }
+
+    @Test
     public void postgresWriterCdcMissingOpColumn() {
         viewConnectorTest("""
                 "transport": {
@@ -1490,6 +1517,78 @@ public class ConnectorTests extends BaseSQLTests {
                     "http_driven": true
                   }
                 }""");
+    }
+
+    // ---- S2 transport config ----
+
+    @Test
+    public void s2InputValidConfig() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "s2_input",
+                  "config": {
+                    "basin": "events",
+                    "stream": "orders",
+                    "auth_token": "${env:S2_AUTH_TOKEN}",
+                    "start_from": {"SeqNum": 42}
+                  }
+                }""");
+    }
+
+    @Test
+    public void s2InputInvalidStartFrom() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "s2_input",
+                  "config": {
+                    "basin": "events",
+                    "stream": "orders",
+                    "auth_token": "token",
+                    "start_from": {"SeqNum": -1}
+                  }
+                }""",
+                "\"start_from\" must be \"Beginning\", \"Tail\"");
+    }
+
+    @Test
+    public void s2InputMissingStream() {
+        tableConnectorTest("""
+                "transport": {
+                  "name": "s2_input",
+                  "config": {
+                    "basin": "events",
+                    "auth_token": "token"
+                  }
+                }""",
+                "required field \"stream\" is missing or empty");
+    }
+
+    @Test
+    public void s2OutputValidConfig() {
+        viewConnectorTest("""
+                "transport": {
+                  "name": "s2_output",
+                  "config": {
+                    "basin": "events",
+                    "stream": "results",
+                    "auth_token": "${env:S2_AUTH_TOKEN}"
+                  }
+                }""");
+    }
+
+    @Test
+    public void s2OutputUnknownField() {
+        viewConnectorTest("""
+                "transport": {
+                  "name": "s2_output",
+                  "config": {
+                    "basin": "events",
+                    "stream": "results",
+                    "auth_token": "token",
+                    "batch_size": 100
+                  }
+                }""",
+                "unknown field \"batch_size\"");
     }
 
     // ---- NATS transport config ----

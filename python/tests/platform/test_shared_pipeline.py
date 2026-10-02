@@ -344,6 +344,36 @@ class TestPipeline(SharedTestPipeline):
         assert df.shape[0] == 100
         self.pipeline.stop(force=True)
 
+    def test_listen_null_strings(self):
+        """
+        CREATE TABLE nullable_strings (
+            id INT NOT NULL,
+            n INT,
+            s VARCHAR,
+            c CHAR(4)
+        );
+        CREATE MATERIALIZED VIEW nullable_strings_view AS
+            SELECT * FROM nullable_strings;
+        """
+        self.pipeline.start()
+        out = self.pipeline.listen("nullable_strings_view")
+        self.pipeline.input_json(
+            "nullable_strings",
+            [
+                {"id": 1, "n": None, "s": None, "c": None},
+                {"id": 2, "n": 0, "s": "None", "c": "None"},
+                {"id": 3, "n": 3, "s": "a", "c": "a"},
+            ],
+        )
+        wait_for_records(out, 3)
+        rows = sorted(out.to_dict(), key=lambda row: row["id"])
+        assert rows == [
+            {"id": 1, "n": None, "s": None, "c": None, "insert_delete": 1},
+            {"id": 2, "n": 0, "s": "None", "c": "None", "insert_delete": 1},
+            {"id": 3, "n": 3, "s": "a", "c": "a", "insert_delete": 1},
+        ]
+        self.pipeline.stop(force=True)
+
     def test_foreach_chunk(self):
         def callback(df: pd.DataFrame, seq_no: int):
             print(f"\nSeq No: {seq_no}, DF size: {df.shape[0]}\n")

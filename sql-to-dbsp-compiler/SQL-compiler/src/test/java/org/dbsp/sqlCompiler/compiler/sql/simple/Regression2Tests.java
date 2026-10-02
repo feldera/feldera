@@ -501,7 +501,7 @@ public class Regression2Tests extends SqlIoTest {
     @Test
     public void issue2234() {
         var ccs = this.getCCS("""
-                CREATE TABLE transaction_with_customer(id INT, amt INT64, cc_num VARCHAR, unix_time INT64);
+                CREATE TABLE transaction_with_customer(id INT, amt INT64, cc_num VARCHAR, unix_time INT64 NOT NULL);
                 CREATE VIEW FEATURE AS
                 SELECT
                     id,

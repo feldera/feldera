@@ -292,6 +292,12 @@ is set: check that `changeDataFeed` is among the table's `writerFeatures`.
   whose polarity comes from `cdc_delete_filter`, and Delta's `_change_type` is a
   second, incompatible answer to the same question.
 
+## Column mapping
+
+[Column mapping](https://docs.delta.io/latest/delta-column-mapping.html) lets a
+Delta table rename or reorder columns without rewriting its data files. Feldera
+reads both mapping modes, `name` and `id`.
+
 ## Transactions
 
 The Delta Lake connector can be configured to automatically initiate [transactions](/pipelines/transactions)

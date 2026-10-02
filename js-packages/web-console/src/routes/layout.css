@@ -96,6 +96,22 @@
   padding-inline: calc(var(--spacing) * 4) /* 1rem = 16px */;
 }
 
+/* A leading icon keeps to the left edge, and the label centres in the space after it.
+   This shows only when the button is wider than its content. The auto margins of the
+   icon and of a zero-width ::after share the spare width. The ::after's negative end
+   margin cancels the flex gap before it, so a button that fits its content keeps its
+   size. */
+.btn:has(> .fd:first-child) {
+  & > .fd:first-child {
+    margin-inline-end: auto;
+  }
+  &::after {
+    content: "";
+    margin-inline-start: auto;
+    margin-inline-end: calc(var(--spacing) * -2) /* Skeleton's `.btn` gap */;
+  }
+}
+
 .btn-icon {
   width: 20px;
   height: 20px;

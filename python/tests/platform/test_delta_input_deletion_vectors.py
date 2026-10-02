@@ -72,6 +72,24 @@ OVERWRITE_FIXTURE_VERSION = "dv_cdc_overwrite_v1"
 # (see ensure_delta_spark_fixture) rather than being imported here.
 _FIXTURE_BUILDER = Path(__file__).parent / "fixtures" / "deletion_vectors.py"
 
+# The fixture's ids. The DV commit soft-deletes the even ones.
+_ODD_IDS = [i for i in range(1, TOTAL_ROWS + 1) if i % 2 == 1]
+_EVEN_IDS = [i for i in range(1, TOTAL_ROWS + 1) if i % 2 == 0]
+
+
+def _plain_rows(ids: list[int], *, grp: bool = False) -> list[dict]:
+    """The rows the builder writes for `ids`: `user_<id>` and `id * 1.5`.
+
+    Restated here rather than read back, so the expectation does not depend on
+    the connector under test. Keep the fixture's arithmetic exact: `value`
+    returns as a `Decimal` and equals a float only when both hold it exactly.
+    """
+    rows = [{"id": i, "name": f"user_{i}", "value": i * 1.5} for i in ids]
+    if grp:
+        for row in rows:
+            row["grp"] = str(row["id"] % 3)
+    return rows
+
 
 def _log_has_dv_entries(loc: DeltaTestLocation) -> bool:
     """Return True when any Delta log entry carries a deletion vector.
@@ -123,28 +141,29 @@ def _build_sql(
 
 
 class DvIngest(NamedTuple):
-    """Outcome of ingesting a DV fixture.
+    """Every ingested row, ordered by ``id``, plus ``total_input_records``.
 
-    ``total`` and ``even_id_rows`` are TABLE row counts; ``input_records`` is
-    ``total_input_records`` (records fed into the circuit). ``input_records``
-    exposes read amplification the row counts cannot: the circuit nets a whole-
-    file re-read back to the same result, so only the ingested-record count
-    distinguishes a minimal DV-delta read from re-reading the whole file.
+    The record count exposes read amplification the rows cannot: the circuit
+    nets a whole-file re-read back to the same rows.
     """
 
-    total: int
-    even_id_rows: int
+    rows: list[dict]
     input_records: int
+
+    @property
+    def total(self) -> int:
+        """Row count, asserted before ``rows`` so a cardinality error reports
+        as one number rather than a 200-row diff."""
+        return len(self.rows)
+
+    @property
+    def ids(self) -> list[int]:
+        """The ingested ids, ascending."""
+        return [row["id"] for row in self.rows]
 
 
 def _run_to_completion(pipeline_name: str, sql: str) -> DvIngest:
-    """Run the pipeline until end-of-input.
-
-    ``even_id_rows`` exists because every fixture soft-deletes exactly the even
-    ids: a correct ingest leaves zero of them, and counting them catches an
-    *inverted* deletion vector (ingesting the deleted half), which COUNT(*)
-    alone cannot, since both halves have the same size.
-    """
+    """Run the pipeline until end-of-input."""
     pipeline = PipelineBuilder(
         TEST_CLIENT,
         pipeline_name,
@@ -158,17 +177,17 @@ def _run_to_completion(pipeline_name: str, sql: str) -> DvIngest:
     pipeline.start()
     pipeline.wait_for_completion(force_stop=False, timeout_s=600)
 
-    rows = list(
-        pipeline.query(
-            f"SELECT COUNT(*) AS total,"
-            f" COALESCE(SUM(CASE WHEN id % 2 = 0 THEN 1 ELSE 0 END), 0) AS even_id_rows"
-            f" FROM {TABLE}"
-        )
+    # Every row, not just a count: a wrong-rows-right-count read (a shifted or
+    # misapplied deletion vector) is invisible to COUNT(*). Sorted here rather
+    # than in SQL, as in `test_delta_input_column_mapping.py`.
+    rows = sorted(
+        (dict(row) for row in pipeline.query(f"SELECT * FROM {TABLE}")),
+        key=lambda row: row["id"],
     )
     # Read before stopping: the metric is only live while the pipeline runs.
     input_records = number_of_input_records(pipeline)
     pipeline.stop(force=True)
-    return DvIngest(int(rows[0]["total"]), int(rows[0]["even_id_rows"]), input_records)
+    return DvIngest(rows, input_records)
 
 
 def _ingest_dv_fixture(
@@ -220,8 +239,10 @@ def test_delta_input_snapshot_with_deletion_vectors(pipeline_name):
         "snapshot ingest of a DV-enabled table must drop the soft-deleted "
         f"rows ({DV_DELETED_ROWS} rows have id % 2 = 0)"
     )
-    assert result.even_id_rows == 0, (
-        "the surviving rows must be the odd ids, not the deleted even ids"
+    assert result.rows == _plain_rows(_ODD_IDS), (
+        "the survivors must be exactly the odd-id rows, payload intact; a "
+        "deletion vector applied at the wrong offset keeps the count and the "
+        "parity but returns different rows"
     )
 
 
@@ -242,9 +263,6 @@ def test_delta_input_follow_with_deletion_vectors(pipeline_name):
         "follow ingest of a DV commit must retract the soft-deleted rows; "
         f"{TOTAL_ROWS} rows means the add action's deletion vector was ignored"
     )
-    assert result.even_id_rows == 0, (
-        "the surviving rows must be the odd ids, not the deleted even ids"
-    )
     # A same-path add/remove DV rewrite must ingest only the flipped rows.
     # Re-reading the whole file (the pre-fix behavior) would net the same rows
     # but roughly double this count, so the record total is what guards it.
@@ -254,6 +272,10 @@ def test_delta_input_follow_with_deletion_vectors(pipeline_name):
         f"{FOLLOW_DV_DELETE_INPUT_RECORDS} (snapshot {TOTAL_ROWS} + "
         f"{DV_DELETED_ROWS} deleted). A far larger count means the connector "
         "re-read the whole rewritten file instead of just the DV delta"
+    )
+    assert result.rows == _plain_rows(_ODD_IDS), (
+        "the follow retraction must remove exactly the even-id rows and leave "
+        "the odd-id rows with their payload intact"
     )
 
 
@@ -280,8 +302,9 @@ def test_delta_input_follow_partitioned_with_dv(pipeline_name):
         "follow side read the partition column as NULL, so the filter dropped "
         "its retractions"
     )
-    assert result.even_id_rows == 0, (
-        "the survivors must be the odd ids, not the deleted even ids"
+    assert result.rows == _plain_rows(kept, grp=True), (
+        "every survivor must carry its partition value and payload; `grp` read "
+        "back as NULL or a wrong id set would still satisfy the count above"
     )
 
 
@@ -312,10 +335,6 @@ def test_delta_input_follow_restore_with_dv(pipeline_name):
         "(masked by the delete's deletion vector) retracts only the survivors; "
         f"got {result.total} rows, expected {TOTAL_ROWS}"
     )
-    assert result.even_id_rows == TOTAL_ROWS // 2, (
-        "the restored even ids must be present; their absence means the "
-        "`remove` action's deletion vector was applied to the wrong rows"
-    )
     # The restore flips the same rows back: its `remove` (masked to the odd
     # survivors) and `add` (DV cleared) differ only in the even ids, so follow
     # must re-insert exactly those, not re-read the whole restored file.
@@ -325,6 +344,10 @@ def test_delta_input_follow_restore_with_dv(pipeline_name):
         f"{FOLLOW_RESTORE_INPUT_RECORDS} (snapshot {EXPECTED_ROWS_AFTER_DV} + "
         f"{DV_DELETED_ROWS} restored). A far larger count means the connector "
         "re-read the whole file on each side of the same-path rewrite"
+    )
+    assert result.ids == list(range(1, TOTAL_ROWS + 1)), (
+        "the restore must leave every id exactly once; a duplicated or missing "
+        "id keeps the total and the even/odd split unchanged"
     )
 
 
@@ -360,8 +383,8 @@ def test_delta_input_cdc_overwrite_masks_dv_rows(pipeline_name):
         "0 means the `remove`'s deletion vector was ignored and its DV-dead "
         "rows over-subtracted the new events"
     )
-    assert result.even_id_rows == EXPECTED_ROWS_AFTER_DV, (
-        "every re-inserted event has an even id"
+    assert result.ids == _EVEN_IDS, (
+        "the surviving events must be exactly the re-inserted even ids"
     )
 
 
@@ -392,6 +415,10 @@ def test_delta_input_cdc_with_deletion_vectors(pipeline_name):
         "CDC replay of DV rewrite commits must net to zero events: "
         "only the single v3 insert event may arrive; a higher count "
         "means soft-deleted or restored events were re-ingested"
+    )
+    assert result.ids == [TOTAL_ROWS + 1], (
+        f"the one surviving event must be the v3 insert (id {TOTAL_ROWS + 1}); "
+        "any other id means a soft-deleted event leaked through"
     )
 
 
@@ -424,8 +451,10 @@ def _run_dv_follow_filter_test(pipeline_name: str, filter_expr: str) -> None:
         f"must retract the even ones; got {result.total} rows, expected "
         f"{len(_FILTER_KEPT_IDS)}"
     )
-    assert result.even_id_rows == 0, (
-        "the surviving rows must be the odd ids, not the deleted even ids"
+    assert result.ids == _FILTER_KEPT_IDS, (
+        f"filter '{filter_expr}' must keep exactly ids {_FILTER_KEPT_IDS[0]}.."
+        f"{_FILTER_KEPT_IDS[-1]} odd; a filter applied to the wrong rows can "
+        "match the count without matching the ids"
     )
 
 

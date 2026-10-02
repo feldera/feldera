@@ -4,7 +4,6 @@ use crate::transport::{
 use crate::{ControllerError, InputConsumer, InputReader, PipelineState, RecordFormat};
 use anyhow::{Result as AnyResult, anyhow};
 use chrono::Utc;
-use dbsp::circuit::tokio::TOKIO;
 use etl::config::{
     BatchConfig, InvalidatedSlotBehavior, MemoryBackpressureConfig, PgConnectionConfig,
     PipelineConfig, TableSyncCopyConfig, TcpKeepaliveConfig,
@@ -32,6 +31,8 @@ use feldera_types::transport::postgres::{PostgresCdcReaderConfig, PostgresTlsCon
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{self, Debug, Formatter};
+use std::future::Future;
+use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -82,6 +83,79 @@ const RESULT_DROPPED_ON_SHUTDOWN: &str = "Async result channel closed before sen
 /// Such writes were never acknowledged, so replaying them is safe.
 fn is_shutdown_error(reason: &str) -> bool {
     reason.contains(TERMINATED_BEFORE_BATCH) || reason.contains(RESULT_DROPPED_ON_SHUTDOWN)
+}
+
+/// etl persists table failures as text, so use the same diagnostics for startup
+/// errors and failures reported later by the table monitor. Keep unrelated
+/// errors free of setup advice and retain the original PostgreSQL diagnostic.
+/// Return a single-layer error so the controller's root-cause formatter shows
+/// the complete message and hint without repeating etl's embedded diagnostics.
+fn with_setup_hint(error: anyhow::Error, run_source_migrations: bool) -> anyhow::Error {
+    let message = error.to_string();
+    let diagnostic = message.to_ascii_lowercase();
+    let permission_denied = [
+        "permission denied",
+        "must be superuser",
+        "must be a superuser",
+        "must be owner",
+    ]
+    .iter()
+    .any(|text| diagnostic.contains(text));
+    let missing_helper = diagnostic.contains("does not exist")
+        && ["etl.describe_table_schema(", "etl.describe_table_identity("]
+            .iter()
+            .any(|function| diagnostic.contains(function));
+    if !permission_denied && !missing_helper {
+        return error;
+    }
+
+    let hint = if run_source_migrations {
+        "With run_source_migrations=true, connect as a superuser to install etl's source \
+         objects. To use a non-superuser role instead, have an administrator install the \
+         source objects and apply the required runtime grants before setting \
+         run_source_migrations=false."
+    } else {
+        "With run_source_migrations=false, have an administrator install or update etl's \
+         source objects and grant EXECUTE on its schema helper functions, SELECT on every \
+         table in the publication and USAGE on their schemas, plus the required database, \
+         etl schema, and state-table privileges. The runtime role also needs the REPLICATION \
+         attribute."
+    };
+    let message = message.trim_end();
+    let separator = if message.ends_with('.') { " " } else { ". " };
+    anyhow!(
+        "{message}{separator}Hint: {hint} State-store migrations still run regardless of this flag. \
+         See 'Running as a non-superuser': {NON_SUPERUSER_DOCS}"
+    )
+}
+
+const NON_SUPERUSER_DOCS: &str =
+    "https://docs.feldera.com/connectors/sources/postgresql-cdc#running-as-a-non-superuser";
+
+/// The `ddl_command_end` event trigger that etl's source migrations install.
+const DDL_EVENT_TRIGGER: &str = "supabase_etl_ddl_message_trigger";
+
+/// Fail when etl's DDL event trigger is missing or disabled. Without it the
+/// source emits no schema-change messages: a dropped column or a changed
+/// column type would then be decoded silently against the stale schema.
+/// `pg_event_trigger` is readable by every role, so the check needs no grant.
+async fn verify_ddl_event_trigger(client: &tokio_postgres::Client) -> AnyResult<()> {
+    let row = client
+        .query_opt(
+            "select evtenabled::text from pg_event_trigger where evtname = $1",
+            &[&DDL_EVENT_TRIGGER],
+        )
+        .await?;
+    let problem = match row {
+        None => "does not exist in the source database",
+        Some(row) if row.get::<_, String>(0) == "D" => "is disabled in the source database",
+        Some(_) => return Ok(()),
+    };
+    Err(anyhow!(
+        "etl's event trigger '{DDL_EVENT_TRIGGER}' {problem}, so schema changes to the \
+         published tables would go unnoticed. Have an administrator recreate or enable it \
+         (see 'Running as a non-superuser': {NON_SUPERUSER_DOCS})"
+    ))
 }
 
 /// Integrated input connector that reads from Postgres via logical replication (CDC).
@@ -170,21 +244,46 @@ impl PostgresCdcInputReader {
             .map(|f| f.name.name())
             .collect();
 
+        let endpoint_name = endpoint.endpoint_name.clone();
         thread::Builder::new()
-            .name("postgres-cdc-input-tokio-wrapper".to_string())
+            .name(format!("pgcdc-{endpoint_name}"))
+            .stack_size(RUNTIME_THREAD_STACK_SIZE)
             .spawn(move || {
-                TOKIO.block_on(async {
-                    let _ = endpoint_clone
-                        .worker_task(
-                            input_stream,
-                            feldera_required_columns,
-                            receiver,
-                            init_status_sender,
-                            redo_snapshot,
-                            resumed_copy,
-                        )
-                        .await;
-                })
+                // etl spawns its workers onto the ambient runtime. A runtime of
+                // the connector's own keeps them off the process-wide one and,
+                // above all, lets a stop end them: shutting it down once the
+                // worker task has returned cancels whatever etl left running
+                // and closes its replication connections, so PostgreSQL
+                // releases the slots however the stop went (#7170, #7201).
+                let runtime = match tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(RUNTIME_WORKER_THREADS)
+                    .thread_name(format!("pgcdc-rt-{endpoint_name}"))
+                    .thread_stack_size(RUNTIME_THREAD_STACK_SIZE)
+                    .enable_all()
+                    .build()
+                {
+                    Ok(runtime) => runtime,
+                    Err(e) => {
+                        let _ =
+                            init_status_sender.send(Err(ControllerError::input_transport_error(
+                                &endpoint_name,
+                                true,
+                                anyhow!("failed to start the connector's tokio runtime: {e}"),
+                            )));
+                        return;
+                    }
+                };
+                block_on_then_shut_down(
+                    runtime,
+                    endpoint_clone.worker_task(
+                        input_stream,
+                        feldera_required_columns,
+                        receiver,
+                        init_status_sender,
+                        redo_snapshot,
+                        resumed_copy,
+                    ),
+                );
             })
             .expect("failed to create Postgres CDC input connector thread");
 
@@ -413,6 +512,19 @@ impl CopyBarrier {
         true
     }
 
+    /// Drop a held terminal barrier when the connector stops.
+    ///
+    /// etl's copy worker stops waiting on the barrier as soon as the shutdown
+    /// reaches it, so there is nothing left to answer, and the copy is not
+    /// recorded as finished: the next start reads the table again. What the
+    /// drop guards is the flush that races the stop. A buffer the reader
+    /// flushes after the stop must not find a barrier to answer, or it would
+    /// take the barrier down and record as finished a copy that etl has
+    /// abandoned; with the barrier gone, the copy stays open.
+    fn release_terminal(&self) {
+        drop(self.state.lock().unwrap().terminal.take());
+    }
+
     /// Account for snapshot buffers the reader has flushed into the circuit,
     /// answering a held terminal barrier once the last of them lands, and say
     /// whether a terminal barrier is still held.
@@ -637,34 +749,43 @@ impl PostgresCdcInputInner {
         // error, and the most likely one after an unqualified name came to
         // mean `public`. Say so now, with the publication's table list, rather
         // than ingest nothing until the stall monitor speaks.
-        match publication_tables(
-            &self.config.uri,
-            &self.config.tls,
-            &self.config.publication,
-            &self.endpoint_name,
-        )
-        .await
-        {
-            Ok(tables) => {
-                if let Some(problem) = source_table_missing_from(
-                    &self.config.source_table,
-                    &self.config.publication,
-                    &tables,
-                ) {
-                    let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
-                        &self.endpoint_name,
-                        true,
-                        anyhow!(problem),
-                    )));
-                    return;
+        let catalog = connect_pg(&self.config.uri, &self.config.tls, &self.endpoint_name).await;
+        match &catalog {
+            Ok(client) => match publication_tables(client, &self.config.publication).await {
+                Ok(tables) => {
+                    if let Some(problem) = source_table_missing_from(
+                        &self.config.source_table,
+                        &self.config.publication,
+                        &tables,
+                    ) {
+                        let _ =
+                            init_status_sender.send(Err(ControllerError::input_transport_error(
+                                &self.endpoint_name,
+                                true,
+                                anyhow!(problem),
+                            )));
+                        return;
+                    }
                 }
-            }
-            Err(e) => warn!(
-                "postgres_cdc {}: could not list the tables of publication '{}' ({e}); a \
-                 source table the publication does not carry is reported by the stall \
-                 monitor instead",
-                &self.endpoint_name, &self.config.publication
-            ),
+                Err(e) => self.warn_publication_unlisted(&e),
+            },
+            Err(e) => self.warn_publication_unlisted(e),
+        }
+
+        // Skipped source migrations leave the event trigger to an
+        // administrator, so check it before touching the state store: a
+        // never-bootstrapped database then stays untouched. With migrations
+        // enabled the trigger is checked after etl installs it. A failed
+        // catalog connection is left for the state store to report.
+        if let (false, Ok(client)) = (self.config.run_source_migrations, &catalog)
+            && let Err(e) = verify_ddl_event_trigger(client).await
+        {
+            let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
+                &self.endpoint_name,
+                true,
+                e,
+            )));
+            return;
         }
 
         let pipeline_config = PipelineConfig {
@@ -689,9 +810,9 @@ impl PostgresCdcInputInner {
             table_sync_monitor_refresh_interval_ms:
                 PipelineConfig::DEFAULT_TABLE_SYNC_MONITOR_REFRESH_INTERVAL_MS,
             invalidated_slot_behavior: InvalidatedSlotBehavior::default(),
-            // etl reads the source schema through helper functions that its own
-            // source migrations install, so the initial copy needs them.
-            run_source_migrations: true,
+            // The initial copy needs etl's schema helpers. When migrations are
+            // disabled, an administrator must have installed them beforehand.
+            run_source_migrations: self.config.run_source_migrations,
         };
 
         // Use PostgresStore to persist table replication phases across restarts.
@@ -700,10 +821,14 @@ impl PostgresCdcInputInner {
         let store = match PostgresStore::new(self.pipeline_id, pg_conn).await {
             Ok(store) => store,
             Err(e) => {
+                let message = format!("failed to initialize PostgresStore: {e}");
                 let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
                     &self.endpoint_name,
                     true,
-                    anyhow!("failed to initialize PostgresStore: {e}"),
+                    with_setup_hint(
+                        anyhow!(e).context(message),
+                        self.config.run_source_migrations,
+                    ),
                 )));
                 return;
             }
@@ -725,15 +850,19 @@ impl PostgresCdcInputInner {
                 self.copy.set_copy_open(reconciled.copy_outstanding);
             }
             Err(e) => {
+                let message = format!(
+                    "could not reconcile the replication state of table '{}' before \
+                     starting: {e}. The connector keeps its resume position in schema 'etl' \
+                     of the source database and must read and update it at startup; fix the \
+                     reported problem, then restart the pipeline",
+                    self.config.source_table
+                );
                 let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
                     &self.endpoint_name,
                     true,
-                    anyhow!(
-                        "could not reconcile the replication state of table '{}' before \
-                         starting: {e}. The connector keeps its resume position in schema 'etl' \
-                         of the source database and must read and update it at startup; fix the \
-                         reported problem, then restart the pipeline",
-                        self.config.source_table
+                    with_setup_hint(
+                        anyhow!(e).context(message),
+                        self.config.run_source_migrations,
                     ),
                 )));
                 return;
@@ -757,6 +886,7 @@ impl PostgresCdcInputInner {
 
         let table_error_monitor = TableErrorMonitor {
             endpoint_name: self.endpoint_name.clone(),
+            run_source_migrations: self.config.run_source_migrations,
             consumer: self.consumer.clone(),
             store: store.clone(),
             source_table: self.config.source_table.clone(),
@@ -767,7 +897,24 @@ impl PostgresCdcInputInner {
         let mut pipeline = Pipeline::new(pipeline_config, store, destination);
         self.set_etl_shutdown_tx(pipeline.shutdown_tx());
 
-        match pipeline.start().await {
+        let started = match pipeline.start().await {
+            Ok(()) if self.config.run_source_migrations => match &catalog {
+                // The migrations have installed the trigger by now; an
+                // administrator may still have disabled it since.
+                Ok(client) => verify_ddl_event_trigger(client).await,
+                Err(_) => Ok(()),
+            },
+            Ok(()) => Ok(()),
+            Err(e) => {
+                let message = format!("failed to start etl pipeline: {e}");
+                Err(with_setup_hint(
+                    anyhow!(e).context(message),
+                    self.config.run_source_migrations,
+                ))
+            }
+        };
+        drop(catalog);
+        match started {
             Ok(()) => {
                 info!(
                     "postgres_cdc {}: etl pipeline started for publication '{}', table '{}'",
@@ -779,7 +926,7 @@ impl PostgresCdcInputInner {
                 let _ = init_status_sender.send(Err(ControllerError::input_transport_error(
                     &self.endpoint_name,
                     true,
-                    anyhow!("failed to start etl pipeline: {e}"),
+                    e,
                 )));
                 self.shutdown_etl_pipeline();
                 return;
@@ -835,12 +982,12 @@ impl PostgresCdcInputInner {
                 );
                 self.shutdown_etl_pipeline();
                 stop_completion_watcher(&mut completion_handle, &self.endpoint_name).await;
-                (pipeline_wait.as_mut().await, false)
+                (self.await_etl_stop(&mut pipeline_wait).await, false)
             }
             _ = table_error_monitor.run() => {
                 self.shutdown_etl_pipeline();
                 stop_completion_watcher(&mut completion_handle, &self.endpoint_name).await;
-                (pipeline_wait.as_mut().await, false)
+                (self.await_etl_stop(&mut pipeline_wait).await, false)
             }
         };
 
@@ -850,7 +997,11 @@ impl PostgresCdcInputInner {
                     "postgres_cdc {}: etl pipeline error: {e}",
                     &self.endpoint_name
                 );
-                self.consumer.error(true, anyhow!(e), None);
+                self.consumer.error(
+                    true,
+                    with_setup_hint(anyhow!(e), self.config.run_source_migrations),
+                    None,
+                );
             } else {
                 debug!(
                     "postgres_cdc {}: etl pipeline stopped during shutdown: {e}",
@@ -868,6 +1019,48 @@ impl PostgresCdcInputInner {
         *self.etl_shutdown_tx.lock().unwrap() = Some(shutdown_tx);
     }
 
+    fn warn_publication_unlisted(&self, error: &anyhow::Error) {
+        warn!(
+            "postgres_cdc {}: could not list the tables of publication '{}' ({error}); a \
+             source table the publication does not carry is reported by the stall \
+             monitor instead",
+            &self.endpoint_name, &self.config.publication
+        );
+    }
+
+    /// Wait for etl to stop after [`Self::shutdown_etl_pipeline`], for at
+    /// most [`ETL_STOP_GRACE`].
+    ///
+    /// The stop reaches this wait once the completion watcher has stopped,
+    /// which takes at most [`WATCHER_SHUTDOWN_TIMEOUT`], and the runtime
+    /// shutdown after it takes at most [`RUNTIME_SHUTDOWN_TIMEOUT`]. The three
+    /// together bound how long a stop holds the replication slots.
+    ///
+    /// etl closes its replication connections when its workers return, and
+    /// PostgreSQL releases the slots then. A worker that does not return
+    /// would keep its slot active for as long as it lives, so the wait is
+    /// bounded: past the grace the connector gives up on etl, and the runtime
+    /// etl runs on is shut down once the worker task returns, which closes
+    /// the connections in its stead.
+    async fn await_etl_stop(
+        &self,
+        pipeline_wait: impl Future<Output = EtlResult<()>>,
+    ) -> EtlResult<()> {
+        match tokio::time::timeout(ETL_STOP_GRACE, pipeline_wait).await {
+            Ok(result) => result,
+            Err(_) => {
+                STOPPED_PAST_GRACE.lock().unwrap().insert(self.pipeline_id);
+                warn!(
+                    "postgres_cdc {}: etl did not stop within {ETL_STOP_GRACE:?}, so its \
+                     replication connections are closed by force. PostgreSQL offers the changes \
+                     they had not confirmed again on the next start",
+                    &self.endpoint_name
+                );
+                Ok(())
+            }
+        }
+    }
+
     fn shutdown_etl_pipeline(&self) {
         // Raise the flag before draining, so a write that queues an answer
         // just after the drain sees it and drains that answer itself.
@@ -876,6 +1069,7 @@ impl PostgresCdcInputInner {
             let _ = shutdown_tx.shutdown();
         }
         release_pending_answers(&self.queue);
+        self.copy.release_terminal();
     }
 }
 
@@ -904,6 +1098,7 @@ impl Drop for PostgresCdcInputInner {
 /// Monitor that turns etl table-state failures into Feldera connector failures.
 struct TableErrorMonitor {
     endpoint_name: String,
+    run_source_migrations: bool,
     consumer: Box<dyn InputConsumer>,
     store: PostgresStore,
     source_table: String,
@@ -1163,7 +1358,10 @@ impl TableErrorMonitor {
         } else {
             format!("table {table_id}")
         };
-        let error = anyhow!("postgres replication error on {table}: {detail}");
+        let error = with_setup_hint(
+            anyhow!("postgres replication error on {table}: {detail}"),
+            self.run_source_migrations,
+        );
         error!("postgres_cdc {}: {error}", &self.endpoint_name);
         self.consumer.error(true, error, None);
         true
@@ -1727,7 +1925,20 @@ impl FelderaDestination {
 
     /// Wait until the Feldera pipeline is running before accepting a new etl
     /// batch.
+    ///
+    /// Once the connector is stopping, the write is refused at once. etl may
+    /// outlive the stop by up to [`RUNTIME_SHUTDOWN_TIMEOUT`] after the reader
+    /// has signalled end of input, and its rows must not reach the queue then.
+    /// The refusal carries the same marker as a termination, so the next start
+    /// rolls it back and etl reads the rows again.
     async fn wait_unpaused(&self) -> EtlResult<()> {
+        if self.stopping.load(Ordering::SeqCst) {
+            return Err(etl_error!(
+                ErrorKind::DestinationError,
+                TERMINATED_BEFORE_BATCH,
+                "the connector is stopping"
+            ));
+        }
         let mut rx = self.pipeline_state_rx.clone();
         match rx.wait_for(|state| state != &PipelineState::Paused).await {
             Ok(state) if *state == PipelineState::Running => Ok(()),
@@ -1827,14 +2038,14 @@ enum CopyWrite {
 
 /// Tables `publication` carries, as `(schema, table)`, read from
 /// `pg_publication_tables` over a plain connection to the source.
-async fn publication_tables(
+/// A plain (non-replication) connection for catalog queries at startup.
+async fn connect_pg(
     uri: &str,
     tls: &PostgresTlsConfig,
-    publication: &str,
     endpoint_name: &str,
-) -> AnyResult<Vec<(String, String)>> {
+) -> AnyResult<tokio_postgres::Client> {
     let config: tokio_postgres::Config = uri.parse()?;
-    let client = match make_tls_connector(tls, endpoint_name)? {
+    Ok(match make_tls_connector(tls, endpoint_name)? {
         Some(connector) => {
             let (client, connection) = config.connect(connector).await?;
             tokio::spawn(connection);
@@ -1845,7 +2056,13 @@ async fn publication_tables(
             tokio::spawn(connection);
             client
         }
-    };
+    })
+}
+
+async fn publication_tables(
+    client: &tokio_postgres::Client,
+    publication: &str,
+) -> AnyResult<Vec<(String, String)>> {
     let rows = client
         .query(
             "select schemaname, tablename from pg_publication_tables where pubname = $1",
@@ -2525,7 +2742,51 @@ struct CompletionWatcher {
 }
 
 /// How long a stop waits for the watcher to answer its durable writes.
-const WATCHER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+pub(crate) const WATCHER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// How long a stop waits for etl to close its replication connections on its
+/// own; see [`PostgresCdcInputInner::await_etl_stop`].
+pub(crate) const ETL_STOP_GRACE: Duration = Duration::from_secs(5);
+
+/// How long the connector's runtime waits for the tasks it still hosts once
+/// the worker task has returned, before it drops them. Dropping them is what
+/// closes the connections of an etl worker that outlived the grace.
+pub(crate) const RUNTIME_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(1);
+
+/// Run `future` to completion on `runtime`, then shut the runtime down within
+/// [`RUNTIME_SHUTDOWN_TIMEOUT`], whether the future returned or panicked.
+///
+/// Dropping a runtime waits without bound for the work it hosts to stop, so
+/// a panic that unwound past the shutdown would turn the bounded stop into a
+/// hang on this thread, with etl's connections and slots held meanwhile. The
+/// panic is resumed once the runtime is gone.
+fn block_on_then_shut_down<F: Future>(runtime: tokio::runtime::Runtime, future: F) -> F::Output {
+    let result = std::panic::catch_unwind(AssertUnwindSafe(|| runtime.block_on(future)));
+    runtime.shutdown_timeout(RUNTIME_SHUTDOWN_TIMEOUT);
+    match result {
+        Ok(output) => output,
+        Err(payload) => std::panic::resume_unwind(payload),
+    }
+}
+
+/// The etl pipelines, by [`pipeline_id`], whose stop ran past
+/// [`ETL_STOP_GRACE`] and closed etl's connections by force. Such a stop
+/// releases its slots late. A test of prompt release checks that its own
+/// pipelines are absent; keying by pipeline keeps the stragglers of other
+/// tests, whose wrapper threads outlive their bodies, out of its verdict.
+pub(crate) static STOPPED_PAST_GRACE: Mutex<BTreeSet<u64>> = Mutex::new(BTreeSet::new());
+
+/// Worker threads of the runtime a connector runs etl on. The most parallel
+/// work etl does for one connector is the initial copy, which reads
+/// `max_copy_connections_per_table` connections at once, so one worker per
+/// connection keeps the copy as parallel as it was on the shared runtime.
+const RUNTIME_WORKER_THREADS: usize =
+    PipelineConfig::DEFAULT_MAX_COPY_CONNECTIONS_PER_TABLE as usize;
+
+/// Stack size of the threads etl runs on, the shared runtime's. A stack
+/// overflow in a task takes the whole process down, so the runtime that
+/// replaced the shared one must not shrink the stacks etl grew up with.
+const RUNTIME_THREAD_STACK_SIZE: usize = 6 * 1024 * 1024;
 
 /// Stop the completion watcher, letting it answer the writes the frontier has
 /// already passed. Calling it again finds nothing to stop.
@@ -2637,6 +2898,119 @@ mod tests {
     use serde_json::json;
     use std::str::FromStr;
     use std::sync::atomic::AtomicBool;
+
+    #[test]
+    fn setup_hint_only_for_permission_or_missing_etl_helper_errors() {
+        for run_source_migrations in [false, true] {
+            for diagnostic in [
+                "permission denied for schema etl",
+                "permission denied for table public.orders",
+                "must be superuser to create an event trigger",
+                "must be a superuser to create an event trigger",
+                "must be owner of function emit_schema_change_messages",
+                "function etl.describe_table_schema(integer) does not exist",
+                "function etl.describe_table_identity(oid) does not exist",
+            ] {
+                let error = with_setup_hint(anyhow!(diagnostic), run_source_migrations).to_string();
+                assert!(error.starts_with(diagnostic), "{error}");
+                assert!(
+                    error.contains(&format!(
+                        "With run_source_migrations={run_source_migrations}"
+                    )),
+                    "{error}"
+                );
+                assert!(error.contains("#running-as-a-non-superuser"), "{error}");
+                // A missing SELECT names the table, so the runtime hint must
+                // point at the published tables and not only at etl's objects.
+                assert_eq!(
+                    error.contains("SELECT on every table in the publication"),
+                    !run_source_migrations,
+                    "{error}"
+                );
+            }
+            for diagnostic in [
+                "connection refused",
+                "password authentication failed",
+                "relation public.orders does not exist",
+                "function public.unrelated(oid) does not exist",
+                "Postgres CDC source table is missing required Feldera columns",
+            ] {
+                assert_eq!(
+                    with_setup_hint(anyhow!(diagnostic), run_source_migrations).to_string(),
+                    diagnostic
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn setup_hint_startup_diagnostic_is_displayed_once() {
+        const DIAGNOSTIC: &str = "permission denied for schema etl";
+        const CONTEXT: &str = "failed to start etl pipeline";
+        for run_source_migrations in [false, true] {
+            let e = etl_error!(
+                ErrorKind::SourceQueryFailed,
+                "Failed to run ETL source migrations"
+            )
+            .with_source(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                DIAGNOSTIC,
+            ));
+            // Match pipeline.start()'s error path, including the etl source
+            // and the startup context that already embeds its diagnostic.
+            let message = format!("{CONTEXT}: {e}");
+            let error = with_setup_hint(anyhow!(e).context(message), run_source_migrations);
+            let controller_error = ControllerError::input_transport_error("cdc", true, error);
+            let displayed = controller_error.to_string();
+            assert_eq!(displayed.matches(DIAGNOSTIC).count(), 1, "{displayed}");
+            assert_eq!(displayed.matches(CONTEXT).count(), 1, "{displayed}");
+            assert_eq!(displayed.matches("Hint:").count(), 1, "{displayed}");
+
+            let serialized = serde_json::to_value(&controller_error).unwrap();
+            let serialized_error = serialized["error"].as_str().unwrap();
+            assert_eq!(
+                serialized_error.matches(DIAGNOSTIC).count(),
+                1,
+                "{serialized_error}"
+            );
+            assert_eq!(
+                serialized_error.matches(CONTEXT).count(),
+                1,
+                "{serialized_error}"
+            );
+            assert_eq!(
+                serialized_error.matches("Hint:").count(),
+                1,
+                "{serialized_error}"
+            );
+        }
+    }
+
+    #[test]
+    fn setup_hint_covers_replication_and_avoids_duplicate_periods() {
+        for diagnostic in [
+            "permission denied to start WAL sender",
+            "permission denied to start WAL sender.",
+            "permission denied to start WAL sender.\n",
+        ] {
+            let error = with_setup_hint(anyhow!(diagnostic), false).to_string();
+            assert!(error.contains("WAL sender. Hint:"), "{error}");
+            assert!(
+                error.contains("runtime role also needs the REPLICATION attribute"),
+                "{error}"
+            );
+        }
+        let error = with_setup_hint(anyhow!("permission denied for schema etl"), true).to_string();
+        assert!(
+            error.contains("connect as a superuser to install etl's source objects."),
+            "{error}"
+        );
+        assert!(
+            error.contains("To use a non-superuser role instead, have an administrator install the source objects and apply the required runtime grants"),
+            "{error}"
+        );
+        assert!(!error.contains("in either case"), "{error}");
+    }
 
     /// The startup rollback recognizes both errors a stop leaves behind: the
     /// one the connector records itself when Feldera stops it mid-batch, and
@@ -3259,6 +3633,82 @@ mod tests {
     }
 
     #[test]
+    fn a_stop_drops_a_held_terminal_barrier() {
+        let barrier = CopyBarrier::new();
+        barrier.note_copy_batch();
+        barrier.note_buffer_queued();
+        let flag = Arc::new(AtomicBool::new(false));
+        assert!(!barrier.hold_terminal(terminal(&flag)));
+
+        barrier.release_terminal();
+        assert!(!answered(&flag), "a stop answers no terminal barrier");
+        assert!(barrier.copy_open(), "the copy stays open across a stop");
+
+        // The reader may still flush the buffer the barrier waited for, after
+        // the stop dropped the barrier. The copy is not finished, so nothing
+        // may record it as such.
+        assert!(
+            !barrier.note_buffers_flushed(1),
+            "no barrier is held once the stop dropped it"
+        );
+        assert!(!answered(&flag));
+        assert!(
+            barrier.copy_open(),
+            "a flush after a stop does not record the copy as finished"
+        );
+    }
+
+    #[test]
+    fn a_stop_with_no_terminal_barrier_held_changes_nothing() {
+        let barrier = CopyBarrier::new();
+        barrier.note_copy_batch();
+        // A stop before any copy barrier arrived, and a second stop, which
+        // `Drop` makes after `shutdown_etl_pipeline` already ran.
+        barrier.release_terminal();
+        barrier.release_terminal();
+        assert!(barrier.copy_open());
+
+        let flag = Arc::new(AtomicBool::new(false));
+        assert!(
+            barrier.hold_terminal(terminal(&flag)),
+            "an empty copy is answered at once"
+        );
+        assert!(answered(&flag));
+    }
+
+    /// A panic on the worker task must not turn the bounded runtime shutdown
+    /// into a hang: dropping a runtime during the unwind waits without bound
+    /// for the work it hosts, and a blocking task that never returns stands
+    /// in for an etl worker stuck past the stop grace.
+    #[test]
+    fn a_panic_on_the_worker_task_still_shuts_the_runtime_down_in_time() {
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let thread = thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()
+                .unwrap();
+            let stuck = runtime.spawn_blocking(|| thread::sleep(Duration::from_secs(30)));
+            let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| {
+                block_on_then_shut_down(runtime, async move {
+                    // Wait until the blocking task occupies its thread.
+                    tokio::task::yield_now().await;
+                    panic!("worker task failed");
+                })
+            }));
+            drop(stuck);
+            let _ = done_tx.send(outcome.is_err());
+        });
+
+        let panicked = done_rx
+            .recv_timeout(RUNTIME_SHUTDOWN_TIMEOUT + Duration::from_secs(5))
+            .expect("the wrapper thread hung on the runtime after a panic");
+        assert!(panicked, "the panic is resumed once the runtime is gone");
+        thread.join().unwrap();
+    }
+
+    #[test]
     fn another_tables_copy_is_no_business_of_the_barrier() {
         let columns = vec!["id".to_string()];
         // A table this connector does not read, rows and terminal write alike.
@@ -3647,6 +4097,30 @@ mod tests {
             take_acks(flushed).is_empty(),
             "the stop already failed the write, so the flush answers nothing"
         );
+    }
+
+    #[test]
+    fn a_write_that_starts_once_the_connector_stops_is_refused() {
+        let copy = Arc::new(CopyBarrier::new());
+        let stopping = Arc::new(AtomicBool::new(false));
+        let destination = destination_stopping(&copy, MockInputConsumer::new(), true, &stopping);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        assert!(runtime.block_on(destination.wait_unpaused()).is_ok());
+
+        stopping.store(true, Ordering::SeqCst);
+        let error = runtime
+            .block_on(destination.wait_unpaused())
+            .expect_err("a write that starts once the connector stops is refused");
+        assert!(
+            is_shutdown_error(&error.to_string()),
+            "the next start must roll the refusal back, got: {error}"
+        );
+        let (size, _, _) = destination.queue.flush_with_aux();
+        assert_eq!(size.records, 0, "nothing reached the queue");
     }
 
     #[test]
@@ -4077,6 +4551,7 @@ mod tests {
             uri: "postgres://user@localhost:5432/db".to_string(),
             publication: "pub".to_string(),
             source_table: "public.t".to_string(),
+            run_source_migrations: true,
             tls: PostgresTlsConfig::default(),
         }
     }

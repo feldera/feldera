@@ -86,6 +86,7 @@ def storage_cfg(
     retention_min_count: int = 1,
     retention_min_age: int = 0,
     read_bucket: Optional[str] = None,
+    take_bucket_ownership: bool = False,
 ) -> dict:
     if standby:
         warnings.warn(
@@ -113,6 +114,8 @@ def storage_cfg(
     )
     if read_bucket is not None:
         sync["read_bucket"] = store.sync_bucket(read_bucket)
+    if take_bucket_ownership:
+        sync["take_bucket_ownership"] = True
     return {
         "backend": {
             "name": "file",
@@ -692,6 +695,94 @@ class TestCheckpointSync(SharedTestPipeline):
         owner.stop(force=True)
         intruder.clear_storage()
         owner.clear_storage()
+
+    @enterprise_only
+    def test_take_bucket_ownership_at_startup_only(self):
+        # `take_bucket_ownership` lets a pipeline take over a bucket that
+        # another pipeline owns, but only as it starts. Pushes never take
+        # ownership, so a pipeline that loses the bucket while it is running
+        # fails its next push, even if it set the flag itself.
+        ft = FaultToleranceModel.AtLeastOnce
+
+        first = self.new_pipeline_with_suffix("first")
+        second = self.new_pipeline_with_suffix("second")
+        bucket_name = first.name
+
+        def configure(pipeline: Pipeline, take_bucket_ownership: bool):
+            pipeline.set_runtime_config(
+                build_runtime_config(
+                    workers=FELDERA_TEST_NUM_WORKERS,
+                    hosts=FELDERA_TEST_NUM_HOSTS,
+                    fault_tolerance_model=ft,
+                    storage=Storage(
+                        config=storage_cfg(
+                            bucket_name, take_bucket_ownership=take_bucket_ownership
+                        )
+                    ),
+                )
+            )
+
+        def assert_owner(pipeline: Pipeline):
+            owner = checkpoint_sync_owner(bucket_name)
+            if owner is not None:
+                self.assertEqual(owner["pipeline_name"], f"pipeline-{pipeline.id()}")
+
+        def push(pipeline: Pipeline, start: int):
+            pipeline.input_json(
+                "t0",
+                [
+                    {"c0": i, "c1": f"{pipeline.name}_{i}"}
+                    for i in range(start, start + 5)
+                ],
+            )
+            pipeline.wait_for_completion()
+            pipeline.checkpoint(wait=True)
+            pipeline.sync_checkpoint(wait=True)
+
+        # `first` claims the bucket with its first push.
+        configure(first, take_bucket_ownership=False)
+        first.start()
+        push(first, 1)
+        assert_owner(first)
+
+        # `second` takes the bucket over as it starts, before pushing anything.
+        configure(second, take_bucket_ownership=True)
+        second.start()
+        assert_owner(second)
+        push(second, 6)
+        assert_owner(second)
+
+        # `first` lost the bucket while running, so its pushes now fail.
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "S3 checkpoint bucket is already owned by [\\s\\S]*"
+            "Refusing to write checkpoint data",
+        ):
+            push(first, 11)
+        assert_owner(second)
+
+        # Restarted with the flag, `first` takes the bucket back as it starts...
+        first.stop(force=True)
+        configure(first, take_bucket_ownership=True)
+        first.start()
+        assert_owner(first)
+        push(first, 16)
+
+        # ...and `second`, which set the flag but is now running, fails its
+        # next push instead of taking the bucket back.
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "S3 checkpoint bucket was taken over by [\\s\\S]*"
+            "while this pipeline [\\s\\S]*was running[\\s\\S]*"
+            "Refusing to write checkpoint data",
+        ):
+            push(second, 21)
+        assert_owner(first)
+
+        second.stop(force=True)
+        first.stop(force=True)
+        second.clear_storage()
+        first.clear_storage()
 
     @enterprise_only
     def test_owner_lock_allows_renamed_pipeline(self):

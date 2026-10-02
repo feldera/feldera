@@ -1,6 +1,6 @@
 use crate::circuit::circuit_builder::{StreamId, register_replay_stream};
 use crate::circuit::metadata::{INPUT_RECORDS_COUNT, MEMORY_ALLOCATIONS_COUNT, RETAINMENT_BOUNDS};
-use crate::circuit::operator_traits::OperatorName;
+use crate::circuit::operator_traits::{OperatorCheckpoint, OperatorName};
 use crate::circuit::{NodeId, splitter_output_chunk_size};
 use crate::dynamic::Factory;
 use crate::operator::dynamic::replay::ReplayState;
@@ -23,7 +23,7 @@ use crate::{
     trace::{Batch, BatchReader, Filter, Spine, SpineSnapshot, Trace, TraceRole},
 };
 use dyn_clone::clone_box;
-use feldera_storage::{FileCommitter, StoragePath};
+use feldera_storage::StoragePath;
 use size_of::SizeOf;
 use std::any::{Any, TypeId};
 use std::collections::BTreeMap;
@@ -1115,16 +1115,15 @@ where
 
     fn checkpoint(
         &mut self,
-        base: &StoragePath,
-        pid: Option<&str>,
-        files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error> {
-        let pid = require_persistent_id(pid, &self.name)?;
+        persistent_id: Option<&str>,
+    ) -> Result<Option<Box<dyn OperatorCheckpoint>>, Error> {
+        let persistent_id = require_persistent_id(persistent_id, &self.name)?;
         self.trace
             .get_or_insert_with(|| {
                 T::new(&self.trace_factories, self.name.get(), TraceRole::Integral)
             })
-            .save(base, pid, files)
+            .save(persistent_id)
+            .map(Some)
     }
 
     fn restore(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {

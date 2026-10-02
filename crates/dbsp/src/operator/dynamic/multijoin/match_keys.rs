@@ -10,6 +10,7 @@ use crate::{
             OUTPUT_REDUNDANCY_PERCENT, OperatorMeta, PREFIX_BATCHES_STATS, SHARED_MEMORY_BYTES,
             STATE_RECORDS_COUNT, USED_MEMORY_BYTES,
         },
+        operator_traits::OperatorCheckpoint,
         splitter_output_chunk_size,
     },
     dynamic::{
@@ -22,12 +23,12 @@ use crate::{
     utils::Tup2,
 };
 use async_stream::stream;
-use feldera_storage::{FileCommitter, StoragePath};
+use feldera_storage::StoragePath;
 use futures::{Stream as AsyncStream, StreamExt};
 use size_of::{Context, SizeOf};
 use std::{
     cell::{Cell, RefCell},
-    collections::{BTreeMap, HashMap, hash_map::Entry},
+    collections::{BTreeMap, HashMap},
     marker::PhantomData,
     ops::Deref,
     pin::Pin,
@@ -558,17 +559,23 @@ where
 
                     start += run_length;
 
-                    if let Entry::Vacant(vacant) = self.future_outputs.borrow_mut().entry(batch_time) {
-                        // Nothing searches this spine until it is output by the
-                        // operator, so it merges as an accumulator does.
-                        let mut spine = <Spine<O> as Trace>::new(
-                            &self.output_factories,
-                            self.name.clone(),
-                            TraceRole::Accumulator,
-                        );
-                        spine.insert(O::dyn_from_tuples(&self.output_factories, (), &mut batch)).await;
-                        vacant.insert(spine);
-                    }
+                    // An earlier clock cycle may already have computed updates
+                    // for `batch_time`; add these to them.
+                    let updates = O::dyn_from_tuples(&self.output_factories, (), &mut batch);
+                    self.future_outputs
+                        .borrow_mut()
+                        .entry(batch_time)
+                        .or_insert_with(|| {
+                            // Nothing searches this spine until it is output by
+                            // the operator, so it merges as an accumulator does.
+                            <Spine<O> as Trace>::new(
+                                &self.output_factories,
+                                self.name.clone(),
+                                TraceRole::Accumulator,
+                            )
+                        })
+                        .insert(updates)
+                        .await;
                     batch.clear();
                 }
 
@@ -859,12 +866,8 @@ where
         self
     }
 
-    fn checkpoint(
-        &mut self,
-        _base: &StoragePath,
-        _files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), crate::Error> {
-        Ok(())
+    fn checkpoint(&mut self) -> Result<Option<Box<dyn OperatorCheckpoint>>, crate::Error> {
+        Ok(None)
     }
 
     fn restore(&mut self, _base: &StoragePath) -> Result<(), crate::Error> {

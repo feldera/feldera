@@ -2,8 +2,8 @@
   font-family: "feldera-material-icons";
   font-display: block;
   src:
-    url("feldera-material-icons.woff2?20da2b0592bd90f7a013e7c743b02687") format("woff2"),
-    url("feldera-material-icons.woff?20da2b0592bd90f7a013e7c743b02687") format("woff");
+    url("feldera-material-icons.woff2?2bb2cc27bc55e642e0e14e455b3486aa") format("woff2"),
+    url("feldera-material-icons.woff?2bb2cc27bc55e642e0e14e455b3486aa") format("woff");
 }
 
 .fd {
@@ -194,45 +194,51 @@
 .fd-key:before {
   content: "\f13b";
 }
-.fd-circle-stop:before {
+.fd-stethoscope:before {
   content: "\f13c";
 }
-.fd-file-down:before {
+.fd-circle-stop:before {
   content: "\f13d";
 }
-.fd-layout-panel-top:before {
+.fd-file-down:before {
   content: "\f13e";
 }
-.fd-save:before {
+.fd-layout-panel-top:before {
   content: "\f13f";
 }
-.fd-search:before {
+.fd-save:before {
   content: "\f140";
 }
-.fd-database:before {
+.fd-search:before {
   content: "\f141";
 }
-.fd-sliders-horizontal:before {
+.fd-database:before {
   content: "\f142";
 }
-.fd-circle-alert:before {
+.fd-sliders-horizontal:before {
   content: "\f143";
 }
-.fd-pencil-line:before {
+.fd-circle-alert:before {
   content: "\f144";
 }
-.fd-play:before {
+.fd-package-open:before {
   content: "\f145";
 }
-.fd-lock-open:before {
+.fd-pencil-line:before {
   content: "\f146";
 }
-.fd-square:before {
+.fd-play:before {
   content: "\f147";
 }
-.fd-circle-x:before {
+.fd-lock-open:before {
   content: "\f148";
 }
-.fd-sun:before {
+.fd-square:before {
   content: "\f149";
+}
+.fd-circle-x:before {
+  content: "\f14a";
+}
+.fd-sun:before {
+  content: "\f14b";
 }

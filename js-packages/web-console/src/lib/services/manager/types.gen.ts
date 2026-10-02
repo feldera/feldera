@@ -734,7 +734,7 @@ export type Configuration = {
    */
   conceptualhq: string
   /**
-   * Feldera edition: "Open source" or "Enterprise"
+   * Feldera edition: "Open source", "Enterprise" or "EnterpriseDev"
    */
   edition: string
   license_validity?: LicenseValidity | null
@@ -1067,6 +1067,10 @@ export type ConsumerConfig = {
 export type ControllerStatus = {
   checkpoint_activity?: CheckpointActivity | null
   global_metrics: GlobalControllerMetrics
+  /**
+   * Resource usage of each host in a multihost pipeline, by ordinal.
+   */
+  host_metrics?: Array<HostMetrics>
   /**
    * Input endpoint configs and metrics.
    */
@@ -2650,6 +2654,20 @@ export type HealthStatus = {
 }
 
 /**
+ * Resource usage of one host in a multihost pipeline.
+ */
+export type HostMetrics = {
+  /**
+   * Bytes the host can still write to its storage disk; absent when unknown.
+   */
+  disk_available_bytes?: number | null
+  /**
+   * Capacity of the host's storage disk, in bytes; absent when unknown.
+   */
+  disk_total_bytes?: number | null
+}
+
+/**
  * Configuration for data input via HTTP.
  *
  * HTTP input adapters cannot be usefully configured as part of pipeline
@@ -3384,6 +3402,10 @@ export type LicenseInformation = {
    * URL that navigates the user to extend / upgrade their license
    */
   extension_url?: string | null
+  /**
+   * Whether the license only permits development use.
+   */
+  is_dev?: boolean
   /**
    * Whether the license is a trial
    */
@@ -4438,7 +4460,10 @@ export type PostStopPipelineParameters = {
  * Postgres CDC input connector configuration.
  *
  * Uses logical replication to capture ongoing changes from a Postgres database.
- * Requires a pre-created publication and a user with REPLICATION privilege.
+ * Requires a pre-created publication. Automatic source migrations require a
+ * superuser; with administrator-installed source objects and
+ * `run_source_migrations = false`, a replication role with the documented
+ * source-table and etl state-store privileges can be used instead.
  * Tables must have primary keys and `REPLICA IDENTITY FULL` is recommended
  * for UPDATE/DELETE support.
  */
@@ -4488,13 +4513,28 @@ export type PostgresCdcReaderConfig = {
    */
   publication: string
   /**
+   * Whether the connector runs etl's source migrations on startup.
+   *
+   * The source migrations install the schema helper functions and the
+   * `ddl_command_end` event trigger. Creating the event trigger requires a
+   * superuser, so a de-elevated role can set this to `false` and have an
+   * administrator install the source objects out-of-band. Disabling this
+   * does not skip the state-store migrations, which run on every start
+   * regardless.
+   *
+   * Default: `true`.
+   */
+  run_source_migrations?: boolean
+  /**
    * Postgres table to replicate, schema-qualified (e.g. "public.orders").
    * A name given without a schema refers to a table in "public".
    * Must be included in the publication.
    */
   source_table: string
   /**
-   * Postgres connection URI. The user must have REPLICATION privilege.
+   * Postgres connection URI. Automatic source migrations require a superuser.
+   * With `run_source_migrations = false`, the user needs REPLICATION and the
+   * grants described in [Running as a non-superuser](https://docs.feldera.com/connectors/sources/postgresql-cdc#running-as-a-non-superuser).
    * See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>
    */
   uri: string
@@ -5628,6 +5668,78 @@ export type RustCompilationInfo = {
 }
 
 /**
+ * Configuration for reading from an S2 stream.
+ */
+export type S2InputConfig = {
+  /**
+   * S2 authentication token.
+   */
+  auth_token: string
+  /**
+   * S2 basin name.
+   */
+  basin: string
+  /**
+   * Custom S2 endpoint URL (e.g., "http://localhost:8080").
+   * If not set, uses the default S2 cloud endpoint.
+   */
+  endpoint?: string | null
+  start_from?: S2StartFrom
+  /**
+   * S2 stream name.
+   */
+  stream: string
+}
+
+/**
+ * Configuration for writing to an S2 stream.
+ */
+export type S2OutputConfig = {
+  /**
+   * S2 authentication token.
+   */
+  auth_token: string
+  /**
+   * S2 basin name.
+   */
+  basin: string
+  /**
+   * Custom S2 endpoint URL (e.g., "http://localhost:8080").
+   * If not set, uses the default S2 cloud endpoint.
+   */
+  endpoint?: string | null
+  /**
+   * S2 stream name.
+   */
+  stream: string
+}
+
+/**
+ * Where to start reading from the S2 stream.
+ */
+export type S2StartFrom =
+  | {
+      /**
+       * Start from a specific sequence number.
+       */
+      SeqNum: number
+    }
+  | {
+      /**
+       * Start from a specific timestamp (milliseconds since epoch).
+       */
+      Timestamp: number
+    }
+  | {
+      /**
+       * Start from N records before the tail.
+       */
+      TailOffset: number
+    }
+  | 'Beginning'
+  | 'Tail'
+
+/**
  * Configuration for reading data from AWS S3.
  */
 export type S3InputConfig = {
@@ -5928,6 +6040,12 @@ export type StorageAutoscalingConfig = {
    * Usage fraction that triggers expansion. Defaults to 0.8.
    */
   scale_threshold?: number | null
+  /**
+   * Expand storage when available space falls below this many MB, even if
+   * usage is still under `scale_threshold`. Either condition triggers
+   * expansion. Unset by default.
+   */
+  scale_threshold_available_mb?: number | null
 }
 
 /**
@@ -6268,6 +6386,34 @@ export type SyncConfig = {
   standby?: boolean
   start_from_checkpoint?: StartFromCheckpoint | null
   /**
+   * Take ownership of `bucket` when the pipeline starts, even if another
+   * pipeline owns it.
+   *
+   * A pipeline records its ownership of `bucket` in an `owner.json` file
+   * at the root of `bucket`, and a push fails without writing anything if
+   * that file names a different pipeline.  When this is `true`, the
+   * pipeline takes ownership as it starts (a standby pipeline, when it is
+   * activated): it logs a warning naming the previous and new owners and
+   * overwrites `owner.json`.  The previous owner's later pushes to
+   * `bucket` then fail.
+   *
+   * This only applies at startup.  If another pipeline takes ownership of
+   * `bucket` while this pipeline is running, this pipeline's pushes fail.
+   *
+   * Ownership changes before the pipeline opens its checkpoint, so it
+   * sticks even if the pipeline then fails to start: the previous owner's
+   * pushes keep failing.  To give `bucket` back, start the previous owner
+   * with `take_bucket_ownership` set.
+   *
+   * Use this to hand a checkpoint location over to a pipeline that
+   * replaces another one, e.g., after deleting and recreating a pipeline.
+   * Stop the previous owner first, and set this on only one of the
+   * pipelines that share a `bucket`.
+   *
+   * Default: false
+   */
+  take_bucket_ownership?: boolean
+  /**
    * The number of file transfers to run in parallel.
    * Default: 20
    */
@@ -6494,6 +6640,14 @@ export type TransportConfig =
   | {
       config: ClockConfig
       name: 'clock_input'
+    }
+  | {
+      config: S2InputConfig
+      name: 's2_input'
+    }
+  | {
+      config: S2OutputConfig
+      name: 's2_output'
     }
   | {
       name: 'null_output'
@@ -6939,7 +7093,7 @@ export type GetMetricsData = {
 
 export type GetMetricsResponses = {
   /**
-   * Metrics of all running pipelines belonging to this tenant in Prometheus format
+   * Metrics of all pipelines belonging to this tenant in Prometheus format
    */
   200: Blob | File
 }
@@ -8193,7 +8347,6 @@ export type GetPipelineMetricsErrors = {
    */
   404: ErrorResponse
   500: ErrorResponse
-  503: ErrorResponse
 }
 
 export type GetPipelineMetricsError = GetPipelineMetricsErrors[keyof GetPipelineMetricsErrors]

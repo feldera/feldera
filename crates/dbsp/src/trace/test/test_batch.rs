@@ -3,6 +3,7 @@
 //! So far, only methods/traits used in tests have been implemented.
 #![allow(clippy::type_complexity)]
 
+use crate::circuit::operator_traits::OperatorCheckpoint;
 use crate::storage::file::FilterStats;
 use crate::trace::BatchLocation;
 use crate::{
@@ -1486,12 +1487,7 @@ where
         &self.value_filter
     }
 
-    fn save(
-        &mut self,
-        _base: &feldera_storage::StoragePath,
-        _pid: &str,
-        _files: &mut Vec<std::sync::Arc<dyn feldera_storage::FileCommitter>>,
-    ) -> Result<(), crate::Error> {
+    fn save(&mut self, _pid: &str) -> Result<Box<dyn OperatorCheckpoint>, crate::Error> {
         todo!()
     }
 

@@ -19,6 +19,8 @@ public class DocumentationTests {
     static final List<Documentation.Link> CITED = List.of(
             WarnFloatingPointEquality.DOCUMENTATION,
             RejectUnsupportedPlans.ROW_DOCUMENTATION,
+            RejectUnsupportedPlans.WINDOW_DOCUMENTATION,
+            RejectUnsupportedPlans.DISTINCT_WINDOW_DOCUMENTATION,
             SqlToRelCompiler.RECURSION_DOCUMENTATION,
             RewriteNow.NOW_DOCUMENTATION,
             StubsWriter.UDF_DOCUMENTATION,

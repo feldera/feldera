@@ -525,6 +525,29 @@ pub struct ExternalControllerStatus {
     /// Output endpoint configs and metrics.
     #[schema(value_type = Vec<OutputEndpointStatus>)]
     pub outputs: Vec<ExternalOutputEndpointStatus>,
+    /// Resource usage of each host in a multihost pipeline, by ordinal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub host_metrics: Vec<HostMetrics>,
+}
+
+/// Resource usage of one host in a multihost pipeline.
+#[derive(Debug, Default, Deserialize, Serialize, ToSchema)]
+pub struct HostMetrics {
+    /// Capacity of the host's storage disk, in bytes; absent when unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disk_total_bytes: Option<u64>,
+    /// Bytes the host can still write to its storage disk; absent when unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disk_available_bytes: Option<u64>,
+}
+
+impl From<&ExternalGlobalControllerMetrics> for HostMetrics {
+    fn from(metrics: &ExternalGlobalControllerMetrics) -> Self {
+        Self {
+            disk_total_bytes: metrics.disk_total_bytes,
+            disk_available_bytes: metrics.disk_available_bytes,
+        }
+    }
 }
 
 fn serialize_timestamp_micros<S>(

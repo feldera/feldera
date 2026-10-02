@@ -3,16 +3,12 @@
 //!
 //! `cargo bench -p dbsp --bench buffer_cache -- --write-ratios 0,10 --capacity-mib 1024 --strategy s3-fifo,lru --max-duration 30`
 use clap::{Parser, ValueEnum};
-use dbsp::mimalloc::MiMalloc;
 use feldera_buffer_cache::{CacheEntry, LruCache, S3FifoCache};
 use rand::rngs::ThreadRng;
 use rand::{Rng, thread_rng};
 use rand_distr::{Distribution, Zipf};
 use std::sync::{Arc, Barrier, OnceLock};
 use std::time::{Duration, Instant};
-
-#[global_allocator]
-static ALLOC: MiMalloc = MiMalloc;
 
 const MIB: usize = 1024 * 1024;
 const DEFAULT_THROUGHPUT_OPS_PER_RATIO: usize = 20_000_000;

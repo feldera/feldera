@@ -692,13 +692,15 @@ pub fn writelog<T: std::fmt::Display>(format: SqlString, argument: T) -> T {
     argument
 }
 
+/// Panics on invalid JSON.
 #[doc(hidden)]
 pub fn parse_json_s(value: SqlString) -> Variant {
-    let var = serde_json::from_str::<Variant>(value.str());
-    match var {
-        Ok(v) => v,
-        Err(_) => Variant::SqlNull,
-    }
+    serde_json::from_str::<Variant>(value.str()).unwrap_or_else(|e| {
+        panic!(
+            "PARSE_JSON: invalid JSON '{}': {e}; use TRY_PARSE_JSON to return NULL for invalid input",
+            value.str()
+        )
+    })
 }
 
 #[doc(hidden)]
@@ -707,6 +709,19 @@ pub fn parse_json_nullN(_value: Option<()>) -> Option<Variant> {
 }
 
 some_polymorphic_function1!(parse_json, s, SqlString, Variant);
+
+/// Returns None on invalid JSON.
+#[doc(hidden)]
+pub fn try_parse_json_s(value: SqlString) -> Option<Variant> {
+    serde_json::from_str::<Variant>(value.str()).ok()
+}
+
+#[doc(hidden)]
+pub fn try_parse_json_nullN(_value: Option<()>) -> Option<Variant> {
+    None
+}
+
+some_polymorphic_null_function1!(try_parse_json, s, SqlString, Variant);
 
 #[doc(hidden)]
 pub fn to_json_V(value: Variant) -> Option<SqlString> {

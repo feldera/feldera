@@ -366,15 +366,27 @@ public class RewriteNow extends CircuitCloneVisitor {
             source = filter;
         }
 
-        // Index input by the temporal key.
+        // Index input by the temporal key.  When the key is a column, the value omits
+        // that column, and the map after the window puts it back from the key.
+        int keyColumn = bounds.keyColumn(param);
+        DBSPExpression value;
+        if (keyColumn < 0) {
+            value = param.asVariable().deref().applyClone();
+        } else {
+            List<DBSPExpression> valueFields = new ArrayList<>();
+            for (int i = 0; i < inputType.size(); i++)
+                if (i != keyColumn)
+                    valueFields.add(param.asVariable().deref().field(i).applyCloneIfNeeded());
+            value = new DBSPTupleExpression(valueFields, false);
+        }
         DBSPClosureExpression indexFunction =
                 new DBSPRawTupleExpression(
                         common.cast(common.getNode(), windowKeyType,
                                 DBSPCastExpression.CastType.SqlUnsafe),
-                        param.asVariable().deref().applyClone()).closure(param);
+                        value).closure(param);
         DBSPTypeIndexedZSet ix = new DBSPTypeIndexedZSet(operator.getRelNode(),
                 windowKeyType,
-                inputType);
+                value.getType());
         DBSPMapIndexOperator index = new DBSPMapIndexOperator(operator.getRelNode(),
                 indexFunction, ix, operator.isMultiset, source.outputPort());
         this.addOperator(index);
@@ -396,9 +408,28 @@ public class RewriteNow extends CircuitCloneVisitor {
         DBSPSimpleOperator winInt = new DBSPIntegrateOperator(relNode, window.outputPort());
         this.addOperator(winInt);
 
-        // Deindex result of window
-        DBSPSimpleOperator deindex = new DBSPDeindexOperator(relNode, window.getFunctionNode(),
-                winInt.outputPort());
+        DBSPSimpleOperator deindex;
+        if (keyColumn < 0) {
+            // Deindex result of window
+            deindex = new DBSPDeindexOperator(relNode, window.getFunctionNode(), winInt.outputPort());
+        } else {
+            // Restore the columns and drop the key
+            DBSPVariablePath var = ix.getKVRefType().var();
+            DBSPExpression[] fields = new DBSPExpression[inputType.size()];
+            for (int i = 0; i < inputType.size(); i++) {
+                if (i == keyColumn) {
+                    // The key has the column's type, except that it cannot be NULL
+                    fields[i] = var.field(0).deref().applyCloneIfNeeded()
+                            .cast(common.getNode(), inputType.getFieldType(i),
+                                    DBSPCastExpression.CastType.SqlUnsafe);
+                } else {
+                    int valueField = i < keyColumn ? i : i - 1;
+                    fields[i] = var.field(1).deref().field(valueField).applyCloneIfNeeded();
+                }
+            }
+            DBSPClosureExpression rebuild = inputType.makeTuple(fields).closure(var);
+            deindex = new DBSPMapOperator(relNode, rebuild, new DBSPTypeZSet(inputType), winInt.outputPort());
+        }
         this.addOperator(deindex);
         return deindex;
     }

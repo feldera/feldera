@@ -724,6 +724,7 @@ where
 
 #[cfg(test)]
 mod tests {
+    use crate::operator::dynamic::join::test::check_join_across_iterations;
     use crate::utils::test::CIRCUIT_CASES;
     use crate::{
         OrdIndexedZSet, OrdZSet, OutputHandle, RootCircuit, Runtime, Stream, ZSetHandle, ZWeight,
@@ -740,6 +741,7 @@ mod tests {
     define_star_join_index!(4);
     define_star_join!(4);
     define_star_join_flatmap!(4);
+    define_inner_star_join!(2);
     define_inner_star_join!(3);
     define_inner_star_join!(4);
     define_inner_star_join_index!(4);
@@ -1271,6 +1273,15 @@ mod tests {
         let reference = recursive_star_join_run(&input_data, false, None);
         let restarted = recursive_star_join_run(&input_data, false, Some(input_data.len() / 2));
         assert_eq!(reference, restarted);
+    }
+
+    #[test]
+    fn recursive_star_join_accumulates_future_updates() {
+        check_join_across_iterations(|levels| {
+            inner_star_join2_nested(levels, levels, |_key, level1, level2| {
+                Tup2(*level1, *level2)
+            })
+        });
     }
 
     fn weighted_vec_u32(

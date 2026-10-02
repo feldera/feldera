@@ -20,7 +20,7 @@ use dbsp::{
         trace::SchedulerEvent,
         Runtime,
     },
-    mimalloc::{AllocStats, MiMalloc},
+    process_stats::ProcessStats,
     monitor::TraceMonitor,
     operator::Generator,
     profile::CPUProfiler,
@@ -48,9 +48,6 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-
-#[global_allocator]
-static ALLOC: MiMalloc = MiMalloc;
 
 enum OutputData {
     None,
@@ -149,10 +146,9 @@ fn main() {
                 if config.profile { " with profiling" } else { "" },
             );
             io::stdout().flush().unwrap();
-            ALLOC.reset_stats();
-            ALLOC.stats()
+            ProcessStats::current()
         } else {
-            AllocStats::default()
+            ProcessStats::default()
         };
         let start = Instant::now();
 
@@ -228,16 +224,12 @@ fn main() {
         let elapsed = start.elapsed();
 
         if is_leader {
-            let stats = ALLOC.stats();
+            let stats = ProcessStats::current();
             println!(
-                "finished in {elapsed:#?}\ntime: {:#?}, user: {:#?}, system: {:#?}\nrss: {}, peak: {}\ncommit: {}, peak: {}\npage faults: {}",
-                Duration::from_millis((stats.elapsed_ms - init_stats.elapsed_ms) as u64),
-                Duration::from_millis((stats.user_ms - init_stats.user_ms) as u64),
-                Duration::from_millis((stats.system_ms - init_stats.system_ms) as u64),
-                HumanBytes(stats.current_rss as u64),
-                HumanBytes(stats.peak_rss as u64),
-                HumanBytes(stats.current_commit as u64),
-                HumanBytes(stats.peak_commit as u64),
+                "finished in {elapsed:#?}\nuser: {:#?}, system: {:#?}\npeak rss: {}\npage faults: {}",
+                Duration::from_millis(stats.user_ms - init_stats.user_ms),
+                Duration::from_millis(stats.system_ms - init_stats.system_ms),
+                HumanBytes(stats.peak_rss),
                 stats.page_faults - init_stats.page_faults,
             );
 
@@ -274,21 +266,13 @@ fn main() {
                         "elapsed",
                         "elements",
                         "evps",
-                        "allocstats_before_elapsed_ms",
                         "allocstats_before_user_ms",
                         "allocstats_before_system_ms",
-                        "allocstats_before_current_rss",
                         "allocstats_before_peak_rss",
-                        "allocstats_before_current_commit",
-                        "allocstats_before_peak_commit",
                         "allocstats_before_page_faults",
-                        "allocstats_after_elapsed_ms",
                         "allocstats_after_user_ms",
                         "allocstats_after_system_ms",
-                        "allocstats_after_current_rss",
                         "allocstats_after_peak_rss",
-                        "allocstats_after_current_commit",
-                        "allocstats_after_peak_commit",
                         "allocstats_after_page_faults"
                     ])
                     .expect("failed to write csv header");
@@ -301,21 +285,13 @@ fn main() {
                     elapsed.as_secs_f64().to_string().as_str(),
                     elements.to_string().as_str(),
                     evps.to_string().as_str(),
-                    init_stats.elapsed_ms.to_string().as_str(),
                     init_stats.user_ms.to_string().as_str(),
                     init_stats.system_ms.to_string().as_str(),
-                    init_stats.current_rss.to_string().as_str(),
                     init_stats.peak_rss.to_string().as_str(),
-                    init_stats.current_commit.to_string().as_str(),
-                    init_stats.peak_commit.to_string().as_str(),
                     init_stats.page_faults.to_string().as_str(),
-                    stats.elapsed_ms.to_string().as_str(),
                     stats.user_ms.to_string().as_str(),
                     stats.system_ms.to_string().as_str(),
-                    stats.current_rss.to_string().as_str(),
                     stats.peak_rss.to_string().as_str(),
-                    stats.current_commit.to_string().as_str(),
-                    stats.peak_commit.to_string().as_str(),
                     stats.page_faults.to_string().as_str(),
                 ])
                 .expect("failed to write csv record");

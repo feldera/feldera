@@ -6,7 +6,8 @@ use crate::{
     preprocess::{DecryptionPreprocessorFactory, PassthroughPreprocessorFactory},
     test::{
         DEFAULT_TIMEOUT_MS, TestStruct, generate_test_batch, init_test_logger, test_circuit,
-        test_circuit_with_aggregate, test_circuit_without_persistent_ids, wait,
+        test_circuit_with_aggregate, test_circuit_with_aliased_index,
+        test_circuit_without_persistent_ids, wait,
     },
     transport::{
         InputQueue, InputQueueEntry, InputReader, InputReaderCommand,
@@ -35,6 +36,7 @@ use std::{
     io::{ErrorKind, Write},
     iter::repeat_n,
     ops::Range,
+    panic::resume_unwind,
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
@@ -51,7 +53,7 @@ use uuid::Uuid;
 
 use arrow::array::{Array, Int64Array};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use dbsp::circuit::tokio::TOKIO;
+use dbsp::{DetailedError, circuit::tokio::TOKIO};
 use proptest::prelude::*;
 
 #[test]
@@ -223,6 +225,136 @@ fn test_start_after() {
 +----+------+---+-----+"#;
 
     assert_eq!(&result, expected);
+    controller.stop().unwrap();
+}
+
+/// A panic on the circuit thread after initialization must reach the error
+/// callback as `ControllerPanic`; otherwise the server never learns that the
+/// pipeline died and keeps reporting it as running.
+#[test]
+fn test_circuit_thread_panic_is_reported() {
+    init_test_logger();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 1,
+        "inputs": {}
+    }))
+    .unwrap();
+
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let errors_clone = errors.clone();
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(move |e, _| errors_clone.lock().unwrap().push(e.error_code())),
+    )
+    .unwrap();
+    controller.start();
+
+    // The circuit thread runs this callback, so the panic unwinds through it.
+    // `resume_unwind` skips the panic hook.  With `RUST_BACKTRACE=1`, the hook
+    // resolves a backtrace under a process-wide lock that other panicking
+    // tests share, which can delay the report past the timeout below.
+    controller.start_graph_profile(Box::new(|_| {
+        resume_unwind(Box::new("injected circuit thread panic"))
+    }));
+
+    // A short timeout: without the fix the report never arrives.
+    wait(|| !errors.lock().unwrap().is_empty(), 10_000)
+        .expect("the circuit thread panic was not reported");
+    assert_eq!(errors.lock().unwrap().as_slice(), ["ControllerPanic"]);
+
+    let stop_error = controller
+        .stop()
+        .expect_err("stopping a controller whose circuit thread panicked must fail");
+    assert_eq!(stop_error.error_code(), "ControllerPanic");
+}
+
+/// A full disk must fail the pipeline with the storage error.
+///
+/// A background merger that cannot write panics.  A worker waiting on that
+/// merger never replies, so the circuit thread must notice the panic while it
+/// waits; otherwise the step blocks forever and the pipeline reports
+/// `Running`.
+#[test]
+fn test_storage_full_reports_storage_error() {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+    let input_path = tempdir.path().join("input.csv");
+    let mut input = File::create_new(&input_path).unwrap();
+    let padding = "x".repeat(100);
+    let mut next_id = 0;
+    let mut append_rows = |n: usize| {
+        for _ in 0..n {
+            writeln!(input, "{next_id},true,{next_id},{padding}{next_id}").unwrap();
+            next_id += 1;
+        }
+        input.flush().unwrap();
+    };
+    append_rows(200_000);
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 2,
+        "storage_config": { "path": storage_dir },
+        "storage": { "min_storage_bytes": 0 },
+        "dev_tweaks": { "storage_mb_max": 1 },
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": { "path": input_path.display().to_string(), "follow": true },
+                },
+                "format": { "name": "csv" },
+            },
+        },
+    }))
+    .unwrap();
+
+    let errors = Arc::new(Mutex::new(Vec::new()));
+    let errors_clone = errors.clone();
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(move |e, _| errors_clone.lock().unwrap().push(e)),
+    )
+    .unwrap();
+    controller.start();
+
+    // The circuit notices dead workers only when it steps, so keep input
+    // flowing, as a live source would.
+    wait(
+        || {
+            append_rows(100);
+            !errors.lock().unwrap().is_empty()
+        },
+        60_000,
+    )
+    .expect("filling storage did not fail the pipeline");
+    let error = errors.lock().unwrap()[0].clone();
+    assert_eq!(error.error_code(), "RuntimeError.WorkerPanic");
+    assert!(
+        error.to_string().contains("no storage space"),
+        "the error should explain that storage is full: {error}"
+    );
+
     controller.stop().unwrap();
 }
 
@@ -3131,6 +3263,354 @@ fn output_connector_pause_survives_restart() {
             .unwrap()
     );
     controller.stop().unwrap();
+}
+
+/// Name of the view in the aliased-index tests.
+const ALIASED_VIEW: &str = "test_output1";
+
+/// Index names for the aliased-index tests.  The first sorts after the view's
+/// name, as in feldera/feldera#7281; the second sorts before it.
+const ALIASED_INDEXES: [&str; 2] = ["test_output1_idx", "idx1"];
+
+/// Configuration of a CSV file connector writing to `path`.
+///
+/// # Arguments
+///
+/// * `path` - File the connector writes to.
+/// * `index` - Index the connector reads from, or `None` to read from
+///   [`ALIASED_VIEW`] itself.
+///
+/// # Returns
+///
+/// The connector configuration as JSON.
+fn aliased_index_output(path: &Path, index: Option<&str>) -> serde_json::Value {
+    let mut config = json!({
+        "stream": ALIASED_VIEW,
+        "transport": {
+            "name": "file_output",
+            "config": { "path": path.display().to_string() },
+        },
+        "format": { "name": "csv", "config": {} },
+    });
+    if let Some(index) = index {
+        config["index"] = json!(index);
+    }
+    config
+}
+
+/// Starts a controller for [`test_circuit_with_aliased_index`].
+///
+/// # Arguments
+///
+/// * `input_path` - CSV file the pipeline reads in follow mode.
+/// * `index` - Name of the view's index.
+/// * `outputs` - Output connector configurations, keyed by connector name.
+///
+/// # Returns
+///
+/// The running controller.
+fn start_aliased_index_controller(
+    input_path: &Path,
+    index: &str,
+    outputs: serde_json::Value,
+) -> Controller {
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": input_path.display().to_string(),
+                        "follow": true,
+                    },
+                },
+                "format": { "name": "csv" },
+            },
+        },
+        "outputs": outputs,
+    }))
+    .unwrap();
+
+    let index = index.to_string();
+    let controller = Controller::with_test_config(
+        move |circuit_config| {
+            Ok(test_circuit_with_aliased_index(
+                circuit_config,
+                ALIASED_VIEW,
+                &index,
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+    controller
+}
+
+/// Checks that output endpoint `endpoint_name` transmits one record for each
+/// of the first `n_records` input records.
+///
+/// Waits for the endpoint to process those input records first.  An endpoint
+/// processes a step's input records even when the step gives it no output, so
+/// a starved endpoint fails the check instead of timing out.
+///
+/// # Arguments
+///
+/// * `controller` - The pipeline's controller.
+/// * `endpoint_name` - Name of the output endpoint.
+/// * `n_records` - Number of input records, each producing one output record.
+#[track_caller]
+fn check_endpoint_transmitted(controller: &Controller, endpoint_name: &str, n_records: u64) {
+    wait(
+        || {
+            output_endpoint_metrics(controller, endpoint_name).total_processed_input_records
+                >= n_records
+        },
+        OUTPUT_TIMEOUT_MS,
+    )
+    .unwrap();
+    assert_eq!(
+        output_endpoint_metrics(controller, endpoint_name).transmitted_records,
+        n_records,
+        "endpoint '{endpoint_name}' processed the input without transmitting its output"
+    );
+}
+
+/// Connectors on a materialized view and on its first index receive the same
+/// output.
+///
+/// The circuit publishes the view and its first index through one output
+/// handle, and reading a handle removes the step's updates from it.  The
+/// controller must read the handle once and hand the updates to every
+/// connector on either relation, whichever of the two names sorts first.
+#[test]
+fn view_and_aliased_index_connectors_receive_the_same_output() {
+    init_test_logger();
+
+    for index in ALIASED_INDEXES {
+        let tempdir = TempDir::new().unwrap();
+        let input_path = tempdir.path().join("input.csv");
+        let view_path = tempdir.path().join("view.csv");
+        let index_path = tempdir.path().join("index.csv");
+        File::create_new(&input_path).unwrap();
+
+        let controller = start_aliased_index_controller(
+            &input_path,
+            index,
+            json!({
+                "view_output": aliased_index_output(&view_path, None),
+                "index_output": aliased_index_output(&index_path, Some(index)),
+            }),
+        );
+        append_input(&input_path, 0..100);
+        check_endpoint_transmitted(&controller, "view_output", 100);
+        check_endpoint_transmitted(&controller, "index_output", 100);
+        controller.stop().unwrap();
+
+        check_file_contents(&view_path, 0..100);
+        check_file_contents(&index_path, 0..100);
+    }
+}
+
+/// Closing a connector on a materialized view does not starve a connector on
+/// the view's first index, which shares the view's output handle.
+///
+/// This is feldera/feldera#7281: a client opened and closed an `/egress`
+/// stream on the view before any input arrived.  From then on, the PostgreSQL
+/// connector on the index received nothing, although the view held every
+/// record.
+#[test]
+fn closing_a_view_connector_does_not_starve_its_aliased_index() {
+    init_test_logger();
+
+    for index in ALIASED_INDEXES {
+        let tempdir = TempDir::new().unwrap();
+        let input_path = tempdir.path().join("input.csv");
+        let view_path = tempdir.path().join("view.csv");
+        let index_path = tempdir.path().join("index.csv");
+        File::create_new(&input_path).unwrap();
+
+        let controller = start_aliased_index_controller(
+            &input_path,
+            index,
+            json!({ "index_output": aliased_index_output(&index_path, Some(index)) }),
+        );
+
+        // Connect a connector to the view and disconnect it, as an `/egress`
+        // request does when its client goes away.
+        let view_config: OutputEndpointConfig =
+            serde_json::from_value(aliased_index_output(&view_path, None)).unwrap();
+        let view_endpoint = controller
+            .inner
+            .connect_output("view_output", &view_config, None)
+            .unwrap();
+        controller.disconnect_output(&view_endpoint);
+
+        append_input(&input_path, 0..100);
+        check_endpoint_transmitted(&controller, "index_output", 100);
+        controller.stop().unwrap();
+
+        check_file_contents(&index_path, 0..100);
+    }
+}
+
+/// A connector with `send_snapshot` on a materialized view's first index
+/// starts with the view's contents.
+///
+/// The index shares the view's output handles, so the controller files the
+/// connector under the view's name, and finds the view's snapshot under that
+/// name.
+#[test]
+fn aliased_index_connector_receives_the_snapshot() {
+    init_test_logger();
+
+    for index in ALIASED_INDEXES {
+        let tempdir = TempDir::new().unwrap();
+        let input_path = tempdir.path().join("input.csv");
+        let index_path = tempdir.path().join("index.csv");
+        File::create_new(&input_path).unwrap();
+
+        let controller = start_aliased_index_controller(&input_path, index, json!({}));
+        append_input(&input_path, 0..100);
+        wait(
+            || {
+                controller
+                    .status()
+                    .global_metrics
+                    .num_total_processed_records()
+                    >= 100
+            },
+            OUTPUT_TIMEOUT_MS,
+        )
+        .unwrap();
+
+        // Attach the connector after the view holds every record, so that
+        // only the snapshot can deliver them.
+        let mut index_config = aliased_index_output(&index_path, Some(index));
+        index_config["send_snapshot"] = json!(true);
+        let index_config: OutputEndpointConfig = serde_json::from_value(index_config).unwrap();
+        controller
+            .inner
+            .connect_output("index_output", &index_config, None)
+            .unwrap();
+
+        wait(
+            || output_endpoint_metrics(&controller, "index_output").transmitted_records >= 100,
+            OUTPUT_TIMEOUT_MS,
+        )
+        .unwrap_or_else(|()| panic!("the connector on '{index}' received no snapshot"));
+        controller.stop().unwrap();
+
+        check_file_contents(&index_path, 0..100);
+    }
+}
+
+/// A connector attached to a materialized view between transactions receives
+/// no output from before it was attached, even when the next transaction
+/// takes several steps.
+///
+/// A materialized view's output handle receives every transaction's output,
+/// with or without connectors.  In an explicit transaction, the connector's
+/// group first reads the handle before the transaction commits, so the handle
+/// must not still hold the output of the transaction that committed before
+/// the connector was attached.
+#[test]
+fn connector_attached_between_transactions_receives_no_earlier_output() {
+    init_test_logger();
+    let tempdir = TempDir::new().unwrap();
+    let input_path = tempdir.path().join("input.csv");
+    let output_path = tempdir.path().join("output.csv");
+    File::create_new(&input_path).unwrap();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "clock_resolution_usecs": null,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": input_path.display().to_string(),
+                        "follow": true,
+                    },
+                },
+                "format": { "name": "csv" },
+            },
+        },
+        "outputs": {},
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &[],
+                &[Some("output")],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+    controller.start();
+
+    // The view has no connector while it processes these records.
+    append_input(&input_path, 0..100);
+    wait(
+        || {
+            controller
+                .status()
+                .global_metrics
+                .num_total_processed_records()
+                >= 100
+        },
+        OUTPUT_TIMEOUT_MS,
+    )
+    .unwrap();
+
+    // Attach a connector between transactions, then feed an explicit
+    // transaction, whose step reads the view's handle before the commit.
+    let output_config: OutputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_output1",
+        "transport": {
+            "name": "file_output",
+            "config": { "path": output_path.display().to_string() },
+        },
+        "format": { "name": "csv", "config": {} },
+    }))
+    .unwrap();
+    controller
+        .inner
+        .connect_output("test_output1", &output_config, None)
+        .unwrap();
+    controller.start_transaction().unwrap();
+    append_input(&input_path, 100..200);
+    wait(
+        || controller.status().num_total_circuit_input_records() >= 200,
+        OUTPUT_TIMEOUT_MS,
+    )
+    .unwrap();
+
+    controller.start_commit_transaction().unwrap();
+    wait(
+        || {
+            output_endpoint_metrics(&controller, "test_output1").total_processed_input_records
+                >= 200
+        },
+        OUTPUT_TIMEOUT_MS,
+    )
+    .unwrap();
+    controller.stop().unwrap();
+
+    check_file_contents(&output_path, 100..200);
 }
 
 /// Runs a basic test of suspend and resume, without fault tolerance.
