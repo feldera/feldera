@@ -142,8 +142,8 @@ ARROW_FIELDS = [
 
 
 def test_struct(i):
-    """One `TestStruct` value, matching what the Rust `data()` generator writes."""
-    return {"id": i, "b": i % 2 != 0, "i": None, "s": f"s{i}"}
+    """One `TestStruct` value, as Rust's `TestStruct::for_id` builds it."""
+    return {"id": i, "b": False, "i": None, "s": ""}
 
 
 def ndjson_to_pandas(json_file):

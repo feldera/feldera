@@ -658,7 +658,7 @@ fn iceberg_glue_s3_input_test() {
         json!({
             "catalog_type": "glue",
             "glue.warehouse": "s3://feldera-iceberg-test/",
-            "table_name": "iceberg_test.test_table_v2",
+            "table_name": "iceberg_test.test_table_v3",
             "glue.access-key-id": std::env::var("ICEBERG_TEST_AWS_ACCESS_KEY_ID").unwrap(),
             "glue.secret-access-key": std::env::var("ICEBERG_TEST_AWS_SECRET_ACCESS_KEY").unwrap(),
             "glue.region": "us-east-1",
@@ -720,7 +720,7 @@ fn iceberg_rest_s3_input_test() {
             "catalog_type": "rest",
             "rest.uri": "http://localhost:8181",
             "rest.warehouse": "s3://feldera-iceberg-test/",
-            "table_name": "iceberg_test.test_table_v2",
+            "table_name": "iceberg_test.test_table_v3",
             "s3.access-key-id": std::env::var("ICEBERG_TEST_AWS_ACCESS_KEY_ID").unwrap(),
             "s3.secret-access-key": std::env::var("ICEBERG_TEST_AWS_SECRET_ACCESS_KEY").unwrap(),
             "s3.region": "us-east-1",
