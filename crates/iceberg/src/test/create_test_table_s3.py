@@ -17,8 +17,6 @@ from pyiceberg.transforms import DayTransform
 from datetime import time, timedelta
 
 import datetime
-import os
-import sys
 import uuid
 import pyarrow as pa
 import pandas as pd
@@ -68,30 +66,15 @@ args = parser.parse_args()
 if args.catalog == "glue":
     from pyiceberg.catalog.glue import GlueCatalog
 
-    aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
-    aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
-
-    if not aws_access_key_id:
-        print("Error: AWS_ACCESS_KEY_ID is not set")
-        sys.exit(1)
-
-    if not aws_secret_access_key:
-        print("Error: AWS_SECRET_ACCESS_KEY is not set")
-        sys.exit(1)
-
     print("Connecting to Glue catalog")
     catalog = GlueCatalog(
         "glue",
         **{
-            "glue.access-key-id": aws_access_key_id,
-            "glue.secret-access-key": aws_secret_access_key,
-            "glue.region": "us-east-1",
-            "s3.access-key-id": aws_access_key_id,
-            "s3.secret-access-key": aws_secret_access_key,
-            "s3.region": "us-east-1",
+            "glue.region": "us-west-1",
+            "s3.region": "us-west-1",
         },
     )
-    location = "s3://feldera-iceberg-test/test_table_v3"
+    location = "s3://feldera-ci-iceberg/test_table_v3"
 elif args.catalog == "rest":
     print("REST catalog not yet supported")
     exit(1)

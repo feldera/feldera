@@ -58,6 +58,10 @@ jobs:
     needs: [invoke-build-rust]
     uses: ./.github/workflows/test-adapters.yml
     secrets: inherit
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
 
   invoke-build-docker:
     name: Build Docker
