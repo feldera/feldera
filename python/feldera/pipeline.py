@@ -165,7 +165,7 @@ class Pipeline:
         df: pandas.DataFrame,
         force: bool = False,
         connector_metadata: Optional[Mapping[str, Any]] = None,
-    ):
+    ) -> Optional[str]:
         """
         Push all rows in a pandas DataFrame to the pipeline.
 
@@ -180,6 +180,9 @@ class Pipeline:
         :param connector_metadata: Connector metadata for every row of the DataFrame,
             as a dict of attribute names to values. ``CONNECTOR_METADATA()`` returns it
             for the rows. None by default.
+
+        :returns: The completion token of the last chunk pushed, which also covers
+            the earlier chunks, or None if the DataFrame is empty and nothing was pushed.
 
         :raises ValueError: If the table does not exist in the pipeline.
         :raises RuntimeError: If the pipeline is not in a valid state to push data.
@@ -210,8 +213,9 @@ class Pipeline:
             )
         else:
             # consider validating the schema here
+            token = None
             for datum in chunk_dataframe(df):
-                self.client.push_to_pipeline(
+                token = self.client.push_to_pipeline(
                     self.name,
                     table_name,
                     "json",
@@ -222,7 +226,7 @@ class Pipeline:
                     force=force,
                     connector_metadata=connector_metadata,
                 )
-            return
+            return token
 
     def input_json(
         self,
