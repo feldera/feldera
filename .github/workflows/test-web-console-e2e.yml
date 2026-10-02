@@ -92,6 +92,24 @@ jobs:
           PLAYWRIGHT_API_ORIGIN: http://localhost:8080
           PLAYWRIGHT_APP_ORIGIN: http://localhost:8080
 
+      # Fails when a docs screenshot no longer matches the UI. To fix it, run the "Docs Screenshots"
+      # workflow on the branch, or `bun run docs-screenshots` (js-packages/web-console/screenshots/README.md).
+      - name: Check docs screenshots
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: bun run check:docs-screenshots
+        working-directory: js-packages/web-console
+        env:
+          PLAYWRIGHT_API_ORIGIN: http://localhost:8080
+          PLAYWRIGHT_APP_ORIGIN: http://localhost:8080
+
+      - name: Upload docs screenshot results
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: docs-screenshots-results
+          path: js-packages/web-console/test-results-screenshots
+          retention-days: 7
+
   # The console against a manager that requires a login. The provider is
   # scripts/dummy_oidc.py, which needs no secrets: its login page grants the
   # chosen identity on click. The browser and the manager must reach the
