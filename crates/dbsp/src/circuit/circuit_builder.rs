@@ -1719,6 +1719,11 @@ pub struct MetadataExchangeInner {
 /// and receives their metadata. As a result all workers have identical metadata
 /// snapshots during the step and can make deterministic decisions based on it, such
 /// as choosing a balancing policy for a stream.
+///
+/// The first step of a transaction exchanges metadata after every worker has
+/// started the transaction, so its snapshot includes the metadata that operators
+/// publish in [`Operator::start_transaction`](crate::circuit::operator_traits::Operator::start_transaction).
+/// Each later step uses the snapshot exchanged at the end of the step before it.
 #[derive(Default, Debug, Clone)]
 pub struct MetadataExchange {
     inner: Rc<MetadataExchangeInner>,
@@ -1736,11 +1741,7 @@ impl MetadataExchange {
 
     /// Update the local metadata for the operator with the given id.
     pub fn set_local_operator_metadata(&self, id: NodeId, metadata: serde_json::Value) {
-        self.inner
-            .local_metadata
-            .borrow_mut()
-            .metadata
-            .insert(id, metadata.clone());
+        self.set_local_operator_metadata_typed(id, metadata);
     }
 
     /// Clear the local metadata for the operator with the given id.
@@ -1762,12 +1763,7 @@ impl MetadataExchange {
 
     /// Get the current snapshot of the local metadata for the operator with the given id.
     pub fn get_local_operator_metadata(&self, id: NodeId) -> Option<serde_json::Value> {
-        self.inner
-            .local_metadata
-            .borrow()
-            .metadata
-            .get(&id)
-            .cloned()
+        self.get_local_operator_metadata_typed(id)
     }
 
     pub fn get_local_operator_metadata_typed<T>(&self, id: NodeId) -> Option<T>
@@ -1789,12 +1785,7 @@ impl MetadataExchange {
 
     /// Get metadata for the operator with the given id received from all workers before the current step.
     pub fn get_global_operator_metadata(&self, id: NodeId) -> Vec<Option<serde_json::Value>> {
-        self.inner
-            .global_metadata
-            .borrow()
-            .iter()
-            .map(|global_metadata| global_metadata.metadata.get(&id).cloned())
-            .collect()
+        self.get_global_operator_metadata_typed(id)
     }
 
     /// Get metadata for the operator with the given id received from all workers before the current step.

@@ -194,8 +194,16 @@ struct Inner {
     /// Broadcast object used to exchange metadata with peers.
     metadata_broadcast: Broadcast<CircuitMetadata>,
 
-    // True before the circuit has executed any steps.
-    before_first_step: bool,
+    /// True if the next step must exchange metadata before it evaluates any
+    /// operators: before the circuit's first step, and after a step that
+    /// completes a transaction.
+    ///
+    /// Deferring the exchange from the end of a transaction's last step to the
+    /// start of the next transaction's first step, after
+    /// [`Operator::start_transaction`](crate::circuit::operator_traits::Operator::start_transaction)
+    /// has run on every worker, lets that first step see the metadata that
+    /// operators publish in `start_transaction`, without an extra exchange.
+    exchange_metadata_before_step: bool,
 
     flush_state: bool,
 }
@@ -360,7 +368,7 @@ impl Inner {
             transaction_phase: TransactionPhase::CommitComplete,
             global_commit_consensus: Broadcast::new("global commit consensus"),
             metadata_broadcast: Broadcast::new("metadata"),
-            before_first_step: true,
+            exchange_metadata_before_step: true,
             flush_state: false,
         };
 
@@ -536,8 +544,8 @@ impl Inner {
 
         circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id()));
 
-        if self.before_first_step {
-            self.before_first_step = false;
+        if self.exchange_metadata_before_step {
+            self.exchange_metadata_before_step = false;
             self.exchange_metadata(circuit).await?;
             if circuit.root_scope() == 0 {
                 circuit.balancer().update_metadata();
@@ -547,12 +555,6 @@ impl Inner {
             circuit.balancer().start_step();
         }
         let result = self.do_step(circuit).await;
-
-        // Exchange metadata with peers.
-        self.exchange_metadata(circuit).await?;
-        if circuit.root_scope() == 0 {
-            circuit.balancer().update_metadata();
-        }
 
         if let TransactionPhase::Committing(unflushed_operators) = &self.transaction_phase {
             let statuses = self
@@ -576,6 +578,20 @@ impl Inner {
                 if circuit.root_scope() == 0 {
                     circuit.balancer().transaction_committed();
                 }
+            }
+        }
+
+        // Exchange metadata with peers, unless this step completed the
+        // transaction: then the next step starts a new transaction and
+        // exchanges metadata first (see `exchange_metadata_before_step`).
+        // Every worker reaches the same decision, because the commit consensus
+        // above is global.
+        if self.commit_complete() {
+            self.exchange_metadata_before_step = true;
+        } else {
+            self.exchange_metadata(circuit).await?;
+            if circuit.root_scope() == 0 {
+                circuit.balancer().update_metadata();
             }
         }
 
@@ -772,5 +788,149 @@ impl Scheduler for DynamicScheduler {
 
     fn is_flush_complete(&self) -> bool {
         self.inner().is_flush_complete()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::{borrow::Cow, cell::RefCell, rc::Rc};
+
+    use serde_json::{Value, json};
+
+    use crate::{
+        Circuit, RootCircuit, Runtime,
+        circuit::{
+            CircuitBase, GlobalNodeId, NodeId, Scope,
+            circuit_builder::MetadataExchange,
+            operator_traits::{Operator, SinkOperator},
+        },
+        operator::{Generator, communication::test_circuit},
+        utils::test::init_test_logger,
+    };
+
+    /// Publishes the number of the current transaction as its metadata in
+    /// `start_transaction`, and records the metadata of every worker as this
+    /// worker sees it in the first step of each transaction.
+    struct TransactionProbe {
+        metadata_exchange: MetadataExchange,
+        node_id: Option<NodeId>,
+        transaction: u64,
+        first_step: bool,
+
+        /// For each transaction, the metadata seen in its first step.
+        seen: Rc<RefCell<Vec<Vec<Option<Value>>>>>,
+    }
+
+    impl Operator for TransactionProbe {
+        fn name(&self) -> Cow<'static, str> {
+            Cow::from("TransactionProbe")
+        }
+
+        fn init(&mut self, global_id: &GlobalNodeId) {
+            self.node_id = global_id.local_node_id();
+        }
+
+        fn fixedpoint(&self, _scope: Scope) -> bool {
+            true
+        }
+
+        fn start_transaction(&mut self) {
+            self.transaction += 1;
+            self.first_step = true;
+            self.metadata_exchange
+                .set_local_operator_metadata(self.node_id.unwrap(), json!(self.transaction));
+        }
+    }
+
+    impl SinkOperator<usize> for TransactionProbe {
+        async fn eval(&mut self, _input: &usize) {
+            if self.first_step {
+                self.first_step = false;
+                let seen = self
+                    .metadata_exchange
+                    .get_global_operator_metadata(self.node_id.unwrap());
+                self.seen.borrow_mut().push(seen);
+            }
+        }
+    }
+
+    /// Runs transactions on this worker's copy of a circuit that contains a
+    /// [TransactionProbe], and checks that the first step of each transaction
+    /// sees the transaction number that every worker published when it
+    /// started the transaction.
+    ///
+    /// Odd transactions take steps before they start committing; even ones
+    /// start committing at once, so that their first step is also a commit
+    /// step.
+    ///
+    /// # Arguments
+    ///
+    /// None.  The worker's runtime determines the number of workers.
+    ///
+    /// # Returns
+    ///
+    /// Nothing.  Panics if a first step sees any other metadata.
+    fn check_first_step_metadata() {
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let (circuit, ()) = RootCircuit::build({
+            let seen = seen.clone();
+            move |circuit| {
+                let source = circuit.add_source(Generator::new(|| 0usize));
+                circuit.add_sink(
+                    TransactionProbe {
+                        metadata_exchange: circuit.metadata_exchange().clone(),
+                        node_id: None,
+                        transaction: 0,
+                        first_step: false,
+                        seen,
+                    },
+                    &source,
+                );
+                Ok(())
+            }
+        })
+        .unwrap();
+
+        for transaction in 1..=8u64 {
+            if transaction % 2 == 0 {
+                circuit.transaction().unwrap();
+            } else {
+                circuit.start_transaction().unwrap();
+                circuit.step().unwrap();
+                circuit.step().unwrap();
+                circuit.start_commit_transaction().unwrap();
+                while !circuit.is_commit_complete() {
+                    circuit.step().unwrap();
+                }
+            }
+            let expected = vec![Some(json!(transaction)); Runtime::num_workers()];
+            assert_eq!(
+                seen.borrow().get(transaction as usize - 1),
+                Some(&expected),
+                "worker {} in transaction {transaction}",
+                Runtime::worker_index()
+            );
+        }
+    }
+
+    /// The first step of a transaction sees the metadata that every worker
+    /// published in `start_transaction`, with all workers on one host.
+    #[test]
+    fn first_step_sees_start_transaction_metadata() {
+        init_test_logger();
+        for workers in [1, 2, 4] {
+            test_circuit(workers, 1, check_first_step_metadata);
+        }
+    }
+
+    /// Like [first_step_sees_start_transaction_metadata], with the workers
+    /// spread over several hosts.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn first_step_sees_start_transaction_metadata_multihost() {
+        init_test_logger();
+        for (workers, hosts) in [(2, 2), (4, 2), (3, 3)] {
+            test_circuit(workers, hosts, check_first_step_metadata);
+        }
     }
 }

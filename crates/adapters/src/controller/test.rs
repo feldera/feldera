@@ -1,4 +1,4 @@
-use super::OutputEndpointControl;
+use super::{OutputEndpointControl, OutputEndpointDescr, OutputEndpoints};
 use crate::{
     Controller, InputConsumer, InputEndpoint, OutputEndpoint, PipelineConfig,
     TransportInputEndpoint,
@@ -8429,4 +8429,61 @@ fn a_reader_is_told_the_step_being_fed_not_the_one_the_outputs_finished() {
     );
 
     controller.stop().unwrap();
+}
+
+/// `OutputEndpoints::insert` must enable the endpoint's stream before it reads
+/// the transaction number.  In the other order, a transaction could start and
+/// sample the stream as disabled between the two, and the endpoint would take
+/// that transaction's empty output as complete.
+#[test]
+fn output_endpoint_insert_enables_before_reading_transaction_number() {
+    // A plain view: the gather of a materialized one is always enabled.
+    let (circuit, catalog) =
+        dbsp::Runtime::init_circuit(dbsp::circuit::CircuitConfig::with_workers(1), |circuit| {
+            let (input, _input_handle) = circuit.add_input_zset::<TestStruct>();
+            let schema = serde_json::to_string(&feldera_types::program_schema::Relation::new(
+                "test_output".into(),
+                TestStruct::schema(),
+                false,
+                BTreeMap::new(),
+            ))
+            .unwrap();
+            let mut catalog = crate::Catalog::new();
+            catalog.register_output_zset::<_, TestStruct>(input, &schema);
+            Ok(catalog)
+        })
+        .unwrap();
+    let mut outputs = OutputEndpoints::new(&catalog);
+    let (stream_name, (handles, _)) = outputs.iter_by_stream().next().unwrap();
+    let stream_name = stream_name.clone();
+    let enable_count = handles.enable_count.clone();
+    assert!(!enable_count.is_enabled());
+
+    let endpoint = OutputEndpointDescr::new(
+        "endpoint",
+        &stream_name,
+        false,
+        false,
+        None,
+        Parker::new().unparker().clone(),
+    );
+    let endpoint_id = 1;
+    outputs
+        .insert(endpoint_id, endpoint, || {
+            assert!(
+                enable_count.is_enabled(),
+                "read the transaction number before enabling the stream"
+            );
+            7
+        })
+        .unwrap();
+    assert_eq!(
+        outputs
+            .lookup_by_id(&endpoint_id)
+            .unwrap()
+            .created_during_transaction_number,
+        7
+    );
+
+    circuit.kill().unwrap();
 }

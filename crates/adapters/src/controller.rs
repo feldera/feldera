@@ -6488,6 +6488,9 @@ struct OutputEndpointDescr {
 
     /// Transaction number when the endpoint was created.
     /// 0 - the endpoint was created before the first transaction performed by the controller.
+    ///
+    /// [OutputEndpoints::insert] sets this after it enables the endpoint's
+    /// stream (see there for why).
     created_during_transaction_number: u64,
 
     /// FIFO queue of batches read from the stream.
@@ -6514,7 +6517,6 @@ impl OutputEndpointDescr {
         stream_name: &str,
         send_snapshot: bool,
         snapshot_already_sent: bool,
-        created_during_transaction_number: u64,
         command_handler: Option<Arc<dyn CommandHandler>>,
         unparker: Unparker,
     ) -> Self {
@@ -6528,7 +6530,7 @@ impl OutputEndpointDescr {
                 snapshot_already_sent,
             )),
             disconnect_flag: Arc::new(AtomicBool::new(false)),
-            created_during_transaction_number,
+            created_during_transaction_number: 0,
             unparker,
         }
     }
@@ -6608,6 +6610,17 @@ impl OutputEndpoints {
     ///
     /// * `endpoint_id` - Id of the endpoint.
     /// * `endpoint_descr` - The endpoint.  Its `stream_name` names the group.
+    /// * `transaction_number` - Returns the controller's current transaction
+    ///   number.
+    ///
+    /// This enables the group's stream first and reads the transaction number
+    /// after, to set the endpoint's `created_during_transaction_number`.  In
+    /// the other order, the circuit could start transaction T+1 and sample
+    /// the stream as disabled between the two, after the read returned T.
+    /// The endpoint would then take the empty output of T+1 as complete and
+    /// silently lose its rows.  In this order, a read that returns T means
+    /// that T+1 samples the stream as enabled, and a read that returns T+1
+    /// makes the endpoint skip T+1.
     ///
     /// # Returns
     ///
@@ -6617,7 +6630,8 @@ impl OutputEndpoints {
     fn insert(
         &mut self,
         endpoint_id: EndpointId,
-        endpoint_descr: OutputEndpointDescr,
+        mut endpoint_descr: OutputEndpointDescr,
+        transaction_number: impl FnOnce() -> u64,
     ) -> Result<(), ControllerError> {
         let Some((handles, endpoints)) = self.by_stream.get_mut(&endpoint_descr.stream_name) else {
             return Err(ControllerError::unknown_output_stream(
@@ -6626,6 +6640,7 @@ impl OutputEndpoints {
             ));
         };
         handles.enable_count.enable();
+        endpoint_descr.created_during_transaction_number = transaction_number();
         endpoints.insert(endpoint_id);
         self.by_id.insert(endpoint_id, endpoint_descr);
         Ok(())
@@ -7549,12 +7564,13 @@ impl ControllerInner {
         self.last_checkpoint_sync.lock().unwrap().clone()
     }
 
+    // Both use `SeqCst` to pair with `EnableCount` (see [OutputEndpoints::insert]).
     fn get_transaction_number(&self) -> u64 {
-        self.transaction_number.load(Ordering::Acquire)
+        self.transaction_number.load(Ordering::SeqCst)
     }
 
     fn increment_transaction_number(&self) {
-        self.transaction_number.fetch_add(1, Ordering::AcqRel);
+        self.transaction_number.fetch_add(1, Ordering::SeqCst);
     }
 
     /// Sets the journaled transaction id of the replay step the circuit thread
@@ -8283,7 +8299,6 @@ impl ControllerInner {
             &stream_name,
             endpoint_config.connector_config.send_snapshot,
             snapshot_already_sent,
-            self.get_transaction_number(),
             command_handler,
             parker.unparker().clone(),
         );
@@ -8295,7 +8310,9 @@ impl ControllerInner {
         if outputs.lookup_by_name(endpoint_name).is_some() {
             Err(ControllerError::duplicate_output_endpoint(endpoint_name))?;
         }
-        outputs.insert(endpoint_id, endpoint_descr)?;
+        outputs.insert(endpoint_id, endpoint_descr, || {
+            self.get_transaction_number()
+        })?;
         drop(outputs);
 
         // We succeeded, cancel removal of the endpoint.
