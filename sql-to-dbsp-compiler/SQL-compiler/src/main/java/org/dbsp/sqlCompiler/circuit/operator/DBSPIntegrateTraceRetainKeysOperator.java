@@ -45,6 +45,11 @@ public final class DBSPIntegrateTraceRetainKeysOperator
         return this;
     }
 
+    @Override
+    public OutputPort data() {
+        return this.left();
+    }
+
     /** Create an operator to retain keys and returns it.  May return null if the keys contain no fields. */
     @Nullable
     public static DBSPIntegrateTraceRetainKeysOperator create(
