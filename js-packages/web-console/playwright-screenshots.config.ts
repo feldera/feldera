@@ -47,7 +47,8 @@ const config: PlaywrightTestConfig = {
       // A shot is rewritten only when more than this share of its pixels changed.
       // This ignores font antialiasing noise between machines.
       maxDiffPixelRatio: 0.005,
-      scale: 'device',
+      // One image pixel per CSS pixel, so that the docs show each image at the size of the UI.
+      scale: 'css',
       animations: 'disabled',
       caret: 'hide'
     }
