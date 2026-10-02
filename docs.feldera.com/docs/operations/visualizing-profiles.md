@@ -9,7 +9,7 @@ import uploadFromPipeline from './open-upload-pipeline.png';
 import uploadFromViewer from './open-upload-viewer.png';
 
 {/* A screenshot at the size of the UI: the images are captured at 2 device pixels for each CSS pixel. */}
-export const Shot = ({src, alt}) => <img className="ui-shot" src={src} srcSet={`${src} 2x`} alt={alt} />
+export const Shot = ({src, alt}) => <img className="ui-shot" src={src} alt={alt} />
 
 ## Preliminaries
 
