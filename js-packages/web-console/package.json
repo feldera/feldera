@@ -48,6 +48,7 @@
     "but-unzip": "0.1.7",
     "clsx": "2.1.1",
     "colorizr": "4.0.1",
+    "common-lib": "workspace:*",
     "common-ui": "workspace:*",
     "d3-format": "3.1.2",
     "dayjs": "1.11.19",
@@ -115,7 +116,7 @@
   "scripts": {
     "clean-install": "bun ci",
     "check-bun-version": "bun ../../scripts/check-bun-version.ts",
-    "deps": "bun ../../scripts/check-bun-version.ts && bun run --filter triage-types --filter profiler-lib --filter common-ui --filter profiler-layout --filter @feldera/vite-plugin-monaco-editor build:self",
+    "deps": "bun ../../scripts/check-bun-version.ts && bun run --filter common-lib --filter triage-types --filter profiler-lib --filter common-ui --filter profiler-layout --filter @feldera/vite-plugin-monaco-editor build:self",
     "prepare": "svelte-kit sync",
     "dev": "bun run deps && vite dev --host",
     "build": "bun run deps && bun run build:self",

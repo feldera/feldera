@@ -1,4 +1,4 @@
-import { nonNull } from '$lib/functions/common/function'
+import { nonNull } from 'common-lib/function'
 
 export const normalizeRuntimeVersion = (version: string) => version.replace(/\+.*/, '')
 

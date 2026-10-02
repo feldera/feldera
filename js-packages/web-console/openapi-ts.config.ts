@@ -3,14 +3,14 @@ import {
   type CustomTypes,
   customTypesPlugin,
   overrideOpenapiType
-} from './src/lib/functions/common/openapi-ts'
+} from './src/lib/functions/openapi-ts'
 
 /**
  * Hand-written types substituted for the generated ones, keyed by the custom
  * `format` that marks a schema.
  */
 const customTypes = {
-  microseconds: { module: '$lib/functions/common/duration', name: 'Microseconds' }
+  microseconds: { module: 'common-lib/duration', name: 'Microseconds' }
 } as const satisfies CustomTypes
 
 export default defineConfig({

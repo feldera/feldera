@@ -1,7 +1,7 @@
 <script lang="ts" generics="S extends string, T extends string">
   import { Progress } from '@skeletonlabs/skeleton-svelte'
+  import { formatDateTime, formatDateTimeRange } from 'common-lib/format'
   import { untrack } from 'svelte'
-  import { formatDateTime, formatDateTimeRange } from '$lib/functions/format'
   import type { HealthEventBucket } from '$lib/functions/pipelines/health'
 
   type Bucket = HealthEventBucket<S, T>

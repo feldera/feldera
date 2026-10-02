@@ -1,15 +1,15 @@
 <script lang="ts">
-  import { Popover, SegmentedControl, Tooltip } from 'common-ui'
-  import type { HTMLAttributes } from 'svelte/elements'
-  import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
-  import { count } from '$lib/functions/common/array'
-  import { humanSize } from '$lib/functions/common/string'
-  import { formatDuration, formatQty } from '$lib/functions/format'
+  import { count } from 'common-lib/array'
+  import { formatDuration, formatQty } from 'common-lib/format'
   import {
     defaultLatencyColorSpread,
     latencyColor,
     latencyColorScale
-  } from '$lib/functions/latencyColor'
+  } from 'common-lib/latencyColor'
+  import { humanSize } from 'common-lib/string'
+  import { Popover, SegmentedControl, Tooltip } from 'common-ui'
+  import type { HTMLAttributes } from 'svelte/elements'
+  import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import type {
     AggregatedInputEndpointMetrics,
     AggregatedMetrics,

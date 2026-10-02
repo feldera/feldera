@@ -283,12 +283,11 @@
 </script>
 
 <script lang="ts">
+  import { count, groupBy } from 'common-lib/array'
+  import { getCaseIndependentName, normalizeCaseIndependentName } from 'common-lib/felderaRelation'
+  import { tuple } from 'common-lib/tuple'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
 
-  import {
-    getCaseIndependentName,
-    normalizeCaseIndependentName
-  } from '$lib/functions/felderaRelation'
   import { type ExtendedPipeline, type XgressEntry } from '$lib/services/pipelineManager'
   import ChangeStream from './ChangeStream.svelte'
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
@@ -300,9 +299,7 @@
     parseStream
   } from '$lib/functions/pipelines/changeStream'
   import JSONbig from 'true-json-bigint'
-  import { count, groupBy } from '$lib/functions/common/array'
   import { untrack } from 'svelte'
-  import { tuple } from '$lib/functions/common/tuple'
   import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
   import {
     usePipelineManager,
