@@ -1319,7 +1319,7 @@ mod parallel {
     use dbsp::utils::Tup2;
     use dbsp::{OrdIndexedZSet, OrdZSet};
     use feldera_sqllib::{
-        ByteArray, Date, F32, F64, SqlDecimal, SqlString, Timestamp, Uuid, Variant,
+        ByteArray, Date, F32, F64, SqlDecimal, SqlString, Timestamp, TimestampTz, Uuid, Variant,
     };
     use feldera_types::deserialize_table_record;
     use feldera_types::program_schema::{ColumnType, Relation, SqlIdentifier};
@@ -1355,6 +1355,7 @@ mod parallel {
         string: String,
         unused: Option<String>,
         timestamp_ntz: Timestamp,
+        timestamp_tz: TimestampTz,
         tinyint: i8,
         string_array: Vec<String>,
         struct1: TestStruct,
@@ -1367,7 +1368,7 @@ mod parallel {
         __feldera_ts: i64,
     }
 
-    deserialize_table_record!(OutputRecord["OutputRecord", Variant, 22] {
+    deserialize_table_record!(OutputRecord["OutputRecord", Variant, 23] {
         (bigint, "bigint", false, i64, |_| None),
         (binary, "binary", false, ByteArray, |_| None),
         (boolean, "boolean", false, bool, |_| None),
@@ -1380,6 +1381,7 @@ mod parallel {
         (string, "string", false, String, |_| None),
         (unused, "unused", false, Option<String>, |_| Some(None)),
         (timestamp_ntz, "timestamp_ntz", false, Timestamp, |_| None),
+        (timestamp_tz, "timestamp_tz", false, TimestampTz, |_| None),
         (tinyint, "tinyint", false, i8, |_| None),
         (string_array, "string_array", false, Vec<String>, |_| None),
         (struct1, "struct1", false, TestStruct, |_| None),
@@ -1407,6 +1409,7 @@ mod parallel {
                 string: self.string.clone(),
                 unused: self.unused.clone(),
                 timestamp_ntz: self.timestamp_ntz,
+                timestamp_tz: self.timestamp_tz,
                 tinyint: self.tinyint,
                 string_array: self.string_array.clone(),
                 struct1: self.struct1.clone(),
@@ -1597,6 +1600,9 @@ mod parallel {
                 Some(format!("unused_{i}"))
             },
             timestamp_ntz: Timestamp::from_milliseconds(1704070800000 + i as i64 * 1000),
+            timestamp_tz: TimestampTz::from(Timestamp::from_milliseconds(
+                1704070800000 + i as i64 * 1000,
+            )),
             tinyint: (i % 120) as i8,
             string_array: vec![format!("arr_{i}")],
             struct1: TestStruct {
