@@ -109,8 +109,13 @@ impl EnableCount {
     }
 
     /// Returns true if this `EnableCount` is enabled.
+    ///
+    /// This and [EnableCount::enable] use `SeqCst`, so that a caller that
+    /// enables and then reads another `SeqCst` atomic, such as a transaction
+    /// number, cannot miss a concurrent update of that atomic that precedes
+    /// a call to this function.
     pub fn is_enabled(&self) -> bool {
-        self.0.load(Ordering::Acquire) > 0
+        self.0.load(Ordering::SeqCst) > 0
     }
 
     /// Enable the accumulator for this output stream.
@@ -118,7 +123,7 @@ impl EnableCount {
     /// This may be paired with a later call to [EnableCount::disable], if the
     /// stream should eventually be disabled.
     pub fn enable(&self) {
-        self.0.fetch_add(1, Ordering::AcqRel);
+        self.0.fetch_add(1, Ordering::SeqCst);
     }
 
     /// Disable the accumulator for this output stream.

@@ -7571,8 +7571,9 @@ impl ControllerInner {
         self.last_checkpoint_sync.lock().unwrap().clone()
     }
 
+    // Both use `SeqCst` to pair with `EnableCount` (see [OutputEndpoints::insert]).
     fn get_transaction_number(&self) -> u64 {
-        self.transaction_number.load(Ordering::Acquire)
+        self.transaction_number.load(Ordering::SeqCst)
     }
 
     /// Returns the current transaction number, ordered after the caller's
@@ -7591,7 +7592,7 @@ impl ControllerInner {
     }
 
     fn increment_transaction_number(&self) {
-        self.transaction_number.fetch_add(1, Ordering::AcqRel);
+        self.transaction_number.fetch_add(1, Ordering::SeqCst);
     }
 
     /// Sets the journaled transaction id of the replay step the circuit thread
