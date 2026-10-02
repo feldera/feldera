@@ -104,7 +104,7 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 
 # Build arg, not a compose `environment:` entry: the latter is set only at run
 # time, which leaves this empty and silently installs `stable` instead.
-ARG RUST_VERSION=1.96.1
+ARG RUST_VERSION=1.99.0
 RUN \
    rustup install $RUST_VERSION && \
    rustup default $RUST_VERSION && \
