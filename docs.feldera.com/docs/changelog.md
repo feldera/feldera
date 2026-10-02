@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- DBSP startup storage accounting now includes checkpoint files in nested directories and continues past unreadable child directories.
+
 - Incompatible change (user-defined aggregates): the accumulator type of a
   user-defined aggregate written in Rust must now implement
   `dbsp::dynamic::OrdRepr` for its rkyv archived form, so that an archived
