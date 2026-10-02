@@ -81,7 +81,8 @@ public class MergeGC extends Passes {
                 return null;
             List<Port<DBSPOperator>> baseDests = Linq.where(
                     this.getGraph().getSuccessors(operator),
-                    p -> (p.node().is(IGCOperator.class) && p.port() == 0));
+                    p -> p.node().is(IGCOperator.class) &&
+                            p.node().to(IGCOperator.class).garbageCollects(operator));
             if (baseDests.size() != 1)
                 return null;
             Port<DBSPOperator> port = baseDests.get(0);
