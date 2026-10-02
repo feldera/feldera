@@ -123,7 +123,7 @@ impl Checkpointer {
         if recursion_depth >= MAX_STORAGE_RECURSION_DEPTH {
             *n_errors += 1;
             warn!(
-                "Maximum storage directory recursion depth reached at {path}; storage usage may be underestimated"
+                "Maximum storage directory recursion depth ({MAX_STORAGE_RECURSION_DEPTH}) reached; storage usage may be underestimated"
             );
             return Ok(0);
         }
@@ -1119,18 +1119,26 @@ mod test {
             log.contains("1 error(s) reading directory entries"),
             "startup log should report the skipped directory: {log}"
         );
+        println!(
+            "startup usage after skipping unreadable subtree: {} bytes",
+            inner.usage().load(Ordering::Relaxed)
+        );
+        println!("{log}");
         let (usage, measurement_log) =
             crate::utils::LogCapture::new(|| restarted.measure_checkpoint_storage_use(uuid))
                 .into_parts();
+        let usage =
+            usage.expect("a nested read error should not block checkpoint size measurement");
         assert!(
-            usage.expect("a nested read error should not block checkpoint size measurement")
-                >= visible_payload.len() as u64,
+            usage >= visible_payload.len() as u64,
             "checkpoint usage should include readable files"
         );
         assert!(
             measurement_log.contains("Encountered 1 error while measuring checkpoint"),
             "checkpoint size measurement should report the skipped directory: {measurement_log}"
         );
+        println!("checkpoint size after skipping unreadable subtree: {usage} bytes");
+        println!("{measurement_log}");
     }
 
     #[test]
@@ -1177,6 +1185,8 @@ mod test {
             log.contains("1 error(s) reading directory entries"),
             "startup log should report the recursion limit: {log}"
         );
+        println!("startup completed with maximum scan depth 64");
+        println!("{log}");
     }
 
     /// Verifies that GC uses `dependencies.json` as the authoritative list
