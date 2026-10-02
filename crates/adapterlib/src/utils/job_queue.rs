@@ -9,7 +9,10 @@ use std::future::Future;
 use std::pin::Pin;
 
 use futures::channel::oneshot;
-use tokio::{spawn, task::JoinHandle};
+use tokio::{
+    spawn,
+    task::{JoinHandle, yield_now},
+};
 
 /// A job queue that dispatches work to a pool of tokio tasks.
 ///
@@ -116,6 +119,11 @@ where
                         if completion_sender.send(result).is_err() {
                             return;
                         };
+                        // The send can wake the consumer into this thread's LIFO slot,
+                        // which other tokio workers cannot steal from. Without a yield,
+                        // the consumer waits until this worker runs out of jobs, while
+                        // the bounded completion queue stalls the producer.
+                        yield_now().await;
                     }
                 })
             })
