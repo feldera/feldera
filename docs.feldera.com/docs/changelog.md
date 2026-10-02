@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- DBSP startup storage accounting now includes checkpoint files in nested directories and continues past unreadable child directories.
+
 - Storage now uses LZ4 compression by default, instead of Snappy.  LZ4
   compresses better in about the same amount of time and decompresses
   several times faster.
