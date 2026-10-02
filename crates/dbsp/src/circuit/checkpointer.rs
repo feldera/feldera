@@ -1066,6 +1066,10 @@ mod test {
         let backend = make_backend();
         let _restarted = Checkpointer::new(backend.clone()).unwrap();
         let usage = backend.usage().load(std::sync::atomic::Ordering::Relaxed);
+        println!(
+            "startup usage: {usage} bytes; nested checkpoint file: {} bytes",
+            nested_payload.len()
+        );
         assert!(
             usage >= nested_payload.len() as i64,
             "startup usage {usage} does not include {} bytes in checkpoint directory {uuid}",
