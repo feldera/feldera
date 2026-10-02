@@ -377,18 +377,87 @@ fn create_localfs_table(data: &[IcebergTestStruct], extra_columns: bool) -> Stri
     // Uncomment to inspect output parquet files produced by the test.
     std::mem::forget(table_dir);
 
+    let mut extra: Vec<&str> = Vec::new();
+    if extra_columns {
+        extra.push("--extra-columns");
+    }
+    run_table_script(&table_path, ndjson_file.path(), &extra)
+}
+
+/// A `datetime` read must land on the snapshot current at that time.
+///
+/// The connector picks the last snapshot whose `timestamp-ms` is at or before
+/// the requested time, so the test reads the two timestamps back rather than
+/// assuming what the writer stamped.
+#[test]
+#[cfg(feature = "iceberg-tests-fs")]
+fn iceberg_localfs_input_test_datetime() {
+    use dbsp::trace::BatchReader;
+
+    let before = data(200);
+    let after: Vec<IcebergTestStruct> = data(400)[200..].to_vec();
+
+    let table_dir = tempfile::TempDir::new().unwrap();
+    let table_path = table_dir.path().display().to_string();
+    std::mem::forget(table_dir);
+
+    let first_ndjson = data_to_ndjson(before.clone());
+    run_table_script(&table_path, first_ndjson.path(), &[]);
+    let second_ndjson = data_to_ndjson(after);
+    let metadata_path = run_table_script(&table_path, second_ndjson.path(), &["--append"]);
+
+    let metadata: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&metadata_path).unwrap()).unwrap();
+    let stamps: Vec<i64> = metadata["snapshot-log"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["timestamp-ms"].as_i64().unwrap())
+        .collect();
+    assert_eq!(stamps.len(), 2, "expected one snapshot per append");
+    assert!(
+        stamps[1] > stamps[0],
+        "the two appends must land in different milliseconds, got {stamps:?}"
+    );
+
+    // Between the appends: the first is visible, the second is not.
+    let read_at = chrono::DateTime::from_timestamp_millis((stamps[0] + stamps[1]) / 2)
+        .unwrap()
+        .to_rfc3339();
+    let (mut json_file, _metrics) = iceberg_snapshot_to_json::<IcebergTestStruct>(
+        &IcebergTestStruct::schema(),
+        &[],
+        json!({ "metadata_location": metadata_path, "datetime": read_at }),
+    );
+
+    let expected = dbsp::OrdZSet::from_tuples(
+        (),
+        before
+            .into_iter()
+            .map(|x| dbsp::utils::Tup2(dbsp::utils::Tup2(x, ()), 1))
+            .collect(),
+    );
+    let zset = file_to_zset::<IcebergTestStruct>(json_file.as_file_mut());
+    assert_eq!(
+        zset.len(),
+        200,
+        "`datetime` must pin the table to the first snapshot"
+    );
+    assert_eq!(zset, expected);
+}
+
+/// Run the table-building script and return the metadata location it prints.
+#[cfg(feature = "iceberg-tests-fs")]
+fn run_table_script(table_path: &str, ndjson_path: &std::path::Path, extra: &[&str]) -> String {
     let script_path = "../iceberg/src/test/create_test_table_s3.py";
 
-    // Run the Python script using the Python interpreter
     let mut command = std::process::Command::new("python3");
     command
         .arg(script_path)
         .arg("--catalog=sql")
         .arg(format!("--warehouse-path={table_path}"))
-        .arg(format!("--json-file={}", ndjson_file.path().display()));
-    if extra_columns {
-        command.arg("--extra-columns");
-    }
+        .arg(format!("--json-file={}", ndjson_path.display()))
+        .args(extra);
     let output = command
         .output()
         .map_err(|e| {
