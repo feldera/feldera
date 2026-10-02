@@ -417,6 +417,24 @@ main .theme-doc-markdown a:hover {
   fill: var(--ifm-alert-border-color);
 }
 
+/* A UI icon in the text, for example a web console button. It takes the color of the text. */
+.inline-icon {
+  width: 1.25em;
+  height: 1.25em;
+  vertical-align: -0.25em;
+}
+
+.inline-icon [stroke] {
+  stroke: currentColor;
+}
+
+/* A small screenshot of a part of the UI, for example in a table cell. */
+.ui-shot {
+  display: block;
+  max-width: 100%;
+  margin-top: 0.5rem;
+}
+
 /* Notes - use Deep Purple */
 .alert--info {
   --ifm-alert-background-color: rgba(54, 14, 59, 0.03);

@@ -82,6 +82,7 @@ test-results-ct/
 playwright-report-ct/
 test-results-e2e/
 playwright-report-e2e/
+test-results-screenshots/
 blob-report/
 playwright/.cache/
 
