@@ -10,9 +10,11 @@ use std::{
 };
 
 use feldera_samply::Span;
+use feldera_storage::fbuf::FBuf;
 use itertools::{Itertools as _, zip_eq};
 use rkyv::AlignedVec;
 use size_of::{HumanBytes, SizeOf, TotalSize};
+use tokio::sync::Notify;
 
 use crate::{
     Circuit, NumEntries, Runtime, Scope, Stream,
@@ -37,6 +39,7 @@ use crate::{
             shard_batch,
         },
     },
+    profile::{ParkReason, ParkingFor},
     trace::{Batch, BatchReader as _, Spine, Trace, TraceRole, deserialize_indexed_wset},
 };
 
@@ -196,6 +199,10 @@ where
     /// One [Rxq] for each of `local_workers`.
     rxq: Vec<Mutex<Rxq<B>>>,
 
+    /// One [Notify] for each of `local_workers`, signaled when its [Rxq]
+    /// records a step from any sender.
+    arrivals: Vec<Notify>,
+
     enable_count: EnableCount,
 }
 
@@ -259,6 +266,7 @@ where
                     Mutex::new(Rxq::new(runtime, receiver, factories, npeers, name.get()))
                 })
                 .collect(),
+            arrivals: layout.local_workers().map(|_| Notify::new()).collect(),
             name,
             enable_count: EnableCount::default(),
         });
@@ -275,28 +283,42 @@ where
             .unwrap()
     }
 
-    /// Delivers `batch`, sent by local or remote `sender`, to local worker
-    /// `receiver`.  If `flush` is true, this is the final batch in the
-    /// transaction.  Returns true if the receiving spine has too many batches.
+    /// Delivers `batch`, sent by local or remote `sender` in its step number
+    /// `step`, to local worker `receiver`.  If `flush` is true, this is the
+    /// final batch in the transaction.  Returns true if the receiving spine has
+    /// too many batches.
     fn deliver(
         &self,
         factories: &B::Factories,
         sender: usize,
         receiver: usize,
         batch: B,
+        step: u64,
         flush: bool,
     ) -> bool {
         // Spill the batch to disk, if we should, without taking the rxq lock.
         let batch =
             Spine::maybe_flush_batch(Some(&self.runtime), batch, factories, || (None, None));
-        if flush || !batch.is_empty() {
-            self.rxq(receiver).deliver(factories, sender, batch, flush)
-        } else {
-            false
-        }
+        let should_block = {
+            let mut rxq = self.rxq(receiver);
+            rxq.record_step(sender, step);
+            if flush || !batch.is_empty() {
+                rxq.deliver(factories, sender, batch, flush)
+            } else {
+                false
+            }
+        };
+        self.arrivals[receiver - self.local_workers.start].notify_waiters();
+        should_block
     }
 
-    async fn send(self: &Arc<Self>, name: Arc<String>, batch: B, flush: bool) {
+    /// Shards `batch` and sends it to the receivers, marked with the sender's
+    /// step number `step`.
+    ///
+    /// The sender must call this exactly once in every step, even if `batch`
+    /// is empty, because [Self::wait_for_arrival] depends on every sender
+    /// reporting every step.
+    async fn send(self: &Arc<Self>, name: Arc<String>, batch: B, step: u64, flush: bool) {
         let sender = Runtime::worker_index();
 
         let runtime = Runtime::runtime().unwrap();
@@ -323,44 +345,32 @@ where
                             .expect("data should include one item per peer")
                             .into_plain()
                             .expect("local data should not be serialized");
-                        self.deliver(&self.factories, sender, receiver, item, flush);
+                        self.deliver(&self.factories, sender, receiver, item, step, flush);
                     }
                 }
                 WorkerLocation::Remote => {
-                    let mut empty = true;
                     let mut items = Vec::with_capacity(receivers.len());
                     for _ in receivers.clone() {
-                        let fbuf = data
+                        let mut fbuf = data
                             .next()
                             .expect("data should include one item per peer")
                             .into_tx()
                             .expect("remote mailboxes should always be serialized");
-                        if !fbuf.is_empty() {
-                            serialized_bytes += fbuf.len();
-                            empty = false;
-                        }
+                        serialized_bytes += fbuf.len();
+                        push_trailer(&mut fbuf, step, flush);
                         items.push(fbuf);
                     }
 
-                    // Skip sending to the remote host if there's no data to
-                    // send (unless we're flushing).
-                    //
-                    // The common case for no data to send is when we're
-                    // sharding to workers on only one host for an output
-                    // connector.
-                    if !empty || flush {
-                        for item in &mut items {
-                            item.push(flush as u8);
-                        }
-                        let this = self.clone();
-                        if let Some(waiter) = this
-                            .clients
-                            .connect(receivers.start, MessageType::Streaming)
-                            .await
-                            .send(name.clone(), this.exchange_id, sender, items)
-                        {
-                            remote_waiters.push(waiter);
-                        }
+                    // Send even if there's no data, because the trailer tells
+                    // the remote host that this sender has finished `step`.
+                    let this = self.clone();
+                    if let Some(waiter) = this
+                        .clients
+                        .connect(receivers.start, MessageType::Streaming)
+                        .await
+                        .send(name.clone(), this.exchange_id, sender, items)
+                    {
+                        remote_waiters.push(waiter);
                     }
                 }
             }
@@ -385,6 +395,32 @@ where
     fn receive(&self) -> Option<Spine<B>> {
         let receiver = Runtime::worker_index();
         self.rxq(receiver).receive()
+    }
+
+    /// Waits until this worker's receive queue holds all of the data that
+    /// every sender sent in the current step.
+    ///
+    /// The current step is the last step in which this worker's own
+    /// [ShardedAccumulatorSender] ran, so the caller must be an operator that
+    /// the circuit evaluates after that sender in the same step.  Otherwise,
+    /// this waits for the previous step.
+    ///
+    /// This does not wait for the receive queue to deliver the data to the
+    /// circuit, which happens only at the end of the transaction.
+    #[cfg_attr(not(test), expect(dead_code, reason = "awaiting first caller"))]
+    async fn wait_for_arrival(&self) {
+        let receiver = Runtime::worker_index();
+        let arrivals = &self.arrivals[receiver - self.local_workers.start];
+        loop {
+            // Create the future before checking, so that a notification
+            // between the check and the wait can't get lost.
+            let arrival = arrivals.notified();
+            if self.rxq(receiver).has_arrived() {
+                return;
+            }
+            let _parked = ParkingFor::new(ParkReason::Peers);
+            arrival.await;
+        }
     }
 
     fn set_name(&self, global_id: &GlobalNodeId) {
@@ -438,6 +474,27 @@ where
     }
 }
 
+/// Appends the trailer to a serialized batch sent to a remote host: the
+/// sender's `step` number as 8 bytes in little-endian order, then `flush` as
+/// 1 byte.
+fn push_trailer(fbuf: &mut FBuf, step: u64, flush: bool) {
+    fbuf.extend_from_slice(&step.to_le_bytes());
+    fbuf.push(flush as u8);
+}
+
+/// Removes the trailer that [push_trailer] appended to `data` and returns the
+/// step number and flush flag in it.
+fn pop_trailer(data: &mut AlignedVec) -> (u64, bool) {
+    let flush = pop_flushed(data);
+    let len = data
+        .len()
+        .checked_sub(size_of::<u64>())
+        .expect("message should end in a step number");
+    let step = u64::from_le_bytes(data[len..].try_into().unwrap());
+    data.resize(len, 0);
+    (step, flush)
+}
+
 impl<B> ExchangeDelivery for ShardedAccumulator<B>
 where
     B: Batch<Time = ()>,
@@ -453,9 +510,9 @@ where
     ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
             for (receiver, mut data) in zip_eq(self.local_workers.clone(), data) {
-                let flush = pop_flushed(&mut data);
+                let (step, flush) = pop_trailer(&mut data);
                 let batch = deserialize_indexed_wset(&self.factories, &data);
-                self.deliver(&self.factories, sender, receiver, batch, flush);
+                self.deliver(&self.factories, sender, receiver, batch, step, flush);
             }
         })
     }
@@ -488,6 +545,10 @@ where
 
     /// For each sender, the number of flushes it has sent.
     n_flushes: Vec<usize>,
+
+    /// For each sender, the last step number that it has delivered, or 0 if it
+    /// has not delivered any step yet.  Step numbers start at 1.
+    last_steps: Vec<u64>,
 
     /// The number of entries that have been popped off `spines` and received by
     /// the circuit.
@@ -561,6 +622,7 @@ where
             )]),
             name,
             n_flushes: repeat_n(0, npeers).collect(),
+            last_steps: repeat_n(0, npeers).collect(),
             n_received: 0,
         }
     }
@@ -592,6 +654,20 @@ where
         }
 
         should_block
+    }
+
+    /// Records that `sender` has delivered all of its data for `step`.
+    fn record_step(&mut self, sender: usize, step: u64) {
+        let last_step = &mut self.last_steps[sender];
+        debug_assert!(step > *last_step, "sender {sender} repeated step {step}");
+        *last_step = step;
+    }
+
+    /// Returns true if every sender has delivered its data for the last step
+    /// that this worker's own sender delivered.
+    fn has_arrived(&self) -> bool {
+        let step = self.last_steps[self.worker_index];
+        self.last_steps.iter().all(|&last_step| last_step >= step)
     }
 
     fn receive(&mut self) -> Option<Spine<B>> {
@@ -631,6 +707,10 @@ where
     input_batch_stats: BatchSizeStats,
 
     flushed: bool,
+
+    /// The number of times this operator has been evaluated, which is the same
+    /// in every worker.
+    step: u64,
 }
 
 impl<B> ShardedAccumulatorSender<B>
@@ -645,6 +725,7 @@ where
             enabled_during_current_transaction: None,
             input_batch_stats: BatchSizeStats::new(),
             flushed: false,
+            step: 0,
         }
     }
 }
@@ -697,22 +778,20 @@ where
         if (len > 0 || self.flushed) && self.enabled_during_current_transaction.is_none() {
             self.enabled_during_current_transaction = Some(self.exchange.enable_count.is_enabled());
         }
-        let Some(enabled) = self.enabled_during_current_transaction else {
-            return;
-        };
-
-        if enabled {
+        // Send in every step, even with no data, so that the receivers learn
+        // that we finished the step (see `ShardedAccumulator::send`).
+        self.step += 1;
+        let batch = if self.enabled_during_current_transaction == Some(true) {
             self.input_batch_stats.add_batch(len);
-            self.exchange
-                .send(self.name.get(), batch.into_owned(), self.flushed)
-                .await;
-        }
+            batch.into_owned()
+        } else {
+            B::dyn_empty(&self.exchange.factories)
+        };
+        self.exchange
+            .send(self.name.get(), batch, self.step, self.flushed)
+            .await;
 
         if self.flushed {
-            if !enabled {
-                let batch = B::dyn_empty(&self.exchange.factories);
-                self.exchange.send(self.name.get(), batch, true).await;
-            }
             self.flushed = false;
             self.enabled_during_current_transaction = None;
         }
@@ -934,16 +1013,33 @@ where
 #[cfg(test)]
 mod tests {
     use crossbeam::thread;
+    use feldera_storage::fbuf::FBuf;
     use itertools::Itertools;
+    use rkyv::AlignedVec;
 
+    use super::{ShardedAccumulator, pop_trailer, push_trailer};
     use crate::{
-        DBSPHandle, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
-        circuit::{CircuitConfig, Layout, Runtime},
+        Circuit, DBSPHandle, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+        circuit::{
+            CircuitConfig, Layout, Runtime,
+            operator_traits::{Operator, SinkOperator},
+        },
         dynamic::{Data, DowncastTrait, DynWeightTyped},
-        trace::{BatchReader, Cursor, FallbackWSet, Spine},
+        trace::{Batch, BatchReader, BatchReaderFactories, Cursor, FallbackWSet, Spine},
         typed_batch::TypedBatch,
     };
-    use std::{collections::BTreeMap, iter::zip, net::TcpListener};
+    use std::{
+        borrow::Cow,
+        collections::BTreeMap,
+        iter::zip,
+        net::TcpListener,
+        panic::Location,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        time::Duration,
+    };
 
     /// Number of rounds for streaming exchange.
     ///
@@ -1107,6 +1203,178 @@ mod tests {
     fn sharded_accumulator_multihost() {
         for (workers, hosts) in [(2, 2), (4, 2), (8, 2), (3, 3), (4, 4), (16, 4)] {
             test_circuit(workers, hosts);
+        }
+    }
+
+    #[test]
+    fn trailer_round_trip() {
+        for payload in [&b""[..], b"x", b"some serialized batch"] {
+            for step in [0, 1, 0x0102_0304_0506_0708, u64::MAX] {
+                for flush in [false, true] {
+                    let mut fbuf = FBuf::new();
+                    fbuf.extend_from_slice(payload);
+                    push_trailer(&mut fbuf, step, flush);
+
+                    let mut data = AlignedVec::new();
+                    data.extend_from_slice(fbuf.as_slice());
+                    assert_eq!(pop_trailer(&mut data), (step, flush));
+                    assert_eq!(data.as_slice(), payload);
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "message should end in a step number")]
+    fn pop_trailer_without_step() {
+        // A flush byte with no step number in front of it.
+        let mut data = AlignedVec::new();
+        data.extend_from_slice(&[1, 2, 0]);
+        pop_trailer(&mut data);
+    }
+
+    /// Sink that waits for its worker's [ShardedAccumulator] to receive all of
+    /// the current step's data, then records the number of records that the
+    /// worker has received so far in the transaction.
+    struct ArrivalProbe<B>
+    where
+        B: Batch,
+    {
+        exchange: Arc<ShardedAccumulator<B>>,
+
+        /// Record counts, indexed by worker.
+        counts: Arc<Vec<AtomicUsize>>,
+    }
+
+    impl<B> Operator for ArrivalProbe<B>
+    where
+        B: Batch,
+    {
+        fn name(&self) -> Cow<'static, str> {
+            Cow::Borrowed("ArrivalProbe")
+        }
+
+        fn fixedpoint(&self, _scope: crate::circuit::Scope) -> bool {
+            true
+        }
+    }
+
+    impl<B> SinkOperator<Option<Spine<B>>> for ArrivalProbe<B>
+    where
+        B: Batch<Time = ()>,
+    {
+        async fn eval(&mut self, _input: &Option<Spine<B>>) {
+            self.exchange.wait_for_arrival().await;
+            let worker = Runtime::worker_index();
+            let count = self
+                .exchange
+                .rxq(worker)
+                .spines
+                .iter()
+                .map(|entry| entry.spine.len())
+                .sum();
+            self.counts[worker].store(count, Ordering::Release);
+        }
+    }
+
+    /// Builds a circuit that feeds its input into a sharded accumulator with an
+    /// [ArrivalProbe] after it.  If `enabled`, it enables the accumulator.
+    ///
+    /// The input handle already partitions records the way the sharded
+    /// accumulator does, so the circuit changes each key to make records
+    /// move between workers.  Then workers with input sleep before they send,
+    /// so that the probes in the workers without input run before all of the
+    /// data has been sent.
+    fn arrival_circuit(
+        circuit: &mut RootCircuit,
+        counts: Arc<Vec<AtomicUsize>>,
+        enabled: bool,
+    ) -> anyhow::Result<ZSetHandle<usize>> {
+        let (input, input_handle) = circuit.add_input_zset::<usize>();
+        let input = input
+            .map(|key| key + 1)
+            .apply(|batch| {
+                if !batch.is_empty() {
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                batch.clone()
+            })
+            .inner();
+        let runtime = Runtime::runtime().unwrap();
+        let factories = BatchReaderFactories::new::<usize, (), ZWeight>();
+        let (accumulation, exchange) = input.new_sharded_accumulator(
+            &runtime,
+            &factories,
+            0..Runtime::num_workers(),
+            input.sharded_accumulator_remote_waiter(&runtime),
+            Location::caller(),
+        );
+        let (stream, enable_count) = accumulation.into_parts();
+        if enabled {
+            enable_count.enable();
+        }
+        circuit.add_sink(ArrivalProbe { exchange, counts }, &stream);
+        Ok(input_handle)
+    }
+
+    /// Checks that, after `wait_for_arrival`, each worker holds all of the data
+    /// sent to it so far in the transaction, including in steps that send no
+    /// data.  If the accumulator is disabled, checks that the wait still
+    /// finishes and that no data arrives.
+    fn test_arrival(workers: usize, hosts: usize, enabled: bool) {
+        const ROUNDS: usize = 4;
+        const STEPS: usize = 8;
+
+        let counts = Arc::new((0..workers).map(|_| AtomicUsize::new(0)).collect_vec());
+        let (mut dbsp_handles, input_handles) = start_runtimes(workers, hosts, {
+            let counts = counts.clone();
+            move |circuit| arrival_circuit(circuit, counts, enabled)
+        });
+
+        let mut next_key = 0;
+        for _round in 0..ROUNDS {
+            for_each_host(&mut dbsp_handles, |h| h.start_transaction().unwrap());
+            let mut n_sent = 0;
+            for step in 0..STEPS {
+                // Leave every third step empty.  Send the rest from a
+                // different host each time, so that data crosses hosts.
+                if step % 3 != 2 {
+                    for _ in 0..step {
+                        input_handles[step % hosts].push(next_key, 1);
+                        next_key += 1;
+                        n_sent += 1;
+                    }
+                }
+                for_each_host(&mut dbsp_handles, |h| {
+                    h.step().unwrap();
+                });
+
+                let n_received: usize = counts.iter().map(|c| c.load(Ordering::Acquire)).sum();
+                let expected = if enabled { n_sent } else { 0 };
+                assert_eq!(
+                    n_received, expected,
+                    "workers={workers} hosts={hosts} enabled={enabled} step={step}"
+                );
+            }
+            for_each_host(&mut dbsp_handles, |h| h.commit_transaction().unwrap());
+        }
+    }
+
+    #[test]
+    fn arrival_single_host() {
+        for workers in [2, 16] {
+            for enabled in [true, false] {
+                test_arrival(workers, 1, enabled);
+            }
+        }
+    }
+
+    #[test]
+    fn arrival_multihost() {
+        for (workers, hosts) in [(2, 2), (8, 2), (3, 3), (16, 4)] {
+            for enabled in [true, false] {
+                test_arrival(workers, hosts, enabled);
+            }
         }
     }
 }
