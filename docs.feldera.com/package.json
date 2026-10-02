@@ -76,6 +76,7 @@
     "qs": "6.16.0",
     "ws": "8.21.0",
     "websocket-driver": "^0.7.5",
-    "image-size": "^2.0.4"
+    "image-size": "^2.0.4",
+    "tapable": "^2.3.3"
   }
 }
