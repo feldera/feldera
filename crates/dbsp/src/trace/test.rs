@@ -1667,7 +1667,7 @@ fn slow_read_storage_config(
             crate::circuit::StorageOptions {
                 min_storage_bytes: Some(0),
                 backend: StorageBackendConfig::File(Box::new(FileBackendConfig {
-                    ioop_delay: Some(read_delay.as_millis() as u64),
+                    ioop_latency: Some(read_delay.into()),
                     ..Default::default()
                 })),
                 ..Default::default()

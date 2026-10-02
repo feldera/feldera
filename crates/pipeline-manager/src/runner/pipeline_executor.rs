@@ -71,6 +71,11 @@ pub trait PipelineExecutor: Sync + Send {
     /// When `is_gen2` is true the pipeline is configured with the Gen-2
     /// engine, so no pipeline binary was compiled: the executor launches the
     /// Gen-2 engine and ignores `program_binary_url`.
+    ///
+    /// When `legacy_duration_spelling` is true the pipeline runs a runtime
+    /// other than the platform's, which may predate the duration rename: the
+    /// executor writes the configuration the pipeline reads through
+    /// [`feldera_types::config::to_legacy_duration_spelling`].
     #[allow(clippy::too_many_arguments)]
     async fn provision(
         &mut self,
@@ -84,6 +89,7 @@ pub trait PipelineExecutor: Sync + Send {
         program_version: Version,
         runtime_config: &serde_json::Value,
         is_gen2: bool,
+        legacy_duration_spelling: bool,
     ) -> Result<(), ManagerError>;
 
     /// Validates whether the compute and possibly storage resources provisioning

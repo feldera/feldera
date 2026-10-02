@@ -574,12 +574,16 @@ pub enum RuntimeConfigKey {
     Workers,
     Storage,
     FaultTolerance,
+    /// Takes a duration such as `60s`, or `null` to disable periodic
+    /// checkpoints. A bare number of seconds is deprecated but still accepted.
     CheckpointInterval,
     CpuProfiler,
     Tracing,
     TracingEndpointJaeger,
     MinBatchSizeRecords,
+    /// Deprecated: use `max_buffering_delay`.
     MaxBufferingDelayUsecs,
+    MaxBufferingDelay,
     CpuCoresMin,
     CpuCoresMax,
     MemoryMbMin,
@@ -587,7 +591,9 @@ pub enum RuntimeConfigKey {
     StorageMbMax,
     StorageClass,
     MinStorageBytes,
+    /// Deprecated: use `clock_resolution`.
     ClockResolutionUsecs,
+    ClockResolution,
     Logging,
     HttpWorkers,
     IoWorkers,

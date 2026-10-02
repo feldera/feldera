@@ -142,7 +142,7 @@ either `registry_urls` or `schema` properties must be specified.
 | `skip_schema_id` | Boolean | `false` | `true` if serialized messages only contain raw data without the header carrying schema ID. See [Confluent documentation](<https://docs.confluent.io/platform/current/schema-registry/fundamentals/serdes-develop/index.html#wire-format>) for more details|
 | `registry_urls`               | array of strings|`[]`| List of schema registry URLs. When non-empty, the connector retrieves Avro message schemas from the registry.|
 | `registry_proxy`              | string          | | Proxy that will be used to access the schema registry. Requires `registry_urls` to be set.|
-| `registry_timeout_secs`       | string          | | Timeout in seconds used to connect to the registry. Requires `registry_urls` to be set.|
+| `registry_timeout`   | duration        | | Timeout used to connect to the registry, for example `10s`. Replaces the deprecated `registry_timeout_secs` (integer seconds). Requires `registry_urls` to be set.|
 | `registry_username`           | string          | | Username used to authenticate with the registry.Requires `registry_urls` to be set. This option is mutually exclusive with token-based authentication (see `registry_authorization_token`).|
 | `registry_password`           | string          | | Password used to authenticate with the registry. Requires `registry_urls` to be set.|
 | `registry_authorization_token`| string          | | Token used to authenticate with the registry. Requires `registry_urls` to be set. This option is mutually exclusive with password-based authentication (see `registry_username` and `registry_password`).|
@@ -285,7 +285,7 @@ However, exactly one of `registry_urls` and `schema` properties must be specifie
 | `skip_schema_id`               | Boolean | `false` | Set to `true` if serialized messages should only contain raw data without the header carrying schema ID. `False` by default. See https://docs.confluent.io/platform/current/schema-registry/fundamentals/serdes-develop/index.html#wire-format|
 | `registry_urls`                | array of strings| `[]` | List of schema registry URLs. When non-empty, the connector retrieves Avro message schemas from the registry.|
 | `registry_proxy`               | string          | | Proxy that will be used to access the schema registry. Requires `registry_urls` to be set.|
-| `registry_timeout_secs`        | string          | | Timeout in seconds used to connect to the registry. Requires `registry_urls` to be set.|
+| `registry_timeout`    | duration        | | Timeout used to connect to the registry, for example `10s`. Replaces the deprecated `registry_timeout_secs` (integer seconds). Requires `registry_urls` to be set.|
 | `registry_username`            | string          | | Username used to authenticate with the registry.Requires `registry_urls` to be set. This option is mutually exclusive with token-based authentication (see `registry_authorization_token`).|
 | `registry_password`            | string          | | Password used to authenticate with the registry. Requires `registry_urls` to be set.|
 | `registry_authorization_token` | string          | | Token used to authenticate with the registry. Requires `registry_urls` to be set. This option is mutually exclusive with password-based authentication (see `registry_username` and `registry_password`).|

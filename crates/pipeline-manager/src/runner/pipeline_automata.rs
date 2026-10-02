@@ -111,6 +111,20 @@ fn program_config_is_gen2(program_config: &serde_json::Value) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether the program configuration pins a runtime other than the platform's
+/// (Gen-2 runs on the platform's engine). Such a runtime may predate the
+/// duration rename, so the executor hands it its duration settings in the older
+/// spelling, which every runtime up to 1.0 accepts. A configuration that fails
+/// to parse is treated as not pinning.
+fn program_config_pins_runtime(program_config: &serde_json::Value) -> bool {
+    validate_program_config(program_config, false)
+        .map(|config| {
+            let runtime = config.runtime_version();
+            !runtime.is_platform() && !runtime.is_gen2()
+        })
+        .unwrap_or(false)
+}
+
 /// Pipeline automaton monitors the runtime state of a single pipeline and continually reconciles
 /// actual with desired state. The automaton runs as a separate tokio task.
 pub struct PipelineAutomaton<T>
@@ -146,8 +160,8 @@ where
     client: reqwest::Client,
 
     /// Set when the pipeline executor `provision()` is called in the `Provisioning` stage.
-    /// Content is the provisioning timeout in seconds.
-    provision_called: Option<u64>,
+    /// Content is the provisioning timeout.
+    provision_called: Option<Duration>,
 
     /// Default maximum time to wait for the pipeline resources to be provisioned.
     /// This can differ significantly between the type of runner.
@@ -1406,15 +1420,18 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 pipeline.program_version,
                 &pipeline.runtime_config,
                 engine_is_gen2,
+                program_config_pins_runtime(&pipeline.program_config),
             )
             .await
         {
             Ok(()) => {
+                // Keep the configured value whole: truncating to seconds would
+                // turn a sub-second timeout into no timeout at all.
                 self.provision_called = Some(
                     deployment_config
                         .global
-                        .provisioning_timeout_secs
-                        .unwrap_or(self.default_provisioning_timeout.as_secs()),
+                        .provisioning_timeout
+                        .map_or(self.default_provisioning_timeout, Into::into),
                 );
                 info!(
                     pipeline_id = %pipeline.id,
@@ -1455,10 +1472,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> Action {
         assert!(self.provision_called.is_some());
-        let provisioning_timeout = Duration::from_secs(
-            self.provision_called
-                .expect("Provision must have been called"),
-        );
+        let provisioning_timeout = self
+            .provision_called
+            .expect("Provision must have been called");
 
         // Deployment initial runtime desired state is expected
         let deployment_initial = match &pipeline.deployment_initial {
@@ -1942,6 +1958,32 @@ mod test {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate, http};
 
+    /// Only a pinned runtime other than the platform's is handed the older
+    /// duration spelling: the platform's own runtime and the Gen-2 engine read
+    /// the current one.
+    #[test]
+    fn only_a_pinned_runtime_gets_the_older_duration_spelling() {
+        crate::enable_test_unstable_features();
+        use super::program_config_pins_runtime;
+        assert!(!program_config_pins_runtime(&serde_json::json!({})));
+        assert!(!program_config_pins_runtime(
+            &serde_json::json!({"runtime_version": null})
+        ));
+        assert!(!program_config_pins_runtime(
+            &serde_json::json!({"runtime_version": "gen2"})
+        ));
+        assert!(program_config_pins_runtime(
+            &serde_json::json!({"runtime_version": "v0.357.0"})
+        ));
+        assert!(program_config_pins_runtime(
+            &serde_json::json!({"runtime_version": "d0b45d8f87056c9d2c89c6f63b2531b0c5905f9b"})
+        ));
+        // A configuration that does not parse pins nothing.
+        assert!(!program_config_pins_runtime(
+            &serde_json::json!({"runtime_version": 7})
+        ));
+    }
+
     struct MockRunner {
         deployment_location: String,
     }
@@ -1988,6 +2030,7 @@ mod test {
             _: Version,
             _: &serde_json::Value,
             _is_gen2: bool,
+            _legacy_duration_spelling: bool,
         ) -> Result<(), ManagerError> {
             Ok(())
         }

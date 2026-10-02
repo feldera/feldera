@@ -152,9 +152,7 @@ impl KafkaOutputEndpoint {
             .context()
             .deferred_logging
             .with_deferred_logging(|| {
-                kafka_producer.init_transactions(Duration::from_secs(
-                    config.initialization_timeout_secs.into(),
-                ))
+                kafka_producer.init_transactions(Duration::from(config.initialization_timeout()))
             })?;
 
         // Read the number of partitions and the next step number.  We do this

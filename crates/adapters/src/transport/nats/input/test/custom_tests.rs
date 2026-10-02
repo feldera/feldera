@@ -10,10 +10,11 @@ use std::time::Duration;
 // Configuration Validation
 // ---------------------------------------------------------------------------
 
-/// Test that inactivity_timeout_secs=0 is rejected early by configuration validation.
-#[test]
-fn test_nats_inactivity_timeout_zero_rejected() {
-    let config_str = r#"
+/// Builds a NATS input config with `field_line` inserted at the transport
+/// config level, and runs it through configuration validation.
+fn validate_config_with(field_line: &str) -> Result<(), String> {
+    let config_str = format!(
+        r#"
 stream: test_input
 transport:
     name: nats_input
@@ -21,66 +22,67 @@ transport:
         connection_config:
             server_url: nats://127.0.0.1:4222
         stream_name: some_stream
-        inactivity_timeout_secs: 0
+        {field_line}
         consumer_config:
             deliver_policy: All
 format:
     name: json
     config:
         update_format: raw
-"#;
-
-    let result = mock_input_pipeline::<NatsTestRecord, NatsTestRecord>(
-        serde_yaml::from_str(config_str).unwrap(),
-        Relation::empty(),
+"#
     );
 
-    match result {
-        Ok(_) => panic!("Expected inactivity_timeout_secs=0 to be rejected"),
-        Err(err) => {
-            let err_msg = format!("{err:#}");
-            assert!(
-                err_msg.contains("inactivity_timeout_secs"),
-                "Error message should mention inactivity_timeout_secs, got: {err_msg}"
-            );
-        }
+    mock_input_pipeline::<NatsTestRecord, NatsTestRecord>(
+        serde_yaml::from_str(&config_str).unwrap(),
+        Relation::empty(),
+    )
+    .map(|_| ())
+    .map_err(|err| format!("{err:#}"))
+}
+
+/// An inactivity timeout below one second is rejected early by configuration
+/// validation, whether written as `inactivity_timeout` or as the bare number
+/// of seconds its `inactivity_timeout_secs` spelling took.
+#[test]
+fn test_nats_inactivity_timeout_below_one_second_rejected() {
+    // `500ms` is the case a zero check would miss: the setting now holds a
+    // `Duration`, so "below one second" is a wider set than "zero".
+    for field_line in [
+        "inactivity_timeout: 0s",
+        "inactivity_timeout: 500ms",
+        "inactivity_timeout_secs: 0",
+    ] {
+        let err_msg = validate_config_with(field_line)
+            .expect_err(&format!("Expected `{field_line}` to be rejected"));
+        // Both spellings reach one setting, so the error names that setting
+        // rather than the key the user happened to type.
+        assert!(
+            err_msg.contains("`inactivity_timeout`"),
+            "Error message should name `inactivity_timeout`, got: {err_msg}"
+        );
     }
 }
 
-/// Test that retry_interval_secs=0 is rejected early by configuration validation.
+/// A retry interval below one second is rejected early by configuration
+/// validation, whether written as `retry_interval` or as the bare number of
+/// seconds its `retry_interval_secs` spelling took.
 #[test]
-fn test_nats_retry_interval_zero_rejected() {
-    let config_str = r#"
-stream: test_input
-transport:
-    name: nats_input
-    config:
-        connection_config:
-            server_url: nats://127.0.0.1:4222
-        stream_name: some_stream
-        retry_interval_secs: 0
-        consumer_config:
-            deliver_policy: All
-format:
-    name: json
-    config:
-        update_format: raw
-"#;
-
-    let result = mock_input_pipeline::<NatsTestRecord, NatsTestRecord>(
-        serde_yaml::from_str(config_str).unwrap(),
-        Relation::empty(),
-    );
-
-    match result {
-        Ok(_) => panic!("Expected retry_interval_secs=0 to be rejected"),
-        Err(err) => {
-            let err_msg = format!("{err:#}");
-            assert!(
-                err_msg.contains("retry_interval_secs"),
-                "Error message should mention retry_interval_secs, got: {err_msg}"
-            );
-        }
+fn test_nats_retry_interval_below_one_second_rejected() {
+    // `500ms` is the case a zero check would miss: the setting now holds a
+    // `Duration`, so "below one second" is a wider set than "zero".
+    for field_line in [
+        "retry_interval: 0s",
+        "retry_interval: 500ms",
+        "retry_interval_secs: 0",
+    ] {
+        let err_msg = validate_config_with(field_line)
+            .expect_err(&format!("Expected `{field_line}` to be rejected"));
+        // Both spellings reach one setting, so the error names that setting
+        // rather than the key the user happened to type.
+        assert!(
+            err_msg.contains("`retry_interval`"),
+            "Error message should name `retry_interval`, got: {err_msg}"
+        );
     }
 }
 

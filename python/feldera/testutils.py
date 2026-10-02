@@ -457,7 +457,7 @@ def build_pipeline(
             # Covers node auto-provisioning: a pipeline that needs a fresh
             # node shape waits for node boot plus image pull, and parallel
             # test workers can request several fresh nodes at once.
-            provisioning_timeout_secs=300,
+            provisioning_timeout="300s",
             resources=resources,
             workers=FELDERA_TEST_NUM_WORKERS,
             hosts=FELDERA_TEST_NUM_HOSTS,

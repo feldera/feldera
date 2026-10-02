@@ -106,8 +106,8 @@ Feldera pipeline:
 
      - Change `model` to `"at_least_once"` or `"exactly_once"`.
 
-     - Optionally, change `"checkpoint_interval_secs"` to an automatic
-       checkpoint interval of your choice, in seconds. The default is 60 seconds. `null` will
+     - Optionally, change `"checkpoint_interval"` to an automatic
+       checkpoint interval of your choice, such as `"5m"`. The default is 60 seconds. `null` will
        disable automatic checkpoints.
 
      Then, click on the Apply button.  If clicking Apply does not
@@ -123,11 +123,11 @@ Feldera pipeline:
      ```
 
      Optionally, use the following command to change the automatic
-     checkpointing interval to `<seconds>` (use `0` for `<seconds>` to
-     disable automatic checkpoints):
+     checkpointing interval to `<duration>`, such as `5m` (use `null`
+     for `<duration>` to disable automatic checkpoints):
 
      ```
-     fda set-config <pipeline> checkpoint_interval <seconds>
+     fda set-config <pipeline> checkpoint_interval <duration>
      ```
 
 ## Writing checkpoints
