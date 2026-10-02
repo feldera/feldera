@@ -174,6 +174,20 @@ where
 
 pub type DynPrefix<TS> = DynDataTyped<Prefix<TS>>;
 
+// Hashing one of these from its archived form is not implemented: `FAITHFUL`
+// is false, so `archived_hash` answers `None` and the caller deserializes and
+// hashes that instead.  The trait is implemented all the same, because
+// `ArchivedDBData` requires it of every type.
+impl<TS> crate::dynamic::HashRepr for ArchivedPrefix<TS>
+where
+    TS: crate::DBData,
+{
+    const FAITHFUL: bool = false;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
+}
+
 #[cfg(test)]
 mod test {
     use rkyv::{Deserialize, Infallible, archived_root, to_bytes};

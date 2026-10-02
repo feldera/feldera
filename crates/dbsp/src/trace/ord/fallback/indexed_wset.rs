@@ -1,5 +1,6 @@
 use super::utils::{copy_to_builder, pick_merge_destination};
 use crate::storage::file::SerializerInner;
+use crate::storage::file::reader::RawItems;
 use crate::storage::file::{FilterKind, FilterStats, TouchedWindowCount};
 use crate::{
     DBWeight, Error, NumEntries,
@@ -25,7 +26,7 @@ use feldera_storage::{FileReader, StoragePath};
 use rand::Rng;
 use rkyv::{Archive, Archived, Deserialize, Fallible, Serialize, ser::Serializer};
 use size_of::SizeOf;
-use std::ops::Neg;
+use std::ops::{Neg, Range};
 use std::{
     fmt::{self, Debug},
     sync::Arc,
@@ -590,6 +591,50 @@ where
                 if *size >= *threshold {
                     self.inner = Self::spill(&self.factories, vec);
                 }
+            }
+        }
+    }
+
+    fn takes_raw_vals(&self) -> bool {
+        match &self.inner {
+            BuilderInner::File(file) => file.takes_raw_vals(),
+            BuilderInner::Vec(_) | BuilderInner::Threshold { .. } => false,
+        }
+    }
+
+    fn add_negative_weights(&mut self, n: u64) {
+        match &mut self.inner {
+            BuilderInner::File(file) => file.add_negative_weights(n),
+            // Only a file builder is ever given a raw run to account for.
+            BuilderInner::Vec(_) | BuilderInner::Threshold { .. } => {}
+        }
+    }
+
+    fn push_raw_vals(&mut self, items: &RawItems<'_>) -> usize {
+        match &mut self.inner {
+            // Only a file builder can take bytes; the other two hold decoded
+            // values, which is what `takes_raw_vals` reports.
+            BuilderInner::File(file) => file.push_raw_vals(items),
+            BuilderInner::Vec(_) | BuilderInner::Threshold { .. } => {
+                panic!("push_raw_vals on a builder writing in memory: ask takes_raw_vals first")
+            }
+        }
+    }
+
+    fn takes_raw_keys(&self) -> bool {
+        match &self.inner {
+            BuilderInner::File(file) => file.takes_raw_keys(),
+            BuilderInner::Vec(_) | BuilderInner::Threshold { .. } => false,
+        }
+    }
+
+    fn push_raw_key(&mut self, item: &RawItems<'_>, row_group: Range<u64>) -> bool {
+        match &mut self.inner {
+            // As with the values: only a file builder can take bytes, which
+            // is what `takes_raw_keys` reports.
+            BuilderInner::File(file) => file.push_raw_key(item, row_group),
+            BuilderInner::Vec(_) | BuilderInner::Threshold { .. } => {
+                panic!("push_raw_key on a builder writing in memory: ask takes_raw_keys first")
             }
         }
     }

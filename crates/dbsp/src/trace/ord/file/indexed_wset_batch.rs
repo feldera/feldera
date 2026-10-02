@@ -13,7 +13,7 @@ use crate::{
         buffer_cache::CacheStats,
         file::{
             Factories as FileFactories, FilterPlan,
-            reader::{BulkRows, Cursor as FileCursor, Error as ReaderError, Reader},
+            reader::{BulkRows, Cursor as FileCursor, Error as ReaderError, RawItems, Reader},
             writer::Writer2,
         },
     },
@@ -717,14 +717,20 @@ where
         }
     }
 
+    /// Inlined on purpose.  This speeds up the merger's hot path.
+    #[inline]
     fn move_key<F>(&mut self, op: F)
     where
         F: Fn(&mut KeyCursor<'s, K, V, R>) -> Result<(), ReaderError>,
     {
         op(&mut self.key_cursor).unwrap_storage();
+        // The value column's factories are the ones the cursor being replaced
+        // is already holding, so this asks for the new key's rows and keeps
+        // the rest.  Resolving them afresh means four `dyn Any` downcasts a
+        // key, which a merge does once for every key it reads.
         self.val_cursor = unsafe {
             self.key_cursor
-                .next_column()
+                .next_column_like(self.val_cursor.row_group())
                 .unwrap_storage()
                 .first_with_hint(&self.val_cursor)
                 .unwrap_storage()
@@ -751,6 +757,44 @@ where
 
     fn key(&self) -> &K {
         self.key_cursor.key().unwrap()
+    }
+
+    fn archived_key(&self) -> Option<&K::Archived> {
+        self.key_cursor.archived_key()
+    }
+
+    fn raw_values(&self) -> Option<RawItems<'_>> {
+        self.val_cursor.raw_run()
+    }
+
+    fn negative_weights(&mut self, n: u64) -> u64 {
+        if TypeId::of::<R>() != TypeId::of::<DynZWeight>() {
+            // Nothing counts these, so nothing need read them.
+            return 0;
+        }
+        if self.wset.metadata().negative_weight_count == 0 {
+            // Shortcut if we know the entire batch doesn't have any negative weights.
+            return 0;
+        }
+        let mut count = 0;
+        for offset in 0..n {
+            if !unsafe { self.val_cursor.aux_at(offset, self.diff.as_mut()) } {
+                break;
+            }
+            if is_counted_negative(self.diff.as_ref()) {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    fn take_values(&mut self, n: u64) {
+        let to = self.val_cursor.relative_position() + n;
+        unsafe { self.val_cursor.move_to_row(to) }.unwrap_storage();
+    }
+
+    fn raw_key(&self) -> Option<(RawItems<'_>, Range<u64>)> {
+        self.key_cursor.raw_item_with_row_group()
     }
 
     fn val(&self) -> &V {
@@ -902,12 +946,75 @@ where
     R: WeightTrait + ?Sized,
 {
     fn update_stats(&mut self, weight: &R) {
-        if TypeId::of::<R>() == TypeId::of::<DynZWeight>()
-            && unsafe { *weight.downcast::<ZWeight>() } < 0
-        {
+        if is_counted_negative(weight) {
             self.stats.negative_weight_count += 1;
         }
     }
+}
+
+/// Whether `weight` is a negative ZWeight.
+///
+/// # Arguments
+///
+/// * `weight` - the weight to test.
+///
+/// # Returns
+///
+/// True for a negative `ZWeight`, false for every other weight and type.
+fn is_counted_negative<R>(weight: &R) -> bool
+where
+    R: WeightTrait + ?Sized,
+{
+    TypeId::of::<R>() == TypeId::of::<DynZWeight>() && unsafe { *weight.downcast::<ZWeight>() } < 0
+}
+
+/// The touched-window counter to give a builder over keys of type `K`, or
+/// `None` where one would never record anything.
+///
+/// [`TouchedWindowCounter::push_key`] gives up on the first key of a type
+/// that cannot be roaring-encoded, so a counter for such a type is dead
+/// weight.  Asking the type here rather than waiting for its first key is
+/// what lets a merge that copies its keys, and so decodes none of them, tell
+/// that there is no counter left to feed.
+fn touched_window_counter<K, V, R>(
+    factories: &FileIndexedWSetFactories<K, V, R>,
+) -> Option<TouchedWindowCounter>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    if !collect_roaring_metadata() {
+        return None;
+    }
+    let mut roaring = false;
+    factories
+        .key_factory()
+        .with(&mut |key: &mut K| roaring = key.supports_roaring32());
+    roaring.then(TouchedWindowCounter::default)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Values a merge has copied into a file batch as bytes.
+    ///
+    /// A splice that quietly stopped engaging would leave every test passing and
+    /// every merge slow, which is how the plumbing for it was wrong the first
+    /// time: the fallback builder took the values and pushed them one at a time
+    /// without saying so. `a_merge_splices_values_it_does_not_have_to_decode`
+    /// watches this.
+    pub(crate) static SPLICED_VALUES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many keys went in as bytes, for the same reason.
+    ///
+    /// Per thread, not global: the suite runs its tests in parallel, and a
+    /// test that asserts a merge copied *nothing* can only do so against a
+    /// count no other test contributes to.  A merge runs on the thread that
+    /// drives it, which is the thread that reads this.
+    pub(crate) static SPLICED_KEYS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 impl<K, V, R> Builder<FileIndexedWSet<K, V, R>> for FileIndexedWSetBuilder<K, V, R>
@@ -938,7 +1045,7 @@ where
             weight: factories.weight_factory().default_box(),
             num_tuples: 0,
             stats: BatchMetadata::default(),
-            touched_window_counter: collect_roaring_metadata().then(TouchedWindowCounter::default),
+            touched_window_counter: touched_window_counter(factories),
         }
     }
 
@@ -975,7 +1082,7 @@ where
             weight: factories.weight_factory().default_box(),
             num_tuples: 0,
             stats: BatchMetadata::default(),
-            touched_window_counter: collect_roaring_metadata().then(TouchedWindowCounter::default),
+            touched_window_counter: touched_window_counter(factories),
         }
     }
 
@@ -1001,6 +1108,44 @@ where
     fn push_val(&mut self, val: &V) {
         self.writer.write1((val, &*self.weight)).unwrap_storage();
         self.num_tuples += 1;
+    }
+
+    fn takes_raw_vals(&self) -> bool {
+        true
+    }
+
+    fn takes_raw_keys(&self) -> bool {
+        // The counter is the one thing this builder needs a key for that a
+        // copy cannot give it; see `push_raw_key`.
+        self.touched_window_counter.is_none()
+    }
+
+    fn push_raw_key(&mut self, item: &RawItems<'_>, row_group: Range<u64>) -> bool {
+        assert!(
+            self.touched_window_counter.is_none(),
+            "push_raw_key on a builder whose touched-window counter needs the key itself: \
+             ask takes_raw_keys first"
+        );
+        let boundaries = [row_group.start, row_group.end];
+        let taken = self.writer.write0_raw(item, &boundaries).unwrap_storage();
+        #[cfg(test)]
+        SPLICED_KEYS.with(|count| count.set(count.get() + taken));
+        taken > 0
+    }
+
+    fn add_negative_weights(&mut self, n: u64) {
+        self.stats.negative_weight_count += n;
+    }
+
+    fn push_raw_vals(&mut self, items: &RawItems<'_>) -> usize {
+        // The weights ride along in the bytes and are never decoded here, so
+        // the caller counts the negative ones and reports them through
+        // `add_negative_weights`.
+        let taken = self.writer.write1_raw(items).unwrap_storage();
+        self.num_tuples += taken;
+        #[cfg(test)]
+        SPLICED_VALUES.with(|count| count.set(count.get() + taken));
+        taken
     }
 
     fn push_time_diff(&mut self, _time: &(), weight: &R) {

@@ -495,6 +495,10 @@ where
         self.cursor.key().unwrap()
     }
 
+    fn archived_key(&self) -> Option<&K::Archived> {
+        self.cursor.archived_key()
+    }
+
     fn val(&self) -> &DynUnit {
         &()
     }

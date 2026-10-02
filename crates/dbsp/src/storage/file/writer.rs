@@ -5,7 +5,7 @@
 //! struct, which is easily done, or mark the currently private `Writer` as
 //! `pub`.
 use super::format::Compression;
-use super::{AnyFactories, BatchKeyFilter, Factories, reader::Reader};
+use super::{AnyFactories, BatchKeyFilter, Factories, reader::RawItems, reader::Reader};
 use crate::storage::{
     backend::{BlockLocation, FileReader, FileWriter, StorageBackend, StorageError},
     buffer_cache::{BufferCache, FBuf, FBufSerializer, LimitExceeded},
@@ -424,6 +424,34 @@ impl ColumnWriter {
         }
         Ok(())
     }
+
+    /// Appends as many of `items` as the open data block will hold, and
+    /// returns how many it appended.
+    ///
+    /// Appending fewer than all of them means the block filled up.  This then
+    /// writes that block out and clears the builder, so a caller that passes
+    /// the rest in again appends them to an empty block.
+    fn add_raw_items<K, A>(
+        &mut self,
+        block_writer: &mut BlockWriter,
+        items: &RawItems<'_>,
+        row_groups: Option<(&[u64], i64)>,
+        serializer: &mut SerializerInner,
+    ) -> Result<usize, StorageError>
+    where
+        K: DataTrait + ?Sized,
+        A: DataTrait + ?Sized,
+    {
+        let mut taken = self.data_block.try_add_raw_items::<K, A>(items, row_groups);
+        if taken < items.roots.len() && !self.data_block.is_empty() {
+            let data_block = self.data_block.build::<K, A>();
+            self.write_data_block::<K, A>(block_writer, data_block, serializer)?;
+            if taken == 0 {
+                taken = self.data_block.try_add_raw_items::<K, A>(items, row_groups);
+            }
+        }
+        Ok(taken)
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -583,6 +611,143 @@ impl DataBlockBuilder {
 
         Ok(())
     }
+    /// Copies as many of `items` into this block as will fit, without decoding
+    /// any of them, and returns how many it took.
+    ///
+    /// The bytes are moved verbatim, so every relative pointer inside them
+    /// still points where it did; what has to be re-established is alignment,
+    /// which the leading pad does by putting the run back in the phase it was
+    /// written in.  A column whose rows have row groups can be spliced only
+    /// where the caller brings them, since a row group names rows in the next
+    /// column by absolute number and those numbers change when a run moves.
+    fn try_add_raw_items<K, A>(
+        &mut self,
+        items: &RawItems<'_>,
+        row_groups: Option<(&[u64], i64)>,
+    ) -> usize
+    where
+        K: DataTrait + ?Sized,
+        A: DataTrait + ?Sized,
+    {
+        if items.roots.is_empty() {
+            return 0;
+        }
+        match row_groups {
+            // A column whose rows have row groups can only be spliced if the
+            // caller brings them; one whose rows have none must not be given
+            // any.
+            Some((boundaries, _)) if boundaries.len() != items.roots.len() + 1 => return 0,
+            None if !self.row_groups.is_empty() => return 0,
+            _ => {}
+        }
+        let root_size = self
+            .factories
+            .item_factory::<K, A>()
+            .archived_layout()
+            .size();
+        let room = self.parameters.max_branch()
+            - self.value_offsets.len().min(self.parameters.max_branch());
+        if room == 0 {
+            return 0;
+        }
+
+        let pad = (items.phase + items.align - self.raw.len() % items.align) % items.align;
+        let start = self.raw.len() + pad;
+
+        // Take only what the block has room for, so that the check below, which
+        // has to build the block's layout to be exact, rarely has to give
+        // anything back.
+        let mut count = items.roots.len().min(room);
+        if self.size_target.is_none() {
+            // A block sets its size target from its first `min_branch` items,
+            // so until it has them there is no budget to measure a run
+            // against.  Take it that far and no further; the caller asks again
+            // with the rest, by which time the target is set.
+            count = count.min(
+                self.parameters
+                    .min_branch
+                    .saturating_sub(self.value_offsets.len())
+                    .max(1),
+            );
+        } else if let Some(size_target) = self.size_target {
+            let budget = size_target.saturating_sub(self.specs().len + pad);
+            count = count.min(
+                items
+                    .roots
+                    .partition_point(|&offset| offset + root_size <= budget),
+            );
+        }
+        if count == 0 {
+            return 0;
+        }
+
+        let old_len = self.raw.len();
+        let old_stride = self.value_offset_stride;
+        self.raw.resize(start, 0);
+        self.raw
+            .extend_from_slice(&items.bytes[..items.roots[count - 1] + root_size]);
+        for &offset in &items.roots[..count] {
+            self.value_offsets.push(start + offset);
+            self.value_offset_stride.push(start + offset);
+        }
+        let old_row_groups = self.row_groups.0.len();
+        if let Some((boundaries, delta)) = row_groups {
+            // The run's rows now sit `delta` further along the next column, so
+            // every boundary moves by the same amount and the ranges stay
+            // consecutive.
+            let shift = |row: u64| (row as i64 + delta) as u64;
+            for pair in boundaries[..=count].windows(2) {
+                self.row_groups.push(&(shift(pair[0])..shift(pair[1])));
+            }
+        }
+
+        // The estimate above ignores how much the value map itself grows, so
+        // confirm the block still fits and hand back the tail if it does not.
+        if let Some(size_target) = self.size_target {
+            let wanted = count;
+            while count > 0 && self.specs().len > size_target {
+                count -= 1;
+                self.value_offsets.pop();
+                if row_groups.is_some() {
+                    self.row_groups.pop();
+                }
+                self.raw.resize(
+                    if count == 0 {
+                        old_len
+                    } else {
+                        start + items.roots[count - 1] + root_size
+                    },
+                    0,
+                );
+            }
+            if count == 0 {
+                self.raw.resize(old_len, 0);
+                self.value_offset_stride = old_stride;
+                self.row_groups.0.truncate(old_row_groups);
+                return 0;
+            }
+            if count < wanted {
+                // Popping cannot be undone on the stride builder, so rebuild
+                // it -- but only where something was popped.  Rebuilding on
+                // every call costs the block's items over again each time,
+                // which is a run's length squared for a caller that splices
+                // one item at a time.
+                self.value_offset_stride = StrideBuilder::new();
+                for &offset in &self.value_offsets {
+                    self.value_offset_stride.push(offset);
+                }
+            }
+        } else if self.value_offsets.len() >= self.parameters.min_branch {
+            self.size_target = Some(
+                self.specs()
+                    .len
+                    .next_multiple_of(512)
+                    .max(self.parameters.min_data_block),
+            );
+        }
+        count
+    }
+
     fn add_item<K, A>(
         &mut self,
         item: (&K, &A),
@@ -721,6 +886,9 @@ impl ContiguousRanges {
     }
     fn clear(&mut self) {
         self.0.clear();
+    }
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
     fn push(&mut self, range: &Range<u64>) {
         match self.0.last() {
@@ -1193,6 +1361,7 @@ struct Writer {
     cache: fn() -> Option<Arc<BufferCache>>,
     writer: BlockWriter,
     key_filter: Option<BatchKeyFilter>,
+
     cws: Vec<ColumnWriter>,
     finished_columns: Vec<FileTrailerColumn>,
     serializer: SerializerInner,
@@ -1253,6 +1422,126 @@ impl Writer {
         // Add `value` to row group for column.
         self.cws[column].rows.end += 1;
         self.cws[column].add_item(&mut self.writer, item, &row_group, &mut self.serializer)
+    }
+
+    /// Whether keys written to `column` can be recorded in this file's
+    /// membership filter without decoding them.
+    ///
+    /// Both halves of the answer are properties of the file and the key type,
+    /// not of any key: a filter that wants the key itself rather than a hash
+    /// of it can never be fed this way, and whether an archived key
+    /// reproduces the decoded key's hash is fixed for the type.
+    fn can_hash_keys<K>(&self, column: usize) -> bool
+    where
+        K: DataTrait + ?Sized,
+    {
+        let Some(filter) = &self.key_filter else {
+            return true;
+        };
+        filter.takes_hashes()
+            && self.cws[column]
+                .factories
+                .key_factory::<K>()
+                .supports_archived_hash()
+    }
+
+    /// Appends a run of already-encoded items to `column`, returning how many
+    /// were appended.
+    ///
+    /// Appending fewer than all of them leaves the rest for another call.  A
+    /// column other than the last stores, with each of its items, the range of
+    /// rows in the next column that belong to it.  Those rows sit elsewhere in
+    /// this file than in the file the run came from, so the caller hands over
+    /// the source's boundaries and this rebases them onto the rows already
+    /// written to the next column.
+    ///
+    /// # Arguments
+    ///
+    /// * `column` - the column to append to.
+    /// * `items` - the run, encoded as the source file stored it.
+    /// * `boundaries` - the run's row groups in the source file, as the
+    ///   `n + 1` rows that bound its `n` items; `None` for the last column,
+    ///   which has no next column to name.  The run's rows must already have
+    ///   been written to the next column.
+    ///
+    /// # Returns
+    ///
+    /// How many items were appended, which is none of them when this file's
+    /// membership filter cannot be fed from the keys as they are stored.
+    pub fn write_raw<K, A>(
+        &mut self,
+        column: usize,
+        items: &RawItems<'_>,
+        boundaries: Option<&[u64]>,
+    ) -> Result<usize, StorageError>
+    where
+        K: DataTrait + ?Sized,
+        A: DataTrait + ?Sized,
+    {
+        // The filter must record every key, so refuse a run whose keys cannot
+        // be hashed without decoding.
+        let feeds_filter = column == 0 && self.key_filter.is_some();
+        if feeds_filter && !self.can_hash_keys::<K>(column) {
+            return Ok(0);
+        }
+        let last = column + 1 == self.n_columns();
+        assert_eq!(
+            last,
+            boundaries.is_none(),
+            "column {column} of {} needs row groups iff it is not the last",
+            self.n_columns(),
+        );
+
+        // The run's rows have already been written to the next column, where
+        // they sit at that column's pending range; the whole run therefore
+        // moves by the distance between there and where it sat in the file it
+        // came from.
+        let pending = (!last).then(|| self.cws[column + 1].take_rows());
+        let row_groups = boundaries.map(|boundaries| {
+            let pending = pending.as_ref().unwrap();
+            assert!(
+                pending.end - pending.start >= boundaries[boundaries.len() - 1] - boundaries[0],
+                "the run's rows were not written to the next column first",
+            );
+            (boundaries, pending.start as i64 - boundaries[0] as i64)
+        });
+
+        let taken = self.cws[column].add_raw_items::<K, A>(
+            &mut self.writer,
+            items,
+            row_groups,
+            &mut self.serializer,
+        )?;
+        self.cws[column].rows.end += taken as u64;
+        if feeds_filter {
+            // Only what was taken: the rest is offered again next call, and
+            // is hashed then rather than now.
+            let key_factory = self.cws[column].factories.key_factory::<K>();
+            let filter = self.key_filter.as_mut().expect("the file has a filter");
+            for &root in &items.roots[..taken] {
+                // SAFETY: `root` is where the source block put this item, and
+                // `items.bytes` is that block's bytes; `raw_items` produced
+                // the two together.
+                let archived = unsafe { key_factory.archived_value(items.bytes, root) };
+                let hash = archived
+                    .archived_hash()
+                    .expect("the key type answered before the run was written");
+                let recorded = filter.push_hash(hash);
+                debug_assert!(
+                    recorded,
+                    "the filter took hashes before the run was written"
+                );
+            }
+        }
+        if let (Some(boundaries), Some(pending)) = (boundaries, pending) {
+            // What the run did not claim stays pending for the next call,
+            // counted in this file's rows rather than the source's.  That is
+            // both the rows of whatever items were not taken and any rows
+            // written ahead of this run.
+            let consumed = boundaries[taken] - boundaries[0];
+            self.cws[column + 1].rows = (pending.start + consumed)..pending.end;
+        }
+        Ok(taken)
     }
 
     pub fn finish_column<K, A>(
@@ -1698,6 +1987,45 @@ where
         self.inner.write(1, item)
     }
 
+    /// Appends a run of already-encoded column-1 items and returns how many
+    /// were taken, which may be fewer than offered; the caller asks again with
+    /// the rest.
+    ///
+    /// The caller keeps the ordering that [`write1`](Self::write1) checks for
+    /// itself, because these items are never decoded.
+    pub fn write1_raw(&mut self, items: &RawItems<'_>) -> Result<usize, StorageError> {
+        self.inner.write_raw::<K1, A1>(1, items, None)
+    }
+
+    /// Appends a run of already-encoded column-0 items, whose column-1 rows
+    /// must already have been written, and returns how many were taken.
+    ///
+    /// `boundaries` are the run's row groups as the `n + 1` rows between them,
+    /// which for the single key a merge writes at a time is the two ends of
+    /// the row group that key names.
+    ///
+    /// Returns zero for a file whose key filter needs the keys themselves
+    /// rather than hashes of them, or whose key type cannot be hashed from
+    /// its archived form: such a filter cannot be fed from a run that is
+    /// never decoded, and a file whose filter is missing keys answers a query
+    /// wrongly.  The caller rewrites the run instead.
+    pub fn write0_raw(
+        &mut self,
+        items: &RawItems<'_>,
+        boundaries: &[u64],
+    ) -> Result<usize, StorageError> {
+        // Column 1's order restarts under each key, which is why
+        // [`write0`](Self::write0) forgets the last value it saw.  A key that
+        // goes in this way is never decoded, so there is no key to remember
+        // either; both checks resume with the next decoded item.
+        #[cfg(debug_assertions)]
+        {
+            self.prev0 = None;
+            self.prev1 = None;
+        }
+        self.inner.write_raw::<K0, A0>(0, items, Some(boundaries))
+    }
+
     /// Returns the number of calls to [`write0`](Self::write0) so far.
     pub fn n_rows(&self) -> u64 {
         self.inner.n_rows()
@@ -1780,5 +2108,450 @@ where
         super::reader::Error,
     > {
         self.into_reader_impl(metadata)
+    }
+}
+
+#[cfg(test)]
+mod splice_test {
+    //! Does copying a run of encoded items from one block to another preserve
+    //! them exactly?
+    //!
+    //! The copy rewrites nothing, so the question is whether rkyv's relative
+    //! pointers and alignment survive the move.  These tests build a block the
+    //! ordinary way, splice runs out of it into a second block, and read the
+    //! second block back, which is the only check that matters: if a pointer
+    //! or an alignment were wrong, the values would come back wrong or the
+    //! read would fault.
+
+    use std::sync::Arc;
+
+    use feldera_storage::fbuf::FBuf;
+
+    use super::{DataBlockBuilder, Parameters};
+    use crate::storage::file::SerializerInner;
+    use crate::{
+        dynamic::{DynData, Erase},
+        storage::{
+            backend::BlockLocation,
+            file::{Factories, format::VERSION_NUMBER, reader::DataBlock as ReadBlock},
+        },
+    };
+
+    type K = String;
+    type A = i64;
+
+    fn factories() -> Factories<DynData, DynData> {
+        Factories::<DynData, DynData>::new::<K, A>()
+    }
+
+    /// A key whose encoded length varies with `i`, so the run being copied is
+    /// not a uniform stride and every item lands at its own alignment.
+    fn key(i: usize) -> K {
+        format!("key-{i:04}-{}", "x".repeat(i % 17))
+    }
+
+    fn aux(i: usize) -> A {
+        (i as i64) * 1_000 - 7
+    }
+
+    /// Builds one data block holding items `0..n`.
+    fn build_raw(n: usize, parameters: &Arc<Parameters>) -> FBuf {
+        let factories = factories();
+        let mut builder = DataBlockBuilder::new(&factories.any_factories(), parameters);
+        let mut serializer = SerializerInner::new();
+        for i in 0..n {
+            let (mut k, mut a) = (key(i), aux(i));
+            builder
+                .try_add_item::<DynData, DynData>(
+                    (k.erase_mut(), a.erase_mut()),
+                    &None,
+                    &mut serializer,
+                )
+                .expect("the test block is sized to hold every item");
+        }
+        builder.build::<DynData, DynData>().raw
+    }
+
+    fn one_block(n: usize, parameters: &Arc<Parameters>) -> ReadBlock<DynData, DynData> {
+        read_back(build_raw(n, parameters))
+    }
+
+    fn read_back(raw: FBuf) -> ReadBlock<DynData, DynData> {
+        read_back_as(raw, VERSION_NUMBER)
+    }
+
+    fn read_back_as(raw: FBuf, version: u32) -> ReadBlock<DynData, DynData> {
+        let location = BlockLocation {
+            offset: 0,
+            size: raw.len(),
+        };
+        ReadBlock::from_raw(Arc::new(raw), location, 0, version)
+            .expect("a block this writer just built should read back")
+    }
+
+    fn items_of(block: &ReadBlock<DynData, DynData>, n: usize) -> Vec<(K, A)> {
+        let factories = factories();
+        (0..n)
+            .map(|i| {
+                let (mut k, mut a) = (K::default(), A::default());
+                unsafe { block.item(&factories, i, (k.erase_mut(), a.erase_mut())) };
+                (k, a)
+            })
+            .collect()
+    }
+
+    /// Copies `first..=last` of `source` into a fresh block and reads it back.
+    fn splice(
+        source: &ReadBlock<DynData, DynData>,
+        first: usize,
+        last: usize,
+        parameters: &Arc<Parameters>,
+    ) -> (ReadBlock<DynData, DynData>, usize) {
+        let factories = factories();
+        let mut builder = DataBlockBuilder::new(&factories.any_factories(), parameters);
+        let mut taken = 0;
+        while taken <= last - first {
+            let rest = source
+                .raw_items(&factories, first + taken, last)
+                .expect("a block this version wrote can be spliced");
+            let more = builder.try_add_raw_items::<DynData, DynData>(&rest, None);
+            if more == 0 {
+                break;
+            }
+            taken += more;
+        }
+        (read_back(builder.build::<DynData, DynData>().raw), taken)
+    }
+
+    fn parameters() -> Arc<Parameters> {
+        Arc::new(Parameters {
+            min_data_block: 1 << 20,
+            ..Parameters::default()
+        })
+    }
+
+    #[test]
+    fn a_spliced_run_reads_back_unchanged() {
+        let parameters = parameters();
+        let source = one_block(64, &parameters);
+        for (first, last) in [(0, 0), (0, 63), (1, 1), (5, 20), (63, 63), (31, 32)] {
+            let (spliced, taken) = splice(&source, first, last, &parameters);
+            assert_eq!(
+                taken,
+                last - first + 1,
+                "run {first}..={last} was cut short"
+            );
+            let expected: Vec<_> = (first..=last).map(|i| (key(i), aux(i))).collect();
+            assert_eq!(
+                items_of(&spliced, taken),
+                expected,
+                "run {first}..={last} came back changed"
+            );
+        }
+    }
+
+    #[test]
+    fn a_splice_survives_every_starting_phase() {
+        // The destination pads itself into the source's alignment phase.  Vary
+        // how much is already in the destination so that every phase is tried,
+        // which is the case a wrong pad would get wrong.
+        let parameters = parameters();
+        let source = one_block(32, &parameters);
+        let factories = factories();
+        for prefix in 0..16 {
+            let items = source.raw_items(&factories, 8, 23).unwrap();
+            let mut builder = DataBlockBuilder::new(&factories.any_factories(), &parameters);
+            let mut serializer = SerializerInner::new();
+            for i in 0..prefix {
+                let (mut k, mut a) = (format!("pre{i}"), -(i as i64));
+                builder
+                    .try_add_item::<DynData, DynData>(
+                        (k.erase_mut(), a.erase_mut()),
+                        &None,
+                        &mut serializer,
+                    )
+                    .unwrap();
+            }
+            let taken = builder.try_add_raw_items::<DynData, DynData>(&items, None);
+            assert_eq!(taken, 16, "prefix {prefix}: the splice was cut short");
+
+            // Reading a misaligned integer gives the right answer on this
+            // hardware, so comparing values back cannot catch a bad pad.  The
+            // invariant itself is what must hold: every root has to sit at the
+            // same offset modulo its alignment as it did where it was written.
+            //
+            // For an ordinary item the pad this asserts on comes out zero, and
+            // not by luck: a root's size is a multiple of its alignment, so a
+            // block's length after any item is a multiple of it too, and both
+            // ends of the copy are therefore already in phase.  The pad earns
+            // its keep only for a root aligned more coarsely than the block
+            // header is long.
+            for (n, &root) in items.roots.iter().enumerate() {
+                assert_eq!(
+                    builder.value_offsets[prefix + n] % items.align,
+                    (items.phase + root) % items.align,
+                    "prefix {prefix}: root {n} moved to a different alignment"
+                );
+            }
+            let block = read_back(builder.build::<DynData, DynData>().raw);
+            let got = items_of(&block, prefix + taken);
+            for (n, i) in (8..24).enumerate() {
+                assert_eq!(
+                    got[prefix + n],
+                    (key(i), aux(i)),
+                    "prefix {prefix}: item {i} came back changed"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_run_bigger_than_the_block_is_taken_in_part() {
+        // A block that can hold only a few items must take a prefix of the run
+        // and say so, rather than overrun its size target or refuse outright.
+        let small = Arc::new(Parameters {
+            min_data_block: 4096,
+            min_branch: 2,
+            ..Parameters::default()
+        });
+        let source = one_block(200, &parameters());
+        let (spliced, taken) = splice(&source, 0, 199, &small);
+        assert!(taken > 0, "nothing was taken");
+        assert!(taken < 200, "a 4 KiB block should not hold all 200 items");
+        let expected: Vec<_> = (0..taken).map(|i| (key(i), aux(i))).collect();
+        assert_eq!(items_of(&spliced, taken), expected);
+    }
+
+    /// An aux type aligned more coarsely than the block header is long, which
+    /// is the only case where the splice's pad is not zero.
+    type WideA = u128;
+
+    fn wide_factories() -> Factories<DynData, DynData> {
+        Factories::<DynData, DynData>::new::<K, WideA>()
+    }
+
+    fn wide_aux(i: usize) -> WideA {
+        ((i as u128) << 64) | 0x0123_4567_89AB_CDEF
+    }
+
+    /// One block of `n` coarsely aligned items, and the same read back.
+    fn one_wide_block(n: usize, parameters: &Arc<Parameters>) -> ReadBlock<DynData, DynData> {
+        let factories = wide_factories();
+        let mut builder = DataBlockBuilder::new(&factories.any_factories(), parameters);
+        let mut serializer = SerializerInner::new();
+        for i in 0..n {
+            let (mut k, mut a) = (key(i), wide_aux(i));
+            builder
+                .try_add_item::<DynData, DynData>(
+                    (k.erase_mut(), a.erase_mut()),
+                    &None,
+                    &mut serializer,
+                )
+                .expect("the test block is sized to hold every item");
+        }
+        read_back(builder.build::<DynData, DynData>().raw)
+    }
+
+    fn wide_items_of(block: &ReadBlock<DynData, DynData>, n: usize) -> Vec<(K, WideA)> {
+        let factories = wide_factories();
+        (0..n)
+            .map(|i| {
+                let (mut k, mut a) = (K::default(), WideA::default());
+                unsafe { block.item(&factories, i, (k.erase_mut(), a.erase_mut())) };
+                (k, a)
+            })
+            .collect()
+    }
+
+    /// The same invariant as [`a_splice_survives_every_starting_phase`], over
+    /// a root aligned to sixteen rather than eight.
+    ///
+    /// No type in the tree can make the pad itself non-zero: a data block
+    /// header is 32 bytes, a root's size is a multiple of its alignment, and
+    /// every alignment in use divides 32, so both ends of a copy are always
+    /// in phase already.  It would take a root aligned to more than 32 to
+    /// change that.  What this pins down is that the arithmetic holds as the
+    /// alignment widens -- if a coarser type ever arrives, the pad goes live
+    /// and these are the assertions that will catch it getting the offset
+    /// wrong.
+    #[test]
+    fn a_coarsely_aligned_splice_keeps_its_phase() {
+        let parameters = parameters();
+        let source = one_wide_block(32, &parameters);
+        let factories = wide_factories();
+        let mut pads = Vec::new();
+
+        for prefix in 0..16 {
+            let items = source.raw_items(&factories, 8, 23).unwrap();
+            assert!(
+                items.align >= 16,
+                "this test needs a root aligned more coarsely than eight; got {}",
+                items.align,
+            );
+
+            let mut builder = DataBlockBuilder::new(&factories.any_factories(), &parameters);
+            let mut serializer = SerializerInner::new();
+            for i in 0..prefix {
+                let (mut k, mut a) = (format!("pre{i}"), wide_aux(i + 900));
+                builder
+                    .try_add_item::<DynData, DynData>(
+                        (k.erase_mut(), a.erase_mut()),
+                        &None,
+                        &mut serializer,
+                    )
+                    .unwrap();
+            }
+
+            let before = builder.raw.len();
+            let taken = builder.try_add_raw_items::<DynData, DynData>(&items, None);
+            assert_eq!(taken, 16, "prefix {prefix}: the splice was cut short");
+            pads.push((items.phase + items.align - before % items.align) % items.align);
+
+            for (n, &root) in items.roots.iter().enumerate() {
+                assert_eq!(
+                    builder.value_offsets[prefix + n] % items.align,
+                    (items.phase + root) % items.align,
+                    "prefix {prefix}: root {n} moved to a different alignment",
+                );
+            }
+
+            let block = read_back(builder.build::<DynData, DynData>().raw);
+            let got = wide_items_of(&block, prefix + taken);
+            for (n, i) in (8..24).enumerate() {
+                assert_eq!(
+                    got[prefix + n],
+                    (key(i), wide_aux(i)),
+                    "prefix {prefix}: item {i} came back changed",
+                );
+            }
+        }
+
+        // Recorded rather than asserted non-zero: see the note above on why
+        // nothing in the tree can produce a pad today.
+        assert!(
+            pads.iter().all(|&pad| pad % 16 == 0),
+            "a pad left the run out of phase: {pads:?}",
+        );
+    }
+
+    /// A block that has taken what it can takes nothing more, rather than
+    /// looping or overrunning its target.
+    ///
+    /// The merge asks again with the rest of the run and falls back to
+    /// pushing values one at a time when it is told zero, so a block that
+    /// kept answering with a short count would spin.
+    #[test]
+    fn a_filled_block_takes_nothing_more_of_a_run() {
+        let small = Arc::new(Parameters {
+            min_data_block: 4096,
+            min_branch: 2,
+            ..Parameters::default()
+        });
+        let factories = factories();
+        let source = one_block(200, &parameters());
+
+        let mut builder = DataBlockBuilder::new(&factories.any_factories(), &small);
+        let mut taken = 0;
+        let mut calls = 0;
+        loop {
+            let rest = source.raw_items(&factories, taken, 199).unwrap();
+            let more = builder.try_add_raw_items::<DynData, DynData>(&rest, None);
+            calls += 1;
+            if more == 0 {
+                break;
+            }
+            taken += more;
+            assert!(calls < 200, "the block never stopped taking items");
+        }
+
+        assert!(taken > 0, "nothing was taken at all");
+        assert!(taken < 200, "a 4 KiB block should not hold all 200 items");
+        // Asking once more changes nothing: the answer stays zero.
+        let rest = source.raw_items(&factories, taken, 199).unwrap();
+        assert_eq!(
+            builder.try_add_raw_items::<DynData, DynData>(&rest, None),
+            0,
+            "a full block took more when asked a second time",
+        );
+
+        let block = read_back(builder.build::<DynData, DynData>().raw);
+        let expected: Vec<_> = (0..taken).map(|i| (key(i), aux(i))).collect();
+        assert_eq!(items_of(&block, taken), expected);
+    }
+
+    /// A value too big for the block size still goes in, by growing the block
+    /// around it; one offered to a block that has already set its target is
+    /// refused instead, so the caller can finish that block and start another.
+    #[test]
+    fn a_value_larger_than_the_block_size_is_taken_only_by_an_empty_block() {
+        // Much larger than `min_data_block`, so no ordinary block holds it.
+        const HUGE: usize = 200_000;
+        let small = Arc::new(Parameters {
+            min_data_block: 4096,
+            min_branch: 2,
+            ..Parameters::default()
+        });
+        let factories = factories();
+
+        let roomy = Arc::new(Parameters {
+            min_data_block: 1 << 20,
+            ..Parameters::default()
+        });
+        let mut builder = DataBlockBuilder::new(&factories.any_factories(), &roomy);
+        let mut serializer = SerializerInner::new();
+        for i in 0..3 {
+            let (mut k, mut a) = (format!("{i:04}{}", "y".repeat(HUGE)), aux(i));
+            builder
+                .try_add_item::<DynData, DynData>(
+                    (k.erase_mut(), a.erase_mut()),
+                    &None,
+                    &mut serializer,
+                )
+                .unwrap();
+        }
+        let source = read_back(builder.build::<DynData, DynData>().raw);
+
+        // A fresh block has no size target yet -- it sets one from its first
+        // `min_branch` items -- so it takes them however big they are and
+        // sizes itself around them.
+        let items = source.raw_items(&factories, 0, 2).unwrap();
+        let mut fresh = DataBlockBuilder::new(&factories.any_factories(), &small);
+        let taken = fresh.try_add_raw_items::<DynData, DynData>(&items, None);
+        assert_eq!(
+            taken, small.min_branch,
+            "an empty block must take its first `min_branch` values however big",
+        );
+        let raw = fresh.build::<DynData, DynData>().raw;
+        assert!(
+            raw.len() > small.min_data_block,
+            "the block did not grow past its minimum to fit the value: {} bytes",
+            raw.len(),
+        );
+        let block = read_back(raw);
+        let expected: Vec<_> = (0..taken)
+            .map(|i| (format!("{i:04}{}", "y".repeat(HUGE)), aux(i)))
+            .collect();
+        assert_eq!(items_of(&block, taken), expected);
+
+        // A block that has already sized itself refuses it, rather than
+        // overrunning; the merge then writes the value the slow way.
+        let mut started = DataBlockBuilder::new(&factories.any_factories(), &small);
+        let ordinary = one_block(8, &parameters());
+        let head = ordinary.raw_items(&factories, 0, 7).unwrap();
+        assert!(started.try_add_raw_items::<DynData, DynData>(&head, None) > 0);
+        assert_eq!(
+            started.try_add_raw_items::<DynData, DynData>(&items, None),
+            0,
+            "a block with a size target took a value far beyond it",
+        );
+    }
+
+    #[test]
+    fn a_block_from_a_future_version_is_refused() {
+        // The encoding may change between versions, so bytes from one the
+        // reader does not know must not be copied blindly.
+        let parameters = parameters();
+        let alien = read_back_as(build_raw(8, &parameters), VERSION_NUMBER + 1);
+        assert!(alien.raw_items(&factories(), 0, 7).is_none());
     }
 }
