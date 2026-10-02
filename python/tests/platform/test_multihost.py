@@ -2,7 +2,7 @@ from feldera.enums import PipelineStatus
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
 from tests import TEST_CLIENT
-from .helper import gen_pipeline_name
+from .helper import gen_pipeline_name, wait_for_condition
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
 
@@ -234,4 +234,96 @@ impl PostprocessorFactory for ExamplePostprocessorFactory {
 
     pipeline.start()
     assert pipeline.status() == PipelineStatus.RUNNING
+    pipeline.stop(force=True)
+
+
+@gen_pipeline_name
+def test_output_gathers_every_host(pipeline_name):
+    """
+    A multihost pipeline gathers each view to the single host that owns
+    its output connectors.  Only that host has the connectors, so the
+    other hosts learn from it whether to send their part of the view.  If
+    they did not, the connector would lose the records that they compute.
+
+    This test inserts enough records that every host computes some of
+    them, then checks that every record arrives at:
+
+    - Output connectors that the views declare.  There are two views, so
+      that the coordinator can assign their connectors to different hosts.
+
+    - HTTP listeners that attach to views without connectors while the
+      pipeline runs.
+
+    The views are not materialized, because a materialized view always
+    gathers from every host.
+    """
+    n_records = 1000
+
+    # `/dev/null` does not work here: the file connector fails on it with
+    # EINVAL, so it transmits nothing.
+    connector = """{
+    "name": "%s",
+    "transport": {
+      "name": "file_output",
+      "config": {
+          "path": "/tmp/%s-%s.json"
+      }
+    },
+    "format": { "name": "json" }
+  }"""
+    sql = f"""
+CREATE TABLE t (x BIGINT NOT NULL PRIMARY KEY);
+CREATE VIEW v1 WITH (
+  'connectors' = '[{connector % ("out1", pipeline_name, "out1")}]'
+) AS SELECT * FROM t;
+CREATE VIEW v2 WITH (
+  'connectors' = '[{connector % ("out2", pipeline_name, "out2")}]'
+) AS SELECT * FROM t;
+CREATE VIEW l1 AS SELECT * FROM t;
+CREATE VIEW l2 AS SELECT * FROM t;
+"""
+
+    pipeline = PipelineBuilder(
+        TEST_CLIENT,
+        pipeline_name,
+        sql,
+        runtime_config=RuntimeConfig(
+            workers=FELDERA_TEST_NUM_WORKERS,
+            hosts=FELDERA_TEST_NUM_HOSTS,
+            fault_tolerance_model=None,
+        ),
+    ).create_or_replace()
+
+    pipeline.start()
+    listeners = {view: pipeline.listen(view) for view in ["l1", "l2"]}
+    pipeline.input_json("t", [{"x": x} for x in range(n_records)])
+
+    def transmitted_records(view: str, connector: str) -> int:
+        stats = pipeline.output_connector_stats(view, connector)
+        return stats.metrics.transmitted_records or 0
+
+    for view, connector in [("v1", "out1"), ("v2", "out2")]:
+        wait_for_condition(
+            f"{view}.{connector} transmits {n_records} records",
+            lambda: transmitted_records(view, connector) >= n_records,
+            timeout_s=120.0,
+            poll_interval_s=1.0,
+        )
+        assert transmitted_records(view, connector) == n_records
+
+    for view, listener in listeners.items():
+        received = []
+
+        def received_all() -> bool:
+            received.extend(record["x"] for record in listener.to_dict())
+            return len(received) >= n_records
+
+        wait_for_condition(
+            f"listener on {view} receives {n_records} records",
+            received_all,
+            timeout_s=120.0,
+            poll_interval_s=1.0,
+        )
+        assert sorted(received) == list(range(n_records))
+
     pipeline.stop(force=True)
