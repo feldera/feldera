@@ -1357,6 +1357,7 @@ pub struct DeltaTestStruct {
     pub string: String,
     pub unused: Option<String>,
     pub timestamp_ntz: Timestamp,
+    pub timestamp_tz: TimestampTz,
     pub tinyint: i8,
     pub string_array: Vec<String>,
     pub struct1: TestStruct,
@@ -1439,6 +1440,9 @@ impl Arbitrary for DeltaTestStruct {
                         string: string.to_string(),
                         unused: Some(unused.to_string()),
                         timestamp_ntz: Timestamp::from_milliseconds(timestamp_ntz * 1000),
+                        timestamp_tz: TimestampTz::from(Timestamp::from_milliseconds(
+                            timestamp_ntz * 1000,
+                        )),
                         tinyint,
                         string_array,
                         struct1,
@@ -1478,6 +1482,11 @@ impl DeltaTestStruct {
             arrow::datatypes::Field::new(
                 "timestamp_ntz",
                 DataType::Timestamp(TimeUnit::Microsecond, None),
+                false,
+            ),
+            arrow::datatypes::Field::new(
+                "timestamp_tz",
+                DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
                 false,
             ),
             arrow::datatypes::Field::new("tinyint", DataType::Int8, false),
@@ -1538,6 +1547,7 @@ impl DeltaTestStruct {
             Field::new("string".into(), ColumnType::varchar(false)),
             Field::new("unused".into(), ColumnType::varchar(true)).with_unused(true),
             Field::new("timestamp_ntz".into(), ColumnType::timestamp(false)),
+            Field::new("timestamp_tz".into(), ColumnType::timestamp_tz(false)),
             Field::new("tinyint".into(), ColumnType::tinyint(false)),
             Field::new(
                 "string_array".into(),
@@ -1587,6 +1597,7 @@ impl DeltaTestStruct {
             Field::new("unused".into(), ColumnType::varchar(true)).with_unused(true),
             Field::new("timestamp_ntz".into(), ColumnType::timestamp(false))
                 .with_lateness("interval '10 days'"),
+            Field::new("timestamp_tz".into(), ColumnType::timestamp_tz(false)),
             Field::new("tinyint".into(), ColumnType::tinyint(false)),
             Field::new(
                 "string_array".into(),
@@ -1634,7 +1645,7 @@ impl DeltaTestStruct {
     }
 }
 
-serialize_table_record!(DeltaTestStruct[20]{
+serialize_table_record!(DeltaTestStruct[21]{
     bigint["bigint"]: i64,
     binary["binary"]: ByteArray,
     boolean["boolean"]: bool,
@@ -1647,6 +1658,7 @@ serialize_table_record!(DeltaTestStruct[20]{
     string["string"]: String,
     unused["unused"]: Option<String>,
     timestamp_ntz["timestamp_ntz"]: Timestamp,
+    timestamp_tz["timestamp_tz"]: TimestampTz,
     tinyint["tinyint"]: i8,
     string_array["string_array"]: Vec<String>,
     struct1["struct1"]: TestStruct,
@@ -1657,7 +1669,7 @@ serialize_table_record!(DeltaTestStruct[20]{
     uuid["uuid"]: Uuid
 });
 
-deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", Variant, 20] {
+deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", Variant, 21] {
     (bigint, "bigint", false, i64, |_| None),
     (binary, "binary", false, ByteArray, |_| None),
     (boolean, "boolean", false, bool, |_| None),
@@ -1670,6 +1682,7 @@ deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", Variant, 20] {
     (string, "string", false, String, |_| None),
     (unused, "unused", false, Option<String>, |_| Some(None)),
     (timestamp_ntz, "timestamp_ntz", false, Timestamp, |_| None),
+    (timestamp_tz, "timestamp_tz", false, TimestampTz, |_| None),
     (tinyint, "tinyint", false, i8, |_| None),
     (string_array, "string_array", false, Vec<String>, |_| None),
     (struct1, "struct1", false, TestStruct, |_| None),

@@ -1,4 +1,6 @@
-use feldera_sqllib::{ByteArray, Date, F32, F64, SqlDecimal, SqlString, Timestamp, Uuid, Variant};
+use feldera_sqllib::{
+    ByteArray, Date, F32, F64, SqlDecimal, SqlString, Timestamp, TimestampTz, Uuid, Variant,
+};
 use feldera_types::{
     format::json::JsonFlavor,
     serde_with_context::{SerializeWithContext, SqlSerdeConfig},
@@ -40,6 +42,7 @@ fn test_redis_output() {
         string: "test".to_owned(),
         unused: None,
         timestamp_ntz: Timestamp::from_milliseconds(1),
+        timestamp_tz: TimestampTz::from(Timestamp::from_milliseconds(1)),
         tinyint: 1,
         string_array: vec!["a".to_owned(), "b".to_owned()],
         struct1: TestStruct {
