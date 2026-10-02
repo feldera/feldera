@@ -118,6 +118,9 @@ export interface DiagramPalette {
     /** Edges reachable from the hovered node, and edges that reach it. */
     edgeForward: Color;
     edgeBackward: Color;
+    /** The same, for the edges that connect directly to the hovered node. */
+    edgeForwardAdjacent: Color;
+    edgeBackwardAdjacent: Color;
     /** Corner chips: background, outline, and glyph. */
     chipFill: Color;
     chipBorder: Color;
@@ -143,6 +146,8 @@ export const DIAGRAM_PALETTES: Record<DiagramTheme, DiagramPalette> = {
         region: '#8cabfa',
         edgeForward: '#ff0000',
         edgeBackward: '#0000ff',
+        edgeForwardAdjacent: '#ff2ee0',
+        edgeBackwardAdjacent: '#4da6ff',
         chipFill: '#ffffff',
         chipBorder: '#c7ccd4',
         chipInk: '#2f353c',
@@ -165,6 +170,8 @@ export const DIAGRAM_PALETTES: Record<DiagramTheme, DiagramPalette> = {
         region: '#0f38ad',
         edgeForward: '#ff6b6b',
         edgeBackward: '#74a9ff',
+        edgeForwardAdjacent: '#d91abc',
+        edgeBackwardAdjacent: '#2f62d9',
         chipFill: '#2c3137',
         chipBorder: '#454b52',
         chipInk: '#e8eaed',
@@ -297,6 +304,21 @@ export function buildGraphStyle(theme: DiagramTheme): StylesheetJson {
                 'target-arrow-color': p.edgeForward,
                 'width': 3,
                 'z-index': TRACED_EDGE_Z_INDEX
+            }
+        },
+        // After the two styles above, so that these colors shadow theirs.
+        {
+            selector: 'edge.highlight-backward-adjacent',
+            style: {
+                'line-color': p.edgeBackwardAdjacent,
+                'target-arrow-color': p.edgeBackwardAdjacent
+            }
+        },
+        {
+            selector: 'edge.highlight-forward-adjacent',
+            style: {
+                'line-color': p.edgeForwardAdjacent,
+                'target-arrow-color': p.edgeForwardAdjacent
             }
         },
     ];
