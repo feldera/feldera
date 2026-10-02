@@ -34,7 +34,7 @@ const selected = (id: string) => {
 
 describe('nodeShadow', () => {
     it('glows around the node the diagram reports on', () => {
-        for (const id of ['plain', 'collapsed', 'inside']) {
+        for (const id of ['plain', 'collapsed', 'region', 'inside']) {
             expect(nodeShadow(selected(id)), id).toBe(SELECTION_GLOW)
         }
     })
@@ -42,18 +42,9 @@ describe('nodeShadow', () => {
     it('leaves every other node bare', () => {
         // Nothing is painted around an unmarked node: its own border is what tells it from the canvas.
         const cy = graph()
-        for (const id of ['plain', 'collapsed', 'inside']) {
+        for (const id of ['plain', 'collapsed', 'region', 'inside']) {
             expect(nodeShadow(cy.$id(id)), id).toBeNull()
         }
-    })
-
-    it('leaves an expanded region flat, marked or not', () => {
-        // The glow would run along the inside of the region's border and read as a border of its own.
-        const cy = graph()
-        expect(cy.$id('region').isParent()).toBe(true)
-        expect(nodeShadow(cy.$id('region'))).toBeNull()
-        cy.$id('region').addClass(SELECTED_NODE_CLASS)
-        expect(nodeShadow(cy.$id('region'))).toBeNull()
     })
 
     it('centers the glow and spreads it wide', () => {
@@ -81,13 +72,17 @@ describe('installNodeShadows', () => {
         const pos = { x: 10, y: 20 }
         renderer.drawNodeUnderlay(context as never, node as never, pos as never, 40 as never, 25 as never)
         expect(calls).toEqual([[context, node, pos, 40, 25]])
-        // And it painted the glow: a single filled round rectangle, moved out of frame so that only
-        // its shadow lands on the canvas.
+        // It fills one round rectangle out of view. The shadow offset moves only the shadow back onto
+        // the node.
         expect(context.log.filter((op) => op === 'fill')).toHaveLength(1)
         expect(context.shadowColor).toBe(SELECTION_GLOW.color)
-        expect(context.roundRects).toHaveLength(1)
-        expect(context.roundRects[0]!.x).toBeLessThan(-1000)
+        expect(context.roundRects).toHaveLength(2)
+        expect(context.roundRects[1]!.x).toBeLessThan(-1000)
         expect(context.shadowOffsetX).toBeGreaterThan(1000)
+        // The clip leaves out the node body, so the glow does not show through the translucent fill
+        // of a region.
+        expect(context.log).toContain('clip:evenodd')
+        expect(context.roundRects[0]).toEqual({ x: -10, y: 7.5, w: 40, h: 25 })
     })
 
     it('paints nothing around an unmarked node', () => {
@@ -138,6 +133,8 @@ const fakeContext = (scale = 1) => ({
     save() { this.log.push('save') },
     restore() { this.log.push('restore') },
     beginPath() { this.log.push('beginPath') },
+    rect() { this.log.push('rect') },
+    clip(rule: string) { this.log.push(`clip:${rule}`) },
     roundRect(x: number, y: number, w: number, h: number) { this.roundRects.push({ x, y, w, h }) },
     fill() { this.log.push('fill') }
 })
