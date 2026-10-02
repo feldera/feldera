@@ -42,8 +42,8 @@
 {/if}
 
 {#if status === 'update_available'}
-  <div class="fd fd-info pb-0.5 text-[20px] text-tertiary-700-300"></div>
+  <div class="fd fd-info pb-0.5 text-[16px] text-tertiary-700-300"></div>
 {:else if status === 'custom'}
-  <div class="fd fd-info pb-0.5 text-[20px] text-warning-500"></div>
+  <div class="fd fd-info pb-0.5 text-[16px] text-warning-500"></div>
 {/if}
 <PipelineVersionTooltip {pipelineName} {status} {baseRuntimeVersion} />

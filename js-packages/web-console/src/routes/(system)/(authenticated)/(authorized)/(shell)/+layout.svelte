@@ -249,14 +249,14 @@
         ></CreatePipelineButton>
       </div>
       <button
-        class="btn h-9 preset-tonal-surface"
+        class="btn preset-tonal-surface"
         onclick={() => {
           globalDialog.dialog = supportBundleDialog
           rightDrawer.value = false
         }}
         data-testid="btn-open-support-bundle"
       >
-        <span class="fd fd-stethoscope text-2xl"></span>
+        <span class="fd fd-stethoscope text-[16px]"></span>
         Open support bundle
       </button>
       <BookADemo class="btn preset-filled-primary-500" placement="nav_drawer">Book a demo</BookADemo

@@ -22,7 +22,7 @@
 </script>
 
 {#snippet defaultIcon()}
-  <span class="fd fd-rocket text-[20px]"></span>
+  <span class="fd fd-rocket"></span>
 {/snippet}
 
 <a
