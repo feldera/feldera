@@ -963,14 +963,18 @@ export class CytographRendering {
         if (node.isParent()) {
             return;
         }
-        this.reachableFrom(node.id(), true).addClass('highlight-forward');
-        this.reachableFrom(node.id(), false).addClass('highlight-backward');
+        const forward = this.reachableFrom(node.id(), true).addClass('highlight-forward');
+        const backward = this.reachableFrom(node.id(), false).addClass('highlight-backward');
+        // The edges that connect directly to the node get their own colors.
+        forward.intersection(node.outgoers('edge')).addClass('highlight-forward-adjacent');
+        backward.intersection(node.incomers('edge')).addClass('highlight-backward-adjacent');
     }
 
     /** Take the mark and the edge coloring off the diagram, leaving what is reported where it is. */
     private clearTrace() {
         this.markSelected(null);
-        this.cy.edges().removeClass('highlight-forward highlight-backward');
+        this.cy.edges().removeClass(
+            'highlight-forward highlight-backward highlight-forward-adjacent highlight-backward-adjacent');
     }
 
     displayNodeAttributes(node: NodeSingular) {
