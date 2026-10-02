@@ -33,6 +33,9 @@ Install dependencies (needs to be done whenever package.json depencies change):
 bun install
 ```
 
+Installing also builds the workspace libraries (`common-ui`, `profiler-lib`, `profiler-layout`
+and others) and runs `svelte-kit sync`, through each package's `prepare` script.
+
 Start the development server:
 
 ```bash
@@ -42,7 +45,27 @@ bun run dev
 Build & export static website:
 
 ```bash
-bun build
+bun run build
+```
+
+`dev`, `build`, `check`, `test-unit` and `test-integration` first run `bun run deps`, which rebuilds
+the workspace libraries, so their latest source is always used. The `:self` variants
+(`build:self`, `check:self`) skip that step.
+
+Every workspace package that other packages use has a `build:self` script. A package's `deps` script
+lists all the libraries it needs, including indirect ones, and builds them with
+`bun run --filter <library> ... build:self`. Bun builds each library after the libraries it lists
+in `dependencies` (not `devDependencies`), and builds independent libraries in parallel. This needs
+Bun 1.3.14 or newer; `deps` checks the version first. When a package starts to use another
+workspace library, add that library to the package's `dependencies` and to the `deps` script of
+every package that uses it.
+
+`svelte-kit sync` generates the route types and `.svelte-kit/tsconfig.json`. `vite dev`, `vite build`
+and Vitest run it on their own. Run it by hand only before `bun run check` after adding or renaming a
+route, or after changing `svelte.config.js`, when no dev server is running:
+
+```bash
+bunx svelte-kit sync
 ```
 
 Format the code & linting:

@@ -15,8 +15,8 @@ To see the latest changes to `profiler-lib` reflected in their syntax highlight,
 bun run build
 ```
 
-When the above applications are built their `prebuild` script automatically builds `profiler-lib`.
-When they are run in development watch mode with `bun run dev` you need to manually run
+The `dev`, `build`, `check` and test scripts of the above applications start with `bun run deps`, which builds `profiler-lib`.
+While they run in development watch mode with `bun run dev`, you need to manually run
 
 ```bash
 cd ../profiler-lib && bun run build
