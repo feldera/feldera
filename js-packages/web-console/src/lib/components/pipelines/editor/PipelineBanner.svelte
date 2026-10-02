@@ -79,7 +79,7 @@
           {#if onClose}
             <button
               onclick={onClose}
-              class="fd fd-x -m-2 btn-icon text-[24px]"
+              class="fd fd-x -m-2 btn-icon text-[20px]"
               aria-label="Dismiss pipeline deployment error"
             >
             </button>

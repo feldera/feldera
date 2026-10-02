@@ -360,7 +360,9 @@ example = "1.0"`
   {/snippet}
   {#snippet codeEditor(textEditor, statusBar)}
     {#snippet editor()}
-      <div class="flex h-full flex-col rounded-container bg-surface-50-950 px-4 py-2">
+      <!-- No top padding: the file tabs' 12px margins centre the header row, as in the
+           tabbed panels below (`TabsPanel`). -->
+      <div class="flex h-full flex-col rounded-container bg-surface-50-950 px-4 pt-0 pb-2">
         {@render textEditor()}
         <div
           class="bg-white-dark mb-2 flex flex-wrap items-center gap-x-8 rounded-b border-t border-surface-50-950 p-2 pl-4"
@@ -376,10 +378,13 @@ example = "1.0"`
     {/if}
   {/snippet}
   {#snippet fileTab(text, onClick, isCurrent, isSaved)}
+    <!-- Styled like the tabs of the tabbed panels (`TabsPanel`): a 24px tab with 12px above
+         and below, and for the current file a 2px bar at the bottom of the row, on the
+         header's line. An unsaved file keeps room on the right for its dot. -->
     <button
-      class=" flex flex-nowrap py-2 pr-5 pl-2 font-medium sm:pl-3 {isCurrent
-        ? 'inset-y-2 border-b-2 border-surface-950-50 pb-1.5'
-        : ' hover:!bg-opacity-50 rounded hover:bg-surface-100-900'}"
+      class="relative my-3 btn h-6! font-medium whitespace-nowrap {isCurrent
+        ? 'after:absolute after:inset-x-0 after:-bottom-3 after:h-0.5 after:bg-surface-950-50'
+        : 'rounded hover:bg-surface-100-900/50'} {isSaved ? '' : 'pr-5!'}"
       onclick={onClick}
     >
       {text}
@@ -389,7 +394,9 @@ example = "1.0"`
     </button>
   {/snippet}
   {#snippet toolBarEnd()}
-    <div class="flex justify-end gap-4 pb-2">
+    <!-- As tall as the file-tab row, so the 24px buttons centre in it, also when they wrap
+         onto a row of their own. -->
+    <div class="flex min-h-12 items-center justify-end gap-4">
       <PipelineActions
         class=""
         {pipeline}

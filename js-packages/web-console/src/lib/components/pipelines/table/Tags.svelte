@@ -315,12 +315,7 @@
       {#snippet listPage()}
         {#if knownTags.size > 0}
           <div class="p-2">
-            <input
-              class="input h-9 w-full"
-              type="search"
-              placeholder="Search"
-              bind:value={search}
-            />
+            <input class="input w-full" type="search" placeholder="Search" bind:value={search} />
           </div>
         {/if}
         <div class="scrollbar flex max-h-[280px] flex-col overflow-y-auto pb-1">
@@ -558,7 +553,7 @@
     </div>
     <button
       type="submit"
-      class="btn h-9! w-full preset-filled-primary-500"
+      class="btn w-full preset-filled-primary-500"
       disabled={opts.submitDisabled}
     >
       {opts.submitLabel}

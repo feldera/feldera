@@ -155,7 +155,7 @@
       </label>
       <label class="flex flex-col text-sm">
         <span class="text-surface-800-200">Role</span>
-        <Select bind:value={newRole} class="h-9 w-28">
+        <Select bind:value={newRole} class="w-28">
           <option value="read">read</option>
           <option value="write">write</option>
           <option value="admin">admin</option>
@@ -237,7 +237,7 @@
                 | 'write'
                 | 'admin'
             }}
-            class="h-9 w-28"
+            class="w-28"
             aria-label="Role for {labelOf(user)}"
           >
             <option value="read">read</option>

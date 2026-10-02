@@ -287,24 +287,21 @@
       onnext={() => submitLogSearch('next')}
       onprevious={() => submitLogSearch('prev')}
       onclear={resetLogSearch}
-      inputClass="h-8 w-40 text-sm"
+      inputClass="h-8 w-40 rounded-[4px] py-0"
     />
     {@render PipelineInfoHeader()}
   </div>
 {/snippet}
 
 {#snippet TabBarEndPipelineInfo()}
-  <div class="ml-auto flex gap-2">
+  <div class="ml-auto flex items-center gap-2">
     {@render PipelineInfoHeader()}
   </div>
 {/snippet}
 
 {#snippet PipelineInfoHeader()}
-  <ClipboardCopyButton
-    value={pipeline.current.id}
-    class="h-4! w-auto! gap-2 preset-tonal-surface px-4"
-  >
-    <span class="text-base font-normal text-surface-950-50"> Pipeline ID </span>
+  <ClipboardCopyButton value={pipeline.current.id} class="preset-tonal-surface btn-sm">
+    <span class="font-normal text-surface-950-50"> Pipeline ID </span>
   </ClipboardCopyButton>
   <Tooltip placement="top">
     {pipeline.current.id}

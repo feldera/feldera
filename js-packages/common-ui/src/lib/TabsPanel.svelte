@@ -111,18 +111,25 @@
   <Tabs
     value={currentTab}
     onValueChange={(e) => (currentTab = e.value)}
-    class="flex h-full flex-col space-y-0! rounded-container bg-surface-50-950 p-4"
+    class="flex h-full flex-col space-y-0! rounded-container bg-surface-50-950 px-4 pt-0 pb-4"
   >
     <!-- Header. `flex-wrap` lets the active tabBarEnd contents (selectors, controls, inputs)
          drop to subsequent rows when the panel is narrowed, instead of forcing a horizontal
          minimum width on the surrounding Pane. `min-w-0` on the row + a row gap keeps the
-         wrapped rows visually grouped. -->
-    <Tabs.List class="flex w-full min-w-0 flex-wrap items-center gap-0 pb-0 mb-0 {headerClass}">
+         wrapped rows visually grouped. The panel has no top padding; instead each 24px tab
+         (`h-6!`, which beats the 32px height of `.btn`) keeps 12px above and below
+         (`my-3`), so the tab labels and any 32px controls in the tabBarEnd centre in a
+         48px row whose bottom edge is the header's line. A tabBarEnd wrapper is at least
+         as tall (`min-h-12`), so when it wraps onto a row of its own its controls centre
+         there too; a bare 32px button takes 8px margins (`my-2`) to fill the same row. -->
+    <Tabs.List
+      class="flex w-full min-w-0 flex-wrap items-center gap-0 pb-0 mb-0 [&>:not([role=tab],[data-part=indicator],button)]:min-h-12 [&>button:not([role=tab])]:my-2 {headerClass}"
+    >
       {#each tabs as { id, label, disabled }}
         <Tabs.Trigger
           value={id}
           {disabled}
-          class="btn h-9 font-medium whitespace-nowrap {id === currentTab
+          class="btn my-3 h-6! font-medium whitespace-nowrap {id === currentTab
             ? 'border-surface-950-50 '
             : 'rounded hover:bg-surface-100-900/50'} {disabled
             ? 'cursor-not-allowed opacity-40'
@@ -137,9 +144,11 @@
            only inlines `left: var(--left)`. Without explicit width/height/top the bar falls
            to whatever static position the indicator's slot ends up at — when the header
            wraps, that's the bottom of the wrapped list, not the active trigger's row. Pin
-           it to the active trigger's bottom edge so it follows the row across wrap breaks. -->
+           it to the active trigger's row so it follows the row across wrap breaks. The
+           trigger's 12px bottom margin puts the row's bottom edge, where the bar belongs,
+           12px below the trigger: --top and --height measure the trigger without margins. -->
       <Tabs.Indicator
-        class="h-0.5 top-[calc(var(--top)+var(--height)-2px)] w-[var(--width)] bg-surface-950-50"
+        class="h-0.5 top-[calc(var(--top)+var(--height)+10px)] w-[var(--width)] bg-surface-950-50"
       />
     </Tabs.List>
     {@render tabContent()}

@@ -129,7 +129,7 @@
       >
         <input
           data-testid="input-pipeline-search"
-          class="input h-9 sm:w-60"
+          class="input sm:w-60"
           type="search"
           placeholder="Search pipelines..."
           oninput={(e) => {
@@ -138,7 +138,7 @@
         />
         <Select
           data-testid="select-pipeline-status"
-          class="h-9 text-base! sm:w-40"
+          class="sm:w-40"
           onchange={(e) => {
             statusFilter.value = filterStatuses.find((v) => e.currentTarget.value === v[0])![0]
             statusFilter.set()
@@ -265,7 +265,7 @@
               >
                 {#if pipeline.deploymentError}
                   {@const message = pipeline.deploymentError.message}
-                  <span class="fd fd-circle-alert pr-2 text-[20px] text-error-500"></span>
+                  <span class="fd fd-circle-alert pr-2 text-[16px] text-error-500"></span>
                   <Popover class="z-20" strategy="fixed">
                     <div
                       class="scrollbar flex max-h-[50vh] max-w-[80vw] overflow-auto whitespace-pre-wrap"
