@@ -25,13 +25,10 @@ public class BalancedJoins extends CircuitCloneWithGraphsVisitor {
         super(compiler, graphs);
     }
 
+    /** True if a GC operator garbage-collects the integral after {@code operator}. */
     private boolean hasGcSuccessor(DBSPOperator operator) {
-        for (Port<DBSPOperator> succ: this.getGraph().getSuccessors(operator)) {
-            if (succ.node().is(IGCOperator.class))
-                // only input 0 of these operators affects the GC
-                return succ.port() == 0;
-        }
-        return false;
+        return Linq.any(this.getGraph().getSuccessors(operator), succ -> succ.node().is(IGCOperator.class) &&
+                succ.node().to(IGCOperator.class).garbageCollects(operator));
     }
 
     private boolean canBalance(DBSPJoinBaseOperator join) {

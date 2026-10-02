@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.graph.Port;
 
@@ -66,13 +67,10 @@ public class CSE extends Repeat {
             postorder(operator.to(DBSPOperator.class));
         }
 
+        /** True if a GC operator garbage-collects the integral after {@code operator}. */
         boolean hasGcSuccessor(DBSPOperator operator) {
-            for (Port<DBSPOperator> succ: this.getGraph().getSuccessors(operator)) {
-                if (succ.node().is(IGCOperator.class))
-                    // only input 0 of these operators affects the GC
-                    return succ.port() == 0;
-            }
-            return false;
+            return Linq.any(this.getGraph().getSuccessors(operator), succ -> succ.node().is(IGCOperator.class) &&
+                    succ.node().to(IGCOperator.class).garbageCollects(operator));
         }
 
         @Override
