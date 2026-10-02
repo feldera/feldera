@@ -319,7 +319,8 @@ describe('Table — header alignment', () => {
     mountTable()
     await expect.poll(rowOrder).toEqual(['alpha', 'bravo', 'charlie', 'delta'])
 
-    expect(justifyOf('Status')).toBe('center')
+    // Status is left-aligned so its chips line up with the label above them.
+    expect(justifyOf('Status')).toBe('normal')
     expect(justifyOf('Errors Runtime errors')).toBe('flex-end')
     expect(justifyOf('Pipeline name')).toBe('normal')
   })
