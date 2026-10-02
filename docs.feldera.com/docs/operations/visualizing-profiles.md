@@ -71,7 +71,7 @@ Console:
 | Open a bundle that you opened before | Click <OpenSupportBundleIcon className="inline-icon" title="Open support bundle" />, then click the bundle.<br/><Shot src={historyFromHome} alt="A bundle in the list of recent support bundles" /> | Not available | Not available |
 | Upload a bundle zip file | Click <OpenSupportBundleIcon className="inline-icon" title="Open support bundle" />, then **Upload support bundle**.<br/><Shot src={uploadFromHome} alt="Upload support bundle in the Open support bundle dialog" /> | Click the arrow next to **View profile**, then **Open support bundle**.<br/><Shot src={uploadFromPipeline} alt="Open support bundle in the View profile menu" /> | Click **Load profile**, then **Open support bundle**.<br/><Shot src={uploadFromViewer} alt="Open support bundle in the Load profile menu" /> |
 
-After you select a zip file, click **View profile** to open it in a new tab. 
+After you select a zip file, click **View profile** to open it in a new tab.
 
 | Support bundle | What is in it |
 |---|---|
