@@ -18,7 +18,7 @@ use crate::{
     Circuit, NumEntries, Runtime, Scope, Stream,
     circuit::{
         GlobalNodeId, NodeId, OwnershipPreference, StepSize, WorkerLocation, WorkerLocations,
-        circuit_builder::StreamId,
+        circuit_builder::{MetadataExchange, StreamId},
         metadata::{
             ALLOCATED_MEMORY_BYTES, BatchSizeStats, INPUT_BATCHES_STATS, MEMORY_ALLOCATIONS_COUNT,
             MetaItem, OUTPUT_BATCHES_STATS, OperatorLocation, OperatorMeta, SHARED_MEMORY_BYTES,
@@ -118,6 +118,7 @@ where
                                 ShardedAccumulatorSender::new(
                                     Some(Location::caller()),
                                     exchange.clone(),
+                                    self.circuit().metadata_exchange().clone(),
                                 ),
                                 ShardedAccumulatorReceiver::new(Some(Location::caller()), exchange),
                                 self,
@@ -588,8 +589,10 @@ where
     B: Batch,
 {
     location: OperatorLocation,
+    local_node_id: NodeId,
     name: OperatorName,
     exchange: Arc<ShardedAccumulator<B>>,
+    metadata_exchange: MetadataExchange,
 
     /// Whether the accumulator is enabled during the current transaction.
     ///
@@ -609,11 +612,17 @@ impl<B> ShardedAccumulatorSender<B>
 where
     B: Batch,
 {
-    fn new(location: OperatorLocation, exchange: Arc<ShardedAccumulator<B>>) -> Self {
+    fn new(
+        location: OperatorLocation,
+        exchange: Arc<ShardedAccumulator<B>>,
+        metadata_exchange: MetadataExchange,
+    ) -> Self {
         Self {
             location,
             name: OperatorName::new("ShardedAccumulatorSender"),
             exchange,
+            local_node_id: NodeId::root(),
+            metadata_exchange,
             enabled_during_current_transaction: None,
             input_batch_stats: BatchSizeStats::new(),
             flushed: false,
@@ -630,6 +639,7 @@ where
     }
 
     fn init(&mut self, global_id: &GlobalNodeId) {
+        self.local_node_id = global_id.local_node_id().unwrap();
         self.name.init(global_id);
     }
 
@@ -653,6 +663,15 @@ where
     fn flush(&mut self) {
         self.flushed = true;
     }
+
+    fn start_transaction(&mut self) {
+        if Runtime::local_worker_offset() == 0 {
+            self.metadata_exchange.set_local_operator_metadata_typed(
+                self.local_node_id,
+                self.exchange.enable_count.is_enabled(),
+            );
+        }
+    }
 }
 
 impl<B> ShardedAccumulatorSender<B>
@@ -660,14 +679,20 @@ where
     B: Batch<Time = ()>,
 {
     async fn eval_inner<'a>(&mut self, batch: Cow<'a, B>) {
-        // We don't have a start-of-transaction signal, so we sample enable_count when
-        // we get the first non-empty batch.  This batch should belong to the next transaction
-        // after the last one that was flushed, since the accumulator should not receive any
-        // non-empty batches from the previous transaction at that point (in the top-level circuit).
-        // This may not be the first batch in the transaction, but it's ok to admit some empty batches.
+        // Sample enable_count when we get the first non-empty batch in a
+        // transaction.  This batch should belong to the next transaction after
+        // the last one that was flushed, since the accumulator should not
+        // receive any non-empty batches from the previous transaction at that
+        // point (in the top-level circuit).  This may not be the first batch in
+        // the transaction, but it's ok to admit some empty batches.
         let len = batch.len();
         if (len > 0 || self.flushed) && self.enabled_during_current_transaction.is_none() {
-            self.enabled_during_current_transaction = Some(self.exchange.enable_count.is_enabled());
+            self.enabled_during_current_transaction = Some(
+                self.metadata_exchange
+                    .get_global_operator_metadata_typed(self.local_node_id)
+                    .into_iter()
+                    .any(|enable| enable == Some(true)),
+            );
         }
         let Some(enabled) = self.enabled_during_current_transaction else {
             return;
@@ -912,6 +937,7 @@ mod tests {
         DBSPHandle, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
         circuit::{CircuitConfig, Layout, Runtime},
         dynamic::{Data, DowncastTrait, DynWeightTyped},
+        operator::dynamic::accumulator::EnableCount,
         trace::{BatchReader, Cursor, FallbackWSet, Spine},
         typed_batch::TypedBatch,
     };
@@ -923,72 +949,131 @@ mod tests {
     /// `n` steps and exchanges `O(n**2)` data.
     const STREAMING_ROUNDS: usize = 64;
 
-    fn test_config(workers: usize) -> CircuitConfig {
-        CircuitConfig::with_workers(workers).with_streaming_exchange(true)
+    type TestOutput = OutputHandle<
+        TypedBatch<usize, (), i64, Spine<FallbackWSet<dyn Data + 'static, DynWeightTyped<i64>>>>,
+    >;
+
+    /// How the test circuit gathers its output.
+    #[derive(Copy, Clone, Debug)]
+    struct Gather {
+        /// Enables the streaming exchange.  Without it, `shard_accumulate`
+        /// falls back to a plain shard and [Accumulator](super::super::accumulator::Accumulator).
+        streaming_exchange: bool,
+
+        /// Gathers to the first host's workers only, the way a multihost
+        /// pipeline gathers a view to the host that owns its connectors.
+        /// Otherwise, gathers to every worker.
+        to_first_host: bool,
     }
 
-    fn test_circuit(workers: usize, hosts: usize) {
-        let (mut dbsp_handles, input_handles, output_handles) = match hosts {
-            0 => unreachable!(),
-            1 => {
-                let (dbsp_handle, (input_handle, output_handle)) =
-                    Runtime::init_circuit(test_config(workers), circuit)
-                        .expect("failed to start runtime");
-                (vec![dbsp_handle], vec![input_handle], vec![output_handle])
-            }
-            _ => {
-                assert!(workers >= hosts);
-
-                // Bind some listening sockets.
-                let exchange_listeners = (0..hosts)
-                    .map(|_| {
-                        TcpListener::bind("127.0.0.1:0")
-                            .expect("should be able to bind a port on localhost")
-                    })
-                    .collect_vec();
-
-                // Assemble the listening sockets' addresses into something we can pass
-                // to `Layout::new_multihost`.
-                let params = exchange_listeners
-                    .iter()
-                    .enumerate()
-                    .map(|(index, listener)| {
-                        (
-                            listener
-                                .local_addr()
-                                .expect("should be able to get local address"),
-                            workers / hosts + (index < workers % hosts) as usize,
-                        )
-                    })
-                    .collect_vec();
-
-                // Create the runtimes.
-                let mut handles = Vec::with_capacity(params.len());
-                for ((local_address, _), exchange_listener) in
-                    zip(params.iter(), exchange_listeners)
-                {
-                    let cconf = CircuitConfig::from(
-                        Layout::new_multihost(&params, *local_address).unwrap(),
-                    )
-                    .with_exchange_listener(exchange_listener)
-                    .with_streaming_exchange(true);
-
-                    let (dbsp_handle, (input_handle, output_handle)) =
-                        Runtime::init_circuit(cconf, circuit).expect("failed to start runtime");
-                    handles.push((dbsp_handle, input_handle, output_handle));
-                }
-                handles.into_iter().multiunzip()
-            }
+    impl Gather {
+        /// Gathers to every worker with `ShardedAccumulator`.
+        const ALL_WORKERS: Self = Self {
+            streaming_exchange: true,
+            to_first_host: false,
         };
+    }
 
-        /// Executes `f` on all of the handles in `dbsp_handles` in parallel and
-        /// waits for them to complete.
-        fn for_each_host<F>(dbsp_handles: &mut [DBSPHandle], f: F)
+    fn test_config(workers: usize, gather: Gather) -> CircuitConfig {
+        CircuitConfig::with_workers(workers).with_streaming_exchange(gather.streaming_exchange)
+    }
+
+    /// The runtimes of a test circuit, one per host, with each host's handles.
+    struct TestHosts {
+        dbsp_handles: Vec<DBSPHandle>,
+        input_handles: Vec<ZSetHandle<usize>>,
+        output_handles: Vec<TestOutput>,
+
+        /// Each host's enable count for the accumulator.  The accumulator
+        /// starts out disabled on every host.
+        enable_counts: Vec<EnableCount>,
+    }
+
+    impl TestHosts {
+        /// Starts [circuit] with `workers` workers spread over `hosts` hosts.
+        fn new(workers: usize, hosts: usize) -> Self {
+            Self::with_gather(workers, hosts, Gather::ALL_WORKERS)
+        }
+
+        /// Like [TestHosts::new], with the circuit gathering its output as
+        /// `gather` says.
+        fn with_gather(workers: usize, hosts: usize, gather: Gather) -> Self {
+            let (dbsp_handles, input_handles, output_handles, enable_counts) = match hosts {
+                0 => unreachable!(),
+                1 => {
+                    let (dbsp_handle, (input_handle, output_handle, enable_count)) =
+                        Runtime::init_circuit(test_config(workers, gather), move |c| {
+                            circuit(c, gather)
+                        })
+                        .expect("failed to start runtime");
+                    (
+                        vec![dbsp_handle],
+                        vec![input_handle],
+                        vec![output_handle],
+                        vec![enable_count],
+                    )
+                }
+                _ => {
+                    assert!(workers >= hosts);
+
+                    // Bind some listening sockets.
+                    let exchange_listeners = (0..hosts)
+                        .map(|_| {
+                            TcpListener::bind("127.0.0.1:0")
+                                .expect("should be able to bind a port on localhost")
+                        })
+                        .collect_vec();
+
+                    // Assemble the listening sockets' addresses into something we can pass
+                    // to `Layout::new_multihost`.
+                    let params = exchange_listeners
+                        .iter()
+                        .enumerate()
+                        .map(|(index, listener)| {
+                            (
+                                listener
+                                    .local_addr()
+                                    .expect("should be able to get local address"),
+                                workers / hosts + (index < workers % hosts) as usize,
+                            )
+                        })
+                        .collect_vec();
+
+                    // Create the runtimes.
+                    let mut handles = Vec::with_capacity(params.len());
+                    for ((local_address, _), exchange_listener) in
+                        zip(params.iter(), exchange_listeners)
+                    {
+                        let cconf = CircuitConfig::from(
+                            Layout::new_multihost(&params, *local_address).unwrap(),
+                        )
+                        .with_exchange_listener(exchange_listener)
+                        .with_streaming_exchange(gather.streaming_exchange);
+
+                        let (dbsp_handle, (input_handle, output_handle, enable_count)) =
+                            Runtime::init_circuit(cconf, move |c| circuit(c, gather))
+                                .expect("failed to start runtime");
+                        handles.push((dbsp_handle, input_handle, output_handle, enable_count));
+                    }
+                    handles.into_iter().multiunzip()
+                }
+            };
+            Self {
+                dbsp_handles,
+                input_handles,
+                output_handles,
+                enable_counts,
+            }
+        }
+
+        /// Executes `f` on every host's handle in parallel and waits for all
+        /// of them to complete.
+        fn for_each_host<F>(&mut self, f: F)
         where
             F: Fn(&mut DBSPHandle) + Send + Sync + 'static,
         {
             thread::scope(|s| {
-                dbsp_handles
+                self.dbsp_handles
                     .iter_mut()
                     .map(|h| s.spawn(|_| f(h)))
                     .collect_vec()
@@ -998,19 +1083,38 @@ mod tests {
             .unwrap();
         }
 
-        for round in 0..STREAMING_ROUNDS {
-            for_each_host(&mut dbsp_handles, |h| h.start_transaction().unwrap());
-
-            for i in 0..=round {
-                input_handles[i % hosts].push(i, 1);
-                for_each_host(&mut dbsp_handles, |h| {
+        /// Runs one transaction that inserts the records `0..n_records`,
+        /// spread round-robin over the hosts, one record per step.
+        ///
+        /// Calls `after_first_step` after the first step, for a test that
+        /// changes the enable counts in the middle of the transaction.
+        ///
+        /// # Returns
+        ///
+        /// The output of the transaction, summed over every host, sorted by
+        /// record.
+        fn run_transaction(
+            &mut self,
+            n_records: usize,
+            after_first_step: impl FnOnce(&Self),
+        ) -> Vec<(usize, ZWeight)> {
+            let hosts = self.dbsp_handles.len();
+            let mut after_first_step = Some(after_first_step);
+            self.for_each_host(|h| h.start_transaction().unwrap());
+            for i in 0..n_records {
+                self.input_handles[i % hosts].push(i, 1);
+                self.for_each_host(|h| {
                     h.step().unwrap();
                 });
+                if let Some(f) = after_first_step.take() {
+                    f(self);
+                }
             }
-            for_each_host(&mut dbsp_handles, |h| h.commit_transaction().unwrap());
+            self.for_each_host(|h| h.commit_transaction().unwrap());
 
             let mut results = BTreeMap::<usize, ZWeight>::new();
-            for spine in output_handles
+            for spine in self
+                .output_handles
                 .iter()
                 .flat_map(|handle| handle.take_from_all())
             {
@@ -1022,31 +1126,61 @@ mod tests {
                     cursor.step_key();
                 }
             }
-            let results = results.into_iter().collect_vec();
-            let expected = (0..=round).map(|i| (i, 1)).collect_vec();
-            assert_eq!(&results, &expected);
+            results.into_iter().collect_vec()
+        }
+    }
+
+    /// The output of a transaction that inserts `0..n_records` with the
+    /// accumulator enabled.
+    fn expected_output(n_records: usize) -> Vec<(usize, ZWeight)> {
+        (0..n_records).map(|i| (i, 1)).collect_vec()
+    }
+
+    /// Enables the accumulator on the hosts in `enabled_hosts` and checks
+    /// that every transaction gathers the records of every host.
+    ///
+    /// # Arguments
+    ///
+    /// * `workers` - total number of workers, across all hosts.
+    /// * `hosts` - number of hosts to spread the workers across.
+    /// * `enabled_hosts` - indexes of the hosts that enable the accumulator.
+    fn test_circuit(workers: usize, hosts: usize, enabled_hosts: &[usize]) {
+        test_gather(workers, hosts, Gather::ALL_WORKERS, enabled_hosts);
+    }
+
+    /// Like [test_circuit], with the circuit gathering its output as `gather`
+    /// says.
+    fn test_gather(workers: usize, hosts: usize, gather: Gather, enabled_hosts: &[usize]) {
+        let mut test_hosts = TestHosts::with_gather(workers, hosts, gather);
+        for &host in enabled_hosts {
+            test_hosts.enable_counts[host].enable();
+        }
+        for round in 0..STREAMING_ROUNDS {
+            let n_records = round + 1;
+            assert_eq!(
+                test_hosts.run_transaction(n_records, |_| ()),
+                expected_output(n_records),
+                "round {round} with {workers} workers on {hosts} hosts, {gather:?}"
+            );
         }
     }
 
     fn circuit(
         circuit: &mut RootCircuit,
-    ) -> anyhow::Result<(
-        ZSetHandle<usize>,
-        OutputHandle<
-            TypedBatch<
-                usize,
-                (),
-                i64,
-                Spine<FallbackWSet<dyn Data + 'static, DynWeightTyped<i64>>>,
-            >,
-        >,
-    )> {
+        gather: Gather,
+    ) -> anyhow::Result<(ZSetHandle<usize>, TestOutput, EnableCount)> {
         let (input, input_handle) = circuit.add_input_zset::<usize>();
-        let output_handle = input
-            .shard_accumulate()
-            .into_enabled_stream()
-            .latest_output();
-        Ok((input_handle, output_handle))
+
+        // An input stream is already sharded, so `shard_accumulate` on it would
+        // fall back to a plain shard and accumulate.  `map` yields a stream
+        // that is not, so that the test exercises `ShardedAccumulator`.
+        let stream = input.map(|x| *x);
+        let workers = match Runtime::runtime().unwrap().layout() {
+            Layout::Multihost { hosts, .. } if gather.to_first_host => hosts[0].workers.clone(),
+            _ => 0..Runtime::num_workers(),
+        };
+        let (stream, enable_count) = stream.shard_workers_accumulate(workers).into_parts();
+        Ok((input_handle, stream.latest_output(), enable_count))
     }
 
     // Create a circuit with `WORKERS` concurrent workers with the following
@@ -1058,14 +1192,79 @@ mod tests {
     #[test]
     fn sharded_accumulator_single_host() {
         for workers in [2, 16, 32] {
-            test_circuit(workers, 1);
+            test_circuit(workers, 1, &[0]);
         }
     }
 
     #[test]
     fn sharded_accumulator_multihost() {
         for (workers, hosts) in [(2, 2), (4, 2), (8, 2), (3, 3), (4, 4), (16, 4)] {
-            test_circuit(workers, hosts);
+            test_circuit(workers, hosts, &(0..hosts).collect_vec());
+        }
+    }
+
+    /// An accumulator that only one host enables still gathers every host's
+    /// records, the way an output connector on the host that a view is
+    /// gathered to enables only that host's accumulator.
+    #[test]
+    fn sharded_accumulator_multihost_one_host_enables() {
+        for (workers, hosts) in [(2, 2), (4, 2), (3, 3), (4, 4)] {
+            for enabled_host in [0, hosts - 1] {
+                test_circuit(workers, hosts, &[enabled_host]);
+            }
+        }
+    }
+
+    /// A gather to the first host that only that host enables still gathers
+    /// every host's records, with and without the streaming exchange.  This
+    /// is how a multihost pipeline gathers a view to the host that owns its
+    /// output connectors.  Without the streaming exchange, the gather falls
+    /// back to a plain shard to the first host and an `Accumulator` there.
+    #[test]
+    fn sharded_accumulator_multihost_gather_to_first_host() {
+        for streaming_exchange in [true, false] {
+            let gather = Gather {
+                streaming_exchange,
+                to_first_host: true,
+            };
+            for (workers, hosts) in [(2, 2), (4, 2), (3, 3), (4, 4)] {
+                test_gather(workers, hosts, gather, &[0]);
+            }
+        }
+    }
+
+    /// An accumulator that one host enables in the middle of a transaction
+    /// outputs nothing in that transaction and every host's records in the
+    /// next one.  Disabling it again takes effect at the next transaction in
+    /// the same way.
+    #[test]
+    fn sharded_accumulator_multihost_enable_mid_transaction() {
+        const N_RECORDS: usize = 8;
+        for (workers, hosts) in [(2, 2), (4, 2), (3, 3)] {
+            let mut test_hosts = TestHosts::new(workers, hosts);
+            assert_eq!(test_hosts.run_transaction(N_RECORDS, |_| ()), vec![]);
+
+            assert_eq!(
+                test_hosts.run_transaction(N_RECORDS, |hosts| hosts.enable_counts[0].enable()),
+                vec![],
+                "enabled during the transaction, with {workers} workers on {hosts} hosts"
+            );
+            assert_eq!(
+                test_hosts.run_transaction(N_RECORDS, |_| ()),
+                expected_output(N_RECORDS),
+                "enabled before the transaction, with {workers} workers on {hosts} hosts"
+            );
+
+            assert_eq!(
+                test_hosts.run_transaction(N_RECORDS, |hosts| hosts.enable_counts[0].disable()),
+                expected_output(N_RECORDS),
+                "disabled during the transaction, with {workers} workers on {hosts} hosts"
+            );
+            assert_eq!(
+                test_hosts.run_transaction(N_RECORDS, |_| ()),
+                vec![],
+                "disabled before the transaction, with {workers} workers on {hosts} hosts"
+            );
         }
     }
 }
