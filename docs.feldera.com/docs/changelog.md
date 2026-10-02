@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+## v0.360.0
+
 - Storage now uses LZ4 compression by default, instead of Snappy.  LZ4
   compresses better in about the same amount of time and decompresses
   several times faster.
