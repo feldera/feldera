@@ -34,6 +34,8 @@ use tracing::info;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[cfg(any(feature = "iceberg-tests-fs", feature = "iceberg-tests-follow"))]
+use std::collections::BTreeMap;
+#[cfg(any(feature = "iceberg-tests-fs", feature = "iceberg-tests-follow"))]
 use std::io::Write;
 
 #[cfg(feature = "iceberg-tests-fs")]
@@ -47,6 +49,8 @@ use super::IcebergSubsetTestStruct;
 use super::IcebergTestStruct;
 #[cfg(feature = "iceberg-tests-s3tables")]
 use super::S3TablesTestStruct;
+#[cfg(any(feature = "iceberg-tests-fs", feature = "iceberg-tests-follow"))]
+use super::TestStruct;
 use super::test_circuit_with_properties;
 
 fn init_logging() {
@@ -244,6 +248,9 @@ where
 }
 
 /// Generate up to `max_records` _unique_ records.
+///
+/// Keep the callers under ~200k: the nested columns cost the Python writer
+/// 1.4 GiB there, and three of these tests run at once.
 #[cfg(any(feature = "iceberg-tests-fs", feature = "iceberg-tests-follow"))]
 fn data(n_records: usize) -> Vec<IcebergTestStruct> {
     let mut result = Vec::with_capacity(n_records);
@@ -267,6 +274,11 @@ fn data(n_records: usize) -> Vec<IcebergTestStruct> {
             fixed: ByteArray::new([0u8; 5].as_slice()),
             varbin: ByteArray::new([0u8; 5].as_slice()),
             tstz: TimestampTz::from(Timestamp::from_naiveDateTime(time)),
+            string_array: vec![format!("a{i}"), format!("b{i}")],
+            struct1: TestStruct::for_id(i as u32),
+            struct_array: vec![TestStruct::for_id(i as u32)],
+            string_string_map: BTreeMap::from([(format!("k{i}"), format!("v{i}"))]),
+            string_struct_map: BTreeMap::from([(format!("k{i}"), TestStruct::for_id(i as u32))]),
         });
 
         time += std::time::Duration::from_secs(1);
@@ -278,20 +290,20 @@ fn data(n_records: usize) -> Vec<IcebergTestStruct> {
 #[test]
 #[cfg(feature = "iceberg-tests-fs")]
 fn iceberg_localfs_input_test_unordered() {
-    iceberg_localfs_input_test(1_000_000, json!({}), &|_| true);
+    iceberg_localfs_input_test(200_000, json!({}), &|_| true);
 }
 
 #[test]
 #[cfg(feature = "iceberg-tests-fs")]
 fn iceberg_localfs_input_test_ordered() {
-    iceberg_localfs_input_test(1_000_000, json!({ "timestamp_column": "ts" }), &|_| true);
+    iceberg_localfs_input_test(200_000, json!({ "timestamp_column": "ts" }), &|_| true);
 }
 
 #[test]
 #[cfg(feature = "iceberg-tests-fs")]
 fn iceberg_localfs_input_test_ordered_with_filter() {
     iceberg_localfs_input_test(
-        1_000_000,
+        200_000,
         json!({ "timestamp_column": "ts", "snapshot_filter": "i >= 10000" }),
         &|x| x.i >= 10000,
     );

@@ -925,6 +925,11 @@ pub struct IcebergTestStruct {
     pub fixed: ByteArray,
     pub varbin: ByteArray,
     pub tstz: TimestampTz,
+    pub string_array: Vec<String>,
+    pub struct1: TestStruct,
+    pub struct_array: Vec<TestStruct>,
+    pub string_string_map: BTreeMap<String, String>,
+    pub string_struct_map: BTreeMap<String, TestStruct>,
 }
 
 impl Arbitrary for IcebergTestStruct {
@@ -986,6 +991,14 @@ impl Arbitrary for IcebergTestStruct {
                         fixed: ByteArray::from_vec(fixed),
                         varbin: ByteArray::new(&varbin),
                         tstz: TimestampTz::from_microseconds(tstz),
+                        string_array: vec![format!("a{s}"), format!("b{s}")],
+                        struct1: TestStruct::for_id(s as u32),
+                        struct_array: vec![TestStruct::for_id(s as u32)],
+                        string_string_map: BTreeMap::from([(format!("k{s}"), format!("v{s}"))]),
+                        string_struct_map: BTreeMap::from([(
+                            format!("k{s}"),
+                            TestStruct::for_id(s as u32),
+                        )]),
                     }
                 },
             )
@@ -1018,6 +1031,44 @@ impl IcebergTestStruct {
                 DataType::Timestamp(TimeUnit::Microsecond, Some("UTC".into())),
                 false,
             ),
+            arrow::datatypes::Field::new(
+                "string_array",
+                DataType::new_list(DataType::Utf8, false),
+                false,
+            ),
+            arrow::datatypes::Field::new(
+                "struct1",
+                DataType::Struct(TestStruct::arrow_schema().fields.clone()),
+                false,
+            ),
+            arrow::datatypes::Field::new(
+                "struct_array",
+                DataType::new_list(
+                    DataType::Struct(TestStruct::arrow_schema().fields.clone()),
+                    false,
+                ),
+                false,
+            ),
+            arrow::datatypes::Field::new_map(
+                "string_string_map",
+                "entries",
+                arrow::datatypes::Field::new("key", DataType::Utf8, false),
+                arrow::datatypes::Field::new("value", DataType::Utf8, false),
+                false,
+                false,
+            ),
+            arrow::datatypes::Field::new_map(
+                "string_struct_map",
+                "entries",
+                arrow::datatypes::Field::new("key", DataType::Utf8, false),
+                arrow::datatypes::Field::new(
+                    "value",
+                    DataType::Struct(TestStruct::arrow_schema().fields.clone()),
+                    false,
+                ),
+                false,
+                false,
+            ),
         ]))
     }
 
@@ -1037,6 +1088,34 @@ impl IcebergTestStruct {
             Field::new("fixed".into(), ColumnType::fixed(5, false)),
             Field::new("varbin".into(), ColumnType::varbinary(false)),
             Field::new("tstz".into(), ColumnType::timestamp_tz(false)),
+            Field::new(
+                "string_array".into(),
+                ColumnType::array(false, ColumnType::varchar(false)),
+            ),
+            Field::new(
+                "struct1".into(),
+                ColumnType::structure(false, &TestStruct::schema()),
+            ),
+            Field::new(
+                "struct_array".into(),
+                ColumnType::array(false, ColumnType::structure(false, &TestStruct::schema())),
+            ),
+            Field::new(
+                "string_string_map".into(),
+                ColumnType::map(
+                    false,
+                    ColumnType::varchar(false),
+                    ColumnType::varchar(false),
+                ),
+            ),
+            Field::new(
+                "string_struct_map".into(),
+                ColumnType::map(
+                    false,
+                    ColumnType::varchar(false),
+                    ColumnType::structure(false, &TestStruct::schema()),
+                ),
+            ),
         ]
     }
 
@@ -1057,6 +1136,34 @@ impl IcebergTestStruct {
             Field::new("fixed".into(), ColumnType::fixed(5, false)),
             Field::new("varbin".into(), ColumnType::varbinary(false)),
             Field::new("tstz".into(), ColumnType::timestamp_tz(false)),
+            Field::new(
+                "string_array".into(),
+                ColumnType::array(false, ColumnType::varchar(false)),
+            ),
+            Field::new(
+                "struct1".into(),
+                ColumnType::structure(false, &TestStruct::schema()),
+            ),
+            Field::new(
+                "struct_array".into(),
+                ColumnType::array(false, ColumnType::structure(false, &TestStruct::schema())),
+            ),
+            Field::new(
+                "string_string_map".into(),
+                ColumnType::map(
+                    false,
+                    ColumnType::varchar(false),
+                    ColumnType::varchar(false),
+                ),
+            ),
+            Field::new(
+                "string_struct_map".into(),
+                ColumnType::map(
+                    false,
+                    ColumnType::varchar(false),
+                    ColumnType::structure(false, &TestStruct::schema()),
+                ),
+            ),
         ];
 
         fields
@@ -1073,7 +1180,7 @@ impl IcebergTestStruct {
     }
 }
 
-serialize_table_record!(IcebergTestStruct[13]{
+serialize_table_record!(IcebergTestStruct[18]{
     b["b"]: bool,
     i["i"]: i32,
     l["l"]: i64,
@@ -1087,10 +1194,15 @@ serialize_table_record!(IcebergTestStruct[13]{
     // uuid["uuid"]: ByteArray,
     fixed["fixed"]: ByteArray,
     varbin["varbin"]: ByteArray,
-    tstz["tstz"]: TimestampTz
+    tstz["tstz"]: TimestampTz,
+    string_array["string_array"]: Vec<String>,
+    struct1["struct1"]: TestStruct,
+    struct_array["struct_array"]: Vec<TestStruct>,
+    string_string_map["string_string_map"]: BTreeMap<String, String>,
+    string_struct_map["string_struct_map"]: BTreeMap<String, TestStruct>
 });
 
-deserialize_table_record!(IcebergTestStruct["IcebergTestStruct", Variant, 13] {
+deserialize_table_record!(IcebergTestStruct["IcebergTestStruct", Variant, 18] {
     (b, "b", false, bool, |_| None),
     (i, "i", false, i32, |_| None),
     (l, "l", false, i64, |_| None),
@@ -1104,7 +1216,12 @@ deserialize_table_record!(IcebergTestStruct["IcebergTestStruct", Variant, 13] {
     // (uuid, "uuid", false, ByteArray, None),
     (fixed, "fixed", false, ByteArray, |_| None),
     (varbin, "varbin", false, ByteArray, |_| None),
-    (tstz, "tstz", false, TimestampTz, |_| None)
+    (tstz, "tstz", false, TimestampTz, |_| None),
+    (string_array, "string_array", false, Vec<String>, |_| None),
+    (struct1, "struct1", false, TestStruct, |_| None),
+    (struct_array, "struct_array", false, Vec<TestStruct>, |_| None),
+    (string_string_map, "string_string_map", false, BTreeMap<String, String>, |_| None),
+    (string_struct_map, "string_struct_map", false, BTreeMap<String, TestStruct>, |_| None)
 });
 
 /// Records in the Amazon S3 Tables integration-test table (`dev.test_table`).
