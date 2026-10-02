@@ -28,6 +28,7 @@ use feldera_adapterlib::errors::controller::ControllerError;
 use feldera_macros::{IsNone, OrdRepr};
 use feldera_sqllib::Variant;
 use feldera_types::config::{PipelineConfig, TransportConfig};
+use feldera_types::constants::DATAFUSION_TEMP_DIR;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
 use feldera_types::serde_with_context::serde_config::{DecimalFormat, VariantFormat};
@@ -3966,7 +3967,8 @@ fn visit_checkpointed_snapshot_timestamps(
     while let Some(dir) = dirs.pop() {
         for entry in std::fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
-            if path.is_dir() {
+            // DataFusion deletes its scratch dirs after the pipeline stops.
+            if path.is_dir() && path.file_name() != Some(OsStr::new(DATAFUSION_TEMP_DIR)) {
                 dirs.push(path);
             } else if path.file_name() == Some(OsStr::new("state.json")) {
                 let mut state: Value =
@@ -4032,9 +4034,16 @@ async fn run_ordered_snapshot_resume_test(legacy_checkpoint: bool) {
         delta_connector_counter(pipeline, "input_connector_delta_snapshot_records_total")
     };
 
+    // Wait until the circuit has taken in a slice, not just the reader.
     let pipeline = start().await;
-    wait(|| snapshot_records(&pipeline) > 0, 20_000)
-        .expect("timeout waiting for the first snapshot slice");
+    wait(
+        || {
+            completed_frontier_metadata(&pipeline)
+                .is_some_and(|metadata| metadata["snapshot_timestamp"].is_string())
+        },
+        20_000,
+    )
+    .expect("timeout waiting for the first snapshot slice");
     suspend_pipeline(pipeline).await;
     let found = visit_checkpointed_snapshot_timestamps(storage_dir.path(), &mut |ts| {
         assert!(
