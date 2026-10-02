@@ -1473,21 +1473,53 @@ impl PipelineExecutor for LocalRunner {
         Ok(())
     }
 
-    /// Removes the pipeline working directory.
+    /// Removes the pipeline working directory. A failed removal must keep the
+    /// pipeline in `Clearing`, so that the automaton retries before allowing a
+    /// new deployment to use the old storage.
     async fn clear(&mut self, _runtime_config: &serde_json::Value) -> Result<(), ManagerError> {
-        if self.config.pipeline_dir(self.pipeline_id).exists() {
-            match remove_dir_all(self.config.pipeline_dir(self.pipeline_id)).await {
-                Ok(_) => (),
-                Err(e) => {
-                    warn!(
-                        pipeline_id = %self.pipeline_id,
-                        pipeline = "N/A",
-                        "Failed to remove working directory: {e}"
-                    );
-                }
-            }
+        clear_pipeline_dir(&self.config.pipeline_dir(self.pipeline_id)).await
+    }
+}
+
+async fn clear_pipeline_dir(path: &Path) -> Result<(), ManagerError> {
+    match remove_dir_all(path).await {
+        Ok(()) => Ok(()),
+        // Clearing is idempotent, including when a previous attempt removed the
+        // directory but the manager did not record the status transition.
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(RunnerError::RunnerClearError {
+            error: format!(
+                "failed to remove working directory '{}': {e}",
+                path.display()
+            ),
         }
-        Ok(())
+        .into()),
+    }
+}
+
+#[cfg(test)]
+mod clear_tests {
+    use super::clear_pipeline_dir;
+
+    #[tokio::test]
+    async fn clear_fails_until_working_directory_is_removed() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("pipeline");
+
+        // A file at the pipeline directory path makes remove_dir_all fail on
+        // every platform. The old state must not be reported as cleared.
+        std::fs::write(&path, b"old state").unwrap();
+        assert!(clear_pipeline_dir(&path).await.is_err());
+        assert!(path.exists());
+
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        std::fs::write(path.join("checkpoint"), b"old state").unwrap();
+        clear_pipeline_dir(&path).await.unwrap();
+        assert!(!path.exists());
+
+        // A retry after successful deletion is also successful.
+        clear_pipeline_dir(&path).await.unwrap();
     }
 }
 
