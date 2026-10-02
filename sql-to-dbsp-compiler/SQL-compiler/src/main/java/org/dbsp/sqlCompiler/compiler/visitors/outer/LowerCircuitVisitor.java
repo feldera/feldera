@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyNOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
@@ -10,11 +11,15 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStarJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
@@ -52,8 +57,12 @@ import java.util.List;
 /** Lowers a circuit's representation; most changes are about
  * generating compilable Rust for operator functions. */
 public class LowerCircuitVisitor extends CircuitCloneVisitor {
+    /** True if the aggregate operators keep their aggregate lists instead of a single {@link DBSPFold}. */
+    final boolean keepAggregateLists;
+
     public LowerCircuitVisitor(DBSPCompiler compiler) {
         super(compiler, false);
+        this.keepAggregateLists = compiler.options.ioOptions.gen2;
     }
 
     /** Rewrite a flatmap operation into a Rust method call.
@@ -294,6 +303,35 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         this.map(node, instrumented);
     }
 
+    @Override
+    public void postorder(DBSPStreamAggregateOperator node) {
+        if (node.function != null || this.keepAggregateLists) {
+            // OrderBy implemented as an aggregate, or a Gen-2 circuit
+            super.postorder(node);
+            return;
+        }
+
+        DBSPFold function = node.getAggregateList().asFold(this.compiler());
+        DBSPSimpleOperator result = new DBSPStreamAggregateOperator(
+                node.getRelNode(), node.getOutputIndexedZSetType(),
+                function, null, this.mapped(node.input()));
+        this.map(node, result);
+    }
+
+    @Override
+    public void postorder(DBSPAggregateOperator node) {
+        if (node.function != null || this.keepAggregateLists) {
+            // OrderBy implemented as an aggregate, or a Gen-2 circuit
+            super.postorder(node);
+            return;
+        }
+        DBSPFold function = node.getAggregateList().asFold(this.compiler());
+        DBSPSimpleOperator result = new DBSPAggregateOperator(
+                node.getRelNode(), node.getOutputIndexedZSetType(),
+                function, null, this.mapped(node.input()));
+        this.map(node, result);
+    }
+
     public static DBSPClosureExpression lowerJoinFilterMapFunctions(
             DBSPCompiler compiler, DBSPClosureExpression expression,
             @Nullable DBSPClosureExpression filter, @Nullable DBSPClosureExpression map) {
@@ -400,5 +438,32 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                     node.getOutputIndexedZSetType(), this.mapped(node.input()));
         }
         this.map(node, replacement);
+    }
+
+    @Override
+    public void postorder(DBSPPartitionedRollingAggregateOperator node) {
+        if (node.aggregateList == null || this.keepAggregateLists) {
+            super.postorder(node);
+            return;
+        }
+        DBSPFold function = node.getAggregateList().asFold(this.compiler());
+        DBSPSimpleOperator result = new DBSPPartitionedRollingAggregateOperator(node.getRelNode(),
+                node.partitioningFunction, function, null, node.lower, node.upper,
+                node.getOutputIndexedZSetType(), this.mapped(node.input()));
+        this.map(node, result);
+    }
+
+    @Override
+    public void postorder(DBSPPartitionedRollingAggregateWithWaterlineOperator node) {
+        if (node.aggregateList == null || this.keepAggregateLists) {
+            super.postorder(node);
+            return;
+        }
+        DBSPFold function = node.aggregateList.asFold(this.compiler());
+        DBSPSimpleOperator result = new DBSPPartitionedRollingAggregateWithWaterlineOperator(node.getRelNode(),
+                node.partitioningFunction, function, null, node.lower, node.upper,
+                node.getOutputIndexedZSetType(),
+                this.mapped(node.left()), this.mapped(node.right()));
+        this.map(node, result);
     }
 }
