@@ -41,6 +41,13 @@ parser.add_argument(
     help="Location to create the warehouse; only used in conjunction with '--catalog=sql' in (default: /tmp/warehouse)",
 )
 parser.add_argument(
+    "--append",
+    action="store_true",
+    help="Append to the existing table, making a second snapshot, "
+    "instead of recreating it",
+)
+
+parser.add_argument(
     "--rows",
     type=int,
     default=1000000,
@@ -130,20 +137,23 @@ partition_spec = PartitionSpec(
     PartitionField(source_id=9, field_id=1000, transform=DayTransform(), name="date")
 )
 
-try:
-    print("Deleting existing table, if any")
-    catalog.drop_table("iceberg_test.test_table_v3")
-except:
-    pass
+if args.append:
+    table = catalog.load_table("iceberg_test.test_table_v3")
+else:
+    try:
+        print("Deleting existing table, if any")
+        catalog.drop_table("iceberg_test.test_table_v3")
+    except:
+        pass
 
-print("Creating Iceberg table")
+    print("Creating Iceberg table")
 
-table = catalog.create_table(
-    "iceberg_test.test_table_v3",
-    schema,
-    location=location,
-    partition_spec=partition_spec,
-)
+    table = catalog.create_table(
+        "iceberg_test.test_table_v3",
+        schema,
+        location=location,
+        partition_spec=partition_spec,
+    )
 
 # Number of records
 num_records = args.rows
