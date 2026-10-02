@@ -159,7 +159,9 @@ class Pipeline:
 
         return self.client.resume_pipeline_logs(self.name, cursor)
 
-    def input_pandas(self, table_name: str, df: pandas.DataFrame, force: bool = False):
+    def input_pandas(
+        self, table_name: str, df: pandas.DataFrame, force: bool = False
+    ) -> Optional[str]:
         """
         Push all rows in a pandas DataFrame to the pipeline.
 
@@ -171,6 +173,9 @@ class Pipeline:
         :param table_name: The name of the table to insert data into.
         :param df: The pandas DataFrame to be pushed to the pipeline.
         :param force: `True` to push data even if the pipeline is paused. `False` by default.
+
+        :returns: The completion token of the last chunk pushed, which also covers
+            the earlier chunks, or None if the DataFrame is empty and nothing was pushed.
 
         :raises ValueError: If the table does not exist in the pipeline.
         :raises RuntimeError: If the pipeline is not in a valid state to push data.
@@ -201,8 +206,9 @@ class Pipeline:
             )
         else:
             # consider validating the schema here
+            token = None
             for datum in chunk_dataframe(df):
-                self.client.push_to_pipeline(
+                token = self.client.push_to_pipeline(
                     self.name,
                     table_name,
                     "json",
@@ -212,7 +218,7 @@ class Pipeline:
                     serialize=False,
                     force=force,
                 )
-            return
+            return token
 
     def input_json(
         self,
@@ -1547,8 +1553,9 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         an exception will be raised.
 
         Important:
-            If you try to ``INSERT`` or ``DELETE`` data from a table while the
-            pipeline is paused, it will block until the pipeline is resumed.
+            If you try to ``INSERT`` data into a table while the pipeline is
+            paused, it will block until the pipeline is resumed.  Ad-hoc
+            queries cannot delete data.
 
         :param query: The SQL query to be executed.
         :param wait: When ``True``, block until the query's writes have been

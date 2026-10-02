@@ -146,6 +146,7 @@ const guides = {
             ]
         },
         'tutorials/time-series',
+        'tutorials/testing',
         {
             type: 'category',
             label: 'Fine-Grained Authorization',
