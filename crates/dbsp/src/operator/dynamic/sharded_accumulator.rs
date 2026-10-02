@@ -123,64 +123,20 @@ where
             && runtime.layout().n_workers() > 1
             && runtime.step_size() == StepSize::Microsteps
         {
-            let remote_waiter_node_id = if runtime.layout().is_multihost() {
-                let clients = ExchangeClients::for_runtime(&runtime);
-                Some(*self.circuit().cache_get_or_insert_with(
-                    ShardedAccumulatorRemoteWaiterId::new(()),
-                    move || {
-                        let waiter = self
-                            .circuit()
-                            .add_source(ShardedAccumulatorRemoteWaiter::new(clients.clone()));
-                        waiter.local_node_id()
-                    },
-                ))
-            } else {
-                None
-            };
-
+            let remote_waiter_node_id = self.sharded_accumulator_remote_waiter(&runtime);
             self.circuit()
                 .cache_get_or_insert_with(
                     ShardedAccumulatorId::new((self.stream_id(), workers.clone())),
                     || {
-                        let exchange_id: ExchangeId = runtime.sequence_next().try_into().unwrap();
-                        let exchange = ShardedAccumulator::<B>::with_runtime(
+                        self.new_sharded_accumulator(
                             &runtime,
-                            workers.clone(),
-                            exchange_id,
                             factories,
+                            workers.clone(),
                             batch_layout,
-                        );
-                        let enable_count = exchange.enable_count.clone();
-                        let local_waiter =
-                            self.circuit()
-                                .add_source(ShardedAccumulatorLocalWaiter::new(
-                                    Some(Location::caller()),
-                                    exchange.clone(),
-                                ));
-                        let receiver = self
-                            .circuit()
-                            .add_exchange(
-                                ShardedAccumulatorSender::new(
-                                    Some(Location::caller()),
-                                    exchange.clone(),
-                                    // Only the root circuit exchanges metadata.
-                                    (self.circuit().root_scope() == 0)
-                                        .then(|| self.circuit().metadata_exchange().clone()),
-                                ),
-                                ShardedAccumulatorReceiver::new(Some(Location::caller()), exchange),
-                                self,
-                            )
-                            .mark_sharded_workers(workers.clone());
-                        self.circuit()
-                            .add_dependency(receiver.local_node_id(), local_waiter.local_node_id());
-                        if let Some(remote_waiter_node_id) = remote_waiter_node_id {
-                            self.circuit()
-                                .add_dependency(receiver.local_node_id(), remote_waiter_node_id);
-                        }
-                        Accumulation {
-                            stream: receiver,
-                            enable_count,
-                        }
+                            remote_waiter_node_id,
+                            Location::caller(),
+                        )
+                        .0
                     },
                 )
                 .clone()
@@ -188,6 +144,87 @@ where
             self.dyn_shard_workers(workers, factories)
                 .dyn_accumulate_with_layout(factories, batch_layout)
         }
+    }
+}
+
+impl<C, B> Stream<C, B>
+where
+    C: Circuit,
+    B: Batch<Time = ()>,
+{
+    /// Returns the node ID of the circuit's [ShardedAccumulatorRemoteWaiter],
+    /// first adding it if necessary, or `None` on a single-host runtime.
+    fn sharded_accumulator_remote_waiter(&self, runtime: &Runtime) -> Option<NodeId> {
+        if !runtime.layout().is_multihost() {
+            return None;
+        }
+        let clients = ExchangeClients::for_runtime(runtime);
+        Some(*self.circuit().cache_get_or_insert_with(
+            ShardedAccumulatorRemoteWaiterId::new(()),
+            move || {
+                let waiter = self
+                    .circuit()
+                    .add_source(ShardedAccumulatorRemoteWaiter::new(clients.clone()));
+                waiter.local_node_id()
+            },
+        ))
+    }
+
+    /// Adds the operators for a new sharded accumulator over `self` to the
+    /// circuit.  Returns the accumulated stream and the [ShardedAccumulator]
+    /// that connects the operators.
+    fn new_sharded_accumulator(
+        &self,
+        runtime: &Runtime,
+        factories: &B::Factories,
+        workers: Range<usize>,
+        batch_layout: BatchLayout,
+        remote_waiter_node_id: Option<NodeId>,
+        location: &'static Location<'static>,
+    ) -> (
+        Accumulation<Stream<C, Option<Spine<B>>>>,
+        Arc<ShardedAccumulator<B>>,
+    ) {
+        let exchange_id: ExchangeId = runtime.sequence_next().try_into().unwrap();
+        let exchange = ShardedAccumulator::<B>::with_runtime(
+            runtime,
+            workers.clone(),
+            exchange_id,
+            factories,
+            batch_layout,
+        );
+        let enable_count = exchange.enable_count.clone();
+        let local_waiter = self
+            .circuit()
+            .add_source(ShardedAccumulatorLocalWaiter::new(
+                Some(location),
+                exchange.clone(),
+            ));
+        let receiver = self
+            .circuit()
+            .add_exchange(
+                ShardedAccumulatorSender::new(
+                    Some(location),
+                    exchange.clone(),
+                    // Only the root circuit exchanges metadata.
+                    (self.circuit().root_scope() == 0)
+                        .then(|| self.circuit().metadata_exchange().clone()),
+                ),
+                ShardedAccumulatorReceiver::new(Some(location), exchange.clone()),
+                self,
+            )
+            .mark_sharded_workers(workers);
+        self.circuit()
+            .add_dependency(receiver.local_node_id(), local_waiter.local_node_id());
+        if let Some(remote_waiter_node_id) = remote_waiter_node_id {
+            self.circuit()
+                .add_dependency(receiver.local_node_id(), remote_waiter_node_id);
+        }
+        let accumulation = Accumulation {
+            stream: receiver,
+            enable_count,
+        };
+        (accumulation, exchange)
     }
 }
 
@@ -1061,6 +1098,88 @@ mod tests {
         CircuitConfig::with_workers(workers).with_streaming_exchange(gather.streaming_exchange)
     }
 
+    /// Starts `hosts` runtimes with `workers` workers in total, configured
+    /// for `gather`, each running the circuit that `constructor` builds.
+    /// Returns a handle for each runtime and what `constructor` returned for
+    /// it.
+    fn start_runtimes<F, T>(
+        workers: usize,
+        hosts: usize,
+        gather: Gather,
+        constructor: F,
+    ) -> (Vec<DBSPHandle>, Vec<T>)
+    where
+        F: FnOnce(&mut RootCircuit) -> anyhow::Result<T> + Clone + Send + 'static,
+        T: Send + 'static,
+    {
+        match hosts {
+            0 => unreachable!(),
+            1 => {
+                let (dbsp_handle, result) =
+                    Runtime::init_circuit(test_config(workers, gather), constructor)
+                        .expect("failed to start runtime");
+                (vec![dbsp_handle], vec![result])
+            }
+            _ => {
+                assert!(workers >= hosts);
+
+                // Bind some listening sockets.
+                let exchange_listeners = (0..hosts)
+                    .map(|_| {
+                        TcpListener::bind("127.0.0.1:0")
+                            .expect("should be able to bind a port on localhost")
+                    })
+                    .collect_vec();
+
+                // Assemble the listening sockets' addresses into something we can pass
+                // to `Layout::new_multihost`.
+                let params = exchange_listeners
+                    .iter()
+                    .enumerate()
+                    .map(|(index, listener)| {
+                        (
+                            listener
+                                .local_addr()
+                                .expect("should be able to get local address"),
+                            workers / hosts + (index < workers % hosts) as usize,
+                        )
+                    })
+                    .collect_vec();
+
+                // Create the runtimes.
+                zip(params.iter(), exchange_listeners)
+                    .map(|((local_address, _), exchange_listener)| {
+                        let cconf = CircuitConfig::from(
+                            Layout::new_multihost(&params, *local_address).unwrap(),
+                        )
+                        .with_exchange_listener(exchange_listener)
+                        .with_streaming_exchange(gather.streaming_exchange);
+
+                        Runtime::init_circuit(cconf, constructor.clone())
+                            .expect("failed to start runtime")
+                    })
+                    .unzip()
+            }
+        }
+    }
+
+    /// Executes `f` on all of the handles in `dbsp_handles` in parallel and
+    /// waits for them to complete.
+    fn for_each_host<F>(dbsp_handles: &mut [DBSPHandle], f: F)
+    where
+        F: Fn(&mut DBSPHandle) + Send + Sync + 'static,
+    {
+        thread::scope(|s| {
+            dbsp_handles
+                .iter_mut()
+                .map(|h| s.spawn(|_| f(h)))
+                .collect_vec()
+                .into_iter()
+                .for_each(|h| h.join().unwrap())
+        })
+        .unwrap();
+    }
+
     /// The runtimes of a test circuit, one per host, with each host's handles.
     struct TestHosts {
         dbsp_handles: Vec<DBSPHandle>,
@@ -1081,66 +1200,10 @@ mod tests {
         /// Like [TestHosts::new], with the circuit gathering its output as
         /// `gather` says.
         fn with_gather(workers: usize, hosts: usize, gather: Gather) -> Self {
-            let (dbsp_handles, input_handles, output_handles, enable_counts) = match hosts {
-                0 => unreachable!(),
-                1 => {
-                    let (dbsp_handle, (input_handle, output_handle, enable_count)) =
-                        Runtime::init_circuit(test_config(workers, gather), move |c| {
-                            circuit(c, gather)
-                        })
-                        .expect("failed to start runtime");
-                    (
-                        vec![dbsp_handle],
-                        vec![input_handle],
-                        vec![output_handle],
-                        vec![enable_count],
-                    )
-                }
-                _ => {
-                    assert!(workers >= hosts);
-
-                    // Bind some listening sockets.
-                    let exchange_listeners = (0..hosts)
-                        .map(|_| {
-                            TcpListener::bind("127.0.0.1:0")
-                                .expect("should be able to bind a port on localhost")
-                        })
-                        .collect_vec();
-
-                    // Assemble the listening sockets' addresses into something we can pass
-                    // to `Layout::new_multihost`.
-                    let params = exchange_listeners
-                        .iter()
-                        .enumerate()
-                        .map(|(index, listener)| {
-                            (
-                                listener
-                                    .local_addr()
-                                    .expect("should be able to get local address"),
-                                workers / hosts + (index < workers % hosts) as usize,
-                            )
-                        })
-                        .collect_vec();
-
-                    // Create the runtimes.
-                    let mut handles = Vec::with_capacity(params.len());
-                    for ((local_address, _), exchange_listener) in
-                        zip(params.iter(), exchange_listeners)
-                    {
-                        let cconf = CircuitConfig::from(
-                            Layout::new_multihost(&params, *local_address).unwrap(),
-                        )
-                        .with_exchange_listener(exchange_listener)
-                        .with_streaming_exchange(gather.streaming_exchange);
-
-                        let (dbsp_handle, (input_handle, output_handle, enable_count)) =
-                            Runtime::init_circuit(cconf, move |c| circuit(c, gather))
-                                .expect("failed to start runtime");
-                        handles.push((dbsp_handle, input_handle, output_handle, enable_count));
-                    }
-                    handles.into_iter().multiunzip()
-                }
-            };
+            let (dbsp_handles, handles) =
+                start_runtimes(workers, hosts, gather, move |c| circuit(c, gather));
+            let (input_handles, output_handles, enable_counts) =
+                handles.into_iter().multiunzip();
             Self {
                 dbsp_handles,
                 input_handles,
@@ -1155,15 +1218,7 @@ mod tests {
         where
             F: Fn(&mut DBSPHandle) + Send + Sync + 'static,
         {
-            thread::scope(|s| {
-                self.dbsp_handles
-                    .iter_mut()
-                    .map(|h| s.spawn(|_| f(h)))
-                    .collect_vec()
-                    .into_iter()
-                    .for_each(|h| h.join().unwrap())
-            })
-            .unwrap();
+            for_each_host(&mut self.dbsp_handles, f);
         }
 
         /// Runs one transaction that inserts the records `0..n_records`,
