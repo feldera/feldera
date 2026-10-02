@@ -1741,11 +1741,7 @@ impl MetadataExchange {
 
     /// Update the local metadata for the operator with the given id.
     pub fn set_local_operator_metadata(&self, id: NodeId, metadata: serde_json::Value) {
-        self.inner
-            .local_metadata
-            .borrow_mut()
-            .metadata
-            .insert(id, metadata.clone());
+        self.set_local_operator_metadata_typed(id, metadata);
     }
 
     /// Clear the local metadata for the operator with the given id.
@@ -1794,12 +1790,7 @@ impl MetadataExchange {
 
     /// Get metadata for the operator with the given id received from all workers before the current step.
     pub fn get_global_operator_metadata(&self, id: NodeId) -> Vec<Option<serde_json::Value>> {
-        self.inner
-            .global_metadata
-            .borrow()
-            .iter()
-            .map(|global_metadata| global_metadata.metadata.get(&id).cloned())
-            .collect()
+        self.get_global_operator_metadata_typed(id)
     }
 
     /// Get metadata for the operator with the given id received from all workers before the current step.
