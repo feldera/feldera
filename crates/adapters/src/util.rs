@@ -387,7 +387,7 @@ impl TokenBucket {
     fn try_consume_token(&self) -> Option<RateLimitCheckResult> {
         if self
             .available_tokens
-            .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |old| {
+            .try_update(Ordering::AcqRel, Ordering::Relaxed, |old| {
                 if old > 0 { Some(old - 1) } else { None }
             })
             .is_ok()
@@ -448,7 +448,7 @@ impl TokenBucket {
         {
             // Safely add tokens but cap to capacity.
             self.available_tokens
-                .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |old| {
+                .try_update(Ordering::AcqRel, Ordering::Relaxed, |old| {
                     Some((old.saturating_add(tokens_to_add as u32)).min(self.max_tokens))
                 })
                 .ok();

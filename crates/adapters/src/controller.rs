@@ -7937,7 +7937,7 @@ impl ControllerInner {
 
         match self
             .num_api_connections
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, update)
+            .try_update(Ordering::SeqCst, Ordering::SeqCst, update)
         {
             Ok(_) => Ok(ApiConnectionGuard(self)),
             Err(_) => Err(PipelineError::ApiConnectionLimit),
