@@ -726,14 +726,10 @@ fn iceberg_glue_s3_input_test() {
         &[],
         json!({
             "catalog_type": "glue",
-            "glue.warehouse": "s3://feldera-iceberg-test/",
+            "glue.warehouse": "s3://feldera-ci-iceberg/",
             "table_name": "iceberg_test.test_table_v3",
-            "glue.access-key-id": std::env::var("ICEBERG_TEST_AWS_ACCESS_KEY_ID").unwrap(),
-            "glue.secret-access-key": std::env::var("ICEBERG_TEST_AWS_SECRET_ACCESS_KEY").unwrap(),
-            "glue.region": "us-east-1",
-            "s3.access-key-id": std::env::var("ICEBERG_TEST_AWS_ACCESS_KEY_ID").unwrap(),
-            "s3.secret-access-key": std::env::var("ICEBERG_TEST_AWS_SECRET_ACCESS_KEY").unwrap(),
-            "s3.region": "us-east-1",
+            "glue.region": env_or("ICEBERG_TEST_REGION", "us-west-1"),
+            "s3.region": env_or("ICEBERG_TEST_REGION", "us-west-1"),
         }),
     );
 
@@ -788,11 +784,9 @@ fn iceberg_rest_s3_input_test() {
         json!({
             "catalog_type": "rest",
             "rest.uri": "http://localhost:8181",
-            "rest.warehouse": "s3://feldera-iceberg-test/",
+            "rest.warehouse": "s3://feldera-ci-iceberg/",
             "table_name": "iceberg_test.test_table_v3",
-            "s3.access-key-id": std::env::var("ICEBERG_TEST_AWS_ACCESS_KEY_ID").unwrap(),
-            "s3.secret-access-key": std::env::var("ICEBERG_TEST_AWS_SECRET_ACCESS_KEY").unwrap(),
-            "s3.region": "us-east-1",
+            "s3.region": env_or("ICEBERG_TEST_REGION", "us-west-1"),
         }),
     );
 
@@ -810,7 +804,11 @@ fn iceberg_rest_s3_input_test() {
 // setup in crates/iceberg/src/test/README.md; override via FELDERA_ICEBERG_*.
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "iceberg-tests-follow")]
+#[cfg(any(
+    feature = "iceberg-tests-follow",
+    feature = "iceberg-tests-glue",
+    feature = "iceberg-tests-rest"
+))]
 fn env_or(key: &str, default: &str) -> String {
     std::env::var(key).unwrap_or_else(|_| default.to_string())
 }
