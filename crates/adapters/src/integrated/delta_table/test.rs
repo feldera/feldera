@@ -6,12 +6,12 @@ use crate::integrated::delta_table::delta_input_serde_config;
 use crate::integrated::delta_table::output::delta_variant_types;
 use crate::test::data::DeltaTestKey;
 use crate::test::{
-    DeltaTestStruct, file_to_zset, list_files_recursive, test_circuit, test_circuit_with_index,
-    wait,
+    DeltaTestStruct, TestStruct, file_to_zset, list_files_recursive, test_circuit,
+    test_circuit_with_index, wait,
 };
 use crate::{Catalog, CircuitCatalog};
 use arrow::datatypes::{DataType as ArrowDataType, FieldRef, Schema as ArrowSchema};
-use chrono::NaiveDate;
+use chrono::{DateTime, NaiveDate};
 use dbsp::circuit::CircuitConfig;
 #[cfg(any(feature = "delta-s3-test", feature = "delta-unity-test"))]
 use dbsp::typed_batch::DynBatchReader;
@@ -93,6 +93,29 @@ where
         + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
         + Sync,
 {
+    delta_table_snapshot_to_json_values::<T>(
+        table_uri,
+        schema,
+        &config
+            .iter()
+            .map(|(key, value)| (key.clone(), Value::from(value.clone())))
+            .collect(),
+    )
+}
+
+/// As [`delta_table_snapshot_to_json`], for settings the connector reads as a
+/// number rather than a string.
+fn delta_table_snapshot_to_json_values<T>(
+    table_uri: &str,
+    schema: &[Field],
+    config: &HashMap<String, Value>,
+) -> NamedTempFile
+where
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+        + Sync,
+{
     let start = Instant::now();
     let json_file = NamedTempFile::new().unwrap();
     println!(
@@ -100,10 +123,7 @@ where
         json_file.path().display()
     );
 
-    let mut config: HashMap<String, Value> = config
-        .iter()
-        .map(|(key, value)| (key.clone(), Value::from(value.clone())))
-        .collect();
+    let mut config = config.clone();
     config.insert("mode".to_string(), "snapshot".into());
 
     let input_pipeline = delta_table_input_pipeline::<T>(
@@ -3939,6 +3959,83 @@ async fn delta_table_ordered_snapshot_resume_legacy_checkpoint_test() {
     run_ordered_snapshot_resume_test(true).await;
 }
 
+/// A `datetime` read must land on the version current at that time.
+///
+/// delta-rs resolves `datetime` from each commit file's modification time, so
+/// the test sets those rather than racing the clock.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_snapshot_datetime_test() {
+    use std::fs::{File, FileTimes};
+    use std::time::{Duration, SystemTime};
+
+    const FIRST_COMMIT_SECS: u64 = 1_700_000_000;
+    const COMMIT_INTERVAL_SECS: u64 = 100;
+    // Halfway between the two appends, so neither boundary is a tie.
+    const READ_AT_SECS: u64 = FIRST_COMMIT_SECS + COMMIT_INTERVAL_SECS * 3 / 2;
+
+    let table_dir = TempDir::new().unwrap();
+    let table_uri = table_dir.path().display().to_string();
+
+    let arrow_schema = Arc::new(ArrowSchema::new(relation_to_arrow_fields(
+        &TestStruct::schema(),
+        delta_schema_options(),
+    )));
+    let struct_fields: Vec<_> = arrow_schema
+        .fields
+        .iter()
+        .map(|f| {
+            StructField::new(
+                f.name(),
+                DataType::try_from_arrow(f.data_type()).unwrap(),
+                f.is_nullable(),
+            )
+        })
+        .collect();
+
+    let before: Vec<TestStruct> = (0..3).map(TestStruct::for_id).collect();
+    let after: Vec<TestStruct> = (3..6).map(TestStruct::for_id).collect();
+
+    let table = create_table(&table_uri, &HashMap::new(), &struct_fields).await;
+    let table = write_data_to_table(table, &arrow_schema, &before).await;
+    let table = write_data_to_table(table, &arrow_schema, &after).await;
+    assert_eq!(table.version(), Some(2), "expected create + two appends");
+
+    let log_dir = table_dir.path().join("_delta_log");
+    for version in 0..=2u64 {
+        let times = FileTimes::new().set_modified(
+            SystemTime::UNIX_EPOCH
+                + Duration::from_secs(FIRST_COMMIT_SECS + version * COMMIT_INTERVAL_SECS),
+        );
+        File::options()
+            .write(true)
+            .open(log_dir.join(format!("{version:020}.json")))
+            .unwrap()
+            .set_times(times)
+            .unwrap();
+    }
+
+    // The first append is visible at that point, the second is not.
+    let read_at = DateTime::from_timestamp(READ_AT_SECS as i64, 0)
+        .unwrap()
+        .to_rfc3339();
+    let read = tokio::task::spawn_blocking(move || {
+        let mut json_file = delta_table_snapshot_to_json::<TestStruct>(
+            &table_uri,
+            &TestStruct::schema(),
+            &HashMap::from([("datetime".to_string(), read_at)]),
+        );
+        file_to_zset::<TestStruct>(json_file.as_file_mut())
+    })
+    .await
+    .unwrap();
+
+    let expected = OrdZSet::from_tuples(
+        (),
+        before.into_iter().map(|x| Tup2(Tup2(x, ()), 1)).collect(),
+    );
+    assert_eq!(read, expected, "`datetime` must pin the table to version 1");
+}
+
 /// Calls `f` on every `snapshot_timestamp` in the checkpoints under
 /// `storage_dir`, saving what it changes, and returns how many it found.
 fn visit_checkpointed_snapshot_timestamps(
@@ -4154,6 +4251,21 @@ proptest! {
         let expected_zset = OrdZSet::from_tuples((), data.clone().into_iter().map(|x| Tup2(Tup2(x,()),1)).collect());
         let zset = file_to_zset::<DeltaTestStruct>(json_file.as_file_mut());
         assert_eq!(zset, expected_zset);
+
+        // The same read done serially, in many small batches. Not
+        // `max_concurrent_readers`: it is process-global and never reset, so a
+        // test that sets it changes every later test in the same binary.
+        let mut json_file_serial = delta_table_snapshot_to_json_values::<DeltaTestStruct>(
+            &table_uri,
+            &DeltaTestStruct::schema(),
+            &HashMap::from([
+                ("num_parsers".to_string(), Value::from(1)),
+                ("scan_parallelism".to_string(), Value::from(1)),
+                ("batch_size".to_string(), Value::from(100)),
+            ]));
+
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_serial.as_file_mut());
+        assert_eq!(zset, expected_zset, "a serial read must return the same data");
 
         // Order delta table by `bigint` (which should be its natural order).
         let mut json_file_ordered_by_id = delta_table_snapshot_to_json::<DeltaTestStruct>(
