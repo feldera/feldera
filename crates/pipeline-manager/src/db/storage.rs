@@ -470,6 +470,10 @@ pub(crate) trait Storage {
     ) -> Result<(), DBError>;
 
     /// Transitions program status to `CompilingRust`.
+    ///
+    /// Production claims go through [`Storage::claim_next_rust_compilation`].
+    /// Tests and the behavioral model still drive this step on its own.
+    #[allow(dead_code)]
     async fn transit_program_status_to_compiling_rust(
         &self,
         tenant_id: TenantId,
@@ -725,7 +729,22 @@ pub(crate) trait Storage {
 
     /// Retrieves the pipeline which is stopped, whose program status has been SqlCompiled
     /// for the longest, and is of the current platform version. Returns `None` if none is found.
+    ///
+    /// Production claims go through [`Storage::claim_next_rust_compilation`].
+    /// Tests and the behavioral model still read without claiming.
+    #[allow(dead_code)]
     async fn get_next_rust_compilation(
+        &self,
+        platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
+    ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError>;
+
+    /// Atomically claim the next `SqlCompiled` pipeline for Rust compilation.
+    ///
+    /// Picks and marks `CompilingRust` in one transaction. A separate select
+    /// then update let a second compiler server miss or steal the row (#6496).
+    async fn claim_next_rust_compilation(
         &self,
         platform_version: &str,
         worker_id: usize,
