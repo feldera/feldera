@@ -252,6 +252,8 @@ The compiler health check fails once the binary store filesystem is 95% full, be
 
 A compilation that never reaches a terminal status keeps demand pending and keeps the workers up. The typical cause is a compile that is OOM-killed on every attempt: the pipeline cycles between `SqlCompiled` and `CompilingRust` forever. Give the compiler pods more memory or remove the offending pipeline.
 
+Peak build memory also depends on how many `rustc` processes cargo runs at once, which by default is one per CPU core the container can see. If the compiler pods share a node pool with mixed instance sizes, the same program can peak higher on a larger instance simply because more cores are available. Setting the `CARGO_BUILD_JOBS` environment variable on the compiler-server container bounds that parallelism (for example, to match the container's CPU request), which makes peak memory a function of that setting rather than of node placement.
+
 ---
 
 ## Troubleshooting & FAQs
