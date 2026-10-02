@@ -107,53 +107,102 @@ if you'd like to experiment with Kafka and other auxiliary services.
 
 ## ⚙️ Running Feldera from sources
 
-To run Feldera from sources, ensure at least 6 GB of free space in the sources directory and an additional 7 GB in your home directory, then install the required dependencies:
+To run Feldera from sources, ensure at least 6 GB of free space in the sources directory and an additional 7 GB in your home directory.
 
-- [Rust tool chain](https://www.rust-lang.org/tools/install)
-- C and C++ compiler toolchain (e.g., gcc, g++)
-- cmake
-- libssl-dev
-- libsasl2-dev
-- zlib1g-dev
-- libzstd-dev
-- golang-go (only to build with `--features fips`, which compiles aws-lc-fips-sys from source; a default build does not need it)
-- pkg-config
-- clang
-- graphviz
-- Java Development Kit (JDK), version 19 or newer (21 is recommended)
-- maven
-- Python 3.10 (for the [Python SDK](https://docs.feldera.com/python/) and integration tests)
-- [Bun](https://bun.sh/docs/installation)
-- [nodejs v20](https://github.com/nodesource/distributions/blob/master/DEV_README.md)
+Feldera is built with Rust. Install the [Rust toolchain](https://www.rust-lang.org/tools/install), then open a new shell so `cargo` is on your `PATH`:
 
-On MacOS, after installing the Rust tool chain, the remaining dependencies can be installed with:
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
+
+### Linux (Ubuntu and Debian)
+
+These packages cover the C/C++ toolchain, CMake, the libraries the Kafka connector links, Clang (including `libclang`, which bindgen needs), Graphviz, Maven, JDK 21, Python 3.10 or newer, and Go. JDK 19 or newer works; 21 is what the SQL compiler is built with. Go is required by `scripts/install-librdkafka.sh`, which builds AWS-LC. A `--features fips` build uses that same Go toolchain to compile `aws-lc-fips-sys`. Python is for the [Python SDK](https://docs.feldera.com/python/) and the integration tests.
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    curl \
+    ca-certificates \
+    gnupg \
+    libssl-dev \
+    libsasl2-dev \
+    zlib1g-dev \
+    libzstd-dev \
+    pkg-config \
+    clang \
+    libclang-dev \
+    graphviz \
+    maven \
+    openjdk-21-jdk \
+    python3 \
+    golang-go
+```
+
+Install [Bun](https://bun.sh/docs/installation):
+
+```bash
+curl -fsSL https://bun.sh/install | bash
+source ~/.bashrc   # or restart your shell
+```
+
+Install [Node.js v20](https://github.com/nodesource/distributions):
+
+```bash
+sudo mkdir -p /etc/apt/keyrings
+curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+    | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
+    | sudo tee /etc/apt/sources.list.d/nodesource.list
+sudo apt-get update
+sudo apt-get install -y nodejs
+```
+
+Continue with [librdkafka and the build](#librdkafka-and-the-build).
+
+### macOS
+
+Install Xcode's command line tools. That provides Clang and the C/C++ toolchain:
+
+```bash
 xcode-select --install
 ```
-for Xcode tools that includes clang, and
-```
+
+Install the remaining dependencies with Homebrew. `go` is required by `scripts/install-librdkafka.sh`. `python@3.10` is for the [Python SDK](https://docs.feldera.com/python/) and the integration tests. `node@20` and `oven-sh/bun/bun` are the Node.js and Bun versions the web console uses.
+
+```bash
 brew install cmake openssl cyrus-sasl zlib zstd go pkg-config graphviz openjdk@21 maven python@3.10 oven-sh/bun/bun node@20
 ```
-for the rest.
 
-The Kafka connectors link librdkafka dynamically, so it has to be installed before the workspace will build:
+Homebrew does not put `openjdk@21` on the default `PATH`. Add it, then open a new shell:
 
+```bash
+echo 'export PATH="$(brew --prefix openjdk@21)/bin:$PATH"' >> ~/.zshrc
 ```
+
+### librdkafka and the build
+
+On either platform, the Kafka connectors link librdkafka dynamically, so install it before the workspace will build. Run this from the repository root:
+
+```bash
 ./scripts/install-librdkafka.sh
 ```
 
 The script builds librdkafka against AWS-LC, which is what keeps Kafka TLS on the same cryptographic implementation as the rest of the system. Distribution packages are built against OpenSSL and are usually older than the version the `rdkafka-sys` crate requires, so installing one of those is not equivalent. Run the script again after a `rdkafka` version bump; it reads the version it needs from `Cargo.lock`. Set `PREFIX` to install somewhere other than `/usr/local`, in which case `PKG_CONFIG_PATH` has to point at `$PREFIX/lib/pkgconfig`.
 
-After that, the first step is to build the SQL compiler:
+Build the SQL compiler:
 
-```
+```bash
 cd sql-to-dbsp-compiler
 ./build.sh
 ```
 
-Next, from the repository root, run the pipeline-manager:
+From the repository root, run the pipeline-manager:
 
-```
+```bash
 cargo run --bin=pipeline-manager
 ```
 
