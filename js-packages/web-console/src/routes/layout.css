@@ -91,15 +91,32 @@
 /* Skeleton UI overrides */
 
 /* Buttons follow the Figma "Button" component at its 32px size. The icon and the label
-   form one group, a fixed gap apart, that Skeleton's `.btn` centres in the button.
+   form one group, `--btn-gap` apart, that Skeleton's `.btn` centres in the button.
    These rules sit outside Tailwind's layers, so they beat utilities such as `h-9` or
    `p-2`; use `!` utilities for a deliberate exception. */
 .btn {
+  --btn-gap: calc(var(--spacing) * 2) /* 8px */;
   height: 32px;
   padding-block: 0;
   padding-inline: calc(var(--spacing) * 3) /* 12px */;
-  gap: calc(var(--spacing) * 2) /* 8px */;
+  gap: var(--btn-gap);
   border-radius: 4px;
+}
+
+/* A leading icon keeps to the left edge, and the label centres in the space after it.
+   This shows only when the button is wider than its content. The auto margins of the
+   icon and of a zero-width ::after share the spare width. The ::after's negative end
+   margin cancels the flex gap before it, so a button that fits its content keeps its
+   size. */
+.btn:has(> .fd:first-child) {
+  & > .fd:first-child {
+    margin-inline-end: auto;
+  }
+  &::after {
+    content: "";
+    margin-inline-start: auto;
+    margin-inline-end: calc(var(--btn-gap) * -1);
+  }
 }
 
 /* Every icon inside a labelled button is 16px. Icon-only buttons (`fd` on the
@@ -124,7 +141,7 @@
 .btn-sm {
   height: 24px;
   padding-inline: calc(var(--spacing) * 2) /* 8px */;
-  gap: calc(var(--spacing) * 1) /* 4px */;
+  --btn-gap: calc(var(--spacing) * 1) /* 4px */;
   border-radius: 3px;
   font-size: 12px;
   line-height: 16px;
@@ -133,7 +150,7 @@
 .btn-lg {
   height: 40px;
   padding-inline: calc(var(--spacing) * 4) /* 16px */;
-  gap: calc(var(--spacing) * 3) /* 12px */;
+  --btn-gap: calc(var(--spacing) * 3) /* 12px */;
   border-radius: 6px;
   font-size: 16px;
   line-height: 24px;
