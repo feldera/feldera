@@ -13,7 +13,7 @@ pub use lir::{LirCircuit, LirEdge, LirNode, LirNodeId, LirStreamId};
 pub use mir::{MirInput, MirNode, MirNodeId};
 use utoipa::ToSchema;
 
-#[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(Serialize, Deserialize, ToSchema, Debug, Default, Eq, PartialEq, Clone, Copy)]
 #[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
 pub struct SourcePosition {
     pub start_line_number: usize,
