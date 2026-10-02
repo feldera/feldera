@@ -8073,8 +8073,8 @@ fn z85_encode(bytes: &[u8]) -> String {
         b"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-:+=^!/*?&<>()[]{}@%$#";
 
     let mut encoded = String::with_capacity(bytes.len() / 4 * 5);
-    for chunk in bytes.chunks_exact(4) {
-        let mut value = u32::from_be_bytes(chunk.try_into().unwrap());
+    for chunk in bytes.as_chunks::<4>().0 {
+        let mut value = u32::from_be_bytes(*chunk);
         let mut group = [0u8; 5];
         for digit in group.iter_mut().rev() {
             *digit = DIGITS[(value % 85) as usize];

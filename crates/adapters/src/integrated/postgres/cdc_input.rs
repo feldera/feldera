@@ -1353,7 +1353,7 @@ impl TableErrorMonitor {
         let table = if Some(table_id) == target {
             format!(
                 "source table '{}' (etl table {table_id})",
-                &self.source_table
+                self.source_table
             )
         } else {
             format!("table {table_id}")
@@ -1404,9 +1404,9 @@ impl TableErrorMonitor {
                      seconds, having no other table of publication '{}' left to copy. Its \
                      replication state is {state}. Check that the pipeline and Postgres server \
                      logs report no replication failure{errors}",
-                    &self.source_table,
+                    self.source_table,
                     TABLE_STALL_REPORT.as_secs(),
-                    &self.publication,
+                    self.publication,
                 )
             }
             None => anyhow!(
@@ -1415,8 +1415,8 @@ impl TableErrorMonitor {
                  that the publication carries this table (an unqualified name refers to schema \
                  'public') and that the pipeline and Postgres server logs report no replication \
                  failure{errors}",
-                &self.source_table,
-                &self.publication,
+                self.source_table,
+                self.publication,
                 TABLE_STALL_REPORT.as_secs(),
             ),
         };
