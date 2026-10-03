@@ -8,6 +8,8 @@ it on as an open-source patch. The e-mail address used to sign must match the e-
 author. If you set your `user.name` and `user.email` git config values, you can sign your commit automatically
 with `git commit -s`.
 
+Please also read our [AI Policy](AI_POLICY.md). It explains when you must file a design first and how to disclose AI use.
+
 ## Dependencies
 
 Our team develops and tests using Linux and MacOS. Windows Subsystem for Linux works fine too.
