@@ -36,9 +36,9 @@
     SegmentedControlSize,
     { control: string; radius: string; item: string }
   > = {
-    sm: { control: 'h-6', radius: 'rounded-[4px]', item: 'gap-1 px-3 text-[12px] leading-4' },
-    md: { control: 'h-8', radius: 'rounded-[4px]', item: 'gap-2 px-4 text-[14px] leading-5' },
-    lg: { control: 'h-10', radius: 'rounded-[6px]', item: 'gap-2 px-4 text-[16px] leading-6' }
+    sm: { control: 'h-6', radius: 'rounded-(--radius-control)', item: 'gap-1 px-3 text-[12px] leading-4' },
+    md: { control: 'h-8', radius: 'rounded-(--radius-control)', item: 'gap-2 px-4 text-[14px] leading-5' },
+    lg: { control: 'h-10', radius: 'rounded-(--radius-control-lg)', item: 'gap-2 px-4 text-[16px] leading-6' }
   }
 </script>
 
