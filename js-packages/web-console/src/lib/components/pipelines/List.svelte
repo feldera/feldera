@@ -43,12 +43,12 @@
 >
   <div class="bg-white-dark sticky top-0 -mr-1 flex items-center gap-2 pb-2 pl-2">
     <input
-      class="input h-8 min-w-0 flex-1"
+      class="input min-w-0 flex-1"
       type="search"
       placeholder="Search pipelines..."
       bind:value={nameSearch}
     />
-    <button onclick={onclose} class="fd fd-x btn-icon text-[24px]" aria-label="Close pipelines list"
+    <button onclick={onclose} class="fd fd-x btn-icon text-[20px]" aria-label="Close pipelines list"
     ></button>
   </div>
   {#if visiblePipelines}

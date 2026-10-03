@@ -360,7 +360,9 @@ example = "1.0"`
   {/snippet}
   {#snippet codeEditor(textEditor, statusBar)}
     {#snippet editor()}
-      <div class="flex h-full flex-col rounded-container bg-surface-50-950 px-4 py-2">
+      <!-- No top padding: the file tabs' 12px margins centre the header row, as in the
+           tabbed panels below (`TabsPanel`). -->
+      <div class="flex h-full flex-col rounded-container bg-surface-50-950 px-4 pt-0 pb-2">
         {@render textEditor()}
         <div
           class="bg-white-dark mb-2 flex flex-wrap items-center gap-x-8 rounded-b border-t border-surface-50-950 p-2 pl-4"
@@ -376,10 +378,10 @@ example = "1.0"`
     {/if}
   {/snippet}
   {#snippet fileTab(text, onClick, isCurrent, isSaved)}
+    <!-- The shared `.tab` (see feldera-modern.css), as in the tabbed panels (`TabsPanel`).
+         An unsaved file keeps room on the right for its dot. -->
     <button
-      class=" flex flex-nowrap py-2 pr-5 pl-2 font-medium sm:pl-3 {isCurrent
-        ? 'inset-y-2 border-b-2 border-surface-950-50 pb-1.5'
-        : ' hover:!bg-opacity-50 rounded hover:bg-surface-100-900'}"
+      class="tab {isCurrent ? 'tab-active' : ''} {isSaved ? '' : 'pr-5!'}"
       onclick={onClick}
     >
       {text}
@@ -389,7 +391,9 @@ example = "1.0"`
     </button>
   {/snippet}
   {#snippet toolBarEnd()}
-    <div class="flex justify-end gap-4 pb-2">
+    <!-- As tall as the file-tab row, so the 24px buttons centre in it, also when they wrap
+         onto a row of their own. -->
+    <div class="flex min-h-12 items-center justify-end gap-4">
       <PipelineActions
         class=""
         {pipeline}

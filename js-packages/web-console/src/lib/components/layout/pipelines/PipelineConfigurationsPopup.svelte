@@ -100,7 +100,7 @@
 </script>
 
 <button
-  class="fd fd-settings btn-icon preset-tonal-surface text-[20px]"
+  class="fd fd-settings btn-icon btn-icon-sm preset-outlined-surface-200-800 text-[16px]"
   onclick={() => {
     pendingJsonValues = null
     globalDialog.dialog = pipelineConfigurationsDialog

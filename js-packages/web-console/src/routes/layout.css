@@ -90,10 +90,17 @@
 
 /* Skeleton UI overrides */
 
+/* Buttons follow the Figma "Button" component at its 32px size. The icon and the label
+   form one group, `--btn-gap` apart, that Skeleton's `.btn` centres in the button.
+   These rules sit outside Tailwind's layers, so they beat utilities such as `h-9` or
+   `p-2`; use `!` utilities for a deliberate exception. */
 .btn {
-  /* gap: calc(0.5rem * var(--space-scale-factor)); */
-  padding-block: calc(var(--spacing) * 2) /* 0.25rem = 4px */;
-  padding-inline: calc(var(--spacing) * 4) /* 1rem = 16px */;
+  --btn-gap: calc(var(--spacing) * 2) /* 8px */;
+  height: 32px;
+  padding-block: 0;
+  padding-inline: calc(var(--spacing) * 3) /* 12px */;
+  gap: var(--btn-gap);
+  border-radius: var(--radius-control);
 }
 
 /* A leading icon keeps to the left edge, and the label centres in the space after it.
@@ -108,13 +115,93 @@
   &::after {
     content: "";
     margin-inline-start: auto;
-    margin-inline-end: calc(var(--spacing) * -2) /* Skeleton's `.btn` gap */;
+    margin-inline-end: calc(var(--btn-gap) * -1);
   }
 }
 
+/* Every icon inside a labelled button is 16px. Icon-only buttons (`fd` on the
+   `.btn-icon` itself) keep their own size. */
+.btn > :is(.fd, .gc) {
+  font-size: 16px;
+}
+
+/* Icon-only buttons follow the Figma "Icon Button" component at its 32px size: a square
+   with the icon centred. It comes after `.btn`, so `btn btn-icon` is square too. */
 .btn-icon {
-  width: 20px;
-  height: 20px;
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  padding: 0;
+  border-radius: var(--radius-control);
+}
+
+/* The Figma components' 24px and 40px sizes, under Skeleton's size class names. Each
+   comes after the 32px default, so it wins where both apply. */
+.btn-sm {
+  height: 24px;
+  padding-inline: calc(var(--spacing) * 2) /* 8px */;
+  --btn-gap: calc(var(--spacing) * 1) /* 4px */;
+  border-radius: var(--radius-control-sm);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.btn-lg {
+  height: 40px;
+  padding-inline: calc(var(--spacing) * 4) /* 16px */;
+  --btn-gap: calc(var(--spacing) * 3) /* 12px */;
+  border-radius: var(--radius-control-lg);
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.btn-lg > :is(.fd, .gc) {
+  font-size: 18px;
+}
+
+.btn-icon-sm {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-control-sm);
+}
+
+.btn-icon-lg {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-control-lg);
+  font-size: 18px;
+}
+
+/* A split button: a main action joined to a chevron that opens more options. Only the
+   outer corners stay rounded, and a 2px line in the page colour divides the halves.
+   See `SplitButton.svelte`. */
+.btn-split {
+  display: inline-flex;
+  flex-wrap: nowrap;
+
+  & :is(.btn, .btn-icon):not(.btn-split-toggle) {
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+  }
+
+  & .btn-split-toggle {
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
+    border-inline-start: 2px solid var(--color-surface-50-950);
+  }
+
+  /* Outlined halves share the main button's right border as their divider. */
+  &.btn-split-outlined .btn-split-toggle {
+    border-inline-start: 0;
+  }
+}
+
+/* Outlined buttons follow the Figma "Button" outline variant: a 1px neutral border and
+   no fill. Their icon and label use the main text colour, like the other icon buttons.
+   Skeleton's preset sets only the border colour, so the text colour is added here. */
+:is(.btn, .btn-icon).preset-outlined-surface-200-800 {
+  color: var(--color-surface-950-50);
 }
 
 .btn,
@@ -173,23 +260,39 @@ input:focus {
   cursor: pointer;
   background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
   background-repeat: no-repeat;
-  background-size: 1.5em 1.5em;
   print-color-adjust: exact;
-  background-position: right 0.5rem center;
-  /* top | right | bottom | left */
-  padding: 0.5rem 2.5rem 0.5rem 0.75rem;
+  /* Selects follow the Figma "Select Trigger" component at its 32px size, like `.btn`.
+     The right padding leaves room for the 16px chevron and an 8px gap before it. */
+  height: 32px;
+  padding: 0 calc(var(--spacing) * 9) /* 36px */ 0 calc(var(--spacing) * 3) /* 12px */;
+  border-radius: var(--radius-control);
+  font-size: var(--text-base) /* 14px */;
+  line-height: var(--text-base--line-height) /* 20px */;
+  background-size: 16px 16px;
+  background-position: right calc(var(--spacing) * 3) /* 12px */ center;
+}
+
+/* Search inputs match `.btn` and `.select`: 32px high with the same corner radius. Skeleton's
+   `.input` already gives them the same 12px side padding and 14/20 text. */
+.input[type="search"] {
+  height: 32px;
+  padding-block: 0;
+  border-radius: var(--radius-control);
+}
+
+/* The Figma "Select Trigger" at its 24px size, like `.btn-sm`. */
+.select-sm {
+  height: 24px;
+  padding: 0 calc(var(--spacing) * 7) /* 28px */ 0 calc(var(--spacing) * 2) /* 8px */;
+  border-radius: var(--radius-control-sm);
+  font-size: 12px;
+  line-height: 16px;
+  background-position: right calc(var(--spacing) * 2) /* 8px */ center;
 }
 
 .checkbox {
   width: 16px;
   height: 16px;
-}
-
-.btn-sm {
-  font-size: var(--text-base) /* 14px */;
-  line-height: var(--text-base--line-height) /* 20px */;
-  padding-block: calc(var(--spacing) * 1) /* 0.25rem = 4px */;
-  padding-inline: calc(var(--spacing) * 2) /* 0.5rem = 8px */;
 }
 
 /* The end of Skeleton UI overrides */

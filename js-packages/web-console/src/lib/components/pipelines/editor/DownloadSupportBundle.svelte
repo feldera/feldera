@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Tooltip } from 'common-ui'
+  import SplitButton from '$lib/components/common/SplitButton.svelte'
   import DownloadProgressDisplay from '$lib/components/dialogs/DownloadProgressDisplay.svelte'
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import SupportBundlePopup from '$lib/components/supportBundle/SupportBundlePopup.svelte'
@@ -74,6 +75,7 @@
 
 <!-- Split button: [View Support Bundle] [▾] -->
 <SupportBundlePopup
+  wrapperClass="flex"
   bind:collectNewData={collectNewData.value}
   onDownload={() => {
     downloadData = { ...defaultData, collect: collectNewData.value }
@@ -81,27 +83,23 @@
   }}
 >
   {#snippet trigger(toggle)}
-    <div class="flex">
-      <!-- Primary action button -->
+    <SplitButton
+      size="sm"
+      ontoggle={toggle}
+      toggleLabel="Support bundle options"
+      variant="outlined"
+    >
       <button
-        class="btn h-8! rounded-r-none border-r-2 border-surface-50-950 bg-surface-100-900"
+        class="btn preset-outlined-surface-200-800 btn-sm"
         onclick={() => openRemoteBundleTab(pipelineName, collectNewData.value)}
         title="Open profile viewer in a new tab"
         data-testid="btn-view-profile"
       >
-        <span class="fd fd-file-search text-[20px] text-primary-500"></span>
+        <span class="fd fd-file-search text-primary-500"></span>
         <span class="hidden sm:inline">View profile</span>
         <span class="inline sm:hidden">Profile</span>
       </button>
-      <!-- Dropdown chevron -->
-      <button
-        class="btn-icon h-4! rounded-l-none bg-surface-100-900"
-        onclick={toggle}
-        aria-label="Support bundle options"
-      >
-        <span class="fd fd-chevron-down text-[24px]"></span>
-      </button>
-    </div>
+    </SplitButton>
   {/snippet}
 </SupportBundlePopup>
 <Tooltip placement="top" class="w-[240px] text-wrap">

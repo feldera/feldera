@@ -28,6 +28,10 @@
   --anchor-text-decoration-focus: none;
   --spacing: 4px;
   --radius-base: 6px;
+  /* Corner radii of the 24px, 32px and 40px controls: buttons, selects and inputs. */
+  --radius-control-sm: 3px;
+  --radius-control: 4px;
+  --radius-control-lg: 6px;
   --radius-container: 12px;
   --default-border-width: 2px;
   --default-divide-width: 1px;
@@ -265,6 +269,65 @@
   --color-status-error-subtle: #f4121227;
 }
 
+/* ── Tabs ────────────────────────────────────────────────────────────────────
+   A 24px tab with 12px above and below, so a row of tabs is 48px tall and its
+   bottom edge is the header's line. The selected tab draws a 2px bar on that
+   line, so the bar stays with its tab when the row wraps. Zag tab triggers are
+   marked selected with `data-selected`; plain buttons use `.tab-active`.
+   Used by TabsPanel and the pipeline editor's file tabs.                     */
+
+.tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 24px;
+  margin-block: 12px;
+  padding-inline: 12px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 150ms;
+}
+
+/* Zag tab triggers also carry Skeleton's own tab styles, whose hover tints the tab
+   with the primary colour and brightens it. A tab keeps its text colour instead, and
+   only an unselected tab takes the grey hover fill. */
+.tab:hover {
+  color: inherit;
+  filter: none;
+  background-color: transparent;
+}
+
+.tab:not([data-selected], .tab-active, [data-disabled]):hover {
+  background-color: color-mix(
+    in oklab,
+    light-dark(var(--color-surface-100), var(--color-surface-900)) 50%,
+    transparent
+  );
+}
+
+.tab:is([data-selected], .tab-active)::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: -12px;
+  height: 2px;
+  background-color: light-dark(
+    var(--color-surface-950),
+    var(--color-surface-50)
+  );
+}
+
+.tab[data-disabled] {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
 /* ── Resizable pane divider handles ──────────────────────────────────────────
    Used by paneforge PaneResizer elements in both web-console and profiler-app.
    Apply in addition to margin utilities (my-2 / mx-1.5) for spacing.         */
@@ -278,7 +341,7 @@
 }
 
 .pane-divider-horizontal::before {
-  content: '';
+  content: "";
   display: flex;
   margin-top: -3px; /* -0.75 * 4 px */
   height: 8px; /* 2 * 4 px */
@@ -299,7 +362,7 @@
 }
 
 .pane-divider-vertical::before {
-  content: '';
+  content: "";
   display: flex;
   margin-left: -3px;
   height: 100%;

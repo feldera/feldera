@@ -359,7 +359,12 @@
       {@render loadProfileControl?.()}
       <ProfileTimestampSelector {profileFiles} {selectedTimestamp} {onSelectTimestamp} />
       {#if hasProfile}
-        <div class="ml-auto">
+        <!-- The search icon sits inside the field, before the text. -->
+        <div class="relative ml-auto flex items-center">
+          <span
+            class="fd fd-search pointer-events-none absolute left-2 text-[16px] text-surface-500"
+            aria-hidden="true"
+          ></span>
           <input
             bind:this={nodeSearchInput}
             bind:value={nodeSearchQuery}
@@ -373,7 +378,7 @@
                 nodeSearchInput?.blur()
               }
             }}
-            class="input h-6 w-36 text-sm"
+            class="input h-6 w-36 pl-7! text-sm"
           />
         </div>
       {:else}
@@ -441,7 +446,7 @@
     {#if metrics.length > 0}
       <Select
         bind:value={selectedMetricId}
-        class="px-2 w-42"
+        class="select-sm w-42 bg-transparent! preset-outlined-surface-200-800"
         title="Select metric"
       >
         {#each metrics as metric (metric.id)}
@@ -463,6 +468,7 @@
       onprevious={() => handleLookup('prev')}
       onclear={resetLookup}
       inputClass="h-8 w-40 text-sm"
+      buttonClass="btn-icon-sm preset-outlined-surface-200-800"
     />
   </div>
 {/snippet}
@@ -471,7 +477,7 @@
   <div class="flex items-center gap-2 px-2">
     <Select
       bind:value={issueSeverityFilter}
-      class="select h-6 min-h-0 px-2 py-0! text-sm w-32"
+      class="select-sm w-32"
       title="Filter by severity"
     >
       <option class="text-base" value="all">All severity</option>
@@ -481,7 +487,7 @@
     </Select>
     <Select
       bind:value={issueCategoryFilter}
-      class="select h-6 min-h-0 px-2 py-0! text-sm w-32"
+      class="select-sm w-32"
       title="Filter by category"
     >
       <option value="all">Category</option>
@@ -502,7 +508,7 @@
       { value: 'node', label: 'Node', disabled: !lastNodeData },
       { value: 'top-nodes', label: 'Top nodes', disabled: !hasProfile }
     ]}
-    class="px-2"
+    size="sm"
   />
   {#if metricsMode !== 'top-nodes'}
     <label class="flex h-6 cursor-pointer items-center gap-2 text-sm">

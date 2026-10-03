@@ -7,6 +7,11 @@
   Generic over the value type `V` (a string union) so `value`/`onValueChange`
   stay type-safe. Each entry is a `SegmentedItem`; pass an optional `label`
   snippet to render richer item content (e.g. an icon beside the text).
+
+  Styled after the Figma "Segmented Control" (surface variant): a light grey track,
+  the selected item raised in white with a hairline border and medium text, and a
+  thin divider between two neighbouring unselected items. `size` picks the 24px,
+  32px (default) or 40px height.
 -->
 <script lang="ts" module>
   import type { Snippet as SvelteSnippet } from 'svelte'
@@ -22,6 +27,19 @@
     disabled?: boolean
     testid?: string
   }
+
+  export type SegmentedControlSize = 'sm' | 'md' | 'lg'
+
+  // Per size: the track height, the corner radius shared by the track, the items and the
+  // selection, and each item's padding, gap and text.
+  const sizeClasses: Record<
+    SegmentedControlSize,
+    { control: string; radius: string; item: string }
+  > = {
+    sm: { control: 'h-6', radius: 'rounded-(--radius-control)', item: 'gap-1 px-3 text-[12px] leading-4' },
+    md: { control: 'h-8', radius: 'rounded-(--radius-control)', item: 'gap-2 px-4 text-[14px] leading-5' },
+    lg: { control: 'h-10', radius: 'rounded-(--radius-control-lg)', item: 'gap-2 px-4 text-[16px] leading-6' }
+  }
 </script>
 
 <script lang="ts" generics="V extends string">
@@ -33,7 +51,8 @@
     items,
     label,
     class: className = '',
-    itemTextClass = ''
+    itemTextClass = '',
+    size = 'md'
   }: {
     value: V
     onValueChange: (value: V) => void
@@ -41,7 +60,14 @@
     label?: Snippet<[SegmentedItem<V>]>
     class?: string
     itemTextClass?: string
+    size?: SegmentedControlSize
   } = $props()
+
+  const sized = $derived(sizeClasses[size])
+
+  /** A divider goes between two neighbouring items when neither is selected. */
+  const hasDividerBefore = (index: number) =>
+    index > 0 && items[index].value !== value && items[index - 1].value !== value
 </script>
 
 <SC
@@ -51,15 +77,20 @@
   }}
   class={className}
 >
-  <SC.Control class="w-fit flex-none rounded bg-surface-100-900/50 border-none p-0.5">
-    <SC.Indicator class="bg-white-dark shadow" />
-    {#each items as item}
+  <SC.Control
+    class="w-fit flex-none border-none bg-surface-950-50/[0.06] p-0 {sized.control} {sized.radius}"
+  >
+    <SC.Indicator class="border border-surface-950-50/10 bg-white-dark {sized.radius}" />
+    {#each items as item, index}
       <SC.Item
         value={item.value}
         disabled={item.disabled}
         data-testid={item.testid}
-        class="z-1 btn h-5 cursor-pointer px-5 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-40"
+        class="relative z-1 inline-flex h-full cursor-pointer items-center justify-center font-normal whitespace-nowrap data-[disabled]:cursor-not-allowed data-[disabled]:opacity-40 data-[state=checked]:font-medium {sized.item} {sized.radius}"
       >
+        {#if hasDividerBefore(index)}
+          <span class="absolute inset-y-[3px] left-0 w-px bg-surface-950-50/10"></span>
+        {/if}
         <SC.ItemText class="text-surface-950-50 {itemTextClass}">
           {#if label}{@render label(item)}{:else}{item.label ?? item.value}{/if}
         </SC.ItemText>

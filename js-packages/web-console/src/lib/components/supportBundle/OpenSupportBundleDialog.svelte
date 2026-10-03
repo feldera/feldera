@@ -136,7 +136,7 @@
           onclick={pick}
           data-testid="btn-pick-support-bundle"
         >
-          <span class="fd fd-file-search text-[18px]"></span>
+          <span class="fd fd-file-search"></span>
           Upload support bundle
         </button>
       {/snippet}

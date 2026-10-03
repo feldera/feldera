@@ -34,11 +34,7 @@
   <label class="label {className}">
     <span class="text-left">Tenant:</span>
     {#if memberships.length > 1}
-      <Select
-        value={feldera.tenantId}
-        onchange={(e) => switchTenant(e.currentTarget.value)}
-        class="text-base"
-      >
+      <Select value={feldera.tenantId} onchange={(e) => switchTenant(e.currentTarget.value)}>
         {#each memberships as membership (membership.tenantId)}
           <option value={membership.tenantId}>{membership.name}</option>
         {/each}

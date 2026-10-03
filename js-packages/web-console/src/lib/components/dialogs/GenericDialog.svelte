@@ -40,7 +40,7 @@
   <div class="flex flex-nowrap justify-between">
     <div class="h5" data-testid="box-dialog-title">{content.title}</div>
     {#if !noclose}
-      <button onclick={cancel} class="fd fd-x -m-4 btn-icon text-[24px]" aria-label="Close dialog"
+      <button onclick={cancel} class="fd fd-x -m-4 btn-icon text-[20px]" aria-label="Close dialog"
       ></button>
     {/if}
   </div>
