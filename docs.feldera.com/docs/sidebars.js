@@ -385,6 +385,11 @@ const connectors = {
                 },
                 {
                     type: 'doc',
+                    id: 'connectors/sinks/nats',
+                    label: 'NATS'
+                },
+                {
+                    type: 'doc',
                     id: 'connectors/sinks/postgresql',
                     label: 'PostgreSQL'
                 },

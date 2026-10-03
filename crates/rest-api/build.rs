@@ -217,6 +217,15 @@ fn type_replacement() -> Vec<(&'static str, &'static str)> {
             "NatsInputConfig",
             "feldera_types::transport::nats::NatsInputConfig",
         ),
+        ("NatsHeader", "feldera_types::transport::nats::NatsHeader"),
+        (
+            "NatsMessageId",
+            "feldera_types::transport::nats::NatsMessageId",
+        ),
+        (
+            "NatsOutputConfig",
+            "feldera_types::transport::nats::NatsOutputConfig",
+        ),
         (
             "StartFromCheckpoint",
             "feldera_types::config::StartFromCheckpoint",
