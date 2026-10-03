@@ -256,6 +256,17 @@ public class Regression2Tests extends SqlIoTest {
     }
 
     @Test
+    public void constantSimilarTo() {
+        // Calcite can evaluate SIMILAR TO when both operands are constant
+        this.statementsFailingInCompilation(
+                "CREATE VIEW v AS SELECT 'abc' SIMILAR TO 'a%' AS b;",
+                "Function 'SIMILAR TO' not yet implemented");
+        this.statementsFailingInCompilation(
+                "CREATE VIEW v AS SELECT 'abc' NOT SIMILAR TO '(b|c)%' AS b;",
+                "Function 'SIMILAR TO' not yet implemented");
+    }
+
+    @Test
     public void issue5637() {
         this.statementsFailingInCompilation("""
                 CREATE MATERIALIZED VIEW v AS SELECT
