@@ -112,7 +112,9 @@ example.
     <td><a id="rlike"></a><code>string RLIKE pattern</code> and
         <code>string NOT RLIKE pattern</code></td>
     <td>The RLIKE expression returns true if <code>string</code> matches <code>pattern</code>.
-        The pattern is a standard Rust regular expression.  If the regular expression is invalid the program will crash with an error.</td>
+        The pattern is a standard Rust regular expression (see <a href="#regular-expressions">Regular expressions</a>).
+        If either argument is <code>NULL</code>, the result is <code>NULL</code>.
+        If the regular expression is invalid the program will crash with an error.</td>
     <td><code>'string' RLIKE 's..i.*'</code> => <code>TRUE</code></td>
   </tr>
   <tr>
@@ -349,12 +351,24 @@ When either argument of `ILIKE`, `NOT ILIKE` is `NULL`, the result is `NULL`.
 
 ## Regular expressions
 
-Regular expressions are matched using the `RLIKE` function.  If either
-argument of `RLIKE` is `NULL`, the result is also `NULL`.  The
-implementation is based on the Rust
+The implementation of regular expressions is based on the Rust
 [`Regex`](https://docs.rs/regex/latest/regex/) library.  The full
 syntax supported is described in the [Rust
 documentation](https://docs.rs/regex/latest/regex/#syntax).
+
+:::warning
+
+Rust regular expressions differ in some important respects from the
+regular expressions of other languages, such as Java, Python, and
+Postgres.  Most differences come from a performance guarantee: the
+time to search a string is at most proportional to the size of the
+regular expression multiplied by the length of the string.  To keep
+this guarantee, Rust does not support some constructs, such as
+look-around and backreferences.  Other constructs are valid, but have a
+different meaning.  See [Differences from Java regular
+expressions](#differences-from-java-regular-expressions).
+
+:::
 
 The description below uses fragments from the [Postgres
 documentation](https://www.postgresql.org/docs/15/functions-matching.html#FUNCTIONS-POSIX-REGEXP),
@@ -368,7 +382,7 @@ definition of a set of strings (a regular set). A string is said to
 match a regular expression if it is a member of the regular set
 described by the regular expression. As with `LIKE`, pattern
 characters match string characters exactly unless they are special
-characters in the regular expression language — but regular
+characters in the regular expression language, but regular
 expressions use different special characters than `LIKE` does. Unlike
 `LIKE` patterns, a regular expression is allowed to match anywhere
 within a string, unless the regular expression is explicitly anchored
@@ -381,10 +395,10 @@ A *branch* is zero or more *quantified atoms* or *constraints*,
 concatenated. It matches a match for the first, followed by a match
 for the second, etc.; an empty branch matches the empty string.
 
-A *quantified atom* is an *atom* possibly followed by a single
+A *quantified atom* is an *atom* possibly followed by a
 *quantifier*. Without a quantifier, it matches a match for the
 atom. With a quantifier, it can match some number of matches of the
-atom. An atom can be any of the possibilities shown in the Table
+atom. An atom can be any of the possibilities shown in the table
 below.
 
 <table>
@@ -402,7 +416,8 @@ below.
    </tr>
    <tr>
       <td><code>.</code></td>
-      <td>matches any single character</td>
+      <td>matches any single character except the newline <code>\n</code>; with the <code>s</code> flag
+          (see <a href="#flags">Flags</a>) it also matches <code>\n</code></td>
    </tr>
    <tr>
       <td><code>[chars]</code></td>
@@ -410,15 +425,17 @@ below.
    </tr>
    <tr>
       <td><code>\k</code></td>
-      <td>where <code>k</code> is a non-alphanumeric character): matches that character taken as an ordinary character, e.g.,
-          <code>\\</code> matches a backslash character</td>
+      <td>where <code>k</code> is an ASCII character that is not a letter or a digit: matches that character
+          taken as an ordinary character, e.g., <code>&#92;&#92;</code> matches a backslash character.
+          The exceptions are <code>&#92;&#60;</code> and <code>&#92;&#62;</code>, which are constraints (see below).
+          A <code>&#92;</code> followed by a non-ASCII character is illegal</td>
    </tr>
    <tr>
       <td><code>\c</code></td>
       <td>where <code>c</code> is alphanumeric (possibly followed by other characters): is an escape, see below</td>
    </tr>
    <tr>
-      <td><code>\&#123;</code></td>
+      <td><code>&#92;&#123;</code></td>
       <td>matches the left-brace character <code>&#123;</code>.  An unescaped <code>&#123;</code> is
           the beginning of a bound (see below); a <code>&#123;</code> not followed by a valid bound
           is rejected with a runtime error</td>
@@ -429,7 +446,7 @@ below.
    </tr>
 </table>
 
-The possible quantifiers and their meanings are shown the Table below.
+The possible quantifiers and their meanings are shown in the table below.
 
 | Quantifier   | Matches                                                                      |
 |--------------|------------------------------------------------------------------------------|
@@ -448,14 +465,13 @@ The possible quantifiers and their meanings are shown the Table below.
 
 A constraint matches an empty string, but matches only when specific
 conditions are met. A constraint can be used where an atom could be
-used, except it cannot be followed by a quantifier. The simple
-constraints are shown in the Table below; some more constraints are
-described later.
+used. The simple constraints are shown in the table below; some more
+constraints are described later.
 
-| Constraint  | Description                            |
-|-------------|----------------------------------------|
-| `^`         | matches at the beginning of the string |
-| `$`         | matches at the end of the string       |
+| Constraint  | Description                                                                        |
+|-------------|------------------------------------------------------------------------------------|
+| `^`         | matches at the beginning of the string; with the `m` flag, also after each `\n`   |
+| `$`         | matches at the end of the string; with the `m` flag, also before each `\n`         |
 
 ### Bracket Expressions
 
@@ -475,43 +491,58 @@ Unlike in POSIX bracket expressions, `\` keeps its special meaning
 within a bracket expression: escapes such as `\]`, `\\`, and the class
 shorthands such as `\d` work inside the brackets.
 
+To include a literal `[` in the list, escape it as `\[`. An unescaped
+`[` inside a bracket expression starts a nested bracket expression, so
+`[a[]` is an unclosed bracket expression. A nested bracket expression
+adds its characters to the list; for example, `[a-d[m-p]]` matches the
+letters `a` to `d` and `m` to `p`. Bracket expressions also support set
+operations:
+
+| Operator | Name                 | Example           | Matches                                                              |
+|----------|----------------------|-------------------|----------------------------------------------------------------------|
+| `&&`     | intersection         | `[a-z&&[^aeiou]]` | characters in both lists: `b`, but not `a`                           |
+| `--`     | difference           | `[a-z--[aeiou]]`  | characters in the first list but not in the second: `b`, but not `a` |
+| `~~`     | symmetric difference | `[a-c~~b-d]`      | characters in exactly one of the lists: `a` and `d`, but not `b`     |
+
 Within a bracket expression, the name of a character class enclosed in
 `[:` and `:]` stands for the list of all characters belonging to that
-class. A character class cannot be used as an endpoint of a range. The
-POSIX standard defines these character class names:
+class. A character class cannot be used as an endpoint of a range.
+These classes contain only ASCII characters; for example, `[[:alpha:]]`
+does not match `é`. The supported class names are:
 
-| Class    | Description                           |
-|----------|---------------------------------------|
-| `alnum`  | letters and numeric digits            |
-| `alpha`  | letters                               |
-| `blank`  | space and tab                         |
-| `cntrl`  | control characters                    |
-| `digit`  | numeric digits                        |
-| `graph`  | printable characters except space     |
-| `lower`  | lower-case letters                    |
-| `print`  | printable characters including space  |
-| `punct`  | punctuation                           |
-| `space`  | any white space                       |
-| `upper`  | upper-case letters                    |
-| `xdigit` | hexadecimal digits                    |
+| Class    | Description                                  |
+|----------|----------------------------------------------|
+| `alnum`  | ASCII letters and digits                     |
+| `alpha`  | ASCII letters                                |
+| `ascii`  | any ASCII character                          |
+| `blank`  | space and tab                                |
+| `cntrl`  | ASCII control characters                     |
+| `digit`  | the digits `0` to `9`                        |
+| `graph`  | printable ASCII characters except space      |
+| `lower`  | ASCII lower-case letters                     |
+| `print`  | printable ASCII characters including space   |
+| `punct`  | ASCII punctuation                            |
+| `space`  | ASCII white space                            |
+| `upper`  | ASCII upper-case letters                     |
+| `word`   | ASCII letters, digits, and underscore        |
+| `xdigit` | hexadecimal digits                           |
 
 Class-shorthand escapes provide shorthands for certain commonly-used
-character classes. They are shown in the table below.
+character classes. They are shown in the table below. Unlike the
+`[:name:]` classes, the shorthands match Unicode characters: `\d`
+matches `٣` (ARABIC-INDIC DIGIT THREE), but `[[:digit:]]` does not.
 
-| Escape  | Description                                             |
-|---------|---------------------------------------------------------|
-| `\d`    | matches any digit, like [[:digit:]]                     |
-| `\s`    | matches any whitespace character, like [[:space:]]      |
-| `\w`    | matches any word character, like [[:word:]]             |
-| `\D`    | matches any non-digit, like [^[:digit:]]                |
-| `\S`    | matches any non-whitespace character, like [^[:space:]] |
-| `\W`    | matches any non-word character, like [^[:word:]]        |
+| Escape  | Description                                                                          |
+|---------|--------------------------------------------------------------------------------------|
+| `\d`    | matches any Unicode decimal digit (`\p{Nd}`)                                         |
+| `\s`    | matches any Unicode white space character (`\p{White_Space}`)                        |
+| `\w`    | matches any Unicode word character: letters, marks, digits, and connector punctuation such as `_` |
+| `\D`    | matches any character that `\d` does not match                                       |
+| `\S`    | matches any character that `\s` does not match                                       |
+| `\W`    | matches any character that `\w` does not match                                       |
 
-The behavior of these standard character classes is generally
-consistent across platforms for characters in the 7-bit ASCII set.
-Whether a given non-ASCII character is considered to belong to one of
-these classes depends on the collation that is used for the
-regular-expression function or operator.
+To make a shorthand match only ASCII characters, turn off the `u`
+flag: `(?-u:\d)` matches only the digits `0` to `9`.
 
 ### Regular Expression Escapes
 
@@ -523,25 +554,50 @@ escape is illegal.
 
 Character-entry escapes exist to make it easier to specify
 non-printing and other inconvenient characters in REs. They are shown
-in the Table below.
+in the table below.
 
-| Escape   | Description                                                                                     |
-|----------|-------------------------------------------------------------------------------------------------|
-| `\n`     | newline, as in C                                                                                |
-| `\r`     | carriage return, as in C                                                                        |
-| `\t`     | horizontal tab, as in C                                                                         |
-| `\u`wxyz | (where wxyz is exactly four hexadecimal digits) the character whose hexadecimal value is 0xwxyz |
-| `\x`hh   | (where hh is a pair of hexadecimal digits) the character whose hexadecimal value is 0xhh; the null byte is `\x00` |
+| Escape       | Description                                                                                     |
+|--------------|-------------------------------------------------------------------------------------------------|
+| `\a`         | bell (U+0007)                                                                                   |
+| `\f`         | form feed (U+000C)                                                                              |
+| `\n`         | newline, as in C                                                                                |
+| `\r`         | carriage return, as in C                                                                        |
+| `\t`         | horizontal tab, as in C                                                                         |
+| `\v`         | vertical tab (U+000B)                                                                           |
+| `\u`wxyz     | (where wxyz is exactly four hexadecimal digits) the character whose hexadecimal value is 0xwxyz |
+| `\U`wxyzabcd | (where wxyzabcd is exactly eight hexadecimal digits) the character whose hexadecimal value is 0xwxyzabcd |
+| `\x`hh       | (where hh is a pair of hexadecimal digits) the character whose hexadecimal value is 0xhh; the null character is `\x00` |
+| `\x{`h...`}` | the character whose hexadecimal value is 0xh...; for example, `\x{1F600}` is 😀. `\u{`h...`}` and `\U{`h...`}` are equivalent |
 
 A constraint escape is a constraint, matching the empty string if
 specific conditions are met, written as an escape. They are shown in
-the Table below.
+the table below.
 
 | Escape  | Description                                 |
 |---------|---------------------------------------------|
 | `\A`    | matches only at the beginning of the string |
+| `\z`    | matches only at the end of the string       |
 | `\b`    | matches word boundaries                     |
 | `\B`    | not a word boundary                         |
+| `\<`    | matches at the beginning of a word          |
+| `\>`    | matches at the end of a word                |
+
+### Flags
+
+Flags change how a regular expression matches.  `(?flags)` sets the
+flags until the end of the enclosing group, and `(?flags:re)` sets the
+flags only for `re`.  A `-` turns off the flags that follow it.  For
+example, `(?i)a(?-i)b` matches `Ab`, but not `AB`.
+
+| Flag | Meaning                                                                                              |
+|------|------------------------------------------------------------------------------------------------------|
+| `i`  | case-insensitive matching, for all Unicode letters                                                   |
+| `m`  | multi-line mode: `^` and `$` also match at the beginning and the end of each line                    |
+| `s`  | `.` also matches `\n`                                                                                |
+| `R`  | CRLF mode: in multi-line mode, `^` and `$` also accept `\r\n` as a line end, and `.` does not match `\r` |
+| `U`  | swaps the meaning of greedy and non-greedy quantifiers: `a+` is non-greedy, and `a+?` is greedy      |
+| `u`  | Unicode mode, which is on by default; `(?-u)` makes `\d`, `\s`, `\w`, `\b`, and the `i` flag use only ASCII characters |
+| `x`  | verbose mode: white space is ignored, and `#` starts a comment that ends at the end of the line      |
 
 ### Capture groups
 
@@ -573,6 +629,51 @@ Subsequent groups may be named and are numbered, starting at 1, by the
 order in which the opening parenthesis appears in the pattern.  For
 example, in the pattern `(?<a>.(?<b>.))(?<c>.)`, `a`, `b` and `c`
 correspond to capture groups `$1`, `$2` and `$3`, respectively.
+
+### Differences from Java regular expressions
+
+Feldera uses Rust regular expressions, not Java regular expressions.
+The table below shows Java constructs that Feldera does not support.
+A regular expression that uses one of them is invalid.
+
+| Java construct                | Meaning in Java                                    | Alternative                                     |
+|-------------------------------|----------------------------------------------------|-------------------------------------------------|
+| `(?=re)`, `(?!re)`            | look-ahead                                         | none                                            |
+| `(?<=re)`, `(?<!re)`          | look-behind                                        | none                                            |
+| `\1` to `\9`, `\k<name>`      | backreference                                      | none                                            |
+| `(?>re)`                      | atomic group                                       | none                                            |
+| `\Q...\E`                     | quotes the enclosed text                           | escape each special character with `\`          |
+| `\G`                          | the end of the previous match                      | none                                            |
+| `\Z`                          | the end of the string, or before a final line terminator | `\z` matches only at the end of the string |
+| `\R`                          | any line break                                     | none                                            |
+| `\X`                          | an extended grapheme cluster                       | none                                            |
+| `\h`, `\H`, `\V`              | horizontal white space, and the opposites of `\h` and `\v` | a bracket expression                    |
+| `\e`                          | the escape character (U+001B)                      | `\x1B`                                          |
+| `\cA`                         | a control character                                | a `\x` escape, such as `\x01`                   |
+| `\0101`                       | an octal escape                                    | a `\x` escape, such as `\x41`                   |
+| `\N{...}`                     | the character with a Unicode name                  | a `\x{...}` escape                              |
+| `\p{InGreek}`                 | a Unicode block                                    | a range, such as `[\x{370}-\x{3FF}]`            |
+| `\p{javaLowerCase}`           | a `java.lang.Character` property                   | a Unicode property, such as `\p{Lowercase}`     |
+| `\p{Alnum}`, `\p{Blank}`, `\p{Graph}`, `\p{Print}`, `\p{XDigit}` | an ASCII class   | `[[:alnum:]]`, `[[:blank:]]`, `[[:graph:]]`, `[[:print:]]`, `[[:xdigit:]]` |
+| `(?d)`                        | Unix lines mode                                    | none                                            |
+
+The table below shows Java constructs that are valid in Feldera, but
+have a different meaning.
+
+| Construct                     | Meaning in Java                                    | Meaning in Feldera                              |
+|-------------------------------|----------------------------------------------------|-------------------------------------------------|
+| `\d`, `\s`, `\w`, `\b`        | ASCII characters only                              | Unicode characters: `\d` matches `٣`            |
+| `\p{Lower}`, `\p{Upper}`, `\p{Alpha}`, `\p{Digit}`, `\p{Punct}`, `\p{Space}` | ASCII characters only | Unicode characters: `\p{Lower}` matches `é` |
+| `(?i)`                        | case-insensitive for ASCII letters only, unless the `u` flag is also set | case-insensitive for all Unicode letters: `(?i)é` matches `É` |
+| `.`                           | any character except a line terminator: `\n`, `\r`, U+0085, U+2028, or U+2029 | any character except `\n` |
+| `$`                           | the end of the string, or before a final line terminator | the end of the string only, without the `m` flag: `a$` does not match `a\n` |
+| `\v`                          | any vertical white space character                 | the vertical tab (U+000B) only                  |
+| `[[:alpha:]]`                 | a nested bracket expression that matches `:`, `a`, `l`, `p`, or `h` | an ASCII letter                  |
+| `(?U)`                        | Unicode character classes                          | swaps greedy and non-greedy quantifiers         |
+| `(?u)`                        | Unicode case-insensitive matching                  | Unicode mode, which is on by default            |
+| `a*+`, `a++`, `a?+`, `a{2}+`  | possessive quantifiers                             | a quantifier applied to a quantified atom: `a*+` is `(?:a*)+` |
+| `$1x` in a replacement string | capture group `1`, then `x`                        | the capture group named `1x`; write `${1}x` instead |
+| `\$` in a replacement string  | a literal `$`                                      | a literal `\`, then a capture group reference; write `$$` instead |
 
 ### Regular expression functions
 
