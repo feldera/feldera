@@ -1313,7 +1313,7 @@ pub(crate) async fn set_deployment_resources_status_stopped(
         None,
         current.deployment_error,
         None,
-        None,
+        current.deployment_config,
         None,
         None,
         None,
@@ -1338,6 +1338,7 @@ pub(crate) async fn remain_deployment_resources_status_stopped(
         true,
     )
     .await?;
+    let current = get_pipeline_by_id(txn, tenant_id, pipeline_id, true).await?;
 
     set_deployment_resources_status(
         txn,
@@ -1350,7 +1351,7 @@ pub(crate) async fn remain_deployment_resources_status_stopped(
         None,
         Some(deployment_error),
         None,
-        None,
+        current.deployment_config,
         None,
         None,
         None,
