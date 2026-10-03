@@ -1012,7 +1012,10 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.start_samply_profile(duration)
         time.sleep(duration)
 
-        timeout = time.monotonic() + 5
+        # After the recording window, samply must stop and presymbolicate
+        # before the profile is available; under load this can take well
+        # over 5 seconds. Match the 30-second exit grace in samply_spawn.rs.
+        timeout = time.monotonic() + 30
 
         samply_profile_bytes = None
 
