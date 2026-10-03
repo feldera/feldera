@@ -20,6 +20,7 @@ import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.sqlCompiler.compiler.Documentation;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.util.Utilities;
@@ -32,7 +33,8 @@ import org.dbsp.util.Utilities;
  *   <li>{@code MODE(DISTINCT value)};</li>
  *   <li>window aggregates with {@code DISTINCT}, such as {@code COUNT(DISTINCT x) OVER (...)};</li>
  *   <li>aggregate calls with a {@code WITHIN DISTINCT} clause;</li>
- *   <li>RANGE window frames with an offset bound over a nullable ORDER BY expression.</li>
+ *   <li>RANGE window frames with an offset bound over a nullable ORDER BY expression;</li>
+ *   <li>{@code SIMILAR TO} and {@code NOT SIMILAR TO}, which Feldera does not implement.</li>
  * </ul>
  *
  * <p>The SQL standard gives ROW comparisons a meaning that may be surprising:
@@ -175,9 +177,17 @@ public class RejectUnsupportedPlans extends RelHomogeneousShuttle {
 
         @Override
         public RexNode visitCall(RexCall call) {
+            checkSimilar(call);
             if (!call.operands.isEmpty() && call.operands.get(0).getType().isStruct())
                 this.checkEquality(call);
             return super.visitCall(call);
+        }
+
+        /** Throw if 'call' is SIMILAR TO; Calcite would otherwise fold it when its operands are constant */
+        static void checkSimilar(RexCall call) {
+            if (call.getKind() == SqlKind.SIMILAR)
+                throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())
+                        + " not yet implemented", 1265, CalciteObject.create(call.getParserPosition()));
         }
 
         /** Report an error if 'call' compares its ROW-typed operands for equality */

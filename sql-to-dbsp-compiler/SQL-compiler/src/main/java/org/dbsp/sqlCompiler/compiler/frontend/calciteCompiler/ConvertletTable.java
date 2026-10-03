@@ -281,6 +281,13 @@ public class ConvertletTable extends ReflectiveConvertletTable {
                                 SqlLibraryOperators.RLIKE.createCall(call.getParserPosition(),
                                         call.getOperandList()))));
 
+        // Convert "x RLIKE y" into "RLIKE(x, y)", so that constant folding
+        // does not evaluate the regular expression with Java semantics
+        registerOp(SqlLibraryOperators.RLIKE,
+                (cx, call) -> cx.convertExpression(
+                        CustomFunctions.RlikeFunction.INSTANCE.createCall(call.getParserPosition(),
+                                call.getOperandList())));
+
         // Expand "x NOT SIMILAR y" into "NOT (x SIMILAR y)"
         registerOp(SqlStdOperatorTable.NOT_SIMILAR_TO,
                 (cx, call) -> cx.convertExpression(
