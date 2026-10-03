@@ -172,7 +172,7 @@
           <th class="h-10 px-3 text-left"
             ><span class="text-base font-normal text-surface-950-50">Storage</span></th
           >
-          <ThSort {table} class="h-10 justify-center px-3" field="status" {...sortColumn('status')}
+          <ThSort {table} class="h-10 px-3" field="status" {...sortColumn('status')}
             ><span class="text-base font-normal text-surface-950-50">Status</span></ThSort
           >
           <th class="h-10 px-3 text-left"
@@ -254,7 +254,7 @@
               >
             </td>
             <td
-              class="px-3 {rowTd} w-36 border-surface-100-900 text-center group-hover:bg-surface-50-950"
+              class="px-3 {rowTd} w-36 border-surface-100-900 text-left group-hover:bg-surface-50-950"
               ><PipelineStatus status={pipeline.status}></PipelineStatus></td
             >
             <td

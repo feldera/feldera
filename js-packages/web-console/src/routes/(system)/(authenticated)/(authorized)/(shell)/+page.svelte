@@ -85,10 +85,6 @@
         data-testid="btn-open-support-bundle"
       >
       </button>
-      <div class="relative">
-        <CreatePipelineButton inputClass="max-w-64" btnClass="preset-filled-surface-50-950"
-        ></CreatePipelineButton>
-      </div>
       <BookADemo class="btn preset-filled-primary-500" placement="home">Book a demo</BookADemo>
     {/if}
   {/snippet}
@@ -140,7 +136,8 @@
           </div>
         </div>
       {/if}
-      <div class="flex flex-col" data-testid="box-pipelines-section">
+      <!-- Without the banner, pad the section so it starts 40px below the header logo. -->
+      <div class="flex flex-col" class:pt-4={welcomed.value} data-testid="box-pipelines-section">
         {#snippet header()}
           <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
             <span class="fd fd-network text-[20px] text-surface-500"></span><span

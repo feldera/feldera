@@ -24,6 +24,7 @@
   import type { ExtendedPipeline } from '$lib/services/pipelineManager'
   import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import { count } from '$lib/functions/common/array'
+  import { statusCounterClass, statusToneColors } from '$lib/functions/pipelineStatusColor'
   import { untrack } from 'svelte'
   import { usePermission } from '$lib/compositions/usePermission.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
@@ -236,7 +237,7 @@
 {#snippet TabControlPerformance()}
   {@render TabPerformance.Label()}
   {#if runtimeErrorsCount > 0}
-    <span class="ml-1 inline-block min-w-6 rounded preset-filled-error-50-950 px-1 font-medium">
+    <span class="ml-1 {statusCounterClass} {statusToneColors.error.chip}">
       {runtimeErrorsCount}
     </span>
   {/if}
@@ -247,12 +248,12 @@
   {@const errorCount = errors.length - warningCount}
   <span class="">Compiler</span>
   {#if warningCount !== 0}
-    <span class="ml-1 inline-block min-w-6 rounded preset-filled-warning-200-800 px-1 font-medium">
+    <span class="ml-1 {statusCounterClass} {statusToneColors.warning.chip}">
       {warningCount}
     </span>
   {/if}
   {#if errorCount !== 0}
-    <span class="ml-1 inline-block min-w-6 rounded preset-filled-error-50-950 px-1 font-medium">
+    <span class="ml-1 {statusCounterClass} {statusToneColors.error.chip}">
       {errorCount}
     </span>
   {/if}

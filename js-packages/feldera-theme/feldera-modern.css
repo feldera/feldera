@@ -225,6 +225,50 @@
   background-color: #ffffff;
 }
 
+/* ── Status tones ────────────────────────────────────────────────────────────
+   Colours for status chips, dots and counters in web-console and profiler-app
+   (Figma: Feldera-UI, node 3554:18690). Tailwind turns them into utilities
+   such as `bg-status-blue-subtle` and `text-status-blue`.                    */
+
+@theme {
+  /* Each tone has a strong colour for text and dots and a subtle colour for the
+     chip background. The light values are Radix alpha steps 11 and 3; the dark
+     overrides follow. A `-dot` colour replaces the strong colour for dots where
+     the strong colour reads too dark. */
+  --color-status-neutral: #0007149f;
+  --color-status-neutral-subtle: #0000330f;
+  --color-status-neutral-dot: #8b8d98;
+  --color-status-blue: #006dcbf2;
+  --color-status-blue-subtle: #008ff519;
+  --color-status-blue-dot: #0090ff;
+  --color-status-jade: #007152df;
+  --color-status-jade-subtle: #00a83829;
+  --color-status-jade-dot: #29a383;
+  --color-status-warning: #ab6400;
+  --color-status-warning-subtle: #ffde003d;
+  --color-status-warning-dot: #ffc53d;
+  --color-status-error: #c40006d3;
+  --color-status-error-subtle: #f3000d14;
+}
+
+/* Dark counterparts of the status tones (Radix dark steps 11 and 3). */
+.dark {
+  --color-status-neutral: #f1f7feb5;
+  --color-status-neutral-subtle: #d3edf81d;
+  --color-status-neutral-dot: #696e77;
+  --color-status-blue: #70b8ff;
+  --color-status-blue-subtle: #0077ff3a;
+  --color-status-blue-dot: #70b8ff;
+  --color-status-jade: #1fd8a4;
+  --color-status-jade-subtle: #00f9a51c;
+  --color-status-jade-dot: #1fd8a4;
+  --color-status-warning: #ffca16;
+  --color-status-warning-subtle: #fa820022;
+  --color-status-warning-dot: #ffca16;
+  --color-status-error: #ff9592;
+  --color-status-error-subtle: #f4121227;
+}
+
 /* ── Tabs ────────────────────────────────────────────────────────────────────
    A 24px tab with 12px above and below, so a row of tabs is 48px tall and its
    bottom edge is the header's line. The selected tab draws a 2px bar on that

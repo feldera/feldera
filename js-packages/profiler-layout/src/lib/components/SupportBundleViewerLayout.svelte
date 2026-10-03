@@ -435,7 +435,7 @@
 {#snippet issuesLabel()}
   Issues &amp; Suggestions
   {#if triageResults.results.length > 0}
-    <span class="ml-1 inline-block min-w-5 rounded px-1 font-medium preset-filled-warning-200-800">
+    <span class="ml-1 inline-block min-w-5 rounded-[3px] bg-status-warning-subtle px-1 text-center font-medium text-status-warning">
       {triageResults.results.length}
     </span>
   {/if}
