@@ -132,6 +132,6 @@ Key Concepts
 
    .. warning::
       If the data source is streaming, this will block forever.
-      In such cases, use :meth:`.Pipeline.wait_for_idle` instead.
+      Use completion tokens to track pipeline progress.
 
 Checkout the :doc:`/examples`.

@@ -70,7 +70,7 @@ from feldera.testutils import (
 from tests import TEST_CLIENT, enterprise_only
 from tests.platform.helper import gen_pipeline_name
 from tests.platform.test_checkpoint_sync import checkpoint_sync_bucket, storage_cfg
-from tests.utils import DeltaTestLocation
+from tests.utils import DeltaTestLocation, wait_for_condition
 
 # Number of rows in the Delta source table.
 TABLE_ROWS = 1000
@@ -784,12 +784,20 @@ CREATE MATERIALIZED VIEW closure AS
     try:
         legacy_pipeline.update_runtime()
         legacy_pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW, timeout_s=600)
-        legacy_pipeline.wait_for_idle()
 
         # Phase 2 injects no new input.  Without loading the on-disk
         # checkpoint written in phase 1, every view would be empty and this
         # assertion would fail.  A passing count proves the manager found and
         # applied the local checkpoint across the runtime version boundary.
+        wait_for_condition(
+            "checkpoint restored 20 rows into t",
+            lambda: (
+                list(legacy_pipeline.query("SELECT COUNT(*) AS n FROM t;"))
+                == [{"n": 20}]
+            ),
+            timeout_s=120.0,
+            poll_interval_s=0.25,
+        )
         result_after = list(legacy_pipeline.query("SELECT COUNT(*) AS n FROM t;"))
         assert result_after == [{"n": 20}], (
             f"row count changed after runtime upgrade: {result_after}"
