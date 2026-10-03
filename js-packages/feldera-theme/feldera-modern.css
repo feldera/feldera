@@ -28,6 +28,10 @@
   --anchor-text-decoration-focus: none;
   --spacing: 4px;
   --radius-base: 6px;
+  /* Corner radii of the 24px, 32px and 40px controls: buttons, selects and inputs. */
+  --radius-control-sm: 3px;
+  --radius-control: 4px;
+  --radius-control-lg: 6px;
   --radius-container: 12px;
   --default-border-width: 2px;
   --default-divide-width: 1px;

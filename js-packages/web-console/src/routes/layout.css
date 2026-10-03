@@ -100,7 +100,7 @@
   padding-block: 0;
   padding-inline: calc(var(--spacing) * 3) /* 12px */;
   gap: var(--btn-gap);
-  border-radius: 4px;
+  border-radius: var(--radius-control);
 }
 
 /* A leading icon keeps to the left edge, and the label centres in the space after it.
@@ -133,7 +133,7 @@
   height: 32px;
   flex-shrink: 0;
   padding: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
 }
 
 /* The Figma components' 24px and 40px sizes, under Skeleton's size class names. Each
@@ -142,7 +142,7 @@
   height: 24px;
   padding-inline: calc(var(--spacing) * 2) /* 8px */;
   --btn-gap: calc(var(--spacing) * 1) /* 4px */;
-  border-radius: 3px;
+  border-radius: var(--radius-control-sm);
   font-size: 12px;
   line-height: 16px;
 }
@@ -151,7 +151,7 @@
   height: 40px;
   padding-inline: calc(var(--spacing) * 4) /* 16px */;
   --btn-gap: calc(var(--spacing) * 3) /* 12px */;
-  border-radius: 6px;
+  border-radius: var(--radius-control-lg);
   font-size: 16px;
   line-height: 24px;
 }
@@ -163,13 +163,13 @@
 .btn-icon-sm {
   width: 24px;
   height: 24px;
-  border-radius: 3px;
+  border-radius: var(--radius-control-sm);
 }
 
 .btn-icon-lg {
   width: 40px;
   height: 40px;
-  border-radius: 6px;
+  border-radius: var(--radius-control-lg);
   font-size: 18px;
 }
 
@@ -265,26 +265,26 @@ input:focus {
      The right padding leaves room for the 16px chevron and an 8px gap before it. */
   height: 32px;
   padding: 0 calc(var(--spacing) * 9) /* 36px */ 0 calc(var(--spacing) * 3) /* 12px */;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
   font-size: var(--text-base) /* 14px */;
   line-height: var(--text-base--line-height) /* 20px */;
   background-size: 16px 16px;
   background-position: right calc(var(--spacing) * 3) /* 12px */ center;
 }
 
-/* Search inputs match `.btn` and `.select`: 32px high with a 4px radius. Skeleton's
+/* Search inputs match `.btn` and `.select`: 32px high with the same corner radius. Skeleton's
    `.input` already gives them the same 12px side padding and 14/20 text. */
 .input[type="search"] {
   height: 32px;
   padding-block: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-control);
 }
 
 /* The Figma "Select Trigger" at its 24px size, like `.btn-sm`. */
 .select-sm {
   height: 24px;
   padding: 0 calc(var(--spacing) * 7) /* 28px */ 0 calc(var(--spacing) * 2) /* 8px */;
-  border-radius: 3px;
+  border-radius: var(--radius-control-sm);
   font-size: 12px;
   line-height: 16px;
   background-position: right calc(var(--spacing) * 2) /* 8px */ center;

@@ -477,7 +477,7 @@
   <div class="flex items-center gap-2 px-2">
     <Select
       bind:value={issueSeverityFilter}
-      class="select select-sm h-6 min-h-0 px-2 py-0! text-sm w-32"
+      class="select-sm w-32"
       title="Filter by severity"
     >
       <option class="text-base" value="all">All severity</option>
@@ -487,7 +487,7 @@
     </Select>
     <Select
       bind:value={issueCategoryFilter}
-      class="select select-sm h-6 min-h-0 px-2 py-0! text-sm w-32"
+      class="select-sm w-32"
       title="Filter by category"
     >
       <option value="all">Category</option>
