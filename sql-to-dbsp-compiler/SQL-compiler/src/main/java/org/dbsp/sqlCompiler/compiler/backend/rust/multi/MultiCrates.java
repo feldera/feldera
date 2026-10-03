@@ -81,8 +81,12 @@ public class MultiCrates {
         boolean enterprise = this.enterprise();
 
         CircuitWriter mainWriter = new CircuitWriter(this.materializations);
+        // The global allocator code runs on every allocation; the main crate may be unoptimized
         BaseRustCodeGenerator globalsWriter = new RustFileWriter(this.materializations)
-                .withUdf(true).withMalloc(false).withGenerateTuples(false);
+                .withUdf(true)
+                .withMalloc(false)
+                .withGlobalAllocator(true)
+                .withGenerateTuples(false);
         // Main crate contains the circuit
         this.main = new CrateGenerator(this.rootDirectory, CRATES_DIRECTORY, this.getMainName(), mainWriter,
                 enterprise, !compiler.options.generateMultiCrateMain(), compiler.options.ioOptions.testing);

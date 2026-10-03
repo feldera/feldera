@@ -229,7 +229,8 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
         this.builder().append(STANDARD_PREAMBLE);
         if (!compiler.options.ioOptions.emitHandles)
             this.builder().append(CATALOG_PREAMBLE);
-        this.builder().append(ALLOC_PREAMBLE);
+        // The linker may drop malloc_conf if it is not in the crate that produces the binary
+        this.builder().append(MALLOC_CONF);
         Set<String> deps = new HashSet<>(this.dependencies);
         List<String> sorted = Linq.list(deps);
         sorted.sort(String::compareTo);

@@ -39,6 +39,11 @@ public class RustFileWriter extends RustWriter {
         return preamble;
     }
 
+    /** True if the generated code declares the global allocator. */
+    public boolean declaresGlobalAllocator() {
+        return this.generateMalloc || this.generateGlobalAllocator;
+    }
+
     /** Special support for running the SLT tests */
     public RustFileWriter forSlt() {
         this.slt = true;
@@ -113,6 +118,8 @@ public class RustFileWriter extends RustWriter {
         }
         if (this.generateMalloc)
             this.outputBuilder.append(BaseRustCodeGenerator.ALLOC_PREAMBLE);
+        else if (this.generateGlobalAllocator)
+            this.outputBuilder.append(BaseRustCodeGenerator.GLOBAL_ALLOCATOR);
         if (this.generateUdfInclude)
             this.generateUdfInclude();
         if (compiler.options.ioOptions.testing)

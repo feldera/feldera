@@ -24,6 +24,8 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
     protected IIndentStream outputBuilder = null;
     boolean generateUdfInclude = true;
     boolean generateMalloc = true;
+    /** Used when generateMalloc is false: generate only the global allocator, without malloc_conf */
+    boolean generateGlobalAllocator = false;
     boolean generateTuples = true;
 
     protected BaseRustCodeGenerator() {
@@ -45,6 +47,11 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
 
     public BaseRustCodeGenerator withMalloc(boolean malloc) {
         this.generateMalloc = malloc;
+        return this;
+    }
+
+    public BaseRustCodeGenerator withGlobalAllocator(boolean allocator) {
+        this.generateGlobalAllocator = allocator;
         return this;
     }
 
@@ -88,14 +95,19 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
             #![allow(non_upper_case_globals)]
             """;
 
-    public static final String ALLOC_PREAMBLE = """
+    public static final String GLOBAL_ALLOCATOR = """
             #[cfg(not(target_env = "msvc"))]
             #[global_allocator]
             static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+            """;
+
+    public static final String MALLOC_CONF = """
             #[allow(non_upper_case_globals)]
             #[export_name = "malloc_conf"]
             pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\\0";
             """;
+
+    public static final String ALLOC_PREAMBLE = GLOBAL_ALLOCATOR + MALLOC_CONF;
 
     /** Emitted only for circuits that register their streams in a Catalog.
      * Handles mode (--handles) needs no Catalog, and omitting the import lets the

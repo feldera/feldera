@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.backend.rust.multi;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ICodeGenerator;
+import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.IndentStreamBuilder;
@@ -76,7 +77,7 @@ public final class CrateGenerator {
     }
 
     boolean isMain() {
-        return this.crateName.contains("main");
+        return this.crateName.endsWith("_main");
     }
 
     void generateCargo(PrintStream stream) {
@@ -132,7 +133,8 @@ public final class CrateGenerator {
             stream.println("dbsp-enterprise = { workspace = true }");
             stream.println("sync-checkpoint = { workspace = true }");
         }
-        if (isMain()) {
+        if (this.codeGenerator.is(RustFileWriter.class) &&
+                this.codeGenerator.to(RustFileWriter.class).declaresGlobalAllocator()) {
             stream.println("""
                     [target.'cfg(not(target_env = "msvc"))'.dependencies]
                     tikv-jemallocator = { workspace = true }
