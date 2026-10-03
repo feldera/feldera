@@ -1012,7 +1012,9 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.start_samply_profile(duration)
         time.sleep(duration)
 
-        timeout = time.monotonic() + 5
+        # Samply needs extra time after the profile to exit and symbolicate;
+        # under CI load on arm64 this took about 8s.
+        timeout = time.monotonic() + 30
 
         samply_profile_bytes = None
 
