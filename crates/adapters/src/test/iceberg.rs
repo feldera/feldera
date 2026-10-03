@@ -1,9 +1,13 @@
 //! See crates/iceberg/srd/tests/README.md for a description of the Iceberg test harness.
 
-use crate::{
-    Controller,
-    test::{file_to_zset, wait},
-};
+#[cfg(any(
+    feature = "iceberg-tests-fs",
+    feature = "iceberg-tests-glue",
+    feature = "iceberg-tests-rest",
+    feature = "iceberg-tests-s3tables"
+))]
+use crate::test::file_to_zset;
+use crate::{Controller, test::wait};
 use crossbeam::channel::Receiver;
 use dbsp::DBData;
 use feldera_sqllib::Variant;
@@ -1165,12 +1169,11 @@ fn iceberg_rest_follow_copy_on_write_delete() {
         // Overwrite reads 5 deletes + 4 inserts, so ingested reaches 14.
         wait(|| ingested_records(pipeline) >= 14, 120_000)
             .expect("timed out following the overwrite");
-        // 8 records: 5 snapshot inserts, 2 for the edited row, 1 for the dropped
-        // row. Wait for the last so the fold sees complete output.
-        wait(|| output_record_count(out_path) >= 8, 60_000).expect("timed out writing output");
-
-        let zset = output_zset(out_path);
-        assert_eq!(zset, expected_zset(&updated));
+        // Deletes and inserts may reach the output in separate steps, so wait
+        // for the final state, not a line count.
+        let expected = expected_zset(&updated);
+        let _ = wait(|| output_zset(out_path) == expected, 60_000);
+        assert_eq!(output_zset(out_path), expected);
     });
 }
 
@@ -1183,11 +1186,12 @@ fn output_record_count(path: &std::path::Path) -> usize {
         .unwrap_or(0)
 }
 
-/// The zset of `insert_delete` records currently in the output file.
+/// The zset of the output file, ignoring a partly written last line.
 #[cfg(feature = "iceberg-tests-follow")]
 fn output_zset(path: &std::path::Path) -> dbsp::OrdZSet<IcebergTestStruct> {
-    let mut file = std::fs::File::open(path).unwrap();
-    file_to_zset::<IcebergTestStruct>(&mut file)
+    let bytes = std::fs::read(path).unwrap();
+    let complete = bytes.iter().rposition(|&b| b == b'\n').map_or(0, |i| i + 1);
+    crate::test::bytes_to_zset::<IcebergTestStruct>(&bytes[..complete])
 }
 
 /// The all-`+1` zset the connector should produce for `data`.

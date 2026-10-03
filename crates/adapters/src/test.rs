@@ -734,6 +734,16 @@ pub fn file_to_zset<T>(file: &mut File) -> OrdZSet<T>
 where
     T: DBData + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>,
 {
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).unwrap();
+    bytes_to_zset(&bytes)
+}
+
+/// Parse `insert_delete` JSON records into a Z-set.
+pub fn bytes_to_zset<T>(bytes: &[u8]) -> OrdZSet<T>
+where
+    T: DBData + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>,
+{
     let format = get_input_format("json").unwrap();
     let buffer = MockDeZSet::<T, T>::new();
 
@@ -748,9 +758,7 @@ where
         )
         .unwrap();
 
-    let mut bytes = Vec::new();
-    file.read_to_end(&mut bytes).unwrap();
-    let (mut parsed_buffers, errors) = parser.parse(&bytes, None);
+    let (mut parsed_buffers, errors) = parser.parse(bytes, None);
     parsed_buffers.flush();
 
     // Use assert_eq, so errors are printed in case of a failure.
