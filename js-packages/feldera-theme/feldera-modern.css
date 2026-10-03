@@ -294,6 +294,15 @@
   transition: background-color 150ms;
 }
 
+/* Zag tab triggers also carry Skeleton's own tab styles, whose hover tints the tab
+   with the primary colour and brightens it. A tab keeps its text colour instead, and
+   only an unselected tab takes the grey hover fill. */
+.tab:hover {
+  color: inherit;
+  filter: none;
+  background-color: transparent;
+}
+
 .tab:not([data-selected], .tab-active, [data-disabled]):hover {
   background-color: color-mix(
     in oklab,
