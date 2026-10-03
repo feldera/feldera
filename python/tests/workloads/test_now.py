@@ -35,14 +35,8 @@ def _wait_datagen_end_of_input(pipeline: Pipeline, *, timeout_s: float) -> None:
     """Wait for this test's bounded datagen input to read its final record."""
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        for inp in pipeline.stats().inputs:
-            if inp.endpoint_name == "datagen":
-                if inp.metrics.end_of_input:
-                    return
-                break
-        else:
-            names = [inp.endpoint_name for inp in pipeline.stats().inputs]
-            raise AssertionError(f"datagen input endpoint not found; have {names!r}")
+        if pipeline.input_connector_stats("t", "datagen").metrics.end_of_input:
+            return
         time.sleep(1)
     raise TimeoutError(f"datagen did not reach end of input within {timeout_s}s")
 

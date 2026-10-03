@@ -78,7 +78,7 @@ class TestClockTimezoneOffset(unittest.TestCase):
                 self.assertEqual(pipeline.status(), PipelineStatus.RUNNING)
 
                 # NOW() is the anchor shifted by the timezone offset.
-                resp = advance_clock_and_wait_for_view(pipeline, 0)
+                resp = advance_clock_and_wait_for_view(pipeline, 0, "v", "t")
                 self.assertEqual(resp["now_ms"], ANCHOR_MS + TZ_OFFSET_MS)
                 view_now = _view_now(pipeline)
                 self.assertTrue(
@@ -88,7 +88,9 @@ class TestClockTimezoneOffset(unittest.TestCase):
                 )
 
                 # Advances compound on the shifted value.
-                resp = advance_clock_and_wait_for_view(pipeline, ONE_MINUTE_MS)
+                resp = advance_clock_and_wait_for_view(
+                    pipeline, ONE_MINUTE_MS, "v", "t"
+                )
                 self.assertEqual(
                     resp["now_ms"], ANCHOR_MS + TZ_OFFSET_MS + ONE_MINUTE_MS
                 )

@@ -76,7 +76,7 @@ class TestClockAdvance(unittest.TestCase):
             self.assertEqual(pipeline.status(), PipelineStatus.RUNNING)
 
             # advance(0) is a read: returns the anchor without moving NOW().
-            resp = advance_clock_and_wait_for_view(pipeline, 0)
+            resp = advance_clock_and_wait_for_view(pipeline, 0, "v", "t")
             self.assertEqual(resp["now_ms"], ANCHOR_MS)
             self.assertTrue(
                 resp["now"].startswith("2030-01-01T00:00:00"),
@@ -84,19 +84,19 @@ class TestClockAdvance(unittest.TestCase):
             )
 
             # advance(null) advances by exactly one clock_resolution.
-            resp = advance_clock_and_wait_for_view(pipeline, None)
+            resp = advance_clock_and_wait_for_view(pipeline, None, "v", "t")
             self.assertEqual(resp["now_ms"], ANCHOR_MS + CLOCK_RESOLUTION_MS)
 
             # advance(+1min) moves NOW() forward; the materialized view
             # must reflect the same value once the step has settled.
-            resp = advance_clock_and_wait_for_view(pipeline, ONE_MINUTE_MS)
+            resp = advance_clock_and_wait_for_view(pipeline, ONE_MINUTE_MS, "v", "t")
             self.assertEqual(
                 resp["now_ms"], ANCHOR_MS + CLOCK_RESOLUTION_MS + ONE_MINUTE_MS
             )
             self.assertTrue(_view_now(pipeline).startswith("2030-01-01T00:01:01"))
 
             # advance(+1 day) compounds with the previous steps.
-            resp = advance_clock_and_wait_for_view(pipeline, ONE_DAY_MS)
+            resp = advance_clock_and_wait_for_view(pipeline, ONE_DAY_MS, "v", "t")
             self.assertEqual(
                 resp["now_ms"],
                 ANCHOR_MS + CLOCK_RESOLUTION_MS + ONE_MINUTE_MS + ONE_DAY_MS,
@@ -104,7 +104,7 @@ class TestClockAdvance(unittest.TestCase):
             self.assertTrue(_view_now(pipeline).startswith("2030-01-02T00:01:01"))
 
             # advance(0) confirms the clock did not drift between calls.
-            resp = advance_clock_and_wait_for_view(pipeline, 0)
+            resp = advance_clock_and_wait_for_view(pipeline, 0, "v", "t")
             self.assertEqual(
                 resp["now_ms"],
                 ANCHOR_MS + CLOCK_RESOLUTION_MS + ONE_MINUTE_MS + ONE_DAY_MS,
@@ -116,7 +116,7 @@ class TestClockAdvance(unittest.TestCase):
                 pipeline.advance_clock(-1)
             self.assertEqual(cm.exception.status_code, 400)
 
-            resp = advance_clock_and_wait_for_view(pipeline, 0)
+            resp = advance_clock_and_wait_for_view(pipeline, 0, "v", "t")
             self.assertEqual(
                 resp["now_ms"],
                 ANCHOR_MS + CLOCK_RESOLUTION_MS + ONE_MINUTE_MS + ONE_DAY_MS,
@@ -156,7 +156,7 @@ class TestClockAdvance(unittest.TestCase):
             self.assertEqual(pipeline.status(), PipelineStatus.RUNNING)
 
             # advance(0): the anchor reads back as a negative now_ms.
-            resp = advance_clock_and_wait_for_view(pipeline, 0)
+            resp = advance_clock_and_wait_for_view(pipeline, 0, "v", "t")
             self.assertEqual(resp["now_ms"], pre_epoch_ms)
             self.assertLess(resp["now_ms"], 0)
             self.assertTrue(
@@ -165,7 +165,7 @@ class TestClockAdvance(unittest.TestCase):
             )
 
             # Forward by one day: still pre-1970, still negative.
-            resp = advance_clock_and_wait_for_view(pipeline, ONE_DAY_MS)
+            resp = advance_clock_and_wait_for_view(pipeline, ONE_DAY_MS, "v", "t")
             self.assertEqual(resp["now_ms"], pre_epoch_ms + ONE_DAY_MS)
             self.assertLess(resp["now_ms"], 0)
             self.assertTrue(

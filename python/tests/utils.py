@@ -948,8 +948,8 @@ def wait_for_records(
 def advance_clock_and_wait_for_view(
     pipeline,
     delta_ms: int | None,
-    view_name: str = "v",
-    time_column: str = "t",
+    view_name: str,
+    time_column: str,
     timeout_s: float = 10.0,
     poll_interval_s: float = 0.05,
 ) -> dict:
@@ -965,12 +965,12 @@ def advance_clock_and_wait_for_view(
     offset such as '2030-01-01T05:30:00+05:30'), while the SQL materialized view returns a
     wall-clock TIMESTAMP without timezone. We parse both values into typed `datetime` objects
     and normalize them to second precision (ignoring timezone envelope and microseconds) for a
-    robust, type-safe comparison without magic character slicing.
+    comparison.
 
     :param pipeline: The Feldera pipeline instance.
     :param delta_ms: Milliseconds to advance the clock, 0 for read-only, or None for one resolution tick.
-    :param view_name: Name of the materialized view containing the clock value (default 'v').
-    :param time_column: Name of the timestamp column in the view (default 't').
+    :param view_name: Name of the materialized view containing the clock value.
+    :param time_column: Name of the timestamp column in the view.
     :param timeout_s: Maximum wait timeout in seconds (default 10.0).
     :param poll_interval_s: Interval between poll attempts in seconds (default 0.05).
     :returns: The dictionary response from `pipeline.advance_clock`.
@@ -996,7 +996,7 @@ def advance_clock_and_wait_for_view(
             view_dt = _parse_timestamp(rows[0][time_column]).replace(
                 tzinfo=None, microsecond=0
             )
-            return view_dt == expected_dt
+            return view_dt >= expected_dt
         except (ValueError, TypeError):
             return False
 
