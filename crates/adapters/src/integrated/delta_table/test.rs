@@ -664,16 +664,21 @@ async fn run_catchup_lag_experiment(
             sleep(Duration::from_millis(10)).await;
         }
 
-        assert_eq!(
-            delta_last_ingested_version(&pipeline),
-            Some(target_version),
-            "last_ingested_version metric must track the completed waterline"
-        );
-        assert_eq!(
-            delta_catchup_target_version(&pipeline),
-            None,
-            "catchup_target_version metric must be cleared after the window closes"
-        );
+        // The connector sets these just after it queues the commit, so they can lag the
+        // completed version.
+        let start = Instant::now();
+        while delta_last_ingested_version(&pipeline) != Some(target_version)
+            || delta_catchup_target_version(&pipeline).is_some()
+        {
+            assert!(
+                start.elapsed() < Duration::from_secs(10),
+                "round {round}: last_ingested_version must reach {target_version} and \
+                 catchup_target_version must clear (got {:?} and {:?})",
+                delta_last_ingested_version(&pipeline),
+                delta_catchup_target_version(&pipeline),
+            );
+            sleep(Duration::from_millis(10)).await;
+        }
 
         let metric_at_round_end = delta_follow_transaction_starts(&pipeline);
         transactions_per_round.push(metric_at_round_end - metric_at_round_start);
