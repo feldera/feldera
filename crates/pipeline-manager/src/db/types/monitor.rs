@@ -15,20 +15,26 @@ use uuid::Uuid;
 #[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone, Copy)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum MonitorStatus {
-    /// The service has not yet had any health check pass and is likely still getting ready.
-    /// Once this status is changed to `Unhealthy` or `Healthy`, it will never transition back.
-    InitialUnhealthy,
     /// The service is experiencing issues.
     Unhealthy,
+    /// The service is not ready yet but is still within the time it is given to get there.
+    Transitioning,
     /// The service is not experiencing any issue.
     Healthy,
+}
+
+impl MonitorStatus {
+    /// Whether the service is not reporting a problem. A transition is not a problem.
+    pub fn is_operational(self) -> bool {
+        self != MonitorStatus::Unhealthy
+    }
 }
 
 impl TryFrom<String> for MonitorStatus {
     type Error = DBError;
     fn try_from(value: String) -> Result<Self, DBError> {
         match value.as_str() {
-            "initial_unhealthy" => Ok(Self::InitialUnhealthy),
+            "initial_unhealthy" | "transitioning" => Ok(Self::Transitioning),
             "unhealthy" => Ok(Self::Unhealthy),
             "healthy" => Ok(Self::Healthy),
             _ => Err(DBError::InvalidMonitorStatus { value }),
@@ -39,8 +45,8 @@ impl TryFrom<String> for MonitorStatus {
 impl From<MonitorStatus> for &'static str {
     fn from(value: MonitorStatus) -> Self {
         match value {
-            MonitorStatus::InitialUnhealthy => "initial_unhealthy",
             MonitorStatus::Unhealthy => "unhealthy",
+            MonitorStatus::Transitioning => "transitioning",
             MonitorStatus::Healthy => "healthy",
         }
     }
