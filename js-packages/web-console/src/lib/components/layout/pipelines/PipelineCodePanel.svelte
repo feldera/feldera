@@ -378,13 +378,10 @@ example = "1.0"`
     {/if}
   {/snippet}
   {#snippet fileTab(text, onClick, isCurrent, isSaved)}
-    <!-- Styled like the tabs of the tabbed panels (`TabsPanel`): a 24px tab with 12px above
-         and below, and for the current file a 2px bar at the bottom of the row, on the
-         header's line. An unsaved file keeps room on the right for its dot. -->
+    <!-- The shared `.tab` (see feldera-modern.css), as in the tabbed panels (`TabsPanel`).
+         An unsaved file keeps room on the right for its dot. -->
     <button
-      class="relative my-3 btn h-6! font-medium whitespace-nowrap {isCurrent
-        ? 'after:absolute after:inset-x-0 after:-bottom-3 after:h-0.5 after:bg-surface-950-50'
-        : 'rounded hover:bg-surface-100-900/50'} {isSaved ? '' : 'pr-5!'}"
+      class="tab {isCurrent ? 'tab-active' : ''} {isSaved ? '' : 'pr-5!'}"
       onclick={onClick}
     >
       {text}
