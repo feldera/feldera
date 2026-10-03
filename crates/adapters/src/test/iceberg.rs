@@ -893,6 +893,22 @@ fn iceberg_metric(pipeline: &Controller, name: &str) -> f64 {
         .unwrap_or(0.0)
 }
 
+/// Wait for the catchup target gauge to reset. The connector clears it just
+/// after it queues the commit, so it can lag the output.
+#[cfg(feature = "iceberg-tests-follow")]
+fn wait_catchup_window_closed(pipeline: &Controller) {
+    wait(
+        || {
+            iceberg_metric(
+                pipeline,
+                "input_connector_iceberg_catchup_target_sequence_number",
+            ) == -1.0
+        },
+        10_000,
+    )
+    .expect("catchup target gauge never reset");
+}
+
 /// Sum of the records the connector has ingested so far (snapshot phase plus
 /// follow phase), read from its custom metrics.
 #[cfg(feature = "iceberg-tests-follow")]
@@ -1149,15 +1165,7 @@ fn iceberg_rest_follow_transaction_catchup() {
             ),
             1.0
         );
-        // The catchup window closed once the batch committed, so the target
-        // gauge is back to its unset sentinel.
-        assert_eq!(
-            iceberg_metric(
-                pipeline,
-                "input_connector_iceberg_catchup_target_sequence_number"
-            ),
-            -1.0
-        );
+        wait_catchup_window_closed(pipeline);
         let zset = output_zset(out_path);
         assert_eq!(zset.len(), 10);
         assert_eq!(zset, expected_zset(&all[5..]));
@@ -1214,13 +1222,7 @@ fn iceberg_rest_follow_transaction_catchup_end_snapshot_id() {
             ),
             1.0
         );
-        assert_eq!(
-            iceberg_metric(
-                pipeline,
-                "input_connector_iceberg_catchup_target_sequence_number"
-            ),
-            -1.0
-        );
+        wait_catchup_window_closed(pipeline);
         let zset = output_zset(out_path);
         assert_eq!(zset.len(), 5);
         assert_eq!(zset, expected_zset(&all[5..10]));
