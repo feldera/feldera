@@ -23,6 +23,30 @@ Source edition can be found on github.
   a separate view without `emit_final` and use that view instead.  See
   [`emit_final`](/tutorials/time-series#emitting-final-values-of-a-view-with-emit_final).
 
+- Incompatible change (user-defined aggregates): the accumulator type of a
+  user-defined aggregate written in Rust must now also implement
+  `dbsp::dynamic::HashRepr` for its rkyv archived form, which hashes an
+  archived value as `Hash` hashes the deserialized one, so that a merge can
+  copy keys from one file to another without deserializing them.  The same
+  holds for any type used as a key or a value with the `dbsp` crate's Rust
+  API.  A type whose `Archive` and `Hash` are both derived can add
+  `#[derive(feldera_macros::HashRepr)]`.  A type with a hand-written
+  `Archive` implementation, such as the `I256Wrapper` accumulator in the
+  documentation, can implement it with `const FAITHFUL: bool = false`,
+  which makes storage deserialize the value whenever it needs the hash; an
+  implementation that claims to be faithful must agree with `Hash` on every
+  value, or lookups miss rows.  Without the implementation the pipeline
+  fails to compile with `the trait bound ... HashRepr is not satisfied`.
+  See [User-defined aggregates](/sql/udf#user-defined-aggregates).
+
+- Incompatible change (Rust API): the `dbsp` crate no longer exports the
+  `impl_hash_repr_via_hash!` and `impl_hash_repr_via_hash_and_slice!`
+  macros.  They implement `dbsp::dynamic::HashRepr` for an archived type by
+  forwarding to its `Hash`, and declare the result faithful without
+  checking it.  That holds only where the archived type hashes like the
+  deserialized one, as a primitive does; anywhere else, lookups miss rows.
+  Implement `HashRepr` as the entry above describes instead.
+
 ## v0.360.0
 
 - Storage now uses LZ4 compression by default, instead of Snappy.  LZ4

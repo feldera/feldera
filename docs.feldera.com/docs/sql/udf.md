@@ -451,14 +451,23 @@ define 3 Rust objects:
     `DBData` allows accumulators to be stored in relations which may be
     spilled to disk; among other traits, it requires `Ord` and
     `ArchivedDBData`.  The latter requires the type's archived form to
-    implement
-    [`OrdRepr`](https://docs.rs/dbsp/latest/dbsp/dynamic/trait.OrdRepr.html),
-    which orders an archived value against an unarchived one without
+    implement two more traits.
+    [`OrdRepr`](https://docs.rs/dbsp/latest/dbsp/dynamic/trait.OrdRepr.html)
+    orders an archived value against an unarchived one without
     deserializing it; storage uses this comparison to search data on disk,
     so it must agree with `Ord`.  A type whose `Ord` is derived can derive
-    it too, with `#[derive(feldera_macros::OrdRepr)]`.  `MonoidValue`
-    essentially requires the traits `Zero`, `HasZero`, `Add` (and variants
-    such as `AddByRef`).
+    it too, with `#[derive(feldera_macros::OrdRepr)]`.
+    [`HashRepr`](https://docs.rs/dbsp/latest/dbsp/dynamic/trait.HashRepr.html)
+    hashes an archived value exactly as `Hash` hashes the deserialized one,
+    so that a merge can record a key it copies in the new file's membership
+    filter without deserializing it.  A type whose `Hash` is derived can
+    derive it too, with `#[derive(feldera_macros::HashRepr)]`.  Any other
+    type can implement it with `FAITHFUL` set to `false`, as the example
+    below does, and storage then deserializes the value whenever it needs
+    the hash; an implementation that claims to be faithful but disagrees
+    with `Hash` makes lookups miss rows.  `MonoidValue` essentially
+    requires the traits `Zero`, `HasZero`, `Add` (and variants such as
+    `AddByRef`).
 
   - [`MulByRef`](https://docs.rs/dbsp/latest/dbsp/algebra/trait.MulByRef.html)
     which allows accumulator values to be multiplied by integer
@@ -642,6 +651,14 @@ impl dbsp::dynamic::OrdRepr<I256Wrapper> for ArchivedI256Wrapper {
     fn ord_cmp(&self, other: &I256Wrapper) -> std::cmp::Ordering {
         I256::from_be_bytes(self.bytes).cmp(&other.data)
     }
+}
+
+// A type whose archived form cannot reproduce the hash the decoded form
+// writes says so, and its caller deserializes and hashes that instead.
+impl dbsp::dynamic::HashRepr for ArchivedI256Wrapper {
+    const FAITHFUL: bool = false;
+
+    fn hash_repr<H: std::hash::Hasher>(&self, _state: &mut H) {}
 }
 
 pub type i128_sum_accumulator_type = I256Wrapper;
