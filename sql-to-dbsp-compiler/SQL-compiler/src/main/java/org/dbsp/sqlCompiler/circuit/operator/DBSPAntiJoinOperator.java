@@ -32,6 +32,11 @@ public final class DBSPAntiJoinOperator extends DBSPBinaryOperator implements IJ
     }
 
     @Override
+    public boolean hasInputIntegrator(int inputIndex) {
+        return inputIndex == 0;
+    }
+
+    @Override
     public void accept(CircuitVisitor visitor) {
         visitor.push(this);
         VisitDecision decision = visitor.preorder(this);

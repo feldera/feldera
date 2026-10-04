@@ -44,7 +44,7 @@ public class SeparateIntegrators extends CircuitCloneWithGraphsVisitor {
     }
 
     /** True when {@code consumer} keeps an integral of the stream it reads on input {@code inputIndex}. */
-    private static boolean hasPreIntegrator(DBSPOperator consumer, int inputIndex) {
+    static boolean hasPreIntegrator(DBSPOperator consumer, int inputIndex) {
         // A sink keeps an integrator of the view contents only when the view is materialized
         if (consumer.is(DBSPSinkOperator.class))
             return consumer.to(DBSPSinkOperator.class).metadata.viewKind ==
@@ -70,7 +70,8 @@ public class SeparateIntegrators extends CircuitCloneWithGraphsVisitor {
                     needsOwnTrace = true;
                 } else {
                     for (Port<DBSPOperator> otherConsumer : this.getGraph().getSuccessors(input.node())) {
-                        if (otherConsumer.node() == operator)
+                        // Another input of the same operator, as in a self-join, is a separate consumer
+                        if (otherConsumer.node() == operator && otherConsumer.port() == inputIndex)
                             continue;
                         if (hasPreIntegrator(otherConsumer.node(), otherConsumer.port())) {
                             needsOwnTrace = true;
