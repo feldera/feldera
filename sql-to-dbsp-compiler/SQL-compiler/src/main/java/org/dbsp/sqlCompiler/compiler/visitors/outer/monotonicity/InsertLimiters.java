@@ -1416,7 +1416,6 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
 
-        DBSPSimpleOperator resultJoin = result;
         this.processIntegral(expansion.leftIntegrator);
         this.processIntegral(expansion.rightIntegrator);
         this.processJoin(expansion.leftDelta);
@@ -1491,31 +1490,19 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 if (retention != null && INSERT_RETAIN_VALUES) {
                     final OutputPort extractRight = this.createApply(
                             leftDeltaLimiter, retention.extract());
-                    // If the two join inputs are the same operator and the left one already got a
-                    // retain, separate them with a noop so the two retains apply to different traces.
-                    // TODO: it may be possible to actually combine the two retain values operators instead,
-                    // see issue 7130
-                    OutputPort left = this.mapped(join.left());
                     OutputPort right = this.mapped(join.right());
-                    if (retainedLeftInput && left.equals(right)) {
-                        var noop = new DBSPNoopOperator(right.operator.getRelNode(), right);
-                        this.addOperator(noop);
-                        right = noop.getOutput(0);
-                    }
-
+                    // SeparateIntegrators gives each input of a self-join its own noop
+                    Utilities.enforce(!retainedLeftInput || !this.mapped(join.left()).equals(right),
+                            () -> "Both inputs of the self-join " + join + " read " + right);
                     DBSPSimpleOperator r = DBSPIntegrateTraceRetainValuesOperator.create(
                             join.getRelNode(), right, retention.projection(),
                             this.createDelay(extractRight));
                     this.addOperator(r);
-
-                    resultJoin = resultJoin.withInputs(Linq.list(resultJoin.inputs.get(0), right), true)
-                            .copyAnnotations(resultJoin)
-                            .to(DBSPSimpleOperator.class);
                 }
             }
         }
 
-        this.map(join, resultJoin, true);
+        this.map(join, result, true);
     }
 
     /** Given two expressions with the same type, compute the MAX expression pointwise,

@@ -66,14 +66,14 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
      * time in lt and the count in lv. */
     static final List<String> COLUMNS = List.of("j", "lk", "lt", "lv", "rk", "rt", "rv");
 
-    /** One SELECT per shape, over left input {@code left} and right input {@code right}.  The
+    /** One SELECT per shape of {@code shapes}, over left input {@code left} and right input {@code right}.  The
      * casts remove the waterlines, so that GC does not prune the traces of the operators that
      * compute view D, which compares the two sides.
      * @param counts  True to add, for each shape, the number of output rows for each l.t and for
      *                each r.t. */
-    static List<String> selects(String label, String left, String right, boolean counts) {
+    static List<String> selects(List<JoinShape> shapes, String label, String left, String right, boolean counts) {
         List<String> result = new ArrayList<>();
-        for (JoinShape shape : SHAPES) {
+        for (JoinShape shape : shapes) {
             String from = shape.from(left, right);
             String rightColumns = shape.hasRight ?
                     "CAST(r.k AS VARCHAR) AS rk, CAST(r.t AS VARCHAR) AS rt, CAST(r.v AS VARCHAR) AS rv " :
@@ -138,15 +138,15 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
         return result;
     }
 
-    /* The generated program starts with
+    /* The generated program for the shape inner_t starts with
      * CREATE TABLE LATE_LEFT_L (k INT NOT NULL, t INT LATENESS 10, v INT NOT NULL);
      * ...
      * CREATE LOCAL VIEW LATE_ALL AS
      * SELECT 'inner_t_L' AS j, CAST(l.k AS VARCHAR) AS lk, ..., CAST(r.v AS VARCHAR) AS rv
      *   FROM LATE_LEFT_L l JOIN LATE_RIGHT_L r ON l.t = r.t
-     * UNION ALL ...;
+     * UNION ALL ... the counts per l.t and per r.t, then the same over LEFT_R and RIGHT_R, ...;
      */
-    static String differentialProgram(List<TablePair<?>> pairs) {
+    static String differentialProgram(List<TablePair<?>> pairs, JoinShape shape) {
         StringBuilder sql = new StringBuilder();
         for (TablePair<?> pair : pairs) {
             sql.append(pair.create("LATE_", true));
@@ -155,7 +155,7 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
         for (String prefix : TablePair.PREFIXES) {
             List<String> branches = new ArrayList<>();
             for (LateInputs lateInputs : LateInputs.values())
-                branches.addAll(selects("_" + lateInputs, prefix + "LEFT_" + lateInputs,
+                branches.addAll(selects(List.of(shape), "_" + lateInputs, prefix + "LEFT_" + lateInputs,
                         prefix + "RIGHT_" + lateInputs, true));
             sql.append("CREATE LOCAL VIEW ").append(prefix).append("ALL AS ")
                     .append(String.join("\nUNION ALL ", branches)).append(";\n");
@@ -172,11 +172,19 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
             new Right(0, 102, 14), new Right(2, null, 15), new Right(3, 106, 16), new Right(0, 111, 17));
 
     /** Every join shape, and every choice of the inputs with LATENESS, gives the same output with and
-     * without LATENESS. */
+     * without LATENESS.  One program per shape: shapes that share an index share one integral, and
+     * a shape without GC would then remove the GC of the others. */
     @Test
     public void sameOutputWithoutLateness() {
-        List<TablePair<?>> pairs = createTablePairs();
-        var tester = new DifferentialTester(this.getCCS(differentialProgram(pairs)), pairs, COLUMNS);
+        for (JoinShape shape : SHAPES) {
+            List<TablePair<?>> pairs = createTablePairs();
+            var tester = new DifferentialTester(this.getCCS(differentialProgram(pairs, shape)), pairs, COLUMNS);
+            steps(tester);
+        }
+    }
+
+    /** The steps of the differential test. */
+    static void steps(DifferentialTester tester) {
         // No waterline yet: matches on t, on k, and on t + 1, unmatched rows on both sides,
         // and a NULL t on each side
         tester.insert(INITIAL.toArray(new Record[0]));
@@ -241,7 +249,7 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
                 CREATE TABLE L (k INT NOT NULL, t INT, v INT NOT NULL);
                 CREATE TABLE R (k INT NOT NULL, t INT, v INT NOT NULL);
                 CREATE VIEW V AS
-                """ + String.join("\nUNION ALL ", selects("", "L", "R", false)) + ";";
+                """ + String.join("\nUNION ALL ", selects(SHAPES, "", "L", "R", false)) + ";";
         var ccs = this.getCCS(program).withStringTrim();
         ccs.stepWeightOne(insertInitial(), """
              j                | lk   | lt   | lv   | rk   | rt   | rv
@@ -431,7 +439,7 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
             left_filter_anti | -        | V        | V        | V
             right_t          | K        | -        | KK       | KK
             right_k          | -        | -        | -        | -
-            full_t_anti      | K        | K        | KK       | KK
+            full_t_anti      | -        | -        | -        | -
             full_k_anti      | -        | -        | -        | -
             asof             | -        | -        | NV       | NV
             not_exists_t     | -        | KKN      | KKN      | KKN
@@ -447,7 +455,8 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
                 (lateness == 0 ? "" : " LATENESS " + lateness) + ", v INT NOT NULL);\n";
     }
 
-    /** Each join shape has GC exactly where the waterlines allow it. */
+    /** Each join shape has GC exactly where the waterlines allow it and no consumer keeps a full
+     * copy of the input. */
     @Test
     public void gcOperators() {
         StringBuilder header = new StringBuilder(String.format("%-16s", "shape"));

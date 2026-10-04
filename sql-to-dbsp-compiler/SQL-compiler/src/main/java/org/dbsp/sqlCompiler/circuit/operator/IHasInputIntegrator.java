@@ -9,4 +9,11 @@ public interface IHasInputIntegrator extends IContainsIntegrator {
     default boolean hasInputIntegrator(int inputIndex) {
         return true;
     }
+
+    /** True if the operator garbage collects the integrator of this input with a bound of its
+     * own; i.e., the integrator is not a full copy of the input.
+     * @param inputIndex  Input of the operator. */
+    default boolean garbageCollectsInput(int inputIndex) {
+        return false;
+    }
 }

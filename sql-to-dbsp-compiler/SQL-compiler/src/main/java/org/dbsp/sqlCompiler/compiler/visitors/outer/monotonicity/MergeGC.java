@@ -1,12 +1,18 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyNOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainNValuesOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.IGCOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IHasInputIntegrator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CSE;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitGraphs;
@@ -14,6 +20,12 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitWithGraphsVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Graph;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
@@ -27,32 +39,126 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Look for the following pattern:
+/** Replace the following pattern, where every consumer of the noops keeps a full integral of
+ * its input, so that the consumers can share one integral:
+ * source -> noop -> retain1
+ *        -> noop -> retain2
+ * ... with source -> noop -> retain1
+ *                         -> retain2
+ * The two retain operators are then merged by the patterns below.
+ *
+ * <p>Replace the following pattern, where all noop consumers keep full integrals:
  * source -> noop -> retain
- *        -> noop -> retain
- * Where the two retain operators are equivalent.
- * Replace this with a single chain.
+ *        -> noop
+ * ... with source -> noop: the consumer without a retain keeps a copy of the source.
+ *
+ * <p>Window operators are not optimized in this way.
  *
  * <p>Replace the following pattern
  * source -> retainKey1
  *        -> retainKey2
- * With source -> retainKey (min of control inputs)
+ * With source -> retainKey (min of control inputs).
+ *
+ * <p>Replace the following pattern
+ * source -> retainValues1
+ *        -> retainValues2
+ * With source -> retainValues, which keeps a value when (retainValues1 OR retainValues2) keeps it.
  */
 public class MergeGC extends Passes {
     /** This is a modified form of {@link CSE.FindCSE} */
     static class FindEquivalentNoops extends CircuitWithGraphsVisitor {
         /** Maps each operator to its canonical representative */
         public final Map<DBSPOperator, DBSPOperator> canonical;
+        /** GC operators to remove: the shared integral has no retention of their kind */
+        public final Set<DBSPOperator> removed;
 
         public FindEquivalentNoops(DBSPCompiler compiler, CircuitGraphs graphs) {
             super(compiler, graphs);
             this.canonical = new HashMap<>();
+            this.removed = new HashSet<>();
         }
 
         @Override
         public Token startVisit(IDBSPOuterNode node) {
             this.canonical.clear();
+            this.removed.clear();
             return super.startVisit(node);
+        }
+
+        /** @return True if every consumer of {@code noop} that is not a GC operator keeps a full
+         * integral of its input, so that the consumers can share one integral.  A consumer that
+         * truncates its integral with a bound of its own keeps no full copy, and a shared integral
+         * would lose either the retain operators or the bound. */
+        boolean consumersCanShareIntegral(DBSPOperator noop) {
+            for (Port<DBSPOperator> succ: this.getGraph().getSuccessors(noop)) {
+                DBSPOperator consumer = succ.node();
+                if (consumer.is(IGCOperator.class))
+                    continue;
+                if (!SeparateIntegrators.hasPreIntegrator(consumer, succ.port()))
+                    return false;
+                if (consumer.is(IHasInputIntegrator.class) &&
+                        consumer.to(IHasInputIntegrator.class).garbageCollectsInput(succ.port()))
+                    return false;
+            }
+            return true;
+        }
+
+        /** @return The GC operator of {@code noop} with retention of kind {@code kind}, or null if there is none. */
+        @Nullable
+        IGCOperator gcOperator(DBSPOperator noop, CheckRetain.RetentionKind kind) {
+            for (Port<DBSPOperator> succ: this.getGraph().getSuccessors(noop)) {
+                DBSPOperator node = succ.node();
+                if (node.is(IGCOperator.class) && node.to(IGCOperator.class).garbageCollects(noop) &&
+                        CheckRetain.slot(node) == kind)
+                    return node.to(IGCOperator.class);
+            }
+            return null;
+        }
+
+        /** Make the first noop of {@code group} of noops the "canonical" representative
+         * of the group when:
+         * - they all read one port;
+         * - their consumers can share one integral;
+         * - for every kind of retention that every noop has, their GC operators can be merged.
+         * A kind of retention that some noop lacks is removed from the other noops: the consumers
+         * of that noop keep a full copy of the input anyway, and one such copy replaces it and the
+         * garbage collected copies. */
+        void findMergeableNoops(List<DBSPOperator> group) {
+            List<IGCOperator> toRemove = new ArrayList<>();
+            for (CheckRetain.RetentionKind kind : CheckRetain.RetentionKind.values()) {
+                List<IGCOperator> ofKind = new ArrayList<>();
+                for (DBSPOperator noop : group) {
+                    IGCOperator gc = this.gcOperator(noop, kind);
+                    if (gc != null)
+                        ofKind.add(gc);
+                }
+                if (ofKind.size() < group.size()) {
+                    toRemove.addAll(ofKind);
+                    continue;
+                }
+                for (IGCOperator gc : ofKind)
+                    if (!FindMultipleRetains.canMerge(ofKind.get(0), gc))
+                        return;
+            }
+            for (IGCOperator gc : toRemove) {
+                Logger.INSTANCE.belowLevel(this, 1)
+                        .append("MergeGC removing ")
+                        .appendSupplier(gc::toString)
+                        .newline();
+                this.removed.add(gc.asOperator());
+            }
+            DBSPOperator first = group.get(0);
+            for (DBSPOperator noop : group) {
+                if (noop == first)
+                    continue;
+                Logger.INSTANCE.belowLevel(this, 1)
+                        .append("MergeGC ")
+                        .appendSupplier(noop::toString)
+                        .append(" -> ")
+                        .appendSupplier(first::toString)
+                        .newline();
+                this.canonical.put(noop, first);
+            }
         }
 
         /** True if {@code left} and {@code right} carry the same values: they are the same port, or
@@ -75,107 +181,111 @@ public class MergeGC extends Passes {
             return leftNode.withInputs(rightNode.inputs, false).equivalent(rightNode);
         }
 
-        @Nullable
-        DBSPSimpleOperator getSingleGcSuccessor(DBSPOperator operator) {
-            if (!operator.is(DBSPNoopOperator.class))
-                return null;
-            List<Port<DBSPOperator>> baseDests = Linq.where(
-                    this.getGraph().getSuccessors(operator),
-                    p -> p.node().is(IGCOperator.class) &&
-                            p.node().to(IGCOperator.class).garbageCollects(operator));
-            if (baseDests.size() != 1)
-                return null;
-            Port<DBSPOperator> port = baseDests.get(0);
-            return port.node().to(DBSPSimpleOperator.class);
+        /** True if {@code gc0} and {@code gc1} retain the same data in the same way: their bounds carry
+         * the same values, and the operators are equivalent once {@code gc1} is rebuilt on the inputs
+         * of {@code gc0}. */
+        static boolean samePolicy(IGCOperator gc0, IGCOperator gc1) {
+            DBSPSimpleOperator op0 = gc0.asOperator();
+            DBSPSimpleOperator op1 = gc1.asOperator();
+            return sameStream(op0.inputs.get(1), op1.inputs.get(1)) &&
+                    op0.equivalent(op1.withInputs(op0.inputs, false));
         }
 
+        /** Group the noops that read {@code operator} by the output port they read from, keeping
+         * only noops whose consumers can share one integral. Record which noops of each group to
+         * merge and which GC operators to remove. */
         @Override
         public void postorder(DBSPSimpleOperator operator) {
-            List<Port<DBSPOperator>> destinations = this.getGraph().getSuccessors(operator);
-            // Compare every pair of destinations
-            for (int i = 0; i < destinations.size(); i++) {
-                DBSPOperator base = destinations.get(i).node();
-                DBSPSimpleOperator gc0 = this.getSingleGcSuccessor(base);
-                if (gc0 == null)
+            // Key: an output port of the operator.  Value: the noops reading it whose consumers can share one integral.
+            Map<OutputPort, List<DBSPOperator>> groups = new HashMap<>();
+            for (Port<DBSPOperator> destination : this.getGraph().getSuccessors(operator)) {
+                DBSPOperator noop = destination.node();
+                if (!noop.is(DBSPNoopOperator.class) || !this.consumersCanShareIntegral(noop))
                     continue;
-
-                for (int j = i + 1; j < destinations.size(); j++) {
-                    DBSPOperator compare = destinations.get(j).node();
-                    if (this.canonical.containsKey(compare))
-                        // Already found a canonical representative
-                        continue;
-                    if (!base.equivalent(compare))
-                        continue;
-
-                    DBSPSimpleOperator gc1 = this.getSingleGcSuccessor(compare);
-                    if (gc1 == null)
-                        continue;
-
-                    // The data inputs of gc0 and gc1 are different noops, so compare gc0 with gc1
-                    // rebuilt on the inputs of gc0, after checking that the bounds are the same:
-                    // the merged trace keeps gc0 only.
-                    if (sameStream(gc0.inputs.get(1), gc1.inputs.get(1)) &&
-                            gc0.equivalent(gc1.withInputs(gc0.inputs, false))) {
-                        Logger.INSTANCE.belowLevel(this, 1)
-                                .append("MergeGC ")
-                                .appendSupplier(compare::toString)
-                                .append(" -> ")
-                                .appendSupplier(base::toString)
-                                .newline()
-                                .appendSupplier(gc1::toString)
-                                .append(" -> ")
-                                .appendSupplier(gc0::toString);
-                        this.canonical.put(compare, base);
-                        this.canonical.put(gc1, gc0);
-                    }
-                }
+                groups.computeIfAbsent(noop.inputs.get(0), p -> new ArrayList<>()).add(noop);
             }
+            for (List<DBSPOperator> group : groups.values())
+                if (group.size() > 1)
+                    this.findMergeableNoops(group);
         }
     }
 
-    /** Find multiple {@link DBSPIntegrateTraceRetainKeysOperator} that apply the same retention
-     * policy to the same data. */
-    static class FindMultipleRetainKeys extends CircuitWithGraphsVisitor {
-        final List<List<DBSPIntegrateTraceRetainKeysOperator>> shareLeftInput;
-        final Set<DBSPIntegrateTraceRetainKeysOperator> visited;
+    /** Find multiple GC operators that read the same data which can be replaced by a single operator.
+     * All the operators of a group have the same class: {@link DBSPIntegrateTraceRetainKeysOperator}s
+     * with the same comparison, {@link DBSPIntegrateTraceRetainValuesOperator}s, or
+     * {@link DBSPIntegrateTraceRetainNValuesOperator}s with identical policies. */
+    static class FindMultipleRetains extends CircuitWithGraphsVisitor {
+        /** Groups of at least two GC operators of the same class that read the same data; MergeRetain
+         * replaces each group with one operator. */
+        final List<List<IGCOperator>> shareLeftInput;
+        /** The GC operators already placed in a group. */
+        final Set<IGCOperator> grouped;
 
-        FindMultipleRetainKeys(DBSPCompiler compiler, CircuitGraphs graphs) {
+        FindMultipleRetains(DBSPCompiler compiler, CircuitGraphs graphs) {
             super(compiler, graphs);
             this.shareLeftInput = new ArrayList<>();
-            this.visited = new HashSet<>();
+            this.grouped = new HashSet<>();
         }
 
-        /** A single operator driven by the minimum of two bounds can replace two retain-keys
-         * operators only when they retain the same data with the same comparison. */
-        static boolean samePolicy(DBSPIntegrateTraceRetainKeysOperator a, DBSPIntegrateTraceRetainKeysOperator b) {
-            return a.left().equals(b.left()) &&
-                    a.accumulate == b.accumulate &&
-                    a.getFunction().equivalent(b.getFunction());
+        /** True if a single operator can replace {@code a} and {@code b} when they read the same data.
+         * A retain-keys operator driven by the minimum of two bounds replaces two retain-keys operators
+         * with the same comparison.  A retain-values operator that keeps a value when either keeps it
+         * replaces any two retain-values operators.  Any other pair must have the same policy. */
+        static boolean canMerge(IGCOperator a, IGCOperator b) {
+            DBSPIntegrateTraceRetainKeysOperator keysA = a.as(DBSPIntegrateTraceRetainKeysOperator.class);
+            DBSPIntegrateTraceRetainKeysOperator keysB = b.as(DBSPIntegrateTraceRetainKeysOperator.class);
+            if (keysA != null && keysB != null)
+                return keysA.accumulate == keysB.accumulate &&
+                        keysA.getFunction().equivalent(keysB.getFunction());
+            if (a.is(DBSPIntegrateTraceRetainValuesOperator.class) &&
+                    b.is(DBSPIntegrateTraceRetainValuesOperator.class))
+                return true;
+            return FindEquivalentNoops.samePolicy(a, b);
         }
 
-        @Override
-        public void postorder(DBSPIntegrateTraceRetainKeysOperator retain) {
-            if (this.visited.contains(retain))
+        /** Group {@code retain} with the GC operators of its class that read the same data and that
+         * can be merged with it; a group with more than one member is recorded in
+         * {@code shareLeftInput}. */
+        void collect(IGCOperator retain) {
+            if (this.grouped.contains(retain))
                 return;
-            List<DBSPIntegrateTraceRetainKeysOperator> common = new ArrayList<>();
+            List<IGCOperator> common = new ArrayList<>();
             common.add(retain);
-            this.visited.add(retain);
-            for (var succ: this.getGraph().getSuccessors(retain.left().node())) {
-                var other = succ.node().as(DBSPIntegrateTraceRetainKeysOperator.class);
-                if (other == null || other == retain || this.visited.contains(other))
+            this.grouped.add(retain);
+            OutputPort data = retain.data();
+            for (var succ: this.getGraph().getSuccessors(data.node())) {
+                if (!succ.node().is(IGCOperator.class))
                     continue;
-                if (!samePolicy(retain, other))
+                IGCOperator other = succ.node().to(IGCOperator.class);
+                if (other == retain || this.grouped.contains(other))
+                    continue;
+                if (!other.data().equals(data) || !canMerge(retain, other))
                     continue;
                 common.add(other);
-                this.visited.add(other);
+                this.grouped.add(other);
             }
             if (common.size() > 1) {
                 this.shareLeftInput.add(common);
             }
         }
+
+        @Override
+        public void postorder(DBSPIntegrateTraceRetainKeysOperator retain) {
+            this.collect(retain);
+        }
+
+        @Override
+        public void postorder(DBSPIntegrateTraceRetainValuesOperator retain) {
+            this.collect(retain);
+        }
+
+        @Override
+        public void postorder(DBSPIntegrateTraceRetainNValuesOperator retain) {
+            this.collect(retain);
+        }
     }
 
-    /** Merge multiple {@link DBSPIntegrateTraceRetainKeysOperator}s which share their left input */
+    /** Merge the groups of GC operators found by {@link FindMultipleRetains} */
     static class MergeRetain extends CircuitCloneVisitor {
         /** Keep a counter and a list; offer a method to decrement counter */
         static class ListCounter<T> {
@@ -193,12 +303,13 @@ public class MergeGC extends Passes {
             }
         }
 
-        final Map<DBSPIntegrateTraceRetainKeysOperator, ListCounter<DBSPIntegrateTraceRetainKeysOperator>> toMerge;
-        final FindMultipleRetainKeys fmk;
+        /** Key: a GC operator to merge.  Value: its group, with a counter of the group members not yet visited. */
+        final Map<IGCOperator, ListCounter<IGCOperator>> toMerge;
+        final FindMultipleRetains fmr;
 
-        DBSPIntegrateTraceRetainKeysOperator merge(List<DBSPIntegrateTraceRetainKeysOperator> operators) {
-            // The shared operators must all have the same left input.
-            Utilities.enforce(operators.size() > 1);
+        /** One retain-keys operator driven by the minimum of the bounds of {@code operators}. */
+        DBSPIntegrateTraceRetainKeysOperator mergeRetainKeys(
+                List<DBSPIntegrateTraceRetainKeysOperator> operators) {
             DBSPIntegrateTraceRetainKeysOperator first = operators.get(0);
             OutputPort left = this.mapped(first.left());
             List<OutputPort> rights = Linq.map(operators, o -> this.mapped(o.right()));
@@ -208,16 +319,87 @@ public class MergeGC extends Passes {
                     first.getRelNode(), first.getClosureFunction(), left, apply, first.accumulate);
         }
 
-        public MergeRetain(DBSPCompiler compiler, FindMultipleRetainKeys fmk) {
+        /** One retain-values operator that keeps a value when any of {@code operators} keeps it.
+         * Its control is the tuple of the controls of {@code operators}. */
+        DBSPIntegrateTraceRetainValuesOperator mergeRetainValues(
+            List<DBSPIntegrateTraceRetainValuesOperator> operators) {
+            DBSPIntegrateTraceRetainValuesOperator first = operators.get(0);
+            CalciteRelNode node = first.getRelNode();
+            OutputPort data = this.mapped(first.left());
+            List<OutputPort> controls = Linq.map(operators, o -> this.mapped(o.right()));
+
+            List<DBSPVariablePath> controlVars = Linq.map(controls, c -> c.outputType().ref().var());
+            List<DBSPExpression> controlFields = Linq.map(controlVars, v -> v.deref().applyCloneIfNeeded());
+            DBSPClosureExpression tuple = new DBSPTupleExpression(controlFields.toArray(new DBSPExpression[0]))
+                    .closure(controlVars.toArray(new DBSPVariablePath[0]));
+            DBSPApplyNOperator control = new DBSPApplyNOperator(node, tuple, controls);
+            this.addOperator(control);
+
+            DBSPType valueType = data.getOutputIndexedZSetType().elementType;
+            DBSPVariablePath value = valueType.ref().var();
+            DBSPVariablePath bounds = control.outputType().ref().var();
+            List<DBSPExpression> keeps = new ArrayList<>();
+            for (int i = 0; i < operators.size(); i++) {
+                DBSPClosureExpression keep = operators.get(i).getClosureFunction();
+                DBSPExpression bound = bounds.deepCopy().deref().field(i).borrow();
+                keeps.add(keep.call(value.deepCopy(), bound).reduce(this.compiler));
+            }
+            DBSPExpression any = ExpressionCompiler.makeBinaryExpressions(
+                    node, keeps.get(0).getType(), DBSPOpcode.OR, keeps);
+            return new DBSPIntegrateTraceRetainValuesOperator(
+                    node, any.closure(value, bounds), data, control.outputPort());
+        }
+
+        /** Drop the operators of {@code operators} whose policy repeats an earlier one.
+         * @param operators  GC operators that read the same data.
+         * @return  The first operator of each retention policy, in the order of {@code operators}; an
+         *          operator that retains the same data with the same bound as an earlier one is
+         *          left out. */
+        static List<IGCOperator> keepOperatorsWithDistinctPolicies(List<IGCOperator> operators) {
+            List<IGCOperator> result = new ArrayList<>();
+            for (IGCOperator operator : operators) {
+                if (!Linq.any(result, kept -> FindEquivalentNoops.samePolicy(kept, operator)))
+                    result.add(operator);
+            }
+            return result;
+        }
+
+        /** Create one GC operator that replaces {@code operators}; all operators read the same data.
+         * @param operators  A group found by {@link FindMultipleRetains}: at least two GC operators
+         *                   of the same class, all {@link DBSPIntegrateTraceRetainKeysOperator}s,
+         *                   all {@link DBSPIntegrateTraceRetainValuesOperator}s, or all
+         *                   {@link DBSPIntegrateTraceRetainNValuesOperator}s, that read the same data.
+         * @return  The first operator rebuilt on the mapped inputs, when all the policies are the
+         *          same; otherwise a retain-keys operator driven by the minimum of the distinct bounds,
+         *          or a retain-values operator that keeps a value when any distinct policy keeps it. */
+        DBSPSimpleOperator merge(List<IGCOperator> operators) {
+            Utilities.enforce(operators.size() > 1);
+            Class<?> kind = operators.get(0).getClass();
+            Utilities.enforce(Linq.all(operators, o -> o.getClass() == kind),
+                    () -> "GC operators of different kinds in one group: " + operators);
+            List<IGCOperator> distinct = keepOperatorsWithDistinctPolicies(operators);
+            if (distinct.size() == 1) {
+                // Always the case for RetainNValues operators, which are grouped only when identical
+                DBSPSimpleOperator first = distinct.get(0).asOperator();
+                return first.withInputs(Linq.map(first.inputs, this::mapped), false).to(DBSPSimpleOperator.class);
+            }
+            if (distinct.get(0).is(DBSPIntegrateTraceRetainKeysOperator.class))
+                return this.mergeRetainKeys(Linq.map(distinct, o -> o.to(DBSPIntegrateTraceRetainKeysOperator.class)));
+            Utilities.enforce(distinct.get(0).is(DBSPIntegrateTraceRetainValuesOperator.class),
+                    () -> "Cannot merge " + distinct);
+            return this.mergeRetainValues(Linq.map(distinct, o -> o.to(DBSPIntegrateTraceRetainValuesOperator.class)));
+        }
+
+        public MergeRetain(DBSPCompiler compiler, FindMultipleRetains fmr) {
             super(compiler, false);
             this.toMerge = new HashMap<>();
-            this.fmk = fmk;
+            this.fmr = fmr;
         }
 
         @Override
         public Token startVisit(IDBSPOuterNode circuit) {
-            for (var l: this.fmk.shareLeftInput) {
-                ListCounter<DBSPIntegrateTraceRetainKeysOperator> list = new ListCounter<>(l);
+            for (var l: this.fmr.shareLeftInput) {
+                ListCounter<IGCOperator> list = new ListCounter<>(l);
                 for (var e: l) {
                     Utilities.putNew(this.toMerge, e, list);
                 }
@@ -225,12 +407,7 @@ public class MergeGC extends Passes {
             return super.startVisit(circuit);
         }
 
-        @Override
-        public void postorder(DBSPIntegrateTraceRetainKeysOperator op) {
-            if (!this.toMerge.containsKey(op)) {
-                super.postorder(op);
-                return;
-            }
+        void process(IGCOperator op) {
             var listCounter = Utilities.getExists(this.toMerge, op);
             boolean done = listCounter.decrement();
             if (!done) {
@@ -238,27 +415,68 @@ public class MergeGC extends Passes {
                 return;
             }
 
-            // Create the replacement only when the last element in the list of equivalent
-            // retain-key operators has been processed.  This ensures that all their
-            // inputs have been processed as well.
-            DBSPIntegrateTraceRetainKeysOperator merge = this.merge(listCounter.list);
-            this.map(op, merge);
+            // Create the replacement only when the last element in the group has been processed.
+            // This ensures that all their inputs have been processed as well.
+            DBSPSimpleOperator merge = this.merge(listCounter.list);
+            this.map(op.asOperator(), merge);
+        }
+
+        @Override
+        public void postorder(DBSPIntegrateTraceRetainKeysOperator op) {
+            if (this.toMerge.containsKey(op))
+                this.process(op);
+            else
+                super.postorder(op);
+        }
+
+        @Override
+        public void postorder(DBSPIntegrateTraceRetainValuesOperator op) {
+            if (this.toMerge.containsKey(op))
+                this.process(op);
+            else
+                super.postorder(op);
+        }
+
+        @Override
+        public void postorder(DBSPIntegrateTraceRetainNValuesOperator op) {
+            if (this.toMerge.containsKey(op))
+                this.process(op);
+            else
+                super.postorder(op);
+        }
+    }
+
+    /** Replace each noop with its canonical representative and remove the GC operators
+     * whose shared integral is not garbage collected. */
+    static class MergeNoops extends CSE.RemoveCSE {
+        final Set<DBSPOperator> removed;
+
+        MergeNoops(DBSPCompiler compiler, Map<DBSPOperator, DBSPOperator> canonical, Set<DBSPOperator> removed) {
+            super(compiler, canonical);
+            this.removed = removed;
+        }
+
+        @Override
+        public void replace(DBSPSimpleOperator operator) {
+            if (this.removed.contains(operator))
+                return;
+            super.replace(operator);
         }
     }
 
     public MergeGC(DBSPCompiler compiler) {
         super("MergeGC", compiler);
-        // Remove redundant noops
+        // Merge the noops whose consumers can share one integral
         Graph graphs = new Graph(compiler);
         this.add(graphs);
         FindEquivalentNoops find = new FindEquivalentNoops(compiler, graphs.getGraphs());
         this.add(find);
-        this.add(new CSE.RemoveCSE(compiler, find.canonical));
+        this.add(new MergeNoops(compiler, find.canonical, find.removed));
 
-        // Merge retainKey
+        // Merge retainKey and retainValues
         Graph graphs1 = new Graph(compiler);
         this.add(graphs1);
-        FindMultipleRetainKeys findRetain = new FindMultipleRetainKeys(compiler, graphs1.getGraphs());
+        FindMultipleRetains findRetain = new FindMultipleRetains(compiler, graphs1.getGraphs());
         this.add(findRetain);
         this.add(new MergeRetain(compiler, findRetain));
     }
