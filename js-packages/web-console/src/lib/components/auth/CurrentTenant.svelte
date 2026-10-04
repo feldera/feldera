@@ -40,7 +40,7 @@
         {/each}
       </Select>
     {:else}
-      <span class="text-base">{feldera.tenantName}</span>
+      <span>{feldera.tenantName}</span>
     {/if}
   </label>
 {/if}

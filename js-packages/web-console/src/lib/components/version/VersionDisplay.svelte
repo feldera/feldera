@@ -1,7 +1,5 @@
 <script lang="ts">
-  import { Popover, Tooltip } from 'common-ui'
   import { page } from '$app/state'
-  import FelderaModernLogomarkBlack from '$assets/images/feldera-modern/Feldera Logomark Black.svg?component'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
 
   const versionText = $derived(
@@ -14,25 +12,19 @@
   )
 </script>
 
-{#snippet logo(className: string)}
-  <FelderaModernLogomarkBlack class="inline w-5 {className}"></FelderaModernLogomarkBlack>
-{/snippet}
-
-<div class="relative text-surface-600-400">
-  <span class="flex gap-3">{@render logo('fill-surface-600-400')} {versionText}</span>
-  {#if revisionText}
-    <Popover
-      class="bg-white-dark z-10 -mt-11 -mr-20 ml-4 w-full max-w-[400px] pt-2 pl-2 text-surface-950-50"
-      placement="bottom-end"
-    >
-      <span class="flex gap-3">{@render logo('fill-surface-950-50')} {versionText}</span>
-      <ClipboardCopyButton class="absolute top-0 right-0 m-2" value={versionText + revisionText}
+<div class="group flex flex-col gap-0.5 text-surface-600-400">
+  <span class="pl-8.5">{versionText}</span>
+  {#if page.data.feldera}
+    <span class="flex items-center justify-between gap-2 pl-8.5 text-sm">
+      <span class="break-all">rev. {page.data.feldera.revision}</span>
+      <!-- Hidden until hover, but still reachable by keyboard -->
+      <ClipboardCopyButton
+        class="-my-1 mr-1.5 btn-icon-sm text-[16px] opacity-0 group-hover:opacity-100 hover:bg-surface-50-950 focus-visible:opacity-100"
+        value={`${versionText ?? ''}${revisionText ?? ''}`}
       ></ClipboardCopyButton>
-      <br class="select-none" />
-      <span class="text-nowrap">{revisionText}</span>
-    </Popover>
+    </span>
   {/if}
   {#if page.data.feldera?.update?.version}
-    <span>latest: {page.data.feldera.update.version}</span>
+    <span class="pl-8.5">latest: {page.data.feldera.update.version}</span>
   {/if}
 </div>
