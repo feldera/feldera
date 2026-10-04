@@ -6735,6 +6735,7 @@
           {
             "name": "action",
             "in": "path",
+            "description": "Input connector action (one of: start, pause)",
             "required": true,
             "schema": {
               "type": "string"
@@ -6744,6 +6745,27 @@
         "responses": {
           "200": {
             "description": "Action has been processed"
+          },
+          "400": {
+            "description": "Action is not one of: start, pause",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Invalid connector action": {
+                    "value": {
+                      "message": "Invalid connector action 'resume'; valid actions are: 'start' or 'pause'",
+                      "error_code": "InvalidConnectorAction",
+                      "details": {
+                        "action": "resume"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           },
           "404": {
             "description": "Pipeline, table and/or input connector with that name does not exist",

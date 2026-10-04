@@ -429,6 +429,12 @@ pub(crate) fn error_unsupported_pipeline_action() -> ErrorResponse {
     })
 }
 
+pub(crate) fn error_invalid_connector_action() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&ApiError::InvalidConnectorAction {
+        action: "resume".to_string(),
+    })
+}
+
 pub(crate) fn error_illegal_pipeline_action() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::IllegalPipelineAction {
             status: ResourcesStatus::Stopping,
