@@ -74,6 +74,13 @@ public final class DBSPWindowOperator extends DBSPBinaryOperator implements IHas
     }
 
     @Override
+    public boolean garbageCollectsInput(int inputIndex) {
+        // The runtime truncates the trace of input 0 below the lower window bound; a window
+        // without a lower bound truncates nothing
+        return inputIndex == 0 && !this.lowerUnbounded;
+    }
+
+    @Override
     public void accept(CircuitVisitor visitor) {
         visitor.push(this);
         VisitDecision decision = visitor.preorder(this);
