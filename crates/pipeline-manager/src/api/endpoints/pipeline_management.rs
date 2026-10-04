@@ -462,8 +462,15 @@ impl PipelineSelectedInfoInternal {
             created_at: extended_pipeline.created_at,
             version: extended_pipeline.version,
             platform_version: extended_pipeline.platform_version,
-            runtime_config: None,
-            deployment_config: None,
+            // The monitoring row carries both, and dashboards need the
+            // storage quota and any resize without the full descriptor.
+            runtime_config: Some(extended_pipeline.runtime_config),
+            deployment_config: Some(
+                extended_pipeline
+                    .deployment_config
+                    .as_ref()
+                    .map(deployment_config_view),
+            ),
             program_code: None,
             udf_rust: None,
             udf_toml: None,
@@ -583,6 +590,8 @@ pub enum PipelineFieldSelector {
     /// - `created_at`
     /// - `version`
     /// - `platform_version`
+    /// - `runtime_config`
+    /// - `deployment_config`
     /// - `program_config`
     /// - `program_version`
     /// - `program_status`

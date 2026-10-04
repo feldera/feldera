@@ -9369,6 +9369,9 @@ export type PostPipelineInputConnectorActionData = {
      * Input connector name
      */
     connector_name: string
+    /**
+     * Input connector action (one of: start, pause)
+     */
     action: string
   }
   query?: never
@@ -9376,6 +9379,10 @@ export type PostPipelineInputConnectorActionData = {
 }
 
 export type PostPipelineInputConnectorActionErrors = {
+  /**
+   * Action is not one of: start, pause
+   */
+  400: ErrorResponse
   /**
    * Pipeline, table and/or input connector with that name does not exist
    */
