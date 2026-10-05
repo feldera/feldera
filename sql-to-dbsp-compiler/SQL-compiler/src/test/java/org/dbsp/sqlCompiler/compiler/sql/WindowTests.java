@@ -797,6 +797,22 @@ public class WindowTests extends ScottBaseTests {
                 (14 rows)""");
     }
 
+    /** LAG and LEAD reject a default value that is not a window constant. */
+    @Test
+    public void issue7388() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE t (id BIGINT, grp BIGINT, ord_col DATE, val DECIMAL(10,2));
+                CREATE VIEW v AS SELECT id,
+                    LEAD(val, 1, val) OVER (PARTITION BY grp ORDER BY ord_col) AS next_val
+                FROM t;""", """
+                While compiling:
+                   49|CREATE VIEW v AS SELECT id,
+                   50|    LEAD(val, 1, val) OVER (PARTITION BY grp ORDER BY ord_col) AS next_val
+                   51|FROM t;
+                error: Not yet implemented: 'LEAD' with a default value that is not a constant
+                This is tracked by issue https://github.com/feldera/feldera/issues/7392""");
+    }
+
     /** Issue 7337: DISTINCT in a window aggregate is rejected. */
     @Test
     public void distinctWindowAggregateRejected() {
