@@ -10604,7 +10604,7 @@
           "top_level_negative_weight_fraction": {
             "type": "number",
             "format": "double",
-            "description": "The share of the records at a spine's highest level with negative\nweights above which the level merges its batches.\n\nA spine keeps most of its records at its highest level.  When many of\nthem are retractions, merging the level's batches cancels them against\nthe records they retract, which shrinks the spine's storage.  The level\nmerges for this reason only when no other rule starts a merge, no\nhigher level holds batches, and it holds more than one.\n\nA fraction from 0 through 1; the default is 0.2.  At 1 the level never\nmerges for this reason.",
+            "description": "The share of the records at a spine's highest level with negative\nweights above which the level merges its batches.\n\nA spine keeps most of its records at its highest level.  When many of\nthem are retractions, merging the level's batches cancels them against\nthe records they retract, which shrinks the spine's storage.\n\nA fraction from 0 through 1; the default is 0.2.  At 1 the level never\nmerges for this reason.",
             "default": null,
             "nullable": true
           }
