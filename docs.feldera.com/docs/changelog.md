@@ -37,6 +37,11 @@ Source edition can be found on github.
   a separate view without `emit_final` and use that view instead.  See
   [`emit_final`](/tutorials/time-series#emitting-final-values-of-a-view-with-emit_final).
 
+- Bug fix (SQL): casting a `DATE`, `TIMESTAMP`, or `TIMESTAMP WITH TIME
+  ZONE` to a string now pads the year to four digits:
+  `CAST(DATE '0001-01-01' AS VARCHAR)` is `'0001-01-01'`.  For years
+  before 1000 the result used to omit the leading zeros (`'1-01-01'`).
+
 ## v0.360.0
 
 - Storage now uses LZ4 compression by default, instead of Snappy.  LZ4

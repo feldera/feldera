@@ -696,4 +696,16 @@ public class PostgresDateTests extends SqlIoTest {
         this.queryFailingInCompilation("SELECT DATE 'infinity'\n",
                 "Illegal DATE literal 'infinity'");
     }
+
+    @Test
+    public void testDateToString() {
+        // Validated on Postgres
+        this.qst("""
+                SELECT CAST(DATE '0001-01-01' AS VARCHAR) AS a, CAST(DATE '0999-12-31' AS VARCHAR) AS b,
+                       CAST(DATE '2024-02-29' AS VARCHAR) AS c;
+                     a      |     b      |     c
+                ------------+------------+------------
+                 0001-01-01 | 0999-12-31 | 2024-02-29
+                (1 row)""");
+    }
 }
