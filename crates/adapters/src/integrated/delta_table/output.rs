@@ -938,13 +938,20 @@ async fn stream_encode_and_write(
         .set_compression(Compression::SNAPPY)
         .set_max_row_group_bytes(Some(MAX_ROW_GROUP_BYTES))
         .build();
+    // delta-rs checks the encoded size only between slices of `write_batch_size`
+    // rows, and its parallel column encoders publish that size one slice late.
+    // At the 8192-row default a slice of our rows is tens of MiB, so the check
+    // reads a stale size and the file never rolls at `TARGET_FILE_SIZE` -- it
+    // grows until the object store rejects the upload past 10000 parts. Slice
+    // finer so a stale reading still lands near the target.
+    const WRITE_BATCH_ROWS: usize = 1024;
     let writer_config = WriterConfig::new(
         inner.arrow_schema.clone(),
         vec![],
         Some(writer_properties),
         None,
         Some(TARGET_FILE_SIZE),
-        None,
+        Some(WRITE_BATCH_ROWS),
         DataSkippingNumIndexedCols::NumColumns(num_indexed_cols),
         None,
     );
@@ -1908,6 +1915,9 @@ mod parallel {
     /// file. delta-rs rolls over only when the writer config carries a target
     /// size; without one it writes a single object per key range, which an object
     /// store rejects once the multipart upload passes 10000 parts.
+    ///
+    /// It pins `WRITE_BATCH_ROWS` too: at delta-rs's 8192-row default these
+    /// 16000 rows still land in one file.
     #[test]
     fn test_batch_larger_than_target_file_size_rolls_over() {
         const PAYLOAD_LEN: usize = 8 * 1024;
