@@ -332,7 +332,7 @@ impl PartitionStream for MaskedParquetPartition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::integrated::delta_table::column_mapping::tests::with_id;
+    use crate::integrated::delta_table::column_mapping::with_id;
     use arrow::array::{Array, Int32Array, Int64Array, StringArray, StringViewArray};
     use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
     use datafusion::physical_plan::ExecutionPlanProperties;

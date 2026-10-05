@@ -26,7 +26,7 @@ use std::sync::Arc;
 
 /// A field's Parquet field id. The data file stamps `PARQUET:field_id`; the Delta
 /// read schema carries `delta.columnMapping.id`. Either identifies the same column.
-pub(super) fn field_id(field: &Field) -> Option<&str> {
+fn field_id(field: &Field) -> Option<&str> {
     field
         .metadata()
         .get("PARQUET:field_id")
@@ -334,8 +334,16 @@ pub(super) fn logical_projection_mask(
     ProjectionMask::roots(builder.parquet_schema(), roots)
 }
 
+/// Copies `field` with field id `id` under metadata `key`, for a test that
+/// builds a column-mapped schema by hand. `deletion_vector`'s reader tests build
+/// the same shape, so it lives here rather than in either `mod tests`.
 #[cfg(test)]
-pub(in crate::integrated::delta_table) mod tests {
+pub(super) fn with_id(field: Field, key: &str, id: &str) -> Field {
+    field.with_metadata(HashMap::from([(key.to_string(), id.to_string())]))
+}
+
+#[cfg(test)]
+mod tests {
     use super::*;
     use arrow::array::StringArray;
     use arrow::datatypes::{
@@ -345,14 +353,6 @@ pub(in crate::integrated::delta_table) mod tests {
 
     /// Stands in for the data file the reader is decoding; it appears in errors.
     const TEST_FILE: &str = "part-00000.parquet";
-
-    pub(in crate::integrated::delta_table) fn with_id(
-        field: ArrowField,
-        key: &str,
-        id: &str,
-    ) -> ArrowField {
-        field.with_metadata(HashMap::from([(key.to_string(), id.to_string())]))
-    }
 
     /// Source `struct<alpha (id 5), beta (id 6)>` for a list element or map value,
     /// paired with the target that lists the same two children in the opposite
