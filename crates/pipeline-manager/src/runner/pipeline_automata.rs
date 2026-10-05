@@ -2180,6 +2180,24 @@ mod test {
             panic!("did not reach {resources_status:?} with storage {storage_status:?}");
         }
 
+        /// Adds an environment variable the current version reserves, as an older version could
+        /// have stored it.
+        async fn reserve_env_in(&self, column: &str) {
+            let statement = format!(
+                "UPDATE pipeline SET {column} = jsonb_set({column}::jsonb, '{{env}}', '{{\"RUST_LOG\": \"debug\"}}')::varchar WHERE id = $1"
+            );
+            self.db
+                .lock()
+                .await
+                .pool
+                .get()
+                .await
+                .unwrap()
+                .execute(&statement, &[&self.automaton.pipeline_id.0])
+                .await
+                .unwrap();
+        }
+
         async fn clear_storage(&self) {
             let automaton = &self.automaton;
             let name = self.pipeline().await.name;
@@ -2623,6 +2641,57 @@ mod test {
             received.contains(&("clear", runtime_config)),
             "{received:?}"
         );
+    }
+
+    /// A stored deployment config that the current version rejects does not block stopping.
+    #[tokio::test]
+    async fn invalid_stored_deployment_config_does_not_block_stopping() {
+        let (mut server, _temp, mut test) = setup_complete().await;
+        let artifacts_path = artifacts_path(test.automaton.pipeline_id);
+        mock_endpoints(
+            &mut server,
+            vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))],
+        )
+        .await;
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick_until(ResourcesStatus::Provisioning, StorageStatus::InUse)
+            .await;
+        test.desire_stopped().await;
+        test.tick_until(ResourcesStatus::Stopping, StorageStatus::InUse)
+            .await;
+        test.reserve_env_in("deployment_config").await;
+        test.tick_until(ResourcesStatus::Stopped, StorageStatus::InUse)
+            .await;
+    }
+
+    /// A stored deployment config that the current version rejects does not hide why a start
+    /// failed.
+    #[tokio::test]
+    async fn invalid_stored_deployment_config_does_not_hide_start_error() {
+        let (mut server, _temp, mut test) = setup_complete().await;
+        let artifacts_path = artifacts_path(test.automaton.pipeline_id);
+        mock_endpoints(
+            &mut server,
+            vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))],
+        )
+        .await;
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick_until(ResourcesStatus::Provisioning, StorageStatus::InUse)
+            .await;
+        test.desire_stopped().await;
+        test.tick_until(ResourcesStatus::Stopped, StorageStatus::InUse)
+            .await;
+        test.reserve_env_in("deployment_config").await;
+        test.reserve_env_in("runtime_config").await;
+
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick().await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
+        let error = test
+            .deployment_error()
+            .await
+            .expect("the start error is recorded");
+        assert!(error.message.contains("RUST_LOG"), "{}", error.message);
     }
 
     #[tokio::test]
