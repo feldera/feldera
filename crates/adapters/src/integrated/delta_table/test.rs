@@ -9452,6 +9452,9 @@ async fn delta_table_snapshot_unlisted_reader_feature_test() {
 /// [`UniformTestStruct`] rather than [`DeltaTestStruct`] because delta-rs cannot
 /// read a `VARIANT` column of a column-mapped table at all: it reads the binary
 /// fields a variant is stored in as `BinaryView`, which its own schema rejects.
+///
+/// The snapshot half also pins `collect_statistics = false`: with statistics on,
+/// DataFusion pairs them to the wrong field and the snapshot reads all NULL.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delta_table_snapshot_and_follow_id_mapped_test() {
     let table_dir = TempDir::new().unwrap();

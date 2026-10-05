@@ -3094,34 +3094,57 @@ impl DeltaTableInputEndpointInner {
     /// survives planning because `parquet.pushdown_filters` is off by default.
     ///
     /// Planning twice is why the second pass is conditional: a read that keeps
-    /// the configured size, which is the common one, is planned once.
+    /// the configured size, which is the common one, is planned once. A
+    /// `mode = 'id'` read always takes the second pass, because it must drop the
+    /// statistics the first pass was sized from.
     async fn execute_stream(
         &self,
         dataframe: DataFrame,
         read_size: Option<ReadSize>,
     ) -> Result<SendableRecordBatchStream, DataFusionError> {
         let (mut state, logical) = dataframe.into_parts();
-        let plan = state.create_physical_plan(&logical).await?;
 
+        // A `mode = 'id'` read must be planned without statistics. DataFusion
+        // matches statistics to fields by position against the table schema,
+        // which under `mode = 'id'` holds physical `col-<id>` names no file need
+        // use, then folds a column it reads as constant into a literal before
+        // `PhysicalExprAdapter` runs. The read returns NULL. Batch sizing still
+        // needs the statistics, so it reads them off this first plan.
+        let id_mapped = self
+            .column_mapping_mode()
+            .map_err(|e| DataFusionError::External(e.into()))?
+            == Some(ColumnMappingMode::Id);
+
+        let plan = state.create_physical_plan(&logical).await?;
         let partitions = scan_partitions(&plan);
         let default_rows = state.config().batch_size();
-        let plan = match read_size
+        let rows = read_size
             .or_else(|| plan_read_size(plan.as_ref()))
             .and_then(|size| size.batch_rows(partitions, default_rows))
-            .filter(|rows| *rows < default_rows)
-        {
-            Some(rows) => {
-                debug!(
-                    "delta_table {}: reading {rows} rows per batch instead of {default_rows}, to \
-                     keep {partitions} concurrent readers within {} MB of decoded data",
-                    &self.endpoint_name,
-                    DECODE_BUDGET_BYTES / 1024 / 1024,
-                );
-                state.config_mut().options_mut().execution.batch_size =
-                    ConfigNonZeroUsize::try_new(rows)?;
-                state.create_physical_plan(&logical).await?
-            }
-            None => plan,
+            .filter(|rows| *rows < default_rows);
+
+        if let Some(rows) = rows {
+            debug!(
+                "delta_table {}: reading {rows} rows per batch instead of {default_rows}, to \
+                 keep {partitions} concurrent readers within {} MB of decoded data",
+                &self.endpoint_name,
+                DECODE_BUDGET_BYTES / 1024 / 1024,
+            );
+            state.config_mut().options_mut().execution.batch_size =
+                ConfigNonZeroUsize::try_new(rows)?;
+        }
+        if id_mapped {
+            state
+                .config_mut()
+                .options_mut()
+                .execution
+                .collect_statistics = false;
+        }
+
+        let plan = if rows.is_some() || id_mapped {
+            state.create_physical_plan(&logical).await?
+        } else {
+            plan
         };
 
         execute_stream(plan, state.task_ctx())
