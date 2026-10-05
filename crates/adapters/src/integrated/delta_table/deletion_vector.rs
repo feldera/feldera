@@ -2,13 +2,12 @@
 //!
 //! A deletion vector marks deleted rows by their *physical position within an
 //! immutable Parquet file* — not by any key; the file's live rows are the rest.
-//! delta-rs applies DVs during
-//! snapshot reads, but the follow/cdc path reads each `Add`/`Remove` action's
-//! file directly and must apply the action's DV itself. We decode the DV with
-//! `delta_kernel`, which owns the on-disk format, and turn it into a Parquet
-//! [`RowSelection`] that drops the deleted rows during decode. The deletion is
-//! thus fully applied (deleted rows are never emitted), and memory stays bounded
-//! to one batch.
+//! delta-rs applies DVs during snapshot reads, but the follow/cdc path reads
+//! each `Add`/`Remove` action's file directly and must apply the action's DV
+//! itself. We decode the DV with `delta_kernel`, which owns the on-disk format,
+//! and turn it into a Parquet [`RowSelection`] that drops the deleted rows
+//! during decode. The deletion is thus fully applied (deleted rows are never
+//! emitted), and memory stays bounded to one batch.
 
 use crate::integrated::delta_table::ReadSchema;
 use crate::integrated::delta_table::column_mapping::{logical_projection_mask, project_to_logical};
@@ -130,10 +129,11 @@ pub(crate) struct MaskedFile {
 /// unioned from, whose count nothing bounded.
 ///
 /// `logical_schema` is the table's Arrow schema, restricted by the caller to the
-/// columns it wants read. Batches are projected to it by name (missing columns
-/// become NULL), and it doubles as the Parquet projection: columns it does not
-/// name are never decoded. The caller must restrict it itself, because
-/// [`StreamingTable`] does not push projections down.
+/// columns it wants read. Batches are projected to it by field id, falling back
+/// to name (missing columns become NULL), and it doubles as the Parquet
+/// projection: columns it does not ask for are never decoded. The caller must
+/// restrict it itself, because [`StreamingTable`] does not push projections
+/// down.
 pub(crate) async fn filtered_parquet_table(
     store: Arc<dyn ObjectStore>,
     files: Vec<MaskedFile>,
