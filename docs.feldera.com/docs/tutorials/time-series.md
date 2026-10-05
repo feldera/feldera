@@ -401,9 +401,11 @@ The use of `emit_final` is subject to the following restrictions:
   column of the view, it will emit an error at compilation time.
 
 * Currently this annotation is only allowed on views that are not
-  [`LOCAL`](/sql/grammar/#creating-views).  It takes effect only
-  for the view used as output.  If the view is used in defining
-  other views, these derived views will receive the non-delayed data.
+  [`LOCAL`](/sql/grammar/#creating-views).
+
+* A view with an `emit_final` annotation cannot be used in the
+  definition of another view.  To use the same rows in another view,
+  define a separate view without `emit_final` and use that view.
 
 * A view with an `emit_final` annotation cannot be the subject of a
   [CREATE INDEX](/sql/grammar/#creating-indexes) statement.

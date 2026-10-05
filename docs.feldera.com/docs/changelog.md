@@ -17,6 +17,12 @@ Source edition can be found on github.
   number is now a compilation error.  See
   [`emit_final`](/tutorials/time-series#emitting-final-values-of-a-view-with-emit_final).
 
+- Incompatible change (SQL): a view with an `emit_final` property can no
+  longer be used in the definition of another view.  The other view read
+  the rows before `emit_final` held them back, not the final rows.  Define
+  a separate view without `emit_final` and use that view instead.  See
+  [`emit_final`](/tutorials/time-series#emitting-final-values-of-a-view-with-emit_final).
+
 ## v0.360.0
 
 - Storage now uses LZ4 compression by default, instead of Snappy.  LZ4
