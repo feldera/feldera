@@ -85,6 +85,14 @@ jobs:
     name: Integration Tests
     needs: [invoke-build-docker]
     uses: ./.github/workflows/test-integration-platform.yml
+    # A called workflow gets no more than the calling job grants; the Unity
+    # Catalog deletion-vector test authenticates to Databricks with an OIDC
+    # token the same way the Unity Catalog adapter tests do.
+    permissions:
+      actions: read
+      contents: read
+      packages: read
+      id-token: write
     secrets: inherit
 
   invoke-tests-integration-runtime:

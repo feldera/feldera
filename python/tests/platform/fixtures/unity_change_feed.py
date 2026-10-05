@@ -12,9 +12,11 @@ reproducible locally.
     python unity_change_feed.py --stress    # the kitchen-sink table
     python unity_change_feed.py --drop      # remove the schema and its tables
 
-Needs ``DELTA_TABLE_TEST_UNITY_HOST``, ``..._CLIENT_ID``, ``..._CLIENT_SECRET``,
-``..._WAREHOUSE_ID`` and ``..._CATALOG`` in the environment. The tables are
-MANAGED, so ``--drop`` reclaims their storage; nothing is left in S3.
+Needs ``DELTA_TABLE_TEST_UNITY_HOST``, ``..._WAREHOUSE_ID`` and ``..._CATALOG``
+in the environment, plus either ``..._TOKEN`` (a bearer token, e.g. from
+``databricks auth token``) or ``..._CLIENT_ID``/``..._CLIENT_SECRET``. The
+tables are MANAGED, so ``--drop`` reclaims their storage; nothing is left
+in S3.
 
 `keyed_merge` is the table the reader has most to get wrong. Every row starts in
 its own partition and the merge moves it into a sibling that sorts *earlier*, so
@@ -422,7 +424,10 @@ def main() -> None:
     host = _require("DELTA_TABLE_TEST_UNITY_HOST").rstrip("/")
     catalog = _require("DELTA_TABLE_TEST_UNITY_CATALOG")
     warehouse = _require("DELTA_TABLE_TEST_UNITY_WAREHOUSE_ID")
-    token = _token(
+    # feldera-ci has no standing client_secret (see infra#239); prefer a
+    # personal token from `databricks auth token` for this by-hand step, and
+    # fall back to a client_secret for whoever already has one.
+    token = os.environ.get("DELTA_TABLE_TEST_UNITY_TOKEN") or _token(
         host,
         _require("DELTA_TABLE_TEST_UNITY_CLIENT_ID"),
         _require("DELTA_TABLE_TEST_UNITY_CLIENT_SECRET"),
