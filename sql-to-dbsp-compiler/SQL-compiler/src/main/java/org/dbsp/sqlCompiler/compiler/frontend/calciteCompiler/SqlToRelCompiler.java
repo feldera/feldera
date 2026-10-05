@@ -2367,31 +2367,21 @@ public class SqlToRelCompiler implements IWritesLogs {
 
             SqlFragment val = viewProperties.getPropertyValue(CreateViewStatement.EMIT_FINAL);
             if (val != null) {
-                try {
-                    int index = Integer.parseInt(val.getString());
-                    if (index < 0 || index >= columns.size())
-                        this.errorReporter.reportError(
-                                new SourcePositionRange(val.getParserPosition()),
-                                "Illegal column number",
-                                "View " + viewName.singleQuote() +
-                            " does not have a column with number " + index);
-                } catch (NumberFormatException ignored) {
-                    ProgramIdentifier canonical =
-                            new ProgramIdentifier(options.canonicalName(
-                                    val.getString(), false));
-                    for (int i = 0; i < columns.size(); i++) {
-                        if (columns.get(i).getName().equals(canonical)) {
-                            emitFinal = i;
-                            break;
-                        }
+                ProgramIdentifier canonical =
+                        new ProgramIdentifier(options.canonicalName(
+                                val.getString(), false));
+                for (int i = 0; i < columns.size(); i++) {
+                    if (columns.get(i).getName().equals(canonical)) {
+                        emitFinal = i;
+                        break;
                     }
-                    if (emitFinal < 0) {
-                        this.errorReporter.reportError(
-                                new SourcePositionRange(val.getParserPosition()),
-                                "Illegal column name",
-                                "Column " + canonical.singleQuote() +
-                                        " not found in " + viewName.singleQuote());
-                    }
+                }
+                if (emitFinal < 0) {
+                    this.errorReporter.reportError(
+                            new SourcePositionRange(val.getParserPosition()),
+                            "Illegal column name",
+                            "Column " + canonical.singleQuote() +
+                                    " not found in " + viewName.singleQuote());
                 }
             }
 

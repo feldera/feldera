@@ -1949,10 +1949,10 @@ public class StreamingTests extends StreamingTestBase {
         this.statementsFailingInCompilation("""
                 create table t (ts int not null LATENESS 2);
                 CREATE VIEW v WITH
-                ('emit_final' = '2') AS
+                ('emit_final' = '0') AS
                 SELECT ts, COUNT(*)
                 FROM t
-                GROUP BY ts;""", "View 'v' does not have a column with number 2");
+                GROUP BY ts;""", "Column '0' not found in 'v'");
         this.statementsFailingInCompilation("""
                 create table t (ts int);
                 CREATE VIEW v WITH

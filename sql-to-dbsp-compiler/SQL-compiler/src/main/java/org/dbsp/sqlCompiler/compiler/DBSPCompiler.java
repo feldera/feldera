@@ -554,6 +554,14 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             return false;
         }
         CreateViewStatement view = Utilities.getExists(this.views, statement.refersTo);
+        if (view.emitFinalColumn() >= 0) {
+            this.reportError(
+                    new SourcePositionRange(statement.createIndex.indexed.getParserPosition()),
+                    UnsupportedException.KIND,
+                    "View " + view.relationName.singleQuote() + " has an 'emit_final' property, " +
+                            "so it cannot have INDEX " + statement.indexName.singleQuote() + ".");
+            return false;
+        }
         int i = 0;
         for (ProgramIdentifier col: statement.columns) {
             int index = view.getColumnIndex(col);

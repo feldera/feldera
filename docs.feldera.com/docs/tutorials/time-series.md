@@ -386,9 +386,8 @@ with and without `emit_final` annotations.
   the previous date can be received after this.  The waterline
   moves forward by one day and the final value for `2020-01-01` is output.
 
-The `emit_final` property must specify either a column name that
-exists in the view, or a column number, where 0 is the leftmost view
-column.
+The `emit_final` property must specify the name of a column of the
+view.
 
 Note that using `emit_final` can significantly delay the output of a view.
 In the example above, the aggregation is performed over a 1-day window,
@@ -405,6 +404,9 @@ The use of `emit_final` is subject to the following restrictions:
   [`LOCAL`](/sql/grammar/#creating-views).  It takes effect only
   for the view used as output.  If the view is used in defining
   other views, these derived views will receive the non-delayed data.
+
+* A view with an `emit_final` annotation cannot be the subject of a
+  [CREATE INDEX](/sql/grammar/#creating-indexes) statement.
 
 ## Append-only tables
 
