@@ -10,6 +10,13 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Incompatible change (SQL): the `emit_final` property of a view must
+  specify a column name.  The documentation also allowed a column number,
+  such as `'emit_final' = '0'`, but the compiler ignored numeric values:
+  the view emitted every change, as if it had no `emit_final` property.  A column
+  number is now a compilation error.  See
+  [`emit_final`](/tutorials/time-series#emitting-final-values-of-a-view-with-emit_final).
+
 ## v0.360.0
 
 - Storage now uses LZ4 compression by default, instead of Snappy.  LZ4
