@@ -14,7 +14,12 @@ import json
 import os
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+
+#: Must match the audience the Databricks federation policy accepts (see
+#: infrastructure/terraform/databricks/access_control.tf).
+GITHUB_OIDC_AUDIENCE = "feldera-databricks-unity-test"
 
 #: The API caps `wait_timeout` at 50s, so anything longer has to be polled.
 STATEMENT_TIMEOUT_S = 1800
@@ -59,18 +64,67 @@ def token(host: str, client_id: str, client_secret: str) -> str:
     ]
 
 
-def token_from_env(host: str) -> str:
-    """A ready-to-use bearer token, preferring one already minted over the host.
+def _github_oidc_token(audience: str) -> str:
+    """This job's own GitHub Actions OIDC token, requesting the given audience.
 
-    feldera-ci has no standing client_secret (see infra#239): provisioning a
-    fixture is a by-hand, one-off action, so the normal path is a personal
-    token from `databricks auth token`, not a service-principal secret minted
-    just for this. DELTA_TABLE_TEST_UNITY_CLIENT_ID/_SECRET still works for
-    whoever has a secret in hand already.
+    GitHub sets these two env vars on every step once the job has
+    `permissions: id-token: write`, not just a step that explicitly uses them.
+    """
+    url = require("ACTIONS_ID_TOKEN_REQUEST_URL")
+    bearer = require("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+    request = urllib.request.Request(
+        f"{url}&audience={urllib.parse.quote(audience)}",
+        headers={"Authorization": f"bearer {bearer}"},
+    )
+    return json.load(urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_S))[
+        "value"
+    ]
+
+
+def token_from_github_oidc(host: str, client_id: str) -> str:
+    """Exchange this job's own GitHub OIDC token for a Databricks one.
+
+    Minted fresh on every call rather than once up front: a long parallel
+    pytest run can take close to the hour a federated token is good for, and
+    which test draws the stale one depends on xdist's scheduling, not
+    anything the test itself does wrong.
+    """
+    subject_token = _github_oidc_token(GITHUB_OIDC_AUDIENCE)
+    request = urllib.request.Request(
+        f"{host}/oidc/v1/token",
+        data=urllib.parse.urlencode(
+            {
+                "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+                "subject_token_type": "urn:ietf:params:oauth:token-type:jwt",
+                "subject_token": subject_token,
+                "client_id": client_id,
+                "scope": "all-apis",
+            }
+        ).encode(),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    return json.load(urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_S))[
+        "access_token"
+    ]
+
+
+def token_from_env(host: str) -> str:
+    """A ready-to-use bearer token.
+
+    Tries, in order: a token already minted (DELTA_TABLE_TEST_UNITY_TOKEN,
+    for a by-hand run with a personal `databricks auth token`); a live
+    GitHub-OIDC exchange (only possible inside a GitHub Actions job with
+    `id-token: write`, which sets ACTIONS_ID_TOKEN_REQUEST_URL); and finally
+    a client_secret, for whoever already has one in hand. feldera-ci itself
+    has no standing client_secret (see infra#239), so CI always takes the
+    OIDC path.
     """
     direct = os.environ.get("DELTA_TABLE_TEST_UNITY_TOKEN")
     if direct:
         return direct
+    client_id = os.environ.get("UNITY_CI_SERVICE_PRINCIPAL_APPLICATION_ID")
+    if client_id and os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL"):
+        return token_from_github_oidc(host, client_id)
     return token(
         host,
         require("DELTA_TABLE_TEST_UNITY_CLIENT_ID"),

@@ -85,11 +85,15 @@ jobs:
     name: Integration Tests
     needs: [invoke-build-docker]
     uses: ./.github/workflows/test-integration-platform.yml
-    # A called workflow gets no more than the calling job grants; the Unity
-    # Catalog deletion-vector test authenticates to Databricks with an OIDC
-    # token the same way the Unity Catalog adapter tests do.
+    # A called workflow gets no more than the calling job grants. This has
+    # two independent reasons: the Unity Catalog deletion-vector test
+    # authenticates to Databricks with an OIDC token the same way the Unity
+    # Catalog adapter tests do, and test-integration-platform.yml's own
+    # cancel-if-*-failed jobs need actions: write to cancel the run on
+    # failure -- granting only actions: read here would silently cap that
+    # down and break cancel-on-failure for the whole workflow.
     permissions:
-      actions: read
+      actions: write
       contents: read
       packages: read
       id-token: write

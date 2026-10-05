@@ -46,9 +46,23 @@ MISSING_ENV = [name for name in REQUIRED_ENV if not os.environ.get(name)]
 if not os.environ.get("DELTA_TABLE_TEST_UNITY_TOKEN"):
     MISSING_ENV += [
         name
-        for name in ("DELTA_TABLE_TEST_UNITY_CLIENT_ID", "DELTA_TABLE_TEST_UNITY_CLIENT_SECRET")
+        for name in (
+            "DELTA_TABLE_TEST_UNITY_CLIENT_ID",
+            "DELTA_TABLE_TEST_UNITY_CLIENT_SECRET",
+        )
         if not os.environ.get(name)
     ]
+
+# A silent skip in CI is exactly how this test went dormant the first time
+# (see infra#239): IN_CI is set on every CI run, so a skip there is always a
+# bug (a missing repo variable or federation policy), never an expected
+# local-dev state, and must fail loudly instead of leaving CI green.
+if MISSING_ENV and os.environ.get("IN_CI"):
+    pytest.fail(
+        f"CI must have {', '.join(MISSING_ENV)} set; a skip here would silently "
+        "stop running this test instead of failing the build",
+        pytrace=False,
+    )
 
 pytestmark = pytest.mark.skipif(
     bool(MISSING_ENV),
