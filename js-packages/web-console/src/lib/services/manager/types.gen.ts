@@ -1966,9 +1966,7 @@ export type DevTweaks = {
    *
    * A spine keeps most of its records at its highest level.  When many of
    * them are retractions, merging the level's batches cancels them against
-   * the records they retract, which shrinks the spine's storage.  The level
-   * merges for this reason only when no other rule starts a merge, no
-   * higher level holds batches, and it holds more than one.
+   * the records they retract, which shrinks the spine's storage.
    *
    * A fraction from 0 through 1; the default is 0.2.  At 1 the level never
    * merges for this reason.
