@@ -14,9 +14,9 @@ use crate::storage::{
     backend::StorageError,
     buffer_cache::{BufferCache, FBuf},
     file::format::{
-        BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, DataBlockHeader, FileTrailerColumn, FixedLen,
-        IndexBlockHeader, MIN_SUPPORTED_VERSION, NodeType, ROARING_BITMAP_FILTER_BLOCK_MAGIC,
-        VERSION_NUMBER, Varint,
+        BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT,
+        DataBlockHeader, FileTrailerColumn, FixedLen, IndexBlockHeader, MIN_SUPPORTED_VERSION,
+        NodeType, ROARING_BITMAP_FILTER_BLOCK_MAGIC, VERSION_NUMBER, Varint,
     },
     file::item::ArchivedItem,
 };
@@ -2101,6 +2101,10 @@ pub struct Reader<T> {
     /// Additional metadata added to the file by the writer.
     pub(crate) metadata: BatchMetadata,
 
+    /// Whether the writer recorded `metadata`; see
+    /// [`has_metadata`](Self::has_metadata).
+    has_metadata: bool,
+
     /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
     /// <https://doc.rust-lang.org/nomicon/phantom-data.html>.
     _phantom: PhantomData<fn() -> T>,
@@ -2233,6 +2237,8 @@ where
                 columns,
                 membership_filter_location,
                 metadata: file_trailer.metadata.clone(),
+                has_metadata: file_trailer
+                    .has_compatible_feature(COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT),
                 _phantom: PhantomData,
             },
             membership_filter,
@@ -2301,6 +2307,23 @@ where
     /// Returns additional metadata added to the file by the writer.
     pub fn metadata(&self) -> &BatchMetadata {
         &self.metadata
+    }
+
+    /// Whether the writer recorded [`metadata`](Self::metadata).
+    ///
+    /// A file written before writers did reads back with default metadata,
+    /// which says, among other things, that the file holds no negative
+    /// weights, whatever it holds.
+    pub fn has_metadata(&self) -> bool {
+        self.has_metadata
+    }
+
+    /// Makes this reader answer as one for a file written before writers
+    /// recorded metadata, for tests of how such files are handled.
+    #[cfg(test)]
+    pub(crate) fn forget_metadata(&mut self) {
+        self.metadata = BatchMetadata::default();
+        self.has_metadata = false;
     }
 }
 

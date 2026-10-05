@@ -32,6 +32,7 @@ use crate::dynamic::{ClonableTrait, DynDataTyped, DynUnit, Weight};
 use crate::storage::buffer_cache::CacheStats;
 use crate::storage::file::SerializerInner;
 use crate::storage::file::TouchedWindowCount;
+use crate::storage::file::reader::{RawItem, RawItems};
 pub use crate::storage::file::{DbspSerializer, Deserializable, Deserializer, Rkyv};
 use crate::storage::file::{FilterKind, FilterStats};
 use crate::trace::cursor::{
@@ -1185,6 +1186,53 @@ where
     /// Adds value `val`.
     fn push_val(&mut self, val: &Output::Val);
 
+    /// Whether this builder can accept raw values via
+    /// [`push_raw_vals`](Self::push_raw_vals).
+    ///
+    /// A builder writing in memory holds decoded values and can never take
+    /// bytes.
+    fn takes_raw_vals(&self) -> bool {
+        false
+    }
+
+    /// Adds a run of already-encoded values for the key being built, without
+    /// decoding them, all of them.
+    ///
+    /// A data block that fills up is written out and the rest go into the
+    /// next one, so a run of any length goes in.  The builder counts the
+    /// values exactly as [`push_val`](Self::push_val) would, except for the
+    /// negative-weight count, which needs a decoded weight: the caller
+    /// reports that through
+    /// [`add_negative_weights`](Self::add_negative_weights).
+    ///
+    /// # Arguments
+    ///
+    /// * `items` - the encoded values, as the batch they came from stored them.
+    ///
+    /// # Panics
+    ///
+    /// Panics on a builder whose [`takes_raw_vals`](Self::takes_raw_vals) is
+    /// false.
+    fn push_raw_vals(&mut self, items: &RawItems<'_>) {
+        let _ = items;
+        panic!("push_raw_vals on a builder that does not take raw values: ask takes_raw_vals first")
+    }
+
+    /// Adds `n` to the count of negative weights the batch being built will
+    /// report.
+    ///
+    /// Updates pushed through [`push_raw_vals`](Self::push_raw_vals) report their
+    /// negative weights using this function.
+    /// Updated pushed through [`push_val`](Self::push_val) shouldn't call this
+    /// function.
+    ///
+    /// # Arguments
+    ///
+    /// * `n` - how many copied records carried a negative weight.
+    fn add_negative_weights(&mut self, n: u64) {
+        let _ = n;
+    }
+
     /// Adds value `val`.
     fn push_val_mut(&mut self, val: &mut Output::Val) {
         self.push_val(val);
@@ -1192,6 +1240,41 @@ where
 
     /// Adds key `key`.
     fn push_key(&mut self, key: &Output::Key);
+
+    /// Whether this builder can accept raw keys via
+    /// [`push_raw_key`](Self::push_raw_key).
+    ///
+    /// A builder writing in memory can never take bytes, and neither can one
+    /// that keeps a touched-window counter, which needs the key itself.
+    fn takes_raw_keys(&self) -> bool {
+        false
+    }
+
+    /// Adds the key `item` encodes, without decoding it.
+    ///
+    /// The builder records the key exactly as [`push_key`](Self::push_key)
+    /// would, including in the file's membership filter, which it feeds with
+    /// a hash taken from the encoded key, and gives it the values written
+    /// since its last key, of which there has to be at least one.
+    ///
+    /// # Arguments
+    ///
+    /// * `item` - the encoded key, as the batch it came from stored it.
+    ///
+    /// # Returns
+    ///
+    /// Whether the key went in.  `false` means its archived form cannot be
+    /// hashed for the file's membership filter.  No key was recorded, so the
+    /// caller pushes it with [`push_key`](Self::push_key) instead.
+    ///
+    /// # Panics
+    ///
+    /// Panics on a builder whose [`takes_raw_keys`](Self::takes_raw_keys) is
+    /// false.
+    fn push_raw_key(&mut self, item: &RawItem<'_>) -> bool {
+        let _ = item;
+        panic!("push_raw_key on a builder that does not take raw keys: ask takes_raw_keys first")
+    }
 
     /// Adds key `key`.
     fn push_key_mut(&mut self, key: &mut Output::Key) {

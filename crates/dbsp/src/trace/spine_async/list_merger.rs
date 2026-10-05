@@ -99,7 +99,13 @@ where
     val_heap: Vec<usize>,
 
     any_values: bool,
+
     has_mut: Vec<bool>,
+
+    /// Whether each cursor's batch may hold negative weights, which a copy of
+    /// its values has to count.  Fixed for a batch, so asked once.
+    may_have_negative_weights: Vec<bool>,
+
     tmp_weight: Box<B::R>,
     time_diffs: Option<Box<DynWeightedPairs<DynDataTyped<B::Time>, B::R>>>,
 
@@ -148,6 +154,10 @@ where
     pub fn new(factories: &B::Factories, cursors: Vec<C>) -> Self {
         let time_diffs = factories.time_diffs_factory().map(|f| f.default_box());
         let has_mut = cursors.iter().map(|c| c.has_mut()).collect();
+        let may_have_negative_weights = cursors
+            .iter()
+            .map(|c| c.may_have_negative_weights())
+            .collect();
         let num_cursors = cursors.len();
 
         let mut merger = ListMerger {
@@ -158,6 +168,7 @@ where
             val_heap: Vec::new(),
             any_values: false,
             has_mut,
+            may_have_negative_weights,
             tmp_weight: factories.weight_factory().default_box(),
             time_diffs,
             scratch: Vec::with_capacity(num_cursors),
@@ -316,18 +327,26 @@ where
             // values into the output.
             if let Some(&index) = self.val_heap.first() {
                 debug_assert_eq!(self.current_val.len(), 1);
-                loop {
-                    self.any_values =
-                        self.copy_times(builder, time_map_func, fuel) || self.any_values;
-                    self.cursors[index].step_val();
-                    if !self.cursors[index].val_valid() {
-                        self.val_heap.clear();
-                        self.current_val.clear();
-                        break;
-                    }
+                if self.can_splice_values(time_map_func) {
+                    self.any_values = self.splice_values(builder, index, fuel) || self.any_values;
+                }
+                if !self.cursors[index].val_valid() {
+                    self.val_heap.clear();
+                    self.current_val.clear();
+                } else {
+                    loop {
+                        self.any_values =
+                            self.copy_times(builder, time_map_func, fuel) || self.any_values;
+                        self.cursors[index].step_val();
+                        if !self.cursors[index].val_valid() {
+                            self.val_heap.clear();
+                            self.current_val.clear();
+                            break;
+                        }
 
-                    if *fuel <= 0 {
-                        return;
+                        if *fuel <= 0 {
+                            return;
+                        }
                     }
                 }
             }
@@ -335,10 +354,12 @@ where
             // If we wrote any values for these minimum keys, write the key.
             if self.any_values {
                 let index = self.current_key.first().unwrap().0;
-                if self.has_mut[index] {
-                    builder.push_key_mut(self.cursors[index].key_mut());
-                } else {
-                    builder.push_key(self.cursors[index].key());
+                if !self.splice_key(builder) {
+                    if self.has_mut[index] {
+                        builder.push_key_mut(self.cursors[index].key_mut());
+                    } else {
+                        builder.push_key(self.cursors[index].key());
+                    }
                 }
                 self.any_values = false;
             }
@@ -357,6 +378,9 @@ where
             while *fuel > 0 {
                 debug_assert_eq!(self.current_key.len(), 1);
                 debug_assert_eq!(self.current_val.len(), 1);
+                if self.can_splice_values(time_map_func) {
+                    self.any_values = self.splice_values(builder, index, fuel) || self.any_values;
+                }
                 while self.cursors[index].val_valid() {
                     self.any_values =
                         self.copy_times(builder, time_map_func, fuel) || self.any_values;
@@ -371,10 +395,12 @@ where
                 );
                 if self.any_values {
                     self.any_values = false;
-                    if self.has_mut[index] {
-                        builder.push_key_mut(self.cursors[index].key_mut());
-                    } else {
-                        builder.push_key(self.cursors[index].key());
+                    if !self.splice_key(builder) {
+                        if self.has_mut[index] {
+                            builder.push_key_mut(self.cursors[index].key_mut());
+                        } else {
+                            builder.push_key(self.cursors[index].key());
+                        }
                     }
                 }
                 self.cursors[index].step_key();
@@ -385,6 +411,88 @@ where
                 }
             }
         }
+    }
+
+    /// Whether a run of values may be copied rather than rewritten.
+    ///
+    /// Not when a time map is in play, which rewrites every time as it goes,
+    /// and not for a timed batch, whose values a merge consolidates. Both
+    /// need each weight in hand; a copy never has one.
+    fn can_splice_values(
+        &self,
+        time_map_func: Option<&dyn Fn(&mut DynDataTyped<B::Time>)>,
+    ) -> bool {
+        time_map_func.is_none() && self.time_diffs.is_none()
+    }
+
+    /// Copies the current key's values from cursor `index` into the output as
+    /// bytes, and returns whether it wrote any.
+    ///
+    /// The caller must have established that this cursor is the only source
+    /// of the current key: the bytes carry the weights as they were written.
+    /// Stops early where the cursor has nothing to offer -- an in-memory
+    /// batch or a filtered one -- and the caller finishes the key the slow
+    /// way.
+    fn splice_values(&mut self, builder: &mut B::Builder, index: usize, fuel: &mut isize) -> bool {
+        if !builder.takes_raw_vals() {
+            // Required, not an optimization: `push_raw_vals` panics on a
+            // builder that does not take bytes, such as one writing in memory.
+            return false;
+        }
+        let mut wrote = false;
+        while self.cursors[index].val_valid() && *fuel > 0 {
+            let taken = {
+                // An empty run would never advance the cursor, so it counts
+                // as nothing to offer.
+                let Some(items) = self.cursors[index]
+                    .raw_values()
+                    .filter(|items| !items.is_empty())
+                else {
+                    break;
+                };
+                builder.push_raw_vals(&items);
+                items.len()
+            };
+            // The bytes went in without being decoded, so the output's count
+            // of negative weights has to come from the cursor that held them.
+            if self.may_have_negative_weights[index] {
+                let negative = self.cursors[index].negative_weights(taken as u64);
+                builder.add_negative_weights(negative);
+            }
+            self.cursors[index].take_values(taken as u64);
+            *fuel -= taken as isize;
+            wrote = true;
+        }
+        wrote
+    }
+
+    /// Copies the key being built into the output as bytes, and returns
+    /// whether it did.
+    ///
+    /// A copied key takes nothing from its source but its bytes: the output
+    /// gives it the rows its values took there, however they got there.  So
+    /// the key may come from any cursor on it that offers its bytes, whether
+    /// its values were copied, summed with another input's, or written
+    /// decoded after the merge ran out of fuel in the middle of the key.
+    ///
+    /// Answers `false` where no cursor on the key offers bytes, or where the
+    /// builder cannot take them.  The caller then writes the key the way it
+    /// always did: nothing has been written either way.
+    fn splice_key(&self, builder: &mut B::Builder) -> bool {
+        if !builder.takes_raw_keys() {
+            // Required, not an optimization: `push_raw_key` panics on a
+            // builder that refuses keys, such as one writing in memory or a
+            // file builder whose touched-window counter needs the key itself.
+            return false;
+        }
+        let Some(item) = self
+            .current_key
+            .iter()
+            .find_map(|&(index, _)| self.cursors[index].raw_key())
+        else {
+            return false;
+        };
+        builder.push_raw_key(&item)
     }
 
     fn copy_times(

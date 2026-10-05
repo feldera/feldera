@@ -1,5 +1,6 @@
 use super::utils::{copy_to_builder, pick_merge_destination};
 use crate::storage::file::SerializerInner;
+use crate::storage::file::reader::{RawItem, RawItems};
 use crate::storage::file::{FilterKind, FilterStats, TouchedWindowCount};
 use crate::{
     DBWeight, Error, NumEntries,
@@ -594,6 +595,50 @@ where
         }
     }
 
+    fn takes_raw_vals(&self) -> bool {
+        match &self.inner {
+            BuilderInner::File(file) => file.takes_raw_vals(),
+            BuilderInner::Vec(_) | BuilderInner::Threshold { .. } => false,
+        }
+    }
+
+    fn add_negative_weights(&mut self, n: u64) {
+        match &mut self.inner {
+            BuilderInner::File(file) => file.add_negative_weights(n),
+            // Only a file builder is ever given a raw run to account for.
+            BuilderInner::Vec(_) | BuilderInner::Threshold { .. } => {}
+        }
+    }
+
+    fn push_raw_vals(&mut self, items: &RawItems<'_>) {
+        match &mut self.inner {
+            // Only a file builder can take bytes; the other two hold decoded
+            // values, which is what `takes_raw_vals` reports.
+            BuilderInner::File(file) => file.push_raw_vals(items),
+            BuilderInner::Vec(_) | BuilderInner::Threshold { .. } => {
+                panic!("push_raw_vals on a builder writing in memory: ask takes_raw_vals first")
+            }
+        }
+    }
+
+    fn takes_raw_keys(&self) -> bool {
+        match &self.inner {
+            BuilderInner::File(file) => file.takes_raw_keys(),
+            BuilderInner::Vec(_) | BuilderInner::Threshold { .. } => false,
+        }
+    }
+
+    fn push_raw_key(&mut self, item: &RawItem<'_>) -> bool {
+        match &mut self.inner {
+            // As with the values: only a file builder can take bytes, which
+            // is what `takes_raw_keys` reports.
+            BuilderInner::File(file) => file.push_raw_key(item),
+            BuilderInner::Vec(_) | BuilderInner::Threshold { .. } => {
+                panic!("push_raw_key on a builder writing in memory: ask takes_raw_keys first")
+            }
+        }
+    }
+
     fn push_key(&mut self, key: &K) {
         match &mut self.inner {
             BuilderInner::Vec(vec) => vec.push_key(key),
@@ -732,6 +777,26 @@ where
             BuilderInner::Vec(vec) => vec.num_tuples(),
             BuilderInner::File(file) => file.num_tuples(),
             BuilderInner::Threshold { vec, .. } => vec.num_tuples(),
+        }
+    }
+}
+
+#[cfg(test)]
+impl<K, V, R> FallbackIndexedWSet<K, V, R>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    /// See [`FileIndexedWSet::forget_metadata`].
+    ///
+    /// # Panics
+    ///
+    /// If the batch is held in memory, or anything else holds its file.
+    pub(crate) fn forget_metadata(&mut self) {
+        match &mut self.inner {
+            Inner::File(file) => file.forget_metadata(),
+            Inner::Vec(_) => panic!("forget_metadata on a batch held in memory"),
         }
     }
 }
