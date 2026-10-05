@@ -473,13 +473,14 @@ impl KafkaFtInputReaderInner {
 
         for ((partition, thread), next_offset) in partitions
             .iter()
+            .copied()
             .zip((0..n_threads).cycle())
             .zip(next_offsets)
         {
             let thread = &mut threads[thread];
             let mut queue = self
                 .kafka_consumer
-                .split_partition_queue(topic, *partition)
+                .split_partition_queue(topic, partition)
                 .ok_or_else(|| anyhow!("could not split queue for partition {partition}"))?;
 
             let unparker = thread.parker.unparker().clone();
@@ -489,7 +490,7 @@ impl KafkaFtInputReaderInner {
             });
 
             let receiver = Arc::new(PartitionReceiver::new(
-                *partition,
+                partition,
                 queue,
                 next_offset,
                 &config,
@@ -624,7 +625,7 @@ impl KafkaFtInputReaderInner {
         }
         impl Stager {
             fn new(
-                receivers: &BTreeMap<&i32, Arc<PartitionReceiver>>,
+                receivers: &BTreeMap<i32, Arc<PartitionReceiver>>,
                 partitions: &[i32],
                 hashing: bool,
             ) -> Self {
@@ -767,7 +768,7 @@ impl KafkaFtInputReaderInner {
                     /// with the earliest timestamp(s), or `None` if any of the
                     /// receivers are out of received items.
                     fn find_earliest(
-                        receivers: &BTreeMap<&i32, Arc<PartitionReceiver>>,
+                        receivers: &BTreeMap<i32, Arc<PartitionReceiver>>,
                     ) -> Option<SmallVec<[usize; 1]>> {
                         let mut iter = receivers.values().enumerate().map(|(index, receiver)| {
                             receiver.peek().map(|timestamp| (index, timestamp))
