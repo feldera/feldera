@@ -40,6 +40,19 @@ struct DiagnosticSpan {
     is_primary: bool,
 }
 
+impl DiagnosticSpan {
+    /// rustc's `column_end` is exclusive; `end_column` is inclusive, as in `SqlCompilerMessage`.
+    /// A zero-width span on one line keeps one character, so it stays visible.
+    fn end_column(&self) -> usize {
+        let end = self.column_end.saturating_sub(1);
+        if self.line_start == self.line_end {
+            end.max(self.column_start)
+        } else {
+            end
+        }
+    }
+}
+
 impl RustcDiagnostic {
     fn into_message(self) -> RustCompilerMessage {
         let warning = self.level == "warning";
@@ -59,7 +72,7 @@ impl RustcDiagnostic {
                 start_line_number: span.line_start,
                 start_column: span.column_start,
                 end_line_number: span.line_end,
-                end_column: span.column_end,
+                end_column: span.end_column(),
                 warning,
                 error_type,
                 message: self.message,
@@ -157,8 +170,50 @@ mod tests {
         assert_eq!(m.start_line_number, 3);
         assert_eq!(m.start_column, 5);
         assert_eq!(m.end_line_number, 3);
-        assert_eq!(m.end_column, 11);
+        assert_eq!(m.end_column, 10);
         assert!(m.rendered.as_ref().unwrap().contains("E0433"));
+    }
+
+    #[test]
+    fn zero_width_span_keeps_one_column() {
+        let stdout = compiler_message(
+            "error",
+            json!({
+                "message": "expected `;`",
+                "spans": [{
+                    "file_name": "/tmp/udf.rs",
+                    "line_start": 2,
+                    "line_end": 2,
+                    "column_start": 7,
+                    "column_end": 7,
+                    "is_primary": true
+                }]
+            }),
+        );
+        let m = &parse_cargo_json_messages(&stdout)[0];
+        assert_eq!(m.start_column, 7);
+        assert_eq!(m.end_column, 7);
+    }
+
+    #[test]
+    fn multi_line_span_ends_before_column_end() {
+        let stdout = compiler_message(
+            "error",
+            json!({
+                "message": "mismatched types",
+                "spans": [{
+                    "file_name": "/tmp/udf.rs",
+                    "line_start": 2,
+                    "line_end": 4,
+                    "column_start": 9,
+                    "column_end": 2,
+                    "is_primary": true
+                }]
+            }),
+        );
+        let m = &parse_cargo_json_messages(&stdout)[0];
+        assert_eq!(m.end_line_number, 4);
+        assert_eq!(m.end_column, 1);
     }
 
     #[test]
