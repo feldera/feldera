@@ -14,9 +14,9 @@ use crate::storage::{
     backend::StorageError,
     buffer_cache::{BufferCache, FBuf},
     file::format::{
-        BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, DataBlockHeader, FileTrailerColumn,
+        BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, DataBlockHeader, FileTrailerColumn, FixedLen,
         IndexBlockHeader, MIN_SUPPORTED_VERSION, NodeType, ROARING_BITMAP_FILTER_BLOCK_MAGIC,
-        Varint,
+        VERSION_NUMBER, Varint,
     },
     file::item::ArchivedItem,
 };
@@ -38,12 +38,14 @@ use feldera_modular_bloom::{ModuleDensity, ModuleLayout};
 use feldera_storage::StoragePath;
 use feldera_storage::file::FileId;
 use size_of::SizeOf;
+use smallvec::SmallVec;
 use snap::raw::{Decoder, decompress_len};
 use std::cell::{Cell, UnsafeCell};
 use std::mem::replace;
 use std::ops::Index;
 use std::time::Instant;
 use std::{
+    alloc::Layout,
     cmp::{
         Ordering::{self, *},
         max, min,
@@ -51,11 +53,12 @@ use std::{
     fmt::{Debug, Formatter, Result as FmtResult},
     marker::PhantomData,
     mem::size_of,
-    ops::{Bound, Range, RangeBounds},
+    ops::{Bound, Range, RangeBounds, RangeInclusive},
     sync::Arc,
+    sync::atomic::{AtomicBool, Ordering as AtomicOrdering},
 };
 use thiserror::Error as ThisError;
-use tracing::info;
+use tracing::{info, warn};
 
 mod bulk_rows;
 pub use bulk_rows::BulkRows;
@@ -512,6 +515,105 @@ impl ValueMapReader {
     }
 }
 
+/// How far an item's bytes run past the start of its root.
+///
+/// The root's size, except for a root that takes no space, in place of which
+/// the encoder writes one byte, since it never writes an item in less (see
+/// `rkyv_serialize`); a copy has to carry that byte, too.
+///
+/// # Arguments
+///
+/// * `root` - the layout of the item's root.
+fn item_extent(root: Layout) -> usize {
+    root.size().max(1)
+}
+
+/// A run of items from one data block, as raw bytes.
+///
+/// Copying these bytes into another block rewrites nothing inside them, so
+/// every relative pointer they contain keeps pointing where it did.  What the
+/// copy must preserve is alignment: the archived types are aligned where they
+/// were written, and a relative pointer cannot fix a root, or anything the
+/// items hold out of line, that lands on the wrong boundary.  The destination
+/// therefore has to pad itself until its length is congruent to
+/// [`phase`](Self::phase) modulo [`align`](Self::align), after which the run's
+/// roots sit at [`roots`](Self::roots) past wherever the bytes went.
+pub struct RawItems<'a> {
+    /// The items, back to back.
+    pub bytes: &'a [u8],
+    /// Each item's root, as an offset into `bytes`.
+    ///
+    /// Inline for a short run, because a merge that copies one key at a time
+    /// asks for a run of one, and an allocation an item would cost about
+    /// what decoding the item costs.
+    pub roots: SmallVec<[usize; 8]>,
+    /// Where `bytes` started in the block it came from.
+    pub phase: usize,
+    /// The alignment a copy has to keep: the strictest of anything the items
+    /// hold, their roots included; see [`ItemFactory::max_align`].
+    ///
+    /// [`ItemFactory::max_align`]: crate::storage::file::ItemFactory::max_align
+    pub align: usize,
+    /// How far an item's bytes run past the start of its root: the root's
+    /// size, or one byte for a root that takes no space, which the encoder
+    /// writes in its place.
+    pub root_size: usize,
+}
+
+impl<'a> RawItems<'a> {
+    /// How many items the run holds.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.roots.len()
+    }
+
+    /// Whether the run holds no items.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.roots.is_empty()
+    }
+
+    /// Item `index` of the run, from where the previous item ends through the
+    /// end of its own root.
+    ///
+    /// # Panics
+    ///
+    /// If `index` is not less than [`len`](Self::len).
+    #[inline]
+    pub fn item(&self, index: usize) -> RawItem<'a> {
+        let start = match index.checked_sub(1) {
+            None => 0,
+            Some(previous) => self.roots[previous] + self.root_size,
+        };
+        let end = self.roots[index] + self.root_size;
+        RawItem {
+            bytes: &self.bytes[start..end],
+            root: self.roots[index] - start,
+            phase: self.phase + start,
+            align: self.align,
+        }
+    }
+}
+
+/// One item of a [`RawItems`] run, as raw bytes.
+///
+/// The bytes run from where the previous item of the run ended through the
+/// end of this item's root, so appending a run's items one after another lays
+/// them out as they lay in the run.
+pub struct RawItem<'a> {
+    /// What the item keeps out of line, then its root.
+    pub bytes: &'a [u8],
+    /// Where the item's root starts in `bytes`.
+    pub root: usize,
+    /// Where `bytes` started in the block it came from.
+    pub phase: usize,
+    /// The alignment a copy has to keep: the strictest of anything the item
+    /// holds, its root included; see [`ItemFactory::max_align`].
+    ///
+    /// [`ItemFactory::max_align`]: crate::storage::file::ItemFactory::max_align
+    pub align: usize,
+}
+
 /// Reader for a data block in a storage file.
 pub(super) struct DataBlock<K, A>
 where
@@ -668,6 +770,137 @@ where
         self.row_group(index)
     }
 
+    /// The encoded bytes of items `first..=last` of this block, if they can be
+    /// copied into another block as they stand.
+    ///
+    /// rkyv writes an item's out-of-line data ahead of its root and points
+    /// back at it with relative offsets, and the serializer keeps no state
+    /// between items, so consecutive items occupy one contiguous,
+    /// self-contained stretch of the block.  Item `i` therefore runs from the
+    /// end of item `i - 1`'s root to the end of its own, and a run of items is
+    /// the concatenation of those stretches.
+    ///
+    /// # Arguments
+    ///
+    /// * `factories` - supplies the archived item layout, whose size marks
+    ///   where each item's root ends and whose alignment the copied bytes must
+    ///   keep.
+    /// * `items` - the run's items, by index from the start of this block,
+    ///   its last item included.
+    ///
+    /// # Returns
+    ///
+    /// `Some` holding the run's bytes, each item's root as an offset into
+    /// them, the offset the run starts at within this block, and the alignment
+    /// a copy must preserve.
+    ///
+    /// `None` in exactly these cases:
+    ///
+    /// * The block's format version is not [`VERSION_NUMBER`], so this build
+    ///   may not encode items the way the block does.
+    /// * `items` is empty, which names no item.
+    /// * The run's last item is at or past the number of items in the block.
+    /// * The item offsets stored in the block put the run's end before its
+    ///   start, or past the end of the block.  Those offsets come from the
+    ///   block itself, so an inconsistent block is declined rather than
+    ///   copied, and [reported](Self::warn_inconsistent_offsets).
+    pub(super) fn raw_items(
+        &self,
+        factories: &Factories<K, A>,
+        items: RangeInclusive<usize>,
+    ) -> Option<RawItems<'_>> {
+        if self.version != VERSION_NUMBER || items.is_empty() || *items.end() >= self.n_values() {
+            return None;
+        }
+        let root = factories.item_factory.archived_layout();
+        let extent = item_extent(root);
+        let start = match items.start().checked_sub(1) {
+            None => DataBlockHeader::LEN,
+            Some(previous) => self.value_map.get(&self.raw, previous) + extent,
+        };
+        // Each item's offset, looked up once and taken relative to the run's
+        // start; the last one also gives where the run ends.
+        let Some(roots) = items
+            .clone()
+            .map(|index| self.value_map.get(&self.raw, index).checked_sub(start))
+            .collect::<Option<SmallVec<[usize; 8]>>>()
+        else {
+            self.warn_inconsistent_offsets(&items);
+            return None;
+        };
+        let end = start + roots[roots.len() - 1] + extent;
+        if end > self.raw.len() {
+            self.warn_inconsistent_offsets(&items);
+            return None;
+        }
+        Some(RawItems {
+            bytes: &self.raw[start..end],
+            roots,
+            phase: start,
+            align: factories.item_factory.max_align(),
+            root_size: extent,
+        })
+    }
+
+    /// Item `index` of the block as raw bytes, from where the previous item
+    /// ends through the end of its root.
+    ///
+    /// The one-item form of [`raw_items`](Self::raw_items), which a merge
+    /// uses for every key it copies: it looks up two offsets and builds no
+    /// list.  Returns `None` where `raw_items` would.
+    pub(super) fn raw_item(
+        &self,
+        factories: &Factories<K, A>,
+        index: usize,
+    ) -> Option<RawItem<'_>> {
+        if self.version != VERSION_NUMBER || index >= self.n_values() {
+            return None;
+        }
+        let layout = factories.item_factory.archived_layout();
+        let extent = item_extent(layout);
+        let start = match index.checked_sub(1) {
+            None => DataBlockHeader::LEN,
+            Some(previous) => self.value_map.get(&self.raw, previous) + extent,
+        };
+        let Some(root) = self.value_map.get(&self.raw, index).checked_sub(start) else {
+            self.warn_inconsistent_offsets(&(index..=index));
+            return None;
+        };
+        let end = start + root + extent;
+        if end > self.raw.len() {
+            self.warn_inconsistent_offsets(&(index..=index));
+            return None;
+        }
+        Some(RawItem {
+            bytes: &self.raw[start..end],
+            root,
+            phase: start,
+            align: factories.item_factory.max_align(),
+        })
+    }
+
+    /// Logs that this block's item offsets contradict each other or the
+    /// block's length, which a correctly written block never shows.
+    ///
+    /// [`raw_items`](Self::raw_items) and [`raw_item`](Self::raw_item) decline
+    /// such a block, so a merge decodes it instead of copying it; this says
+    /// why, and which block.  It is logged once per process, because a merge
+    /// asks for every item of a damaged block in turn.
+    ///
+    /// # Arguments
+    ///
+    /// * `items` - the items whose offsets did not add up.
+    fn warn_inconsistent_offsets(&self, items: &RangeInclusive<usize>) {
+        static WARNED: AtomicBool = AtomicBool::new(false);
+        if !WARNED.swap(true, AtomicOrdering::Relaxed) {
+            warn!(
+                "data block ({}) has item offsets that contradict each other or the \
+                 block's length at items {items:?}; merges decode it instead of copying it",
+                self.location
+            );
+        }
+    }
+
     unsafe fn archived_item(
         &self,
         factories: &Factories<K, A>,
@@ -691,7 +924,19 @@ where
         }
     }
 
-    unsafe fn item(&self, factories: &Factories<K, A>, index: usize, item: (&mut K, &mut A)) {
+    /// Decodes item `index` of this block into `item`.
+    ///
+    /// # Safety
+    ///
+    /// Unsafe because `rkyv` deserialization is unsafe: the block must be
+    /// well formed, with items of the types `factories` describes, and
+    /// `index` must be less than its item count.
+    pub(super) unsafe fn item(
+        &self,
+        factories: &Factories<K, A>,
+        index: usize,
+        item: (&mut K, &mut A),
+    ) {
         unsafe {
             let archived_item = self.archived_item(factories, index);
             let mut deserializer = Deserializer::new(self.version);
@@ -2267,6 +2512,23 @@ where
         }
     }
 
+    /// Row group over a different range of rows of the same reader and column.
+    ///
+    /// A column's factories are the same whichever of its rows are in view,
+    /// and resolving them costs four `dyn Any` downcasts.  A merge stepping
+    /// from one key to the next already holds a row group for that column, so
+    /// it calls this rather than `new` and clones the factories instead of
+    /// resolving them again.
+    fn with_rows(&self, rows: Range<u64>) -> Self {
+        Self {
+            reader: self.reader,
+            factories: self.factories.clone(),
+            column: self.column,
+            rows,
+            _phantom: PhantomData,
+        }
+    }
+
     /// # Safety
     ///
     /// Unsafe because the cursor reads archived values, and does so from safe
@@ -2657,6 +2919,57 @@ where
         Ok(())
     }
 
+    /// The row group this cursor reads, for
+    /// [`next_column_like`](Self::next_column_like).
+    pub fn row_group(&self) -> &RowGroup<'a, K, A, N, T> {
+        &self.row_group
+    }
+
+    /// The rows from this cursor's position to the end of the data block it
+    /// sits in, or to the end of the row group, whichever comes first, as raw
+    /// bytes.
+    ///
+    /// Every other way of reading a row decodes it; this hands back the
+    /// encoding instead, which a writer can append to its last column as it
+    /// stands -- see [`RawItems`].  The run stops at a block boundary because
+    /// a block is the unit the reader holds, so a caller that wants more asks
+    /// again after moving past what it took.
+    ///
+    /// Returns `None` when the cursor is not on a row, or when the block was
+    /// written in a format this one does not share.
+    pub fn raw_run(&self) -> Option<RawItems<'_>> {
+        let Position::Row(path) = &self.position else {
+            return None;
+        };
+        let block_rows = path.data.rows();
+        let end = block_rows.end.min(self.row_group.rows.end);
+        if path.row < block_rows.start || end <= path.row {
+            return None;
+        }
+        path.data.raw_items(
+            &self.row_group.factories,
+            (path.row - block_rows.start) as usize..=(end - 1 - block_rows.start) as usize,
+        )
+    }
+
+    /// The row at the cursor as raw bytes.
+    ///
+    /// One row, which is all a merge ever wants: it owns the output only as far
+    /// as the next key of another input, and where that is cannot be known
+    /// without looking, so taking a key at a time is what lets it stop
+    /// anywhere.
+    ///
+    /// Returns `None` for a column whose rows have no row group, which is the
+    /// last one: a merge copies those as runs, with [`raw_run`](Self::raw_run).
+    pub fn raw_item(&self) -> Option<RawItem<'_>> {
+        let Position::Row(path) = &self.position else {
+            return None;
+        };
+        path.data.row_groups.as_ref()?;
+        let index = (path.row - path.data.rows().start) as usize;
+        path.data.raw_item(&self.row_group.factories, index)
+    }
+
     /// Returns the key in the current row, or `None` if the cursor is before or
     /// after the row group.
     ///
@@ -2720,6 +3033,42 @@ where
         unsafe { self.position.aux(&self.row_group.factories, aux) }
     }
 
+    /// The auxiliary data `offset` rows past the current one, or `false` where
+    /// that row is outside the data block this cursor is reading.
+    ///
+    /// Can be used to read only the weights without deserializing entire values.
+    ///
+    /// # Arguments
+    ///
+    /// * `offset` - how many rows past the current one to read.
+    /// * `aux` - filled in with that row's auxiliary data.
+    ///
+    /// # Returns
+    ///
+    /// Whether `aux` was filled in.
+    ///
+    /// # Safety
+    ///
+    /// Unsafe because `rkyv` deserialization is unsafe.
+    pub unsafe fn aux_at(&self, offset: u64, aux: &mut A) -> bool {
+        let Position::Row(path) = &self.position else {
+            return false;
+        };
+        let block_rows = path.data.rows();
+        let Some(row) = path.row.checked_add(offset) else {
+            return false;
+        };
+        if row >= block_rows.end.min(self.row_group.rows.end) {
+            return false;
+        }
+        // SAFETY: this function's own obligation (see `# Safety`).  `row` is
+        // in the data block `path` holds: it is at or past the cursor's row,
+        // which is in that block, and before the end of the block and of the
+        // row group, as just checked.
+        unsafe { path.data.aux_for_row(&self.row_group.factories, row, aux) };
+        true
+    }
+
     /// Returns the key and auxiliary data in the current row, or `None` if the
     /// cursor is before or after the row group.
     ///
@@ -2763,6 +3112,11 @@ where
     /// row group, returns the row number of the row just after the row group.
     pub fn absolute_position(&self) -> u64 {
         self.position.absolute_position(&self.row_group)
+    }
+
+    /// Returns the cursor's position within its row group.
+    pub fn relative_position(&self) -> u64 {
+        self.absolute_position() - self.row_group.rows.start
     }
 
     /// Returns the number of times [`move_next`](Self::move_next) may be called
@@ -2964,6 +3318,26 @@ where
             self.row_group.column + 1,
             self.position.row_group()?,
         ))
+    }
+
+    /// The same as [`next_column`](Self::next_column), taking the column's
+    /// factories from `like` rather than resolving them again.
+    ///
+    /// `like` must be a row group over the next column of the same file,
+    /// which is what a cursor already reading that column carries; a debug
+    /// build checks both.  This is the form a merge wants: it crosses to the
+    /// next column once a key, and the factories it needs are the ones it
+    /// used for the key before.
+    pub fn next_column_like<'b>(
+        &'b self,
+        like: &RowGroup<'a, NK, NA, NN, T>,
+    ) -> Result<RowGroup<'a, NK, NA, NN, T>, Error> {
+        debug_assert_eq!(like.column, self.row_group.column + 1);
+        debug_assert!(
+            std::ptr::eq(like.reader, self.row_group.reader),
+            "`like` is a row group of another file"
+        );
+        Ok(like.with_rows(self.position.row_group()?))
     }
 }
 
