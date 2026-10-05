@@ -8,7 +8,7 @@
 //!
 //! [`ListingTable`]: datafusion::datasource::listing::ListingTable
 
-use crate::integrated::delta_table::deletion_vector::{
+use crate::integrated::delta_table::column_mapping::{
     field_index_by_id, realign_array, source_index,
 };
 use arrow::datatypes::{DataType, FieldRef, Schema, SchemaRef};
