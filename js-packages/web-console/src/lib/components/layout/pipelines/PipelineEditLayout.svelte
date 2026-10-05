@@ -283,6 +283,7 @@
         {#if pipelineThumb}
           <PipelineStatus
             data-testid="box-pipeline-status"
+            class="self-start sm:self-center"
             status={pipelineThumb.status}
             {deleted}
           ></PipelineStatus>
