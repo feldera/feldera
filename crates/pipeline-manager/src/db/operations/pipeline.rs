@@ -1377,6 +1377,12 @@ pub(crate) async fn set_deployment_resources_status_provisioning(
         false,
     )
     .await?;
+    validate_deployment_config(&new_deployment_config).map_err(|error| {
+        DBError::InvalidDeploymentConfig {
+            value: new_deployment_config.clone(),
+            error,
+        }
+    })?;
     let current = get_pipeline_by_id(txn, tenant_id, pipeline_id, true).await?;
 
     set_deployment_resources_status(
@@ -1599,16 +1605,6 @@ async fn set_deployment_resources_status(
     final_deployment_initial: Option<RuntimeDesiredStatus>,
     final_bootstrap_config: Option<BootstrapConfig>,
 ) -> Result<(), DBError> {
-    // Validate that the new or existing deployment configuration is valid
-    if let Some(deployment_config) = &final_deployment_config {
-        let _ = validate_deployment_config(deployment_config).map_err(|error| {
-            DBError::InvalidDeploymentConfig {
-                value: deployment_config.clone(),
-                error,
-            }
-        })?;
-    }
-
     // Validate that the new storage status details is valid
     if let Some(storage_status_details) = &new_storage_status_details {
         let _ = validate_storage_status_details(storage_status_details).map_err(|error| {
