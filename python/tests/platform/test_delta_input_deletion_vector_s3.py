@@ -39,13 +39,16 @@ from feldera.testutils import FELDERA_TEST_NUM_HOSTS, FELDERA_TEST_NUM_WORKERS
 from tests import TEST_CLIENT
 from tests.platform.fixtures import unity_api, unity_deletion_vectors as fixture
 
-REQUIRED_ENV = [
-    "DELTA_TABLE_TEST_UNITY_DV_TABLE",
-    "DELTA_TABLE_TEST_UNITY_HOST",
-    "DELTA_TABLE_TEST_UNITY_CLIENT_ID",
-    "DELTA_TABLE_TEST_UNITY_CLIENT_SECRET",
-]
+REQUIRED_ENV = ["DELTA_TABLE_TEST_UNITY_DV_TABLE", "DELTA_TABLE_TEST_UNITY_HOST"]
 MISSING_ENV = [name for name in REQUIRED_ENV if not os.environ.get(name)]
+# feldera-ci has no standing client_secret (see infra#239); CI mints a bearer
+# token per run instead. A client_secret still works for a by-hand run.
+if not os.environ.get("DELTA_TABLE_TEST_UNITY_TOKEN"):
+    MISSING_ENV += [
+        name
+        for name in ("DELTA_TABLE_TEST_UNITY_CLIENT_ID", "DELTA_TABLE_TEST_UNITY_CLIENT_SECRET")
+        if not os.environ.get(name)
+    ]
 
 pytestmark = pytest.mark.skipif(
     bool(MISSING_ENV),
