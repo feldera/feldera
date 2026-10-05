@@ -13,7 +13,6 @@ use crate::integrated::delta_table::ReadSchema;
 use crate::integrated::delta_table::column_mapping::{logical_projection_mask, project_to_logical};
 use anyhow::{Result as AnyResult, anyhow};
 use arrow::datatypes::SchemaRef;
-use arrow::record_batch::RecordBatch;
 use async_stream::try_stream;
 use datafusion::catalog::TableProvider;
 use datafusion::catalog::streaming::StreamingTable;
@@ -335,6 +334,7 @@ mod tests {
     use crate::integrated::delta_table::column_mapping::with_id;
     use arrow::array::{Array, Int32Array, Int64Array, StringArray, StringViewArray};
     use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
+    use arrow::record_batch::RecordBatch;
     use datafusion::physical_plan::ExecutionPlanProperties;
     use datafusion::prelude::SessionContext;
     use deltalake::{DeltaTableBuilder, ensure_table_uri};
