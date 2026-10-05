@@ -231,7 +231,8 @@
 <div class="flex h-full w-full flex-col">
   <AppHeader>
     {#snippet afterStart()}
-      <div class="flex min-w-0 flex-1 flex-col gap-x-2 gap-y-1 sm:flex-row sm:items-center">
+      <!-- One row that wraps: the status chip drops under the name only when they don't fit. -->
+      <div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
         <PipelineBreadcrumbs
           class="-ml-3 items-center py-1 pl-3"
           textClass="text-base font-semibold"
@@ -283,7 +284,7 @@
         {#if pipelineThumb}
           <PipelineStatus
             data-testid="box-pipeline-status"
-            class="self-start sm:self-center"
+            class="shrink-0"
             status={pipelineThumb.status}
             {deleted}
           ></PipelineStatus>
