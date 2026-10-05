@@ -42,7 +42,8 @@ fn field_id(field: &Field) -> Option<&str> {
         .map(String::as_str)
 }
 
-/// Index a field list by field id, skipping fields without one.
+/// Index a field list by field id, skipping fields without one. Two fields
+/// sharing an id is malformed; the later one wins.
 pub(super) fn field_index_by_id(fields: &Fields) -> HashMap<&str, usize> {
     fields
         .iter()
@@ -320,6 +321,10 @@ pub(super) fn project_to_logical(
 
 /// Build the [`ProjectionMask`] selecting the root file columns `logical_schema`
 /// wants, matched by field id (falling back to name); the rest are never decoded.
+///
+/// The name fallback is unconditional here, where [`source_index`] refuses one on
+/// a column carrying another id. A mask only decides what to decode, so the looser
+/// rule can over-select but cannot mispair: [`project_to_logical`] still pairs.
 pub(super) fn logical_projection_mask(
     builder: &ParquetRecordBatchStreamBuilder<ParquetObjectReader>,
     logical_schema: &SchemaRef,
@@ -634,6 +639,54 @@ mod tests {
         let out = realign_array(&source, &target, Some(TEST_FILE), "items").unwrap();
         assert_eq!(out.data_type(), &target);
         assert_eq!(out.len(), 2);
+    }
+
+    // The map branch of the rebuild: a map whose value is a column-mapped struct
+    // must pair the value's children by field id, as a list's element does.
+    #[test]
+    fn realign_array_matches_map_value_struct_by_field_id() {
+        let (value, target_fields) = reordered_struct_pair();
+        let keys: ArrayRef = Arc::new(StringArray::from(vec!["k"]));
+        let source_entries = StructArray::from(vec![
+            (
+                Arc::new(ArrowField::new("key", ArrowDataType::Utf8, false)),
+                keys,
+            ),
+            (
+                Arc::new(ArrowField::new("value", value.data_type().clone(), true)),
+                Arc::new(value) as ArrayRef,
+            ),
+        ]);
+        let entries_field =
+            |entries_type: ArrowDataType| Arc::new(ArrowField::new("entries", entries_type, false));
+        let map: ArrayRef = Arc::new(
+            MapArray::try_new(
+                entries_field(source_entries.data_type().clone()),
+                OffsetBuffer::new(vec![0i32, 1].into()),
+                source_entries,
+                None,
+                false,
+            )
+            .unwrap(),
+        );
+
+        let target = ArrowDataType::Map(
+            entries_field(ArrowDataType::Struct(ArrowFields::from(vec![
+                ArrowField::new("key", ArrowDataType::Utf8, false),
+                ArrowField::new("value", ArrowDataType::Struct(target_fields), true),
+            ]))),
+            false,
+        );
+
+        let out = realign_array(&map, &target, Some(TEST_FILE), "attrs").unwrap();
+        assert_eq!(out.data_type(), &target);
+        let out = out.as_any().downcast_ref::<MapArray>().unwrap();
+        let value: ArrayRef = Arc::clone(out.entries().column(1));
+        assert_eq!(
+            first_child_value(&value),
+            "B",
+            "the target value's first child is id 6, so it must carry beta's value"
+        );
     }
 
     // A columnMapping.mode=id file names columns logically (`op`, `after`) and
