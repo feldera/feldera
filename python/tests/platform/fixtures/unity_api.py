@@ -60,6 +60,17 @@ def token(host: str, client_id: str, client_secret: str) -> str:
 
 
 def token_from_env(host: str) -> str:
+    """A ready-to-use bearer token, preferring one already minted over the host.
+
+    feldera-ci has no standing client_secret (see infra#239): provisioning a
+    fixture is a by-hand, one-off action, so the normal path is a personal
+    token from `databricks auth token`, not a service-principal secret minted
+    just for this. DELTA_TABLE_TEST_UNITY_CLIENT_ID/_SECRET still works for
+    whoever has a secret in hand already.
+    """
+    direct = os.environ.get("DELTA_TABLE_TEST_UNITY_TOKEN")
+    if direct:
+        return direct
     return token(
         host,
         require("DELTA_TABLE_TEST_UNITY_CLIENT_ID"),
