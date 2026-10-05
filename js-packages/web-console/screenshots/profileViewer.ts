@@ -2,6 +2,14 @@
 
 import path from 'node:path'
 import { test as base, expect, type Page } from '@playwright/test'
+import {
+  BADGE_HEIGHT,
+  badgePillWidth,
+  CHIP_INSET,
+  CODE_CHIP_HEIGHT,
+  CODE_CHIP_WIDTH,
+  formatLeafCount
+} from '../../profiler-lib/src/chips'
 import { type Box, clearAnnotations } from './annotate'
 
 /** The profile that the viewer shots load: a support bundle of the `fraud-detection` demo pipeline. */
@@ -119,6 +127,40 @@ export async function nodeBox(page: Page, id: string): Promise<Box> {
     const origin = container.getBoundingClientRect()
     return { x: origin.x + box.x1, y: origin.y + box.y1, width: box.w, height: box.h }
   }, id)
+}
+
+/**
+ * The boxes of the corner chips of node `id` on screen, in viewport coordinates. The chips are images
+ * in the canvas, with no element, so this repeats the arithmetic of `chipBox` in
+ * `profiler-lib/src/chipButtons.ts`: both chips end `CHIP_INSET` left of the right edge of the node.
+ */
+export async function chipBoxes(page: Page, id: string): Promise<{ code: Box; counter: Box }> {
+  const { right, top, zoom, leafCount } = await page.evaluate((id) => {
+    const container = document.querySelector('.visualizer-graph') as HTMLElement
+    // biome-ignore lint/suspicious/noExplicitAny: cytoscape keeps its instance in a private field
+    const cy = (container as any)._cyreg.cy
+    const node = cy.getElementById(id)
+    const padding = Number(node.numericStyle('padding')) || 0
+    const zoom = cy.zoom()
+    const center = node.renderedPosition()
+    const origin = container.getBoundingClientRect()
+    return {
+      right: origin.x + center.x + ((node.width() + 2 * padding) / 2) * zoom,
+      top: origin.y + center.y - ((node.height() + 2 * padding) / 2) * zoom,
+      zoom,
+      leafCount: Number(node.data('leaf_count')) || 0
+    }
+  }, id)
+  const chip = (offsetY: number, width: number, height: number): Box => ({
+    x: right - (CHIP_INSET + width) * zoom,
+    y: top + offsetY * zoom,
+    width: width * zoom,
+    height: height * zoom
+  })
+  return {
+    code: chip(-CODE_CHIP_HEIGHT, CODE_CHIP_WIDTH, CODE_CHIP_HEIGHT),
+    counter: chip(CHIP_INSET, badgePillWidth(formatLeafCount(leafCount)), BADGE_HEIGHT)
+  }
 }
 
 /** Runs `action`, which starts a new layout, and waits until that layout has finished. */

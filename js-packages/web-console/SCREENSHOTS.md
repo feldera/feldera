@@ -17,7 +17,7 @@ Goals:
 | --- | --- |
 | Reproducible | Two runs on the same commit produce byte-identical PNGs |
 | Automatic | One command regenerates every screenshot |
-| Drift-detecting | CI fails when a UI change invalidates a committed screenshot |
+| Local | A developer runs the script and commits the images that they accept |
 | Reviewable | Image diffs appear in the PR that caused them |
 
 ## How vitest browser mode works here
@@ -340,32 +340,17 @@ place keeps those working and puts image review beside prose review.
 | Script | Behaviour |
 | --- | --- |
 | `screenshots:update` | Capture and write into `docs.feldera.com` |
-| `screenshots:check` | Capture to a temp directory, compare against committed images, exit non-zero on drift |
 | `screenshots:update -- <id>` | Regenerate one shot |
 
-`screenshots:check` uses the pixel-ratio tolerance already configured for e2e in
+`screenshots:update` uses the pixel-ratio tolerance already configured for e2e in
 `playwright.config.ts` (`maxDiffPixelRatio: 0.01`), which absorbs font-hinting noise without hiding
 layout changes.
 
-## CI
+## No CI
 
-Add `.github/workflows/screenshots.yml`, modelled on `.github/workflows/test-web-console-e2e.yml`,
-which already provides the `mcr.microsoft.com/playwright:v1.58.2-noble` container and a
-`pipeline-manager` service with `AUTH_PROVIDER: none`. Pinning that image also pins the font stack,
-which matters because a different font package changes every pixel.
-
-The vitest path needs only the container. The e2e path additionally needs the service.
-
-| Trigger | Job | On failure |
-| --- | --- | --- |
-| PR touching `js-packages/web-console/**` | `screenshots:check` | Fail, upload diffs as an artifact, comment with the changed shot ids |
-| `workflow_dispatch`, or a `regen-screenshots` label | `screenshots:update` | Commit updated PNGs to the PR branch |
-
-The label path makes regeneration one click: CI names the broken shots, the author adds the label,
-CI pushes new images into the same PR where a reviewer sees them next to the code that changed them.
-
-Do not regenerate automatically on every push. Screenshot churn in unrelated PRs is how image
-pipelines become noise that reviewers learn to skip.
+The screenshots are not captured in CI, and no CI job compares them with the UI. A developer runs
+`screenshots:update` locally, reviews the changed images, and commits the ones that they accept.
+This keeps write tokens and image churn out of the CI, and a pixel change never blocks a merge.
 
 ## Rollout
 
@@ -373,12 +358,10 @@ pipelines become noise that reviewers learn to skip.
 | --- | --- | --- |
 | 1 | `screenshots` vitest project, one component shot | Byte-identical output across two local runs |
 | 2 | Migrate the detail shots under `docs/pipelines/` to component captures | Hand-cropping retired |
-| 3 | `screenshots:check` in CI on web-console PRs | Drift becomes visible |
-| 4 | The `regen-screenshots` label path | Drift becomes one click to fix |
-| 5 | e2e path plus fixtures for the `docs/tour/` whole-page shots | The staleest set is generated |
+| 3 | e2e path plus fixtures for the `docs/tour/` whole-page shots | The staleest set is generated |
 
 Phase 1 carries the real risk. Run `screenshots:update` twice on an unchanged tree and confirm
-`git diff` is empty before the set grows. Phase 5 is last because it is the only phase needing
+`git diff` is empty before the set grows. Phase 3 is last because it is the only phase needing
 instance state, and the safety guard around `resetInstance` deserves its own review.
 
 ## Open questions
@@ -390,6 +373,6 @@ shots are worse, since the device scale factor multiplies height as well. Add `o
 capture step in phase 1, prefer viewport and element clips over `fullPage`, and revisit if history
 growth becomes a problem.
 
-Authenticated and enterprise views. The CI instance runs `AUTH_PROVIDER: none`, so any shot showing
-the tenant selector cannot be generated there. Vitest browser mode sidesteps this for component
+Authenticated and enterprise views. A local instance with `AUTH_PROVIDER: none` cannot show the
+tenant selector. Vitest browser mode sidesteps this for component
 shots, since auth state is just a prop. Defer until a whole-page shot needs it.

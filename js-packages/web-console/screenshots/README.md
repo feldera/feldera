@@ -1,6 +1,6 @@
 # Docs screenshots
 
-These Playwright tests capture the web console screenshots into `docs.feldera.com/docs`. A test sets
+These Playwright scripts capture the web console screenshots into `docs.feldera.com/docs`. A script sets
 up one state of the UI, then compares it with the image in the docs. It writes a new image only when
 more than 0.5% of the pixels changed (`maxDiffPixelRatio` in `../playwright-screenshots.config.ts`).
 
@@ -20,7 +20,6 @@ Run them in `js-packages/web-console`:
 | `bun run docs-screenshots`                          | Captures all shots, and writes the images that changed or are missing |
 | `bun run docs-screenshots --project profile-viewer` | The same, for the shots that need no manager                          |
 | `bun run docs-screenshots -g "top nodes"`           | The same, for the tests whose title matches                           |
-| `bun run check:docs-screenshots`                    | Captures all shots, and fails if an image changed. Writes no image.   |
 
 | Environment                | The app that the shots load                                                                 |
 | -------------------------- | ------------------------------------------------------------------------------------------- |
@@ -40,7 +39,7 @@ not have yet, set `DOCS_SCREENSHOTS_BUILD=1`, or rebuild the manager.
 | Clock and locale | `timezoneId: 'UTC'`, `locale: 'en-US'`                                                                                                                                                                                                     |
 | Layout and view  | `profileViewer.ts` waits until the nodes and the view stop moving                                                                                                                                                                          |
 | Pointer          | Real pointer events, then the pointer moves off the diagram                                                                                                                                                                                |
-| Fonts            | CI uses the pinned `mcr.microsoft.com/playwright` image. Other fonts can move pixels by more than the threshold.                                                                                                                           |
+| Fonts            | Other fonts can move pixels by more than the threshold. Capture on the same machine each time, or review each changed image.                                                                                                               |
 
 ## Files
 
@@ -51,15 +50,7 @@ not have yet, set `DOCS_SCREENSHOTS_BUILD=1`, or rebuild the manager.
 | `capture.ts`       | The name of a docs image, and a clipped compare                                                                                                 |
 | `profileViewer.ts` | Opens the bundle, and moves the diagram to a node                                                                                               |
 
-## CI
+## Not in CI
 
-| When                                  | Workflow                                     | What it does                                                                                                                                                                                                   |
-| ------------------------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A pull request changes `js-packages/` | `docs-screenshots.yml`, job `profile-viewer` | Captures the `profile-viewer` shots. If an image changed, commits it as `[docs] Update web-console screenshots` on the PR branch. It does not run on pull requests from forks, because it cannot push to them. |
-| You start it from the Actions tab     | `docs-screenshots.yml`, job `all`            | Captures all shots against a manager service from the image tag that you give (default `latest`), and commits the changes                                                                                      |
-| The merge queue                       | `test-web-console-e2e.yml`                   | Checks all shots against the manager of the commit. If a shot is stale, the merge fails.                                                                                                                       |
-
-When the merge queue fails on a shot, start the workflow on the branch, or run
-`bun run docs-screenshots` against your local manager and commit the images. If the branch changes
-the API, the `latest` image may not work for the `all` job. Then use a local manager that you built
-from the branch.
+No CI job captures or checks these shots. Run `bun run docs-screenshots`, look at the images that
+changed, and commit the ones that you accept. Revert the others with `git checkout`.

@@ -11,7 +11,7 @@ const config: PlaywrightTestConfig = {
   testDir: 'screenshots',
   outputDir: 'test-results-screenshots',
   projects: [
-    // Needs no pipeline manager. The PR workflow runs only this project.
+    // Needs no pipeline manager.
     { name: 'profile-viewer', testMatch: /(?<!\.web-console)\.shot\.ts$/ },
     // Needs a pipeline manager.
     { name: 'web-console', testMatch: /\.web-console\.shot\.ts$/ }

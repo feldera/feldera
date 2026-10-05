@@ -1,26 +1,20 @@
 # Visualizing Pipeline Profiles
 
+{/* The icons are imported, not referenced as images: an imported SVG is drawn inline, so it takes the color of the text. */}
 import OpenSupportBundleIcon from '../../../js-packages/web-console/src/assets/icons/feldera-material-icons/stethoscope.svg';
-import liveFromPipeline from './open-live-pipeline.png';
-import liveFromViewer from './open-live-viewer.png';
-import historyFromHome from './open-history-home.png';
-import uploadFromHome from './open-upload-home.png';
-import uploadFromPipeline from './open-upload-pipeline.png';
-import uploadFromViewer from './open-upload-viewer.png';
-
-{/* A screenshot at the size of the UI: the images are captured at 2 device pixels for each CSS pixel. */}
-export const Shot = ({src, alt}) => <img className="ui-shot" src={src} alt={alt} />
+import SearchIcon from '../../../js-packages/common-ui/src/lib/icons/search.svg';
 
 ## Preliminaries
 
-The Feldera SQL compiler transforms a query into a circuit. The profile
-viewer draws the circuit as a *circuit diagram*. A circuit diagram has two
-kinds of objects:
+The Feldera SQL compiler transforms a program into a *dataflow graph*. The
+profile viewer draws the dataflow graph. A dataflow graph has these kinds of
+objects:
 
 | Object | What it is |
 |---|---|
-| Node (operator) | A computation. Most nodes roughly represent a SQL operation, for example a join or an aggregate. |
-| Edge | A directed flow of data in the circuit. It carries the changes that the node produces when it receives inputs. |
+| Node (operator) | A computation. A SQL operation, for example a join or an aggregate, usually compiles into many nodes. |
+| Edge | A directed flow of data between two nodes. It carries the changes that a node produces when it receives inputs. |
+| Region | A node that contains another dataflow graph. See [Regions](#regions). |
 
 Feldera queries run continuously, each receiving many input changes
 and producing many output changes.  So multiple Feldera views are
@@ -32,58 +26,52 @@ in programming is the technique of measuring and understanding the
 behavior of computer programs.
 
 The Feldera engine contains lots of *instrumentation* code which
-collects measurements about the behavior of each operator.  These
+collects measurements about the behavior of each node.  These
 measurements are aggregated into *measurement statistics*.  For
-example, the code may measure how much time an operator spends to
-process each change.  During the lifetime of a pipeline each operator
+example, the code may measure how much time a node spends to
+process each change.  During the lifetime of a pipeline each node
 may be invoked millions of times, so the information is summarized,
-for example as the "total time" spent executing this operator.
+for example as the "total time" spent executing this node.
 
 There are many interesting measurements that may be collected; other
-examples are: how much data is received by the operator, how much data
-is produced by the operator (note that an operator like `WHERE`
+examples are: how much data is received by the node, how much data
+is produced by the node (note that a node for `WHERE`
 produces less data than it receives), how much data was written to
-disk, how much memory was allocated by an operator, when searching for
+disk, how much memory was allocated by a node, when searching for
 a value what is the success rate (for `JOIN` operations), etc.
 
 Feldera pipelines are designed to take advantage of multiple CPU cores
 (and will soon use multiple computers as well, each with multiple
-cores).  When you start a pipeline you specify a number of cores, and
-each operator of the circuit diagram is instantiated once for every
-core.  The profiling code collects information for each core.
+cores).  When you start a pipeline you specify a number of *workers*.
+Each node of the dataflow graph runs on all the worker threads of each
+host of the pipeline.  The profiling code collects measurements for each
+worker.
 
 ## Opening the profile viewer
 
-The profile viewer is integrated into the [Web Console](https://docs.feldera.com/interface/web-console) - the browser-based dashboard of the Feldera instance.
-It can be used by developers for offline analysis of [support bundles](https://docs.feldera.com/operations/guide/#diagnosing-performance-issues)
-which contain profiling information.
+The profile viewer is part of the [Web Console](https://docs.feldera.com/interface/web-console),
+the browser-based dashboard of the Feldera instance. It shows the
+dataflow graph of a pipeline, with the measurements of each node.
 
-The profile viewer shows the circuit diagram of a pipeline, with the
-measurements for every node. It reads the profiles from a *support bundle*. A support bundle
-contains profiles at multiple points in time.
+The viewer reads the profiles from a [support bundle](https://docs.feldera.com/operations/guide/#diagnosing-performance-issues).
+A support bundle may contain profiles at multiple points in time. The
+viewer shows the measurements as they were when the profile was
+collected. It does not update them live.
 
-You can get a support bundle in three ways. Each way starts from one or more pages of the Web
-Console:
+You can open a profile in the viewer in three ways:
 
 | To | Home page | Pipeline page | Profile viewer |
 |---|---|---|---|
-| Download a bundle from a pipeline | Not available | Click **View profile**.<br/><Shot src={liveFromPipeline} alt="The View profile button" /> | Click **Load profile**, then **Download profile**.<br/><Shot src={liveFromViewer} alt="Download profile in the Load profile menu" /> |
-| Open a bundle that you opened before | Click <OpenSupportBundleIcon className="inline-icon" title="Open support bundle" />, then click the bundle.<br/><Shot src={historyFromHome} alt="A bundle in the list of recent support bundles" /> | Not available | Not available |
-| Upload a bundle zip file | Click <OpenSupportBundleIcon className="inline-icon" title="Open support bundle" />, then **Upload support bundle**.<br/><Shot src={uploadFromHome} alt="Upload support bundle in the Open support bundle dialog" /> | Click the arrow next to **View profile**, then **Open support bundle**.<br/><Shot src={uploadFromPipeline} alt="Open support bundle in the View profile menu" /> | Click **Load profile**, then **Open support bundle**.<br/><Shot src={uploadFromViewer} alt="Open support bundle in the Load profile menu" /> |
+| Download a profile from a pipeline | Not available | Click **View profile**.<br/>![The View profile button](open-live-pipeline.png) | Click **Load profile**, then **Download profile**.<br/>![Download profile in the Load profile menu](open-live-viewer.png) |
+| Open a bundle that you opened before | Click <OpenSupportBundleIcon className="inline-icon" title="Open support bundle" />, then click the bundle.<br/>![A bundle in the list of recent support bundles](open-history-home.png) | Not available | Not available |
+| Upload a bundle zip file | Click <OpenSupportBundleIcon className="inline-icon" title="Open support bundle" />, then **Upload support bundle**.<br/>![Upload support bundle in the Open support bundle dialog](open-upload-home.png) | Click the arrow next to **View profile**, then **Open support bundle**.<br/>![Open support bundle in the View profile menu](open-upload-pipeline.png) | Click **Load profile**, then **Open support bundle**.<br/>![Open support bundle in the Load profile menu](open-upload-viewer.png) |
 
 After you select a zip file, click **View profile** to open it in a new tab.
 
-| Support bundle | What is in it |
+| Support bundle | Profiles in it |
 |---|---|
-| Downloaded from a pipeline | The profiles that Feldera collected and stored at earlier points in time. If the pipeline is running and **Collect new data** is checked, the live metrics are recorded as an additional profile. |
-| Uploaded | The profiles in the zip file, for example a bundle from the [diagnostics guide](/operations/guide#diagnosing-performance-issues). The console adds the file to the list of bundles that you opened before. |
-
-The menus that download a bundle also have these items:
-
-| Menu item | What it does |
-|---|---|
-| Download support bundle | Saves the support bundle as a zip file. It does not open the viewer. |
-| Collect new data | When checked, the pipeline records a new profile. When it is off, you get the profile that the pipeline made last. |
+| Downloaded from a pipeline | The profiles that the pipeline collected at earlier points in time. If the pipeline is running and **Collect new data** is checked in the menu, the pipeline also collects a new profile now. |
+| Uploaded | The profiles in the zip file, for example a bundle from the [diagnostics guide](/operations/guide#diagnosing-performance-issues). The Web Console adds the file to the list of bundles that you opened before. |
 
 ## The parts of the viewer
 
@@ -92,201 +80,244 @@ The menus that download a bundle also have these items:
 | Part | What it shows |
 |---|---|
 | Toolbar | **Load profile** gets a new bundle. **Snapshot** selects one of the profiles in the bundle. **Search node** finds a node. |
-| Minimap | A small picture of the full diagram, with an outline of the part that is on screen |
-| Circuit diagram | The nodes and edges of the pipeline |
-| SQL | The program of the pipeline. A click on a node selects its SQL here. |
+| Minimap | A map that shows which part of the dataflow graph is in the window |
+| Dataflow graph | The nodes and edges of the pipeline |
+| SQL | The SQL program of the pipeline. A click on a node selects its SQL here, if the node has a SQL source position. |
 | Analysis panel | The tabs **Metrics**, **Logs**, **Config** and **Issues & Suggestions** |
 
 The analysis panel has these tabs:
 
 | Tab | Content |
 |---|---|
-| Metrics | The measurements of the full pipeline, of one node, or of the nodes with the highest values |
+| Metrics | The measurements of the pipeline, of the current node, or of the top nodes. See [Displaying measurements](#displaying-measurements). |
 | Logs | The pipeline log from the bundle |
 | Config | The pipeline configuration from the bundle |
-| Issues & Suggestions | Problems that the viewer found in the bundle, with a severity and a category for each |
+| Issues & Suggestions | Problems that triage rules found in the bundle. See [Issues & Suggestions](#issues-and-suggestions). |
 
-The button in the corner of the SQL panel moves the SQL panel to the full
-height of the window. You can drag the borders between the panels.
+The button in the top right corner of the SQL panel stretches it to the full
+height of the window.
 
-## Moving around the diagram
+## Moving around the dataflow graph
 
-The diagram can be much larger than the window.
+The dataflow graph can be much larger than the window.
 
 | To | Do this |
 |---|---|
 | Zoom | Turn the mouse wheel |
-| Pan | Hold LMB and drag the background of the diagram |
-| Go to another part of the diagram | Click or drag on the minimap |
-| See the full diagram | Double-click the minimap |
-| Find a node | Type in **Search node** input, then press Enter |
+| Pan | Click and drag the background of the dataflow graph |
+| Go to another part of the dataflow graph | Click or drag on the minimap |
+| See the full dataflow graph | Double-click the minimap |
+| Find a node | Type a node ID, a table or view name, or a persistent ID in **Search node**, then press Enter. See [Searching for a node](#searching-for-a-node). |
 
-## Regions
+## The current node
 
-The compiler puts related nodes into *regions*. For example, a region can
-hold all the nodes of one SQL view. An expanded region has a dashed
-border, and its nodes are inside it:
-
-![An expanded region](region-expanded.png)
-
-A collapsed region is one box. The chip at its top right shows the number
-of nodes in it. A collapsed region also shows the names of the tables and
-views in it. When you move the pointer over a top-level region, the region
-glows, and the chip changes to a square (expand) or a dash (collapse):
-
-![A collapsed region, with the pointer on it](region-collapsed.png)
-
-| To | Do this |
-|---|---|
-| Collapse or expand a region | Double-click it, or click the "child count" chip at its top right |
-| See the measurements of a region | Click it |
-
-A small pipeline opens with all its regions expanded.
-
-The measurements of a region come from the nodes in it. Some are the sum
-of the nodes (for example time and storage). Others are the largest value
-of the nodes (for example averages, percents, minimums and maximums).
-
-## Selecting a node
+Click a node to make it the *current node*. The other parts of the
+viewer show information about the current node:
 
 | Action | Result |
 |---|---|
-| Move the pointer over a node | The node glows and its edges change color. The analysis panel does not change. |
-| Click a node | The node stays selected. The **Node** view of the **Metrics** tab shows its measurements, and the SQL panel selects the SQL that the node comes from. |
-| Press Escape | The selection is removed. |
-
-### Paths through the diagram
-
-When a node is selected, the edges show the paths through it:
-
-![The paths through the selected node](reachability.png)
-
-| Edge color | Meaning |
-|---|---|
-| Magenta | An edge out of the selected node |
-| Light blue | An edge into the selected node |
-| Red | An edge further downstream, on a path that starts at the selected node |
-| Blue | An edge further upstream, on a path that ends at the selected node |
-| Gray | An edge that is not on a path through the selected node |
-
-A diagram can have back edges, for example in a recursive query. The paths
-stop at a back edge.
+| Move the pointer over a node | The node glows. The other parts of the viewer do not change. |
+| Click a node | The node becomes the current node and glows. The **Node** view of the **Metrics** tab shows its measurements, the SQL panel selects the SQL of the node, if the node has a SQL source position, and the edges show its [reachability](#reachability). |
+| Press Escape | There is no current node. |
 
 ### Nodes and SQL
 
-A node with a `</>` chip has an associated SQL source position:
+A node with a Code chip has an associated SQL source position:
 
 ![Nodes with a SQL source position](source-chip.png)
 
 When you click such a node, the SQL panel selects the SQL statements of
 the node and scrolls to them:
 
-![The SQL of the selected node](sources.png)
+![The SQL of the current node](sources.png)
 
 A click on a region selects the SQL of all the nodes in it. The relation
 between nodes and SQL statements is many-to-many. One statement can
 compile into many nodes, and one node can do the work of many statements.
 Some nodes have no SQL source position.
 
-## The Metrics tab
+### Reachability
+
+The edges show the paths through the current node:
+
+![The paths through the current node](reachability.png)
+
+| Edge color | Meaning |
+|---|---|
+| Magenta | An edge out of the current node |
+| Light blue | An edge into the current node |
+| Red | An edge further downstream, on a path that starts at the current node |
+| Blue | An edge further upstream, on a path that ends at the current node |
+| Gray | An edge that is not on a path through the current node |
+
+Most dataflow graphs have back edges: each integrator has one. The paths
+stop at a back edge.
+
+## Regions
+
+Some nodes contain another dataflow graph. These nodes are *regions*. You
+can expand a region to see the nodes in it. An expanded region has a dashed
+border, and its nodes are inside it:
+
+![An expanded region](region-expanded.png)
+
+A collapsed region is shown as a node:
+
+![A collapsed region](region-collapsed.png)
+
+| Decoration | Meaning |
+|---|---|
+| Name | The node ID of the region, and the names of the tables and views in it |
+| Child count chip | The number of nodes in the region. The nodes in nested regions count, and the nested regions do not. |
+| Code chip | The region has a SQL source position. See [Nodes and SQL](#nodes-and-sql). |
+
+When you move the pointer over a top-level region, the region glows, and
+the child count chip changes to a square (expand) or a dash (collapse):
+
+![A collapsed region, with the pointer on it](region-collapsed-hover.png)
+
+| To | Do this |
+|---|---|
+| Collapse or expand a region | Double-click it, or click its child count chip |
+| Make a region the current node | Click it |
+
+A small pipeline opens with all its regions expanded.
+
+## Displaying measurements
+
+The measurements are values that the running pipeline collects for each
+node. You can display them, and use them to troubleshoot performance
+problems.
+
+Each measurement is a value of a *metric*, for example **Runtime percent**.
+There are many metrics, and one of them is always the *current metric*.
+See [The current metric](#the-current-metric).
 
 The **Metrics** tab has three views:
 
 | View | Content |
 |---|---|
-| Overview | The global statistics of the pipeline, then the measurements of the full diagram |
-| Node | The measurements of the node or region that you clicked last |
-| Top nodes | The nodes with the highest values of the selected metric |
+| Overview |  The global statistics of the pipeline, and the aggregated measurements of all nodes |
+| Node | The measurements of the current node |
+| Top nodes | The top nodes according to the current metric |
 
-### Overview
+### Per-pipeline measurements
+
+The **Overview** view shows the global statistics of the pipeline, for
+example the number of records that the pipeline received and processed,
+and its CPU time. Then it shows the measurements for the full dataflow graph.
 
 ![The Overview view](overall.png)
 
-The global statistics come from the pipeline itself, for example the
-number of records that the pipeline received and processed, and its CPU
-time. They are not the sum of the measurements of the nodes.
+### Per-node measurements
 
-### Node
+The **Node** view shows the measurements of the current node, in tables
+that group related measurements. The measurements of a region are
+aggregated measurements of the nodes in it.
+
+Each node runs on multiple *worker* threads on each host of the pipeline.
+The profile has a value of each measurement for each worker. The Node view
+shows these values, and how much they differ between the workers.
 
 ![The measurements of a node](node-metrics.png)
 
 | Part | What it shows |
 |---|---|
-| Title | The node ID and its operation. Click it to jump to the node in the diagram. |
+| Title | The node ID and the name of its operator. Click it to center the dataflow graph on this node. |
 | consumers | The number of nodes that read the output of this node |
-| persistent ID | An ID of the node that does not change when the program is compiled again |
-| Section | A group of related measurements, for example **Time** or **State**. Click the title of a section to collapse or expand it. |
+| persistent ID | Two nodes with the same persistent ID compute the same result from the same table inputs. So the two nodes, and all the nodes before them, are semantically equivalent. |
+| Section | A table of related measurements, for example **Time** or **State**. Click the title of a section to collapse or expand it. |
 | Avg, Min, Max, Total | The average, minimum, maximum and sum of the measurement across the workers |
-| Bars | One bar for each worker. Move the pointer over a bar to see its value. |
-| Skew | How much the workers differ. Click it to make the bars taller. |
+| Histogram | One bar for each worker. Move the pointer over a bar to see its value. |
+| Skew | A measure of the resource imbalance between the workers. Higher skew is generally bad. Click it to make the histogram taller. |
 
-The section that holds the selected metric is first, and it does not
-collapse. In it, the selected metric is the first row.
+The section that holds the current metric is shown first, and it does not
+collapse. In it, the current metric is the first row.
 
-The colors compare a measurement to the same measurement in all the
-nodes of the diagram. The stronger the red, the higher the value. So a red
-value is high for this diagram, but not necessarily high in general.
+Some measurements have a red background. The intensity of the red shows how
+important the measurement is, relative to the highest values of that
+measurement in the whole dataflow graph.
 
-Turn on **Show advanced** to show more measurements. The measurements
-change with the type of node. For example, a node that keeps no state
-has no **State** section.
+Each node has only some of the measurements. For example, a node that
+keeps no state has no **State** section. Turn on **Show advanced** to show
+more measurements.
 
-### Selecting the metric
+### The current metric
 
-The metric list is above the measurements. The selected metric:
-
-- sets the color of each node in the diagram, from white (low) to red
-  (high). The color uses the largest value across the workers.
-- sorts the **Top nodes** view.
-
-Type in the list to find a metric.
+To change the current metric, use the **Select metric** box at the top
+right of the **Metrics** tab:
 
 ![Selecting the metric](metric-selection.png)
 
+The current metric colors each node of the dataflow graph. The color
+shows how important the node is for this metric, when compared with the
+other nodes.
+
 ### Top nodes
 
-![The nodes with the highest values of the metric](important-nodes.png)
+**Top nodes** lists the nodes that have a value for the current metric.
+The node most worthy of attention is first. Click a node ID to center the
+dataflow graph on that node.
 
-**Top nodes** lists the nodes that have a value for the selected metric,
-from the highest value to the lowest. Click a node ID to show the node in
-the diagram.
+![The top nodes for the current metric](important-nodes.png)
+
+## Issues & Suggestions {#issues-and-suggestions}
+
+The **Issues & Suggestions** tab shows the results of triage rules that
+the viewer runs on the bundle. The number on the tab is the number of
+results. Each result has:
+
+| Part | What it shows |
+|---|---|
+| Severity | **Critical**, **Medium** or **Low** |
+| Category | The area of the problem, for example **Storage** or **Connector** |
+| Rule and message | The rule that found the problem, and what it found |
+| Show details | The data that the rule found |
+
+Use **Filter by severity** and **Filter by category** to show only some of
+the results. If the Feldera instance has no triage rules, the tab shows
+"No issues found".
 
 ## Searching
 
 ### Searching for a node
 
-**Search node** finds a node by one of these, in this sequence:
+**Search node** allows you to search for a node by one of these, in this
+order:
 
 1. The node ID, for example `nn21`.
 2. The name of a table or a view. An exact match is prioritized over a part
    of a name.
 3. A part of the persistent ID of the node.
 
-The viewer expands the regions that hold the node, moves the node to the
-center of the window, and makes it glow:
+When you press Enter, the viewer expands the regions that hold the node,
+centers the node in the window, and makes it glow. The node does not
+become the current node. Click it to make it the current node.
 
 ![Searching for a node](search.png)
 
 ### Searching in a tab
 
-The magnifier button at the top right of the analysis panel searches the
-tab that is shown:
+The <SearchIcon className="inline-icon" title="Search" /> button at the top right of the analysis
+panel searches the open tab below it:
+
+![Searching in the Metrics tab](search-tab.png)
 
 | Tab | What the search finds |
 |---|---|
 | Metrics | The title of a section, the name or ID of a metric, or a row of **Top nodes** |
 | Logs | A log line that contains the text |
-| Issues & Suggestions | An issue that contains the text |
+| Issues & Suggestions | A result that contains the text |
 
 Press Enter for the next match, and Shift+Enter for the previous match.
 
-### Keyboard
+### Keyboard search
 
 | Keys | Where you clicked last | Result |
 |---|---|---|
-| `Ctrl-F` (`Cmd-F` on macOS) | In the diagram | Moves the focus to **Search node** |
-| `Ctrl-F` (`Cmd-F` on macOS) | Anywhere else | Opens the search of the tab that is shown. It selects the old text, so you can type a new search immediately. |
-| Escape | | Removes the node selection, or closes the search |
+| `Ctrl-F` (`Cmd-F` on macOS) | In the dataflow graph | Moves the focus to **Search node** |
+| `Ctrl-F` (`Cmd-F` on macOS) | Anywhere else | Opens the search of the open tab. It selects the old text, so you can type a new search immediately. |
+| Escape | | Removes the current node, or closes the search |
 
 The **Config** tab does not have its own search. On this tab, `Ctrl-F`
 opens the search of the browser.

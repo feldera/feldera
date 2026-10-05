@@ -428,13 +428,6 @@ main .theme-doc-markdown a:hover {
   stroke: currentColor;
 }
 
-/* A small screenshot of a part of the UI, for example in a table cell. */
-.ui-shot {
-  display: block;
-  max-width: 100%;
-  margin-top: 0.5rem;
-}
-
 /* Notes - use Deep Purple */
 .alert--info {
   --ifm-alert-background-color: rgba(54, 14, 59, 0.03);
