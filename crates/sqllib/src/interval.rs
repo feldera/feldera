@@ -1080,3 +1080,8 @@ crate::hash_repr::hash_repr_struct! {
     ShortInterval => ArchivedShortInterval { microseconds: i64 },
     LongInterval => ArchivedLongInterval { months: i32 },
 }
+
+crate::hash_repr::archived_repr_inline! {
+    ShortInterval => ArchivedShortInterval,
+    LongInterval => ArchivedLongInterval,
+}

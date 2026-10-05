@@ -1580,3 +1580,12 @@ impl<T> crate::dynamic::HashRepr for ArchivedLeanVec<T> {
     #[inline]
     fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
 }
+
+// The elements lie out of line, each aligned as `T`, as a vector's do.
+impl<T, U> crate::dynamic::ArchivedRepr<LeanVec<U>> for ArchivedLeanVec<T>
+where
+    T: crate::dynamic::ArchivedRepr<U>,
+{
+    const MAX_ALIGN: usize =
+        crate::dynamic::max_align(::core::mem::align_of::<Self>(), T::MAX_ALIGN);
+}

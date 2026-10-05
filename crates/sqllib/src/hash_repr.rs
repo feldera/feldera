@@ -52,6 +52,23 @@ macro_rules! hash_repr_struct {
 
 pub(crate) use hash_repr_struct;
 
+/// Implements `ArchivedRepr` for the archived form of a struct that keeps
+/// nothing out of line, which therefore needs only its own alignment.
+///
+/// The struct's `OrdRepr` and `HashRepr` come from elsewhere, such as a
+/// derive and [`hash_repr_struct!`].  Use it only on a struct whose fields
+/// are all held inline: one that points at anything would need what that
+/// needs too, and debug builds catch a struct that does.
+macro_rules! archived_repr_inline {
+    ($($decoded:ty => $archived:ty),* $(,)?) => {$(
+        impl ::dbsp::dynamic::ArchivedRepr<$decoded> for $archived {
+            const MAX_ALIGN: usize = ::core::mem::align_of::<$archived>();
+        }
+    )*};
+}
+
+pub(crate) use archived_repr_inline;
+
 #[cfg(test)]
 mod test {
     //! Does a composite work out its faithfulness from its fields?

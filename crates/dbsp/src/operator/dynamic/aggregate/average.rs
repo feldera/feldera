@@ -404,6 +404,22 @@ where
     fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
 }
 
+impl<T, R> crate::dynamic::ArchivedRepr<Avg<T, R>> for ArchivedAvg<T, R>
+where
+    T: rkyv::Archive,
+    R: rkyv::Archive,
+    <T as rkyv::Archive>::Archived: Ord + crate::dynamic::ArchivedRepr<T>,
+    <R as rkyv::Archive>::Archived: Ord + crate::dynamic::ArchivedRepr<R>,
+{
+    const MAX_ALIGN: usize = crate::dynamic::max_align(
+        ::core::mem::align_of::<Self>(),
+        crate::dynamic::max_align(
+            <rkyv::Archived<T> as crate::dynamic::ArchivedRepr<T>>::MAX_ALIGN,
+            <rkyv::Archived<R> as crate::dynamic::ArchivedRepr<R>>::MAX_ALIGN,
+        ),
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use rkyv::Deserialize;

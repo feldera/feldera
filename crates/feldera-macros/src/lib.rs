@@ -8,6 +8,7 @@ use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
 
 mod archive_attrs;
+mod archived_repr;
 mod hash_repr;
 mod ord_repr;
 mod tuples;
@@ -76,6 +77,29 @@ pub fn derive_ord_repr(item: TokenStream) -> TokenStream {
 pub fn derive_hash_repr(item: TokenStream) -> TokenStream {
     let input = parse_macro_input!(item as DeriveInput);
     match hash_repr::derive_hash_repr_impl(input) {
+        Ok(expanded) => expanded.into(),
+        Err(error) => error.to_compile_error().into(),
+    }
+}
+
+/// Derives `ArchivedRepr`, together with `OrdRepr` and `HashRepr`, for the
+/// rkyv archived form of a struct or enum: everything storage needs to search,
+/// hash and copy an `ArchivedFoo` without deserializing it into a `Foo`.
+///
+/// `OrdRepr` and `HashRepr` come out exactly as their own derives would
+/// generate them, with the same requirements and the same refusals, so a type
+/// derives this instead of those two, not beside them.  `ArchivedRepr`'s
+/// `MAX_ALIGN` is the larger of the archived root's alignment and every
+/// field's `MAX_ALIGN`; a field marked `#[omit_bounds]` counts as the
+/// strictest alignment of a primitive, since its own is defined in terms of
+/// the type being derived.
+///
+/// Every field type `T` gets the bound `<T as Archive>::Archived:
+/// ArchivedRepr<T>`, in the same way that rkyv's derive bounds field types.
+#[proc_macro_derive(ArchivedRepr)]
+pub fn derive_archived_repr(item: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(item as DeriveInput);
+    match archived_repr::derive_archived_repr_impl(input) {
         Ok(expanded) => expanded.into(),
         Err(error) => error.to_compile_error().into(),
     }

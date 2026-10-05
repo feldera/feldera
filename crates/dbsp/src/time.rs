@@ -265,3 +265,7 @@ impl crate::dynamic::HashRepr for ArchivedUnitTimestamp {
     #[inline]
     fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
 }
+
+impl crate::dynamic::ArchivedRepr<UnitTimestamp> for ArchivedUnitTimestamp {
+    const MAX_ALIGN: usize = ::core::mem::align_of::<Self>();
+}

@@ -140,6 +140,12 @@ const FAITHFUL: bool = false;
 fn hash_repr<H: std::hash::Hasher>(&self, _state: &mut H) {}
 }
 
+// The archived form keeps nothing out of line, so a copy of its bytes has to
+// stay only as aligned as the form itself.
+impl dbsp::dynamic::ArchivedRepr<I256Wrapper> for ArchivedI256Wrapper {
+const MAX_ALIGN: usize = std::mem::align_of::<ArchivedI256Wrapper>();
+}
+
 pub type i128_sum_accumulator_type = I256Wrapper;
 
 pub fn i128_sum_map(val: ByteArray) -> i128_sum_accumulator_type {

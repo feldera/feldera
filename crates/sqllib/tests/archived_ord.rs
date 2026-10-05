@@ -13,15 +13,19 @@
 //! integer, the special floats, strings that share a prefix, decimals equal in
 //! value but not in representation, empty and nested containers, and every arm
 //! of the variant enum.  The second says the same thing over random values.
+//!
+//! Both halves also check that archiving each value asks for no stricter
+//! alignment than its type declares, which a merge relies on when it copies
+//! archived values between files.
 
 use std::collections::BTreeMap;
 use std::mem::size_of;
 
 use dbsp::DBData;
 use dbsp::algebra::{F32, F64};
-use dbsp::dynamic::{DynData, Erase, HashRepr, OrdRepr, WithFactory};
+use dbsp::dynamic::{ArchivedRepr, DynData, Erase, HashRepr, OrdRepr, WithFactory};
 use dbsp::storage::buffer_cache::FBuf;
-use dbsp::storage::file::to_bytes;
+use dbsp::storage::file::{archived_alignment, to_bytes};
 use dbsp::utils::tuple::TupleFormat;
 use dbsp::utils::{Tup1, Tup2, Tup3, Tup4, Tup5, Tup8, Tup9, Tup10};
 use feldera_sqllib::{
@@ -136,7 +140,8 @@ where
     );
 }
 
-/// Checks every ordered pair drawn from `values`, both ways round.
+/// Checks every ordered pair drawn from `values`, both ways round, and that
+/// each value stays within the alignment its type declares.
 ///
 /// Taking both directions is what catches an implementation that is consistent
 /// with itself but not antisymmetric, which a one-directional sweep would miss.
@@ -150,11 +155,28 @@ where
         "{label}: a single value cannot exercise a comparison"
     );
     for (i, a) in values.iter().enumerate() {
+        check_alignment(&format!("{label}[{i}]"), a);
         for (j, b) in values.iter().enumerate() {
             check_pair(&format!("{label}[{i}] vs {label}[{j}]"), a, b);
         }
     }
     check_sort_agrees(label, values);
+}
+
+/// Checks that archiving `value` asks for no stricter alignment than its
+/// type's `ArchivedRepr::MAX_ALIGN`.
+///
+/// A merge copies an archived value's bytes keeping only that alignment, so
+/// anything in the value aligned more strictly could land misaligned, and
+/// reading it would be undefined behavior.
+fn check_alignment<T: DBData>(label: &str, value: &T) {
+    let declared = <T::Repr as ArchivedRepr<T>>::MAX_ALIGN;
+    let asked = archived_alignment(value);
+    assert!(
+        asked <= declared,
+        "{label}: archiving asked for alignment {asked}, more than the {declared} its type \
+         declares\n  value: {value:?}"
+    );
 }
 
 /// Sorting by each ordering must produce the same sequence.
@@ -1492,6 +1514,7 @@ macro_rules! ordering_proptest {
             proptest! {
                 #[test]
                 fn pair(a in $strategy, b in $strategy) {
+                    check_alignment(stringify!($name), &a);
                     check_pair(stringify!($name), &a, &b);
                 }
             }

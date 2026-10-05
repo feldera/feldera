@@ -1,6 +1,6 @@
 use dbsp::NumEntries;
 use dbsp::algebra::{HasOne, HasZero, MulByRef, OptionWeightType};
-use dbsp::dynamic::{HashRepr, OrdRepr};
+use dbsp::dynamic::{ArchivedRepr, HashRepr, OrdRepr};
 use dbsp::utils::{IsNone, SupportsRoaring};
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, serde_config::DecimalFormat,
@@ -39,6 +39,11 @@ impl<const P: usize, const S: usize> OrdRepr<Fixed<P, S>> for Fixed<P, S> {
     fn ord_cmp(&self, other: &Fixed<P, S>) -> core::cmp::Ordering {
         self.cmp(other)
     }
+}
+
+/// A `Fixed` archives to itself and keeps nothing out of line.
+impl<const P: usize, const S: usize> ArchivedRepr<Fixed<P, S>> for Fixed<P, S> {
+    const MAX_ALIGN: usize = std::mem::align_of::<Self>();
 }
 
 impl<const P: usize, const S: usize> IsNone for Fixed<P, S> {

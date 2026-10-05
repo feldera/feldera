@@ -297,3 +297,7 @@ mod tests {
 crate::hash_repr::hash_repr_struct! {
     Uuid => ArchivedUuid { value: uuid::Uuid },
 }
+
+crate::hash_repr::archived_repr_inline! {
+    Uuid => ArchivedUuid,
+}

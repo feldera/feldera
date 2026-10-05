@@ -409,7 +409,7 @@ mod test {
 
     use std::collections::{BTreeMap, BTreeSet};
 
-    use feldera_macros::{IsNone, OrdRepr};
+    use feldera_macros::{ArchivedRepr, IsNone};
     use rkyv::{Archive, Deserialize, Serialize};
     use size_of::SizeOf;
 
@@ -769,7 +769,8 @@ mod test {
 
     // The shapes `#[derive(HashRepr)]` sees: a struct with named fields, a
     // tuple struct, a struct with no fields, an enum, and a struct that
-    // holds the enum.
+    // holds the enum.  They derive `ArchivedRepr`, whose `HashRepr` is the
+    // one `#[derive(HashRepr)]` generates, because `check` needs `DBData`.
     #[derive(
         Clone,
         Debug,
@@ -783,9 +784,8 @@ mod test {
         Archive,
         Serialize,
         Deserialize,
-        feldera_macros::HashRepr,
         IsNone,
-        OrdRepr,
+        ArchivedRepr,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
     struct Named {
@@ -807,9 +807,8 @@ mod test {
         Archive,
         Serialize,
         Deserialize,
-        feldera_macros::HashRepr,
         IsNone,
-        OrdRepr,
+        ArchivedRepr,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
     struct Pair(u32, Option<String>);
@@ -827,9 +826,8 @@ mod test {
         Archive,
         Serialize,
         Deserialize,
-        feldera_macros::HashRepr,
         IsNone,
-        OrdRepr,
+        ArchivedRepr,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
     struct NoFields();
@@ -847,9 +845,8 @@ mod test {
         Archive,
         Serialize,
         Deserialize,
-        feldera_macros::HashRepr,
         IsNone,
-        OrdRepr,
+        ArchivedRepr,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
     enum Kind {
@@ -874,9 +871,8 @@ mod test {
         Archive,
         Serialize,
         Deserialize,
-        feldera_macros::HashRepr,
         IsNone,
-        OrdRepr,
+        ArchivedRepr,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
     struct Holder {

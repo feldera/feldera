@@ -1025,3 +1025,17 @@ where
     #[inline]
     fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
 }
+
+impl<V, U> crate::dynamic::ArchivedRepr<Update<V, U>> for ArchivedUpdate<V, U>
+where
+    V: crate::DBData,
+    U: crate::DBData,
+{
+    const MAX_ALIGN: usize = crate::dynamic::max_align(
+        ::core::mem::align_of::<Self>(),
+        crate::dynamic::max_align(
+            <rkyv::Archived<V> as crate::dynamic::ArchivedRepr<V>>::MAX_ALIGN,
+            <rkyv::Archived<U> as crate::dynamic::ArchivedRepr<U>>::MAX_ALIGN,
+        ),
+    );
+}

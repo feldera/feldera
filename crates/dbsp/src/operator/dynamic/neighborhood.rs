@@ -592,6 +592,20 @@ where
     fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
 }
 
+impl<K, V> crate::dynamic::ArchivedRepr<NeighborhoodDescr<K, V>> for ArchivedNeighborhoodDescr<K, V>
+where
+    K: crate::DBData,
+    V: crate::DBData,
+{
+    const MAX_ALIGN: usize = crate::dynamic::max_align(
+        ::core::mem::align_of::<Self>(),
+        crate::dynamic::max_align(
+            <rkyv::Archived<Option<K>> as crate::dynamic::ArchivedRepr<Option<K>>>::MAX_ALIGN,
+            <rkyv::Archived<V> as crate::dynamic::ArchivedRepr<V>>::MAX_ALIGN,
+        ),
+    );
+}
+
 #[cfg(test)]
 #[allow(clippy::type_complexity)]
 mod test {

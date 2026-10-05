@@ -460,6 +460,51 @@ where
     fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
 }
 
+impl<TS, A> crate::dynamic::ArchivedRepr<ChildPtr<TS, A>> for ArchivedChildPtr<TS, A>
+where
+    TS: DBData,
+    A: DBData,
+    Prefix<TS>: DBData,
+{
+    const MAX_ALIGN: usize = crate::dynamic::max_align(
+        ::core::mem::align_of::<Self>(),
+        crate::dynamic::max_align(
+            <rkyv::Archived<Prefix<TS>> as crate::dynamic::ArchivedRepr<Prefix<TS>>>::MAX_ALIGN,
+            <rkyv::Archived<A> as crate::dynamic::ArchivedRepr<A>>::MAX_ALIGN,
+        ),
+    );
+}
+
+impl<TS, A> crate::dynamic::ArchivedRepr<TreeNode<TS, A>> for ArchivedTreeNode<TS, A>
+where
+    TS: DBData,
+    A: DBData,
+    Prefix<TS>: DBData,
+{
+    const MAX_ALIGN: usize = crate::dynamic::max_align(
+        ::core::mem::align_of::<Self>(),
+        <rkyv::Archived<ChildPtr<TS, A>> as crate::dynamic::ArchivedRepr<ChildPtr<TS, A>>>::MAX_ALIGN,
+    );
+}
+
+impl<TS, A> crate::dynamic::ArchivedRepr<TreeNodeUpdate<TS, A>> for ArchivedTreeNodeUpdate<TS, A>
+where
+    TS: DBData,
+    A: DBData,
+    Option<TreeNode<TS, A>>: DBData,
+    Prefix<TS>: DBData,
+{
+    const MAX_ALIGN: usize = crate::dynamic::max_align(
+        ::core::mem::align_of::<Self>(),
+        crate::dynamic::max_align(
+            <rkyv::Archived<Prefix<TS>> as crate::dynamic::ArchivedRepr<Prefix<TS>>>::MAX_ALIGN,
+            <rkyv::Archived<Option<TreeNode<TS, A>>> as crate::dynamic::ArchivedRepr<
+                Option<TreeNode<TS, A>>,
+            >>::MAX_ALIGN,
+        ),
+    );
+}
+
 #[cfg(test)]
 mod test {
     use crate::{

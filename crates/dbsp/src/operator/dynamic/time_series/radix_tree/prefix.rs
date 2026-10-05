@@ -188,6 +188,16 @@ where
     fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
 }
 
+impl<TS> crate::dynamic::ArchivedRepr<Prefix<TS>> for ArchivedPrefix<TS>
+where
+    TS: crate::DBData,
+{
+    const MAX_ALIGN: usize = crate::dynamic::max_align(
+        ::core::mem::align_of::<Self>(),
+        <rkyv::Archived<TS> as crate::dynamic::ArchivedRepr<TS>>::MAX_ALIGN,
+    );
+}
+
 #[cfg(test)]
 mod test {
     use rkyv::{Deserialize, Infallible, archived_root, to_bytes};

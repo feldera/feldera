@@ -163,3 +163,20 @@ where
     #[inline]
     fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
 }
+
+impl<TOuter, TInner> crate::dynamic::ArchivedRepr<Product<TOuter, TInner>>
+    for ArchivedProduct<TOuter, TInner>
+where
+    TOuter: rkyv::Archive,
+    TInner: rkyv::Archive,
+    <TOuter as rkyv::Archive>::Archived: Ord + crate::dynamic::ArchivedRepr<TOuter>,
+    <TInner as rkyv::Archive>::Archived: Ord + crate::dynamic::ArchivedRepr<TInner>,
+{
+    const MAX_ALIGN: usize = crate::dynamic::max_align(
+        ::core::mem::align_of::<Self>(),
+        crate::dynamic::max_align(
+            <rkyv::Archived<TOuter> as crate::dynamic::ArchivedRepr<TOuter>>::MAX_ALIGN,
+            <rkyv::Archived<TInner> as crate::dynamic::ArchivedRepr<TInner>>::MAX_ALIGN,
+        ),
+    );
+}

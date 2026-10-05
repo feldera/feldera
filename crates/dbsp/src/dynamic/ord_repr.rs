@@ -41,7 +41,8 @@ use std::{
 /// any struct or enum whose `Ord` is derived: it compares fields in
 /// declaration order, and enum variants by declaration position, exactly as
 /// `#[derive(Ord)]` does. A type with a hand-written `Ord` must hand-write
-/// `OrdRepr` to match it.
+/// `OrdRepr` to match it. `#[derive(ArchivedRepr)]` generates the same
+/// comparison, together with the rest of [`ArchivedRepr`](super::ArchivedRepr).
 ///
 /// Every `DBData` type has this comparison available through
 /// [`ArchivedDBData::Repr`](crate::dynamic::ArchivedDBData).
@@ -286,7 +287,7 @@ mod tests {
         storage::file::to_bytes,
         utils::{Tup0, Tup2, Tup10},
     };
-    use feldera_macros::{HashRepr, IsNone, OrdRepr};
+    use feldera_macros::{ArchivedRepr, IsNone};
     use proptest::prelude::*;
     use rkyv::{Archive, Deserialize, Serialize, archived_root};
     use size_of::SizeOf;
@@ -326,9 +327,8 @@ mod tests {
         Archive,
         Serialize,
         Deserialize,
-        HashRepr,
         IsNone,
-        OrdRepr,
+        ArchivedRepr,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
     struct Row {
@@ -355,9 +355,8 @@ mod tests {
         Archive,
         Serialize,
         Deserialize,
-        HashRepr,
         IsNone,
-        OrdRepr,
+        ArchivedRepr,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
     struct Sizes(usize, isize);
@@ -375,9 +374,8 @@ mod tests {
         Archive,
         Serialize,
         Deserialize,
-        HashRepr,
         IsNone,
-        OrdRepr,
+        ArchivedRepr,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
     enum Kind {

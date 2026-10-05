@@ -420,6 +420,15 @@ macro_rules! impl_float_hash_repr {
 }
 
 impl_float_hash_repr!(F32 => ArchivedF32, F64 => ArchivedF64);
+
+// A float wrapper keeps nothing out of line.
+impl crate::dynamic::ArchivedRepr<F32> for ArchivedF32 {
+    const MAX_ALIGN: usize = ::core::mem::align_of::<ArchivedF32>();
+}
+
+impl crate::dynamic::ArchivedRepr<F64> for ArchivedF64 {
+    const MAX_ALIGN: usize = ::core::mem::align_of::<ArchivedF64>();
+}
 deserialize_without_context!(F32);
 deserialize_without_context!(F64);
 

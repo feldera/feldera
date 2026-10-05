@@ -203,3 +203,14 @@ where
     #[inline]
     fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
 }
+
+impl<T> crate::dynamic::ArchivedRepr<BSet<T>> for ArchivedBSet<T>
+where
+    T: rkyv::Archive + Ord,
+    <T as rkyv::Archive>::Archived: Ord + crate::dynamic::ArchivedRepr<T>,
+{
+    const MAX_ALIGN: usize = crate::dynamic::max_align(
+        ::core::mem::align_of::<Self>(),
+        <rkyv::Archived<BTreeSet<T>> as crate::dynamic::ArchivedRepr<BTreeSet<T>>>::MAX_ALIGN,
+    );
+}

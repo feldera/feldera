@@ -1,4 +1,4 @@
-use super::{AsAny, Comparable, DowncastTrait, HashRepr, OrdRepr};
+use super::{ArchivedRepr, AsAny, Comparable, DowncastTrait, OrdRepr};
 use crate::{
     derive_comparison_traits,
     storage::file::{DbspSerializer, Deserializer},
@@ -12,23 +12,23 @@ use std::{cmp::Ordering, marker::PhantomData, mem::transmute};
 /// seems to be the key for rust to know the bounds exist globally in the code
 /// without having to specify the bounds everywhere.
 ///
-/// `Repr: OrdRepr<Self>` lets storage order an archived value against an
-/// unarchived one without deserializing it; see [`OrdRepr`] for the contract
-/// that the implementation must meet.
-///
-/// `Repr: HashRepr` hashes an archived value, producing the exact same result
-/// as the decoded value would.
+/// `Repr: ArchivedRepr<Self>` lets storage work on an archived value without
+/// deserializing it: order it against an unarchived one
+/// ([`OrdRepr`](super::OrdRepr), whose contract the implementation must
+/// meet), hash it as the decoded value hashes ([`HashRepr`](super::HashRepr)),
+/// and copy its bytes between blocks as aligned as they have to stay
+/// ([`ArchivedRepr::MAX_ALIGN`]).
 pub trait ArchivedDBData:
     for<'a> Serialize<DbspSerializer<'a>> + Archive<Archived = Self::Repr> + Sized
 {
-    type Repr: Deserialize<Self, Deserializer> + Ord + OrdRepr<Self> + HashRepr;
+    type Repr: Deserialize<Self, Deserializer> + Ord + ArchivedRepr<Self>;
 }
 
 /// We also automatically implement this bound for everything that satisfies it.
 impl<T> ArchivedDBData for T
 where
     T: Archive + for<'a> Serialize<DbspSerializer<'a>>,
-    Archived<T>: Deserialize<T, Deserializer> + Ord + OrdRepr<T> + HashRepr,
+    Archived<T>: Deserialize<T, Deserializer> + Ord + ArchivedRepr<T>,
 {
     type Repr = Archived<T>;
 }

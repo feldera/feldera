@@ -102,6 +102,11 @@ impl dbsp::dynamic::OrdRepr<ByteArray> for ArchivedByteArray {
     }
 }
 
+/// The payload lies out of line as bytes, which need no alignment.
+impl dbsp::dynamic::ArchivedRepr<ByteArray> for ArchivedByteArray {
+    const MAX_ALIGN: usize = std::mem::align_of::<ArchivedByteArray>();
+}
+
 impl SizeOf for ByteArray {
     fn size_of_children(&self, context: &mut size_of::Context) {
         // `SmallVec` has no `SizeOf` impl, so delegating to `self.data` resolved

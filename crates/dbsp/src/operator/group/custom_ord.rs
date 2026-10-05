@@ -216,3 +216,15 @@ where
     #[inline]
     fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
 }
+
+impl<T, F> crate::dynamic::ArchivedRepr<WithCustomOrd<T, F>> for ArchivedWithCustomOrd<T, F>
+where
+    T: Archive + Deserializable,
+    F: CmpFunc<T>,
+    <T as Archive>::Archived: crate::dynamic::ArchivedRepr<T>,
+{
+    const MAX_ALIGN: usize = crate::dynamic::max_align(
+        ::core::mem::align_of::<Self>(),
+        <<T as Archive>::Archived as crate::dynamic::ArchivedRepr<T>>::MAX_ALIGN,
+    );
+}
