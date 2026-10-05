@@ -1,6 +1,6 @@
 use crate::{
     DBData,
-    dynamic::{ArchiveTrait, erase::Erase},
+    dynamic::{ArchiveTrait, ArchivedDBData, HashRepr, erase::Erase},
 };
 use rkyv::archived_value;
 use std::{marker::PhantomData, mem};
@@ -29,6 +29,16 @@ pub trait Factory<Trait: ArchiveTrait + ?Sized>: Send + Sync {
     /// The specified offset must contain an archived instance of the concrete
     /// type that this factory manages.
     unsafe fn archived_value<'a>(&self, bytes: &'a [u8], pos: usize) -> &'a Trait::Archived;
+
+    /// Whether an archived value of the concrete type can be hashed without
+    /// decoding it.
+    ///
+    /// # Returns
+    ///
+    /// The concrete type's [`HashRepr::FAITHFUL`], which is fixed for the
+    /// type: either every value of it can be hashed from its archived form,
+    /// or none can.
+    fn supports_archived_hash(&self) -> bool;
 }
 
 struct FactoryImpl<T, Trait: ?Sized> {
@@ -64,6 +74,10 @@ where
             let archived: &T::Archived = archived_value::<T>(bytes, pos);
             <T as Erase<Trait>>::erase_archived(archived)
         }
+    }
+
+    fn supports_archived_hash(&self) -> bool {
+        <<T as ArchivedDBData>::Repr as HashRepr>::FAITHFUL
     }
 }
 

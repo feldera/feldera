@@ -15,6 +15,12 @@
 ///
 /// Use it only on a struct whose own `Hash` is derived.  A hand-written one
 /// may write something else entirely, and then this would not match it.
+///
+/// List the fields in the order the struct declares them, which is the order
+/// a derived `Hash` writes them in.  A list that leaves a field out, names
+/// one the struct lacks, or gives one a type other than its own fails to
+/// compile.  The order is not checked: a list out of order compiles, and only
+/// the tests that compare the archived hash with the decoded one catch it.
 macro_rules! hash_repr_struct {
     ($($decoded:ty => $archived:ty { $($field:tt : $field_ty:ty),+ $(,)? }),* $(,)?) => {$(
         impl $crate::__HashRepr for $decoded {
@@ -23,6 +29,9 @@ macro_rules! hash_repr_struct {
 
             #[inline]
             fn hash_repr<H: ::std::hash::Hasher>(&self, state: &mut H) {
+                // The list names every field, each with its own type.
+                let Self { $($field: _),+ } = self;
+                $(let _: &$field_ty = &self.$field;)+
                 $($crate::__HashRepr::hash_repr(&self.$field, state);)+
             }
         }
@@ -33,6 +42,8 @@ macro_rules! hash_repr_struct {
 
             #[inline]
             fn hash_repr<H: ::std::hash::Hasher>(&self, state: &mut H) {
+                let Self { $($field: _),+ } = self;
+                $(let _: &::rkyv::Archived<$field_ty> = &self.$field;)+
                 $($crate::__HashRepr::hash_repr(&self.$field, state);)+
             }
         }

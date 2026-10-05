@@ -25,7 +25,7 @@ use deltalake::protocol::SaveMode;
 use deltalake::table::config::TableProperty;
 use deltalake::{DeltaTable, DeltaTableBuilder, ensure_table_uri};
 use feldera_adapterlib::errors::controller::ControllerError;
-use feldera_macros::{IsNone, OrdRepr};
+use feldera_macros::{HashRepr, IsNone, OrdRepr};
 use feldera_sqllib::Variant;
 use feldera_types::config::{PipelineConfig, TransportConfig};
 use feldera_types::constants::DATAFUSION_TEMP_DIR;
@@ -5033,6 +5033,7 @@ async fn delta_table_follow_partition_column_types_test() {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -5110,6 +5111,7 @@ async fn delta_table_follow_partition_uppercase_columns_test() {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -7009,6 +7011,7 @@ async fn follow_filter_before_projection_prunes_scan() {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -7479,6 +7482,7 @@ async fn delta_output_variant_encoding_mismatch_test() {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -7513,6 +7517,7 @@ deserialize_table_record!(UniformNested["UniformNested", Variant, 2] {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
@@ -7602,6 +7607,7 @@ impl UniformTestStruct {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
+    HashRepr,
     OrdRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]

@@ -1569,3 +1569,14 @@ impl<T: Debug> Debug for LeanVec<T> {
         })
     }
 }
+
+// Hashing one of these from its archived form is not implemented: `FAITHFUL`
+// is false, so `archived_hash` answers `None` and the caller deserializes and
+// hashes that instead.  The trait is implemented all the same, because
+// `ArchivedDBData` requires it of every type.
+impl<T> crate::dynamic::HashRepr for ArchivedLeanVec<T> {
+    const FAITHFUL: bool = false;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
+}

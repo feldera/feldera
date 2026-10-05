@@ -1795,10 +1795,10 @@ ordering_proptest!(prop_tup10_mixed, mixed_tup10_any());
 /// A hasher that records what it was asked to write rather than a hash.
 ///
 /// Every `write_*` is left on its default, which routes through `write`, so
-/// the log tells one write of a slice's bytes from one write an element.  The
-/// hasher the engine uses cannot: it is insensitive to where one call ends
-/// and the next begins, so it answers the same either way.  Hashing
-/// faithfully is the stronger claim of making the same calls, and this is
+/// the log tells one write of a slice's bytes from one write per element.
+/// The hasher the engine uses cannot: it is insensitive to where one write
+/// ends and the next begins, so it answers the same either way.  Hashing
+/// faithfully is the stronger claim of making the same writes, and this is
 /// what checks it.
 #[derive(Default)]
 struct CallLog(Vec<Vec<u8>>);
@@ -1813,7 +1813,7 @@ impl std::hash::Hasher for CallLog {
     }
 }
 
-/// The calls hashing `value` makes, in order.
+/// The writes hashing `value` makes, in order.
 fn calls_of(hash: impl FnOnce(&mut CallLog)) -> Vec<Vec<u8>> {
     let mut log = CallLog::default();
     hash(&mut log);
@@ -1821,7 +1821,7 @@ fn calls_of(hash: impl FnOnce(&mut CallLog)) -> Vec<Vec<u8>> {
 }
 
 /// Checks that an archived value hashes exactly as its decoded form does:
-/// the same answer, and the same calls to get there.
+/// the same answer, and the same writes to get there.
 fn check_hash<T>(label: &str, values: &[T])
 where
     T: DBData,

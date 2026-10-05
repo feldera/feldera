@@ -113,6 +113,7 @@ deserialize_without_context!(Tup10, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10);
     rkyv::Archive,
     rkyv::Serialize,
     rkyv::Deserialize,
+    feldera_macros::HashRepr,
     feldera_macros::IsNone,
     feldera_macros::OrdRepr,
 )]

@@ -286,7 +286,7 @@ mod tests {
         storage::file::to_bytes,
         utils::{Tup0, Tup2, Tup10},
     };
-    use feldera_macros::{IsNone, OrdRepr};
+    use feldera_macros::{HashRepr, IsNone, OrdRepr};
     use proptest::prelude::*;
     use rkyv::{Archive, Deserialize, Serialize, archived_root};
     use size_of::SizeOf;
@@ -326,6 +326,7 @@ mod tests {
         Archive,
         Serialize,
         Deserialize,
+        HashRepr,
         IsNone,
         OrdRepr,
     )]
@@ -354,6 +355,7 @@ mod tests {
         Archive,
         Serialize,
         Deserialize,
+        HashRepr,
         IsNone,
         OrdRepr,
     )]
@@ -373,6 +375,7 @@ mod tests {
         Archive,
         Serialize,
         Deserialize,
+        HashRepr,
         IsNone,
         OrdRepr,
     )]

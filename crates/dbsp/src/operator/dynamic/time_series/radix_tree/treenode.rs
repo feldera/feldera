@@ -419,6 +419,47 @@ where
     A: DataTrait + ?Sized,
     TS: PrimInt + DBData);
 
+// Hashing one of these from its archived form is not implemented: `FAITHFUL`
+// is false, so `archived_hash` answers `None` and the caller deserializes and
+// hashes that instead.  The trait is implemented all the same, because
+// `ArchivedDBData` requires it of every type.
+impl<TS, A> crate::dynamic::HashRepr for ArchivedChildPtr<TS, A>
+where
+    TS: DBData,
+    A: DBData,
+    Prefix<TS>: DBData,
+{
+    const FAITHFUL: bool = false;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
+}
+
+impl<TS, A> crate::dynamic::HashRepr for ArchivedTreeNode<TS, A>
+where
+    TS: DBData,
+    A: DBData,
+    Prefix<TS>: DBData,
+{
+    const FAITHFUL: bool = false;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
+}
+
+impl<TS, A> crate::dynamic::HashRepr for ArchivedTreeNodeUpdate<TS, A>
+where
+    TS: DBData,
+    A: DBData,
+    Option<TreeNode<TS, A>>: DBData,
+    Prefix<TS>: DBData,
+{
+    const FAITHFUL: bool = false;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
+}
+
 #[cfg(test)]
 mod test {
     use crate::{
