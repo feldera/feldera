@@ -206,7 +206,7 @@
 
 .btn,
 .btn-icon {
-  &:not(:disabled) {
+  &:not(:disabled, .disabled) {
     &:hover {
       filter: brightness(93%);
       &:where(.dark, .dark *) {
@@ -214,6 +214,18 @@
       }
     }
   }
+
+  /* Disabled buttons don't react to hover, including Skeleton's own brightness change. */
+  &:is(:disabled, .disabled):hover {
+    filter: none;
+  }
+}
+
+/* A brightness filter shows nothing on an outlined button's transparent fill, so outlined
+   buttons get a neutral fill on hover instead. */
+:is(.btn, .btn-icon).preset-outlined-surface-200-800:not(:disabled, .disabled):hover {
+  filter: none;
+  background-color: var(--color-surface-100-900);
 }
 
 /* .btn:hover,
