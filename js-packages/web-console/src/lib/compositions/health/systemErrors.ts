@@ -300,6 +300,33 @@ const ignoredRustErrors = [
 /** Split cargo's `--- stderr` marker so the echoed tool error is its own message. */
 const flattenStderr = (stderr: string) => stderr.replaceAll('\n--- stderr\n', '\n\n')
 
+/**
+ * Matches one Rust compiler message in a stderr stream, capturing it in group 1.
+ *
+ * - `/m` makes `^` match at the start of every line, `/g` yields every message
+ * - `^(?:[\w-]+: )?` an optional prefix naming the tool that emitted the message, e.g. `sccache: `
+ * - `warning:(?! \`)` a warning, excluding cargo summaries such as ``warning: `pipeline` (lib) generated 2 warnings``
+ * - `error(\[[\w]+\])?:` an error, with an optional diagnostic code, e.g. `error[E0433]:`
+ * - `([\s\S])+?` the message body, lazily extended across lines until a terminator matches
+ * - `\n(\n|(?=error|warning))` terminator: a blank line, or the first line of the next message
+ * - `\n?$(?![\s\S])` terminator: the end of stderr; `(?![\s\S])` pins `$` there,
+ *   because under `/m` it would otherwise match at every line break
+ *
+ * Examples of captured messages:
+ *
+ * ```
+ * sccache: error: Timed out waiting for server startup.
+ * ```
+ *
+ * ```
+ * error[E0433]: failed to resolve: use of undeclared crate or module `chrnoo`
+ *  --> /home/feldera/.feldera/compiler/rust-compilation/udf.rs:3:5
+ *   |
+ * 3 |     chrnoo::Utc::now();
+ *   |     ^^^^^^ use of undeclared crate or module `chrnoo`
+ * ```
+ */
+
 const rustCompilerErrorRegex =
   /^((?:[\w-]+: )?(warning:(?! `)|error(\[[\w]+\])?:)([\s\S])+?)(\n(\n|(?=error|warning))|\n?$(?![\s\S]))/gm
 
