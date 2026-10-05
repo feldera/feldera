@@ -1,23 +1,31 @@
 //! Pairing a data file's columns with the Delta table's schema.
 //!
 //! Under `delta.columnMapping.mode = 'name'` or `'id'` a column's name on disk
-//! is not the name the table's schema gives it, so the two sides pair by field
-//! id: Delta stamps `delta.columnMapping.id` on the schema and a writer stamps
-//! `PARQUET:field_id` on the file. Nested fields need the same treatment, which
-//! Arrow's `cast` cannot give them, so a struct, list or map is rebuilt here
-//! instead.
+//! is not the name the table's schema gives it. There are two ways across, and
+//! this module holds both.
 //!
-//! [`super::field_id_adapter`] applies this to a listing's scan;
+//! By name: Delta stamps each field's physical name into its metadata, so
+//! [`field_to_physical`] builds the schema a file is read with, and
+//! [`relabel_nested_columns`] puts the logical names back on the batch. Only
+//! nested names need putting back; the top level is already logical.
+//!
+//! By field id: Delta stamps `delta.columnMapping.id` on the schema and a writer
+//! stamps `PARQUET:field_id` on the file. Nested fields need the same treatment,
+//! which Arrow's `cast` cannot give them, so a struct, list or map is rebuilt
+//! here instead. [`super::field_id_adapter`] applies this to a listing's scan;
 //! [`project_to_logical`] applies it batch by batch to the direct reader that a
 //! deletion vector or an unlistable location forces.
 
+use anyhow::{Result as AnyResult, anyhow};
 use arrow::array::{
-    Array, ArrayRef, LargeListArray, ListArray, MapArray, StructArray, new_null_array,
+    Array, ArrayData, ArrayRef, LargeListArray, ListArray, MapArray, StructArray, make_array,
+    new_null_array,
 };
 use arrow::compute::cast;
 use arrow::datatypes::{DataType, Field, FieldRef, Fields, Schema, SchemaRef};
 use arrow::record_batch::RecordBatch;
 use datafusion::common::DataFusionError;
+use delta_kernel::schema::ColumnMetadataKey;
 use parquet::arrow::ProjectionMask;
 use parquet::arrow::async_reader::{ParquetObjectReader, ParquetRecordBatchStreamBuilder};
 use std::collections::{HashMap, HashSet};
@@ -334,6 +342,151 @@ pub(super) fn logical_projection_mask(
     ProjectionMask::roots(builder.parquet_schema(), roots)
 }
 
+/// A field's physical (on-disk) name under column mapping, or its logical name
+/// when unmapped. Delta stamps it into the Arrow field metadata at every level.
+pub(super) fn physical_name(field: &Field) -> String {
+    field
+        .metadata()
+        .get(ColumnMetadataKey::ColumnMappingPhysicalName.as_ref())
+        .cloned()
+        .unwrap_or_else(|| field.name().clone())
+}
+
+/// Returns a copy of `field` whose own name, and every nested field name (struct
+/// children and list/map element fields, at any depth), is `rename`d. Nullability
+/// and metadata carry over unchanged.
+fn rename_fields(field: &FieldRef, rename: &dyn Fn(&Field) -> String) -> FieldRef {
+    Arc::new(
+        Field::new(
+            rename(field.as_ref()),
+            rename_nested_fields(field.data_type(), rename),
+            field.is_nullable(),
+        )
+        .with_metadata(field.metadata().clone()),
+    )
+}
+
+/// Recurse [`rename_fields`] into every field a container type holds. Scalar
+/// types are returned unchanged.
+fn rename_nested_fields(data_type: &DataType, rename: &dyn Fn(&Field) -> String) -> DataType {
+    let renamed = |field: &FieldRef| rename_fields(field, rename);
+    match data_type {
+        DataType::Struct(fields) => DataType::Struct(fields.iter().map(renamed).collect()),
+        DataType::List(field) => DataType::List(renamed(field)),
+        DataType::LargeList(field) => DataType::LargeList(renamed(field)),
+        DataType::FixedSizeList(field, len) => DataType::FixedSizeList(renamed(field), *len),
+        DataType::Map(field, sorted) => DataType::Map(renamed(field), *sorted),
+        other => other.clone(),
+    }
+}
+
+/// Returns a copy of `field` named as it appears on disk at every level: each
+/// column-mapped name becomes its physical name, unmapped names carry over.
+pub(super) fn field_to_physical(field: &FieldRef) -> FieldRef {
+    rename_fields(field, &physical_name)
+}
+
+/// Maps each nested column-mapped field's physical name to its logical name,
+/// descending through struct children and list/map element fields at any depth.
+/// Top-level fields are excluded. Empty unless the table nests column-mapped
+/// fields.
+pub(super) fn nested_physical_to_logical(schema: &Schema) -> HashMap<String, String> {
+    fn collect(data_type: &DataType, map: &mut HashMap<String, String>) {
+        for field in child_fields(data_type) {
+            let physical = physical_name(field);
+            if physical != *field.name() {
+                map.insert(physical, field.name().clone());
+            }
+            collect(field.data_type(), map);
+        }
+    }
+    let mut map = HashMap::new();
+    for field in schema.fields() {
+        collect(field.data_type(), &mut map);
+    }
+    map
+}
+
+/// The fields a container type holds directly: a struct's children, or the sole
+/// element field of a list/map. Scalar types hold none.
+fn child_fields(data_type: &DataType) -> Vec<&FieldRef> {
+    match data_type {
+        DataType::Struct(fields) => fields.iter().collect(),
+        DataType::List(field)
+        | DataType::LargeList(field)
+        | DataType::FixedSizeList(field, _)
+        | DataType::Map(field, _) => vec![field],
+        _ => vec![],
+    }
+}
+
+/// Rebuild `array` with every struct/list/map field name substituted through
+/// `map`, at any nesting depth, reusing the underlying buffers. Only field-name
+/// metadata changes; the physical layout is untouched. Names absent from `map`
+/// carry over unchanged.
+fn relabel_array(array: &ArrayRef, map: &HashMap<String, String>) -> AnyResult<ArrayRef> {
+    Ok(make_array(relabel_array_data(array.to_data(), map)?))
+}
+
+/// Recursive core of [`relabel_array`], operating on the raw [`ArrayData`] tree.
+fn relabel_array_data(data: ArrayData, map: &HashMap<String, String>) -> AnyResult<ArrayData> {
+    let relabeled_type = relabel_data_type(data.data_type(), map);
+    let children: Vec<ArrayData> = data
+        .child_data()
+        .iter()
+        .map(|child| relabel_array_data(child.clone(), map))
+        .collect::<AnyResult<_>>()?;
+    // Relabeling only renames fields; buffers, offsets, lengths, and null bitmaps
+    // carry over untouched, so the built data is structurally identical. `build`
+    // only errors on a real layout mismatch, which would be a bug here.
+    data.into_builder()
+        .data_type(relabeled_type)
+        .child_data(children)
+        .build()
+        .map_err(|e| anyhow!("relabeling column-mapped field names failed: {e}"))
+}
+
+/// Substitute nested field names in `data_type` through `map`. Names absent from
+/// `map`, and scalar types, are left unchanged.
+fn relabel_data_type(data_type: &DataType, map: &HashMap<String, String>) -> DataType {
+    rename_nested_fields(data_type, &|field| {
+        map.get(field.name())
+            .cloned()
+            .unwrap_or_else(|| field.name().clone())
+    })
+}
+
+/// Translate a batch's nested field names physical-to-logical. Top-level names
+/// are left as-is (already logical); only names nested inside a struct, list, or
+/// map are rewritten.
+pub(super) fn relabel_nested_columns(
+    batch: &RecordBatch,
+    map: &HashMap<String, String>,
+) -> AnyResult<RecordBatch> {
+    let columns: Vec<ArrayRef> = batch
+        .columns()
+        .iter()
+        .map(|c| relabel_array(c, map))
+        .collect::<AnyResult<_>>()?;
+    let fields: Vec<FieldRef> = batch
+        .schema()
+        .fields()
+        .iter()
+        .zip(&columns)
+        .map(|(f, c)| {
+            Arc::new(
+                Field::new(f.name(), c.data_type().clone(), f.is_nullable())
+                    .with_metadata(f.metadata().clone()),
+            )
+        })
+        .collect();
+    RecordBatch::try_new(
+        Arc::new(Schema::new(fields).with_metadata(batch.schema().metadata().clone())),
+        columns,
+    )
+    .map_err(|e| anyhow!("relabeling column-mapped field names failed: {e}"))
+}
+
 /// Copies `field` with field id `id` under metadata `key`, for a test that
 /// builds a column-mapped schema by hand. `deletion_vector`'s reader tests build
 /// the same shape, so it lives here rather than in either `mod tests`.
@@ -345,7 +498,8 @@ pub(super) fn with_id(field: Field, key: &str, id: &str) -> Field {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arrow::array::StringArray;
+    use arrow::array::{StringArray, StringViewArray};
+    use arrow::buffer::OffsetBuffer;
     use arrow::datatypes::{
         DataType as ArrowDataType, Field as ArrowField, Fields as ArrowFields,
         Schema as ArrowSchema,
@@ -412,8 +566,6 @@ mod tests {
     // Delta's `List` and `Map` end to end.
     #[test]
     fn realign_array_matches_nested_struct_by_field_id() {
-        use arrow::buffer::OffsetBuffer;
-
         let (value, target_fields) = reordered_struct_pair();
         let element =
             |element_type: ArrowDataType| Arc::new(ArrowField::new("element", element_type, true));
@@ -757,5 +909,242 @@ mod tests {
         assert!(err.contains(TEST_FILE), "{err}");
         assert!(err.contains("Utf8"), "{err}");
         assert!(err.contains("FixedSizeBinary(16)"), "{err}");
+    }
+
+    /// A column-mapped field: logical `name`, physical name in its metadata.
+    fn mapped(name: &str, data_type: DataType, physical: &str) -> Field {
+        Field::new(name, data_type, true).with_metadata(HashMap::from([(
+            "delta.columnMapping.physicalName".to_string(),
+            physical.to_string(),
+        )]))
+    }
+
+    /// Relabeling rebuilds each column's `ArrayData` with renamed fields, and a
+    /// view array's layout is several data buffers behind a buffer of views
+    /// rather than one values buffer behind offsets. Since reads ask for view
+    /// types, a column-mapped nested string column arrives here as one, so the
+    /// rebuild has to carry that layout through untouched.
+    #[test]
+    fn relabel_carries_view_arrays_through() {
+        let ids: ArrayRef = Arc::new(StringViewArray::from(vec!["t1", "t2"]));
+        let after: ArrayRef = Arc::new(StructArray::from(vec![(
+            Arc::new(Field::new("col-id", DataType::Utf8View, true)),
+            ids.clone(),
+        )]));
+        let batch = RecordBatch::try_from_iter(vec![("after", after)]).unwrap();
+
+        let map = nested_physical_to_logical(&Schema::new(vec![mapped(
+            "after",
+            struct_of(vec![mapped("id", DataType::Utf8View, "col-id")]),
+            "col-after",
+        )]));
+        let relabeled = relabel_nested_columns(&batch, &map).unwrap();
+
+        let DataType::Struct(children) = relabeled.schema().field(0).data_type().clone() else {
+            panic!("`after` must stay a struct");
+        };
+        assert_eq!(children[0].name(), "id");
+        assert_eq!(
+            children[0].data_type(),
+            &DataType::Utf8View,
+            "relabeling renames fields, it must not change their types"
+        );
+
+        let after = relabeled
+            .column(0)
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+        assert_eq!(after.column(0).as_ref(), ids.as_ref());
+    }
+
+    /// A `struct<..>` data type from mapped fields.
+    fn struct_of(fields: Vec<Field>) -> DataType {
+        DataType::Struct(Fields::from(fields))
+    }
+
+    /// A `list<element: ..>` data type. The `element` field itself is not column
+    /// mapped, matching how Delta stores list elements.
+    fn list_of(element: DataType) -> DataType {
+        DataType::List(Arc::new(Field::new("element", element, true)))
+    }
+
+    /// The children of a struct-typed field, or panic.
+    fn struct_children(field: &Field) -> &Fields {
+        match field.data_type() {
+            DataType::Struct(children) => children,
+            other => panic!("expected struct, got {other:?}"),
+        }
+    }
+
+    /// The element field of a list-typed field, or panic.
+    fn list_element(field: &Field) -> &Field {
+        match field.data_type() {
+            DataType::List(element) => element,
+            other => panic!("expected list, got {other:?}"),
+        }
+    }
+
+    // The read side: nested struct children must be renamed to physical names,
+    // else the Parquet read fails the struct cast.
+    #[test]
+    fn read_schema_renames_nested_fields() {
+        let after = DataType::Struct(Fields::from(vec![
+            mapped("id", DataType::Utf8, "col-id"),
+            mapped("amount", DataType::Utf8, "col-amount"),
+        ]));
+        let physical = field_to_physical(&Arc::new(mapped("after", after, "col-after")));
+
+        assert_eq!(physical.name(), "col-after");
+        let DataType::Struct(children) = physical.data_type() else {
+            panic!("`after` must stay a struct");
+        };
+        assert_eq!(children[0].name(), "col-id");
+        assert_eq!(children[1].name(), "col-amount");
+    }
+
+    // The write side: the read batch arrives with logical top-level names but
+    // physical nested names; relabeling must restore logical nested names while
+    // preserving the data, else nested fields silently read as NULL.
+    #[test]
+    fn relabel_restores_nested_names_and_preserves_data() {
+        let ids: ArrayRef = Arc::new(StringArray::from(vec!["t1", "t2"]));
+        let amounts: ArrayRef = Arc::new(StringArray::from(vec!["10", "20"]));
+        let after: ArrayRef = Arc::new(StructArray::from(vec![
+            (
+                Arc::new(Field::new("col-id", DataType::Utf8, true)),
+                ids.clone(),
+            ),
+            (
+                Arc::new(Field::new("col-amount", DataType::Utf8, true)),
+                amounts.clone(),
+            ),
+        ]));
+        let batch = RecordBatch::try_from_iter(vec![("after", after)]).unwrap();
+
+        let map = nested_physical_to_logical(&Schema::new(vec![mapped(
+            "after",
+            DataType::Struct(Fields::from(vec![
+                mapped("id", DataType::Utf8, "col-id"),
+                mapped("amount", DataType::Utf8, "col-amount"),
+            ])),
+            "col-after",
+        )]));
+        let relabeled = relabel_nested_columns(&batch, &map).unwrap();
+
+        let DataType::Struct(children) = relabeled.schema().field(0).data_type().clone() else {
+            panic!("`after` must stay a struct");
+        };
+        assert_eq!(children[0].name(), "id");
+        assert_eq!(children[1].name(), "amount");
+
+        let after = relabeled
+            .column(0)
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+        assert_eq!(after.column(0).as_ref(), ids.as_ref());
+        assert_eq!(after.column(1).as_ref(), amounts.as_ref());
+    }
+
+    // Structs in structs: the rename must reach every level.
+    #[test]
+    fn read_schema_renames_struct_in_struct() {
+        let inner = struct_of(vec![mapped("leaf", DataType::Utf8, "col-leaf")]);
+        let outer = struct_of(vec![mapped("inner", inner, "col-inner")]);
+        let physical = field_to_physical(&Arc::new(mapped("outer", outer, "col-outer")));
+
+        assert_eq!(physical.name(), "col-outer");
+        let inner = &struct_children(&physical)[0];
+        assert_eq!(inner.name(), "col-inner");
+        assert_eq!(struct_children(inner)[0].name(), "col-leaf");
+    }
+
+    // Arrays in structs: the rename descends through the list element.
+    #[test]
+    fn read_schema_renames_array_in_struct() {
+        let outer = struct_of(vec![mapped("items", list_of(DataType::Utf8), "col-items")]);
+        let physical = field_to_physical(&Arc::new(mapped("outer", outer, "col-outer")));
+
+        // The list element itself carries no mapping, so it keeps its name; only
+        // the struct field wrapping the list is renamed.
+        let items = &struct_children(&physical)[0];
+        assert_eq!(items.name(), "col-items");
+        assert!(matches!(items.data_type(), DataType::List(_)));
+    }
+
+    // Structs in arrays: the rename descends into the list element's struct.
+    #[test]
+    fn read_schema_renames_struct_in_array() {
+        let element = struct_of(vec![mapped("id", DataType::Utf8, "col-id")]);
+        let physical = field_to_physical(&Arc::new(mapped("items", list_of(element), "col-items")));
+
+        assert_eq!(physical.name(), "col-items");
+        let element = list_element(&physical);
+        assert_eq!(struct_children(element)[0].name(), "col-id");
+    }
+
+    // Structs of structs of arrays of structs: the deepest leaf must be renamed.
+    #[test]
+    fn read_schema_renames_struct_of_struct_of_array_of_struct() {
+        let leaf = struct_of(vec![mapped("amount", DataType::Utf8, "col-amount")]);
+        let mid = struct_of(vec![mapped("rows", list_of(leaf), "col-rows")]);
+        let outer = struct_of(vec![mapped("mid", mid, "col-mid")]);
+        let physical = field_to_physical(&Arc::new(mapped("outer", outer, "col-outer")));
+
+        let mid = &struct_children(&physical)[0];
+        assert_eq!(mid.name(), "col-mid");
+        let rows = &struct_children(mid)[0];
+        assert_eq!(rows.name(), "col-rows");
+        let leaf = list_element(rows);
+        assert_eq!(struct_children(leaf)[0].name(), "col-amount");
+    }
+
+    // Structs in arrays of structs, end to end: relabeling must restore logical
+    // names inside the list element and preserve the leaf data.
+    #[test]
+    fn relabel_restores_names_inside_array_of_structs() {
+        // A list<struct<col-id: utf8>> with two lists over three elements.
+        let ids: ArrayRef = Arc::new(StringArray::from(vec!["t1", "t2", "t3"]));
+        let element_values: ArrayRef = Arc::new(StructArray::from(vec![(
+            Arc::new(Field::new("col-id", DataType::Utf8, true)),
+            ids.clone(),
+        )]));
+        let element_field = Arc::new(Field::new(
+            "element",
+            element_values.data_type().clone(),
+            true,
+        ));
+        let items: ArrayRef = Arc::new(ListArray::new(
+            element_field,
+            OffsetBuffer::new(vec![0, 2, 3].into()),
+            element_values,
+            None,
+        ));
+        let batch = RecordBatch::try_from_iter(vec![("items", items)]).unwrap();
+
+        let map = nested_physical_to_logical(&Schema::new(vec![mapped(
+            "items",
+            list_of(struct_of(vec![mapped("id", DataType::Utf8, "col-id")])),
+            "col-items",
+        )]));
+        let relabeled = relabel_nested_columns(&batch, &map).unwrap();
+
+        let schema = relabeled.schema();
+        let element = list_element(schema.field(0));
+        assert_eq!(struct_children(element)[0].name(), "id");
+
+        // The leaf data survives the relabel unchanged.
+        let list = relabeled
+            .column(0)
+            .as_any()
+            .downcast_ref::<ListArray>()
+            .unwrap();
+        let element = list
+            .values()
+            .as_any()
+            .downcast_ref::<StructArray>()
+            .unwrap();
+        assert_eq!(element.column(0).as_ref(), ids.as_ref());
     }
 }
