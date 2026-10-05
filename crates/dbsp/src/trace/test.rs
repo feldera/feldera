@@ -2,6 +2,7 @@ use crate::trace::StoragePath;
 use crate::utils::test::CIRCUIT_CASES;
 use std::{
     cmp::max,
+    collections::BTreeMap,
     sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering},
@@ -17,7 +18,7 @@ use size_of::SizeOf;
 use tempfile::tempdir;
 
 use crate::{
-    DynZWeight, Runtime, ZWeight,
+    DBData, DynZWeight, Runtime, ZWeight,
     algebra::{
         AddByRef, IndexedZSet, NegByRef, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet,
         OrdZSetFactories, ZBatch, ZSet,
@@ -41,7 +42,7 @@ use crate::{
             assert_trace_eq, test_batch_sampling, test_trace_sampling,
         },
     },
-    utils::{Tup1, Tup2, Tup3, Tup4},
+    utils::{Tup1, Tup2, Tup3, Tup4, Tup10},
 };
 
 use super::Filter;
@@ -2046,6 +2047,309 @@ fn assert_seek_key_exact_matches<B>(
     }
 }
 
+/// Walks `cursor` over an `i32`-keyed batch, checking that every key it
+/// offers archived is the key it offers decoded.
+///
+/// # Arguments
+///
+/// * `cursor` - the cursor to walk.
+///
+/// # Returns
+///
+/// How many keys the cursor holds, and how many of them it offers archived.
+fn archived_keys_offered<C>(mut cursor: C) -> (usize, usize)
+where
+    C: Cursor<DynI32, DynI32, (), DynZWeight>,
+{
+    let (mut keys, mut archived) = (0, 0);
+    while cursor.key_valid() {
+        if let Some(key) = cursor.archived_key() {
+            assert_eq!(
+                key.cmp_target(cursor.key()),
+                std::cmp::Ordering::Equal,
+                "key {keys}: the archived key is a different key from the decoded one",
+            );
+            archived += 1;
+        }
+        keys += 1;
+        cursor.step_key();
+    }
+    (keys, archived)
+}
+
+/// A cursor over a file-backed batch offers its key as it is stored, and one
+/// over a vec-backed batch does not.
+///
+/// This is what lets a merge compare and copy keys without decoding them, so
+/// the archived key has to be the same key: the merge would otherwise order
+/// its output by something other than what it wrote.  A batch's own cursor,
+/// and any cursor boxed as a `dyn Cursor`, wrap the file's, and have to hand
+/// the archived key on, or a merge built on them decodes every key.
+#[test]
+fn a_file_cursor_offers_the_same_key_archived() {
+    use std::cmp::Ordering;
+
+    let _temp_dir = tempdir().expect("Can't create temp dir for storage");
+    let mut config = mkconfig(_temp_dir.path());
+    config.storage.as_mut().unwrap().options.min_storage_bytes = Some(0);
+
+    run_in_circuit_with_storage_config(config, move || {
+        // Keys that share bytes and differ in length once archived, so that a
+        // comparison has to read past the first of them.
+        let tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>> =
+            (0..400i32).map(|i| Tup2(Tup2(i, i * 3), 1)).collect();
+
+        for location in [BatchLocation::Memory, BatchLocation::Storage] {
+            let batch = build_fallback_indexed_wset_i32_at(tuples.clone(), location);
+            let mut cursor = batch.merge_cursor(None, None);
+            let mut keys = 0;
+            while cursor.key_valid() {
+                match cursor.archived_key() {
+                    Some(archived) => {
+                        assert_eq!(
+                            location,
+                            BatchLocation::Storage,
+                            "a vec-backed batch has nothing archived to offer",
+                        );
+                        assert_eq!(
+                            archived.cmp_target(cursor.key()),
+                            Ordering::Equal,
+                            "key {keys}: the archived key is a different key from the decoded one",
+                        );
+                    }
+                    None => assert_eq!(
+                        location,
+                        BatchLocation::Memory,
+                        "a file-backed batch should offer its key archived",
+                    ),
+                }
+                keys += 1;
+                cursor.step_key();
+            }
+            assert_eq!(keys, tuples.len(), "at {location:?}");
+
+            let archived = if location == BatchLocation::Storage {
+                tuples.len()
+            } else {
+                0
+            };
+            assert_eq!(
+                archived_keys_offered(batch.cursor()),
+                (tuples.len(), archived),
+                "the batch's own cursor at {location:?}",
+            );
+            let boxed: Box<dyn Cursor<DynI32, DynI32, (), DynZWeight> + '_> =
+                Box::new(batch.cursor());
+            assert_eq!(
+                archived_keys_offered(boxed),
+                (tuples.len(), archived),
+                "a boxed cursor at {location:?}",
+            );
+        }
+    });
+}
+
+/// A key that keeps the legacy rkyv layout: eight fields or fewer.
+type LegacyTupleKey = Tup3<i32, String, i64>;
+
+/// A key in the wider v4 layout, built so that most of its fields are absent
+/// and it therefore archives sparsely, behind a bitmap, rather than densely.
+type SparseTupleKey = Tup10<
+    Option<i32>,
+    Option<i32>,
+    Option<i32>,
+    Option<i32>,
+    Option<i32>,
+    Option<i32>,
+    Option<i32>,
+    Option<i32>,
+    Option<i32>,
+    Option<i32>,
+>;
+
+/// Builds one input batch at `location`, through the merger, as the other
+/// tiered inputs here are built.
+fn build_keyed_batch_at<K>(
+    factories: &crate::trace::FallbackIndexedWSetFactories<DynData, DynI32, DynZWeight>,
+    tuples: Vec<Tup2<Tup2<K, i32>, ZWeight>>,
+    location: BatchLocation,
+) -> crate::trace::FallbackIndexedWSet<DynData, DynI32, DynZWeight>
+where
+    K: DBData,
+{
+    let mut erased: Box<DynWeightedPairs<DynPair<DynData, DynI32>, DynZWeight>> =
+        Box::new(LeanVec::from(tuples)).erase_box();
+    let initial = crate::trace::FallbackIndexedWSet::dyn_from_tuples(factories, (), &mut erased);
+    let builder = <crate::trace::FallbackIndexedWSet<DynData, DynI32, DynZWeight> as Batch>::Builder::for_merge(
+        factories,
+        [&initial],
+        Some(location),
+    );
+    ListMerger::merge(factories, builder, vec![initial.merge_cursor(None, None)])
+}
+
+/// Merges three overlapping batches held in the tiers `locations` names, and
+/// checks the result against a model built from the same tuples.
+///
+/// The tiers are the point.  A cursor over a file-backed batch offers its key
+/// as it is stored and one over a vec-backed batch offers it decoded, so a
+/// merge compares archived against archived, archived against decoded, or
+/// decoded against decoded depending on where its inputs happen to live.
+/// Running every assignment of the two tiers reaches each of those.
+fn check_mixed_location_merge<K>(key_of: impl Fn(i32) -> K, locations: [BatchLocation; 3])
+where
+    K: DBData,
+{
+    let factories = <crate::trace::FallbackIndexedWSetFactories<DynData, DynI32, DynZWeight>>::new::<
+        K,
+        i32,
+        ZWeight,
+    >();
+
+    // Overlapping key ranges, so the merge has to order keys across cursors
+    // rather than drain one input at a time, and adds the weights of the keys
+    // its inputs share.
+    let per_batch: Vec<Vec<Tup2<Tup2<K, i32>, ZWeight>>> = (0..3i32)
+        .map(|batch| {
+            (0..120i32)
+                .map(|i| {
+                    let k = (i + batch * 40) % 200;
+                    Tup2(Tup2(key_of(k), k % 5), 1)
+                })
+                .collect()
+        })
+        .collect();
+
+    let mut model: BTreeMap<(K, i32), ZWeight> = BTreeMap::new();
+    for tuples in &per_batch {
+        for Tup2(Tup2(key, val), weight) in tuples {
+            *model.entry((key.clone(), *val)).or_default() += weight;
+        }
+    }
+    model.retain(|_, weight| *weight != 0);
+
+    let inputs: Vec<_> = per_batch
+        .into_iter()
+        .zip(locations)
+        .map(|(tuples, location)| build_keyed_batch_at(&factories, tuples, location))
+        .collect();
+    for (input, location) in inputs.iter().zip(locations) {
+        assert_eq!(
+            input.location(),
+            location,
+            "an input batch did not land in the tier it was asked for",
+        );
+    }
+
+    let builder = <crate::trace::FallbackIndexedWSet<DynData, DynI32, DynZWeight> as Batch>::Builder::for_merge(
+        &factories,
+        inputs.iter().collect::<Vec<_>>(),
+        Some(BatchLocation::Storage),
+    );
+    let cursors: Vec<_> = inputs.iter().map(|b| b.merge_cursor(None, None)).collect();
+    let merged: crate::trace::FallbackIndexedWSet<DynData, DynI32, DynZWeight> =
+        ListMerger::merge(&factories, builder, cursors);
+
+    let mut got: Vec<((K, i32), ZWeight)> = Vec::new();
+    let mut cursor = merged.cursor();
+    while cursor.key_valid() {
+        while cursor.val_valid() {
+            got.push((
+                (unsafe { cursor.key().downcast::<K>() }.clone(), *unsafe {
+                    cursor.val().downcast::<i32>()
+                }),
+                **cursor.weight(),
+            ));
+            cursor.step_val();
+        }
+        cursor.step_key();
+    }
+
+    let want: Vec<((K, i32), ZWeight)> = model.into_iter().collect();
+    assert_eq!(got, want, "merged contents differ for tiers {locations:?}");
+}
+
+/// The merge orders its keys correctly whichever tiers its inputs are in, for
+/// keys of every shape the storage format stores differently.
+///
+/// The shapes are what make this more than a repeat of the i32 merges above:
+/// a string is held out of line, a UUID is sixteen inline bytes, a narrow
+/// tuple keeps the legacy layout, and a wide tuple of mostly-absent fields
+/// archives sparsely.  An i32 key is none of these -- it is a fixed-size
+/// inline integer -- so it exercises only the simplest way a key can be read
+/// back out of a block.
+#[test]
+fn a_merge_orders_keys_of_every_shape_across_mixed_tiers() {
+    let _temp_dir = tempdir().expect("Can't create temp dir for storage");
+    let mut config = mkconfig(_temp_dir.path());
+    config.storage.as_mut().unwrap().options.min_storage_bytes = Some(0);
+
+    run_in_circuit_with_storage_config(config, move || {
+        for tiers in 0..8u8 {
+            let locations = [0, 1, 2].map(|i| {
+                if tiers & (1 << i) == 0 {
+                    BatchLocation::Memory
+                } else {
+                    BatchLocation::Storage
+                }
+            });
+
+            // Out of line, and long enough that a comparison reads past the
+            // first bytes of it.
+            check_mixed_location_merge(
+                |k| format!("key-{k:06}-{}", "x".repeat(k as usize % 23)),
+                locations,
+            );
+            // Sixteen inline bytes, ordered as one wide integer.
+            check_mixed_location_merge(|k| u128::from(k as u32) << 64, locations);
+            // Variable-length bytes that are not a string.
+            check_mixed_location_merge(
+                |k| {
+                    (0..=(k as u8 % 19))
+                        .map(|b| b ^ (k as u8))
+                        .collect::<Vec<u8>>()
+                },
+                locations,
+            );
+            // An enum key, whose discriminant rkyv narrows.  `Option`'s
+            // `HashRepr` still hashes it the way the decoded one hashes, so a
+            // merge copies these keys.
+            check_mixed_location_merge(
+                |k| {
+                    if k % 4 == 0 {
+                        None
+                    } else {
+                        Some(i64::from(k) * 31)
+                    }
+                },
+                locations,
+            );
+            check_mixed_location_merge(
+                |k| LegacyTupleKey::new(k, format!("v{k:04}"), i64::from(k) * 7),
+                locations,
+            );
+            // Eight of ten fields absent, which is what puts it over the
+            // threshold for the sparse layout.
+            check_mixed_location_merge(
+                |k| {
+                    SparseTupleKey::new(
+                        Some(k),
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        Some(k % 7),
+                    )
+                },
+                locations,
+            );
+        }
+    });
+}
 /// Shared body for `indexed_wset_storage_merges_*` proptests. Generates
 /// inputs as a vec/file mix, runs `ListMerger::merge` to file storage, and
 /// validates the merged batch against a `TestBatch` reference. The input

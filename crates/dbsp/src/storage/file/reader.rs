@@ -39,6 +39,7 @@ use feldera_storage::StoragePath;
 use feldera_storage::file::FileId;
 use size_of::SizeOf;
 use snap::raw::{Decoder, decompress_len};
+use std::cell::{Cell, UnsafeCell};
 use std::mem::replace;
 use std::ops::Index;
 use std::time::Instant;
@@ -2268,13 +2269,16 @@ where
 
     /// # Safety
     ///
-    /// Unsafe because `rkyv` deserialization is unsafe.
+    /// Unsafe because the cursor reads archived values, and does so from safe
+    /// methods: constructing one is where the caller promises the file is
+    /// well formed, and [`Cursor::key`] and [`Cursor::archived_key`] rely on
+    /// that promise rather than asking again.
     unsafe fn cursor(&self, position: Position<K, A>) -> Cursor<'a, K, A, N, T> {
-        let mut key = self.factories.key_factory.default_box();
-        unsafe { position.key(&self.factories, &mut key) };
         Cursor {
             row_group: self.clone(),
-            key,
+            key: UnsafeCell::new(self.factories.key_factory.default_box()),
+            decoded: Cell::new(false),
+            archived: Cell::new(None),
             position,
             scratch: None,
         }
@@ -2478,6 +2482,27 @@ where
     }
 }
 
+/// Where a cursor's archived key lies, kept so that asking for the key again
+/// does not look it up again.
+///
+/// It points into the data block the cursor's position holds, so it stays
+/// valid for as long as the cursor stays where it is.
+struct ArchivedKeyPtr<T: ?Sized>(*const T);
+
+impl<T: ?Sized> Clone for ArchivedKeyPtr<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T: ?Sized> Copy for ArchivedKeyPtr<T> {}
+
+// SAFETY: only the cursor that set the pointer dereferences it, and only while
+// it holds the block the pointer points into.  Moving the cursor to another
+// thread moves that block's owner with it, and the archived bytes are never
+// written once the block is built.
+unsafe impl<T: ?Sized> Send for ArchivedKeyPtr<T> {}
+
 /// A cursor for a layer file.
 ///
 /// A cursor traverses a [`RowGroup`].  It can be positioned on a particular row
@@ -2491,9 +2516,21 @@ where
     row_group: RowGroup<'a, K, A, N, T>,
     position: Position<K, A>,
 
-    /// When `position.has_value()`, this is the deserialized key at that row.
-    /// Otherwise, it can have any value.
-    key: Box<K>,
+    /// The decoded key at `position`, or any value at all when `decoded` is
+    /// `false`.
+    ///
+    /// Decoded on demand rather than on every move.
+    key: UnsafeCell<Box<K>>,
+
+    /// Whether `key` holds the key at `position`.
+    decoded: Cell<bool>,
+
+    /// The archived key at `position`, once [`archived_key`](Self::archived_key)
+    /// has found it; every move clears it.
+    ///
+    /// Finding the key takes a value-map lookup and two dynamic calls, and a
+    /// merge compares the same cursor's key several times before moving it.
+    archived: Cell<Option<ArchivedKeyPtr<K::Archived>>>,
 
     /// Where a predicate seek deserializes each probed key.  Allocated by the
     /// first such seek and kept for the next, so that a seek per input record
@@ -2509,7 +2546,17 @@ where
     fn clone(&self) -> Self {
         Self {
             row_group: self.row_group.clone(),
-            key: clone_box(&self.key),
+            // SAFETY: no fill can be in flight while this reads the cell.
+            // `key` fills through `&self`, so holding `&self` is no barrier
+            // by itself.  What keeps the two apart is that the `UnsafeCell`
+            // makes `Cursor` `!Sync`, so no other thread can hold the
+            // `&Cursor` a call to `key` would need, and that nothing
+            // reachable from here calls `key`, which rules out a re-entrant
+            // fill on this thread.  A `Sync` impl for `Cursor` would break
+            // this.
+            key: UnsafeCell::new(clone_box(unsafe { &**self.key.get() })),
+            decoded: self.decoded.clone(),
+            archived: Cell::new(None),
             position: self.position.clone(),
             // A cache, so the clone allocates its own when it needs one.
             scratch: None,
@@ -2542,7 +2589,8 @@ where
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn move_next(&mut self) -> Result<(), Error> {
         self.position.next(&self.row_group)?;
-        unsafe { self.position.key(&self.row_group.factories, &mut self.key) };
+        self.decoded.set(false);
+        self.archived.set(None);
         Ok(())
     }
 
@@ -2555,7 +2603,8 @@ where
     /// Unsafe because `rkyv` deserialization is unsafe.
     pub unsafe fn move_prev(&mut self) -> Result<(), Error> {
         self.position.prev(&self.row_group)?;
-        unsafe { self.position.key(&self.row_group.factories, &mut self.key) };
+        self.decoded.set(false);
+        self.archived.set(None);
         Ok(())
     }
 
@@ -2568,7 +2617,8 @@ where
     pub unsafe fn move_first(&mut self) -> Result<(), Error> {
         self.position
             .move_to_row(&self.row_group, self.row_group.rows.start)?;
-        unsafe { self.position.key(&self.row_group.factories, &mut self.key) };
+        self.decoded.set(false);
+        self.archived.set(None);
         Ok(())
     }
 
@@ -2582,10 +2632,11 @@ where
         if !self.row_group.is_empty() {
             self.position
                 .move_to_row(&self.row_group, self.row_group.rows.end - 1)?;
-            unsafe { self.position.key(&self.row_group.factories, &mut self.key) };
         } else {
             self.position = Position::After { hint: None };
         }
+        self.decoded.set(false);
+        self.archived.set(None);
         Ok(())
     }
 
@@ -2598,17 +2649,65 @@ where
         if row < self.row_group.rows.end - self.row_group.rows.start {
             self.position
                 .move_to_row(&self.row_group, self.row_group.rows.start + row)?;
-            unsafe { self.position.key(&self.row_group.factories, &mut self.key) };
         } else {
             self.position.move_after();
         }
+        self.decoded.set(false);
+        self.archived.set(None);
         Ok(())
     }
 
     /// Returns the key in the current row, or `None` if the cursor is before or
     /// after the row group.
+    ///
+    /// Decodes it if this is the first ask since the cursor moved.  Prefer
+    /// [`archived_key`](Self::archived_key) where the caller can work with
+    /// the key as stored, which is what a merge does.
     pub fn key(&self) -> Option<&K> {
-        self.has_value().then_some(&*self.key)
+        if !self.has_value() {
+            return None;
+        }
+        if !self.decoded.get() {
+            // SAFETY: two obligations.
+            //
+            // Decoding is unsafe, and the obligation is the one every `move_`
+            // method on this cursor already carries and documents; moving is
+            // what put the cursor on this row.
+            //
+            // The write through the cell cannot alias a reference handed out
+            // earlier: it happens only while `decoded` is false, which only a
+            // `&mut self` move sets, and no `&K` from a previous call can
+            // outlive that move.
+            unsafe {
+                let key = &mut **self.key.get();
+                self.position.key(&self.row_group.factories, key);
+            }
+            self.decoded.set(true);
+        }
+        // SAFETY: filled just above, and nothing mutates it while `decoded`
+        // stays true.
+        Some(unsafe { &**self.key.get() })
+    }
+
+    /// Returns the key in the current row as it is stored, or `None` if the
+    /// cursor is before or after the row group.
+    ///
+    /// Costs nothing beyond finding the row: the key is read where it lies
+    /// rather than decoded into this cursor.  It compares against another
+    /// archived key with [`Ord`], and against a decoded one with
+    /// [`cmp_target`](crate::dynamic::DeserializeDyn::cmp_target).
+    pub fn archived_key(&self) -> Option<&K::Archived> {
+        if let Some(ArchivedKeyPtr(key)) = self.archived.get() {
+            // SAFETY: set below from the key at this position, which has not
+            // changed since, because every move clears the cache; the key lies
+            // in the data block the position holds.
+            return Some(unsafe { &*key });
+        }
+        // SAFETY: the same obligation as `key` above, discharged by the
+        // `move_` method that put the cursor here.
+        let key = unsafe { self.position.archived_key(&self.row_group.factories) }?;
+        self.archived.set(Some(ArchivedKeyPtr(key as *const _)));
+        Some(key)
     }
 
     /// Returns the auxiliary data in the current row, or `None` if the cursor
@@ -2695,9 +2794,14 @@ where
             row_group,
             position,
             key,
+            decoded,
+            archived,
             scratch,
         } = self;
         let scratch = scratch.get_or_insert_with(|| row_group.factories.key_factory.default_box());
+        // The search moves the cursor, invalidating the key.
+        decoded.set(false);
+        archived.set(None);
         // SAFETY: the caller's obligation (see `# Safety`) is the one that
         // `Position::advance_to_first_ge` has; the closure itself only calls
         // safe methods on the archived key it is handed.
@@ -2708,7 +2812,7 @@ where
                     archived.deserialize(&mut **scratch);
                     if predicate(&**scratch) { Less } else { Greater }
                 },
-                &mut **key,
+                key.get_mut(),
             )
         }
     }
@@ -2746,9 +2850,11 @@ where
     where
         C: FnMut(&K::Archived) -> Ordering,
     {
+        self.decoded.set(false);
+        self.archived.set(None);
         unsafe {
             self.position
-                .advance_to_first_ge(&self.row_group, compare, &mut *self.key)
+                .advance_to_first_ge(&self.row_group, compare, self.key.get_mut())
         }
     }
 
@@ -2771,9 +2877,14 @@ where
             row_group,
             position,
             key,
+            decoded,
+            archived,
             scratch,
         } = self;
         let scratch = scratch.get_or_insert_with(|| row_group.factories.key_factory.default_box());
+        // The search moves the cursor, invalidating the key.
+        decoded.set(false);
+        archived.set(None);
         // SAFETY: as in `seek_forward_until`: the caller's obligation is the
         // one that `Position::rewind_to_last_le` has, and the closure is
         // safe code.
@@ -2788,7 +2899,7 @@ where
                         Greater
                     }
                 },
-                &mut **key,
+                key.get_mut(),
             )
         }
     }
@@ -2824,9 +2935,11 @@ where
     where
         C: FnMut(&K::Archived) -> Ordering,
     {
+        self.decoded.set(false);
+        self.archived.set(None);
         unsafe {
             self.position
-                .rewind_to_last_le(&self.row_group, compare, &mut *self.key)
+                .rewind_to_last_le(&self.row_group, compare, self.key.get_mut())
         }
     }
 }
@@ -2997,6 +3110,11 @@ where
     }
     unsafe fn archived_item(&self, factories: &Factories<K, A>) -> &dyn ArchivedItem<'_, K, A> {
         unsafe { self.data.archived_item_for_row(factories, self.row) }
+    }
+    unsafe fn archived_key(&self, factories: &Factories<K, A>) -> &K::Archived {
+        // SAFETY: the caller's obligation, the same as for `archived_item`:
+        // the file is well formed and this path's row is in its data block.
+        unsafe { self.archived_item(factories).fst() }
     }
 
     fn row_group(&self) -> Result<Range<u64>, Error> {
@@ -3406,6 +3524,15 @@ where
                 key
             })
         }
+    }
+
+    /// The key in the current row as it is stored, without decoding it.
+    ///
+    /// # Safety
+    ///
+    /// Unsafe because reading an archived value is unsafe.
+    pub unsafe fn archived_key(&self, factories: &Factories<K, A>) -> Option<&K::Archived> {
+        unsafe { self.path().map(|path| path.archived_key(factories)) }
     }
     /// # Safety
     ///

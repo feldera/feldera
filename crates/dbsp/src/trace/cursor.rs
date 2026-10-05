@@ -21,7 +21,7 @@ pub use saturating_cursor::SaturatingCursor;
 pub use reverse::ReverseKeyCursor;
 use size_of::SizeOf;
 
-use crate::dynamic::{DataTrait, Factory};
+use crate::dynamic::{ArchiveTrait, DataTrait, Factory};
 
 use super::BatchReader;
 use super::{Filter, GroupFilter};
@@ -135,6 +135,17 @@ pub trait Cursor<K: ?Sized, V: ?Sized, T, R: ?Sized> {
 
     /// A reference to the current key. Panics if invalid.
     fn key(&self) -> &K;
+
+    /// The current key as it is stored, for a cursor over a batch that keeps
+    /// its keys archived, or `None` for one that keeps them decoded.
+    ///
+    /// See [`MergeCursor::archived_key`], which a merge reaches this through.
+    fn archived_key(&self) -> Option<&<K as ArchiveTrait>::Archived>
+    where
+        K: ArchiveTrait,
+    {
+        None
+    }
 
     /// A reference to the current value. Panics if invalid.
     fn val(&self) -> &V;
@@ -441,6 +452,16 @@ where
         (**self).val()
     }
 
+    // What a merge needs to compare keys without decoding them, passed on:
+    // the trait's default offers nothing, and a merge built on a wrapper that
+    // kept it would decode every key it compares.
+    fn archived_key(&self) -> Option<&<K as ArchiveTrait>::Archived>
+    where
+        K: ArchiveTrait,
+    {
+        (**self).archived_key()
+    }
+
     fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
         (**self).map_times(logic)
     }
@@ -617,6 +638,16 @@ where
         self.0.val()
     }
 
+    // What a merge needs to compare keys without decoding them, passed on:
+    // the trait's default offers nothing, and a merge built on a wrapper that
+    // kept it would decode every key it compares.
+    fn archived_key(&self) -> Option<&<K as ArchiveTrait>::Archived>
+    where
+        K: ArchiveTrait,
+    {
+        self.0.archived_key()
+    }
+
     fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
         self.0.map_times(logic)
     }
@@ -745,6 +776,16 @@ where
         self.val_valid().then(|| self.val())
     }
     fn key(&self) -> &K;
+
+    /// The current key as it is stored, for a cursor that holds its keys
+    /// archived, or `None` for one that holds them decoded.
+    fn archived_key(&self) -> Option<&<K as ArchiveTrait>::Archived>
+    where
+        K: ArchiveTrait,
+    {
+        None
+    }
+
     fn val(&self) -> &V;
     fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R));
     fn weight(&mut self) -> &R
@@ -777,6 +818,13 @@ where
     V: ?Sized,
     R: ?Sized,
 {
+    fn archived_key(&self) -> Option<&<K as ArchiveTrait>::Archived>
+    where
+        K: ArchiveTrait,
+    {
+        (**self).archived_key()
+    }
+
     fn key_valid(&self) -> bool {
         (**self).key_valid()
     }
@@ -905,6 +953,13 @@ where
     T: 'static,
     C: Cursor<K, V, T, R>,
 {
+    fn archived_key(&self) -> Option<&<K as ArchiveTrait>::Archived>
+    where
+        K: ArchiveTrait,
+    {
+        self.cursor.archived_key()
+    }
+
     fn key_valid(&self) -> bool {
         self.cursor.key_valid()
     }
@@ -1014,6 +1069,13 @@ where
     T: 'static,
     C: Cursor<K, V, T, R>,
 {
+    fn archived_key(&self) -> Option<&<K as ArchiveTrait>::Archived>
+    where
+        K: ArchiveTrait,
+    {
+        self.cursor.archived_key()
+    }
+
     fn key_valid(&self) -> bool {
         self.cursor.key_valid()
     }
@@ -1345,6 +1407,13 @@ where
     R: ?Sized,
     C: Cursor<K, V, T, R>,
 {
+    fn archived_key(&self) -> Option<&<K as ArchiveTrait>::Archived>
+    where
+        K: ArchiveTrait,
+    {
+        self.cursor.archived_key()
+    }
+
     fn key_valid(&self) -> bool {
         self.cursor.key_valid()
     }
