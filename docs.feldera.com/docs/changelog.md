@@ -25,6 +25,13 @@ Source edition can be found on github.
   a separate view without `emit_final` and use that view instead.  See
   [`emit_final`](/tutorials/time-series#emitting-final-values-of-a-view-with-emit_final).
 
+- Incompatible change (ad-hoc queries): the `hash` result format, and
+  `Pipeline.query_hash()` in the Python SDK, return a different hash for
+  every query.  The hash is computed by DataFusion, which this release
+  upgrades, so the same rows now hash to a different value.  A hash
+  identifies a result set within one Feldera release: compare hashes taken
+  from the same release.
+
 ## v0.360.0
 
 - Storage now uses LZ4 compression by default, instead of Snappy.  LZ4

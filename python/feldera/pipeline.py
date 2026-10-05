@@ -1546,6 +1546,12 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
             For a stable hash, the query must be deterministic which means
             it should be sorted.
 
+        Note:
+            The hash identifies a result set within one Feldera release. It
+            is built on DataFusion's row hash, so a Feldera upgrade can
+            change it for unchanged data; compare hashes taken from the same
+            release.
+
         :param query: The SQL query to be executed.
 
         :raises FelderaAPIError: If the pipeline is not in a RUNNING or PAUSED
