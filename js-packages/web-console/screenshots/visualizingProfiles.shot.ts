@@ -2,11 +2,12 @@
 // Each test sets up one state of the UI, then compares it with the image in the docs.
 
 import { expect, type Locator, type Page } from '@playwright/test'
-import { annotate, type Box, boxOf, grow, union } from './annotate'
+import { annotate, type Box, boxOf, clearAnnotations, grow, union } from './annotate'
 import { docsImage, expectClip as expectDocsClip, waitForTransitions } from './capture'
 import {
   afterLayout,
   centerOn,
+  chipBoxes,
   fitTo,
   nodeBox,
   test,
@@ -110,7 +111,7 @@ test.describe('The profile viewer', () => {
       {
         kind: 'frame',
         box: grow(await boxOf(page.getByTestId('visualizer-diagram')), -4),
-        label: 'Circuit diagram',
+        label: 'Dataflow graph',
         side: 'bottom'
       },
       { kind: 'frame', box: grow(await boxOf(sql), -2), label: 'SQL', side: 'top' },
@@ -169,13 +170,31 @@ test.describe('The profile viewer', () => {
     await parkPointer(page)
     await centerOn(page, REGION, 1)
     const collapsed = await nodeBox(page, REGION)
+    const chips = await chipBoxes(page, REGION)
+    // Room right of the node for the labels.
+    const clip = grow(union(collapsed, { ...chips.counter, width: chips.counter.width + 130 }), 40)
+    await annotate(page, [
+      { kind: 'frame', box: grow(chips.code, 2), label: 'Code chip', side: 'right' },
+      { kind: 'frame', box: grow(chips.counter, 2), label: 'Child count chip', side: 'right' }
+    ])
+    await expectClip(page, 'region-collapsed.png', clip)
+    await clearAnnotations(page)
     const { x, y } = center(collapsed)
     // The pointer on the region, so that it glows as a hovered node does. It first moves to an empty
-    // spot of the diagram: the diagram still has the region as hovered, from the double-click, and
-    // fires no new hover for it.
+    // spot of the dataflow graph: the graph still has the region as hovered, from the double-click,
+    // and fires no new hover for it.
     await page.mouse.move(collapsed.x - 40, collapsed.y - 40)
     await page.mouse.move(x, y)
-    await expectClip(page, 'region-collapsed.png', grow(collapsed, 60))
+    await annotate(page, [
+      { kind: 'frame', box: grow(chips.counter, 2), label: 'Expand', side: 'right' },
+      {
+        kind: 'arrow',
+        from: { x: collapsed.x + 30, y: collapsed.y + collapsed.height + 30 },
+        to: { x: collapsed.x + 30, y: collapsed.y + collapsed.height + 6 },
+        label: 'Glow'
+      }
+    ])
+    await expectClip(page, 'region-collapsed-hover.png', clip)
     // The next tests share the viewer, and expect the region expanded.
     await afterLayout(page, () => page.mouse.dblclick(x, y))
   })
@@ -238,7 +257,7 @@ test.describe('The Metrics tab', () => {
         {
           kind: 'callout',
           box: await first(analysis.locator('.bar-chart')),
-          label: 'Bars',
+          label: 'Histogram',
           x: labelX
         },
         { kind: 'frame', box: await first(analysis.getByText(/^Skew/)), label: 'Skew', side: 'top' }
@@ -264,6 +283,21 @@ test.describe('The Metrics tab', () => {
       width: panel.width,
       height: Math.min(listBox.y + listBox.height + 16 - panel.y, panel.height)
     })
+  })
+
+  test('searching in a tab', async ({ page }) => {
+    const analysis = panes(page).analysis
+    const button = analysis.getByRole('button', { name: 'Search', exact: true })
+    await button.click()
+    const input = analysis.getByPlaceholder('Search metrics')
+    await input.fill('records')
+    await input.press('Enter')
+    await waitForTransitions(analysis)
+    await parkPointer(page)
+    await annotate(page, [{ kind: 'frame', box: grow(await boxOf(button), 2) }])
+    await expectAnalysis(page, 'search-tab.png')
+    // The next tests share the viewer, and expect the search closed.
+    await input.press('Escape')
   })
 
   test('the top nodes', async ({ page }) => {
