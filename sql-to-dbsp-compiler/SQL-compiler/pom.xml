@@ -20,7 +20,7 @@
         <jackson.version>2.22.3</jackson.version>
         <janino.version>3.1.12</janino.version>
         <project.version>0.365.0</project.version>
-        <avatica.version>1.28.0</avatica.version>
+        <avatica.version>1.29.0</avatica.version>
     </properties>
 
     <repositories>
