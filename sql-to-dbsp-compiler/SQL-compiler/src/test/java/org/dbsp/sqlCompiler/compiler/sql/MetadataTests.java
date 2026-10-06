@@ -252,7 +252,7 @@ public class MetadataTests extends BaseSQLTests {
         TestUtil.assertMessagesContain(compiler, """
                 Format argument does not look like a format string.
                     1|CREATE VIEW V AS SELECT PARSE_TIMESTAMP(10, '%s');
-                                                              ^^""");
+                                              ^^^^^^^^^^^^^^^^^^^^^^^^^""");
 
         compiler = this.chattyCompiler();
         compiler.submitStatementsForCompilation("CREATE VIEW V AS SELECT PARSE_TIMESTAMP('10', '%s');");

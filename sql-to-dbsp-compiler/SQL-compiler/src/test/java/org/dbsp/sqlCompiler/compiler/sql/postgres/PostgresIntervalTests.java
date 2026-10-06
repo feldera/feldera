@@ -622,7 +622,19 @@ public class PostgresIntervalTests extends SqlIoTest {
                 ---
                  +1 02:03:04.500000
                 (1 row)
-                
+
+                SELECT CAST(INTERVAL '1 02:03:04.123456' DAYS TO SECONDS AS VARCHAR);
+                 x
+                ---
+                 +1 02:03:04.123456
+                (1 row)
+
+                SELECT CAST(INTERVAL '1.123456' SECONDS AS VARCHAR);
+                 x
+                ---
+                 +1.123456
+                (1 row)
+
                 SELECT CAST(INTERVAL '1' DAYS AS VARCHAR);
                  x
                 ---

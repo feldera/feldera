@@ -797,9 +797,36 @@ public class WindowTests extends ScottBaseTests {
                 (14 rows)""");
     }
 
-    /** LAG and LEAD reject a default value that is not a window constant. */
+    /** LEAD and LAG with default values supplied as casts of literals;
+     * LAG and LEAD reject a default value that is not a window constant. */
     @Test
     public void issue7388() {
+        // Validated on Postgres
+        var ccs = this.getCCS("""
+                CREATE TABLE t (id BIGINT, grp BIGINT, ord_col DATE, val DECIMAL(10,2));
+                CREATE VIEW v AS SELECT id,
+                    SUM(val) OVER (PARTITION BY grp ORDER BY ord_col ROWS BETWEEN 3 PRECEDING AND CURRENT ROW) AS rolling_sum,
+                    LEAD(ord_col, 1, CAST('9999-12-31' AS DATE)) OVER (PARTITION BY grp ORDER BY ord_col ASC) AS next_date,
+                    LAG(ord_col, 1, CAST('0001-01-01' AS DATE)) OVER (PARTITION BY grp ORDER BY ord_col) AS prev_date
+                FROM t;""");
+        ccs.stepWeightOne("""
+                INSERT INTO t VALUES
+                    (1, 1, '2024-01-01', 10.00),
+                    (2, 1, '2024-02-01', 20.00),
+                    (3, 1, '2024-03-01', 30.00),
+                    (4, 1, '2024-04-01', 40.00),
+                    (5, 1, '2024-05-01', 50.00),
+                    (6, 2, '2024-01-15', 5.50),
+                    (7, 2, '2024-02-15', NULL);""", """
+                 id | rolling_sum | next_date  | prev_date
+                ---------------------------------------------------------------------
+                 1  | 10.00       | 2024-02-01 | 0001-01-01
+                 2  | 30.00       | 2024-03-01 | 2024-01-01
+                 3  | 60.00       | 2024-04-01 | 2024-02-01
+                 4  | 100.00      | 2024-05-01 | 2024-03-01
+                 5  | 140.00      | 9999-12-31 | 2024-04-01
+                 6  | 5.50        | 2024-02-15 | 0001-01-01
+                 7  | 5.50        | 9999-12-31 | 2024-01-15""");
         this.statementsFailingInCompilation("""
                 CREATE TABLE t (id BIGINT, grp BIGINT, ord_col DATE, val DECIMAL(10,2));
                 CREATE VIEW v AS SELECT id,
