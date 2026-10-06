@@ -259,9 +259,10 @@ where
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use crate::{
-        Circuit, Runtime, Stream, operator::Generator, typed_batch::OrdZSet, utils::Tup2, zset,
+        Circuit, Runtime, Stream, circuit::CircuitConfig, operator::Generator,
+        typed_batch::OrdZSet, utils::Tup2, zset,
     };
     use std::{
         thread,
@@ -269,10 +270,30 @@ mod test {
         vec,
     };
 
+    /// Configuration for a recursion test.
+    ///
+    /// Operators split their outputs into chunks of two records, so that even
+    /// small inputs produce iterations whose output arrives over several steps,
+    /// as large inputs do in production.  A nested circuit feeds the first
+    /// chunks back before the iteration ends, a path that whole outputs never
+    /// take.
+    ///
+    /// # Arguments
+    ///
+    /// * `workers` - number of worker threads.
+    ///
+    /// # Returns
+    ///
+    /// The configuration, ready for further settings.
+    pub(crate) fn recursion_test_config(workers: usize) -> CircuitConfig {
+        CircuitConfig::from(workers).with_splitter_chunk_size_records(2)
+    }
+
     // See https://github.com/feldera/feldera/issues/4168
     #[test]
     fn issue4168() {
-        let (mut circuit, edges_handle) = Runtime::init_circuit(8, move |circuit| {
+        let config = recursion_test_config(8);
+        let (mut circuit, edges_handle) = Runtime::init_circuit(config, move |circuit| {
             let (edges_stream, edges_handle) = circuit.add_input_zset::<Tup2<u64, u64>>();
 
             // Create two identical recursive fragments. issue4168 caused them to deadlock.
@@ -336,7 +357,8 @@ mod test {
             .map(|i| Tup2(Tup2(i, i + 1), -1))
             .collect::<Vec<_>>();
 
-        let (mut root, (edges_handle, paths_handle)) = Runtime::init_circuit(1, move |circuit| {
+        let config = recursion_test_config(1);
+        let (mut root, (edges_handle, paths_handle)) = Runtime::init_circuit(config, |circuit| {
             let (edges, edges_handle) = circuit.add_input_zset::<Tup2<u64, u64>>();
 
             let paths = circuit
@@ -370,21 +392,21 @@ mod test {
         }
     }
 
-    mod reachability {
+    pub(crate) mod reachability {
         use super::*;
         use crate::{
             DBSPHandle, FallbackZSet, OutputHandle, RootCircuit,
             algebra::AddByRef,
-            circuit::{CircuitConfig, CircuitStorageConfig, Mode, StorageConfig},
+            circuit::{CircuitStorageConfig, Mode, StorageConfig},
             typed_batch::SpineSnapshot,
         };
         use std::ops::Range;
         use uuid::Uuid;
 
-        type Edge = Tup2<usize, usize>;
+        pub(crate) type Edge = Tup2<usize, usize>;
 
         /// Changes to the edges relation.
-        fn edges_data() -> Vec<OrdZSet<Edge>> {
+        pub(crate) fn edges_data() -> Vec<OrdZSet<Edge>> {
             vec![
                 zset! { Tup2(1, 2) => 1 },
                 zset! { Tup2(2, 3) => 1},
@@ -398,7 +420,7 @@ mod test {
         }
 
         /// Expected output to the reachable relation.
-        fn expected_reachable() -> Vec<OrdZSet<Edge>> {
+        pub(crate) fn expected_reachable() -> Vec<OrdZSet<Edge>> {
             vec![
                 zset! { Tup2(1, 2) => 1 },
                 zset! { Tup2(1, 2) => 1, Tup2(2, 3) => 1, Tup2(1, 3) => 1 },
@@ -421,7 +443,7 @@ mod test {
 
         /// Output of one recursive relation: the changes it makes in each
         /// transaction.
-        type Deltas = OutputHandle<SpineSnapshot<OrdZSet<Edge>>>;
+        pub(crate) type Deltas = OutputHandle<SpineSnapshot<OrdZSet<Edge>>>;
 
         /// Runs a reachability circuit over [`edges_data`], checkpointing it
         /// halfway through and restarting it from that checkpoint.
@@ -438,7 +460,7 @@ mod test {
         /// backfill: the checkpoint is the only place that state can come from.
         /// A scope that came back empty computes the wrong changes and fails
         /// the comparison.
-        fn checkpoint_and_restart<F>(build: F)
+        pub(crate) fn checkpoint_and_restart<F>(build: F)
         where
             F: Fn(&mut RootCircuit, usize) -> Vec<Deltas> + Clone + Send + Sync + 'static,
         {
@@ -448,7 +470,7 @@ mod test {
             let path = tempfile::tempdir().unwrap().keep();
 
             let config = |init_checkpoint: Option<Uuid>| {
-                CircuitConfig::with_workers(1)
+                recursion_test_config(1)
                     .with_mode(Mode::Persistent)
                     .with_storage(Some(
                         CircuitStorageConfig::for_config(

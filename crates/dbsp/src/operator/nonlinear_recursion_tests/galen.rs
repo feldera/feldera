@@ -28,8 +28,8 @@ use std::collections::BTreeSet;
 use proptest::prelude::*;
 
 use super::harness::{
-    Program, Transaction, ZSet, any_config, apply_proposals, check, configs, fixpoint, map_steps,
-    proposals, read_zset, set_after, set_zset, workloads,
+    Program, RecursionApi, RecursiveWith, Transaction, ZSet, any_config, apply_proposals, check,
+    configs, fixpoint, map_steps, proposals, read_zset, set_after, set_zset, workloads,
 };
 use crate::{
     OutputHandle, RootCircuit, Stream, ZSetHandle, ZWeight,
@@ -66,7 +66,7 @@ impl Program for Galen {
     );
     type Output = (ZSet<Pair>, ZSet<Triple>);
 
-    fn build(&self, circuit: &mut RootCircuit) -> Self::Handles {
+    fn build(&self, circuit: &mut RootCircuit, api: RecursionApi) -> Self::Handles {
         let (p, p_handle) = circuit.add_input_zset::<Pair>();
         let (q, q_handle) = circuit.add_input_zset::<Triple>();
         let (r, r_handle) = circuit.add_input_zset::<Triple>();
@@ -74,7 +74,8 @@ impl Program for Galen {
         let (u, u_handle) = circuit.add_input_zset::<Triple>();
         let (s, s_handle) = circuit.add_input_zset::<Pair>();
         let (p_out, q_out) = circuit
-            .recursive(
+            .recursive_with(
+                api,
                 |child, (p_var, q_var): (Stream<_, OrdZSet<Pair>>, Stream<_, OrdZSet<Triple>>)| {
                     let p_by_1 = p_var.map_index(|Tup2(x, y)| (*x, *y));
                     let p_by_2 = p_var.map_index(|Tup2(x, y)| (*y, *x));
