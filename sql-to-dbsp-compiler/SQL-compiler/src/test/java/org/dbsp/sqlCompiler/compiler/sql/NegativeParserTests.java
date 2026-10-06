@@ -80,6 +80,28 @@ public class NegativeParserTests extends BaseSQLTests {
     }
 
     @Test
+    public void defaultValueErrorPosition() {
+        // The message names the position of the literal in the program, and the error once
+        String ddl = """
+                CREATE TABLE T (
+                    a DOUBLE DEFAULT 1e400
+                );""";
+        this.statementsFailingInCompilation(ddl,
+                "From line 2, column 22 to line 2, column 26: Numeric literal '1E400' out of range\n");
+    }
+
+    @Test
+    public void latenessErrorPosition() {
+        // The message names the position of the lateness expression in the program
+        String ddl = """
+                CREATE TABLE T (
+                    ts TIMESTAMP LATENESS INTERVAL 1e400 SECONDS
+                );""";
+        this.statementsFailingInCompilation(ddl,
+                "From line 2, column 27 to line 2, column 48: Numeric literal '1E400' out of range\n");
+    }
+
+    @Test
     public void duplicatedKey2() {
         String ddl = "create table git_commit (\n" +
                 "    git_commit_id bigint not null PRIMARY KEY PRIMARY KEY)";
@@ -156,7 +178,8 @@ public class NegativeParserTests extends BaseSQLTests {
     }
 
     /** The body of a function is compiled inside a generated program; an error on
-     * the second line of the body must point at that line of the user's program */
+     * the second line of the body must point at that line of the user's program,
+     * both in the location and in the message */
     @Test
     public void functionBodyErrorPosition() {
         this.statementsFailingInCompilation("""
@@ -165,7 +188,8 @@ public class NegativeParserTests extends BaseSQLTests {
                   a +
                   nosuch;
                 CREATE VIEW V AS SELECT f(x) FROM T;""",
-                "(no input file):4:3: error");
+                "(no input file):4:3: error: Compilation error: " +
+                        "From line 4, column 3 to line 4, column 8: Column 'nosuch' not found in any table\n");
     }
 
     @Test
