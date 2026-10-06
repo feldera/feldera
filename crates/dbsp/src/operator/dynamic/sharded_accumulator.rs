@@ -118,7 +118,9 @@ where
                                 ShardedAccumulatorSender::new(
                                     Some(Location::caller()),
                                     exchange.clone(),
-                                    self.circuit().metadata_exchange().clone(),
+                                    // Only the root circuit exchanges metadata.
+                                    (self.circuit().root_scope() == 0)
+                                        .then(|| self.circuit().metadata_exchange().clone()),
                                 ),
                                 ShardedAccumulatorReceiver::new(Some(Location::caller()), exchange),
                                 self,
@@ -592,7 +594,10 @@ where
     local_node_id: NodeId,
     name: OperatorName,
     exchange: Arc<ShardedAccumulator<B>>,
-    metadata_exchange: MetadataExchange,
+
+    /// Used to share `enable_count` with the other hosts, in the root circuit.
+    /// `None` in a nested circuit, which does not exchange metadata.
+    metadata_exchange: Option<MetadataExchange>,
 
     /// Whether the accumulator is enabled during the current transaction.
     ///
@@ -615,7 +620,7 @@ where
     fn new(
         location: OperatorLocation,
         exchange: Arc<ShardedAccumulator<B>>,
-        metadata_exchange: MetadataExchange,
+        metadata_exchange: Option<MetadataExchange>,
     ) -> Self {
         Self {
             location,
@@ -665,8 +670,10 @@ where
     }
 
     fn start_transaction(&mut self) {
-        if Runtime::local_worker_offset() == 0 {
-            self.metadata_exchange.set_local_operator_metadata_typed(
+        if let Some(metadata_exchange) = &self.metadata_exchange
+            && Runtime::local_worker_offset() == 0
+        {
+            metadata_exchange.set_local_operator_metadata_typed(
                 self.local_node_id,
                 self.exchange.enable_count.is_enabled(),
             );
@@ -687,12 +694,13 @@ where
         // the transaction, but it's ok to admit some empty batches.
         let len = batch.len();
         if (len > 0 || self.flushed) && self.enabled_during_current_transaction.is_none() {
-            self.enabled_during_current_transaction = Some(
-                self.metadata_exchange
+            self.enabled_during_current_transaction = Some(match &self.metadata_exchange {
+                Some(metadata_exchange) => metadata_exchange
                     .get_global_operator_metadata_typed(self.local_node_id)
                     .into_iter()
                     .any(|enable| enable == Some(true)),
-            );
+                None => self.exchange.enable_count.is_enabled(),
+            });
         }
         let Some(enabled) = self.enabled_during_current_transaction else {
             return;
@@ -934,12 +942,13 @@ mod tests {
     use itertools::Itertools;
 
     use crate::{
-        DBSPHandle, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+        DBSPHandle, OrdZSet, OutputHandle, RootCircuit, Stream, ZSetHandle, ZWeight,
         circuit::{CircuitConfig, Layout, Runtime},
         dynamic::{Data, DowncastTrait, DynWeightTyped},
         operator::dynamic::accumulator::EnableCount,
         trace::{BatchReader, Cursor, FallbackWSet, Spine},
         typed_batch::TypedBatch,
+        utils::Tup2,
     };
     use std::{collections::BTreeMap, iter::zip, net::TcpListener};
 
@@ -1230,6 +1239,51 @@ mod tests {
             for (workers, hosts) in [(2, 2), (4, 2), (3, 3), (4, 4)] {
                 test_gather(workers, hosts, gather, &[0]);
             }
+        }
+    }
+
+    /// A `ShardedAccumulator` in a nested circuit gathers every worker's
+    /// records.  Only the root circuit exchanges metadata, so the accumulator
+    /// must use its local enable count there.
+    ///
+    /// A join in a recursive scope uses a `ShardedAccumulator`, so this
+    /// finds the nodes that are reachable from node 0 along a chain.
+    #[test]
+    fn sharded_accumulator_nested_circuit() {
+        const N_NODES: usize = 16;
+        for workers in [2, 4] {
+            let (mut dbsp, (edges_handle, roots_handle, output)) =
+                Runtime::init_circuit(test_config(workers, Gather::ALL_WORKERS), |circuit| {
+                    let (edges, edges_handle) = circuit.add_input_zset::<Tup2<usize, usize>>();
+                    let (roots, roots_handle) = circuit.add_input_zset::<usize>();
+                    let reachable =
+                        circuit.recursive(|child, reachable: Stream<_, OrdZSet<usize>>| {
+                            let edges =
+                                edges.delta0(child).map_index(|Tup2(from, to)| (*from, *to));
+                            let roots = roots.delta0(child);
+                            Ok(reachable
+                                .map_index(|node| (*node, ()))
+                                .join(&edges, |_from, _, to| *to)
+                                .plus(&roots))
+                        })?;
+                    Ok((edges_handle, roots_handle, reachable.output()))
+                })
+                .unwrap();
+
+            edges_handle.append(
+                &mut (0..N_NODES - 1)
+                    .map(|node| Tup2(Tup2(node, node + 1), 1))
+                    .collect(),
+            );
+            roots_handle.push(0, 1);
+            dbsp.transaction().unwrap();
+
+            assert_eq!(
+                output.consolidate(),
+                OrdZSet::from_keys((), (0..N_NODES).map(|node| Tup2(node, 1)).collect()),
+                "{workers} workers"
+            );
+            dbsp.kill().unwrap();
         }
     }
 
