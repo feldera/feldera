@@ -81,7 +81,7 @@ public class CastTests extends SqlIoTest {
 
     @Test
     public void testTinyInt() {
-        this.runtimeConstantFail("SELECT CAST(256 AS TINYINT)", "out of range integral type conversion attempted");
+        this.runtimeConstantFail("SELECT CAST(256 AS TINYINT)", "number too large to fit in target type");
     }
 
     @Test
