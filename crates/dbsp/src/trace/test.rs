@@ -2272,10 +2272,30 @@ fn assert_seek_key_exact_matches<B>(
     }
 }
 
+/// Reopens a file-backed batch from its file, as a restore does.
+///
+/// # Arguments
+///
+/// * `batch` - A batch that resides in storage.
+/// * `factories` - The factories of the batch's type.
+///
+/// # Returns
+///
+/// A second batch that reads the same file.
+fn reopen<B>(batch: &B, factories: &B::Factories) -> B
+where
+    B: Batch,
+{
+    let file = batch.file_reader().expect("batch must be file backed");
+    B::from_path(factories, file.path())
+        .unwrap_or_else(|e| panic!("reopening {}: {e}", file.path()))
+}
+
 /// Shared body for `indexed_wset_storage_merges_*` proptests. Generates
 /// inputs as a vec/file mix, runs `ListMerger::merge` to file storage, and
-/// validates the merged batch against a `TestBatch` reference. The input
-/// batches are reduced by an optional key filter `retain_above`.
+/// validates the merged batch against a `TestBatch` reference, both as the
+/// merge wrote it and reopened from its file. The input batches are reduced by
+/// an optional key filter `retain_above`.
 fn run_indexed_wset_storage_merges(
     batches: MergeInputBatches,
     retain_above: Option<i32>,
@@ -2356,13 +2376,23 @@ fn run_indexed_wset_storage_merges(
 
         // Check some absent probes across the input range.
         let absent_probes = (-150_000i32..=150_000).step_by(7_500);
-        assert_seek_key_exact_matches(&merged, &expected, absent_probes, 42);
+        assert_seek_key_exact_matches(&merged, &expected, absent_probes.clone(), 42);
+
+        // A restore reopens every batch from its file, and the filter it loads
+        // must answer like the one the merge built. The merge drops keys that
+        // cancel or fall below `retain_above`, so the file can start above the
+        // smallest input key.
+        let reopened = reopen(&merged, &factories);
+        assert_eq!(reopened.membership_filter_kind(), kind);
+        assert_batch_eq(&reopened, &expected);
+        assert_seek_key_exact_matches(&reopened, &expected, absent_probes, 42);
     });
 }
 
 /// Dense-key sibling of `run_indexed_wset_storage_merges`. Same merge plumbing
 /// but with the `0..200` key domain so we probe every possible key in
-/// `seek_key_exact` and so per-batch overlap is high.
+/// `seek_key_exact` and so per-batch overlap is high. It also validates the
+/// merged batch reopened from its file.
 fn run_indexed_wset_storage_merges_dense(batches: MergeInputBatches, fc: FilterConfig) {
     let _temp_dir = tempdir().expect("Can't create temp dir for storage");
     let mut config = mkconfig(_temp_dir.path());
@@ -2423,6 +2453,14 @@ fn run_indexed_wset_storage_merges_dense(batches: MergeInputBatches, fc: FilterC
         // Key domain is `0..200`; probe every value to cover present and
         // absent paths exhaustively.
         assert_seek_key_exact_matches(&merged, &expected, 0..200i32, 42);
+
+        // A restore reopens every batch from its file, and the filter it loads
+        // must answer like the one the merge built, even when the smallest
+        // input key cancelled out of the merged batch.
+        let reopened = reopen(&merged, &factories);
+        assert_eq!(reopened.membership_filter_kind(), kind);
+        assert_batch_eq(&reopened, &expected);
+        assert_seek_key_exact_matches(&reopened, &expected, 0..200i32, 42);
     });
 }
 
