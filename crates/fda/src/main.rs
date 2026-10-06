@@ -4246,6 +4246,7 @@ aC3Oy4iVrYGOq9v6uP9iblE=\n\
             sql_compilation: None,
             rust_compilation: Some(RustCompilationInfo {
                 exit_code: 101,
+                messages: Vec::new(),
                 stdout: "checking pipeline\n".to_string(),
                 stderr: "error: failed to compile".to_string(),
             }),
