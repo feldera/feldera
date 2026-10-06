@@ -52,7 +52,7 @@ pub mod support_bundle;
         ("table_name" = String, Path,
             description = "SQL table name. Unquoted SQL names have to be capitalized. Quoted SQL names have to exactly match the case from the SQL program."),
         ("force" = bool, Query, description = "When `true`, push data to the pipeline even if the pipeline is paused. The default value is `false`"),
-        ("format" = String, Query, description = "Input data format, either `csv' or 'json'."),
+        ("format" = String, Query, description = "Input data format: `csv`, `json`, `parquet`, `avro`, or `raw`. The default is `csv`."),
         ("array" = Option<bool>, Query, description = "Set to `true` if updates in this stream are packaged into JSON arrays (used in conjunction with `format=json`). The default values is `false`."),
         ("update_format" = Option<JsonUpdateFormat>, Query, description = "JSON data change event format (used in conjunction with `format=json`).  The default value is 'insert_delete'."),
     ),

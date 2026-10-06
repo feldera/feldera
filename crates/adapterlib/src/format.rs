@@ -8,7 +8,6 @@ use std::io::{Error as IoError, Read};
 use std::ops::{Add, AddAssign, Range};
 use std::sync::Arc;
 
-use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
 use dbsp::operator::input::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
@@ -32,23 +31,18 @@ pub trait InputFormat: Send + Sync {
     /// Unique name of the data format.
     fn name(&self) -> Cow<'static, str>;
 
-    /// Extract parser configuration from an HTTP request.
+    /// Extract parser configuration from the query string of an HTTP request.
+    ///
+    /// `query` holds only the parameters that configure the format: the
+    /// `/ingress` handler has already removed the parameters it consumes
+    /// itself.
     ///
     /// Returns the extracted configuration cast to the `ErasedSerialize` trait
     /// object (to keep this trait object-safe).
-    ///
-    /// # Discussion
-    ///
-    /// We could rely on the `serde_urlencoded` crate to deserialize the config
-    /// from the HTTP request, which is what most implementations will do
-    /// internally; however allowing the implementation to override this
-    /// method enables additional flexibility. For example, an
-    /// implementation may use `Content-Type` and other request headers, set
-    /// HTTP-specific defaults for config fields, etc.
-    fn config_from_http_request(
+    fn config_from_http_query(
         &self,
         endpoint_name: &str,
-        request: &HttpRequest,
+        query: &str,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError>;
 
     /// Create a new parser for the format.
@@ -647,14 +641,18 @@ pub trait OutputFormat: Send + Sync {
     /// Unique name of the data format.
     fn name(&self) -> Cow<'static, str>;
 
-    /// Extract encoder configuration from an HTTP request.
+    /// Extract encoder configuration from the query string of an HTTP request.
+    ///
+    /// `query` holds only the parameters that configure the format: the
+    /// `/egress` handler has already removed the parameters it consumes
+    /// itself.
     ///
     /// Returns the extracted configuration cast to the `ErasedSerialize` trait
     /// object (to keep this trait object-safe).
-    fn config_from_http_request(
+    fn config_from_http_query(
         &self,
         endpoint_name: &str,
-        request: &HttpRequest,
+        query: &str,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError>;
 
     /// Create a new encoder for the format.
