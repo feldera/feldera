@@ -1110,18 +1110,12 @@ fn output_headers_test() {
         .unwrap();
     endpoint.batch_end().unwrap();
 
-    // An exactly-once connector deduplicates output by Kafka message key, so
-    // it cannot also write a caller-supplied key.
+    // With a caller-supplied key, the key is written as-is and the position
+    // moves into a header.
     endpoint.batch_start(2, OutputBatchType::Delta).unwrap();
-    let error = endpoint
+    endpoint
         .push_key(Some(b"key".as_slice()), Some(b"value".as_slice()), &[])
-        .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("does not support key-value pairs"),
-        "unexpected error: {error}"
-    );
+        .unwrap();
     endpoint.batch_end().unwrap();
 
     let configured = [
@@ -1142,6 +1136,186 @@ fn output_headers_test() {
             ),
         ]
     );
+}
+
+/// Polls `consumer` for a keyed output message, returning its partition, key,
+/// payload, and position header value.
+fn read_keyed_message(consumer: &BaseConsumer) -> Option<(i32, Vec<u8>, Vec<u8>, Vec<u8>)> {
+    let message = consumer.poll(Duration::from_millis(100))?.ok()?;
+    let headers = message.headers().expect("keyed messages should have headers");
+    let position = (0..headers.count())
+        .map(|i| headers.get(i))
+        .find(|header| header.key == super::output::POSITION_HEADER)
+        .expect("keyed messages should have a position header")
+        .value
+        .expect("position header should have a value")
+        .to_vec();
+    Some((
+        message.partition(),
+        message.key().unwrap().to_vec(),
+        message.payload().unwrap().to_vec(),
+        position,
+    ))
+}
+
+/// Verifies that a fault-tolerant Kafka output connector supports
+/// caller-supplied keys: the key is written as-is, the position travels in a
+/// header, and records with the same key land in the same partition, so that
+/// a consumer of a subset of partitions sees them in order (issue #7355).
+#[test]
+fn output_keyed_test() {
+    init_test_logger();
+    let output_topic = "ft_output_keyed_test_output_topic";
+
+    // Create topic with multiple partitions.
+    let _kafka_resources = KafkaResources::create_topics(&[(output_topic, 2)]);
+
+    let config = serde_json::from_value(json!({
+      "name": "kafka_output",
+      "config": { "topic": output_topic }
+    }))
+    .unwrap();
+
+    let mut endpoint = output_transport_config_to_endpoint(
+        &config,
+        "",
+        true,
+        default_secrets_directory(),
+        CancellationToken::new(),
+    )
+    .unwrap()
+    .unwrap();
+    endpoint
+        .connect(Box::new(|fatal, error, tag| {
+            info!("({fatal:?}, {error:?}, {tag:?})")
+        }))
+        .unwrap();
+
+    endpoint.batch_start(0, OutputBatchType::Delta).unwrap();
+    endpoint
+        .push_key(Some(b"key-a".as_slice()), Some(b"1".as_slice()), &[])
+        .unwrap();
+    endpoint
+        .push_key(Some(b"key-b".as_slice()), Some(b"2".as_slice()), &[])
+        .unwrap();
+    endpoint
+        .push_key(Some(b"key-a".as_slice()), Some(b"3".as_slice()), &[])
+        .unwrap();
+    endpoint.batch_end().unwrap();
+
+    let consumer = ClientConfig::new()
+        .set("bootstrap.servers", default_redpanda_server())
+        .set("auto.offset.reset", "earliest")
+        .set("enable.auto.commit", "false")
+        .set("group.id", format!("{output_topic}_reader"))
+        // Fault-tolerant output connectors write inside transactions.
+        .set("isolation.level", "read_committed")
+        .create::<BaseConsumer>()
+        .unwrap();
+    consumer.subscribe(&[output_topic]).unwrap();
+
+    // (partition, key, payload, position header value).
+    let mut messages: Vec<(i32, Vec<u8>, Vec<u8>, Vec<u8>)> = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while messages.len() < 3 {
+        assert!(
+            Instant::now() < deadline,
+            "read only {} of 3 messages in {output_topic} before timing out",
+            messages.len()
+        );
+        let Some(message) = read_keyed_message(&consumer) else {
+            continue;
+        };
+        messages.push(message);
+    }
+
+    // The caller-supplied key is written as-is, and messages with the same
+    // key land in the same partition, in the order they were pushed.  The
+    // order across partitions is arbitrary, so we only check within
+    // partitions.
+    let mut key_a_messages: Vec<&(i32, Vec<u8>, Vec<u8>, Vec<u8>)> = Vec::new();
+    for message in &messages {
+        assert!(
+            message.1 == b"key-a".to_vec() || message.1 == b"key-b".to_vec(),
+            "unexpected key: {messages:?}"
+        );
+        if message.1 == b"key-a".to_vec() {
+            key_a_messages.push(message);
+        }
+    }
+    let key_b_messages: Vec<_> = messages
+        .iter()
+        .filter(|message| message.1 == b"key-b".to_vec())
+        .collect();
+    assert_eq!(key_a_messages.len(), 2, "in {messages:?}");
+    assert_eq!(key_b_messages.len(), 1, "in {messages:?}");
+    assert_eq!(
+        key_a_messages[0].0, key_a_messages[1].0,
+        "messages with the same key should land in the same partition: {messages:?}"
+    );
+    assert_eq!(
+        key_a_messages
+            .iter()
+            .map(|(_, _, payload, _)| payload.clone())
+            .collect::<Vec<_>>(),
+        vec![b"1".to_vec(), b"3".to_vec()],
+        "messages with the same key should stay in order: {messages:?}"
+    );
+
+    // The position header lets recovery pick up where this run left off.
+    for (_, _, _, position) in &messages {
+        let position: serde_json::Value = serde_json::from_slice(position).unwrap();
+        assert_eq!(position["transaction"], json!(0), "in {messages:?}");
+    }
+
+    // A restarted endpoint recovers the transaction number from the position
+    // headers, so it drops the already-written transaction 0 and only writes
+    // transaction 1.
+    let mut endpoint = output_transport_config_to_endpoint(
+        &config,
+        "",
+        true,
+        default_secrets_directory(),
+        CancellationToken::new(),
+    )
+    .unwrap()
+    .unwrap();
+    endpoint
+        .connect(Box::new(|fatal, error, tag| {
+            info!("({fatal:?}, {error:?}, {tag:?})")
+        }))
+        .unwrap();
+    endpoint.batch_start(0, OutputBatchType::Delta).unwrap();
+    endpoint
+        .push_key(Some(b"key-a".as_slice()), Some(b"dropped".as_slice()), &[])
+        .unwrap();
+    endpoint.batch_end().unwrap();
+    endpoint.batch_start(1, OutputBatchType::Delta).unwrap();
+    endpoint
+        .push_key(Some(b"key-a".as_slice()), Some(b"4".as_slice()), &[])
+        .unwrap();
+    endpoint.batch_end().unwrap();
+
+    // The consumer is already positioned after the first three messages, so
+    // this reads the one new message from transaction 1.
+    let mut new_messages: Vec<(i32, Vec<u8>, Vec<u8>, Vec<u8>)> = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while new_messages.is_empty() {
+        assert!(
+            Instant::now() < deadline,
+            "no new messages in {output_topic} before timing out"
+        );
+        let Some(message) = read_keyed_message(&consumer) else {
+            continue;
+        };
+        new_messages.push(message);
+    }
+    // `new_messages` only contains transaction 1's record, so the replayed
+    // transaction 0 was dropped.
+    assert_eq!(new_messages.len(), 1, "in {new_messages:?}");
+    assert!(new_messages[0].2 == b"4".to_vec(), "in {new_messages:?}");
+    let position: serde_json::Value = serde_json::from_slice(&new_messages[0].3).unwrap();
+    assert_eq!(position["transaction"], json!(1), "in {new_messages:?}");
 }
 
 /// A Kafka message header, where a `None` value is a null value.

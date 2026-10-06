@@ -10,7 +10,7 @@ use feldera_types::transport::kafka::KafkaOutputConfig;
 use rdkafka::client::OAuthToken;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::ConsumerContext;
-use rdkafka::message::{Header, OwnedHeaders};
+use rdkafka::message::{Header, Headers, OwnedHeaders};
 use rdkafka::{
     ClientConfig, ClientContext, Message,
     config::FromClientConfigAndContext,
@@ -30,6 +30,11 @@ use tracing::{debug, info, info_span, warn};
 use super::{CommonConfig, Ctp, count_partitions_in_topic};
 
 const DEFAULT_MAX_MESSAGE_SIZE: usize = 1_000_000;
+
+/// Header that carries the [`OutputPosition`] when the caller supplies the
+/// message key.  Keyless messages store the position as the message key
+/// instead, so the header is only written for keyed messages.
+pub(crate) const POSITION_HEADER: &str = "__feldera_position";
 
 /// Max metadata overhead added by Kafka to each message.  Useful payload size
 /// plus this overhead must not exceed `message.max.bytes`.
@@ -83,6 +88,17 @@ impl OutputPosition {
     where
         M: Message,
     {
+        // Keyed messages carry the position in a header; keyless messages
+        // (and messages written before keyed output was supported) carry it
+        // as the message key.
+        if let Some(headers) = msg.headers() {
+            for i in 0..headers.count() {
+                let header = headers.get(i);
+                if header.key == POSITION_HEADER {
+                    return Ok(serde_json::from_slice(header.value.unwrap_or(&[]))?);
+                }
+            }
+        }
         Ok(serde_json::from_slice(msg.key().unwrap_or(&[]))?)
     }
 }
@@ -254,12 +270,6 @@ impl OutputEndpoint for KafkaOutputEndpoint {
         val: Option<&[u8]>,
         headers: &[(&str, Option<&[u8]>)],
     ) -> AnyResult<()> {
-        if provided_key.is_some() {
-            bail!(
-                "Kafka output transport does not support key-value pairs when configured in exactly once fault-tolerant mode."
-            );
-        }
-
         let _guard = span(&self.topic);
         let State::BatchOpen(OutputPosition {
             transaction,
@@ -282,24 +292,40 @@ impl OutputEndpoint for KafkaOutputEndpoint {
                 all_headers = all_headers.insert(Header { key, value: *value });
             }
 
-            let key = OutputPosition {
+            let position = OutputPosition {
                 transaction,
                 substep,
             };
-            let key = serde_json::to_string(&key).unwrap();
-            let mut record = BaseRecord::to(&self.topic)
-                .key(&key)
-                .partition(self.next_partition as i32)
-                .headers(all_headers);
+            let position_json = serde_json::to_string(&position).unwrap();
+            let mut record = if let Some(key) = provided_key {
+                // With a caller-supplied key, the position rides in a header so
+                // that the caller's key stays the message key, and librdkafka
+                // partitions by key hash instead of our round-robin, so that
+                // records with the same key stay in order within one partition
+                // (issue #7355).
+                BaseRecord::to(&self.topic)
+                    .key(key)
+                    .headers(all_headers.insert(Header {
+                        key: POSITION_HEADER,
+                        value: Some(position_json.as_bytes()),
+                    }))
+            } else {
+                let record = BaseRecord::to(&self.topic)
+                    .key(position_json.as_bytes())
+                    .partition(self.next_partition as i32)
+                    .headers(all_headers);
+
+                self.next_partition += 1;
+                if self.next_partition >= self.n_partitions {
+                    self.next_partition = 0;
+                }
+
+                record
+            };
             if let Some(val) = val {
                 record = record.payload(val);
             }
             kafka_send(&self.kafka_producer, &self.topic, record, &self.shutdown)?;
-
-            self.next_partition += 1;
-            if self.next_partition >= self.n_partitions {
-                self.next_partition = 0;
-            }
         }
         Ok(())
     }
