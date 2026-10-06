@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+## v0.362.0
+
 - Incompatible change (SQL): the `emit_final` property of a view must
   specify a column name.  The documentation also allowed a column number,
   such as `'emit_final' = '0'`, but the compiler ignored numeric values:
