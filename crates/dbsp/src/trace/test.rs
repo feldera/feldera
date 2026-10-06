@@ -1414,6 +1414,232 @@ fn test_fallback_wset_roaring_filter_rebuilt_after_storage_merge() {
     });
 }
 
+/// Lists the keys that `seek_key_exact` does not find in a batch.
+///
+/// # Arguments
+///
+/// * `batch` - A batch keyed by `Tup1<i64>`.
+/// * `keys` - The keys to look up, each with a fresh cursor.
+///
+/// # Returns
+///
+/// The keys that were not found, in the order of `keys`.
+fn keys_not_found<B>(batch: &B, keys: &[i64]) -> Vec<i64>
+where
+    B: BatchReader<Key = DynData>,
+{
+    keys.iter()
+        .copied()
+        .filter(|key| !batch.cursor().seek_key_exact(Tup1(*key).erase(), None))
+        .collect()
+}
+
+/// Checks that a merged batch's roaring filter still finds every key after
+/// the batch is reloaded from storage, when the merge drops the smallest key
+/// of its inputs.
+///
+/// A merge plans its roaring filter around the smallest key of its input
+/// batches. Here that key has weight 1 in one input and -1 in the other, so
+/// the merged batch starts at a larger key. The surviving keys sit at odd
+/// offsets from the dropped one, so a filter decoded relative to the merged
+/// batch's first key, instead of the base it was built from, probes only clear
+/// bits. The reload happens in a fresh circuit, as a restore does.
+///
+/// Each of the four file batch types reaches the filter through its own
+/// `from_path`, so all of them run through this check.
+///
+/// # Arguments
+///
+/// * `label` - Names the batch type in failure messages.
+/// * `factories` - Returns the factories of the batch type, keyed by
+///   `Tup1<i64>`.
+/// * `build` - Builds a batch from `(key, weight)` pairs in ascending key
+///   order.
+fn assert_roaring_filter_survives_reload<B>(
+    label: &str,
+    factories: fn() -> B::Factories,
+    build: fn(&B::Factories, &[(i64, ZWeight)]) -> B,
+) where
+    B: Batch<Key = DynData> + Send + 'static,
+    B::Factories: Send + 'static,
+{
+    const MINIMUM: i64 = 8_000_000;
+    const NAME: &str = "merged-batch.feldera";
+    let label = label.to_string();
+    let keys: Vec<i64> = (0..1_000).map(|i| MINIMUM + 1 + 2 * i).collect();
+
+    // A circuit deletes its storage directory when it shuts down, so the
+    // merged batch file is stashed outside it and copied into the next one.
+    let temp_dir = tempdir().expect("Can't create temp dir for storage");
+    let stash = temp_dir.path().join("stashed-batch.feldera");
+    let write_dir = temp_dir.path().join("write");
+    let read_dir = temp_dir.path().join("read");
+    std::fs::create_dir_all(&write_dir).unwrap();
+    std::fs::create_dir_all(&read_dir).unwrap();
+
+    let mut config = mkconfig(&write_dir);
+    config.dev_tweaks.enable_roaring = Some(true);
+    {
+        let (label, keys, stash, write_dir) = (
+            label.clone(),
+            keys.clone(),
+            stash.clone(),
+            write_dir.clone(),
+        );
+        run_in_circuit_with_storage_config(config, move || {
+            let factories = factories();
+            let input: Vec<(i64, ZWeight)> = std::iter::once(MINIMUM)
+                .chain(keys.iter().copied())
+                .map(|key| (key, 1))
+                .collect();
+            let with_minimum = build(&factories, &input);
+            let cancels_minimum = build(&factories, &[(MINIMUM, -1)]);
+            let merged: B = ListMerger::merge(
+                &factories,
+                B::Builder::for_merge(
+                    &factories,
+                    [&with_minimum, &cancels_minimum],
+                    Some(BatchLocation::Storage),
+                ),
+                vec![
+                    with_minimum.merge_cursor(None, None),
+                    cancels_minimum.merge_cursor(None, None),
+                ],
+            );
+
+            assert_eq!(
+                merged.membership_filter_kind(),
+                FilterKind::Roaring,
+                "{label}"
+            );
+            let (first, _) = merged.key_bounds().expect("merged batch is empty");
+            assert_eq!(
+                *first.downcast_checked::<Tup1<i64>>(),
+                Tup1(MINIMUM + 1),
+                "{label}"
+            );
+            assert_eq!(
+                keys_not_found(&merged, &keys),
+                Vec::<i64>::new(),
+                "{label}: keys not found before reload"
+            );
+
+            let file = merged
+                .file_reader()
+                .expect("merged batch must be file backed");
+            let source = file.path().to_string();
+            std::fs::copy(write_dir.join(source.trim_start_matches('/')), &stash).unwrap();
+        });
+    }
+
+    std::fs::copy(&stash, read_dir.join(NAME)).unwrap();
+    let mut config = mkconfig(&read_dir);
+    config.dev_tweaks.enable_roaring = Some(true);
+    run_in_circuit_with_storage_config(config, move || {
+        let reloaded = B::from_path(&factories(), &StoragePath::from(NAME))
+            .unwrap_or_else(|e| panic!("{label}: reloading the merged batch: {e}"));
+
+        assert_eq!(
+            reloaded.membership_filter_kind(),
+            FilterKind::Roaring,
+            "{label}"
+        );
+        let missing = keys_not_found(&reloaded, &keys);
+        assert!(
+            missing.is_empty(),
+            "{label}: {} of {} keys not found after reload, starting with {:?}",
+            missing.len(),
+            keys.len(),
+            &missing[..missing.len().min(5)]
+        );
+    });
+}
+
+#[test]
+fn file_wset_roaring_filter_survives_reload_after_the_minimum_cancels() {
+    assert_roaring_filter_survives_reload::<FileWSet<DynData, DynZWeight>>(
+        "FileWSet",
+        <FileWSetFactories<DynData, DynZWeight>>::new::<Tup1<i64>, (), ZWeight>,
+        |factories, tuples| {
+            let mut builder = <FileWSet<DynData, DynZWeight> as Batch>::Builder::with_capacity(
+                factories,
+                tuples.len(),
+                0,
+            );
+            for (key, weight) in tuples {
+                builder.push_time_diff(&(), weight.erase());
+                builder.push_key(Tup1(*key).erase());
+            }
+            builder.done()
+        },
+    );
+}
+
+#[test]
+fn file_indexed_wset_roaring_filter_survives_reload_after_the_minimum_cancels() {
+    assert_roaring_filter_survives_reload::<FileIndexedWSet<DynData, DynData, DynZWeight>>(
+        "FileIndexedWSet",
+        <FileIndexedWSetFactories<DynData, DynData, DynZWeight>>::new::<Tup1<i64>, i64, ZWeight>,
+        |factories, tuples| {
+            let mut builder =
+                <FileIndexedWSet<DynData, DynData, DynZWeight> as Batch>::Builder::with_capacity(
+                    factories,
+                    tuples.len(),
+                    tuples.len(),
+                );
+            for (key, weight) in tuples {
+                builder.push_val_diff(0i64.erase(), weight.erase());
+                builder.push_key(Tup1(*key).erase());
+            }
+            builder.done()
+        },
+    );
+}
+
+#[test]
+fn file_key_batch_roaring_filter_survives_reload_after_the_minimum_cancels() {
+    assert_roaring_filter_survives_reload::<FileKeyBatch<DynData, u32, DynZWeight>>(
+        "FileKeyBatch",
+        <FileKeyBatchFactories<DynData, u32, DynZWeight>>::new::<Tup1<i64>, (), ZWeight>,
+        |factories, tuples| {
+            let mut builder =
+                <FileKeyBatch<DynData, u32, DynZWeight> as Batch>::Builder::with_capacity(
+                    factories,
+                    tuples.len(),
+                    tuples.len(),
+                );
+            for (key, weight) in tuples {
+                builder.push_time_diff(&0u32, weight.erase());
+                builder.push_val(().erase());
+                builder.push_key(Tup1(*key).erase());
+            }
+            builder.done()
+        },
+    );
+}
+
+#[test]
+fn file_val_batch_roaring_filter_survives_reload_after_the_minimum_cancels() {
+    assert_roaring_filter_survives_reload::<FileValBatch<DynData, DynData, u32, DynZWeight>>(
+        "FileValBatch",
+        <FileValBatchFactories<DynData, DynData, u32, DynZWeight>>::new::<Tup1<i64>, i64, ZWeight>,
+        |factories, tuples| {
+            let mut builder =
+                <FileValBatch<DynData, DynData, u32, DynZWeight> as Batch>::Builder::with_capacity(
+                    factories,
+                    tuples.len(),
+                    tuples.len(),
+                );
+            for (key, weight) in tuples {
+                builder.push_time_diff(&0u32, weight.erase());
+                builder.push_val(0i64.erase());
+                builder.push_key(Tup1(*key).erase());
+            }
+            builder.done()
+        },
+    );
+}
+
 /// Builds a `FallbackIndexedWSet` over `(key, value, weight)` triples.
 fn build_fallback_indexed_wset_i32(
     tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>>,
