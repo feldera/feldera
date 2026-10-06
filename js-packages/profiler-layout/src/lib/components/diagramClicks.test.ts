@@ -366,21 +366,25 @@ describe('the overview report a profile opens with', () => {
 })
 
 describe('a double click on a nested region', () => {
-  it('does nothing, since only the top-level region around it expands and collapses', async () => {
+  it('collapses that region alone, inside the region around it', async () => {
     const { cy, toggle, reported, cleanup } = await mountDiagram('light', NESTED)
     expect(cy.$id('outer').isParent()).toBe(true)
     expect(cy.$id('sub').isParent()).toBe(true)
 
     await toggle('sub')
     expect(cy.$id('outer').isParent()).toBe(true)
-    expect(cy.$id('sub').isParent()).toBe(true)
-    expect(reported.doubleClicks).toEqual([])
+    expect(cy.$id('sub').isParent()).toBe(false)
+    expect(cy.$id('sub').parent().id()).toBe('outer')
+    expect(reported.doubleClicks).toEqual([{ nodeId: 'sub', type: 'group' }])
 
-    // The top-level region still collapses, and the nested region is no longer shown.
+    // The region around it collapses too, and takes the nested one with it.
     await toggle('outer')
     expect(cy.$id('outer').isParent()).toBe(false)
     expect(cy.$id('sub').length).toBe(0)
-    expect(reported.doubleClicks).toEqual([{ nodeId: 'outer', type: 'group' }])
+    expect(reported.doubleClicks).toEqual([
+      { nodeId: 'sub', type: 'group' },
+      { nodeId: 'outer', type: 'group' }
+    ])
     cleanup()
   })
 })

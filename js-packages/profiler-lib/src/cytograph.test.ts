@@ -28,6 +28,35 @@ const profile = () =>
         }
     } as never).profile
 
+/** A region inside a region, the case a single level of expansion cannot describe. */
+const nested = () =>
+    CircuitProfile.fromJson({
+        metrics: [],
+        worker_profiles: [{ metadata: {} }],
+        graph: {
+            nodes: {
+                id: 'n',
+                label: 'circuit',
+                nodes: [
+                    cluster('outer', 'outer', [
+                        simple('n1', 'source'),
+                        cluster('inner', 'inner', [simple('n2', 'map')])
+                    ])
+                ]
+            },
+            edges: [{ from_node: 'n1', to_node: 'n2' }]
+        }
+    } as never).profile
+
+/** The nodes of the graph drawn for `profile` with exactly `expanded` expanded, by id. */
+const drawn = (p: CircuitProfile, expanded: string[]) => {
+    const selection = new CircuitSelection(
+        new ExplicitSubSet(new Set(p.complexNodes.keys()), new Set(expanded))
+    )
+    const elements = Cytograph.fromProfile(p, selection).getGraphElements('light')
+    return new Map(elements.nodes.map((n) => [n.data.id as string, n.data]))
+}
+
 /** Nothing expanded, so `region` is drawn as one collapsed node. */
 const collapsedGraph = () => {
     const p = profile()
@@ -83,5 +112,51 @@ describe('node definitions', () => {
         for (const id of ['n1', 'region']) {
             expect(byId.get(id)!.text_width, id).toBe(labelWidth(byId.get(id)!.label))
         }
+    })
+})
+
+describe('nested regions', () => {
+    it('draws a collapsed region inside an expanded one', () => {
+        // Why the regions are walked from the outside in: consult only the outermost one and expanding
+        // it reveals every descendant, leaving `inner` impossible to collapse on its own.
+        const nodes = drawn(nested(), ['outer'])
+        expect([...nodes.keys()].sort()).toEqual(['inner', 'n', 'n1', 'outer'])
+        expect(nodes.get('inner')!.has_children).toBe(true)
+        expect(nodes.get('inner')!.parent).toBe('outer')
+        // `inner` stands in for what it hides, so it reports the count of it.
+        expect(nodes.get('inner')!.leaf_count).toBe(1)
+    })
+
+    it('draws every operator once both regions are expanded', () => {
+        const nodes = drawn(nested(), ['outer', 'inner'])
+        expect([...nodes.keys()].sort()).toEqual(['inner', 'n', 'n1', 'n2', 'outer'])
+        // Both regions are on the graph, since cytoscape needs every `parent` it is given to exist.
+        expect(nodes.get('n2')!.parent).toBe('inner')
+        expect(nodes.get('inner')!.parent).toBe('outer')
+    })
+
+    it('hides an expanded region inside a collapsed one, there being nowhere to draw it', () => {
+        const nodes = drawn(nested(), ['inner'])
+        expect([...nodes.keys()].sort()).toEqual(['n', 'outer'])
+        expect(nodes.get('outer')!.leaf_count).toBe(2)
+    })
+
+    it('lands an edge on whichever region is drawn in place of its endpoints', () => {
+        const elements = (expanded: string[]) => {
+            const p = nested()
+            const selection = new CircuitSelection(
+                new ExplicitSubSet(new Set(p.complexNodes.keys()), new Set(expanded))
+            )
+            return Cytograph.fromProfile(p, selection).getGraphElements('light').edges
+        }
+        // n1 -> n2, with n2 hidden inside the collapsed `inner`.
+        const collapsed = elements(['outer'])
+        expect(collapsed).toHaveLength(1)
+        expect(collapsed[0]!.data.source).toBe('n1')
+        expect(collapsed[0]!.data.target).toBe('inner')
+        // Both expanded, so the edge is the one the profile describes.
+        expect(elements(['outer', 'inner'])[0]!.data.target).toBe('n2')
+        // Everything hidden: the edge would be a self-edge on `outer`, so it is not drawn at all.
+        expect(elements([])).toHaveLength(0)
     })
 })
