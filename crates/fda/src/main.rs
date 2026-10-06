@@ -285,6 +285,7 @@ impl CacheDisabler {
                 udf_toml: None,
                 program_config: Some(pc),
                 runtime_config: None,
+                deployment_config: None,
             })
             .send()
             .await
@@ -1442,6 +1443,7 @@ async fn set_pipeline_tags(client: &Client, name: &str, tags: Vec<String>) -> Ve
             udf_toml: None,
             program_config: None,
             runtime_config: None,
+            deployment_config: None,
         })
         .send()
         .await
@@ -1523,6 +1525,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                             use_platform_compiler,
                         }),
                         runtime_config: None,
+                        deployment_config: None,
                     })
                     .send()
                     .await
@@ -1604,6 +1607,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     udf_toml: source_pipeline.udf_toml,
                     program_config: Some(program_config),
                     runtime_config: Some(runtime_config),
+                    deployment_config: None,
                 })
                 .send()
                 .await
@@ -1700,6 +1704,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         udf_toml: None,
                         program_config: None,
                         runtime_config: None,
+                        deployment_config: None,
                     })
                     .send()
                     .await
@@ -2306,6 +2311,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     udf_toml: None,
                     program_config: None,
                     runtime_config: Some(rc),
+                    deployment_config: None,
                 })
                 .send()
                 .await
@@ -3577,6 +3583,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                     use_platform_compiler,
                 }),
                 runtime_config: None,
+                deployment_config: None,
             };
             let response = client
                 .patch_pipeline()
@@ -3705,6 +3712,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                     udf_toml,
                     program_config: None,
                     runtime_config: None,
+                    deployment_config: None,
                 };
                 let response = client
                     .patch_pipeline()
