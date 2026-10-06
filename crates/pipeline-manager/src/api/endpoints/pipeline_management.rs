@@ -8,6 +8,9 @@ use crate::config::CommonConfig;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::types::combined_status::{CombinedDesiredStatus, CombinedStatus, combine_since};
+use crate::db::types::deployment::{
+    PipelineDeploymentConfig, check_unchanged_deployment_config, deployment_config_view,
+};
 use crate::db::types::pipeline::{
     ClientMetadata, ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PatchClientMetadata,
     PipelineDescr, PipelineId,
@@ -101,6 +104,9 @@ pub struct PipelineInfo {
     pub version: Version,
     pub platform_version: String,
     pub runtime_config: RuntimeConfig,
+    /// The CPU and memory of the pipeline's current or last deployment, or `null` before its
+    /// first start. Can differ from `runtime_config` after a `PATCH` of `deployment_config`.
+    pub deployment_config: Option<PipelineDeploymentConfig>,
     pub program_code: String,
     pub udf_rust: String,
     pub udf_toml: String,
@@ -152,6 +158,7 @@ pub struct PipelineInfoInternal {
     pub version: Version,
     pub platform_version: String,
     pub runtime_config: serde_json::Value,
+    pub deployment_config: Option<serde_json::Value>,
     pub program_code: String,
     pub udf_rust: String,
     pub udf_toml: String,
@@ -194,6 +201,10 @@ impl PipelineInfoInternal {
             version: extended_pipeline.version,
             platform_version: extended_pipeline.platform_version,
             runtime_config: extended_pipeline.runtime_config,
+            deployment_config: extended_pipeline
+                .deployment_config
+                .as_ref()
+                .map(deployment_config_view),
             program_code: extended_pipeline.program_code,
             udf_rust: extended_pipeline.udf_rust,
             udf_toml: extended_pipeline.udf_toml,
@@ -262,6 +273,10 @@ pub struct PipelineSelectedInfo {
     pub platform_version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_config: Option<RuntimeConfig>,
+    /// The CPU and memory of the pipeline's current or last deployment, or `null` before its
+    /// first start. Can differ from `runtime_config` after a `PATCH` of `deployment_config`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub deployment_config: Option<Option<PipelineDeploymentConfig>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub program_code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -321,6 +336,8 @@ pub struct PipelineSelectedInfoInternal {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub runtime_config: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub deployment_config: Option<Option<serde_json::Value>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub program_code: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub udf_rust: Option<String>,
@@ -373,6 +390,12 @@ impl PipelineSelectedInfoInternal {
             version: extended_pipeline.version,
             platform_version: extended_pipeline.platform_version,
             runtime_config: Some(extended_pipeline.runtime_config),
+            deployment_config: Some(
+                extended_pipeline
+                    .deployment_config
+                    .as_ref()
+                    .map(deployment_config_view),
+            ),
             program_code: Some(extended_pipeline.program_code),
             udf_rust: Some(extended_pipeline.udf_rust),
             udf_toml: Some(extended_pipeline.udf_toml),
@@ -439,6 +462,7 @@ impl PipelineSelectedInfoInternal {
             version: extended_pipeline.version,
             platform_version: extended_pipeline.platform_version,
             runtime_config: None,
+            deployment_config: None,
             program_code: None,
             udf_rust: None,
             udf_toml: None,
@@ -515,6 +539,7 @@ pub enum PipelineFieldSelector {
     /// - `version`
     /// - `platform_version`
     /// - `runtime_config`
+    /// - `deployment_config`
     /// - `program_code`
     /// - `udf_rust`
     /// - `udf_toml`
@@ -621,6 +646,9 @@ pub struct PostPutPipeline {
     #[serde(flatten)]
     pub client_metadata: ClientMetadata,
     pub runtime_config: Option<RuntimeConfig>,
+    /// Must be absent, `null`, or equal to the stored value, so a pipeline read with `GET` can be
+    /// written back. Change it with `PATCH` while the pipeline is running.
+    pub deployment_config: Option<PipelineDeploymentConfig>,
     pub program_code: String,
     pub udf_rust: Option<String>,
     pub udf_toml: Option<String>,
@@ -639,6 +667,7 @@ pub struct PostPutPipelineInternal {
     #[serde(flatten)]
     pub client_metadata: ClientMetadata,
     pub runtime_config: Option<serde_json::Value>,
+    pub deployment_config: Option<serde_json::Value>,
     pub program_code: String,
     pub udf_rust: Option<String>,
     pub udf_toml: Option<String>,
@@ -680,6 +709,10 @@ pub struct PatchPipeline {
     #[serde(flatten)]
     pub client_metadata: PatchClientMetadata,
     pub runtime_config: Option<RuntimeConfig>,
+    /// Changes the CPU and memory of a running pipeline in place (experimental). Cannot be
+    /// combined with other fields. The change lasts across restarts until storage is cleared
+    /// or CPU or memory is changed in `runtime_config`.
+    pub deployment_config: Option<PipelineDeploymentConfig>,
     pub program_code: Option<String>,
     pub udf_rust: Option<String>,
     pub udf_toml: Option<String>,
@@ -697,6 +730,7 @@ pub struct PatchPipelineInternal {
     #[serde(flatten)]
     pub client_metadata: PatchClientMetadata,
     pub runtime_config: Option<serde_json::Value>,
+    pub deployment_config: Option<serde_json::Value>,
     pub program_code: Option<String>,
     pub udf_rust: Option<String>,
     pub udf_toml: Option<String>,
@@ -1075,7 +1109,11 @@ pub(crate) async fn post_pipeline(
     tenant_id: ReqData<TenantId>,
     body: web::Json<PostPutPipelineInternal>,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_descr: PipelineDescr = body.into_inner().into();
+    let body = body.into_inner();
+    if let Some(deployment_config) = &body.deployment_config {
+        check_unchanged_deployment_config(None, deployment_config)?;
+    }
+    let pipeline_descr: PipelineDescr = body.into();
     let pipeline = state
         .db
         .lock()
@@ -1129,7 +1167,8 @@ pub(crate) async fn post_pipeline(
             , body = ErrorResponse
             , examples(
                 ("Name does not match pattern" = (value = json!(examples::error_pipeline_name_does_not_match_pattern()))),
-                ("Cannot update non-stopped pipeline" = (value = json!(examples::error_update_restricted_to_stopped())))
+                ("Cannot update non-stopped pipeline" = (value = json!(examples::error_update_restricted_to_stopped()))),
+                ("Changed deployment config" = (value = json!(examples::error_invalid_deployment_patch())))
             )
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
@@ -1144,11 +1183,18 @@ pub(crate) async fn put_pipeline(
     body: web::Json<PostPutPipelineInternal>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
-    let pipeline_descr: PipelineDescr = body.into_inner().into();
-    let (is_new, pipeline) = state
-        .db
-        .lock()
-        .await
+    let body = body.into_inner();
+    let db = state.db.lock().await;
+    if let Some(deployment_config) = &body.deployment_config {
+        let stored = match db.get_pipeline(*tenant_id, &pipeline_name).await {
+            Ok(pipeline) => pipeline.deployment_config,
+            Err(DBError::UnknownPipelineName { .. }) => None,
+            Err(e) => Err(e)?,
+        };
+        check_unchanged_deployment_config(stored.as_ref(), deployment_config)?;
+    }
+    let pipeline_descr: PipelineDescr = body.into();
+    let (is_new, pipeline) = db
         .new_or_update_pipeline(
             *tenant_id,
             Uuid::now_v7(),
@@ -1187,6 +1233,9 @@ pub(crate) async fn put_pipeline(
 /// Patch Pipeline
 ///
 /// Partially update a pipeline.
+///
+/// A `deployment_config` resizes the CPU and memory of a running pipeline in place (experimental,
+/// enabled by `--enable-pipeline-resize`). It cannot be combined with other fields.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -1213,9 +1262,15 @@ pub(crate) async fn put_pipeline(
             , body = ErrorResponse
             , examples(
                 ("Name does not match pattern" = (value = json!(examples::error_pipeline_name_does_not_match_pattern()))),
-                ("Cannot update non-stopped pipeline" = (value = json!(examples::error_update_restricted_to_stopped())))
+                ("Cannot update non-stopped pipeline" = (value = json!(examples::error_update_restricted_to_stopped()))),
+                ("Cannot resize non-running pipeline" = (value = json!(examples::error_deployment_restricted_to_running()))),
+                ("Invalid deployment config patch" = (value = json!(examples::error_invalid_deployment_patch())))
             )
         ),
+        (status = METHOD_NOT_ALLOWED
+            , description = "The runner of this installation cannot resize a running pipeline in place"
+            , body = ErrorResponse
+            , example = json!(examples::error_unsupported_pipeline_action())),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline CRUD"
@@ -1228,6 +1283,16 @@ pub(crate) async fn patch_pipeline(
     body: web::Json<PatchPipelineInternal>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
+    if let Some(deployment_config) = body.deployment_config.as_ref().filter(|v| !v.is_null()) {
+        return patch_deployment_config(
+            state,
+            *tenant_id,
+            &pipeline_name,
+            &body,
+            deployment_config,
+        )
+        .await;
+    }
     let pipeline = state
         .db
         .lock()
@@ -1259,6 +1324,50 @@ pub(crate) async fn patch_pipeline(
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(returned_pipeline))
+}
+
+/// Handles a `PATCH` of `deployment_config`, which resizes a running pipeline.
+async fn patch_deployment_config(
+    state: WebData<ServerState>,
+    tenant_id: TenantId,
+    pipeline_name: &str,
+    body: &PatchPipelineInternal,
+    deployment_config: &serde_json::Value,
+) -> Result<HttpResponse, ManagerError> {
+    if !state.config.enable_pipeline_resize {
+        Err(ApiError::UnsupportedPipelineAction {
+            action: "PATCH deployment_config".to_string(),
+            reason: "the runner of this installation cannot resize a running pipeline in place"
+                .to_string(),
+        })?;
+    }
+    let combined = body.name.is_some()
+        || !body.client_metadata.contains_only_nones()
+        || body.runtime_config.is_some()
+        || body.program_code.is_some()
+        || body.udf_rust.is_some()
+        || body.udf_toml.is_some()
+        || body.program_config.is_some();
+    if combined {
+        Err(DBError::InvalidDeploymentPatch {
+            reason: "`deployment_config` cannot be combined with other fields".to_string(),
+        })?;
+    }
+    let pipeline = state
+        .db
+        .lock()
+        .await
+        .patch_pipeline_deployment(tenant_id, pipeline_name, deployment_config)
+        .await?;
+    info!(
+        pipeline = %pipeline.name,
+        pipeline_id = %pipeline.id,
+        tenant = %tenant_id.0,
+        "Pipeline deployment config patched with {deployment_config}"
+    );
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(PipelineInfoInternal::new(pipeline)))
 }
 
 /// Recompile Pipeline
@@ -2231,6 +2340,131 @@ mod tests {
     };
     use feldera_types::runtime_status::{ConnectorStats, RuntimeStatusDetails};
     use serde_json::json;
+
+    /// `deployment_config` can only be changed by `PATCH`, alone, when resizing is enabled. `POST`
+    /// and `PUT` accept it only unchanged, so a pipeline read with `GET` can be written back.
+    #[actix_web::test]
+    async fn deployment_config_requests() {
+        use crate::api::main::ServerState;
+        use crate::db::test::setup_pg;
+        use crate::db::types::tenant::TenantId;
+        use actix_web::{App, HttpMessage, test, web};
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+        use uuid::Uuid;
+
+        crate::ensure_default_crypto_provider();
+        let (db, _temp) = setup_pg().await;
+        let db = Arc::new(Mutex::new(db));
+        let resize = json!({"resources": {"cpu_cores_min": 1.0}});
+        let unset = json!({"resources": {
+            "cpu_cores_min": null, "cpu_cores_max": null,
+            "memory_mb_min": null, "memory_mb_max": null,
+        }});
+        let put = |deployment_config: serde_json::Value| json!({"name": "p", "program_code": "", "deployment_config": deployment_config});
+        let cases = [
+            // (resizing enabled, method, uri, body, expected status, expected error code)
+            (
+                false,
+                "PATCH",
+                "/pipelines/missing",
+                json!({"deployment_config": resize}),
+                405,
+                Some("UnsupportedPipelineAction"),
+            ),
+            (
+                true,
+                "PATCH",
+                "/pipelines/missing",
+                json!({"deployment_config": resize}),
+                404,
+                Some("UnknownPipelineName"),
+            ),
+            (
+                true,
+                "PATCH",
+                "/pipelines/missing",
+                json!({"deployment_config": resize, "description": "d"}),
+                400,
+                Some("InvalidDeploymentPatch"),
+            ),
+            (
+                true,
+                "PATCH",
+                "/pipelines/missing",
+                json!({"deployment_config": resize, "runtime_config": {}}),
+                400,
+                Some("InvalidDeploymentPatch"),
+            ),
+            (
+                true,
+                "POST",
+                "/pipelines",
+                put(resize.clone()),
+                400,
+                Some("InvalidDeploymentPatch"),
+            ),
+            (
+                true,
+                "PUT",
+                "/pipelines/p",
+                put(resize.clone()),
+                400,
+                Some("InvalidDeploymentPatch"),
+            ),
+            (true, "PUT", "/pipelines/p", put(json!(null)), 201, None),
+            // Written back as read: never started, so `deployment_config` is unset.
+            (true, "PUT", "/pipelines/p", put(unset.clone()), 200, None),
+            (
+                true,
+                "PUT",
+                "/pipelines/p",
+                put(resize.clone()),
+                400,
+                Some("InvalidDeploymentPatch"),
+            ),
+            // A null `deployment_config` is a regular PATCH.
+            (
+                true,
+                "PATCH",
+                "/pipelines/p",
+                json!({"deployment_config": null, "description": "d"}),
+                200,
+                None,
+            ),
+        ];
+        for (enabled, method, uri, body, expected_status, expected_code) in cases {
+            let mut state = ServerState::test_state(db.clone()).await;
+            state.config.enable_pipeline_resize = enabled;
+            let app = test::init_service(
+                App::new()
+                    .app_data(web::Data::new(state))
+                    .service(super::patch_pipeline)
+                    .service(super::put_pipeline)
+                    .service(super::post_pipeline),
+            )
+            .await;
+            let req = test::TestRequest::default()
+                .method(method.parse().unwrap())
+                .uri(uri)
+                .set_json(&body)
+                .to_request();
+            req.extensions_mut().insert(TenantId(Uuid::nil()));
+            let resp = test::call_service(&app, req).await;
+            let status = resp.status();
+            let response: serde_json::Value = test::read_body_json(resp).await;
+            assert_eq!(status, expected_status, "{method} {uri} {body}: {response}");
+            if let Some(code) = expected_code {
+                assert_eq!(response["error_code"], code, "{method} {uri} {body}");
+            } else {
+                assert_eq!(
+                    response["deployment_config"],
+                    json!(null),
+                    "{method} {uri} {body}"
+                );
+            }
+        }
+    }
 
     /// The API never returns the large program info fields. The circuit IR in
     /// particular reaches the pipeline through the program info artifact, so

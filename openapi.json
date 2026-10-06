@@ -928,6 +928,7 @@
                       "logging": null,
                       "pipeline_template_configmap": null
                     },
+                    "deployment_config": null,
                     "program_code": "CREATE TABLE table1 ( col1 INT );",
                     "udf_rust": "",
                     "udf_toml": "",
@@ -1021,6 +1022,7 @@
                       "logging": null,
                       "pipeline_template_configmap": null
                     },
+                    "deployment_config": null,
                     "program_code": "CREATE TABLE table2 ( col2 VARCHAR );",
                     "udf_rust": "",
                     "udf_toml": "",
@@ -1142,6 +1144,7 @@
                   "logging": null,
                   "pipeline_template_configmap": null
                 },
+                "deployment_config": null,
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
                 "udf_toml": null,
@@ -1216,6 +1219,7 @@
                     "logging": null,
                     "pipeline_template_configmap": null
                   },
+                  "deployment_config": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
                   "udf_toml": "",
@@ -1402,6 +1406,7 @@
                     "logging": null,
                     "pipeline_template_configmap": null
                   },
+                  "deployment_config": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
                   "udf_toml": "",
@@ -1550,6 +1555,7 @@
                   "logging": null,
                   "pipeline_template_configmap": null
                 },
+                "deployment_config": null,
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
                 "udf_toml": null,
@@ -1624,6 +1630,7 @@
                     "logging": null,
                     "pipeline_template_configmap": null
                   },
+                  "deployment_config": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
                   "udf_toml": "",
@@ -1725,6 +1732,7 @@
                     "logging": null,
                     "pipeline_template_configmap": null
                   },
+                  "deployment_config": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
                   "udf_toml": "",
@@ -1780,6 +1788,15 @@
                       "message": "Pipeline can only be updated while stopped. Stop it first by invoking '/stop'.",
                       "error_code": "UpdateRestrictedToStopped",
                       "details": null
+                    }
+                  },
+                  "Changed deployment config": {
+                    "value": {
+                      "message": "Invalid deployment patch: cpu_cores_min (9) exceeds cpu_cores_max (8)",
+                      "error_code": "InvalidDeploymentPatch",
+                      "details": {
+                        "reason": "cpu_cores_min (9) exceeds cpu_cores_max (8)"
+                      }
                     }
                   },
                   "Name does not match pattern": {
@@ -1905,7 +1922,7 @@
           "Pipeline CRUD"
         ],
         "summary": "Patch Pipeline",
-        "description": "Required role: `write` or higher.\n\nPartially update a pipeline.",
+        "description": "Required role: `write` or higher.\n\nPartially update a pipeline.\n\nA `deployment_config` resizes the CPU and memory of a running pipeline in place (experimental,\nenabled by `--enable-pipeline-resize`). It cannot be combined with other fields.",
         "operationId": "patch_pipeline",
         "parameters": [
           {
@@ -1928,6 +1945,7 @@
                 "name": null,
                 "description": "This is a new description",
                 "runtime_config": null,
+                "deployment_config": null,
                 "program_code": "CREATE TABLE table3 ( col3 INT );",
                 "udf_rust": null,
                 "udf_toml": null,
@@ -1997,6 +2015,7 @@
                     "logging": null,
                     "pipeline_template_configmap": null
                   },
+                  "deployment_config": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
                   "udf_toml": "",
@@ -2047,11 +2066,27 @@
                   "$ref": "#/components/schemas/ErrorResponse"
                 },
                 "examples": {
+                  "Cannot resize non-running pipeline": {
+                    "value": {
+                      "message": "Pipeline 'deployment_config' can only be changed while it is running. Start it with '/start', or change 'runtime_config.resources' while it is stopped.",
+                      "error_code": "DeploymentRestrictedToRunning",
+                      "details": null
+                    }
+                  },
                   "Cannot update non-stopped pipeline": {
                     "value": {
                       "message": "Pipeline can only be updated while stopped. Stop it first by invoking '/stop'.",
                       "error_code": "UpdateRestrictedToStopped",
                       "details": null
+                    }
+                  },
+                  "Invalid deployment config patch": {
+                    "value": {
+                      "message": "Invalid deployment patch: cpu_cores_min (9) exceeds cpu_cores_max (8)",
+                      "error_code": "InvalidDeploymentPatch",
+                      "details": {
+                        "reason": "cpu_cores_min (9) exceeds cpu_cores_max (8)"
+                      }
                     }
                   },
                   "Name does not match pattern": {
@@ -2081,6 +2116,24 @@
                   "error_code": "UnknownPipelineName",
                   "details": {
                     "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "The runner of this installation cannot resize a running pipeline in place",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unsupported pipeline action 'suspend': this pipeline does not support the suspend action for the following reason(s):\n    - Storage must be configured",
+                  "error_code": "UnsupportedPipelineAction",
+                  "details": {
+                    "action": "suspend",
+                    "reason": "this pipeline does not support the suspend action for the following reason(s):\n    - Storage must be configured"
                   }
                 }
               }
@@ -7137,6 +7190,7 @@
                     "logging": null,
                     "pipeline_template_configmap": null
                   },
+                  "deployment_config": null,
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
                   "udf_toml": "",
@@ -10361,6 +10415,35 @@
           }
         }
       },
+      "DeploymentResources": {
+        "type": "object",
+        "description": "The CPU and memory of a pipeline deployment.",
+        "properties": {
+          "cpu_cores_max": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "cpu_cores_min": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "memory_mb_max": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          },
+          "memory_mb_min": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true,
+            "minimum": 0
+          }
+        },
+        "additionalProperties": false
+      },
       "DevTweaks": {
         "type": "object",
         "description": "Optional settings for tweaking Feldera internals.\n\nThese settings reflect experiments that may come and go and change from\nversion to version.  Users should not consider them to be stable.",
@@ -12926,6 +13009,14 @@
           {
             "type": "object",
             "properties": {
+              "deployment_config": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PipelineDeploymentConfig"
+                  }
+                ],
+                "nullable": true
+              },
               "name": {
                 "type": "string",
                 "nullable": true
@@ -13254,6 +13345,16 @@
         ],
         "description": "Pipeline deployment configuration.\nIt represents configuration entries directly provided by the user\n(e.g., runtime configuration) and entries derived from the schema\nof the compiled program (e.g., connectors). Storage configuration,\nif applicable, is set by the runner."
       },
+      "PipelineDeploymentConfig": {
+        "type": "object",
+        "description": "The `deployment_config` field of a pipeline in the API: the runtime modifiable fields of the\nstored deployment config. `PATCH` changes them while the pipeline runs.",
+        "properties": {
+          "resources": {
+            "$ref": "#/components/schemas/DeploymentResources"
+          }
+        },
+        "additionalProperties": false
+      },
       "PipelineDiff": {
         "type": "object",
         "description": "Summary of changes in the pipeline between checkpointed and new versions.",
@@ -13382,6 +13483,14 @@
               "created_at": {
                 "type": "string",
                 "format": "date-time"
+              },
+              "deployment_config": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PipelineDeploymentConfig"
+                  }
+                ],
+                "nullable": true
               },
               "deployment_desired_status": {
                 "$ref": "#/components/schemas/CombinedDesiredStatus"
@@ -13658,6 +13767,14 @@
                 "type": "string",
                 "format": "date-time"
               },
+              "deployment_config": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PipelineDeploymentConfig"
+                  }
+                ],
+                "nullable": true
+              },
               "deployment_desired_status": {
                 "$ref": "#/components/schemas/CombinedDesiredStatus"
               },
@@ -13868,6 +13985,14 @@
               "program_code"
             ],
             "properties": {
+              "deployment_config": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/PipelineDeploymentConfig"
+                  }
+                ],
+                "nullable": true
+              },
               "name": {
                 "type": "string"
               },

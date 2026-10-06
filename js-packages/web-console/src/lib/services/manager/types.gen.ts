@@ -1709,6 +1709,16 @@ export type Demo = {
 }
 
 /**
+ * The CPU and memory of a pipeline deployment.
+ */
+export type DeploymentResources = {
+  cpu_cores_max?: number | null
+  cpu_cores_min?: number | null
+  memory_mb_max?: number | null
+  memory_mb_min?: number | null
+}
+
+/**
  * Optional settings for tweaking Feldera internals.
  *
  * These settings reflect experiments that may come and go and change from
@@ -4078,6 +4088,7 @@ export type PatchClientMetadata = {
  * change.
  */
 export type PatchPipeline = PatchClientMetadata & {
+  deployment_config?: PipelineDeploymentConfig | null
   name?: string | null
   program_code?: string | null
   program_config?: ProgramConfig | null
@@ -4352,6 +4363,14 @@ export type PipelineConfig = {
 }
 
 /**
+ * The `deployment_config` field of a pipeline in the API: the runtime modifiable fields of the
+ * stored deployment config. `PATCH` changes them while the pipeline runs.
+ */
+export type PipelineDeploymentConfig = {
+  resources?: DeploymentResources
+}
+
+/**
  * Summary of changes in the pipeline between checkpointed and new versions.
  */
 export type PipelineDiff = {
@@ -4395,6 +4414,7 @@ export type PipelineId = string
  */
 export type PipelineInfo = ClientMetadata & {
   created_at: string
+  deployment_config?: PipelineDeploymentConfig | null
   deployment_desired_status: CombinedDesiredStatus
   deployment_desired_status_since: string
   deployment_error?: ErrorResponse | null
@@ -4466,6 +4486,7 @@ export type PipelineMonitorEventSelectedInfo = {
 export type PipelineSelectedInfo = ClientMetadata & {
   connectors?: ConnectorStats | null
   created_at: string
+  deployment_config?: PipelineDeploymentConfig | null
   deployment_desired_status: CombinedDesiredStatus
   deployment_desired_status_since: string
   deployment_error?: ErrorResponse | null
@@ -4554,6 +4575,7 @@ export type PipelineTemplateConfig = {
  * (for strings: an empty string `""`, for objects: an empty dictionary `{}`).
  */
 export type PostPutPipeline = ClientMetadata & {
+  deployment_config?: PipelineDeploymentConfig | null
   name: string
   program_code: string
   program_config?: ProgramConfig | null
@@ -7598,6 +7620,10 @@ export type PatchPipelineErrors = {
    * Pipeline with that name does not exist
    */
   404: ErrorResponse
+  /**
+   * The runner of this installation cannot resize a running pipeline in place
+   */
+  405: ErrorResponse
   /**
    * Cannot rename pipeline as the name already exists
    */
