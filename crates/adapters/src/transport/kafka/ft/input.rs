@@ -76,27 +76,24 @@ const ERROR_BUFFER_SIZE: usize = 1000;
 type HeaderPairs<'a> = SmallVec<[(&'a str, Option<&'a [u8]>); 8]>;
 
 pub struct KafkaFtInputEndpoint {
-    config: Arc<KafkaInputConfig>,
+    config: KafkaInputConfig,
 }
 
 impl KafkaFtInputEndpoint {
     pub fn new(mut config: KafkaInputConfig) -> AnyResult<KafkaFtInputEndpoint> {
         config.validate()?;
-        Ok(KafkaFtInputEndpoint {
-            config: Arc::new(config),
-        })
+        Ok(KafkaFtInputEndpoint { config })
     }
 }
 
-/// Returns a copy of `config` whose `partitions` list, if any, is in ascending
-/// order, with any offsets in `start_from` reordered to match.
+/// Returns `config` modified so that its `partitions` list, if any, is in
+/// ascending order, with any offsets in `start_from` reordered to match.
 ///
 /// The reader keeps its partitions in ascending order, and so do the offsets in
 /// its resume metadata.  Code that pairs the reader's partitions with the
 /// configuration's partitions by position is only correct if both are in the
 /// same order.
-pub(super) fn sort_partitions(config: &KafkaInputConfig) -> KafkaInputConfig {
-    let mut config = config.clone();
+pub(super) fn sort_partitions(mut config: KafkaInputConfig) -> KafkaInputConfig {
     if let Some(partitions) = &mut config.partitions {
         match &mut config.start_from {
             KafkaStartFromConfig::Offsets(offsets) => {
@@ -887,7 +884,7 @@ fn span(topic: &str) -> EnteredSpan {
 
 impl KafkaFtInputReader {
     fn new(
-        config: &Arc<KafkaInputConfig>,
+        config: KafkaInputConfig,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         resume_info: Option<serde_json::Value>,
@@ -916,14 +913,14 @@ impl KafkaFtInputReader {
         //
         // This has the desirable side effect of ensuring that we can reach the
         // broker and failing with an error if we cannot.
-        let context = KafkaFtInputContext::new(config)?;
+        let context = KafkaFtInputContext::new(&config)?;
         let kafka_consumer = BaseConsumer::from_config_and_context(&client_config, context)?;
 
         // IMPORTANT: Poll before trying to fetch metadata. Necessary so that OAUTHBREAKER token
         // is set.
         kafka_consumer.poll(std::time::Duration::from_nanos(0));
         let partition_count = count_partitions_in_topic(&kafka_consumer, &config.topic)?;
-        let config = &Arc::new(sort_partitions(config));
+        let config = Arc::new(sort_partitions(config));
 
         let inner = Arc::new(KafkaFtInputReaderInner {
             kafka_consumer: Arc::new(kafka_consumer),
@@ -943,7 +940,7 @@ impl KafkaFtInputReader {
         // checkpoint (`resume_info`) supersedes `start_from`, so skip it then.
         let latest_offsets =
             if resume_info.is_none() && matches!(config.start_from, KafkaStartFromConfig::Latest) {
-                Some(inner.fetch_latest_offsets(config, n_partitions)?)
+                Some(inner.fetch_latest_offsets(&config, n_partitions)?)
             } else {
                 None
             };
@@ -995,7 +992,7 @@ impl TransportInputEndpoint for KafkaFtInputEndpoint {
         resume_info: Option<serde_json::Value>,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(KafkaFtInputReader::new(
-            &self.config,
+            self.config.clone(),
             consumer,
             parser,
             resume_info,
