@@ -108,6 +108,7 @@ import java.util.Objects;
 import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * This class compiles SQL statements into DBSP circuits.
@@ -240,6 +241,28 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     public static ProgramIdentifier NOW_TABLE_NAME = new ProgramIdentifier("", false);
     public static ProgramIdentifier ERROR_TABLE_NAME = new ProgramIdentifier("", false);
     public static ProgramIdentifier ERROR_VIEW_NAME = new ProgramIdentifier("", false);
+
+    /** Running time of each compilation phase; printed with -TVisitorProfiles=1 */
+    public static final VisitorProfiles phases = new VisitorProfiles();
+
+    /** Run 'action' and add its running time to the named compilation phase */
+    public static <T> T timed(String phase, Supplier<T> action) {
+        phases.start(phase);
+        try {
+            return action.get();
+        } finally {
+            phases.stop(phase);
+        }
+    }
+
+    public static void timedRun(String phase, Runnable action) {
+        phases.start(phase);
+        try {
+            action.run();
+        } finally {
+            phases.stop(phase);
+        }
+    }
 
     // Steps executed before the actual compilation.
     void start() {
@@ -666,7 +689,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
     }
 
     @Nullable DBSPCircuit runAllCompilerStages() {
-        List<ParsedStatement> parsed = this.runParser();
+        List<ParsedStatement> parsed = timed("Parse", this::runParser);
         if (this.hasErrors())
             return null;
 
@@ -699,15 +722,15 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                         .newline();
                 SqlKind kind = node.statement().getKind();
                 if (kind == SqlKind.CREATE_TYPE) {
-                    RelStatement fe = this.sqlToRelCompiler.compileCreateType(node);
+                    RelStatement fe = timed("Calcite", () -> this.sqlToRelCompiler.compileCreateType(node));
                     if (fe == null)
                         // error during compilation
                         continue;
-                    this.relToDBSPCompiler.compile(fe);
+                    timedRun("RelToDBSP", () -> this.relToDBSPCompiler.compile(fe));
                     continue;
                 }
                 if (kind == SqlKind.OTHER && node.statement() instanceof SqlCreateAggregate) {
-                    CreateAggregateStatement stat = this.sqlToRelCompiler.compileCreateAggregate(node, this.sources);
+                    CreateAggregateStatement stat = timed("Calcite", () -> this.sqlToRelCompiler.compileCreateAggregate(node, this.sources));
                     boolean exists = this.sqlToRelCompiler.functionExists(stat.function.getName());
                     if (exists) {
                         throw new CompilationError("A function named " + Utilities.singleQuote(stat.function.getName()) +
@@ -716,10 +739,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                                 stat.getCalciteObject());
                     }
                     aggregateFunctions.add(stat.function);
-                    this.relToDBSPCompiler.compile(stat);
+                    timedRun("RelToDBSP", () -> this.relToDBSPCompiler.compile(stat));
                 }
                 if (kind == SqlKind.CREATE_FUNCTION) {
-                    CreateFunctionStatement stat = this.sqlToRelCompiler.compileCreateFunction(node, this.sources);
+                    CreateFunctionStatement stat = timed("Calcite", () -> this.sqlToRelCompiler.compileCreateFunction(node, this.sources));
                     boolean exists = this.sqlToRelCompiler.functionExists(stat.function.getName());
                     if (exists) {
                         throw new CompilationError("A function named " + Utilities.singleQuote(stat.function.getName()) +
@@ -737,7 +760,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                         SqlOperatorTable newFunctions = SqlOperatorTables.of(Linq.list(function));
                         this.sqlToRelCompiler.addOperatorTable(newFunctions);
                     }
-                    this.relToDBSPCompiler.compile(stat);
+                    timedRun("RelToDBSP", () -> this.relToDBSPCompiler.compile(stat));
                 }
                 if (node.statement() instanceof SqlLateness lateness) {
                     ProgramIdentifier view = ProgramIdentifier.fromSqlId(lateness.getView());
@@ -778,9 +801,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 if (node.statement() instanceof SqlCreateView cv) {
                     ProgramIdentifier viewName = ProgramIdentifier.fromSqlId(cv.name);
                     Map<ProgramIdentifier, SqlLateness> lateness = this.viewLateness.getOrDefault(viewName, new HashMap<>());
-                    compiled = this.compileCreateView(node, lateness);
+                    compiled = timed("Calcite", () -> this.compileCreateView(node, lateness));
                 } else {
-                    RelStatement single = this.sqlToRelCompiler.compile(node, this.sources);
+                    RelStatement single = timed("Calcite", () -> this.sqlToRelCompiler.compile(node, this.sources));
                     compiled = single == null
                             // error during compilation
                             ? Linq.list()
@@ -801,12 +824,12 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                             return null;
                         Utilities.putNew(this.indexes, ct.getName(), ct);
                     }
-                    this.relToDBSPCompiler.compile(fe);
+                    timedRun("RelToDBSP", () -> this.relToDBSPCompiler.compile(fe));
                 }
             }
             this.setErrorContext(SourcePositionRange.INVALID);
 
-            this.sqlToRelCompiler.endCompilation(this.compiler());
+            timedRun("Calcite", () -> this.sqlToRelCompiler.endCompilation(this.compiler()));
             DBSPCircuit circuit = this.relToDBSPCompiler.getFinalCircuit();
             if (circuit == null)
                 return null;
@@ -814,8 +837,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 ToDot.dump(this, "initial.png", this.getDebugLevel(), "png", circuit);
 
             this.validateForeignKeys(circuit, foreignKeys);
-            if (!this.options.ioOptions.inputCircuit)
-                circuit = this.optimize(circuit);
+            if (!this.options.ioOptions.inputCircuit) {
+                DBSPCircuit unoptimized = circuit;
+                circuit = timed("Optimizer", () -> this.optimize(unoptimized));
+            }
             return circuit;
         } catch (CalciteContextException e) {
             CompilationError e0 = this.improveErrorMessage(e);

@@ -17,7 +17,8 @@ import java.util.Map;
 
 /** Collect running time for various visitors.
  * Note that running times are not cumulative - some visitors can invoke other visitors.
- * The compiler prints the collected profiles at the end of compilation when invoked with -TVisitorProfiles=1 */
+ * The compiler prints the collected profiles and the time of each compilation phase
+ * at the end of compilation when invoked with -TVisitorProfiles=1 */
 public class VisitorProfiles {
     record Profile(long time, int invocations) {
         Profile add(long time) {
@@ -50,18 +51,23 @@ public class VisitorProfiles {
         return visitor.getClass().getSimpleName();
     }
 
-    void start(String visitor) {
+    public void start(String visitor) {
         Long now = System.currentTimeMillis();
         this.running.add(Pair.of(visitor, now));
     }
 
-    void stop(String visitor) {
+    public void stop(String visitor) {
         long end = System.currentTimeMillis();
         var pair = Utilities.removeLast(this.running);
         Utilities.enforce(pair.left.equals(visitor), () -> "Expected to finish " + pair.left + " but it is " + visitor);
         Long started = pair.right;
-        Profile previous = this.profiles.getOrDefault(visitor, new Profile(0, 0));
-        this.profiles.put(visitor, previous.add(end - started));
+        this.add(visitor, end - started);
+    }
+
+    /** Add a measured duration to the named profile */
+    public void add(String name, long ms) {
+        Profile previous = this.profiles.getOrDefault(name, new Profile(0, 0));
+        this.profiles.put(name, previous.add(ms));
     }
 
     public void start(InnerVisitor visitor) {

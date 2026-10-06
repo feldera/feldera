@@ -134,6 +134,7 @@ import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.Pair;
 import org.dbsp.generated.parser.DbspParserImpl;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.Documentation;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
@@ -953,7 +954,8 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         CalciteOptimizer optimizer = new CalciteOptimizer(
                 this.options.languageOptions.optimizationLevel, relBuilder, this.errorReporter);
-        rel = optimizer.apply(rel, this.options);
+        RelNode input = rel;
+        rel = DBSPCompiler.timed("Calcite.optimize", () -> optimizer.apply(input, this.options));
         RelNode finalRel1 = rel;
         if (visible)
             Logger.INSTANCE.belowLevel(this, level)
@@ -1425,7 +1427,8 @@ public class SqlToRelCompiler implements IWritesLogs {
                 }
                 if (cd.defaultValue != null) {
                     defaultValueRange = new SourcePositionRange(cd.defaultValue.getParserPosition());
-                    defaultValue = this.validateDefaultValue(cd, cd.defaultValue, sources);
+                    defaultValue = DBSPCompiler.timed("Calcite.defaults",
+                            () -> this.validateDefaultValue(cd, cd.defaultValue, sources));
                 }
                 interned = cd.interned;
             } else if (col instanceof SqlPrimaryKey ||
@@ -2104,10 +2107,11 @@ public class SqlToRelCompiler implements IWritesLogs {
 
     RelRoot sqlToRel(SqlNode node) {
         SqlToRelConverter converter = this.getConverter();
-        SqlNode validated = this.getValidator().validate(node);
+        // Phase names with a "Calcite." prefix measure parts of the "Calcite" phase
+        SqlNode validated = DBSPCompiler.timed("Calcite.validate", () -> this.getValidator().validate(node));
         validated.accept(new WarnFloatingPointEquality(
                 this.getValidator(), this.errorReporter, this.sourcePositionRemap));
-        RelRoot root = converter.convertQuery(validated, false, true);
+        RelRoot root = DBSPCompiler.timed("Calcite.toRel", () -> converter.convertQuery(validated, false, true));
         root.rel.accept(new RejectUnsupportedPlans(this.errorReporter));
         return root;
     }
