@@ -259,16 +259,16 @@ jobs:
 
       # feldera-ci has no OAuth secret; the Unity Catalog deletion-vector
       # test authenticates through Databricks workload identity federation
-      # instead (see infrastructure/terraform/databricks/access_control.tf
-      # for the federation policy this matches), exchanging this job's own
-      # GitHub OIDC token for a Databricks one. unity_api.py does the
-      # exchange itself, lazily, the moment the test actually calls it --
-      # not here, up front: the full tests/platform suite runs under
-      # pytest-xdist for 30+ minutes, long enough to approach a federated
-      # token's ~1h lifetime, and which test draws a stale one would depend
-      # on xdist's scheduling. GitHub sets ACTIONS_ID_TOKEN_REQUEST_URL/
-      # _TOKEN on every step once id-token: write is granted, not just one
-      # that explicitly reads them, so no separate step is needed here.
+      # instead, exchanging this job's own GitHub OIDC token for a
+      # Databricks one. unity_api.py does the exchange itself, lazily, the
+      # moment the test actually calls it and caches the result until
+      # Databricks' own reported expiry -- not here, up front: the full
+      # tests/platform suite runs under pytest-xdist for 30+ minutes, long
+      # enough to approach a federated token's lifetime, and which test
+      # draws a stale one would depend on xdist's scheduling. GitHub sets
+      # ACTIONS_ID_TOKEN_REQUEST_URL/_TOKEN on every step once id-token:
+      # write is granted, not just one that explicitly reads them, so no
+      # separate step is needed here.
       - name: Run platform tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/platform --timeout=1500 -vv ${{ vars.PYTEST_EXTRA }}

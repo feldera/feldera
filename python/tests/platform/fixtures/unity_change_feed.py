@@ -424,9 +424,9 @@ def main() -> None:
     host = _require("DELTA_TABLE_TEST_UNITY_HOST").rstrip("/")
     catalog = _require("DELTA_TABLE_TEST_UNITY_CATALOG")
     warehouse = _require("DELTA_TABLE_TEST_UNITY_WAREHOUSE_ID")
-    # feldera-ci has no standing client_secret (see infra#239); prefer a
-    # personal token from `databricks auth token` for this by-hand step, and
-    # fall back to a client_secret for whoever already has one.
+    # feldera-ci has no standing client_secret; prefer a personal token from
+    # `databricks auth token` for this by-hand step, and fall back to a
+    # client_secret for whoever already has one.
     token = os.environ.get("DELTA_TABLE_TEST_UNITY_TOKEN") or _token(
         host,
         _require("DELTA_TABLE_TEST_UNITY_CLIENT_ID"),
