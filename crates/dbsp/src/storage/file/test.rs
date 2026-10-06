@@ -1753,6 +1753,84 @@ fn roaring_u64_filter_roundtrip_uses_batch_min_offset() {
     });
 }
 
+/// A roaring filter planned around a key smaller than the file's first key
+/// answers the same straight from the writer and after the file is reopened.
+///
+/// A merge plans its filter around the smallest key of its inputs, and that
+/// key can cancel out of the merged file. The keys here sit at odd offsets from
+/// the planned minimum, so a reader that took the first key for the filter's
+/// base would probe only clear bits.
+#[test]
+fn roaring_filter_planned_below_the_first_key_survives_reopen() {
+    init_test_logger();
+
+    with_roaring_enabled(|| {
+        for reopen in [false, true] {
+            let factories = Factories::<DynData, DynData>::new::<i64, ()>();
+            let tempdir = tempdir().unwrap();
+            let storage_backend = <dyn StorageBackend>::new(
+                &StorageConfig {
+                    path: tempdir.path().to_string_lossy().to_string(),
+                    cache: Default::default(),
+                },
+                &StorageOptions::default(),
+            )
+            .unwrap();
+
+            let planned_min = -1_000i64;
+            let keys: Vec<i64> = (0..64).map(|i| planned_min + 1 + 2 * i).collect();
+            let filter_plan =
+                FilterPlan::from_bounds((&planned_min) as &DynData, keys.last().unwrap());
+            let mut writer = Writer1::new(
+                &factories,
+                test_buffer_cache,
+                &*storage_backend,
+                Parameters::default(),
+                FilterPlan::decide_filter(Some(&filter_plan), keys.len()),
+            )
+            .unwrap();
+            for key in &keys {
+                writer.write0((key, &())).unwrap();
+            }
+
+            let (reader, filters) = if reopen {
+                let path = writer.path().clone();
+                let (_file_handle, _key_filter, _key_bounds) =
+                    writer.close(BatchMetadata::default()).unwrap();
+                let (reader, membership_filter) = Reader::open_with_filter(
+                    &[&factories.any_factories()],
+                    test_buffer_cache,
+                    &*storage_backend,
+                    &path,
+                )
+                .unwrap();
+                let key_range = reader.key_range().unwrap().map(Into::into);
+                let filters = BatchFilters::from_file(key_range, membership_filter);
+                (reader, filters)
+            } else {
+                writer.into_reader(BatchMetadata::default()).unwrap()
+            };
+
+            for key in &keys {
+                assert!(
+                    filters.maybe_contains_key(key as &DynData, None),
+                    "reopen={reopen}: key {key} not found"
+                );
+            }
+            for key in keys.iter().map(|key| key + 1).take(keys.len() - 1) {
+                assert!(
+                    !filters.maybe_contains_key((&key) as &DynData, None),
+                    "reopen={reopen}: absent key {key} found"
+                );
+            }
+            assert_eq!(
+                filter_block_magic(&reader),
+                Some(ROARING_BITMAP_FILTER_BLOCK_MAGIC)
+            );
+        }
+    });
+}
+
 #[test]
 fn i64_keys_fallback_to_bloom_when_span_exceeds_u32() {
     init_test_logger();

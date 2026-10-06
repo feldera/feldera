@@ -84,11 +84,22 @@ impl BatchKeyFilter {
         bloom::load_modular_bloom_filter(layout, words, density).map(Self::Bloom)
     }
 
-    pub(crate) fn deserialize_roaring_u32<K>(data: &[u8], min: &K) -> io::Result<Self>
+    /// Loads the roaring filter that a file stores for its keys.
+    ///
+    /// # Arguments
+    ///
+    /// * `data` - The serialized bitmap.
+    /// * `first_key` - The file's smallest key, which locates the bitmap's
+    ///   base (see [`TrackingRoaringBitmap::deserialize_from_first_key`]).
+    ///
+    /// # Returns
+    ///
+    /// The filter, or the error that deserializing the bitmap reported.
+    pub(crate) fn deserialize_roaring_u32<K>(data: &[u8], first_key: &K) -> io::Result<Self>
     where
         K: DataTrait + ?Sized,
     {
-        TrackingRoaringBitmap::deserialize_from(data, min).map(Self::RoaringU32)
+        TrackingRoaringBitmap::deserialize_from_first_key(data, first_key).map(Self::RoaringU32)
     }
 
     /// Adds a key to the filter.
@@ -127,6 +138,11 @@ impl BatchKeyFilter {
 ///   minimum;
 /// - one exact touched-window count per input batch, relative to that batch's
 ///   own minimum.
+///
+/// The bounds come from the input batches, so the merged batch can be
+/// narrower: a key whose weights cancel, or that a filter drops, never
+/// reaches it. A roaring filter takes `min` as its base, which can therefore
+/// lie below the merged batch's first key.
 pub struct FilterPlan<K>
 where
     K: DataTrait + ?Sized,

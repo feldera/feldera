@@ -9,10 +9,19 @@ use std::{io, mem::size_of_val};
 use tracing::{debug, error};
 
 /// Roaring bitmap wrapper that tracks hit/miss counts during membership probes.
+///
+/// The bitmap holds each key as a `u32` offset from a base key. A merge
+/// chooses the base before it writes anything, as the smallest key of its
+/// inputs, and that key may cancel out of the merged batch. Only the bitmap is
+/// stored, so a filter loaded from a file knows the batch's first key, not
+/// the base; `deserialize_from_first_key` recovers the base from it.
 #[derive(Debug)]
 pub struct TrackingRoaringBitmap {
     bitmap: RoaringBitmap,
     min: Box<DynData>,
+    /// The bit that `min` maps to. Zero when `min` is the base the bitmap was
+    /// built from.
+    min_offset: u32,
     tracking: TrackingFilterStats,
 }
 
@@ -24,6 +33,7 @@ impl TrackingRoaringBitmap {
         let mut filter = Self {
             bitmap,
             min: clone_box(min.as_data()),
+            min_offset: 0,
             tracking: TrackingFilterStats::new(0),
         };
         filter.refresh_stats_size();
@@ -64,7 +74,10 @@ impl TrackingRoaringBitmap {
     where
         K: DataTrait + ?Sized,
     {
-        self.push(self.roaring_u32(key));
+        let bit = self
+            .bit(key)
+            .expect("roaring key lies beyond the last bit of the filter");
+        self.push(bit);
     }
 
     pub(crate) fn finalize(&mut self) {
@@ -91,18 +104,40 @@ impl TrackingRoaringBitmap {
         is_hit
     }
 
-    fn roaring_u32<K>(&self, key: &K) -> u32
+    /// Returns the bit that represents `key`.
+    ///
+    /// # Arguments
+    ///
+    /// * `key` - A key no smaller than `min`.
+    ///
+    /// # Returns
+    ///
+    /// The bit, or `None` if it would lie beyond the last bit a `u32` can
+    /// address.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `key` is smaller than `min` or lies more than `u32::MAX`
+    /// above it: callers check a batch's key range before its filter.
+    fn bit<K>(&self, key: &K) -> Option<u32>
     where
         K: DataTrait + ?Sized,
     {
         key.roaring_u32_offset_dyn_checked(self.min.as_ref())
+            .checked_add(self.min_offset)
     }
 
     pub(crate) fn maybe_contains_key<K>(&self, key: &K) -> bool
     where
         K: DataTrait + ?Sized,
     {
-        self.contains(self.roaring_u32(key))
+        match self.bit(key) {
+            Some(bit) => self.contains(bit),
+            None => {
+                self.tracking.record(false);
+                false
+            }
+        }
     }
 
     pub(crate) fn stats(&self) -> FilterStats {
@@ -117,12 +152,33 @@ impl TrackingRoaringBitmap {
         self.bitmap.serialize_into(writer)
     }
 
-    pub(crate) fn deserialize_from<R, K>(reader: R, min: &K) -> io::Result<Self>
+    /// Loads a filter stored for a batch whose first key is `first_key`.
+    ///
+    /// The stored bitmap does not record the base its offsets are relative
+    /// to, and a merged batch can start above that base when its smallest
+    /// input key cancels out. Decoding relative to `first_key` alone would then
+    /// shift every probe off its key's bit. Keys are added in ascending order,
+    /// so the bitmap's lowest set bit belongs to `first_key`, and its position
+    /// is the distance from the base to `first_key`.
+    ///
+    /// # Arguments
+    ///
+    /// * `reader` - The serialized bitmap.
+    /// * `first_key` - The smallest key of the batch the filter belongs to.
+    ///
+    /// # Returns
+    ///
+    /// The filter, or the error that deserializing the bitmap reported.
+    pub(crate) fn deserialize_from_first_key<R, K>(reader: R, first_key: &K) -> io::Result<Self>
     where
         R: io::Read,
         K: DataTrait + ?Sized,
     {
-        Ok(Self::new(RoaringBitmap::deserialize_from(reader)?, min))
+        let bitmap = RoaringBitmap::deserialize_from(reader)?;
+        let first_key_offset = bitmap.min().unwrap_or(0);
+        let mut filter = Self::new(bitmap, first_key);
+        filter.min_offset = first_key_offset;
+        Ok(filter)
     }
 }
 
@@ -444,6 +500,10 @@ mod tests {
     }
 
     /// Round-trip serialize/deserialize keeps the same membership behavior.
+    ///
+    /// Container 0 is empty, so the first key lies `1 << 16` above the base
+    /// the filter was built from, and the restored filter has to locate the
+    /// base from the first key.
     #[test]
     fn tracking_roaring_bitmap_roundtrip_serialization() {
         let min = -123i64;
@@ -461,6 +521,7 @@ mod tests {
                 (0..keys_in_container).map(move |offset| min + container_base + offset)
             })
             .collect();
+        let first_key = inserted_values[0];
 
         let mut original = TrackingRoaringBitmap::with_min((&min) as &crate::dynamic::DynData);
         for value in &inserted_values {
@@ -472,9 +533,9 @@ mod tests {
         original
             .serialize_into(&mut serialized)
             .expect("roaring filter should serialize");
-        let restored = TrackingRoaringBitmap::deserialize_from(
+        let restored = TrackingRoaringBitmap::deserialize_from_first_key(
             serialized.as_slice(),
-            (&min) as &crate::dynamic::DynData,
+            (&first_key) as &crate::dynamic::DynData,
         )
         .expect("roaring filter should deserialize");
 
@@ -494,7 +555,9 @@ mod tests {
                 "expected inserted value {value} to survive round-trip"
             );
         }
-        for container in 0..CONTAINER_COUNT {
+        // Container 0 lies below the first key, where a batch's range check
+        // stops every probe before it reaches the filter.
+        for container in 1..CONTAINER_COUNT {
             let container_base = min + (container << 16);
             let keys_in_container = container * container;
             for offset in keys_in_container..CONTAINER_WIDTH {
@@ -569,6 +632,65 @@ mod tests {
             prop_assert!(stats.size_byte > 0);
             prop_assert_eq!(stats.hits, inserted_values.len() + probe_hits);
             prop_assert_eq!(stats.misses, probe_misses);
+        }
+
+        /// A filter stored and then loaded from its batch's first key answers
+        /// every probe in the batch's key range exactly. The batch either
+        /// starts at the base the filter was built from or above it, as a
+        /// merged batch does when its smallest input key cancels.
+        #[test]
+        fn tracking_roaring_bitmap_loaded_from_first_key_matches_reference_set(
+            base in -1_000_000i64..=1_000_000,
+            starts_at_base in any::<bool>(),
+            inserted_offsets in vec(any::<u32>(), 1..256),
+            probe_offsets in vec(any::<u32>(), 0..256),
+        ) {
+            let mut offsets = inserted_offsets;
+            if starts_at_base {
+                offsets.push(0);
+            }
+            offsets.sort_unstable();
+            offsets.dedup();
+            let keys: Vec<i64> = offsets
+                .iter()
+                .map(|offset| base + i64::from(*offset))
+                .collect();
+            let expected: BTreeSet<i64> = keys.iter().copied().collect();
+            let (first_key, last_key) = (keys[0], keys[keys.len() - 1]);
+
+            let mut stored = TrackingRoaringBitmap::with_min((&base) as &DynData);
+            for key in &keys {
+                stored.push_key(key as &DynData);
+            }
+            stored.finalize();
+            let mut serialized = Vec::new();
+            stored
+                .serialize_into(&mut serialized)
+                .expect("roaring filter should serialize");
+            let loaded = TrackingRoaringBitmap::deserialize_from_first_key(
+                serialized.as_slice(),
+                (&first_key) as &DynData,
+            )
+            .expect("roaring filter should deserialize");
+
+            // A batch checks its key range before its filter, so probes outside
+            // `first_key..=last_key` never reach the filter.
+            let probes = keys.iter().copied().chain(
+                probe_offsets
+                    .iter()
+                    .map(|offset| base + i64::from(*offset))
+                    .filter(|key| (first_key..=last_key).contains(key)),
+            );
+            for key in probes {
+                prop_assert_eq!(
+                    loaded.maybe_contains_key((&key) as &DynData),
+                    expected.contains(&key),
+                    "membership mismatch for key {} (first key {}, base {})",
+                    key,
+                    first_key,
+                    base,
+                );
+            }
         }
     }
 }
