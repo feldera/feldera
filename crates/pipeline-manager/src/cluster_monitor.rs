@@ -85,8 +85,10 @@ pub async fn cluster_monitor<P: ResourcesPoller>(
     );
     // `check_storage` additionally fails on storage pressure of the compiler
     // working directory, which would make binary uploads fail with ENOSPC.
+    // `check_sccache` additionally fails when the sccache server that builds
+    // need is down, which makes every Rust compilation fail.
     let compiler_url = format!(
-        "{protocol}://{}:{}/healthz?check_storage=true",
+        "{protocol}://{}:{}/healthz?check_storage=true&check_sccache=true",
         common_config.compiler_host, common_config.compiler_port
     );
     let runner_url = format!(

@@ -743,17 +743,59 @@ fn storage_pressure_message(
     ))
 }
 
+/// Default TCP port of the local sccache server (`SCCACHE_SERVER_PORT`).
+const SCCACHE_DEFAULT_PORT: u16 = 4226;
+
+/// Port of the local sccache server that must stay reachable, `None` when no
+/// server is expected: builds do not use sccache, or the server may exit when
+/// idle (`SCCACHE_IDLE_TIMEOUT` other than 0) and is started again on demand.
+fn expected_sccache_port(
+    rustc_wrapper: Option<&str>,
+    idle_timeout: Option<&str>,
+    server_port: Option<&str>,
+) -> Option<u16> {
+    let uses_sccache = rustc_wrapper
+        .and_then(|wrapper| Path::new(wrapper).file_name())
+        .is_some_and(|name| name == "sccache");
+    if !uses_sccache || idle_timeout.map(str::trim) != Some("0") {
+        return None;
+    }
+    Some(
+        server_port
+            .and_then(|port| port.trim().parse().ok())
+            .unwrap_or(SCCACHE_DEFAULT_PORT),
+    )
+}
+
+/// Message reported when no sccache server answers on `port`, `None` when one does.
+async fn sccache_unavailable_message(port: u16) -> Option<String> {
+    let connect = tokio::net::TcpStream::connect(("127.0.0.1", port));
+    let error = match tokio::time::timeout(Duration::from_secs(1), connect).await {
+        Ok(Ok(_)) => return None,
+        Ok(Err(e)) => e.to_string(),
+        Err(_) => "connection timed out".to_string(),
+    };
+    Some(format!(
+        "unhealthy: sccache server is not reachable on 127.0.0.1:{port} ({error}); \
+         Rust compilation on this compiler fails until the compiler server restarts"
+    ))
+}
+
 /// Query parameters of the `/healthz` endpoint.
 #[derive(serde::Deserialize)]
 struct HealthzQuery {
     /// Also report storage pressure of the working-directory filesystem.
     #[serde(default)]
     check_storage: bool,
+    /// Also report a local sccache server that builds need but cannot reach.
+    #[serde(default)]
+    check_sccache: bool,
 }
 
 /// Health check which returns success if it is able to reach the database.
 /// With `?check_storage=true` it also fails when the working-directory
-/// filesystem is nearly full.
+/// filesystem is nearly full. With `?check_sccache=true` it also fails when
+/// builds use an sccache server that must always run but does not answer.
 ///
 /// Kubernetes probes must omit the parameter, because restarting the pod
 /// cannot free disk space and the pod still serves already compiled binaries.
@@ -768,6 +810,18 @@ async fn healthz(
     if query.check_storage
         && let Some(disk_space) = DiskSpace::new_from_path(&config.working_dir())
         && let Some(message) = storage_pressure_message(&disk_space, STORAGE_PRESSURE_THRESHOLD)
+    {
+        return Ok(
+            HttpResponse::ServiceUnavailable().json(serde_json::json!({ "status": message }))
+        );
+    }
+    if query.check_sccache
+        && let Some(port) = expected_sccache_port(
+            std::env::var("RUSTC_WRAPPER").ok().as_deref(),
+            std::env::var("SCCACHE_IDLE_TIMEOUT").ok().as_deref(),
+            std::env::var("SCCACHE_SERVER_PORT").ok().as_deref(),
+        )
+        && let Some(message) = sccache_unavailable_message(port).await
     {
         return Ok(
             HttpResponse::ServiceUnavailable().json(serde_json::json!({ "status": message }))
@@ -1453,6 +1507,34 @@ mod test {
         assert!(super::storage_pressure_message(&disk_space(0.95), 0.95).is_some());
         let message = super::storage_pressure_message(&disk_space(1.0), 0.95).unwrap();
         assert!(message.contains("100.0% full"));
+    }
+
+    /// The sccache server is only required when builds use it and it never
+    /// exits on idle.
+    #[test]
+    fn expected_sccache_port() {
+        use super::expected_sccache_port as port;
+        assert_eq!(port(Some("sccache"), Some("0"), None), Some(4226));
+        assert_eq!(
+            port(Some("/usr/local/bin/sccache"), Some("0"), Some("5000")),
+            Some(5000)
+        );
+        assert_eq!(port(Some("sccache"), Some("0"), Some("bad")), Some(4226));
+        assert_eq!(port(Some("sccache"), Some("600"), None), None);
+        assert_eq!(port(Some("sccache"), None, None), None);
+        assert_eq!(port(Some("other-wrapper"), Some("0"), None), None);
+        assert_eq!(port(None, Some("0"), None), None);
+    }
+
+    /// A listening server is healthy, a closed port is reported.
+    #[tokio::test]
+    async fn sccache_unavailable_message() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        assert!(super::sccache_unavailable_message(port).await.is_none());
+        drop(listener);
+        let message = super::sccache_unavailable_message(port).await.unwrap();
+        assert!(message.contains(&format!("127.0.0.1:{port}")));
     }
 
     /// An old ephemeral validation directory is removed, a fresh one is kept,
