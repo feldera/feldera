@@ -10,7 +10,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.statement.DBSPLetStatement;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Utilities;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
@@ -105,8 +104,8 @@ public class CanonicalForm extends InnerRewriteVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPType type) {
-        return VisitDecision.STOP;
+    protected boolean rewritesTypes() {
+        return false;
     }
 
     @Override

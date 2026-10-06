@@ -48,6 +48,11 @@ public class RewriteFields extends InnerRewriteVisitor {
         this.currentDepth = 0;
     }
 
+    @Override
+    protected boolean rewritesTypes() {
+        return false;
+    }
+
     /** Essentially says that "all fields of this parameter are used" */
     public void parameterFullyUsed(DBSPParameter parameter) {
         this.fieldRemap.updateParameterValue(parameter, FieldUseMap.identity(parameter.getType()));

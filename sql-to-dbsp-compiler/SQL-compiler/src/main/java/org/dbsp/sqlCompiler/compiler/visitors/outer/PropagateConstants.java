@@ -15,7 +15,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 
 import javax.annotation.Nullable;
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /** Try to optimize operators applied to constant inputs */
@@ -35,7 +35,7 @@ public class PropagateConstants extends CircuitCloneVisitor {
         Simplify simplify = new Simplify(compiler);
         if (value.is(DBSPZSetExpression.class)) {
             DBSPZSetExpression set = value.to(DBSPZSetExpression.class);
-            Map<DBSPExpression, Long> result = new HashMap<>();
+            Map<DBSPExpression, Long> result = new LinkedHashMap<>();
             boolean evaluated = true;
             for (var entry : set.data.entrySet()) {
                 DBSPExpression filtered = filter.call(entry.getKey().borrow()).reduce(compiler);

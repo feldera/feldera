@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -30,52 +31,55 @@ public final class ParameterField extends IUsedFields {
         return new ParameterField(this.param, indexes);
     }
 
-    @Override
-    public ParameterFieldUse getParameterUse() {
-        ParameterFieldUse result = new ParameterFieldUse();
-        DBSPType paramType = param.getType();
-        DBSPTypeRawTuple raw = paramType.as(DBSPTypeRawTuple.class);
-        boolean isRaw = raw != null && raw.size() == 2 &&
+    /** The parameter type if it is a raw tuple of two references, null otherwise */
+    @Nullable
+    static DBSPTypeRawTuple rawPairOfRefs(DBSPType type) {
+        DBSPTypeRawTuple raw = type.as(DBSPTypeRawTuple.class);
+        if (raw != null && raw.size() == 2 &&
                 raw.tupFields[0].is(DBSPTypeRef.class) &&
-                raw.tupFields[1].is(DBSPTypeRef.class);
-        boolean isRef = param.getType().is(DBSPTypeRef.class);
-        FieldUseMap whole;
-        FieldUseMap first = null;
-        FieldUseMap second = null;
-        // This is actually a heuristic recognizing various type patterns for parameters
-        // and adjusting the field use.
-        // - &T
-        // - (&left, &right) (a raw tuple)
-        // - anything else
-        if (isRef) {
-            whole = new FieldUseMap(param.getType(), false).deref();
-        } else if (isRaw) {
-            var tuple = new FieldUseMap(param.getType(), false);
-            first = tuple.field(0).deref();
-            second = tuple.field(1).deref();
-            whole = FieldUseMap.list(param.getType().to(DBSPTypeRawTuple.class),
-                    List.of(first, second));
-        } else {
-            whole = new FieldUseMap(param.getType(), false);
+                raw.tupFields[1].is(DBSPTypeRef.class))
+            return raw;
+        return null;
+    }
+
+    /** A use map of the parameter with all fields unused.  The shape depends on the parameter type:
+     * &T is a reference to the map of T,
+     * (&left, &right) is a raw tuple of two references,
+     * any other type is mapped directly. */
+    static FieldUseMap allUnused(DBSPParameter param) {
+        DBSPType paramType = param.getType();
+        if (paramType.is(DBSPTypeRef.class))
+            return new FieldUseMap(paramType, false).deref().borrow();
+        DBSPTypeRawTuple raw = rawPairOfRefs(paramType);
+        if (raw != null) {
+            FieldUseMap tuple = new FieldUseMap(paramType, false);
+            return FieldUseMap.list(raw, List.of(
+                    tuple.field(0).deref().borrow(),
+                    tuple.field(1).deref().borrow()));
         }
-        FieldUseMap fu = whole;
+        return new FieldUseMap(paramType, false);
+    }
+
+    @Override
+    void markParameterUse(ParameterFieldUse use) {
+        FieldUseMap stored = use.getOrAdd(this.param, ParameterField::allUnused);
+        DBSPType paramType = this.param.getType();
+        DBSPTypeRawTuple raw = rawPairOfRefs(paramType);
+        FieldUseMap fu;
+        if (paramType.is(DBSPTypeRef.class)) {
+            fu = stored.deref();
+        } else if (raw != null) {
+            fu = FieldUseMap.list(raw, List.of(stored.field(0).deref(), stored.field(1).deref()));
+        } else {
+            fu = stored;
+        }
         for (int i : this.indexes) {
             if (fu.getType().is(DBSPTypeNull.class))
                 // This can happen e.g., for a parameter with type Tup2<i64, null>
                 break;
             fu = fu.field(i);
         }
-        // Mutate field of whole
         fu.setUsed();
-        if (isRef) {
-            result.set(this.param, whole.borrow());
-        } else if (isRaw) {
-            result.set(this.param, FieldUseMap.list(param.getType().to(DBSPTypeRawTuple.class),
-                    List.of(first.borrow(), second.borrow())));
-        } else {
-            result.set(this.param, whole);
-        }
-        return result;
     }
 
     @Override

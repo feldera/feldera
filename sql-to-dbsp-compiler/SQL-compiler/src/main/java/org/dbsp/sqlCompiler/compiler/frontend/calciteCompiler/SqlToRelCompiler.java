@@ -245,6 +245,9 @@ public class SqlToRelCompiler implements IWritesLogs {
     private final CustomFunctions customFunctions;
     /** User-defined types */
     private final HashMap<ProgramIdentifier, RelDataType> udt;
+    /** Literals validated as column default values.  Key is the SQL text of the literal,
+     * value is the validated expression. */
+    private final HashMap<String, RexNode> validatedLiterals;
     private final HashMap<ProgramIdentifier, DeclareViewStatement> declaredViews;
     /** Names of the relations in the SQL that the compiler synthesizes to validate an
      * expression.  The clone that compiles that SQL shares the program's catalog and view
@@ -326,6 +329,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         connConfigProp.put(CalciteConnectionProperty.CASE_SENSITIVE.camelName(), String.valueOf(true));
         connConfigProp.put(CalciteConnectionProperty.DEFAULT_NULL_COLLATION.camelName(), NULL_COLLATION);
         this.udt = new HashMap<>();
+        this.validatedLiterals = new HashMap<>();
         this.connectionConfig = new CalciteConnectionConfigImpl(connConfigProp);
         this.parserConfig = SqlParser.config()
                 .withLex(Lex.ORACLE)
@@ -388,15 +392,21 @@ public class SqlToRelCompiler implements IWritesLogs {
     /** Create a copy of the 'source' compiler which can be used to compile
      * some generated SQL without affecting its data structures */
     public SqlToRelCompiler(SqlToRelCompiler source) {
+        this(source, source.errorReporter);
+    }
+
+    /** A copy of 'source' which reports problems to 'errorReporter' */
+    public SqlToRelCompiler(SqlToRelCompiler source, IErrorReporter errorReporter) {
         this.options = source.options;
         this.parserConfig = source.parserConfig;
         this.cluster = source.cluster;
         this.converterConfig = source.converterConfig;
         this.connectionConfig = source.connectionConfig;
-        this.errorReporter = source.errorReporter;
+        this.errorReporter = errorReporter;
         this.customFunctions = new CustomFunctions(source.customFunctions);
         this.calciteCatalog = new Catalog(source.calciteCatalog);
         this.udt = new HashMap<>(source.udt);
+        this.validatedLiterals = new HashMap<>();
         this.declaredViews = new HashMap<>(source.declaredViews);
         this.rootSchema = CalciteSchema.createRootSchema(false, false).plus();
         this.copySchema(source.rootSchema);
@@ -1247,8 +1257,56 @@ public class SqlToRelCompiler implements IWritesLogs {
                 columnType, CalciteObject.create(value));
     }
 
-    RexNode validateConstantExpression(SqlExtendedColumnDeclaration column,
-                                       SqlNode value, SourceFileContents sources) {
+    /** Forwards problems to another reporter and counts them */
+    static class CountingReporter implements IErrorReporter {
+        final IErrorReporter target;
+        int problems;
+
+        CountingReporter(IErrorReporter target) {
+            this.target = target;
+            this.problems = 0;
+        }
+
+        @Override
+        public void setErrorContext(SourcePositionRange range) {
+            this.target.setErrorContext(range);
+        }
+
+        @Override
+        public void reportProblem(SourcePositionRange range, boolean warning, boolean continuation,
+                                  String errorType, String message) {
+            this.problems++;
+            this.target.reportProblem(range, warning, continuation, errorType, message);
+        }
+
+        @Override
+        public boolean hasErrors() {
+            return this.target.hasErrors();
+        }
+    }
+
+    /** Validate a column default value.  The validation of a literal depends only on its text,
+     * so each distinct literal is validated once. */
+    RexNode validateDefaultValue(SqlExtendedColumnDeclaration column,
+                                 SqlNode value, SourceFileContents sources) {
+        if (!(value instanceof SqlLiteral))
+            return this.validateConstantExpression(column, value, sources, this.errorReporter);
+        String text = value.toSqlString(OracleSqlDialect.DEFAULT).getSql();
+        RexNode validated = this.validatedLiterals.get(text);
+        if (validated != null)
+            return validated;
+        CountingReporter reporter = new CountingReporter(this.errorReporter);
+        validated = this.validateConstantExpression(column, value, sources, reporter);
+        // A literal whose validation reports a problem, or throws, is validated again at each
+        // occurrence, which reports the problem at that occurrence
+        if (reporter.problems == 0)
+            this.validatedLiterals.put(text, validated);
+        return validated;
+    }
+
+    /** Validate 'value', reporting problems to 'reporter' */
+    RexNode validateConstantExpression(SqlExtendedColumnDeclaration column, SqlNode value,
+                                       SourceFileContents sources, IErrorReporter reporter) {
         try {
             /* We generate the following SQL:
               CREATE VIEW FELDERA_SYNTHESIZED_VIEW AS SELECT expression;
@@ -1259,7 +1317,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     .newline()
                     .append(sql)
                     .newline();
-            SqlToRelCompiler clone = new SqlToRelCompiler(this);
+            SqlToRelCompiler clone = new SqlToRelCompiler(this, reporter);
             List<ParsedStatement> list = clone.parseStatements(sql, false, true);
             RelStatement lastStatement = null;
             for (ParsedStatement node : list) {
@@ -1367,7 +1425,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 }
                 if (cd.defaultValue != null) {
                     defaultValueRange = new SourcePositionRange(cd.defaultValue.getParserPosition());
-                    defaultValue = this.validateConstantExpression(cd, cd.defaultValue, sources);
+                    defaultValue = this.validateDefaultValue(cd, cd.defaultValue, sources);
                 }
                 interned = cd.interned;
             } else if (col instanceof SqlPrimaryKey ||

@@ -187,7 +187,14 @@ public abstract class InnerRewriteVisitor
         return this.getResult().to(DBSPStatement.class);
     }
 
+    /** True if this visitor may change types.  A visitor that returns false skips all types. */
+    protected boolean rewritesTypes() {
+        return true;
+    }
+
     protected DBSPType transform(DBSPType type) {
+        if (!this.rewritesTypes())
+            return type;
         type.accept(this);
         return this.getResultType();
     }

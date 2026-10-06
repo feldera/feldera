@@ -9,6 +9,7 @@ import org.dbsp.util.Utilities;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Function;
 
 /** Maps each parameter to a "bitmap" of the fields that are used. */
 public class ParameterFieldUse {
@@ -29,6 +30,11 @@ public class ParameterFieldUse {
 
     public FieldUseMap get(DBSPParameter param) {
         return Utilities.getExists(this.paramMap, param);
+    }
+
+    /** The use map of 'param', created by 'create' if there is none */
+    public FieldUseMap getOrAdd(DBSPParameter param, Function<DBSPParameter, FieldUseMap> create) {
+        return this.paramMap.computeIfAbsent(param, create);
     }
 
     public void set(DBSPParameter parameter, FieldUseMap map) {

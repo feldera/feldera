@@ -12,6 +12,11 @@ public class RemoveClones extends InnerRewriteVisitor {
     }
 
     @Override
+    protected boolean rewritesTypes() {
+        return false;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPCloneExpression expression) {
         this.push(expression);
         DBSPExpression cloned = this.transform(expression.expression);
