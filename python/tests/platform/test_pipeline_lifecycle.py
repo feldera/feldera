@@ -10,7 +10,9 @@ from tests import TEST_CLIENT
 from .helper import (
     wait_for_condition,
     create_pipeline,
+    patch_json,
     post_json,
+    put_json,
     http_request,
     wait_for_program_success,
     gen_pipeline_name,
@@ -838,6 +840,124 @@ def test_runtime_config_edit_restricted(pipeline_name):
         lambda r: r["resources"]["storage_class"],
         "example",
     )
+
+
+@gen_pipeline_name
+def test_deployment_resources(pipeline_name):
+    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, "").create_or_replace()
+    runtime_config = TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}?selector=all")[
+        "runtime_config"
+    ]
+    runtime_config["resources"].update(
+        {
+            "cpu_cores_min": 0.5,
+            "cpu_cores_max": 1,
+            "memory_mb_min": 1000,
+            "memory_mb_max": 1000,
+        }
+    )
+    TEST_CLIENT.patch_pipeline(name=pipeline_name, runtime_config=runtime_config)
+    url = api_url(f"/pipelines/{pipeline_name}")
+
+    def patch(resources):
+        return patch_json(url, {"deployment_config": {"resources": resources}})
+
+    def assert_error(response, error_code):
+        assert response.status_code == HTTPStatus.BAD_REQUEST, response.text
+        assert response.json()["error_code"] == error_code, response.text
+
+    def current():
+        response = get_pipeline(pipeline_name, "all")
+        assert response.status_code == HTTPStatus.OK, response.text
+        return response.json()
+
+    def current_cpu_cores_min():
+        return current()["deployment_config"]["resources"]["cpu_cores_min"]
+
+    def put(deployment_config):
+        pipeline = current()
+        body = {
+            key: pipeline[key]
+            for key in [
+                "name",
+                "description",
+                "runtime_config",
+                "program_code",
+                "udf_rust",
+                "udf_toml",
+                "program_config",
+            ]
+        }
+        return put_json(url, {**body, "deployment_config": deployment_config})
+
+    assert current()["deployment_config"] is None
+    response = patch({"cpu_cores_min": 0.25})
+    resizable = response.status_code != HTTPStatus.METHOD_NOT_ALLOWED
+    if resizable:
+        assert_error(response, "DeploymentRestrictedToRunning")
+    else:
+        assert response.json()["error_code"] == "UnsupportedPipelineAction", (
+            response.text
+        )
+
+    pipeline.start()
+    assert current_cpu_cores_min() == 0.5
+    if not resizable:
+        pipeline.stop(force=True)
+        pytest.skip("the runner cannot resize a running pipeline in place")
+    assert_error(patch({"cpu_cores_min": 2}), "InvalidDeploymentPatch")
+    # The CPU request would become equal to its limit.
+    assert_error(patch({"cpu_cores_max": 0.5}), "InvalidDeploymentPatch")
+    assert patch({"workers": 1}).status_code == HTTPStatus.BAD_REQUEST
+    assert_error(
+        patch_json(
+            url,
+            {
+                "deployment_config": {"resources": {"cpu_cores_min": 0.25}},
+                "description": "d",
+            },
+        ),
+        "InvalidDeploymentPatch",
+    )
+
+    before = current()
+    response = patch({"cpu_cores_min": 0.25})
+    assert response.status_code == HTTPStatus.OK, response.text
+    assert response.json()["deployment_config"]["resources"]["cpu_cores_min"] == 0.25
+    after = current()
+    assert after["deployment_config"]["resources"]["cpu_cores_min"] == 0.25
+    assert after["runtime_config"] == before["runtime_config"]
+    assert after["version"] == before["version"]
+    assert after["refresh_version"] == before["refresh_version"] + 1
+
+    # PUT accepts the deployment config only unchanged. While running, a PUT is
+    # also refused when the platform version differs, as any PUT then changes it.
+    response = put(after["deployment_config"])
+    assert response.status_code == HTTPStatus.OK or (
+        response.json()["error_code"] == "UpdateRestrictedToStopped"
+    ), response.text
+    assert_error(put({"resources": {"cpu_cores_min": 0.5}}), "InvalidDeploymentPatch")
+    assert current_cpu_cores_min() == 0.25
+
+    # A restart keeps the resize.
+    pipeline.stop(force=True)
+    pipeline.start()
+    assert current_cpu_cores_min() == 0.25
+
+    # Clearing storage resets it.
+    pipeline.stop(force=True)
+    pipeline.clear_storage()
+    pipeline.start()
+    assert current_cpu_cores_min() == 0.5
+
+    # A CPU edit while stopped replaces it.
+    assert patch({"cpu_cores_min": 0.25}).status_code == HTTPStatus.OK
+    pipeline.stop(force=True)
+    runtime_config["resources"]["cpu_cores_min"] = 0.75
+    TEST_CLIENT.patch_pipeline(name=pipeline_name, runtime_config=runtime_config)
+    pipeline.start()
+    assert current_cpu_cores_min() == 0.75
+    pipeline.stop(force=True)
 
 
 @gen_pipeline_name

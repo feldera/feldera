@@ -64,6 +64,7 @@ The Kubernetes runner manages pipeline pod lifecycle.
 | Key | Default | Description |
 |-----|---------|-------------|
 | `kubernetesRunner.enablePerPipelineNamespace` | `false` | When `true`, pipelines can run in their own namespaces (requires `ClusterRole`/`ClusterRoleBinding`). When `false`, pipelines run in the same namespace as Feldera. |
+| `kubernetesRunner.enablePipelineResize` | `false` | **Experimental.** Allow changing the CPU and memory of a running single-host pipeline without a restart. Requires Kubernetes 1.33 or later. See [resizing a running pipeline](/pipelines/configuration#resizing-a-running-pipeline). |
 | `kubernetesRunner.allowCustomPipelineTemplate` | `false` | **Experimental.** Allow pipelines to reference a ConfigMap containing a custom StatefulSet YAML template. The template format may change incompatibly across Feldera upgrades. |
 | `kubernetesRunner.pipelineStatefulSetLabels` | `[]` | Labels added to pipeline StatefulSet `metadata.labels`. Format: `["key=value"]`. |
 | `kubernetesRunner.pipelineStatefulSetPodLabels` | `[]` | Labels added to pipeline StatefulSet `spec.template.metadata.labels`. Format: `["key=value"]`. |
