@@ -35,6 +35,8 @@ use feldera_types::{
     adapter_stats::ConnectorHealth, program_schema::Relation,
     transport::delta_table::DeltaTableWriterConfig,
 };
+use parquet::basic::Compression;
+use parquet::file::properties::WriterProperties;
 use serde::Serialize;
 use serde_arrow::ArrayBuilder;
 use serde_arrow::schema::SerdeArrowSchema;
@@ -224,6 +226,9 @@ const CHUNK_SIZE: usize = 100_000;
 /// readers to scan. 100 MiB is the size delta-rs itself used before the target
 /// became optional.
 const TARGET_FILE_SIZE: NonZeroU64 = NonZeroU64::new(100 * 1024 * 1024).unwrap();
+
+/// Bounds row groups so the writer waits on uploads instead of buffering whole files.
+const MAX_ROW_GROUP_BYTES: usize = 16 * 1024 * 1024;
 
 impl DeltaTableWriter {
     #[allow(clippy::too_many_arguments)]
@@ -929,10 +934,16 @@ async fn stream_encode_and_write(
     rows_written: &mut u64,
 ) -> Result<(Vec<Add>, usize), WriteError> {
     let num_indexed_cols = min(32, inner.arrow_schema.fields.len() as u64);
+    // delta-rs defaults plus the row group bound.
+    let writer_properties = WriterProperties::builder()
+        .set_created_by(format!("delta-rs version {}", deltalake::crate_version()))
+        .set_compression(Compression::SNAPPY)
+        .set_max_row_group_bytes(Some(MAX_ROW_GROUP_BYTES))
+        .build();
     let writer_config = WriterConfig::new(
         inner.arrow_schema.clone(),
         vec![],
-        None,
+        Some(writer_properties),
         Some(TARGET_FILE_SIZE),
         None,
         DataSkippingNumIndexedCols::NumColumns(num_indexed_cols),
@@ -1338,6 +1349,17 @@ mod parallel {
     use feldera_adapterlib::transport::OutputBatchType;
 
     use super::DeltaTableWriter;
+    use async_trait::async_trait;
+    use deltalake::logstore::ObjectStoreRef;
+    use deltalake::logstore::object_store::path::Path as ObjectPath;
+    use deltalake::logstore::object_store::{
+        CopyOptions, GetOptions, GetResult, ListResult, MultipartUpload, ObjectMeta, ObjectStore,
+        PutMultipartOptions, PutOptions, PutPayload, PutResult, Result as ObjectStoreResult,
+        UploadPart,
+    };
+    use futures::stream::BoxStream;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::{Duration, Instant};
 
     // ── Output record type (DeltaTestStruct fields + metadata columns) ──
 
@@ -1919,6 +1941,160 @@ mod parallel {
         assert_eq!(read_delta_output(&table_uri).len(), rows);
     }
 
+    /// A slow object store must stall the encoder, not grow memory by the size of the output.
+    #[test]
+    fn a_stalled_object_store_stops_the_encoder() {
+        const PAYLOAD_LEN: usize = 8 * 1024;
+        let table_dir = TempDir::new().unwrap();
+        let table_uri = table_dir.path().display().to_string();
+
+        let target = super::TARGET_FILE_SIZE.get() as usize;
+        let rows = (target * 5 / 4).div_ceil(PAYLOAD_LEN);
+        let records: Vec<DeltaTestStruct> = (0..rows)
+            .map(|i| DeltaTestStruct {
+                string: incompressible_string(i as u64, PAYLOAD_LEN),
+                ..make_record(i)
+            })
+            .collect();
+        let batch = build_insert_batch(&records);
+
+        let mut endpoint = make_endpoint(1, &table_uri, true);
+        let (open, gate) = tokio::sync::watch::channel(false);
+        let stalled_parts = Arc::new(AtomicUsize::new(0));
+        endpoint.object_store = Arc::new(GatedStore {
+            inner: endpoint.object_store.clone(),
+            gate,
+            stalled_parts: stalled_parts.clone(),
+        });
+        let inner = endpoint.inner.clone();
+        let encoder = std::thread::spawn(move || encode_batch(&mut endpoint, &batch));
+
+        // delta-rs keeps at most 10 parts of a file in flight.
+        let start = Instant::now();
+        while stalled_parts.load(Ordering::Relaxed) < 10 {
+            assert!(
+                start.elapsed() < Duration::from_secs(60),
+                "no upload started"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        // Time for an unbounded encoder to finish the rest of the batch.
+        std::thread::sleep(Duration::from_secs(2));
+        let encoded = inner.records_written.load(Ordering::Relaxed);
+        open.send(true).unwrap();
+        encoder.join().unwrap();
+
+        assert!(
+            encoded < rows as u64,
+            "encoded all {rows} rows while the object store accepted nothing"
+        );
+        assert_eq!(read_delta_output(&table_uri).len(), rows);
+    }
+
+    /// Holds every multipart part until the gate opens.
+    #[derive(Debug)]
+    struct GatedStore {
+        inner: ObjectStoreRef,
+        gate: tokio::sync::watch::Receiver<bool>,
+        stalled_parts: Arc<AtomicUsize>,
+    }
+
+    impl std::fmt::Display for GatedStore {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "GatedStore({})", self.inner)
+        }
+    }
+
+    #[derive(Debug)]
+    struct GatedUpload {
+        inner: Box<dyn MultipartUpload>,
+        gate: tokio::sync::watch::Receiver<bool>,
+        stalled_parts: Arc<AtomicUsize>,
+    }
+
+    #[async_trait]
+    impl MultipartUpload for GatedUpload {
+        fn put_part(&mut self, data: PutPayload) -> UploadPart {
+            self.stalled_parts.fetch_add(1, Ordering::Relaxed);
+            let mut gate = self.gate.clone();
+            let put = self.inner.put_part(data);
+            Box::pin(async move {
+                let _ = gate.wait_for(|open| *open).await;
+                put.await
+            })
+        }
+
+        async fn complete(&mut self) -> ObjectStoreResult<PutResult> {
+            self.inner.complete().await
+        }
+
+        async fn abort(&mut self) -> ObjectStoreResult<()> {
+            self.inner.abort().await
+        }
+    }
+
+    #[async_trait]
+    impl ObjectStore for GatedStore {
+        async fn put_opts(
+            &self,
+            location: &ObjectPath,
+            payload: PutPayload,
+            opts: PutOptions,
+        ) -> ObjectStoreResult<PutResult> {
+            self.inner.put_opts(location, payload, opts).await
+        }
+
+        async fn put_multipart_opts(
+            &self,
+            location: &ObjectPath,
+            opts: PutMultipartOptions,
+        ) -> ObjectStoreResult<Box<dyn MultipartUpload>> {
+            Ok(Box::new(GatedUpload {
+                inner: self.inner.put_multipart_opts(location, opts).await?,
+                gate: self.gate.clone(),
+                stalled_parts: self.stalled_parts.clone(),
+            }))
+        }
+
+        async fn get_opts(
+            &self,
+            location: &ObjectPath,
+            options: GetOptions,
+        ) -> ObjectStoreResult<GetResult> {
+            self.inner.get_opts(location, options).await
+        }
+
+        fn delete_stream(
+            &self,
+            locations: BoxStream<'static, ObjectStoreResult<ObjectPath>>,
+        ) -> BoxStream<'static, ObjectStoreResult<ObjectPath>> {
+            self.inner.delete_stream(locations)
+        }
+
+        fn list(
+            &self,
+            prefix: Option<&ObjectPath>,
+        ) -> BoxStream<'static, ObjectStoreResult<ObjectMeta>> {
+            self.inner.list(prefix)
+        }
+
+        async fn list_with_delimiter(
+            &self,
+            prefix: Option<&ObjectPath>,
+        ) -> ObjectStoreResult<ListResult> {
+            self.inner.list_with_delimiter(prefix).await
+        }
+
+        async fn copy_opts(
+            &self,
+            from: &ObjectPath,
+            to: &ObjectPath,
+            options: CopyOptions,
+        ) -> ObjectStoreResult<()> {
+            self.inner.copy_opts(from, to, options).await
+        }
+    }
+
     /// Deterministic printable ASCII that Snappy cannot shrink and that Parquet
     /// cannot dictionary-encode away, so the written file size tracks `len`.
     fn incompressible_string(seed: u64, len: usize) -> String {
@@ -2308,8 +2484,6 @@ mod parallel {
     }
 
     // ── Progress counter tests ────────────────────────────────────
-
-    use std::sync::atomic::Ordering;
 
     fn records_written(endpoint: &DeltaTableWriter) -> u64 {
         endpoint.inner.records_written.load(Ordering::Relaxed)
