@@ -88,6 +88,33 @@ impl KafkaFtInputEndpoint {
     }
 }
 
+/// Returns a copy of `config` whose `partitions` list, if any, is in ascending
+/// order, with any offsets in `start_from` reordered to match.
+///
+/// The reader keeps its partitions in ascending order, and so do the offsets in
+/// its resume metadata.  Code that pairs the reader's partitions with the
+/// configuration's partitions by position is only correct if both are in the
+/// same order.
+pub(super) fn sort_partitions(config: &KafkaInputConfig) -> KafkaInputConfig {
+    let mut config = config.clone();
+    if let Some(partitions) = &mut config.partitions {
+        match &mut config.start_from {
+            KafkaStartFromConfig::Offsets(offsets) => {
+                // If the lengths differ, keep the order so that the reader
+                // reports the mismatch with the offsets that the user wrote.
+                if offsets.len() == partitions.len() {
+                    let mut pairs = iter::zip(partitions.iter().copied(), offsets.iter().copied())
+                        .collect::<Vec<_>>();
+                    pairs.sort_by_key(|(partition, _offset)| *partition);
+                    (*partitions, *offsets) = pairs.into_iter().unzip();
+                }
+            }
+            _ => partitions.sort(),
+        }
+    }
+    config
+}
+
 struct KafkaFtInputReader {
     inner: Arc<KafkaFtInputReaderInner>,
     command_sender: UnboundedSender<InputReaderCommand>,
@@ -895,6 +922,7 @@ impl KafkaFtInputReader {
         // is set.
         kafka_consumer.poll(std::time::Duration::from_nanos(0));
         let partition_count = count_partitions_in_topic(&kafka_consumer, &config.topic)?;
+        let config = &Arc::new(sort_partitions(config));
 
         let inner = Arc::new(KafkaFtInputReaderInner {
             kafka_consumer: Arc::new(kafka_consumer),
