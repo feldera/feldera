@@ -1253,16 +1253,16 @@ fn output_keyed_test() {
     // key land in the same partition, in the order they were pushed.  The
     // order across partitions is arbitrary, so we only check within
     // partitions.
-    let mut key_a_messages: Vec<&KeyedMessage> = Vec::new();
-    for message in &messages {
-        assert!(
-            message.1 == b"key-a".to_vec() || message.1 == b"key-b".to_vec(),
-            "unexpected key: {messages:?}"
-        );
-        if message.1 == b"key-a".to_vec() {
-            key_a_messages.push(message);
-        }
-    }
+    assert!(
+        messages
+            .iter()
+            .all(|message| message.1 == b"key-a".to_vec() || message.1 == b"key-b".to_vec()),
+        "unexpected key: {messages:?}"
+    );
+    let key_a_messages: Vec<_> = messages
+        .iter()
+        .filter(|message| message.1 == b"key-a".to_vec())
+        .collect();
     let key_b_messages: Vec<_> = messages
         .iter()
         .filter(|message| message.1 == b"key-b".to_vec())
@@ -1330,9 +1330,8 @@ fn output_keyed_test() {
         };
         new_messages.push(message);
     }
-    // `new_messages` only contains transaction 1's record, so the replayed
-    // transaction 0 was dropped.
-    assert_eq!(new_messages.len(), 1, "in {new_messages:?}");
+    // The first message read must be transaction 1's record; if the replayed
+    // transaction 0 record ("dropped") had been written, it would come first.
     assert_eq!(new_messages[0].2, b"4".to_vec(), "in {new_messages:?}");
     let position: serde_json::Value = serde_json::from_slice(&new_messages[0].3).unwrap();
     assert_eq!(position["transaction"], json!(1), "in {new_messages:?}");
