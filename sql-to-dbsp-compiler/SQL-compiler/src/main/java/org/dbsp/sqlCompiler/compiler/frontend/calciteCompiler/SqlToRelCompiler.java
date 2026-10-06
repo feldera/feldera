@@ -210,6 +210,8 @@ import java.util.function.Consumer;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 
+import static org.apache.calcite.util.Static.RESOURCE;
+
 /**
  * The SqlToRel compiler compiles SQL into Calcite RelNode representations.
  * It is stateful.
@@ -796,8 +798,8 @@ public class SqlToRelCompiler implements IWritesLogs {
     public static final Documentation.Link RECURSION_DOCUMENTATION = new Documentation.Link("sql/recursion");
     final StringBuilder newlines = new StringBuilder();
     /** Maps a position in the program being compiled to the position reported to the user.
-     * This is normally the identity function, except while compiling the body of a user-defined
-     * function. */
+     * This is the identity function, except while compiling SQL that the compiler generates:
+     * the body of a user-defined function, a column default value, or a lateness. */
     UnaryOperator<SqlParserPos> sourcePositionRemap = UnaryOperator.identity();
 
     /** Create a new parser.
@@ -1195,6 +1197,8 @@ public class SqlToRelCompiler implements IWritesLogs {
 
     RexNode validateLateness(SqlIdentifier columnName, SqlDataTypeSpec columnType,
                              SqlNode value, SourceFileContents sources) {
+        // The generated SQL contains a reformatted copy of 'value', so problems are reported at all of 'value'
+        UnaryOperator<SqlParserPos> remap = generated -> value.getParserPosition();
         try {
             /* We generate the following SQL:
               CREATE TABLE FELDERA_SYNTHESIZED_TABLE(column type);
@@ -1212,6 +1216,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     .append(sql)
                     .newline();
             SqlToRelCompiler clone = new SqlToRelCompiler(this);
+            clone.sourcePositionRemap = remap;
             List<ParsedStatement> list = clone.parseStatements(sql, false, true);
             RelStatement lastStatement = null;
             for (ParsedStatement node : list) {
@@ -1245,11 +1250,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 }
             }
         } catch (CalciteContextException e) {
-            SqlParserPos pos = value.getParserPosition();
-            String message = e.getMessage();
-            CalciteContextException ex = new CalciteContextException(message != null ? message : "", e.getCause());
-            ex.setPosition(pos.getLineNum(), pos.getColumnNum(), pos.getEndLineNum(), pos.getEndColumnNum());
-            throw ex;
+            throw rewriteException(e, remap);
         } catch (SqlParseException e) {
             // Do we need to rewrite other exceptions?
             throw new RuntimeException(e);
@@ -1309,6 +1310,8 @@ public class SqlToRelCompiler implements IWritesLogs {
     /** Validate 'value', reporting problems to 'reporter' */
     RexNode validateConstantExpression(SqlExtendedColumnDeclaration column, SqlNode value,
                                        SourceFileContents sources, IErrorReporter reporter) {
+        // The generated SQL contains a reformatted copy of 'value', so problems are reported at all of 'value'
+        UnaryOperator<SqlParserPos> remap = generated -> value.getParserPosition();
         try {
             /* We generate the following SQL:
               CREATE VIEW FELDERA_SYNTHESIZED_VIEW AS SELECT expression;
@@ -1320,6 +1323,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     .append(sql)
                     .newline();
             SqlToRelCompiler clone = new SqlToRelCompiler(this, reporter);
+            clone.sourcePositionRemap = remap;
             List<ParsedStatement> list = clone.parseStatements(sql, false, true);
             RelStatement lastStatement = null;
             for (ParsedStatement node : list) {
@@ -1340,11 +1344,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 }
             }
         } catch (CalciteContextException e) {
-            SqlParserPos pos = value.getParserPosition();
-            String message = e.getMessage();
-            CalciteContextException ex = new CalciteContextException(message != null ? message : "", e.getCause());
-            ex.setPosition(pos.getLineNum(), pos.getColumnNum(), pos.getEndLineNum(), pos.getEndColumnNum());
-            throw ex;
+            throw rewriteException(e, remap);
         } catch (SqlParseException e) {
             // Do we need to rewrite other exceptions?
             throw new RuntimeException(e);
@@ -1661,6 +1661,7 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         int newLineNumber = 0;
         SqlParserPos position = body.getParserPosition();
+        UnaryOperator<SqlParserPos> remap = UnaryOperator.identity();
         try {
             /* To compile a function like
               CREATE FUNCTION fun(a type0, b type1) returning type2 as expression;
@@ -1694,7 +1695,8 @@ public class SqlToRelCompiler implements IWritesLogs {
                     .newline();
             SqlToRelCompiler clone = new SqlToRelCompiler(this);
             int bodyStartLine = newLineNumber;
-            clone.sourcePositionRemap = generated -> positionInFunctionBody(generated, bodyStartLine, position);
+            remap = generated -> positionInFunctionBody(generated, bodyStartLine, position);
+            clone.sourcePositionRemap = remap;
             List<ParsedStatement> list = clone.parseStatements(sql, true, true);
             RelStatement statement = null;
             for (ParsedStatement node : list) {
@@ -1708,7 +1710,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             extractor.go(node);
             return Objects.requireNonNull(extractor.body);
         } catch (CalciteContextException e) {
-            throw this.rewriteException(e, newLineNumber, position);
+            throw rewriteException(e, remap);
         } catch (SqlParseException e) {
             // Do we need to rewrite other exceptions?
             throw new RuntimeException(e);
@@ -1955,17 +1957,25 @@ public class SqlToRelCompiler implements IWritesLogs {
         return new SqlParserPos(line, column, endLine, endColumn);
     }
 
-    /** The exception {@code e}, raised while compiling a function body inside a generated
-     * program, with its position moved into the user's program */
-    CalciteContextException rewriteException(
-            CalciteContextException e, int bodyStartLine, SqlParserPos body) {
+    /** The exception {@code e}, raised while compiling SQL that the compiler generated,
+     * with its position moved by {@code remap} into the user's program.
+     * The message is built again, since Calcite writes the old position into it. */
+    static CalciteContextException rewriteException(
+            CalciteContextException e, UnaryOperator<SqlParserPos> remap) {
         SqlParserPos generated = new SqlParserPos(
                 e.getPosLine(), e.getPosColumn(), e.getEndPosLine(), e.getEndPosColumn());
-        SqlParserPos position = positionInFunctionBody(generated, bodyStartLine, body);
-        return new CalciteContextException(
-                e.getMessage() == null ? "" : e.getMessage(), e.getCause(),
-                position.getLineNum(), position.getColumnNum(),
-                position.getEndLineNum(), position.getEndColumnNum());
+        SqlParserPos position = remap.apply(generated);
+        int line = position.getLineNum();
+        int column = position.getColumnNum();
+        int endLine = position.getEndLineNum();
+        int endColumn = position.getEndColumnNum();
+        // Same context message as SqlUtil.newContextException
+        var context = line == endLine && column == endColumn
+                ? RESOURCE.validatorContextPoint(line, column)
+                : RESOURCE.validatorContext(line, column, endLine, endColumn);
+        CalciteContextException result = context.ex(Objects.requireNonNull(e.getCause()));
+        result.setPosition(line, column, endLine, endColumn);
+        return result;
     }
 
     private DropTableStatement compileDropTable(ParsedStatement node) {
