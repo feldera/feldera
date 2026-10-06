@@ -298,6 +298,9 @@ where
 pub struct SerializerInner {
     scratch: DbspScratch,
     shared_resolvers: HashMap<*const u8, usize>,
+    /// The strictest alignment serialization asked for since the last call to
+    /// [`with`](Self::with) began; see [`max_align`](Self::max_align).
+    max_align: usize,
 }
 
 impl SerializerInner {
@@ -306,7 +309,20 @@ impl SerializerInner {
         Self {
             scratch: DbspScratch::default(),
             shared_resolvers: HashMap::new(),
+            max_align: 1,
         }
+    }
+
+    /// The strictest alignment serialization asked for during the last call
+    /// to [`with`](Self::with): that of the value's root, or of anything it
+    /// wrote out of line, whichever is stricter.
+    ///
+    /// This is what [`ArchivedRepr::MAX_ALIGN`] has to cover for the type of
+    /// the value that was serialized.
+    ///
+    /// [`ArchivedRepr::MAX_ALIGN`]: crate::dynamic::ArchivedRepr::MAX_ALIGN
+    pub fn max_align(&self) -> usize {
+        self.max_align
     }
 
     /// Constructs a `DbspSerializer` with this `SerializerInner` and
@@ -317,6 +333,7 @@ impl SerializerInner {
     {
         self.scratch.clear();
         self.shared_resolvers.clear();
+        self.max_align = 1;
 
         let mut serializer = DbspSerializer {
             serializer,
@@ -394,6 +411,17 @@ impl rkyv::ser::Serializer for DbspSerializer<'_> {
         self.serializer
             .write(bytes)
             .map_err(CompositeSerializerError::SerializerError)
+    }
+
+    /// Pads to `align`, as `rkyv`'s own implementation does, and records the
+    /// alignment for [`SerializerInner::max_align`].
+    #[inline]
+    fn align(&mut self, align: usize) -> Result<usize, Self::Error> {
+        self.inner.max_align = self.inner.max_align.max(align);
+        let mask = align - 1;
+        debug_assert_eq!(align & mask, 0);
+        self.pad((align - (self.pos() & mask)) & mask)?;
+        Ok(self.pos())
     }
 }
 
@@ -649,6 +677,39 @@ where
     Ok(SerializerInner::to_fbuf_with_thread_local(|serializer| {
         serializer.serialize_value(value)
     }))
+}
+
+/// The strictest alignment archiving `value` asks for: that of its root, or of
+/// anything it writes out of line, whichever is stricter.
+///
+/// [`ArchivedRepr::MAX_ALIGN`] for `value`'s type has to be at least this for
+/// every value, which is what tests of an implementation check with it.
+///
+/// [`ArchivedRepr::MAX_ALIGN`]: crate::dynamic::ArchivedRepr::MAX_ALIGN
+///
+/// # Arguments
+///
+/// * `value` - the value to archive.
+///
+/// # Returns
+///
+/// The alignment, a power of two.
+///
+/// # Panics
+///
+/// If `value` fails to serialize.
+pub fn archived_alignment<T>(value: &T) -> usize
+where
+    T: for<'a> Serialize<DbspSerializer<'a>>,
+{
+    let mut inner = SerializerInner::new();
+    let mut bytes = FBuf::default();
+    inner
+        .with(FBufSerializer::new(&mut bytes), |serializer| {
+            serializer.serialize_value(value)
+        })
+        .expect("the value serializes");
+    inner.max_align()
 }
 
 /// Serializes the given value and returns the resulting bytes.

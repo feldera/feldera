@@ -4225,3 +4225,10 @@ crate::hash_repr::hash_repr_struct! {
     Timestamp => ArchivedTimestamp { microseconds: i64 },
     TimestampTz => ArchivedTimestampTz { microseconds: i64 },
 }
+
+crate::hash_repr::archived_repr_inline! {
+    Date => ArchivedDate,
+    Time => ArchivedTime,
+    Timestamp => ArchivedTimestamp,
+    TimestampTz => ArchivedTimestampTz,
+}

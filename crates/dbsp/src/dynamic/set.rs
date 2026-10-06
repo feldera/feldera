@@ -188,3 +188,29 @@ where
         self.iter.next().map(|x| x.erase())
     }
 }
+
+// Hashing one of these from its archived form is not implemented: `FAITHFUL`
+// is false, so `archived_hash` answers `None` and the caller deserializes and
+// hashes that instead.  The trait is implemented all the same, because
+// `ArchivedDBData` requires it of every type.
+impl<T> crate::dynamic::HashRepr for ArchivedBSet<T>
+where
+    T: rkyv::Archive + Ord,
+    <T as rkyv::Archive>::Archived: Ord,
+{
+    const FAITHFUL: bool = false;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
+}
+
+impl<T> crate::dynamic::ArchivedRepr<BSet<T>> for ArchivedBSet<T>
+where
+    T: rkyv::Archive + Ord,
+    <T as rkyv::Archive>::Archived: Ord + crate::dynamic::ArchivedRepr<T>,
+{
+    const MAX_ALIGN: usize = crate::dynamic::max_align(
+        ::core::mem::align_of::<Self>(),
+        <rkyv::Archived<BTreeSet<T>> as crate::dynamic::ArchivedRepr<BTreeSet<T>>>::MAX_ALIGN,
+    );
+}

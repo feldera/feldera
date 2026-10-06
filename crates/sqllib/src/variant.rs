@@ -97,6 +97,13 @@ impl crate::__HashRepr for ArchivedVariant {
     fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
 }
 
+/// A variant holds a decimal inline, an `i128`, so its root already needs the
+/// strictest alignment a primitive can, and nothing it holds out of line,
+/// itself included, can need more.
+impl dbsp::dynamic::ArchivedRepr<Variant> for ArchivedVariant {
+    const MAX_ALIGN: usize = dbsp::dynamic::MAX_PRIMITIVE_ALIGN;
+}
+
 /////////////// Variant index
 
 // Return type is always Option<Variant>, but result is never None, always a Variant

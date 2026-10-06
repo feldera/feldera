@@ -254,3 +254,18 @@ impl Timestamp for u32 {
         Self::MAX
     }
 }
+
+// Hashing one of these from its archived form is not implemented: `FAITHFUL`
+// is false, so `archived_hash` answers `None` and the caller deserializes and
+// hashes that instead.  The trait is implemented all the same, because
+// `ArchivedDBData` requires it of every type.
+impl crate::dynamic::HashRepr for ArchivedUnitTimestamp {
+    const FAITHFUL: bool = false;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
+}
+
+impl crate::dynamic::ArchivedRepr<UnitTimestamp> for ArchivedUnitTimestamp {
+    const MAX_ALIGN: usize = ::core::mem::align_of::<Self>();
+}

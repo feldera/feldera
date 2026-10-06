@@ -212,6 +212,11 @@ impl dbsp::dynamic::OrdRepr<SqlString> for ArchivedString {
     }
 }
 
+/// A `SqlString` archives as a `String`, whose text needs no alignment.
+impl dbsp::dynamic::ArchivedRepr<SqlString> for ArchivedString {
+    const MAX_ALIGN: usize = std::mem::align_of::<ArchivedString>();
+}
+
 #[doc(hidden)]
 pub fn concat_s_s(left: SqlString, right: SqlString) -> SqlString {
     SqlString::from_concat(&[left.str(), right.str()])

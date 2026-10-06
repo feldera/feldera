@@ -1,10 +1,10 @@
 use crate::{
     DBData,
-    dynamic::{DataTrait, DowncastTrait, Erase, SerializeDyn},
+    dynamic::{ArchivedRepr, DataTrait, DowncastTrait, Erase, SerializeDyn, max_align},
     trace::DbspSerializer,
 };
 use rkyv::{Archive, Fallible, Serialize, archived_value, with::Inline};
-use std::{marker::PhantomData, mem::transmute};
+use std::{alloc::Layout, marker::PhantomData, mem::align_of, mem::transmute};
 
 /// An object-safe interface to types that represent (key, auxiliary data) pair.
 ///
@@ -95,6 +95,26 @@ where
         bytes: &'a [u8],
         pos: usize,
     ) -> &'a dyn ArchivedItem<'a, K, A>;
+
+    /// The layout of one archived item's root.
+    ///
+    /// Every item in a data block archives to the same root type, so the root
+    /// has the same size in all of them, and an item's bytes therefore run
+    /// from the end of the previous item's root to the end of its own.  That
+    /// is what lets a run of items be copied from one block to another without
+    /// being decoded: [`Layout::size`] finds the run's bounds.  How far the
+    /// copy may be shifted is [`max_align`](Self::max_align)'s answer, not the
+    /// root's alignment, since an item can hold something out of line that is
+    /// aligned more strictly than its root.
+    fn archived_layout(&self) -> Layout;
+
+    /// The strictest alignment of anything an archived item holds: its root,
+    /// and whatever its key and its auxiliary data keep out of line.
+    ///
+    /// A copy of an item's bytes keeps the item's position in its block
+    /// modulo this, which keeps every object in it aligned; see
+    /// [`ArchivedRepr::MAX_ALIGN`](crate::dynamic::ArchivedRepr::MAX_ALIGN).
+    fn max_align(&self) -> usize;
 }
 
 /// Struct that implements the [`Item`] trait.
@@ -270,6 +290,21 @@ where
                 archived_value::<RefTup2<'a, K, A>>(bytes, pos);
             Tup2Deserialize::new(archived)
         }
+    }
+    fn archived_layout(&self) -> Layout {
+        Layout::new::<ArchivedRefTup2<'static, K, A>>()
+    }
+
+    fn max_align(&self) -> usize {
+        // The item's root holds the key and the auxiliary data inline, and
+        // each of them adds whatever it keeps out of line.
+        max_align(
+            align_of::<ArchivedRefTup2<'static, K, A>>(),
+            max_align(
+                <K::Repr as ArchivedRepr<K>>::MAX_ALIGN,
+                <A::Repr as ArchivedRepr<A>>::MAX_ALIGN,
+            ),
+        )
     }
 }
 

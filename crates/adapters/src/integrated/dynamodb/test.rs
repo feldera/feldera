@@ -16,7 +16,7 @@ use dbsp::utils::Tup2;
 use feldera_adapterlib::catalog::SerBatch;
 use feldera_adapterlib::metrics::ConnectorMetrics;
 use feldera_adapterlib::transport::OutputBatchType;
-use feldera_macros::{IsNone, OrdRepr};
+use feldera_macros::{ArchivedRepr, IsNone};
 use feldera_sqllib::{
     ByteArray, Date, F32, F64, SqlDecimal, SqlString, Time, Timestamp, Uuid, Variant,
 };
@@ -60,7 +60,7 @@ use super::output::{DynamoDBOutputEndpoint, DynamoDBWorker};
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 struct TestRecord {
@@ -97,7 +97,7 @@ serialize_struct!(TestRecord()[5]{
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 struct TestKey {
@@ -126,7 +126,7 @@ serialize_struct!(TestKey()[2]{
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 struct AllTypesRecord {
@@ -215,7 +215,7 @@ deserialize_table_record!(AllTypesRecord["AllTypesRecord", Variant, 21] {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 struct AllTypesKey {

@@ -21,7 +21,7 @@ use size_of::SizeOf;
     Archive,
     Serialize,
     Deserialize,
-    feldera_macros::OrdRepr,
+    feldera_macros::ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]

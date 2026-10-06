@@ -452,13 +452,29 @@ define 3 Rust objects:
     spilled to disk; among other traits, it requires `Ord` and
     `ArchivedDBData`.  The latter requires the type's archived form to
     implement
-    [`OrdRepr`](https://docs.rs/dbsp/latest/dbsp/dynamic/trait.OrdRepr.html),
-    which orders an archived value against an unarchived one without
-    deserializing it; storage uses this comparison to search data on disk,
-    so it must agree with `Ord`.  A type whose `Ord` is derived can derive
-    it too, with `#[derive(feldera_macros::OrdRepr)]`.  `MonoidValue`
-    essentially requires the traits `Zero`, `HasZero`, `Add` (and variants
-    such as `AddByRef`).
+    [`ArchivedRepr`](https://docs.rs/dbsp/latest/dbsp/dynamic/trait.ArchivedRepr.html),
+    which is what storage needs to work on an archived value without
+    deserializing it: two traits and a constant.
+    [`OrdRepr`](https://docs.rs/dbsp/latest/dbsp/dynamic/trait.OrdRepr.html)
+    orders an archived value against an unarchived one; storage uses this
+    comparison to search data on disk, so it must agree with `Ord`.
+    [`HashRepr`](https://docs.rs/dbsp/latest/dbsp/dynamic/trait.HashRepr.html)
+    hashes an archived value exactly as `Hash` hashes the deserialized one,
+    so that a merge can record a key it copies in the new file's membership
+    filter.  `MAX_ALIGN` is the strictest alignment of anything the archived
+    value holds, which a merge keeps when it copies the value's bytes from
+    one file to another.  A type whose `Archive`, `Ord` and `Hash` are all
+    derived gets all three with `#[derive(feldera_macros::ArchivedRepr)]`.
+    Any other type implements them by hand, as the example below does:
+    `HashRepr` with `FAITHFUL` set to `false` makes storage deserialize the
+    value whenever it needs the hash, and an implementation that claims to
+    be faithful but disagrees with `Hash` makes lookups miss rows;
+    `ArchivedRepr` with no body takes `MAX_ALIGN` to be 16, which is safe
+    for any type whose serializer aligns nothing more strictly than an
+    `i128`, while a value too small makes reading a copied value undefined
+    behavior.  `MonoidValue` essentially
+    requires the traits `Zero`, `HasZero`, `Add` (and variants such as
+    `AddByRef`).
 
   - [`MulByRef`](https://docs.rs/dbsp/latest/dbsp/algebra/trait.MulByRef.html)
     which allows accumulator values to be multiplied by integer
@@ -642,6 +658,20 @@ impl dbsp::dynamic::OrdRepr<I256Wrapper> for ArchivedI256Wrapper {
     fn ord_cmp(&self, other: &I256Wrapper) -> std::cmp::Ordering {
         I256::from_be_bytes(self.bytes).cmp(&other.data)
     }
+}
+
+// A type whose archived form cannot reproduce the hash the decoded form
+// writes says so, and its caller deserializes and hashes that instead.
+impl dbsp::dynamic::HashRepr for ArchivedI256Wrapper {
+    const FAITHFUL: bool = false;
+
+    fn hash_repr<H: std::hash::Hasher>(&self, _state: &mut H) {}
+}
+
+// The archived form keeps nothing out of line, so a copy of its bytes has to
+// stay only as aligned as the form itself.
+impl dbsp::dynamic::ArchivedRepr<I256Wrapper> for ArchivedI256Wrapper {
+    const MAX_ALIGN: usize = std::mem::align_of::<ArchivedI256Wrapper>();
 }
 
 pub type i128_sum_accumulator_type = I256Wrapper;

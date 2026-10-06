@@ -4,7 +4,7 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Schema, TimeUnit};
 use dbsp::utils::Tup2;
-use feldera_macros::{IsNone, OrdRepr};
+use feldera_macros::{ArchivedRepr, IsNone};
 use feldera_sqllib::{
     ByteArray, Date, F32, F64, SqlDecimal, SqlString, Time, Timestamp, TimestampTz, Uuid, Variant,
 };
@@ -39,7 +39,7 @@ use std::sync::Arc;
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct TestStruct {
@@ -136,7 +136,7 @@ serialize_struct!(TestStruct()[4]{
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct KeyStruct {
@@ -206,7 +206,7 @@ serialize_struct!(KeyStruct()[1]{
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct CountRow {
@@ -323,7 +323,7 @@ pub fn generate_test_batches_with_weights(
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct TestStructMetadata {
@@ -385,7 +385,7 @@ impl TestStructMetadata {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct TestStructSoftDelete {
@@ -472,7 +472,7 @@ impl TestStructSoftDelete {
     rkyv::Deserialize,
     Arbitrary,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Clone, Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -506,7 +506,7 @@ deserialize_table_record!(EmbeddedStruct["EmbeddedStruct", Variant, 1] {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct TestStruct2 {
@@ -840,7 +840,7 @@ deserialize_table_record!(TestStruct2["TestStruct2", Variant, 8] {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct DatabricksPeople {
@@ -907,7 +907,7 @@ deserialize_table_record!(DatabricksPeople["DatabricksPeople", Variant, 8] {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct IcebergTestStruct {
@@ -1243,7 +1243,7 @@ deserialize_table_record!(IcebergTestStruct["IcebergTestStruct", Variant, 18] {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct S3TablesTestStruct {
@@ -1295,7 +1295,7 @@ deserialize_table_record!(S3TablesTestStruct["S3TablesTestStruct", Variant, 3] {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct IcebergSubsetTestStruct {
@@ -1341,7 +1341,7 @@ deserialize_table_record!(IcebergSubsetTestStruct["IcebergSubsetTestStruct", Var
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct DeltaTestStruct {
@@ -1708,7 +1708,7 @@ deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", Variant, 21] {
     rkyv::Serialize,
     rkyv::Deserialize,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 pub struct DeltaTestKey {

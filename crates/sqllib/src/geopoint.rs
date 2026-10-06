@@ -102,3 +102,7 @@ some_polymorphic_function2!(st_distance, geopoint, GeoPoint, geopoint, GeoPoint,
 crate::hash_repr::hash_repr_struct! {
     GeoPoint => ArchivedGeoPoint { 0: F64, 1: F64 },
 }
+
+crate::hash_repr::archived_repr_inline! {
+    GeoPoint => ArchivedGeoPoint,
+}

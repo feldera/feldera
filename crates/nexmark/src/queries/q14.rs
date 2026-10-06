@@ -2,7 +2,7 @@ use super::NexmarkStream;
 use crate::model::Event;
 use dbsp::{OrdZSet, RootCircuit, Stream};
 use feldera_fxp::Fixed;
-use feldera_macros::{IsNone, OrdRepr};
+use feldera_macros::{ArchivedRepr, IsNone};
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::hash::Hash;
@@ -62,7 +62,7 @@ pub type Q14Price = Fixed<20, 5>;
     Serialize,
     Deserialize,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]
@@ -83,7 +83,7 @@ type Q14Stream = Stream<RootCircuit, OrdZSet<Q14Output>>;
     Serialize,
     Deserialize,
     IsNone,
-    OrdRepr,
+    ArchivedRepr,
 )]
 #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 #[archive(compare(PartialEq, PartialOrd))]

@@ -90,7 +90,7 @@ mod pg {
 
     use chrono::SubsecRound;
     use dbsp::{Runtime, utils::Tup1};
-    use feldera_macros::{IsNone, OrdRepr};
+    use feldera_macros::{ArchivedRepr, IsNone};
     use feldera_sqllib::{F32, F64, SqlDecimal, SqlString, Variant};
     use feldera_types::{
         config::PipelineConfig,
@@ -140,7 +140,7 @@ mod pg {
         rkyv::Serialize,
         rkyv::Deserialize,
         IsNone,
-        OrdRepr,
+        ArchivedRepr,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
     pub(super) struct PostgresTestStruct {
@@ -3965,7 +3965,7 @@ mod cdc_tests {
         rkyv::Serialize,
         rkyv::Deserialize,
         feldera_macros::IsNone,
-        feldera_macros::OrdRepr,
+        feldera_macros::ArchivedRepr,
     )]
     #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
     pub(super) struct CdcAllTypesStruct {

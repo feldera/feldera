@@ -146,3 +146,37 @@ where
         }
     }
 }
+
+// Hashing one of these from its archived form is not implemented: `FAITHFUL`
+// is false, so `archived_hash` answers `None` and the caller deserializes and
+// hashes that instead.  The trait is implemented all the same, because
+// `ArchivedDBData` requires it of every type.
+impl<TOuter, TInner> crate::dynamic::HashRepr for ArchivedProduct<TOuter, TInner>
+where
+    TOuter: rkyv::Archive,
+    TInner: rkyv::Archive,
+    <TOuter as rkyv::Archive>::Archived: Ord,
+    <TInner as rkyv::Archive>::Archived: Ord,
+{
+    const FAITHFUL: bool = false;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
+}
+
+impl<TOuter, TInner> crate::dynamic::ArchivedRepr<Product<TOuter, TInner>>
+    for ArchivedProduct<TOuter, TInner>
+where
+    TOuter: rkyv::Archive,
+    TInner: rkyv::Archive,
+    <TOuter as rkyv::Archive>::Archived: Ord + crate::dynamic::ArchivedRepr<TOuter>,
+    <TInner as rkyv::Archive>::Archived: Ord + crate::dynamic::ArchivedRepr<TInner>,
+{
+    const MAX_ALIGN: usize = crate::dynamic::max_align(
+        ::core::mem::align_of::<Self>(),
+        crate::dynamic::max_align(
+            <rkyv::Archived<TOuter> as crate::dynamic::ArchivedRepr<TOuter>>::MAX_ALIGN,
+            <rkyv::Archived<TInner> as crate::dynamic::ArchivedRepr<TInner>>::MAX_ALIGN,
+        ),
+    );
+}

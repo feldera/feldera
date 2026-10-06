@@ -1423,6 +1423,11 @@ impl dbsp::dynamic::OrdRepr<FlatVariant> for ArchivedFlatVariant {
     }
 }
 
+/// The encoding lies out of line as bytes, which need no alignment.
+impl dbsp::dynamic::ArchivedRepr<FlatVariant> for ArchivedFlatVariant {
+    const MAX_ALIGN: usize = std::mem::align_of::<ArchivedFlatVariant>();
+}
+
 impl Hash for ArchivedFlatVariant {
     fn hash<H: Hasher>(&self, state: &mut H) {
         hash_value(self.as_bytes(), state);

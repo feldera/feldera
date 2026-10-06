@@ -387,6 +387,39 @@ where
 // lower_bound) },     }
 // }
 
+// Hashing one of these from its archived form is not implemented: `FAITHFUL`
+// is false, so `archived_hash` answers `None` and the caller deserializes and
+// hashes that instead.  The trait is implemented all the same, because
+// `ArchivedDBData` requires it of every type.
+impl<T, R> crate::dynamic::HashRepr for ArchivedAvg<T, R>
+where
+    T: rkyv::Archive,
+    R: rkyv::Archive,
+    <T as rkyv::Archive>::Archived: Ord,
+    <R as rkyv::Archive>::Archived: Ord,
+{
+    const FAITHFUL: bool = false;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
+}
+
+impl<T, R> crate::dynamic::ArchivedRepr<Avg<T, R>> for ArchivedAvg<T, R>
+where
+    T: rkyv::Archive,
+    R: rkyv::Archive,
+    <T as rkyv::Archive>::Archived: Ord + crate::dynamic::ArchivedRepr<T>,
+    <R as rkyv::Archive>::Archived: Ord + crate::dynamic::ArchivedRepr<R>,
+{
+    const MAX_ALIGN: usize = crate::dynamic::max_align(
+        ::core::mem::align_of::<Self>(),
+        crate::dynamic::max_align(
+            <rkyv::Archived<T> as crate::dynamic::ArchivedRepr<T>>::MAX_ALIGN,
+            <rkyv::Archived<R> as crate::dynamic::ArchivedRepr<R>>::MAX_ALIGN,
+        ),
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use rkyv::Deserialize;

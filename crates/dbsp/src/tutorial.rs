@@ -192,7 +192,7 @@
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
 //! #     feldera_macros::IsNone,
-//! #     feldera_macros::OrdRepr,
+//! #     feldera_macros::ArchivedRepr,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -250,7 +250,7 @@
 //! # rkyv::Deserialize,
 //! # serde::Deserialize,
 //! # feldera_macros::IsNone,
-//! # feldera_macros::OrdRepr,
+//! # feldera_macros::ArchivedRepr,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -300,8 +300,8 @@
 //! The compiler will point out a problem: `Record` lacks several traits
 //! required for the record type of the "Z-sets".  We need `SizeOf` from the
 //! `size_of` crate, `Archive`, `Serialize`, and `Deserialize` from the `rkyv`
-//! crate, and `IsNone` and `OrdRepr` from the `feldera_macros` crate.  We can
-//! derive all of them:
+//! crate, and `IsNone` and `ArchivedRepr` from the `feldera_macros` crate.  We
+//! can derive all of them:
 //!
 //! ```
 //! use rkyv::{Archive, Serialize};
@@ -324,7 +324,7 @@
 //!     rkyv::Deserialize,
 //!     serde::Deserialize,
 //!     feldera_macros::IsNone,
-//!     feldera_macros::OrdRepr,
+//!     feldera_macros::ArchivedRepr,
 //! )]
 //! #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -339,11 +339,13 @@
 //! be moved from one host to another.  Our example uses `serde::Deserialize` to
 //! parse CSV.
 //!
-//! > 💡 `OrdRepr` lets DBSP compare a record that storage holds in `rkyv`'s
-//! archived form with a record in memory, without deserializing it.  The
-//! derive orders records the way `#[derive(Ord)]` does, so it suits any record
-//! type whose `Ord` is derived.  A type with a hand-written `Ord` needs a
-//! hand-written `OrdRepr` to match.
+//! > 💡 `ArchivedRepr` lets DBSP work on a record that storage holds in
+//! `rkyv`'s archived form without deserializing it: compare it with a record
+//! in memory, hash it, and copy it from one file to another.  The derive
+//! orders and hashes records the way `#[derive(Ord)]` and `#[derive(Hash)]` do,
+//! so it suits any record type whose `Ord` and `Hash` are derived.  A type with
+//! a hand-written `Ord` or `Hash` needs a hand-written `OrdRepr` or `HashRepr`
+//! to match, and then a hand-written `ArchivedRepr` beside it.
 //!
 //! ## Execution
 //!
@@ -376,7 +378,7 @@
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
 //! #     feldera_macros::IsNone,
-//! #     feldera_macros::OrdRepr,
+//! #     feldera_macros::ArchivedRepr,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -459,7 +461,7 @@
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
 //! #     feldera_macros::IsNone,
-//! #     feldera_macros::OrdRepr,
+//! #     feldera_macros::ArchivedRepr,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -539,7 +541,7 @@
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
 //! #     feldera_macros::IsNone,
-//! #     feldera_macros::OrdRepr,
+//! #     feldera_macros::ArchivedRepr,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -622,7 +624,7 @@
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
 //! #     feldera_macros::IsNone,
-//! #     feldera_macros::OrdRepr,
+//! #     feldera_macros::ArchivedRepr,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -759,7 +761,7 @@
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
 //! #     feldera_macros::IsNone,
-//! #     feldera_macros::OrdRepr,
+//! #     feldera_macros::ArchivedRepr,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -919,7 +921,7 @@
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
 //! #     feldera_macros::IsNone,
-//! #     feldera_macros::OrdRepr,
+//! #     feldera_macros::ArchivedRepr,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -1078,7 +1080,7 @@
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
 //! #     feldera_macros::IsNone,
-//! #     feldera_macros::OrdRepr,
+//! #     feldera_macros::ArchivedRepr,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -1203,7 +1205,7 @@
 //!     rkyv::Deserialize,
 //!     serde::Deserialize,
 //!     feldera_macros::IsNone,
-//!     feldera_macros::OrdRepr,
+//!     feldera_macros::ArchivedRepr,
 //! )]
 //! #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! struct VaxMonthly {
@@ -1262,7 +1264,7 @@
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
 //! #     feldera_macros::IsNone,
-//! #     feldera_macros::OrdRepr,
+//! #     feldera_macros::ArchivedRepr,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -1286,7 +1288,7 @@
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
 //! #     feldera_macros::IsNone,
-//! #     feldera_macros::OrdRepr,
+//! #     feldera_macros::ArchivedRepr,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct VaxMonthly {
@@ -1423,7 +1425,7 @@
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
 //! #     feldera_macros::IsNone,
-//! #     feldera_macros::OrdRepr,
+//! #     feldera_macros::ArchivedRepr,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -1542,7 +1544,7 @@
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
 //! #     feldera_macros::IsNone,
-//! #     feldera_macros::OrdRepr,
+//! #     feldera_macros::ArchivedRepr,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -1664,7 +1666,7 @@
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
 //! #     feldera_macros::IsNone,
-//! #     feldera_macros::OrdRepr,
+//! #     feldera_macros::ArchivedRepr,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -1748,7 +1750,7 @@
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
 //! #     feldera_macros::IsNone,
-//! #     feldera_macros::OrdRepr,
+//! #     feldera_macros::ArchivedRepr,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -1892,7 +1894,7 @@
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
 //! #     feldera_macros::IsNone,
-//! #     feldera_macros::OrdRepr,
+//! #     feldera_macros::ArchivedRepr,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct Record {
@@ -1916,7 +1918,7 @@
 //! #     rkyv::Deserialize,
 //! #     serde::Deserialize,
 //! #     feldera_macros::IsNone,
-//! #     feldera_macros::OrdRepr,
+//! #     feldera_macros::ArchivedRepr,
 //! # )]
 //! # #[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
 //! # struct VaxMonthly {

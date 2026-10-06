@@ -26,6 +26,7 @@ feldera_macros::declare_tuple! { Tup14<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, 
 feldera_macros::declare_tuple! { Tup15<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15> }
 feldera_macros::declare_tuple! { Tup16<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16> }
 feldera_macros::declare_tuple! { Tup17<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17> }
+feldera_macros::declare_tuple! { Tup20<T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13, T14, T15, T16, T17, T18, T19, T20> }
 feldera_macros::declare_tuple! { Tup65<
     T1, T2, T3, T4, T5, T6, T7, T8, T9, T10,
     T11, T12, T13, T14, T15, T16, T17, T18, T19, T20,
@@ -256,6 +257,53 @@ type Tup65Ty = Tup65<
     Option<u8>,
 >;
 
+/// Seventeen nullable fields, alternately integers and strings: the fewest
+/// fields whose NULL bitmap takes three bytes.
+type NullableTup17Ty = Tup17<
+    Option<i64>,
+    Option<SqlString>,
+    Option<i64>,
+    Option<SqlString>,
+    Option<i64>,
+    Option<SqlString>,
+    Option<i64>,
+    Option<SqlString>,
+    Option<i64>,
+    Option<SqlString>,
+    Option<i64>,
+    Option<SqlString>,
+    Option<i64>,
+    Option<SqlString>,
+    Option<i64>,
+    Option<SqlString>,
+    Option<i64>,
+>;
+
+/// Twenty fields, alternately nullable strings and integers between an
+/// integer and a string that are never NULL.
+type NullableTup20Ty = Tup20<
+    i64,
+    Option<SqlString>,
+    Option<i64>,
+    Option<SqlString>,
+    Option<i64>,
+    Option<SqlString>,
+    Option<i64>,
+    Option<SqlString>,
+    Option<i64>,
+    Option<SqlString>,
+    Option<i64>,
+    Option<SqlString>,
+    Option<i64>,
+    Option<SqlString>,
+    Option<i64>,
+    Option<SqlString>,
+    Option<i64>,
+    Option<SqlString>,
+    Option<i64>,
+    SqlString,
+>;
+
 const PROPTEST_CASES: u32 = 128;
 const STORAGE_CASES: u32 = 128;
 const STORAGE_MAX_ROWS: usize = 8;
@@ -292,19 +340,56 @@ where
     Ok(())
 }
 
-/// The contract of `OrdRepr`, which storage relies on to search a file with
-/// a key it holds in memory: the archive of `lhs` orders against `rhs`
-/// exactly as `lhs` does.
+/// Checks that the archive of `lhs` compares with `rhs`, decoded or
+/// archived, exactly as `lhs` does.
+///
+/// Storage relies on both comparisons.  A search of a file compares the
+/// archived keys in it with a key it holds decoded, through `OrdRepr`, and a
+/// merge compares two archives, through their own `Ord` and `PartialEq`.
+///
+/// # Arguments
+///
+/// - `lhs`: the value whose archive is compared.
+/// - `rhs`: the value it is compared with, decoded and then archived.
+///
+/// # Returns
+///
+/// `Ok(())` if every comparison agrees with the decoded one, or the failure
+/// of the first that does not.
 fn archived_ord_eq<T: DBData>(lhs: &T, rhs: &T) -> Result<(), TestCaseError> {
-    let bytes = dbsp::storage::file::to_bytes(lhs)
-        .map_err(|err| TestCaseError::fail(format!("serialize failed: {err:?}")))?;
-    // SAFETY: `bytes` is the archive of a `T`, in the aligned buffer
+    let archive = |value: &T| {
+        dbsp::storage::file::to_bytes(value)
+            .map_err(|err| TestCaseError::fail(format!("serialize failed: {err:?}")))
+    };
+    let lhs_bytes = archive(lhs)?;
+    let rhs_bytes = archive(rhs)?;
+    // SAFETY: each buffer is the archive of a `T`, in the aligned buffer
     // `to_bytes` produced, so a `T::Repr` sits at its root.
-    let archived = unsafe { rkyv::archived_root::<T>(&bytes[..]) };
+    let (lhs_archived, rhs_archived) = unsafe {
+        (
+            rkyv::archived_root::<T>(&lhs_bytes[..]),
+            rkyv::archived_root::<T>(&rhs_bytes[..]),
+        )
+    };
+    let expected = lhs.cmp(rhs);
     prop_assert_eq!(
-        archived.ord_cmp(rhs),
-        lhs.cmp(rhs),
-        "{:?} vs {:?}",
+        lhs_archived.ord_cmp(rhs),
+        expected,
+        "archived against decoded: {:?} vs {:?}",
+        lhs,
+        rhs
+    );
+    prop_assert_eq!(
+        lhs_archived.cmp(rhs_archived),
+        expected,
+        "archived against archived: {:?} vs {:?}",
+        lhs,
+        rhs
+    );
+    prop_assert_eq!(
+        lhs_archived == rhs_archived,
+        lhs == rhs,
+        "archived equality: {:?} vs {:?}",
         lhs,
         rhs
     );
@@ -954,6 +1039,229 @@ fn tup65_strategy() -> BoxedStrategy<Tup65Ty> {
                 opts[48], opts[49], opts[50], opts[51], opts[52], opts[53], opts[54], opts[55],
                 opts[56], opts[57], opts[58], opts[59], opts[60], opts[61], opts[62], opts[63],
             )
+        })
+        .boxed()
+}
+
+/// How likely a field of a mostly-NULL tuple is to be NULL: two times in
+/// three.
+///
+/// Two such fields agree almost half the time, both NULL or both the same of
+/// the few small values a field otherwise holds, so a comparison of two
+/// tuples of them runs past the first field almost half the time.
+const MOSTLY_NULL: f64 = 2.0 / 3.0;
+
+/// Draws an integer that is NULL with probability `null` and otherwise one
+/// of four small values.
+///
+/// # Arguments
+///
+/// * `null` - how likely the integer is to be NULL, from 0 to 1.
+///
+/// # Returns
+///
+/// The strategy.
+fn nullable_i64(null: f64) -> BoxedStrategy<Option<i64>> {
+    prop::option::weighted(1.0 - null, -2i64..2).boxed()
+}
+
+/// Draws a string of at most two characters, each `a` or `b`.
+///
+/// # Returns
+///
+/// The strategy.
+fn short_sql_string() -> BoxedStrategy<SqlString> {
+    "[ab]{0,2}".prop_map(SqlString::from).boxed()
+}
+
+/// Draws a [`short_sql_string`] that is NULL with probability `null`.
+///
+/// # Arguments
+///
+/// * `null` - how likely the string is to be NULL, from 0 to 1.
+///
+/// # Returns
+///
+/// The strategy.
+fn nullable_sql_string(null: f64) -> BoxedStrategy<Option<SqlString>> {
+    prop::option::weighted(1.0 - null, short_sql_string()).boxed()
+}
+
+/// Draws a [`NullableTup17Ty`] whose fields are each NULL with probability
+/// `null`.  The tuple is stored sparsely when seven or more of its seventeen
+/// fields are NULL, and densely otherwise.
+///
+/// # Arguments
+///
+/// * `null` - how likely each field is to be NULL, from 0 to 1.
+///
+/// # Returns
+///
+/// The strategy.
+fn nullable_tup17_strategy(null: f64) -> BoxedStrategy<NullableTup17Ty> {
+    let head = (
+        nullable_i64(null),
+        nullable_sql_string(null),
+        nullable_i64(null),
+        nullable_sql_string(null),
+        nullable_i64(null),
+        nullable_sql_string(null),
+        nullable_i64(null),
+        nullable_sql_string(null),
+        nullable_i64(null),
+        nullable_sql_string(null),
+        nullable_i64(null),
+        nullable_sql_string(null),
+    );
+    (
+        head,
+        nullable_i64(null),
+        nullable_sql_string(null),
+        nullable_i64(null),
+        nullable_sql_string(null),
+        nullable_i64(null),
+    )
+        .prop_map(|(head, m, n, o, p, q)| {
+            let (a, b, c, d, e, f, g, h, i, j, k, l) = head;
+            Tup17::new(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q)
+        })
+        .boxed()
+}
+
+/// Draws a [`NullableTup20Ty`] whose nullable fields are each NULL with
+/// probability `null`.  The tuple is stored sparsely when eight or more of
+/// its twenty fields are NULL, and densely otherwise.
+///
+/// # Arguments
+///
+/// * `null` - how likely each nullable field is to be NULL, from 0 to 1.
+///
+/// # Returns
+///
+/// The strategy.
+fn nullable_tup20_strategy(null: f64) -> BoxedStrategy<NullableTup20Ty> {
+    let head = (
+        -2i64..2,
+        nullable_sql_string(null),
+        nullable_i64(null),
+        nullable_sql_string(null),
+        nullable_i64(null),
+        nullable_sql_string(null),
+        nullable_i64(null),
+        nullable_sql_string(null),
+        nullable_i64(null),
+        nullable_sql_string(null),
+        nullable_i64(null),
+        nullable_sql_string(null),
+    );
+    (
+        head,
+        nullable_i64(null),
+        nullable_sql_string(null),
+        nullable_i64(null),
+        nullable_sql_string(null),
+        nullable_i64(null),
+        nullable_sql_string(null),
+        nullable_i64(null),
+        short_sql_string(),
+    )
+        .prop_map(|(head, m, n, o, p, q, r, s, t)| {
+            let (a, b, c, d, e, f, g, h, i, j, k, l) = head;
+            Tup20::new(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t)
+        })
+        .boxed()
+}
+
+/// Gives a tuple the first fields of another.
+///
+/// # Arguments
+///
+/// * `first` - the tuple whose fields to take.
+/// * `tuple` - the tuple to give them to.
+/// * `shared` - how many fields to take.
+/// * The rest - the indexes of the tuple's fields, in order.
+///
+/// # Returns
+///
+/// `tuple`, with its first `shared` fields those of `first`.
+macro_rules! with_prefix_of {
+    ($first:expr, $tuple:expr, $shared:expr; $($field:tt),+ $(,)?) => {{
+        let mut tuple = $tuple;
+        $(
+            if $field < $shared {
+                tuple.$field = $first.$field.clone();
+            }
+        )+
+        tuple
+    }};
+}
+
+/// [`with_prefix_of`] for a [`NullableTup17Ty`].
+fn tup17_with_prefix_of(
+    first: &NullableTup17Ty,
+    tuple: NullableTup17Ty,
+    shared: usize,
+) -> NullableTup17Ty {
+    with_prefix_of!(first, tuple, shared; 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16)
+}
+
+/// [`with_prefix_of`] for a [`NullableTup20Ty`].
+fn tup20_with_prefix_of(
+    first: &NullableTup20Ty,
+    tuple: NullableTup20Ty,
+    shared: usize,
+) -> NullableTup20Ty {
+    with_prefix_of!(
+        first, tuple, shared;
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19
+    )
+}
+
+/// Draws a set of two to sixteen tuples, each after the first repeating a
+/// prefix of the first, of a length drawn for that tuple, and drawn afresh
+/// after it.
+///
+/// Tuples drawn independently seldom agree past their first few fields, so
+/// a comparison of two of them stops early.  Two of these agree at least as
+/// far as the shorter of their prefixes, so comparisons reach every field,
+/// and a prefix as long as the tuple repeats the first tuple outright.  How
+/// likely a field is to be NULL is drawn once for the set, anywhere from
+/// never to always, so that some sets are stored densely, some sparsely, and
+/// some mix the two layouts.
+///
+/// # Arguments
+///
+/// * `tuple` - draws a tuple whose fields are NULL with the probability it
+///   is given.
+/// * `with_prefix` - gives a tuple the first fields of another, as many as
+///   its last argument says.
+/// * `width` - how many fields a tuple has.
+///
+/// # Returns
+///
+/// The strategy.
+fn prefix_sharing_set<T>(
+    tuple: fn(f64) -> BoxedStrategy<T>,
+    with_prefix: fn(&T, T, usize) -> T,
+    width: usize,
+) -> BoxedStrategy<Vec<T>>
+where
+    T: Clone + core::fmt::Debug + 'static,
+{
+    (0.0..=1.0f64)
+        .prop_flat_map(move |null| {
+            (
+                tuple(null),
+                prop::collection::vec((tuple(null), 0..=width), 1..=15),
+            )
+        })
+        .prop_map(move |(first, rest)| {
+            let mut set: Vec<T> = rest
+                .into_iter()
+                .map(|(tuple, shared)| with_prefix(&first, tuple, shared))
+                .collect();
+            set.push(first);
+            set
         })
         .boxed()
 }
@@ -1832,6 +2140,48 @@ tuple_archived_ord_test!(tup15_archived_ord, Tup15Ty, tup15_strategy());
 tuple_archived_ord_test!(tup16_archived_ord, Tup16Ty, tup16_strategy());
 tuple_archived_ord_test!(tup17_archived_ord, Tup17Ty, tup17_strategy());
 tuple_archived_ord_test!(tup65_archived_ord, Tup65Ty, tup65_strategy());
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(PROPTEST_CASES))]
+
+    /// Compares every pair from a set of mostly-NULL `Tup17`s.  Two of them
+    /// agree on a field almost half the time, so some comparisons run well
+    /// past the first field, and some sets mix a densely stored tuple in
+    /// with the sparse ones.
+    #[test]
+    fn mostly_null_tup17_archived_ord(
+        values in prop::collection::vec(nullable_tup17_strategy(MOSTLY_NULL), 2..=16)
+    ) {
+        archived_ord_all(&values)?;
+    }
+
+    /// The same for `Tup20`s, whose first and last fields are never NULL.
+    #[test]
+    fn mostly_null_tup20_archived_ord(
+        values in prop::collection::vec(nullable_tup20_strategy(MOSTLY_NULL), 2..=16)
+    ) {
+        archived_ord_all(&values)?;
+    }
+
+    /// Compares every pair from a set of `Tup17`s that repeat prefixes of one
+    /// tuple, so that comparisons run as deep into the tuples as the
+    /// prefixes do, between densely stored tuples, sparsely stored ones, and
+    /// one of each.
+    #[test]
+    fn prefix_sharing_tup17_archived_ord(
+        values in prefix_sharing_set(nullable_tup17_strategy, tup17_with_prefix_of, 17)
+    ) {
+        archived_ord_all(&values)?;
+    }
+
+    /// The same for `Tup20`s.
+    #[test]
+    fn prefix_sharing_tup20_archived_ord(
+        values in prefix_sharing_set(nullable_tup20_strategy, tup20_with_prefix_of, 20)
+    ) {
+        archived_ord_all(&values)?;
+    }
+}
 
 tuple_storage_roundtrip_test!(
     tup0_storage_roundtrip,

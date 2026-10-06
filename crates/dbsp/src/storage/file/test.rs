@@ -2360,3 +2360,1553 @@ fn a_legacy_filter_has_no_ladder_to_descend() {
         }
     });
 }
+
+/// Copying a layer file by splicing its values, rather than rewriting them.
+///
+/// This is the whole point of [`Cursor::raw_run`] and [`Writer2::write1_raw`]:
+/// a merge that finds one input holding a stretch of the output to itself can
+/// move those bytes instead of decoding and re-encoding them.  The copy here
+/// is the simplest case of that, one input and no merging at all, so anything
+/// that comes back different is the splice's fault and nothing else's.
+///
+/// Such a merge reads its inputs without decoding them, too: it compares keys
+/// as they are stored, with [`Cursor::archived_key`], and counts the negative
+/// weights of the values it copies where they lie, with [`Cursor::aux_at`].
+/// The tests of those two check that they read what decoding would.
+mod splice_layer_file {
+    use std::{
+        cmp::Ordering,
+        collections::{BTreeMap, HashSet},
+        ops::Range,
+    };
+
+    use feldera_types::config::{StorageConfig, StorageOptions};
+    use rand::{Rng, SeedableRng, seq::SliceRandom};
+    use rand_chacha::ChaCha8Rng;
+
+    use crate::{
+        DBData,
+        algebra::{F32, F64},
+        dynamic::{DataTrait, DynData, DynWeight, Erase},
+        hash::default_hash,
+        storage::{
+            backend::StorageBackend,
+            file::{
+                BatchKeyFilter, Factories, FilterPlan,
+                filter::FilterKind,
+                format::{BatchMetadata, Compression},
+                reader::{ColumnSpec, Cursor, Reader, RowGroup},
+                writer::{Parameters, Writer2},
+            },
+        },
+        time::Product,
+        trace::filter::BatchFilters,
+        utils::{Tup1, Tup2, Tup3, Tup4, Tup10},
+    };
+
+    use super::{backend_at, test_buffer_cache};
+    use tempfile::tempdir;
+
+    type K0 = String;
+    type A0 = ();
+    type K1 = u64;
+    type A1 = i64;
+
+    /// Keys of uneven length, so items do not all encode to the same size and
+    /// the runs being copied are not a uniform stride.
+    fn key0(row: usize) -> K0 {
+        format!("key-{row:05}-{}", "y".repeat(row % 23))
+    }
+
+    fn values(row: usize) -> Vec<(K1, A1)> {
+        (0..1 + row % 5)
+            .map(|i| ((row * 10 + i) as u64, (row as i64) - (i as i64) * 3))
+            .collect()
+    }
+
+    /// Every way a block can be stored: as is, and with each codec.  A copy
+    /// takes items from a block once it is decompressed and puts them in a
+    /// block that is compressed afresh, so it has to come out the same under
+    /// each.
+    const COMPRESSIONS: [Option<Compression>; 4] = [
+        None,
+        Some(Compression::Snappy),
+        Some(Compression::Lz4),
+        Some(Compression::Zstd),
+    ];
+
+    fn parameters(compression: Option<Compression>) -> Parameters {
+        Parameters {
+            // Small blocks so a run runs off the end of one and the splice has
+            // to carry on into the next, which is the case that gets the row
+            // numbering wrong if anything does.
+            min_data_block: 4096,
+            min_index_block: 4096,
+            compression,
+            ..Parameters::default()
+        }
+    }
+
+    /// A reader for the files these tests write, which hold keys in their
+    /// first column and values with their weights in the second.
+    type TwoColumnReader = Reader<(
+        &'static DynData,
+        &'static DynData,
+        (&'static DynData, &'static DynWeight, ()),
+    )>;
+
+    /// A writer for those files.
+    type TwoColumnWriter = Writer2<DynData, DynData, DynData, DynWeight>;
+
+    /// Creates a writer for a file whose keys are of type `K`.
+    ///
+    /// # Arguments
+    ///
+    /// * `backend` - where to write the file.
+    /// * `parameters` - how to write it.
+    /// * `filter` - the membership filter to build for its keys, if any.
+    ///
+    /// # Returns
+    ///
+    /// The writer.
+    fn new_writer<K: DBData>(
+        backend: &dyn StorageBackend,
+        parameters: Parameters,
+        filter: Option<BatchKeyFilter>,
+    ) -> TwoColumnWriter {
+        Writer2::new(
+            &Factories::<DynData, DynData>::new::<K, A0>(),
+            &Factories::<DynData, DynWeight>::new::<K1, A1>(),
+            test_buffer_cache,
+            backend,
+            parameters,
+            filter,
+        )
+        .unwrap()
+    }
+
+    /// Writes a file whose first column holds `keys` and whose second holds,
+    /// under the key at index `row`, the [`values`] of `row`.
+    ///
+    /// # Arguments
+    ///
+    /// * `keys` - the keys, in ascending order and without repeats.
+    /// * `backend` - where to write the file.
+    /// * `parameters` - how to write it.
+    /// * `filter` - the membership filter to build for the keys, if any.
+    ///
+    /// # Returns
+    ///
+    /// A reader for the file, and the filters that go with it.
+    fn write_keys<K: DBData>(
+        keys: &[K],
+        backend: &dyn StorageBackend,
+        parameters: Parameters,
+        filter: Option<BatchKeyFilter>,
+    ) -> (TwoColumnReader, BatchFilters<DynData>) {
+        let mut writer = new_writer::<K>(backend, parameters, filter);
+        for (row, key) in keys.iter().enumerate() {
+            for (mut k, mut a) in values(row) {
+                writer.write1((k.erase_mut(), a.erase_mut())).unwrap();
+            }
+            writer.write0((key.erase(), ().erase())).unwrap();
+        }
+        writer.into_reader(BatchMetadata::default()).unwrap()
+    }
+
+    fn build(
+        n: usize,
+        backend: &dyn StorageBackend,
+        compression: Option<Compression>,
+    ) -> TwoColumnReader {
+        let keys: Vec<K0> = (0..n).map(key0).collect();
+        let filter = crate::storage::file::filter::FilterPlan::<DynData>::decide_filter(None, n);
+        write_keys(&keys, backend, parameters(compression), filter).0
+    }
+
+    /// Asserts that `cursor` is on a row whose key is `expected`, both decoded
+    /// and as stored, or on no row when `expected` is `None`.
+    ///
+    /// The key as stored is asked for twice: the first ask looks it up and
+    /// keeps it, and the second answers from what the first kept.
+    ///
+    /// # Arguments
+    ///
+    /// * `cursor` - the cursor to check.
+    /// * `expected` - the key the cursor should be on, if any.
+    /// * `after` - what moved the cursor there, for the failure message.
+    ///
+    /// # Panics
+    ///
+    /// If either form of the key is not `expected`.
+    fn assert_on_key<A, N, T>(
+        cursor: &Cursor<'_, DynData, A, N, T>,
+        expected: Option<&DynData>,
+        after: &str,
+    ) where
+        A: DataTrait + ?Sized,
+        T: ColumnSpec,
+    {
+        assert_eq!(cursor.key(), expected, "after {after}, the decoded key");
+        for ask in ["first", "second"] {
+            let archived = cursor.archived_key();
+            match expected {
+                Some(expected) => assert_eq!(
+                    archived.map(|archived| archived.cmp_target(expected)),
+                    Some(Ordering::Equal),
+                    "after {after}, the key as stored, asked for the {ask} time",
+                ),
+                None => assert!(
+                    archived.is_none(),
+                    "after {after}, a key as stored off the rows, asked for the {ask} time",
+                ),
+            }
+        }
+    }
+
+    /// Copies one key's values from row `from` on, a run at a time, until the
+    /// copy has reached row `until`.
+    ///
+    /// A run ends where its data block or the key's values end, so the copy
+    /// stops at the first such end at or past `until`.
+    ///
+    /// # Arguments
+    ///
+    /// * `writer` - the writer to copy into.
+    /// * `values` - the key's values in the source.
+    /// * `from` - the first row to copy, counted from the key's first value.
+    /// * `until` - the row the copy has to reach.
+    ///
+    /// # Returns
+    ///
+    /// The row after the last one copied, which is `from` when `until` is not
+    /// past it.
+    fn copy_runs<T: ColumnSpec>(
+        writer: &mut TwoColumnWriter,
+        values: &RowGroup<'_, DynData, DynWeight, (), T>,
+        from: u64,
+        until: u64,
+    ) -> u64 {
+        let mut at = from;
+        let mut cursor = values.nth(at).unwrap();
+        while at < until {
+            at += {
+                let run = cursor
+                    .raw_run()
+                    .expect("a block this build wrote can be copied");
+                writer.write1_raw(&run).unwrap();
+                run.len() as u64
+            };
+            // SAFETY: the cursor reads a file these tests wrote, through the
+            // factories they wrote it with.
+            unsafe { cursor.move_to_row(at) }.unwrap();
+        }
+        at
+    }
+
+    /// Encodes some of the values of the key at index `row`, as [`values`]
+    /// gives them.
+    ///
+    /// # Arguments
+    ///
+    /// * `writer` - the writer to encode into.
+    /// * `row` - the key's index.
+    /// * `rows` - which of its values to encode, counted from its first.
+    fn encode_values(writer: &mut TwoColumnWriter, row: usize, rows: Range<u64>) {
+        for (value, weight) in &values(row)[rows.start as usize..rows.end as usize] {
+            writer.write1((value.erase(), weight.erase())).unwrap();
+        }
+    }
+
+    /// Copies `source` into `writer` a key at a time, as a merge copies a key
+    /// that no other input holds: its values as bytes, then the key as bytes,
+    /// or decoded where the writer refuses the bytes.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - the file to copy.
+    /// * `writer` - the writer to copy into.
+    ///
+    /// # Returns
+    ///
+    /// How many keys the writer refused as bytes.
+    fn copy_key_by_key(source: &TwoColumnReader, writer: &mut TwoColumnWriter) -> usize {
+        let rows0 = source.rows();
+        let mut keys = rows0.nth(0).unwrap();
+        let mut refused = 0;
+        while keys.has_value() {
+            let values = keys.next_column().unwrap();
+            copy_runs(writer, &values, 0, values.len());
+            let taken = {
+                let item = keys.raw_item().unwrap();
+                writer.write0_raw(&item).unwrap()
+            };
+            if !taken {
+                refused += 1;
+                writer.write0((keys.key().unwrap(), ().erase())).unwrap();
+            }
+            // SAFETY: as in `copy_runs`.
+            unsafe { keys.move_next() }.unwrap();
+        }
+        refused
+    }
+
+    /// Writes a file of `keys` and copies it key by key into one that builds
+    /// `filter`.
+    ///
+    /// # Arguments
+    ///
+    /// * `keys` - the keys, in ascending order and without repeats.
+    /// * `backend` - where to write both files.
+    /// * `filter` - the membership filter the copy builds, if any.
+    ///
+    /// # Returns
+    ///
+    /// A reader for the copy, its filters, and how many keys it refused as
+    /// bytes.
+    fn copy_keys<K: DBData>(
+        keys: &[K],
+        backend: &dyn StorageBackend,
+        filter: Option<BatchKeyFilter>,
+    ) -> (TwoColumnReader, BatchFilters<DynData>, usize) {
+        let (source, _) = write_keys(keys, backend, parameters(None), None);
+        source.evict();
+        let mut writer = new_writer::<K>(backend, parameters(None), filter);
+        let refused = copy_key_by_key(&source, &mut writer);
+        let (copy, filters) = writer.into_reader(BatchMetadata::default()).unwrap();
+        copy.evict();
+        (copy, filters, refused)
+    }
+
+    /// Asserts that `file` holds exactly the keys of `expected`, in order,
+    /// each owning the [`values`] of the row it is paired with.
+    ///
+    /// Every key and value is read decoded and as stored, every value also at
+    /// its position under its key, and from every value each weight that
+    /// `aux_at` can reach in the same run.
+    ///
+    /// # Arguments
+    ///
+    /// * `file` - the file to read.
+    /// * `expected` - each key the file should hold, after the row whose
+    ///   values it should own.
+    ///
+    /// # Panics
+    ///
+    /// If the file holds anything else.
+    fn assert_holds<K: DBData>(
+        file: &TwoColumnReader,
+        expected: impl IntoIterator<Item = (usize, K)>,
+    ) {
+        let expected: Vec<(usize, K)> = expected.into_iter().collect();
+        let rows0 = file.rows();
+        assert_eq!(
+            rows0.len(),
+            expected.len() as u64,
+            "the file holds the wrong number of keys",
+        );
+        for (at, (row, key)) in expected.iter().enumerate() {
+            let keys = rows0.nth(at as u64).unwrap();
+            assert_on_key(&keys, Some(key.erase()), &format!("nth({at})"));
+            let rows1 = keys.next_column().unwrap();
+            let owned = values(*row);
+            assert_eq!(
+                rows1.len(),
+                owned.len() as u64,
+                "key {at} owns the wrong number of values",
+            );
+            let mut cursor = rows1.nth(0).unwrap();
+            for (index, &(value, weight)) in owned.iter().enumerate() {
+                let place = format!("key {at}, value {index}");
+                assert_eq!(cursor.relative_position(), index as u64, "{place}");
+                assert_on_key(&cursor, Some(value.erase()), &place);
+                let reach = cursor
+                    .raw_run()
+                    .expect("a block this build wrote can be copied")
+                    .len() as u64;
+                let (mut got_value, mut got_weight) = (K1::default(), A1::default());
+                // SAFETY: the cursor reads a file these tests wrote, through
+                // the factories they wrote it with.
+                unsafe {
+                    assert!(
+                        cursor
+                            .item((got_value.erase_mut(), got_weight.erase_mut()))
+                            .is_some(),
+                        "{place}: no item",
+                    );
+                    assert_eq!((got_value, got_weight), (value, weight), "{place}");
+                    for offset in 0..reach {
+                        assert!(
+                            cursor.aux_at(offset, got_weight.erase_mut()),
+                            "{place}: aux_at({offset}) read nothing",
+                        );
+                        assert_eq!(
+                            got_weight,
+                            owned[index + offset as usize].1,
+                            "{place}: aux_at({offset}) read the wrong weight",
+                        );
+                    }
+                    assert!(
+                        !cursor.aux_at(reach, got_weight.erase_mut()),
+                        "{place}: aux_at({reach}) read past the run",
+                    );
+                    cursor.move_next().unwrap();
+                }
+            }
+        }
+    }
+
+    /// Asserts that seeking `file` for the key of any row of its source, kept
+    /// or not, lands on the first key at or past it when seeking forward, and
+    /// on the last key at or before it when seeking backward.
+    ///
+    /// # Arguments
+    ///
+    /// * `file` - a copy of a file that held the keys of rows `0..n`.
+    /// * `kept` - the rows whose keys the copy holds, in order.
+    /// * `n` - how many keys the source held.
+    ///
+    /// # Panics
+    ///
+    /// If a seek lands anywhere else.
+    fn assert_seeks_land(file: &TwoColumnReader, kept: &[usize], n: usize) {
+        let rows0 = file.rows();
+        let last = rows0.len() - 1;
+        for row in 0..n {
+            let target = key0(row);
+            let ahead = kept
+                .get(kept.partition_point(|&kept| kept < row))
+                .map(|&kept| key0(kept));
+            let behind = kept
+                .partition_point(|&kept| kept <= row)
+                .checked_sub(1)
+                .map(|previous| key0(kept[previous]));
+            let mut forward = rows0.nth(0).unwrap();
+            let mut forward_until = rows0.nth(0).unwrap();
+            let mut backward = rows0.nth(last).unwrap();
+            let mut backward_until = rows0.nth(last).unwrap();
+            // SAFETY: the cursors read a file these tests wrote, through the
+            // factories they wrote it with.
+            unsafe {
+                forward.advance_to_value_or_larger(target.erase()).unwrap();
+                forward_until
+                    .seek_forward_until(|key| key >= target.erase())
+                    .unwrap();
+                backward.rewind_to_value_or_smaller(target.erase()).unwrap();
+                backward_until
+                    .seek_backward_until(|key| key <= target.erase())
+                    .unwrap();
+            }
+            let ahead = ahead.as_ref().map(|key| key.erase());
+            let behind = behind.as_ref().map(|key| key.erase());
+            let to = format!("to key {row}");
+            assert_on_key(&forward, ahead, &format!("advance_to_value_or_larger {to}"));
+            assert_on_key(&forward_until, ahead, &format!("seek_forward_until {to}"));
+            assert_on_key(
+                &backward,
+                behind,
+                &format!("rewind_to_value_or_smaller {to}"),
+            );
+            assert_on_key(
+                &backward_until,
+                behind,
+                &format!("seek_backward_until {to}"),
+            );
+        }
+    }
+
+    /// Copies a file of `keys` key by key into one with a Bloom filter, and
+    /// checks that each key went into the filter by the hash its decoded form
+    /// has.
+    ///
+    /// # Arguments
+    ///
+    /// * `keys` - the keys, in any order and possibly repeated.
+    /// * `hashable` - whether the archived form of `K` can be hashed.  If it
+    ///   can, every key has to go in as bytes and hash as stored the way it
+    ///   hashes decoded; if not, every key has to be refused as bytes, offer no
+    ///   hash as stored, and go in decoded.
+    ///
+    /// # Panics
+    ///
+    /// If a key goes in some other way, reads back different, or is missing
+    /// from the filter.
+    fn assert_copied_keys_hash_like_decoded<K: DBData>(mut keys: Vec<K>, hashable: bool) {
+        keys.sort();
+        keys.dedup();
+        let what = std::any::type_name::<K>();
+        let tempdir = tempdir().unwrap();
+        let backend = backend_at(&tempdir.path().to_string_lossy());
+        let filter = FilterPlan::<DynData>::decide_filter(None, keys.len());
+        let (copy, filters, refused) = copy_keys(&keys, &*backend, filter);
+        assert_eq!(
+            filters.membership_filter_kind(),
+            FilterKind::Bloom,
+            "{what}"
+        );
+        assert_eq!(
+            refused,
+            if hashable { 0 } else { keys.len() },
+            "{what}: the keys refused as bytes",
+        );
+        assert_holds(&copy, keys.iter().cloned().enumerate());
+
+        let rows0 = copy.rows();
+        let mut cursor = rows0.nth(0).unwrap();
+        for key in &keys {
+            assert_eq!(
+                cursor.archived_key().unwrap().archived_hash(),
+                hashable.then(|| default_hash(key)),
+                "{what}: {key:?} hashes differently as stored",
+            );
+            assert!(
+                filters.maybe_contains_key(key.erase(), None),
+                "{what}: {key:?} is missing from the filter",
+            );
+            // SAFETY: the cursor reads the file this function wrote, through
+            // the factories it wrote it with.
+            unsafe { cursor.move_next() }.unwrap();
+        }
+    }
+
+    /// A splice onto a file that already holds rows has to move every row
+    /// group by the distance between where the run sat and where it now sits.
+    ///
+    /// A straight copy cannot show this: there the two coincide and a shift of
+    /// zero is correct.  Here the destination is given a few keys of its own
+    /// first, so the distance is not zero and getting it wrong is visible.
+    #[test]
+    fn a_splice_onto_a_non_empty_file_shifts_row_groups() {
+        let n = 200;
+        let head = 3; // keys written the ordinary way before any splicing
+        let tempdir = tempdir().unwrap();
+        let backend = <dyn StorageBackend>::new(
+            &StorageConfig {
+                path: tempdir.path().to_string_lossy().to_string(),
+                cache: Default::default(),
+            },
+            &StorageOptions::default(),
+        )
+        .unwrap();
+        let source = build(n, &*backend, None);
+        source.evict();
+
+        let factories0 = Factories::<DynData, DynData>::new::<K0, A0>();
+        let factories1 = Factories::<DynData, DynWeight>::new::<K1, A1>();
+        let mut writer = Writer2::new(
+            &factories0,
+            &factories1,
+            test_buffer_cache,
+            &*backend,
+            parameters(None),
+            None,
+        )
+        .unwrap();
+
+        // Keys of the destination's own, sorting before every key of the
+        // source and carrying a different number of values each, so that the
+        // source's rows land somewhere they have never been.
+        let mut shift = 0u64;
+        for i in 0..head {
+            for j in 0..(2 + i) {
+                let (mut k, mut a) = ((900 + 10 * i + j) as K1, -(j as A1) - 1);
+                writer.write1((k.erase_mut(), a.erase_mut())).unwrap();
+                shift += 1;
+            }
+            let (mut k, mut a) = (format!("aaa-{i}"), ());
+            writer.write0((k.erase_mut(), a.erase_mut())).unwrap();
+        }
+        assert!(shift > 0, "the destination has to start somewhere else");
+
+        // Now the whole source, spliced, landing `shift` rows further along.
+        let rows0 = source.rows();
+        let mut keys = unsafe { rows0.first() }.unwrap();
+        let mut at = 0u64;
+        while keys.has_value() {
+            // One key at a time, which is the granularity a merge splices at: it
+            // owns the output only as far as the next key of another input.  A
+            // key's record carries the range of value rows it owns, so those
+            // values have to be written before it is.
+            let value_rows = keys.next_column().unwrap();
+            let mut value_cursor = unsafe { value_rows.first() }.unwrap();
+            let mut values_at = 0u64;
+            while values_at < value_rows.len() {
+                let run = value_cursor.raw_run().unwrap();
+                writer.write1_raw(&run).unwrap();
+                values_at += run.len() as u64;
+                unsafe { value_cursor.move_to_row(values_at) }.unwrap();
+            }
+            let took = {
+                let item = keys.raw_item().unwrap();
+                writer.write0_raw(&item).unwrap()
+            };
+            assert!(took, "the key splice stalled at {at}");
+            at += 1;
+            unsafe { keys.move_next() }.unwrap();
+        }
+        assert_eq!(at, n as u64);
+
+        let copy = writer.into_reader(BatchMetadata::default()).unwrap().0;
+        copy.evict();
+        let copy0 = copy.rows();
+        assert_eq!(copy0.len(), (n + head) as u64);
+        for row in 0..n {
+            let cursor = copy0.nth((row + head) as u64).unwrap();
+            let rows1 = cursor.next_column().unwrap();
+            let expected = values(row);
+            assert_eq!(rows1.len(), expected.len() as u64, "row {row} value count");
+            let mut c1 = unsafe { rows1.first() }.unwrap();
+            let (mut got_k, mut got_a) = (K1::default(), A1::default());
+            for (i, (k, a)) in expected.iter().enumerate() {
+                let (mut want_k, mut want_a) = (*k, *a);
+                assert_eq!(
+                    unsafe { c1.item((got_k.erase_mut(), got_a.erase_mut())) },
+                    Some((want_k.erase_mut() as &mut _, want_a.erase_mut() as &mut _)),
+                    "row {row} value {i} came back changed"
+                );
+                unsafe { c1.move_next() }.unwrap();
+            }
+        }
+    }
+
+    /// A copied key has to own at least one row of the next column, as an
+    /// encoded one does.
+    ///
+    /// A key written with none would leave the file's columns disagreeing on
+    /// how many rows there are, which only shows when the file is read back;
+    /// the writer refuses it on the spot instead, in every build.
+    #[test]
+    #[should_panic(expected = "a key needs at least one row of the next column")]
+    fn a_copied_key_that_owns_no_rows_is_refused() {
+        let tempdir = tempdir().unwrap();
+        let backend = <dyn StorageBackend>::new(
+            &StorageConfig {
+                path: tempdir.path().to_string_lossy().to_string(),
+                cache: Default::default(),
+            },
+            &StorageOptions::default(),
+        )
+        .unwrap();
+        let source = build(10, &*backend, None);
+        let factories0 = Factories::<DynData, DynData>::new::<K0, A0>();
+        let factories1 = Factories::<DynData, DynWeight>::new::<K1, A1>();
+        let mut writer = Writer2::new(
+            &factories0,
+            &factories1,
+            test_buffer_cache,
+            &*backend,
+            parameters(None),
+            crate::storage::file::filter::FilterPlan::<DynData>::decide_filter(None, 10),
+        )
+        .unwrap();
+        let rows0 = source.rows();
+        let keys = unsafe { rows0.first() }.unwrap();
+        let item = keys.raw_item().unwrap();
+        // No values written first.
+        let _ = writer.write0_raw(&item);
+    }
+
+    /// A copied key goes into the copy's membership filter by its own hash,
+    /// wherever it sits in the archived item it was copied as.
+    ///
+    /// An archived item is the key together with its auxiliary data, laid out
+    /// the way Rust chooses, so the key starts at the item's root only when the
+    /// auxiliary data takes no space.  Beside a `u64`, a `u8` key sits eight
+    /// bytes in: hashing from the item's root would record part of the
+    /// auxiliary data instead, and those keys would be missing from the filter.
+    #[test]
+    fn a_copied_key_beside_auxiliary_data_is_found_in_the_filter() {
+        type Key = u8;
+        type Aux = u64;
+        let n = 200;
+        let key = |row: usize| row as Key;
+        let aux = |row: usize| 1_000_000 + row as Aux;
+
+        let tempdir = tempdir().unwrap();
+        let backend = <dyn StorageBackend>::new(
+            &StorageConfig {
+                path: tempdir.path().to_string_lossy().to_string(),
+                cache: Default::default(),
+            },
+            &StorageOptions::default(),
+        )
+        .unwrap();
+        let factories0 = Factories::<DynData, DynData>::new::<Key, Aux>();
+        let factories1 = Factories::<DynData, DynWeight>::new::<K1, A1>();
+        let new_writer = || {
+            Writer2::new(
+                &factories0,
+                &factories1,
+                test_buffer_cache,
+                &*backend,
+                parameters(None),
+                crate::storage::file::filter::FilterPlan::<DynData>::decide_filter(None, n),
+            )
+            .unwrap()
+        };
+
+        let mut writer = new_writer();
+        for row in 0..n {
+            for (mut k, mut a) in values(row) {
+                writer.write1((k.erase_mut(), a.erase_mut())).unwrap();
+            }
+            let (mut k, mut a) = (key(row), aux(row));
+            writer.write0((k.erase_mut(), a.erase_mut())).unwrap();
+        }
+        let source: Reader<(
+            &'static DynData,
+            &'static DynData,
+            (&'static DynData, &'static DynWeight, ()),
+        )> = writer.into_reader(BatchMetadata::default()).unwrap().0;
+        source.evict();
+
+        let mut writer = new_writer();
+        let rows0 = source.rows();
+        let mut keys = unsafe { rows0.first() }.unwrap();
+        while keys.has_value() {
+            let value_rows = keys.next_column().unwrap();
+            let mut value_cursor = unsafe { value_rows.first() }.unwrap();
+            let mut values_at = 0u64;
+            while values_at < value_rows.len() {
+                let run = value_cursor.raw_run().unwrap();
+                writer.write1_raw(&run).unwrap();
+                values_at += run.len() as u64;
+                unsafe { value_cursor.move_to_row(values_at) }.unwrap();
+            }
+            let took = {
+                let item = keys.raw_item().unwrap();
+                writer.write0_raw(&item).unwrap()
+            };
+            assert!(took, "the copy refused a key");
+            unsafe { keys.move_next() }.unwrap();
+        }
+        let (copy, filters) = writer.into_reader(BatchMetadata::default()).unwrap();
+        copy.evict();
+
+        assert_eq!(filters.membership_filter_kind(), FilterKind::Bloom);
+        let missing: Vec<usize> = (0..n)
+            .filter(|&row| {
+                let mut k = key(row);
+                !filters.maybe_contains_key(k.erase_mut(), None)
+            })
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "copied keys are missing from the filter at rows {missing:?}"
+        );
+    }
+
+    /// Copies the file by splicing both columns, which is what a merge that
+    /// found a run of keys to itself would do.
+    ///
+    /// The copy carries a membership filter, which is the ordinary case: a
+    /// merge builds one for whatever it writes.  The filter is fed from the
+    /// archived keys as they go by, since a splice never decodes one, and the
+    /// check at the end is the one that matters -- a key that went in has to
+    /// be found again, or a query that looks for it is silently wrong.
+    #[test]
+    fn a_two_column_spliced_copy_matches_the_original() {
+        for compression in COMPRESSIONS {
+            let n = 400;
+            let tempdir = tempdir().unwrap();
+            let backend = <dyn StorageBackend>::new(
+                &StorageConfig {
+                    path: tempdir.path().to_string_lossy().to_string(),
+                    cache: Default::default(),
+                },
+                &StorageOptions::default(),
+            )
+            .unwrap();
+            let source = build(n, &*backend, compression);
+            source.evict();
+
+            let factories0 = Factories::<DynData, DynData>::new::<K0, A0>();
+            let factories1 = Factories::<DynData, DynWeight>::new::<K1, A1>();
+            let mut writer = Writer2::new(
+                &factories0,
+                &factories1,
+                test_buffer_cache,
+                &*backend,
+                parameters(compression),
+                crate::storage::file::filter::FilterPlan::<DynData>::decide_filter(None, n),
+            )
+            .unwrap();
+
+            let rows0 = source.rows();
+            let mut keys = unsafe { rows0.first() }.unwrap();
+            let mut at = 0u64;
+            while keys.has_value() {
+                // One key at a time, which is the granularity a merge splices at: it
+                // owns the output only as far as the next key of another input.  A
+                // key's record carries the range of value rows it owns, so those
+                // values have to be written before it is.
+                let value_rows = keys.next_column().unwrap();
+                let mut value_cursor = unsafe { value_rows.first() }.unwrap();
+                let mut values_at = 0u64;
+                while values_at < value_rows.len() {
+                    let run = value_cursor.raw_run().unwrap();
+                    writer.write1_raw(&run).unwrap();
+                    values_at += run.len() as u64;
+                    unsafe { value_cursor.move_to_row(values_at) }.unwrap();
+                }
+                let took = {
+                    let item = keys.raw_item().unwrap();
+                    writer.write0_raw(&item).unwrap()
+                };
+                assert!(took, "the key splice stalled at {at}");
+                at += 1;
+                unsafe { keys.move_next() }.unwrap();
+            }
+            assert_eq!(at, n as u64);
+
+            let (copy, filters) = writer.into_reader(BatchMetadata::default()).unwrap();
+            copy.evict();
+            assert_eq!(copy.rows().len(), n as u64);
+
+            // Every key the splice copied has to be in the filter.  A filter
+            // fed from decoded keys would pass this too, so the assertion
+            // above it is what says the filter came from the spliced bytes:
+            // the splice could not have run at all had it refused, and the
+            // rows would not be here.
+            assert_ne!(filters.membership_filter_kind(), FilterKind::None);
+            for row in 0..n {
+                let mut key = key0(row);
+                assert!(
+                    filters.maybe_contains_key(key.erase_mut(), None),
+                    "row {row} is missing from the membership filter"
+                );
+            }
+
+            let copy0 = copy.rows();
+            for row in 0..n {
+                let cursor = copy0.nth(row as u64).unwrap();
+                let mut want0 = key0(row);
+                assert_eq!(cursor.key(), Some(want0.erase_mut() as &_), "row {row} key");
+                let rows1 = cursor.next_column().unwrap();
+                let expected = values(row);
+                assert_eq!(rows1.len(), expected.len() as u64, "row {row} value count");
+                let mut c1 = unsafe { rows1.first() }.unwrap();
+                let (mut got_k, mut got_a) = (K1::default(), A1::default());
+                for (i, (k, a)) in expected.iter().enumerate() {
+                    let (mut want_k, mut want_a) = (*k, *a);
+                    assert_eq!(
+                        unsafe { c1.item((got_k.erase_mut(), got_a.erase_mut())) },
+                        Some((want_k.erase_mut() as &mut _, want_a.erase_mut() as &mut _)),
+                        "row {row} value {i} came back changed"
+                    );
+                    unsafe { c1.move_next() }.unwrap();
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_spliced_copy_matches_the_original() {
+        for compression in COMPRESSIONS {
+            let n = 400;
+            let tempdir = tempdir().unwrap();
+            let backend = <dyn StorageBackend>::new(
+                &StorageConfig {
+                    path: tempdir.path().to_string_lossy().to_string(),
+                    cache: Default::default(),
+                },
+                &StorageOptions::default(),
+            )
+            .unwrap();
+            let source = build(n, &*backend, compression);
+            source.evict();
+
+            let factories0 = Factories::<DynData, DynData>::new::<K0, A0>();
+            let factories1 = Factories::<DynData, DynWeight>::new::<K1, A1>();
+            let mut writer = Writer2::new(
+                &factories0,
+                &factories1,
+                test_buffer_cache,
+                &*backend,
+                parameters(compression),
+                crate::storage::file::filter::FilterPlan::<DynData>::decide_filter(None, n),
+            )
+            .unwrap();
+
+            let rows0 = source.rows();
+            let mut spliced = 0usize;
+            for row in 0..n {
+                let keys = rows0.nth(row as u64).unwrap();
+                let rows1 = keys.next_column().unwrap();
+                let mut cursor = unsafe { rows1.first() }.unwrap();
+                let mut taken = 0u64;
+                while cursor.has_value() {
+                    let run = cursor
+                        .raw_run()
+                        .expect("a block this writer just wrote can be spliced");
+                    writer.write1_raw(&run).unwrap();
+                    spliced += run.len();
+                    taken += run.len() as u64;
+                    unsafe { cursor.move_to_row(taken) }.unwrap();
+                }
+                let mut k = key0(row);
+                let mut a = ();
+                writer.write0((k.erase_mut(), a.erase_mut())).unwrap();
+            }
+            let total: usize = (0..n).map(|row| values(row).len()).sum();
+            assert_eq!(spliced, total, "not every value was spliced");
+
+            let copy = writer.into_reader(BatchMetadata::default()).unwrap().0;
+            copy.evict();
+            assert_eq!(copy.rows().len(), n as u64);
+            let copy0 = copy.rows();
+            for row in 0..n {
+                let cursor = copy0.nth(row as u64).unwrap();
+                let mut want0 = key0(row);
+                assert_eq!(cursor.key(), Some(want0.erase_mut() as &_), "row {row} key");
+                let rows1 = cursor.next_column().unwrap();
+                let expected = values(row);
+                assert_eq!(rows1.len(), expected.len() as u64, "row {row} value count");
+                let mut c1 = unsafe { rows1.first() }.unwrap();
+                let (mut got_k, mut got_a) = (K1::default(), A1::default());
+                for (i, (k, a)) in expected.iter().enumerate() {
+                    let (mut want_k, mut want_a) = (*k, *a);
+                    assert_eq!(
+                        unsafe { c1.item((got_k.erase_mut(), got_a.erase_mut())) },
+                        Some((want_k.erase_mut() as &mut _, want_a.erase_mut() as &mut _)),
+                        "row {row} value {i} came back changed"
+                    );
+                    unsafe { c1.move_next() }.unwrap();
+                }
+            }
+        }
+    }
+
+    /// Copies the rows of `source` at `rows`, in that order, keys and values
+    /// alike, into a file that has no filter, so no key is refused.
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - the file to copy from, written by [`build`].
+    /// * `rows` - the rows to copy.
+    #[cfg(debug_assertions)]
+    fn copy_rows(source: &TwoColumnReader, rows: &[u64]) {
+        let tempdir = tempdir().unwrap();
+        let backend = backend_at(&tempdir.path().to_string_lossy());
+        let mut writer = new_writer::<K0>(&*backend, parameters(None), None);
+        let rows0 = source.rows();
+        for &row in rows {
+            let keys = rows0.nth(row).unwrap();
+            let rows1 = keys.next_column().unwrap();
+            let values = unsafe { rows1.first() }.unwrap();
+            writer.write1_raw(&values.raw_run().unwrap()).unwrap();
+            assert!(writer.write0_raw(&keys.raw_item().unwrap()).unwrap());
+        }
+    }
+
+    /// A debug build checks the order of keys that are copied, as it does
+    /// for keys written decoded, though a copy never needs a key decoded.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "to column 0")]
+    fn a_debug_build_rejects_copied_keys_out_of_order() {
+        let tempdir = tempdir().unwrap();
+        let backend = backend_at(&tempdir.path().to_string_lossy());
+        copy_rows(&build(2, &*backend, None), &[1, 0]);
+    }
+
+    /// A debug build checks that a run of values copied under a key follows
+    /// the values already under it: here the run's first value repeats an
+    /// earlier one, because the run is the one copied just before it.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "to column 1")]
+    fn a_debug_build_rejects_copied_values_out_of_order() {
+        let tempdir = tempdir().unwrap();
+        let backend = backend_at(&tempdir.path().to_string_lossy());
+        let source = build(2, &*backend, None);
+        let mut writer = new_writer::<K0>(&*backend, parameters(None), None);
+        let rows0 = source.rows();
+        let key = rows0.nth(1).unwrap();
+        let rows1 = key.next_column().unwrap();
+        let values = unsafe { rows1.first() }.unwrap();
+        let run = values.raw_run().unwrap();
+        writer.write1_raw(&run).unwrap();
+        writer.write1_raw(&run).unwrap();
+    }
+
+    /// A debug build refuses a row group of another file as the model for
+    /// crossing to the next column, which would make the row group it hands
+    /// back read that file instead.
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "another file")]
+    fn next_column_like_rejects_a_row_group_of_another_file() {
+        let tempdir = tempdir().unwrap();
+        let backend = backend_at(&tempdir.path().to_string_lossy());
+        let (one, other) = (build(1, &*backend, None), build(1, &*backend, None));
+        let (rows0, other_rows0) = (one.rows(), other.rows());
+        let key = rows0.nth(0).unwrap();
+        let other_key = other_rows0.nth(0).unwrap();
+        let other_values = other_key.next_column().unwrap();
+        let _ = key.next_column_like(&other_values);
+    }
+
+    /// A cursor offers the key of whatever row it moves to as stored, and no
+    /// key off the rows, however it moves.
+    ///
+    /// The cursor keeps the stored key it found until it moves, so every way
+    /// of moving has to forget it; one that did not would hand out the key of
+    /// the row it left, and a merge comparing keys that way would order its
+    /// output wrongly.  Every way of moving starts, at least once, from a row
+    /// whose key was just asked for, so that there is something to forget.
+    /// Small blocks and a branching factor of three spread the rows over many
+    /// data blocks under several levels of index, so the moves cross both.
+    #[test]
+    fn the_key_as_stored_follows_every_move() {
+        let n = 200;
+        let tempdir = tempdir().unwrap();
+        let backend = backend_at(&tempdir.path().to_string_lossy());
+        let keys: Vec<K0> = (0..n).map(key0).collect();
+        let parameters = Parameters {
+            max_branch: 3,
+            ..parameters(None)
+        };
+        let (file, _) = write_keys(&keys, &*backend, parameters, None);
+        let key_at = |row: usize| Some(keys[row].erase());
+        // Strings that sort after and before every key.
+        let (after_all, before_all) = (K0::from("z"), K0::new());
+
+        let rows0 = file.rows();
+        let mut cursor = rows0.nth(0).unwrap();
+        assert_on_key(&cursor, key_at(0), "nth(0)");
+        // SAFETY: every move below reads the file this test wrote, through
+        // the factories it wrote it with.
+        unsafe {
+            cursor.move_next().unwrap();
+            assert_on_key(&cursor, key_at(1), "move_next");
+            cursor.move_prev().unwrap();
+            assert_on_key(&cursor, key_at(0), "move_prev");
+            cursor.move_prev().unwrap();
+            assert_on_key(&cursor, None, "move_prev from the first row");
+            cursor.move_next().unwrap();
+            assert_on_key(&cursor, key_at(0), "move_next from before the rows");
+            cursor.move_to_row(150).unwrap();
+            assert_on_key(&cursor, key_at(150), "move_to_row(150)");
+
+            // A clone moves on its own.
+            let mut clone = cursor.clone();
+            assert_on_key(&clone, key_at(150), "clone");
+            clone.move_prev().unwrap();
+            assert_on_key(&clone, key_at(149), "move_prev on the clone");
+            assert_on_key(&cursor, key_at(150), "move_prev on its clone");
+
+            cursor
+                .advance_to_value_or_larger(keys[170].erase())
+                .unwrap();
+            assert_on_key(&cursor, key_at(170), "advance_to_value_or_larger");
+            cursor.advance_to_value_or_larger(keys[10].erase()).unwrap();
+            assert_on_key(
+                &cursor,
+                key_at(170),
+                "advance_to_value_or_larger to a passed key",
+            );
+            let target = keys[180].clone();
+            cursor
+                .seek_forward_until(|key| key >= target.erase())
+                .unwrap();
+            assert_on_key(&cursor, key_at(180), "seek_forward_until");
+            cursor.rewind_to_value_or_smaller(keys[20].erase()).unwrap();
+            assert_on_key(&cursor, key_at(20), "rewind_to_value_or_smaller");
+            cursor
+                .rewind_to_value_or_smaller(keys[190].erase())
+                .unwrap();
+            assert_on_key(
+                &cursor,
+                key_at(20),
+                "rewind_to_value_or_smaller to a passed key",
+            );
+            let target = keys[10].clone();
+            cursor
+                .seek_backward_until(|key| key <= target.erase())
+                .unwrap();
+            assert_on_key(&cursor, key_at(10), "seek_backward_until");
+
+            cursor.move_last().unwrap();
+            assert_on_key(&cursor, key_at(n - 1), "move_last");
+            cursor.move_next().unwrap();
+            assert_on_key(&cursor, None, "move_next from the last row");
+            cursor.move_prev().unwrap();
+            assert_on_key(&cursor, key_at(n - 1), "move_prev from past the rows");
+            cursor.move_to_row(n as u64).unwrap();
+            assert_on_key(&cursor, None, "move_to_row just past the rows");
+            cursor.move_to_row(5).unwrap();
+            assert_on_key(&cursor, key_at(5), "move_to_row from past the rows");
+            cursor.move_first().unwrap();
+            assert_on_key(&cursor, key_at(0), "move_first");
+            cursor.move_to_row(u64::MAX).unwrap();
+            assert_on_key(&cursor, None, "move_to_row(u64::MAX)");
+            cursor.move_to_row(7).unwrap();
+            assert_on_key(&cursor, key_at(7), "move_to_row(7)");
+            cursor
+                .advance_to_value_or_larger(after_all.erase())
+                .unwrap();
+            assert_on_key(&cursor, None, "advance_to_value_or_larger past every key");
+            cursor.move_prev().unwrap();
+            assert_on_key(&cursor, key_at(n - 1), "move_prev from past every key");
+            cursor
+                .rewind_to_value_or_smaller(before_all.erase())
+                .unwrap();
+            assert_on_key(&cursor, None, "rewind_to_value_or_smaller before every key");
+        }
+
+        // The values of one key are a row group in the middle of their
+        // column, so moving off either end of it leaves the rows although the
+        // column goes on.  This key's five values span data blocks.
+        let row = 4;
+        let values: Vec<K1> = values(row).into_iter().map(|(value, _)| value).collect();
+        let value_at = |index: usize| Some(values[index].erase());
+        let rows1 = rows0.nth(row as u64).unwrap().next_column().unwrap();
+        let mut cursor = rows1.nth(0).unwrap();
+        assert_on_key(&cursor, value_at(0), "nth(0) of the values");
+        // SAFETY: as above.
+        unsafe {
+            cursor.move_next().unwrap();
+            assert_on_key(&cursor, value_at(1), "move_next over the values");
+            cursor.move_last().unwrap();
+            assert_on_key(&cursor, value_at(4), "move_last over the values");
+            cursor.move_next().unwrap();
+            assert_on_key(&cursor, None, "move_next from the last value");
+            cursor.move_prev().unwrap();
+            assert_on_key(&cursor, value_at(4), "move_prev from past the values");
+            cursor.move_first().unwrap();
+            assert_on_key(&cursor, value_at(0), "move_first over the values");
+            cursor.move_prev().unwrap();
+            assert_on_key(&cursor, None, "move_prev from the first value");
+            cursor
+                .advance_to_value_or_larger(values[3].erase())
+                .unwrap();
+            assert_on_key(
+                &cursor,
+                value_at(3),
+                "advance_to_value_or_larger over the values",
+            );
+            cursor
+                .rewind_to_value_or_smaller(values[1].erase())
+                .unwrap();
+            assert_on_key(
+                &cursor,
+                value_at(1),
+                "rewind_to_value_or_smaller over the values",
+            );
+            cursor.move_to_row(u64::MAX).unwrap();
+            assert_on_key(&cursor, None, "move_to_row(u64::MAX) over the values");
+        }
+    }
+
+    /// `aux_at` reads the weights of rows ahead of the cursor as far as the
+    /// end of its data block or of its row group, whichever comes first, and
+    /// no further.
+    ///
+    /// A merge counts the negative weights of a run it copies this way, so a
+    /// read past either end would count a row that is not in the run.  Every
+    /// data block of values here holds exactly `MAX_BRANCH` rows, which says
+    /// where blocks end without asking the reader, and the keys own one to
+    /// five values each, so some row groups end inside a block and some run
+    /// across several.
+    #[test]
+    fn aux_at_stops_at_the_end_of_the_block_and_of_the_row_group() {
+        const MAX_BRANCH: u64 = 4;
+        let n = 40;
+        let tempdir = tempdir().unwrap();
+        let backend = backend_at(&tempdir.path().to_string_lossy());
+        let keys: Vec<K0> = (0..n).map(key0).collect();
+        let parameters = Parameters {
+            max_branch: MAX_BRANCH as usize,
+            ..parameters(None)
+        };
+        let (file, _) = write_keys(&keys, &*backend, parameters, None);
+
+        // Runs that end where a block does, before the key's values do, and
+        // runs that end where the key's values do, inside a block.
+        let (mut ended_by_block, mut ended_by_row_group) = (0, 0);
+        let mut weight = A1::default();
+        // The row of the current key's first value, counted from the top of
+        // the column.
+        let mut first_row = 0;
+        for row in 0..n {
+            let expected = values(row);
+            let end = first_row + expected.len() as u64;
+            let rows1 = file.rows().nth(row as u64).unwrap().next_column().unwrap();
+            let mut cursor = rows1.nth(0).unwrap();
+            // SAFETY: the cursor reads the file this test wrote, through the
+            // factories it wrote it with.
+            unsafe {
+                for index in 0..expected.len() {
+                    let at = first_row + index as u64;
+                    let block_end = (at / MAX_BRANCH + 1) * MAX_BRANCH;
+                    let reach = block_end.min(end) - at;
+                    ended_by_block += usize::from(block_end < end);
+                    ended_by_row_group += usize::from(end < block_end);
+                    let place = format!("key {row}, value {index}");
+                    assert_eq!(
+                        cursor.raw_run().map(|run| run.len() as u64),
+                        Some(reach),
+                        "{place}: the run does not end where the block or the key does",
+                    );
+                    for offset in 0..reach {
+                        assert!(
+                            cursor.aux_at(offset, weight.erase_mut()),
+                            "{place}: aux_at({offset}) read nothing",
+                        );
+                        assert_eq!(
+                            weight,
+                            expected[index + offset as usize].1,
+                            "{place}: aux_at({offset}) read the wrong weight",
+                        );
+                    }
+                    assert!(
+                        !cursor.aux_at(reach, weight.erase_mut()),
+                        "{place}: aux_at({reach}) read past the end of the run",
+                    );
+                    assert!(
+                        !cursor.aux_at(u64::MAX, weight.erase_mut()),
+                        "{place}: aux_at(u64::MAX) read something",
+                    );
+                    cursor.move_next().unwrap();
+                }
+                assert!(
+                    !cursor.aux_at(0, weight.erase_mut()),
+                    "key {row}: aux_at read past the last value",
+                );
+                assert!(
+                    !rows1.before().aux_at(0, weight.erase_mut()),
+                    "key {row}: aux_at read before the first value",
+                );
+            }
+            first_row = end;
+        }
+        assert!(
+            ended_by_block > 0 && ended_by_row_group > 0,
+            "the runs ended {ended_by_block} times at a block's end and \
+             {ended_by_row_group} times at a key's, but both have to happen",
+        );
+    }
+
+    /// The way [`a_file_interleaves_copied_and_encoded_rows`] writes one key's
+    /// values into its copy.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    enum Way {
+        /// Leaves the key out, values and all.
+        Skipped,
+        /// Encodes every value.
+        Encoded,
+        /// Copies every value, a run at a time.
+        Copied,
+        /// Encodes the values up to a row picked at random and copies the
+        /// rest.
+        EncodedThenCopied,
+        /// Copies runs until it reaches a row picked at random and encodes
+        /// the rest.
+        CopiedThenEncoded,
+    }
+
+    impl Way {
+        /// Every way, to pick from.
+        const ALL: [Way; 5] = [
+            Way::Skipped,
+            Way::Encoded,
+            Way::Copied,
+            Way::EncodedThenCopied,
+            Way::CopiedThenEncoded,
+        ];
+    }
+
+    /// A file can mix copied rows with encoded ones, in any order and under
+    /// one key, and reads back as if every row had been encoded.
+    ///
+    /// A merge copies what one input holds alone and encodes the rest, so a
+    /// block of its output can hold encoded items after copied ones and the
+    /// reverse, a copied key can own values that were encoded, and a copy can
+    /// begin in the middle of a source block.  Each key of the source here
+    /// goes into the copy a way picked at random: its values encoded, copied,
+    /// or some of each, and the key itself copied or encoded; or the key is
+    /// left out, so that the copy's rows do not line up with the source's.
+    /// The files have data blocks of two, three and seven items, and of as
+    /// many as fit, stored as is and with each codec, with and without a Bloom
+    /// filter.
+    #[test]
+    fn a_file_interleaves_copied_and_encoded_rows() {
+        let n = 300;
+        let keys: Vec<K0> = (0..n).map(key0).collect();
+        // Every way a key went in, with whether the key itself was copied.
+        let mut ways = HashSet::new();
+        let mut seed = 0;
+        for max_branch in [2, 3, 7, usize::MAX] {
+            for compression in COMPRESSIONS {
+                for bloom in [false, true] {
+                    println!("max_branch {max_branch}, {compression:?}, Bloom filter {bloom}");
+                    seed += 1;
+                    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+                    let tempdir = tempdir().unwrap();
+                    let backend = backend_at(&tempdir.path().to_string_lossy());
+                    let parameters = Parameters {
+                        max_branch,
+                        ..parameters(compression)
+                    };
+                    let (source, _) = write_keys(&keys, &*backend, parameters.clone(), None);
+                    source.evict();
+                    let filter = if bloom {
+                        FilterPlan::<DynData>::decide_filter(None, n)
+                    } else {
+                        None
+                    };
+                    let mut writer = new_writer::<K0>(&*backend, parameters, filter);
+
+                    let rows0 = source.rows();
+                    let mut kept = Vec::new();
+                    for row in 0..n {
+                        let key = rows0.nth(row as u64).unwrap();
+                        let values = key.next_column().unwrap();
+                        let len = values.len();
+                        let way = *Way::ALL.choose(&mut rng).unwrap();
+                        match way {
+                            Way::Skipped => {
+                                ways.insert((way, false));
+                                continue;
+                            }
+                            Way::Encoded => encode_values(&mut writer, row, 0..len),
+                            Way::Copied => {
+                                copy_runs(&mut writer, &values, 0, len);
+                            }
+                            Way::EncodedThenCopied => {
+                                let head = rng.gen_range(0..=len);
+                                encode_values(&mut writer, row, 0..head);
+                                copy_runs(&mut writer, &values, head, len);
+                            }
+                            Way::CopiedThenEncoded => {
+                                let until = rng.gen_range(0..=len);
+                                let copied = copy_runs(&mut writer, &values, 0, until);
+                                encode_values(&mut writer, row, copied..len);
+                            }
+                        }
+                        let copy_key = rng.gen_bool(0.5);
+                        if copy_key {
+                            let item = key.raw_item().unwrap();
+                            assert!(
+                                writer.write0_raw(&item).unwrap(),
+                                "key {row} was refused as bytes",
+                            );
+                        } else {
+                            writer.write0((key.key().unwrap(), ().erase())).unwrap();
+                        }
+                        ways.insert((way, copy_key));
+                        kept.push(row);
+                    }
+                    let (copy, filters) = writer.into_reader(BatchMetadata::default()).unwrap();
+                    copy.evict();
+
+                    assert_holds(&copy, kept.iter().map(|&row| (row, key0(row))));
+                    assert_seeks_land(&copy, &kept, n);
+                    let kind = if bloom {
+                        FilterKind::Bloom
+                    } else {
+                        FilterKind::None
+                    };
+                    assert_eq!(filters.membership_filter_kind(), kind);
+                    for &row in &kept {
+                        assert!(
+                            filters.maybe_contains_key(keys[row].erase(), None),
+                            "key {row} is missing from the filter",
+                        );
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            ways.len(),
+            2 * Way::ALL.len() - 1,
+            "some way of writing a key never came up: {ways:?}",
+        );
+    }
+
+    /// A key that the copy's membership filter cannot take as bytes is refused
+    /// without taking the rows written for it, and the same key written
+    /// decoded owns them.
+    ///
+    /// A roaring filter needs every key itself rather than a hash of it, and a
+    /// `Product` key cannot hash its archived form the way it hashes decoded,
+    /// so a Bloom filter cannot take one as bytes either; without a filter,
+    /// the same keys go in as bytes.  The keys own one to five values each,
+    /// and in every case each key has to own its own after the copy, and the
+    /// filter has to find every key.
+    #[test]
+    fn a_refused_key_leaves_its_rows_for_the_decoded_key() {
+        let tempdir = tempdir().unwrap();
+        let backend = backend_at(&tempdir.path().to_string_lossy());
+
+        let keys: Vec<u32> = (0..300).map(|i| i * 3).collect();
+        let roaring = BatchKeyFilter::new_roaring_u32::<DynData>(0u32.erase());
+        let (copy, filters, refused) = copy_keys(&keys, &*backend, Some(roaring));
+        assert_eq!(refused, keys.len(), "a roaring filter took keys as bytes");
+        assert_eq!(filters.membership_filter_kind(), FilterKind::Roaring);
+        assert_holds(&copy, keys.iter().copied().enumerate());
+        // A roaring filter is exact, so it finds every key and nothing else.
+        for &key in &keys {
+            assert!(
+                filters.maybe_contains_key(key.erase(), None),
+                "{key} is missing from the filter",
+            );
+            assert!(
+                !filters.maybe_contains_key((key + 1).erase(), None),
+                "the filter holds {}, which is not a key",
+                key + 1,
+            );
+        }
+
+        let keys: Vec<Product<u32, u32>> = (0..300).map(|i| Product::new(i / 7, i)).collect();
+        for filter in [FilterPlan::<DynData>::decide_filter(None, keys.len()), None] {
+            let bloom = filter.is_some();
+            let (copy, filters, refused) = copy_keys(&keys, &*backend, filter);
+            assert_eq!(
+                refused,
+                if bloom { keys.len() } else { 0 },
+                "the keys refused as bytes, with a Bloom filter: {bloom}",
+            );
+            assert_holds(&copy, keys.iter().cloned().enumerate());
+            for key in &keys {
+                assert!(
+                    filters.maybe_contains_key(key.erase(), None),
+                    "{key:?} is missing from the filter",
+                );
+            }
+        }
+    }
+
+    /// A copied key goes into a Bloom filter by the hash of its archived form,
+    /// which for every key type that has one is the hash of the decoded key,
+    /// and a key of a type without one goes in decoded.
+    ///
+    /// A key recorded by any other hash would be missing from the filter when
+    /// a lookup hashes the decoded key, so the lookup would find nothing.  The
+    /// types cover text short enough to be kept inline and long enough not to
+    /// be, floats including a negative zero and NaN, integers of several
+    /// widths, options, tuples, vectors and maps, and these nested.  A tuple
+    /// of ten fields is stored in a wider layout, whose archived form cannot
+    /// be hashed, so its keys go in decoded.
+    #[test]
+    fn copied_keys_hash_like_decoded_keys() {
+        type Wide = Tup10<
+            Option<i32>,
+            Option<i32>,
+            Option<i32>,
+            Option<i32>,
+            Option<i32>,
+            Option<i32>,
+            Option<i32>,
+            Option<i32>,
+            Option<i32>,
+            Option<i32>,
+        >;
+        let n = 200i64;
+        let text = |i: i64| format!("s{i:+05}{}", "x".repeat((i.unsigned_abs() % 23) as usize));
+        // Field `bit` of a wide tuple, present where bit `bit` of `i` is set.
+        let field = |i: i64, bit: i64| ((i >> bit) & 1 == 1).then_some((i * bit) as i32);
+
+        assert_copied_keys_hash_like_decoded((0..n).map(text).collect::<Vec<_>>(), true);
+        assert_copied_keys_hash_like_decoded(
+            (0..n)
+                .map(|i| (i as f64 - 100.5) * 0.37)
+                .chain([-0.0, f64::NAN, f64::INFINITY, f64::NEG_INFINITY])
+                .map(F64::new)
+                .collect(),
+            true,
+        );
+        assert_copied_keys_hash_like_decoded(
+            (0..n)
+                .map(|i| (i as f32 - 100.5) * 0.37)
+                .chain([-0.0, f32::NAN])
+                .map(F32::new)
+                .collect(),
+            true,
+        );
+        assert_copied_keys_hash_like_decoded((-100..100).map(|i: i64| i as i8).collect(), true);
+        assert_copied_keys_hash_like_decoded(
+            (0..n).map(|i| (i as i128 - 100) << 70).collect(),
+            true,
+        );
+        assert_copied_keys_hash_like_decoded(
+            (0..n).map(|i| ((i as u128) << 90) | 7).collect(),
+            true,
+        );
+        assert_copied_keys_hash_like_decoded(
+            (0..n).map(|i| (i % 7 != 0).then(|| text(i))).collect(),
+            true,
+        );
+        assert_copied_keys_hash_like_decoded((0..n).map(|i| Tup1(text(i))).collect(), true);
+        assert_copied_keys_hash_like_decoded(
+            (0..n).map(|i| Tup2(i as i32 / 3, text(i))).collect(),
+            true,
+        );
+        assert_copied_keys_hash_like_decoded(
+            (0..n)
+                .map(|i| Tup3((i % 3 != 0).then(|| text(i)), i / 2, i % 2 == 0))
+                .collect(),
+            true,
+        );
+        assert_copied_keys_hash_like_decoded(
+            (0..n)
+                .map(|i| Tup4(i as i32, text(i), i % 2 == 0, F64::new(i as f64 / 3.0)))
+                .collect(),
+            true,
+        );
+        assert_copied_keys_hash_like_decoded(
+            (0..n)
+                .map(|i| {
+                    (0..i % 4)
+                        .map(|j| (j != 1).then_some((j * i) as i32))
+                        .collect::<Vec<_>>()
+                })
+                .collect(),
+            true,
+        );
+        assert_copied_keys_hash_like_decoded(
+            (0..n)
+                .map(|i| (0..i % 4).map(|j| (text(j), i)).collect::<BTreeMap<_, _>>())
+                .collect(),
+            true,
+        );
+        assert_copied_keys_hash_like_decoded(
+            (0..n)
+                .map(|i| {
+                    Tup2(
+                        (i % 3 != 0).then(|| (0..i % 3).map(text).collect::<Vec<_>>()),
+                        i,
+                    )
+                })
+                .collect(),
+            true,
+        );
+        assert_copied_keys_hash_like_decoded(
+            (0..n)
+                .map(|i| (0..i % 3).map(|j| (j * i) as u128).collect::<Vec<_>>())
+                .collect(),
+            true,
+        );
+
+        assert_copied_keys_hash_like_decoded::<Wide>(
+            (0..n)
+                .map(|i| {
+                    Tup10::new(
+                        field(i, 0),
+                        field(i, 1),
+                        field(i, 2),
+                        field(i, 3),
+                        field(i, 4),
+                        field(i, 5),
+                        field(i, 6),
+                        field(i, 7),
+                        field(i, 8),
+                        None,
+                    )
+                })
+                .collect(),
+            false,
+        );
+    }
+}

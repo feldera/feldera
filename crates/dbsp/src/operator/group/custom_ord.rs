@@ -202,3 +202,29 @@ where
         Some(self.cmp(other))
     }
 }
+
+// Hashing one of these from its archived form is not implemented: `FAITHFUL`
+// is false, so `archived_hash` answers `None` and the caller deserializes and
+// hashes that instead.  The trait is implemented all the same, because
+// `ArchivedDBData` requires it of every type.
+impl<T, F> crate::dynamic::HashRepr for ArchivedWithCustomOrd<T, F>
+where
+    T: rkyv::Archive,
+{
+    const FAITHFUL: bool = false;
+
+    #[inline]
+    fn hash_repr<H: ::std::hash::Hasher>(&self, _state: &mut H) {}
+}
+
+impl<T, F> crate::dynamic::ArchivedRepr<WithCustomOrd<T, F>> for ArchivedWithCustomOrd<T, F>
+where
+    T: Archive + Deserializable,
+    F: CmpFunc<T>,
+    <T as Archive>::Archived: crate::dynamic::ArchivedRepr<T>,
+{
+    const MAX_ALIGN: usize = crate::dynamic::max_align(
+        ::core::mem::align_of::<Self>(),
+        <<T as Archive>::Archived as crate::dynamic::ArchivedRepr<T>>::MAX_ALIGN,
+    );
+}

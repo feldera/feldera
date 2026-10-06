@@ -1100,16 +1100,75 @@ pub(super) fn declare_tuple_impl(tuple: TupleDef) -> TokenStream2 {
         }
     };
 
+    // The legacy layout is the tuple of the archived fields, so its root's
+    // alignment and the fields' own `MAX_ALIGN` are all there is.
+    let legacy_archived_repr_impl = quote! {
+        impl<#(#generics),*> ::dbsp::dynamic::ArchivedRepr<#name<#(#generics),*>>
+            for #archived_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive,)*
+            #(::rkyv::Archived<#generics>: ::dbsp::dynamic::ArchivedRepr<#generics>,)*
+        {
+            const MAX_ALIGN: usize = {
+                let mut max = ::core::mem::align_of::<Self>();
+                #(max = ::dbsp::dynamic::max_align(
+                    max,
+                    <::rkyv::Archived<#generics> as ::dbsp::dynamic::ArchivedRepr<#generics>>::MAX_ALIGN,
+                );)*
+                max
+            };
+        }
+    };
+
+    // The wide layout's root points at a dense or a sparse body written out
+    // of line, which holds each present field archived as its inner value,
+    // and the sparse body points at those through a vector of relative
+    // pointers, also out of line.
+    let wide_archived_repr_impl = quote! {
+        impl<#(#generics),*> ::dbsp::dynamic::ArchivedRepr<#name<#(#generics),*>>
+            for #archived_name<#(#generics),*>
+        where
+            #(#generics: ::rkyv::Archive + ::dbsp::utils::IsNone,)*
+            #(<#generics as ::dbsp::utils::IsNone>::Inner: ::rkyv::Archive,)*
+            #(::rkyv::Archived<<#generics as ::dbsp::utils::IsNone>::Inner>:
+                ::dbsp::dynamic::ArchivedRepr<<#generics as ::dbsp::utils::IsNone>::Inner>,)*
+        {
+            const MAX_ALIGN: usize = {
+                let mut max = ::core::mem::align_of::<Self>();
+                max = ::dbsp::dynamic::max_align(
+                    max,
+                    ::core::mem::align_of::<#archived_dense_name<#(#generics),*>>(),
+                );
+                max = ::dbsp::dynamic::max_align(
+                    max,
+                    ::core::mem::align_of::<#archived_sparse_name<#(#generics),*>>(),
+                );
+                max = ::dbsp::dynamic::max_align(
+                    max,
+                    ::core::mem::align_of::<::rkyv::rel_ptr::RawRelPtrI32>(),
+                );
+                #(max = ::dbsp::dynamic::max_align(
+                    max,
+                    <::rkyv::Archived<<#generics as ::dbsp::utils::IsNone>::Inner>
+                        as ::dbsp::dynamic::ArchivedRepr<<#generics as ::dbsp::utils::IsNone>::Inner>>::MAX_ALIGN,
+                );)*
+                max
+            };
+        }
+    };
+
     let rkyv_blocks = if use_legacy {
         quote! {
             #legacy_hash_repr_impl
             #legacy_archived_ord_impls
+            #legacy_archived_repr_impl
         }
     } else {
         quote! {
             #choose_format_impl
             #rkyv_impls
             #wide_hash_repr_impl
+            #wide_archived_repr_impl
         }
     };
 

@@ -15,6 +15,12 @@
 ///
 /// Use it only on a struct whose own `Hash` is derived.  A hand-written one
 /// may write something else entirely, and then this would not match it.
+///
+/// List the fields in the order the struct declares them, which is the order
+/// a derived `Hash` writes them in.  A list that leaves a field out, names
+/// one the struct lacks, or gives one a type other than its own fails to
+/// compile.  The order is not checked: a list out of order compiles, and only
+/// the tests that compare the archived hash with the decoded one catch it.
 macro_rules! hash_repr_struct {
     ($($decoded:ty => $archived:ty { $($field:tt : $field_ty:ty),+ $(,)? }),* $(,)?) => {$(
         impl $crate::__HashRepr for $decoded {
@@ -23,6 +29,9 @@ macro_rules! hash_repr_struct {
 
             #[inline]
             fn hash_repr<H: ::std::hash::Hasher>(&self, state: &mut H) {
+                // The list names every field, each with its own type.
+                let Self { $($field: _),+ } = self;
+                $(let _: &$field_ty = &self.$field;)+
                 $($crate::__HashRepr::hash_repr(&self.$field, state);)+
             }
         }
@@ -33,6 +42,8 @@ macro_rules! hash_repr_struct {
 
             #[inline]
             fn hash_repr<H: ::std::hash::Hasher>(&self, state: &mut H) {
+                let Self { $($field: _),+ } = self;
+                $(let _: &::rkyv::Archived<$field_ty> = &self.$field;)+
                 $($crate::__HashRepr::hash_repr(&self.$field, state);)+
             }
         }
@@ -40,6 +51,23 @@ macro_rules! hash_repr_struct {
 }
 
 pub(crate) use hash_repr_struct;
+
+/// Implements `ArchivedRepr` for the archived form of a struct that keeps
+/// nothing out of line, which therefore needs only its own alignment.
+///
+/// The struct's `OrdRepr` and `HashRepr` come from elsewhere, such as a
+/// derive and [`hash_repr_struct!`].  Use it only on a struct whose fields
+/// are all held inline: one that points at anything would need what that
+/// needs too, and debug builds catch a struct that does.
+macro_rules! archived_repr_inline {
+    ($($decoded:ty => $archived:ty),* $(,)?) => {$(
+        impl ::dbsp::dynamic::ArchivedRepr<$decoded> for $archived {
+            const MAX_ALIGN: usize = ::core::mem::align_of::<$archived>();
+        }
+    )*};
+}
+
+pub(crate) use archived_repr_inline;
 
 #[cfg(test)]
 mod test {
