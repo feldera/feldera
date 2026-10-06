@@ -39,7 +39,8 @@
 //! Layer files support cheap key-membership tests using a per-batch filter
 //! block. The default filter is Bloom-based; key types whose per-batch span
 //! fits in `u32` can alternatively use an exact roaring bitmap filter by
-//! storing keys relative to the batch minimum.
+//! storing each key's offset from a base no larger than the batch's first
+//! key.
 //!
 //! Layer files should support 1 TB data size.
 //!
