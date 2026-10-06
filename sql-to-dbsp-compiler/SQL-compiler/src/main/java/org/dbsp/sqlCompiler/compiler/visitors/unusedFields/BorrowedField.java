@@ -13,8 +13,8 @@ public final class BorrowedField extends IUsedFields {
     }
 
     @Override
-    public ParameterFieldUse getParameterUse() {
-        return this.field.getParameterUse();
+    void markParameterUse(ParameterFieldUse use) {
+        this.field.markParameterUse(use);
     }
 
     @Override

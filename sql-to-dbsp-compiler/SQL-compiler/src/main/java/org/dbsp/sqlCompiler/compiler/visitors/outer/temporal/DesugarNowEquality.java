@@ -28,6 +28,11 @@ public class DesugarNowEquality extends CircuitCloneVisitor {
             this.containsNow = new ContainsNow(compiler, true);
         }
 
+        @Override
+        protected boolean rewritesTypes() {
+            return false;
+        }
+
         boolean hasNow(DBSPExpression expression) {
             this.containsNow.apply(expression);
             return this.containsNow.found;

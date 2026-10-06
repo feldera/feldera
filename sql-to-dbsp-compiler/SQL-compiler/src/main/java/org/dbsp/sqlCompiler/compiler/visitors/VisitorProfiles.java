@@ -16,7 +16,8 @@ import java.util.List;
 import java.util.Map;
 
 /** Collect running time for various visitors.
- * Note that running times are not cumulative - some visitors can invoke other visitors. */
+ * Note that running times are not cumulative - some visitors can invoke other visitors.
+ * The compiler prints the collected profiles at the end of compilation when invoked with -TVisitorProfiles=1 */
 public class VisitorProfiles {
     record Profile(long time, int invocations) {
         Profile add(long time) {

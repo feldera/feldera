@@ -5,7 +5,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Linq;
 
 /** Rewrites closures to use fresh parameter objects with the same names and types. */
@@ -26,8 +25,8 @@ public class FreshenParameters extends InnerRewriteVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPType type) {
-        return VisitDecision.STOP;
+    protected boolean rewritesTypes() {
+        return false;
     }
 
     /** Freshen the parameters of the closures nested inside 'expression'; if the

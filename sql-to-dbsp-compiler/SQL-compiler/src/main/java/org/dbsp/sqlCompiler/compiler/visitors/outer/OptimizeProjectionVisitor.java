@@ -31,7 +31,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Maybe;
 import org.dbsp.util.Utilities;
 
-import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -63,7 +63,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                         .to(DBSPZSetExpression.class);
                 Objects.requireNonNull(projection.expression);
 
-                Map<DBSPExpression, Long> result1 = new HashMap<>();
+                Map<DBSPExpression, Long> result1 = new LinkedHashMap<>();
                 DBSPType elementType = projection.expression.getResultType();
                 for (Map.Entry<DBSPExpression, Long> entry: before.data.entrySet()) {
                     DBSPExpression row = entry.getKey();

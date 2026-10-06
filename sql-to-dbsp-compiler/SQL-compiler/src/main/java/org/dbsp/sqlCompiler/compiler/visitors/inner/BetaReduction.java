@@ -116,8 +116,8 @@ public class BetaReduction extends InnerRewriteVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPType type) {
-        return VisitDecision.STOP;
+    protected boolean rewritesTypes() {
+        return false;
     }
 
     @Override

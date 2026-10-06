@@ -76,6 +76,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateViewStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.IHasSchema;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitorProfiles;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitOptimizer;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -981,7 +982,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         if (this.getDebugLevel() > 0 && !temporary && circuit != null) {
             ToDot.dump(this, "final.png", this.getDebugLevel(), "png", circuit);
         }
-        Logger.INSTANCE.belowLevel(this, 2)
+        Logger.INSTANCE.belowLevel(VisitorProfiles.class, 1)
                 .appendSupplier(() -> InnerVisitor.profiles.toString("Inner", 10))
                 .newline()
                 .appendSupplier(() -> CircuitVisitor.profiles.toString("Outer", 10))
