@@ -344,7 +344,27 @@ deserialize_table_record!(TestStructMetadata["TestStructMetadata", Variant, 6] {
     (kafka_offset, "kafka_offset", false, i64, |__feldera_metadata: &Option<Variant>| __feldera_metadata.as_ref().and_then(|metadata| i64::try_from(metadata.index_string("kafka_offset")).ok()))
 });
 
+serialize_table_record!(TestStructMetadata[6]{
+    i["i"]: i32,
+    kafka_headers["kafka_headers"]: Variant,
+    kafka_topic["kafka_topic"]: SqlString,
+    kafka_timestamp["kafka_timestamp"]: Timestamp,
+    kafka_partition["kafka_partition"]: i32,
+    kafka_offset["kafka_offset"]: i64
+});
+
 impl TestStructMetadata {
+    pub fn schema() -> Vec<Field> {
+        vec![
+            Field::new("i".into(), ColumnType::int(false)),
+            Field::new("kafka_headers".into(), ColumnType::variant(false)),
+            Field::new("kafka_topic".into(), ColumnType::varchar(false)),
+            Field::new("kafka_timestamp".into(), ColumnType::timestamp(false)),
+            Field::new("kafka_partition".into(), ColumnType::int(false)),
+            Field::new("kafka_offset".into(), ColumnType::bigint(false)),
+        ]
+    }
+
     pub fn new(
         i: i32,
         kafka_headers: Variant,

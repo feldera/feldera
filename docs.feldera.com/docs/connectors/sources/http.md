@@ -118,6 +118,50 @@ for product_id in range(0, 1000):
         batch.clear()
 ```
 
+## Connector metadata
+
+A request can attach "connector metadata" to the records it carries.  Pass the metadata as a JSON object in the `connector_metadata` query parameter.  The
+[`CONNECTOR_METADATA()`](/sql/grammar#connector_metadata) function returns
+the object for every record of the request, so a column declared with
+`DEFAULT CAST(CONNECTOR_METADATA()['name'] AS type)` receives a value from the
+`name` attribute of the object.  The parameter works with every input format.
+
+For example, a test can feed a table declared for a Kafka connector through
+the HTTP connector:
+
+```sql
+CREATE TABLE events (
+  id BIGINT,
+  kafka_topic VARCHAR DEFAULT CAST(CONNECTOR_METADATA()['kafka_topic'] AS VARCHAR),
+  kafka_offset BIGINT DEFAULT CAST(CONNECTOR_METADATA()['kafka_offset'] AS BIGINT)
+);
+```
+
+The following request inserts the row `(1, 'orders', 42)`.  The
+`connector_metadata` value is the URL encoding of
+`{"kafka_topic": "orders", "kafka_offset": 42}`:
+
+```bash
+curl -i -X 'POST' \
+  'http://127.0.0.1:8080/v0/pipelines/supply-chain-pipeline/ingress/events?format=json&update_format=raw&connector_metadata=%7B%22kafka_topic%22%3A%22orders%22%2C%22kafka_offset%22%3A42%7D' \
+  -d '{"id": 1}'
+```
+
+The Python API takes the metadata as a dictionary:
+
+```python
+pipeline.input_json(
+    "events",
+    [{"id": 1}],
+    connector_metadata={"kafka_topic": "orders", "kafka_offset": 42},
+)
+```
+
+A request without the parameter inserts records for which
+`CONNECTOR_METADATA()` returns `NULL`, so the metadata columns take the
+`NULL` default.  A `connector_metadata` value that is not a JSON object is
+rejected with status 400 before the record is ingested.
+
 ## Additional resources
 
 For more information, see:

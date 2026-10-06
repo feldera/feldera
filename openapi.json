@@ -4634,6 +4634,16 @@
               ],
               "nullable": true
             }
+          },
+          {
+            "name": "connector_metadata",
+            "in": "query",
+            "description": "Connector metadata for every record of this request, as a JSON object.  `CONNECTOR_METADATA()` returns the object for the records, so a column declared with `DEFAULT CAST(CONNECTOR_METADATA()['name'] AS type)` takes its value from the object's `name` attribute.  Works with every input format.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
           }
         ],
         "requestBody": {

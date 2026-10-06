@@ -159,7 +159,13 @@ class Pipeline:
 
         return self.client.resume_pipeline_logs(self.name, cursor)
 
-    def input_pandas(self, table_name: str, df: pandas.DataFrame, force: bool = False):
+    def input_pandas(
+        self,
+        table_name: str,
+        df: pandas.DataFrame,
+        force: bool = False,
+        connector_metadata: Optional[Mapping[str, Any]] = None,
+    ):
         """
         Push all rows in a pandas DataFrame to the pipeline.
 
@@ -171,6 +177,9 @@ class Pipeline:
         :param table_name: The name of the table to insert data into.
         :param df: The pandas DataFrame to be pushed to the pipeline.
         :param force: `True` to push data even if the pipeline is paused. `False` by default.
+        :param connector_metadata: Connector metadata for every row of the DataFrame,
+            as a dict of attribute names to values. ``CONNECTOR_METADATA()`` returns it
+            for the rows. None by default.
 
         :raises ValueError: If the table does not exist in the pipeline.
         :raises RuntimeError: If the pipeline is not in a valid state to push data.
@@ -211,6 +220,7 @@ class Pipeline:
                     array=True,
                     serialize=False,
                     force=force,
+                    connector_metadata=connector_metadata,
                 )
             return
 
@@ -221,6 +231,7 @@ class Pipeline:
         update_format: str = "raw",
         force: bool = False,
         wait: bool = True,
+        connector_metadata: Optional[Mapping[str, Any]] = None,
         **kwargs,
     ) -> str:
         """
@@ -236,6 +247,11 @@ class Pipeline:
             "raw", "insert_delete". https://docs.feldera.com/formats/json#the-insertdelete-format
         :param force: `True` to push data even if the pipeline is paused. `False` by default.
         :param wait: If True, blocks until this input has been processed by the pipeline
+        :param connector_metadata: Connector metadata for every record of this request,
+            as a dict of attribute names to values. ``CONNECTOR_METADATA()`` returns it
+            for the records, so a column declared with
+            ``DEFAULT CAST(CONNECTOR_METADATA()['name'] AS type)`` takes its value from
+            the ``name`` attribute. None by default.
         :param kwargs: Additional key word arguments forwarded to the Client push_to_pipeline method
 
         :returns: The completion token to this input.
@@ -262,6 +278,7 @@ class Pipeline:
             array=array,
             force=force,
             wait=wait,
+            connector_metadata=connector_metadata,
             **kwargs,
         )
 
