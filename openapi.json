@@ -4605,7 +4605,7 @@
           {
             "name": "format",
             "in": "query",
-            "description": "Input data format, either `csv' or 'json'.",
+            "description": "Input data format: `csv`, `json`, `parquet`, `avro`, or `raw`. The default is `csv`.",
             "required": true,
             "schema": {
               "type": "string"

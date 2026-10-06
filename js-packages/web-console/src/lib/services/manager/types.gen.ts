@@ -8283,7 +8283,7 @@ export type HttpInputData = {
      */
     force: boolean
     /**
-     * Input data format, either `csv' or 'json'.
+     * Input data format: `csv`, `json`, `parquet`, `avro`, or `raw`. The default is `csv`.
      */
     format: string
     /**

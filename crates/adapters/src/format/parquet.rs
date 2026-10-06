@@ -2,7 +2,6 @@ use std::io::Cursor;
 use std::mem::take;
 use std::{borrow::Cow, sync::Arc};
 
-use actix_web::HttpRequest;
 use anyhow::{Result as AnyResult, bail};
 use arrow::datatypes::{
     DataType, Field as ArrowField, FieldRef, Fields, IntervalUnit as ArrowIntervalUnit, Schema,
@@ -68,10 +67,10 @@ impl InputFormat for ParquetInputFormat {
     /// Create a parser using configuration extracted from an HTTP request.
     // We could just rely on serde to deserialize the config from the
     // HTTP query, but a specialized method gives us more flexibility.
-    fn config_from_http_request(
+    fn config_from_http_query(
         &self,
         _endpoint_name: &str,
-        _request: &HttpRequest,
+        _query: &str,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
         Ok(Box::new(ParquetParserConfig {}))
     }
@@ -183,22 +182,16 @@ impl OutputFormat for ParquetOutputFormat {
         Cow::Borrowed("parquet")
     }
 
-    fn config_from_http_request(
+    fn config_from_http_query(
         &self,
         endpoint_name: &str,
-        request: &HttpRequest,
+        query: &str,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
         Ok(Box::new(
             ParquetEncoderConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
-                request.query_string().as_bytes(),
+                query.as_bytes(),
             )))
-            .map_err(|e| {
-                ControllerError::encoder_config_parse_error(
-                    endpoint_name,
-                    &e,
-                    request.query_string(),
-                )
-            })?,
+            .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, query))?,
         ))
     }
 
