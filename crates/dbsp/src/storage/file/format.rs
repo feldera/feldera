@@ -777,6 +777,10 @@ pub struct RoaringBitmapFilterBlock {
     pub len: u64,
 
     /// Serialized roaring bitmap contents.
+    ///
+    /// The bitmap holds each key's offset from a base no larger than the
+    /// file's first key. The base is not stored: readers locate the first key
+    /// at the bitmap's lowest set bit.
     #[br(count = len)]
     pub data: Vec<u8>,
 }
@@ -795,6 +799,6 @@ pub struct RoaringBitmapFilterBlockRef<'a> {
     #[bw(try_calc(u64::try_from(data.len())))]
     pub len: u64,
 
-    /// Serialized roaring bitmap contents.
+    /// Serialized roaring bitmap contents, as in [`RoaringBitmapFilterBlock`].
     pub data: &'a [u8],
 }

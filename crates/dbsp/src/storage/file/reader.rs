@@ -1682,7 +1682,7 @@ fn whole_block(
 fn read_filter_block(
     file_handle: &dyn FileReader,
     location: BlockLocation,
-    roaring_min: Option<&DynData>,
+    first_key: Option<&DynData>,
 ) -> Result<Option<BatchKeyFilter>, Error> {
     // Reading the header before the modules only pays off when the configured
     // rate can drop some of them. When it cannot, that first read would be
@@ -1782,14 +1782,14 @@ fn read_filter_block(
             let block = whole_block(file_handle, location, &head)?;
             let block: RoaringBitmapFilterBlock =
                 parse_filter_block(&block, location, "roaring bitmap filter")?;
-            let roaring_min = roaring_min.ok_or_else(|| {
+            let first_key = first_key.ok_or_else(|| {
                 Error::Corruption(CorruptionError::InvalidFilterEncoding {
                     location,
                     kind: "roaring bitmap",
-                    inner: "roaring bitmap filter requires the batch minimum".to_string(),
+                    inner: "roaring bitmap filter requires the batch's first key".to_string(),
                 })
             })?;
-            BatchKeyFilter::deserialize_roaring_u32(&block.data, roaring_min)
+            BatchKeyFilter::deserialize_roaring_u32(&block.data, first_key)
                 .map(Some)
                 .map_err(|e| {
                     Error::Corruption(CorruptionError::InvalidFilterEncoding {
@@ -2066,13 +2066,13 @@ where
 {
     /// Reads and deserializes the per-batch membership filter, if present.
     ///
-    /// For roaring filters this also threads the batch minimum into the
-    /// min-offset decoder, so the returned filter can be queried directly.
+    /// A roaring filter also needs the batch's first key to locate the base
+    /// of its offsets, so the returned filter can be queried directly.
     pub fn membership_filter(&self) -> Result<Option<BatchKeyFilter>, Error> {
         let key_range = self.key_range()?;
-        let roaring_min = key_range.as_ref().map(|(min, _)| min.as_ref().as_data());
+        let first_key = key_range.as_ref().map(|(min, _)| min.as_ref().as_data());
         self.membership_filter_location
-            .map(|location| read_filter_block(&*self.file.file_handle, location, roaring_min))
+            .map(|location| read_filter_block(&*self.file.file_handle, location, first_key))
             .transpose()
             .map(Option::flatten)
     }
