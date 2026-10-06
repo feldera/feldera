@@ -1110,11 +1110,15 @@ fn output_headers_test() {
         .unwrap();
     endpoint.batch_end().unwrap();
 
-    // With a caller-supplied key, the key is written as-is and the position
-    // moves into a header.
+    // With a caller-supplied key, the position header goes first, ahead of
+    // the configured and per-message headers.
     endpoint.batch_start(2, OutputBatchType::Delta).unwrap();
     endpoint
-        .push_key(Some(b"key".as_slice()), Some(b"value".as_slice()), &[])
+        .push_key(
+            Some(b"key".as_slice()),
+            Some(b"from keyed push_key".as_slice()),
+            &[("header3", Some(b"baz".as_slice())), ("header4", None)],
+        )
         .unwrap();
     endpoint.batch_end().unwrap();
 
@@ -1126,25 +1130,42 @@ fn output_headers_test() {
         ("header3".to_string(), Some(b"baz".to_vec())),
         ("header4".to_string(), None),
     ];
+    let position = [(
+        super::output::POSITION_HEADER.to_string(),
+        Some(br#"{"transaction":2,"substep":0}"#.to_vec()),
+    )];
     assert_eq!(
-        read_messages(output_topic, 2),
+        read_messages(output_topic, 3),
         vec![
             (b"from push_buffer".to_vec(), configured.to_vec()),
             (
                 b"from push_key".to_vec(),
                 [configured.as_slice(), per_message.as_slice()].concat()
             ),
+            (
+                b"from keyed push_key".to_vec(),
+                [
+                    position.as_slice(),
+                    configured.as_slice(),
+                    per_message.as_slice()
+                ]
+                .concat()
+            ),
         ]
     );
 }
 
-/// Polls `consumer` for a keyed output message, returning its partition, key,
-/// payload, and position header value.
-fn read_keyed_message(consumer: &BaseConsumer) -> Option<(i32, Vec<u8>, Vec<u8>, Vec<u8>)> {
-    let message = consumer.poll(Duration::from_millis(100))?.ok()?;
-    let headers = message.headers().expect("keyed messages should have headers");
-    let position = (0..headers.count())
-        .map(|i| headers.get(i))
+/// A keyed Kafka message's partition, key, payload, and position header value.
+type KeyedMessage = (i32, Vec<u8>, Vec<u8>, Vec<u8>);
+
+/// Polls `consumer` for a keyed output message.
+fn read_keyed_message(consumer: &BaseConsumer) -> Option<KeyedMessage> {
+    let message = consumer.poll(Duration::from_millis(100))?.unwrap();
+    let headers = message
+        .headers()
+        .expect("keyed messages should have headers");
+    let position = headers
+        .iter()
         .find(|header| header.key == super::output::POSITION_HEADER)
         .expect("keyed messages should have a position header")
         .value
@@ -1214,8 +1235,7 @@ fn output_keyed_test() {
         .unwrap();
     consumer.subscribe(&[output_topic]).unwrap();
 
-    // (partition, key, payload, position header value).
-    let mut messages: Vec<(i32, Vec<u8>, Vec<u8>, Vec<u8>)> = Vec::new();
+    let mut messages: Vec<KeyedMessage> = Vec::new();
     let deadline = Instant::now() + Duration::from_secs(60);
     while messages.len() < 3 {
         assert!(
@@ -1233,7 +1253,7 @@ fn output_keyed_test() {
     // key land in the same partition, in the order they were pushed.  The
     // order across partitions is arbitrary, so we only check within
     // partitions.
-    let mut key_a_messages: Vec<&(i32, Vec<u8>, Vec<u8>, Vec<u8>)> = Vec::new();
+    let mut key_a_messages: Vec<&KeyedMessage> = Vec::new();
     for message in &messages {
         assert!(
             message.1 == b"key-a".to_vec() || message.1 == b"key-b".to_vec(),
@@ -1298,7 +1318,7 @@ fn output_keyed_test() {
 
     // The consumer is already positioned after the first three messages, so
     // this reads the one new message from transaction 1.
-    let mut new_messages: Vec<(i32, Vec<u8>, Vec<u8>, Vec<u8>)> = Vec::new();
+    let mut new_messages: Vec<KeyedMessage> = Vec::new();
     let deadline = Instant::now() + Duration::from_secs(60);
     while new_messages.is_empty() {
         assert!(
@@ -1313,9 +1333,93 @@ fn output_keyed_test() {
     // `new_messages` only contains transaction 1's record, so the replayed
     // transaction 0 was dropped.
     assert_eq!(new_messages.len(), 1, "in {new_messages:?}");
-    assert!(new_messages[0].2 == b"4".to_vec(), "in {new_messages:?}");
+    assert_eq!(new_messages[0].2, b"4".to_vec(), "in {new_messages:?}");
     let position: serde_json::Value = serde_json::from_slice(&new_messages[0].3).unwrap();
     assert_eq!(position["transaction"], json!(1), "in {new_messages:?}");
+}
+
+/// Verifies that a fault-tolerant Kafka output connector refuses keyed
+/// messages that recovery could not rely on: tombstones, which compaction
+/// eventually removes, and messages too large for the broker.  A refused
+/// message writes nothing and takes no substep, so the next message in the
+/// same transaction gets substep 0.
+#[test]
+fn output_keyed_refused_test() {
+    init_test_logger();
+    let output_topic = "ft_output_keyed_refused_test_output_topic";
+
+    let _kafka_resources = KafkaResources::create_topics(&[(output_topic, 1)]);
+
+    let config = serde_json::from_value(json!({
+      "name": "kafka_output",
+      "config": {
+        "topic": output_topic,
+        "message.max.bytes": "1000"
+      }
+    }))
+    .unwrap();
+
+    let mut endpoint = output_transport_config_to_endpoint(
+        &config,
+        "",
+        true,
+        default_secrets_directory(),
+        CancellationToken::new(),
+    )
+    .unwrap()
+    .unwrap();
+    endpoint
+        .connect(Box::new(|fatal, error, tag| {
+            info!("({fatal:?}, {error:?}, {tag:?})")
+        }))
+        .unwrap();
+
+    endpoint.batch_start(0, OutputBatchType::Delta).unwrap();
+    let error = endpoint
+        .push_key(Some(b"key".as_slice()), None, &[])
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("tombstones"),
+        "unexpected error: {error}"
+    );
+    let error = endpoint
+        .push_key(Some(b"key".as_slice()), Some(&[0u8; 1000]), &[])
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("exceeds the maximum"),
+        "unexpected error: {error}"
+    );
+    endpoint
+        .push_key(Some(b"key".as_slice()), Some(b"kept".as_slice()), &[])
+        .unwrap();
+    endpoint.batch_end().unwrap();
+
+    let consumer = ClientConfig::new()
+        .set("bootstrap.servers", default_redpanda_server())
+        .set("auto.offset.reset", "earliest")
+        .set("enable.auto.commit", "false")
+        .set("group.id", format!("{output_topic}_reader"))
+        .set("isolation.level", "read_committed")
+        .create::<BaseConsumer>()
+        .unwrap();
+    consumer.subscribe(&[output_topic]).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let message = loop {
+        assert!(
+            Instant::now() < deadline,
+            "no message in {output_topic} before timing out"
+        );
+        if let Some(message) = read_keyed_message(&consumer) {
+            break message;
+        }
+    };
+    assert_eq!(message.2, b"kept".to_vec());
+    let position: serde_json::Value = serde_json::from_slice(&message.3).unwrap();
+    assert_eq!(position, json!({"transaction": 0, "substep": 0}));
+
+    // Nothing else was written.
+    let extra = (0..20).find_map(|_| read_keyed_message(&consumer));
+    assert_eq!(extra, None, "unexpected extra message");
 }
 
 /// A Kafka message header, where a `None` value is a null value.

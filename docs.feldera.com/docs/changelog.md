@@ -10,6 +10,14 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- The Kafka output connector now writes keyed messages with exactly-once
+  fault tolerance, for example from the JSON `debezium` format or from
+  `key_fields`.  These messages were previously reported as errors and not
+  written.  Messages with the same key now go to the same partition in order,
+  so consumers can share a topic's partitions.  Keyless messages are written
+  as before.  Tombstones are still not supported in this mode.  See
+  [message keys with exactly-once fault tolerance](/connectors/sinks/kafka#message-keys-with-exactly-once-fault-tolerance).
+
 ## v0.362.0
 
 - Incompatible change (SQL): the `emit_final` property of a view must
