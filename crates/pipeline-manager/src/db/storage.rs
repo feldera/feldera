@@ -410,6 +410,15 @@ pub(crate) trait Storage {
         platform_version: &str,
     ) -> Result<(), DBError>;
 
+    /// Applies `patch`, a partial runtime configuration, to the deployment config of a running
+    /// pipeline.
+    async fn patch_pipeline_deployment(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        patch: &serde_json::Value,
+    ) -> Result<serde_json::Value, DBError>;
+
     /// Updates an existing pipeline.
     ///
     /// # Arguments

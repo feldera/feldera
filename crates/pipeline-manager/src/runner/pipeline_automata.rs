@@ -2,6 +2,7 @@ use crate::config::CommonConfig;
 use crate::db::error::DBError;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::storage_postgres::StoragePostgres;
+use crate::db::types::deployment::merge_deployment_config;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineId,
     runtime_desired_status_to_string, runtime_status_to_string,
@@ -23,6 +24,7 @@ use crate::runner::pipeline_logs::{
     FollowRequest, LogMessage, LogsSender, start_thread_pipeline_logs,
 };
 use chrono::Utc;
+use feldera_types::config::PipelineConfig;
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{
     ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus, RuntimeStatusDetails,
@@ -1007,6 +1009,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         // Deployment configuration
         let mut deployment_config =
             generate_pipeline_config(pipeline.id, &pipeline.name, &runtime_config);
+        // A resize lasts until storage is cleared.
+        if let Some(previous_deployment_config) = &pipeline.deployment_config
+            && pipeline.storage_status != StorageStatus::Cleared
+            && let Ok(previous) =
+                serde_json::from_value::<PipelineConfig>(previous_deployment_config.clone())
+        {
+            merge_deployment_config(&mut deployment_config, &previous.global);
+        }
         deployment_config.storage_config =
             Some(self.pipeline_handle.generate_storage_config().await);
         let deployment_config_json = match serde_json::to_value(&deployment_config) {
@@ -2594,6 +2604,61 @@ mod test {
             test.pipeline().await.deployment_config,
             Some(deployment_config)
         );
+    }
+
+    /// A resize stored in the deployment config is kept by a restart and reset once storage is
+    /// cleared.
+    #[tokio::test]
+    async fn restart_keeps_a_resize_until_storage_is_cleared() {
+        let (mut server, _temp, mut test) = setup_complete().await;
+        let artifacts_path = artifacts_path(test.automaton.pipeline_id);
+        mock_endpoints(
+            &mut server,
+            vec![MockEndpoint::new("GET", &artifacts_path, 200, json!({}))],
+        )
+        .await;
+        let cpu_cores_min = |test_pipeline: &ExtendedPipelineDescr| {
+            test_pipeline.deployment_config.as_ref().unwrap()["resources"]["cpu_cores_min"].clone()
+        };
+
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick_until(ResourcesStatus::Provisioning, StorageStatus::InUse)
+            .await;
+        let initial = cpu_cores_min(&test.pipeline().await);
+        let mut resized = test.pipeline().await.deployment_config.unwrap();
+        resized["resources"]["cpu_cores_min"] = json!(0.25);
+        test.db
+            .lock()
+            .await
+            .pool
+            .get()
+            .await
+            .unwrap()
+            .execute(
+                "UPDATE pipeline SET deployment_config = $1 WHERE id = $2",
+                &[&resized.to_string(), &test.automaton.pipeline_id.0],
+            )
+            .await
+            .unwrap();
+
+        test.desire_stopped().await;
+        test.tick_until(ResourcesStatus::Stopped, StorageStatus::InUse)
+            .await;
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick_until(ResourcesStatus::Provisioning, StorageStatus::InUse)
+            .await;
+        assert_eq!(cpu_cores_min(&test.pipeline().await), json!(0.25));
+
+        test.desire_stopped().await;
+        test.tick_until(ResourcesStatus::Stopped, StorageStatus::InUse)
+            .await;
+        test.clear_storage().await;
+        test.tick_until(ResourcesStatus::Stopped, StorageStatus::Cleared)
+            .await;
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        test.tick_until(ResourcesStatus::Provisioning, StorageStatus::InUse)
+            .await;
+        assert_eq!(cpu_cores_min(&test.pipeline().await), initial);
     }
 
     /// Without a stored deployment config, `stop()` and `clear()` receive the runtime config

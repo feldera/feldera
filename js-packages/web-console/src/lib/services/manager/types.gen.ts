@@ -4248,6 +4248,13 @@ export type PipelineConfig = {
 }
 
 /**
+ * The deployment of a running pipeline.
+ */
+export type PipelineDeployment = {
+  resources: ResourceConfig
+}
+
+/**
  * Summary of changes in the pipeline between checkpointed and new versions.
  */
 export type PipelineDiff = {
@@ -8080,6 +8087,87 @@ export type GetPipelineDataflowGraphResponses = {
 
 export type GetPipelineDataflowGraphResponse =
   GetPipelineDataflowGraphResponses[keyof GetPipelineDataflowGraphResponses]
+
+export type GetPipelineDeploymentData = {
+  body?: never
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: never
+  url: '/v0/pipelines/{pipeline_name}/deployment'
+}
+
+export type GetPipelineDeploymentErrors = {
+  /**
+   * Pipeline is not running
+   */
+  400: ErrorResponse
+  /**
+   * Pipeline with that name does not exist
+   */
+  404: ErrorResponse
+  500: ErrorResponse
+}
+
+export type GetPipelineDeploymentError =
+  GetPipelineDeploymentErrors[keyof GetPipelineDeploymentErrors]
+
+export type GetPipelineDeploymentResponses = {
+  /**
+   * Deployment of the running pipeline
+   */
+  200: PipelineDeployment
+}
+
+export type GetPipelineDeploymentResponse =
+  GetPipelineDeploymentResponses[keyof GetPipelineDeploymentResponses]
+
+export type PatchPipelineDeploymentData = {
+  /**
+   * Partial runtime configuration. Only `resources.cpu_cores_min`, `resources.cpu_cores_max`, `resources.memory_mb_min` and `resources.memory_mb_max` can change.
+   */
+  body: RuntimeConfig
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: never
+  url: '/v0/pipelines/{pipeline_name}/deployment'
+}
+
+export type PatchPipelineDeploymentErrors = {
+  /**
+   * Pipeline is not running, or the patch is invalid
+   */
+  400: ErrorResponse
+  /**
+   * Pipeline with that name does not exist
+   */
+  404: ErrorResponse
+  /**
+   * The runner of this installation cannot resize a running pipeline in place
+   */
+  405: ErrorResponse
+  500: ErrorResponse
+}
+
+export type PatchPipelineDeploymentError =
+  PatchPipelineDeploymentErrors[keyof PatchPipelineDeploymentErrors]
+
+export type PatchPipelineDeploymentResponses = {
+  /**
+   * Deployment changed; returns the new deployment
+   */
+  200: PipelineDeployment
+}
+
+export type PatchPipelineDeploymentResponse =
+  PatchPipelineDeploymentResponses[keyof PatchPipelineDeploymentResponses]
 
 export type PostPipelineDiffData = {
   /**

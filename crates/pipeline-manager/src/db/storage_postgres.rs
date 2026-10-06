@@ -8,6 +8,7 @@ use crate::db::pg_setup;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::transaction;
 use crate::db::types::api_key::ApiKeyDescr;
+use crate::db::types::deployment::{patch_deployment_config, running_deployment_config};
 use crate::db::types::monitor::{
     ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent,
     ExtendedPipelineMonitorEvent, NewClusterMonitorEvent, PipelineMonitorEvent,
@@ -768,6 +769,34 @@ impl Storage for StoragePostgres {
         txn.commit().await?;
 
         Ok(())
+    }
+
+    async fn patch_pipeline_deployment(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        patch: &serde_json::Value,
+    ) -> Result<serde_json::Value, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = transaction::begin(&mut client).await?;
+        let current =
+            operations::pipeline::get_pipeline(&txn, tenant_id, pipeline_name, true).await?;
+        let patched = patch_deployment_config(running_deployment_config(&current)?, patch)?;
+
+        let stmt = txn
+            .prepare_cached(
+                "UPDATE pipeline
+                     SET deployment_config = $1,
+                         refresh_version = refresh_version + 1
+                     WHERE tenant_id = $2 AND id = $3",
+            )
+            .await?;
+        let rows_affected = txn
+            .execute(&stmt, &[&patched.to_string(), &tenant_id.0, &current.id.0])
+            .await?;
+        assert_eq!(rows_affected, 1);
+        txn.commit().await?;
+        Ok(patched)
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -213,6 +213,10 @@ pub enum DBError {
         pipeline_name: String,
     },
     UpdateRestrictedToStopped,
+    DeploymentRestrictedToRunning,
+    InvalidDeploymentPatch {
+        reason: String,
+    },
     ProgramStatusUpdateRestrictedToStopped,
     DeleteRestrictedToFullyStopped,
     DeleteRestrictedToClearedStorage,
@@ -813,6 +817,15 @@ impl Display for DBError {
                     "Pipeline can only be updated while stopped. Stop it first by invoking '/stop'."
                 )
             }
+            DBError::DeploymentRestrictedToRunning => {
+                write!(
+                    f,
+                    "Pipeline deployment is only available while it is running. Start it with '/start', or change 'runtime_config.resources' while it is stopped."
+                )
+            }
+            DBError::InvalidDeploymentPatch { reason } => {
+                write!(f, "Invalid deployment patch: {reason}")
+            }
             DBError::ProgramStatusUpdateRestrictedToStopped => {
                 write!(f, "Program status can only be updated while stopped.")
             }
@@ -1141,6 +1154,8 @@ impl DetailedError for DBError {
             Self::UnknownPipeline { .. } => Cow::from("UnknownPipeline"),
             Self::UnknownPipelineName { .. } => Cow::from("UnknownPipelineName"),
             Self::UpdateRestrictedToStopped { .. } => Cow::from("UpdateRestrictedToStopped"),
+            Self::DeploymentRestrictedToRunning => Cow::from("DeploymentRestrictedToRunning"),
+            Self::InvalidDeploymentPatch { .. } => Cow::from("InvalidDeploymentPatch"),
             Self::ProgramStatusUpdateRestrictedToStopped { .. } => {
                 Cow::from("ProgramStatusUpdateRestrictedToStopped")
             }
@@ -1273,6 +1288,8 @@ impl ResponseError for DBError {
             Self::UnknownPipeline { .. } => StatusCode::NOT_FOUND,
             Self::UnknownPipelineName { .. } => StatusCode::NOT_FOUND,
             Self::UpdateRestrictedToStopped { .. } => StatusCode::BAD_REQUEST,
+            Self::DeploymentRestrictedToRunning => StatusCode::BAD_REQUEST,
+            Self::InvalidDeploymentPatch { .. } => StatusCode::BAD_REQUEST,
             Self::ProgramStatusUpdateRestrictedToStopped { .. } => StatusCode::BAD_REQUEST,
             Self::DeleteRestrictedToFullyStopped { .. } => StatusCode::BAD_REQUEST,
             Self::CannotRenameNonExistingPipeline { .. } => StatusCode::BAD_REQUEST,

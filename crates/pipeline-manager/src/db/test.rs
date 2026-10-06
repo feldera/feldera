@@ -8,6 +8,9 @@ use crate::db::storage_postgres::{StoragePostgres, is_pipeline_assigned_to_worke
 use crate::db::transaction;
 use crate::db::transaction::LOCK_TIMEOUT;
 use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId};
+use crate::db::types::deployment::{
+    merge_deployment_config_on_edit, patch_deployment_config, running_deployment_config,
+};
 use crate::db::types::monitor::{
     ClusterMonitorEvent, ClusterMonitorEventId, ExtendedClusterMonitorEvent,
     ExtendedPipelineMonitorEvent, MonitorStatus, NewClusterMonitorEvent, PipelineMonitorEvent,
@@ -656,6 +659,24 @@ fn limited_option_program_config() -> impl Strategy<Value = Option<serde_json::V
     any::<Option<ProgramConfigPropVal>>().prop_map(|val| val.map(map_val_to_limited_program_config))
 }
 
+/// Generates different deployment patches, valid and invalid.
+fn limited_patch_pipeline_deployment() -> impl Strategy<Value = serde_json::Value> {
+    let cpu = proptest::option::of(prop_oneof![Just(-1.0), Just(0.5), Just(1.0), Just(2.0)]);
+    let memory = proptest::option::of(prop_oneof![Just(0u64), Just(1000), Just(2000)]);
+    (cpu.clone(), cpu, memory.clone(), memory, any::<bool>()).prop_map(
+        |(cpu_cores_min, cpu_cores_max, memory_mb_min, memory_mb_max, workers)| {
+            let mut patch = json!({"resources": {
+                "cpu_cores_min": cpu_cores_min, "cpu_cores_max": cpu_cores_max,
+                "memory_mb_min": memory_mb_min, "memory_mb_max": memory_mb_max,
+            }});
+            if workers {
+                patch["workers"] = json!(2);
+            }
+            patch
+        },
+    )
+}
+
 /// Generates different SQL compilation information.
 fn limited_sql_compilation_info() -> impl Strategy<Value = SqlCompilationInfo> {
     any::<u8>().prop_map(|v| SqlCompilationInfo {
@@ -1060,6 +1081,63 @@ async fn api_key_store_and_validation() {
         let err = handle.db.validate_api_key(&api_key_2).await.unwrap_err();
         assert!(matches!(err, DBError::InvalidApiKey));
     }
+}
+
+/// `V37` copies the CPU and memory of the runtime config into the stored deployment config of
+/// stopped pipelines only, leaving every other field alone.
+#[tokio::test]
+async fn stopped_deployment_resources_are_synced_once() {
+    let handle = test_setup().await;
+    let client = handle.db.pool.get().await.unwrap();
+    // Temp tables shadow the real one, so the migration runs unmodified.
+    client
+        .batch_execute(
+            r#"CREATE TEMP TABLE pipeline (id int PRIMARY KEY, deployment_resources_status varchar,
+                 runtime_config varchar, deployment_config varchar);
+               INSERT INTO pipeline VALUES
+                 (1, 'stopped', '{"resources": {"cpu_cores_min": 8, "memory_mb_max": 2000}}',
+                  '{"workers": 4, "resources": {"cpu_cores_min": 4.0, "cpu_cores_max": 6.0, "memory_mb_max": 1000, "storage_mb_max": 50}}'),
+                 (2, 'provisioned', '{"resources": {"cpu_cores_min": 8}}', '{"resources": {"cpu_cores_min": 2.0}}'),
+                 (3, 'stopped', '{}', NULL);"#,
+        )
+        .await
+        .unwrap();
+    client
+        .batch_execute(include_str!(
+            "../../migrations/V37__sync_stopped_deployment_resources.sql"
+        ))
+        .await
+        .unwrap();
+    let deployment_config = |id: i32| {
+        let client = &client;
+        async move {
+            client
+                .query_one(
+                    "SELECT deployment_config FROM pipeline WHERE id = $1",
+                    &[&id],
+                )
+                .await
+                .unwrap()
+                .get::<_, Option<String>>(0)
+                .map(|config| serde_json::from_str::<serde_json::Value>(&config).unwrap())
+        }
+    };
+    assert_eq!(
+        deployment_config(1).await,
+        Some(json!({"workers": 4, "resources": {
+            "cpu_cores_min": 8, "cpu_cores_max": null, "memory_mb_min": null,
+            "memory_mb_max": 2000, "storage_mb_max": 50
+        }}))
+    );
+    assert_eq!(
+        deployment_config(2).await,
+        Some(json!({"resources": {"cpu_cores_min": 2.0}}))
+    );
+    assert_eq!(deployment_config(3).await, None);
+    client
+        .batch_execute("DROP TABLE pg_temp.pipeline;")
+        .await
+        .unwrap();
 }
 
 /// The tenant-identity section of `V35__rbac.sql`, delimited in the file by
@@ -3426,7 +3504,241 @@ async fn pipeline_transition_after_quick_stop() {
     );
 }
 
-/// Deployment of a pipeline by starting it and progressing through various deployment statuses.
+/// Deployment patch of a running pipeline.
+#[tokio::test]
+async fn pipeline_deployment_patch() {
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+    let pipeline = handle
+        .db
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            "v0",
+            PipelineDescr {
+                name: "resized".to_string(),
+                description: "".to_string(),
+                tags: vec![],
+                runtime_config: json!({
+                    "workers": 4,
+                    "resources": {"cpu_cores_min": 2, "cpu_cores_max": 3, "memory_mb_min": 4000, "memory_mb_max": 4000}
+                }),
+                program_code: "".to_string(),
+                udf_rust: "".to_string(),
+                udf_toml: "".to_string(),
+                program_config: json!({}),
+            },
+        )
+        .await
+        .unwrap();
+    let patch =
+        json!({"resources": {"cpu_cores_min": 1.0, "memory_mb_min": 3000, "memory_mb_max": 3000}});
+
+    // Stopped
+    assert!(matches!(
+        handle
+            .db
+            .patch_pipeline_deployment(tenant_id, "resized", &patch)
+            .await
+            .unwrap_err(),
+        DBError::DeploymentRestrictedToRunning
+    ));
+
+    // Compile
+    handle
+        .db
+        .transit_program_status_to_compiling_sql(tenant_id, pipeline.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_sql_compiled(
+            tenant_id,
+            pipeline.id,
+            Version(1),
+            &SqlCompilationInfo {
+                exit_code: 0,
+                messages: vec![],
+            },
+            &serde_json::to_value(ProgramInfo {
+                schema: serde_json::to_value(ProgramSchema {
+                    inputs: vec![],
+                    outputs: vec![],
+                })
+                .unwrap(),
+                main_rust: "".to_string(),
+                udf_stubs: "".to_string(),
+                input_connectors: BTreeMap::new(),
+                output_connectors: BTreeMap::new(),
+                circuit_ir: None,
+                dataflow: None,
+            })
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_compiling_rust(tenant_id, pipeline.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_success(
+            tenant_id,
+            pipeline.id,
+            Version(1),
+            &RustCompilationInfo {
+                exit_code: 0,
+                stdout: "".to_string(),
+                stderr: "".to_string(),
+                messages: vec![],
+            },
+            "def",
+            "123",
+            "456",
+        )
+        .await
+        .unwrap();
+    async fn start(db: &StoragePostgres, tenant_id: TenantId, version: Version) {
+        let pipeline = db.get_pipeline(tenant_id, "resized").await.unwrap();
+        db.set_deployment_resources_desired_status_provisioned(
+            tenant_id,
+            "resized",
+            RuntimeDesiredStatus::Paused,
+            BootstrapConfig::default(),
+            false,
+        )
+        .await
+        .unwrap();
+        db.transit_deployment_resources_status_to_provisioning(
+            tenant_id,
+            pipeline.id,
+            version,
+            Uuid::nil(),
+            serde_json::to_value(generate_pipeline_config(
+                pipeline.id,
+                &pipeline.name,
+                &serde_json::from_value(pipeline.runtime_config.clone()).unwrap(),
+            ))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+        db.transit_deployment_resources_status_to_provisioned(
+            tenant_id,
+            pipeline.id,
+            version,
+            "location",
+            json!({}),
+            RuntimeStatus::Initializing,
+            json!(""),
+            RuntimeDesiredStatus::Paused,
+        )
+        .await
+        .unwrap();
+    }
+    async fn stop(db: &StoragePostgres, tenant_id: TenantId, version: Version) {
+        let pipeline = db.get_pipeline(tenant_id, "resized").await.unwrap();
+        db.set_deployment_resources_desired_status_stopped(tenant_id, "resized")
+            .await
+            .unwrap();
+        db.transit_deployment_resources_status_to_stopping(
+            tenant_id,
+            pipeline.id,
+            version,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        db.transit_deployment_resources_status_to_stopped(tenant_id, pipeline.id, version)
+            .await
+            .unwrap();
+    }
+
+    // Running: the patch writes the deployment configuration only
+    start(&handle.db, tenant_id, Version(1)).await;
+    let before = handle.db.get_pipeline(tenant_id, "resized").await.unwrap();
+    let resized = handle
+        .db
+        .patch_pipeline_deployment(tenant_id, "resized", &patch)
+        .await
+        .unwrap();
+    let after = handle.db.get_pipeline(tenant_id, "resized").await.unwrap();
+    assert_eq!(after.deployment_config, Some(resized.clone()));
+    assert_eq!(resized["resources"]["cpu_cores_min"], json!(1.0));
+    assert_eq!(resized["resources"]["memory_mb_min"], json!(3000));
+    assert_eq!(after.runtime_config, before.runtime_config);
+    assert_eq!(after.version, before.version);
+    assert_eq!(after.refresh_version, Version(before.refresh_version.0 + 1));
+
+    // Running: an invalid patch changes nothing
+    let invalid = json!({"resources": {"cpu_cores_min": 9.0}});
+    assert!(matches!(
+        handle
+            .db
+            .patch_pipeline_deployment(tenant_id, "resized", &invalid)
+            .await
+            .unwrap_err(),
+        DBError::InvalidDeploymentPatch { .. }
+    ));
+    let unchanged = handle.db.get_pipeline(tenant_id, "resized").await.unwrap();
+    assert_eq!(unchanged.deployment_config, after.deployment_config);
+    assert_eq!(unchanged.refresh_version, after.refresh_version);
+
+    // Stopping requested: refused although still provisioned
+    handle
+        .db
+        .set_deployment_resources_desired_status_stopped(tenant_id, "resized")
+        .await
+        .unwrap();
+    assert!(matches!(
+        handle
+            .db
+            .patch_pipeline_deployment(tenant_id, "resized", &patch)
+            .await
+            .unwrap_err(),
+        DBError::DeploymentRestrictedToRunning
+    ));
+
+    // Stopped: the resized deployment configuration is kept
+    stop(&handle.db, tenant_id, Version(1)).await;
+    let stopped = handle.db.get_pipeline(tenant_id, "resized").await.unwrap();
+    assert_eq!(stopped.deployment_config, Some(resized.clone()));
+
+    // Stopped: an edit of other fields keeps the resize, a CPU or memory edit replaces it
+    let edit = |runtime_config: serde_json::Value| {
+        let db = &handle.db;
+        async move {
+            db.update_pipeline(
+                tenant_id,
+                "resized",
+                &None,
+                &PatchClientMetadata::default(),
+                "v0",
+                false,
+                &Some(runtime_config),
+                &None,
+                &None,
+                &None,
+                &None,
+            )
+            .await
+            .unwrap()
+            .deployment_config
+            .unwrap()
+        }
+    };
+    let mut runtime_config = stopped.runtime_config.clone();
+    runtime_config["min_batch_size_records"] = json!(7);
+    assert_eq!(edit(runtime_config.clone()).await, resized);
+    runtime_config["resources"]["cpu_cores_min"] = json!(2.5);
+    let edited = edit(runtime_config).await;
+    assert_eq!(edited["resources"]["cpu_cores_min"], json!(2.5));
+    assert_eq!(edited["resources"]["memory_mb_min"], json!(4000));
+}
+
 #[tokio::test]
 async fn pipeline_deployment() {
     let handle = test_setup().await;
@@ -5579,6 +5891,11 @@ enum StorageAction {
         Version,
         #[proptest(strategy = "limited_resources_details()")] serde_json::Value,
     ),
+    PatchPipelineDeployment(
+        TenantId,
+        #[proptest(strategy = "limited_pipeline_name()")] String,
+        #[proptest(strategy = "limited_patch_pipeline_deployment()")] serde_json::Value,
+    ),
     TransitDeploymentResourcesStatusToProvisioned(
         TenantId,
         PipelineId,
@@ -6357,6 +6674,12 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.remain_deployment_resources_status_provisioning(tenant_id, pipeline_id, version_guard, deployment_resources_status_details.clone()).await;
                                 check_responses(i, model_response, impl_response);
                             }
+                            StorageAction::PatchPipelineDeployment(tenant_id, pipeline_name, patch) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.patch_pipeline_deployment(tenant_id, &pipeline_name, &patch).await;
+                                let impl_response = handle.db.patch_pipeline_deployment(tenant_id, &pipeline_name, &patch).await;
+                                check_responses(i, model_response, impl_response);
+                            }
                             StorageAction::TransitDeploymentResourcesStatusToProvisioned(tenant_id, pipeline_id, version_guard, deployment_location, deployment_resources_status_details, runtime_status, runtime_status_details, runtime_desired_status) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.transit_deployment_resources_status_to_provisioned(tenant_id, pipeline_id, version_guard, &deployment_location, deployment_resources_status_details.clone(), runtime_status, runtime_status_details.clone(), runtime_desired_status).await;
@@ -6905,6 +7228,15 @@ impl ModelHelpers for Mutex<DbModel> {
         if let Some(runtime_config) = runtime_config {
             if *runtime_config != pipeline.runtime_config {
                 version_increment = true;
+            }
+            if let Some(deployment_config) = &pipeline.deployment_config
+                && let Some(edited) = merge_deployment_config_on_edit(
+                    deployment_config,
+                    &pipeline.runtime_config,
+                    runtime_config,
+                )
+            {
+                pipeline.deployment_config = Some(edited);
             }
             pipeline.runtime_config = runtime_config.clone();
         }
@@ -8049,6 +8381,23 @@ impl Storage for Mutex<DbModel> {
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
         Ok(())
+    }
+
+    async fn patch_pipeline_deployment(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        patch: &serde_json::Value,
+    ) -> Result<serde_json::Value, DBError> {
+        let mut pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
+        let patched = patch_deployment_config(running_deployment_config(&pipeline)?, patch)?;
+        pipeline.deployment_config = Some(patched.clone());
+        pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline);
+        Ok(patched)
     }
 
     async fn delete_pipeline(

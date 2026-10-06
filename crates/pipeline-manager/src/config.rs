@@ -1197,6 +1197,12 @@ pub struct ApiServerConfig {
     #[serde(default)]
     #[arg(long, default_value = "", env = "FELDERA_HTTP_BASE_PATH")]
     pub http_base_path: String,
+
+    /// Allow `PATCH /deployment` to resize a running pipeline's CPU and memory in place, without a
+    /// restart. Enable only when the runner supports it.
+    #[serde(default)]
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = false, env = "FELDERA_ENABLE_PIPELINE_RESIZE")]
+    pub enable_pipeline_resize: bool,
 }
 
 /// A trust relationship granting the platform-wide `owner` role, declared at
@@ -1371,6 +1377,7 @@ impl ApiServerConfig {
             first_user_role: Role::Admin,
             provision_on_login: true,
             http_base_path: String::new(),
+            enable_pipeline_resize: false,
         }
     }
 }

@@ -9,6 +9,7 @@ use crate::db::operations::pipeline_parsing::{
 use crate::db::operations::utils::{
     maybe_tenant_id_foreign_key_constraint_err, maybe_unique_violation,
 };
+use crate::db::types::deployment::merge_deployment_config_on_edit;
 use crate::db::types::pipeline::{
     ExtendedPipelineDescr, ExtendedPipelineDescrEventInfo, ExtendedPipelineDescrMonitoring,
     PatchClientMetadata, PipelineDescr, PipelineId, bootstrap_config_to_string,
@@ -730,6 +731,22 @@ pub(crate) async fn update_pipeline(
             )
             .await?;
         assert_eq!(rows_affected, 1); // The row must exist as it has been retrieved before
+    }
+
+    // A CPU or memory edit replaces a resize, which otherwise lasts across restarts.
+    if let Some(runtime_config) = &runtime_config
+        && let Some(deployment_config) = &current.deployment_config
+        && let Some(edited) = merge_deployment_config_on_edit(
+            deployment_config,
+            &current.runtime_config,
+            runtime_config,
+        )
+    {
+        let stmt = txn
+            .prepare_cached("UPDATE pipeline SET deployment_config = $1 WHERE id = $2")
+            .await?;
+        txn.execute(&stmt, &[&edited.to_string(), &current.id.0])
+            .await?;
     }
 
     new_pipeline_monitor_event(txn, tenant_id, current.id, Uuid::now_v7()).await?;

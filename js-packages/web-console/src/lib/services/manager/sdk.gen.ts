@@ -87,6 +87,9 @@ import type {
   GetPipelineDataflowGraphData,
   GetPipelineDataflowGraphErrors,
   GetPipelineDataflowGraphResponses,
+  GetPipelineDeploymentData,
+  GetPipelineDeploymentErrors,
+  GetPipelineDeploymentResponses,
   GetPipelineErrors,
   GetPipelineEventData,
   GetPipelineEventErrors,
@@ -156,6 +159,9 @@ import type {
   ListTenantUsersErrors,
   ListTenantUsersResponses,
   PatchPipelineData,
+  PatchPipelineDeploymentData,
+  PatchPipelineDeploymentErrors,
+  PatchPipelineDeploymentResponses,
   PatchPipelineErrors,
   PatchPipelineResponses,
   PatchTenantData,
@@ -1162,6 +1168,65 @@ export const getPipelineDataflowGraph = <ThrowOnError extends boolean = true>(
     security: [{ scheme: 'bearer', type: 'http' }],
     url: '/v0/pipelines/{pipeline_name}/dataflow_graph',
     ...options
+  })
+
+/**
+ * Get Pipeline Deployment
+ *
+ * Required role: `read` or higher.
+ *
+ * Returns the deployment of a running pipeline.
+ */
+export const getPipelineDeployment = <ThrowOnError extends boolean = true>(
+  options: Options<GetPipelineDeploymentData, ThrowOnError>
+): RequestResult<
+  GetPipelineDeploymentResponses,
+  GetPipelineDeploymentErrors,
+  ThrowOnError,
+  'data'
+> =>
+  (options.client ?? client).get<
+    GetPipelineDeploymentResponses,
+    GetPipelineDeploymentErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/deployment',
+    ...options
+  })
+
+/**
+ * Patch Pipeline Deployment
+ *
+ * Required role: `write` or higher.
+ *
+ * Changes the CPU and memory of a running pipeline in its deployment config. The change lasts
+ * across restarts until storage is cleared or CPU or memory is changed in the runtime config.
+ */
+export const patchPipelineDeployment = <ThrowOnError extends boolean = true>(
+  options: Options<PatchPipelineDeploymentData, ThrowOnError>
+): RequestResult<
+  PatchPipelineDeploymentResponses,
+  PatchPipelineDeploymentErrors,
+  ThrowOnError,
+  'data'
+> =>
+  (options.client ?? client).patch<
+    PatchPipelineDeploymentResponses,
+    PatchPipelineDeploymentErrors,
+    ThrowOnError,
+    'data'
+  >({
+    responseStyle: 'data',
+    security: [{ scheme: 'bearer', type: 'http' }],
+    url: '/v0/pipelines/{pipeline_name}/deployment',
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers
+    }
   })
 
 /**
