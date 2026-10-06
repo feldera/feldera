@@ -3139,3 +3139,188 @@ fn test_kafka_metadata_raw() {
     received[1].kafka_timestamp = feldera_sqllib::Timestamp::from_microseconds(0);
     assert_eq!(received, expected);
 }
+
+/// Tests for a `partitions` list that is not in ascending order.
+///
+/// The reader keeps its partitions in ascending order internally, so it must
+/// not match them with the list by position.
+mod unsorted_partitions {
+    use super::*;
+    use crate::transport::kafka::ft::input::sort_partitions;
+    use rdkafka::producer::Producer;
+
+    fn config(extra: JsonValue) -> KafkaInputConfig {
+        let mut config = json!({"topic": "t", "bootstrap.servers": "localhost:9092"});
+        config
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        serde_json::from_value(config).unwrap()
+    }
+
+    #[test]
+    fn sort_keeps_offsets_with_their_partitions() {
+        let sorted = sort_partitions(&config(json!({
+            "partitions": [7, 2, 4],
+            "start_from": {"offsets": [70, 20, 40]},
+        })));
+        assert_eq!(sorted.partitions.unwrap(), [2, 4, 7]);
+        assert_eq!(
+            sorted.start_from,
+            KafkaStartFromConfig::Offsets(vec![20, 40, 70])
+        );
+
+        let sorted = sort_partitions(&config(json!({"partitions": [3, 1, 2]})));
+        assert_eq!(sorted.partitions.unwrap(), [1, 2, 3]);
+
+        // Without a list, there is nothing to sort.
+        assert_eq!(sort_partitions(&config(json!({}))).partitions, None);
+
+        // Mismatched offsets keep their order, so that the reader can report
+        // the mismatch as the user wrote it.
+        let sorted = sort_partitions(&config(json!({
+            "partitions": [7, 2],
+            "start_from": {"offsets": [70, 20, 40]},
+        })));
+        assert_eq!(sorted.partitions.unwrap(), [7, 2]);
+        assert_eq!(
+            sorted.start_from,
+            KafkaStartFromConfig::Offsets(vec![70, 20, 40])
+        );
+    }
+
+    fn create_reader(
+        topic: &str,
+        extra_config: JsonValue,
+        resume_info: Option<JsonValue>,
+    ) -> (
+        Box<dyn TransportInputEndpoint>,
+        DummyInputReceiver,
+        Box<dyn InputReader>,
+    ) {
+        let mut inner_config = json!({
+            "topic": topic,
+            "log_level": "debug",
+            "start_from": "earliest",
+        });
+        inner_config
+            .as_object_mut()
+            .unwrap()
+            .extend(extra_config.as_object().unwrap().clone());
+        let config = serde_json::from_value(json!({
+          "name": "kafka_input",
+          "config": inner_config,
+        }))
+        .unwrap();
+        let endpoint = input_transport_config_to_endpoint(&config, "", default_secrets_directory())
+            .unwrap()
+            .unwrap();
+        let receiver = DummyInputReceiver::new();
+        let reader = endpoint
+            .open(
+                receiver.consumer(),
+                Box::new(DummyParser::new(&receiver)),
+                Relation::empty(),
+                resume_info,
+            )
+            .unwrap();
+        (endpoint, receiver, reader)
+    }
+
+    /// Produces records with IDs `ids` into `partition`, each with its ID as
+    /// its timestamp offset from `base`.
+    fn produce(producer: &TestProducer, topic: &str, partition: i32, base: i64, ids: Range<u32>) {
+        for id in ids {
+            let mut writer = CsvWriterBuilder::new()
+                .has_headers(false)
+                .from_writer(Vec::new());
+            writer.serialize(TestStruct::for_id(id)).unwrap();
+            let bytes = writer.into_inner().unwrap();
+            let record = <BaseRecord<(), [u8], ()>>::to(topic)
+                .payload(&bytes)
+                .timestamp(base + id as i64)
+                .partition(partition);
+            producer.producer.send(record).unwrap();
+        }
+        producer.producer.flush(Duration::from_secs(10)).unwrap();
+    }
+
+    /// Returns the IDs of the records flushed to `receiver` so far.
+    fn flushed_ids(receiver: &DummyInputReceiver) -> Vec<u32> {
+        take_flushed(receiver)
+            .iter()
+            .map(|record| record.split(',').next().unwrap().parse().unwrap())
+            .collect()
+    }
+
+    /// With synchronized partitions, the reader must read the partition with
+    /// the earliest record, not the partition at the same position in the
+    /// `partitions` list.
+    #[test]
+    fn synchronization() {
+        init_test_logger();
+        const TOPIC: &str = "unsorted_partitions_synchronization";
+        let _kafka_resources = KafkaResources::create_topics(&[(TOPIC, 3)]);
+
+        // Partition `p` gets records `10 * p` and `10 * p + 1`, so partition 0
+        // has the earliest records.  After it reads both of them, partition 0
+        // is empty, so synchronization stops.
+        let producer = TestProducer::new();
+        let base = Timestamp::now().to_millis().unwrap();
+        for partition in 0..3 {
+            let first = 10 * partition as u32;
+            produce(&producer, TOPIC, partition, base, first..first + 2);
+        }
+
+        let (_endpoint, receiver, reader) = create_reader(
+            TOPIC,
+            json!({"partitions": [2, 0, 1], "synchronize_partitions": true}),
+            None,
+        );
+        reader.extend();
+        receiver.expect_buffering(2);
+        reader.queue(false);
+        let metadata = Metadata {
+            offsets: vec![0..2, 0..0, 0..0],
+        };
+        receiver.expect(vec![ConsumerCall::Extended {
+            num_records: 2,
+            metadata: serde_json::to_value(&metadata).unwrap(),
+        }]);
+        assert_eq!(flushed_ids(&receiver), [0, 1]);
+    }
+
+    /// Resuming from a checkpoint must give each partition its own offset.
+    #[test]
+    fn resume() {
+        init_test_logger();
+        const TOPIC: &str = "unsorted_partitions_resume";
+        let _kafka_resources = KafkaResources::create_topics(&[(TOPIC, 2)]);
+        let producer = TestProducer::new();
+        let base = Timestamp::now().to_millis().unwrap();
+        produce(&producer, TOPIC, 0, base, 0..5);
+        produce(&producer, TOPIC, 1, base, 10..15);
+
+        // The checkpoint read 1 record from partition 0 and all 5 records
+        // from partition 1, so 4 records remain, all from partition 0.
+        let resume_info = Metadata {
+            offsets: vec![0..1, 0..5],
+        };
+        let (_endpoint, receiver, reader) = create_reader(
+            TOPIC,
+            json!({"partitions": [1, 0]}),
+            Some(serde_json::to_value(&resume_info).unwrap()),
+        );
+        reader.extend();
+        receiver.expect_buffering(4);
+        reader.queue(false);
+        let metadata = Metadata {
+            offsets: vec![1..5, 5..5],
+        };
+        receiver.expect(vec![ConsumerCall::Extended {
+            num_records: 4,
+            metadata: serde_json::to_value(&metadata).unwrap(),
+        }]);
+        assert_eq!(flushed_ids(&receiver), [1, 2, 3, 4]);
+    }
+}
