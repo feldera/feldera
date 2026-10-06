@@ -3160,7 +3160,7 @@ mod unsorted_partitions {
 
     #[test]
     fn sort_keeps_offsets_with_their_partitions() {
-        let sorted = sort_partitions(&config(json!({
+        let sorted = sort_partitions(config(json!({
             "partitions": [7, 2, 4],
             "start_from": {"offsets": [70, 20, 40]},
         })));
@@ -3170,15 +3170,15 @@ mod unsorted_partitions {
             KafkaStartFromConfig::Offsets(vec![20, 40, 70])
         );
 
-        let sorted = sort_partitions(&config(json!({"partitions": [3, 1, 2]})));
+        let sorted = sort_partitions(config(json!({"partitions": [3, 1, 2]})));
         assert_eq!(sorted.partitions.unwrap(), [1, 2, 3]);
 
         // Without a list, there is nothing to sort.
-        assert_eq!(sort_partitions(&config(json!({}))).partitions, None);
+        assert_eq!(sort_partitions(config(json!({}))).partitions, None);
 
         // Mismatched offsets keep their order, so that the reader can report
         // the mismatch as the user wrote it.
-        let sorted = sort_partitions(&config(json!({
+        let sorted = sort_partitions(config(json!({
             "partitions": [7, 2],
             "start_from": {"offsets": [70, 20, 40]},
         })));
