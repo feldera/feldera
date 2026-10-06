@@ -469,11 +469,10 @@ impl WriterTask {
     ) -> AnyResult<Self> {
         let storage_options = inner.config.object_store_config.clone();
 
-        // S3 has no atomic rename, so delta commits rely on conditional put
-        // (`copy_if_not_exists`), which delta-rs configures by default and every
-        // current S3 implementation supports. Setting `AWS_S3_ALLOW_UNSAFE_RENAME`
-        // would opt out of that into unsafe overwriting renames, so we leave it
-        // to the user's `object_store_config` for stores that need it.
+        // S3 has no atomic rename, so a delta commit is a conditional put,
+        // which delta-rs enables by default. A store without conditional put can
+        // set `AWS_S3_ALLOW_UNSAFE_RENAME` in `object_store_config`, trading the
+        // atomic commit for an overwriting rename.
 
         // On restart (resuming from a checkpoint), open the existing table
         // without truncating or error-checking.  This prevents data loss when
@@ -938,12 +937,11 @@ async fn stream_encode_and_write(
         .set_compression(Compression::SNAPPY)
         .set_max_row_group_bytes(Some(MAX_ROW_GROUP_BYTES))
         .build();
-    // delta-rs checks the encoded size only between slices of `write_batch_size`
-    // rows, and its parallel column encoders publish that size one slice late.
-    // At the 8192-row default a slice of our rows is tens of MiB, so the check
-    // reads a stale size and the file never rolls at `TARGET_FILE_SIZE` -- it
-    // grows until the object store rejects the upload past 10000 parts. Slice
-    // finer so a stale reading still lands near the target.
+    // delta-rs compares the encoded size against `TARGET_FILE_SIZE` only between
+    // slices of `write_batch_size` rows, and its encoders report that size one
+    // slice late. At the 8192-row default a slice is tens of MiB, so the file
+    // overshoots the target until the object store rejects the upload past 10000
+    // parts. A smaller slice keeps the stale reading near the target.
     const WRITE_BATCH_ROWS: usize = 1024;
     let writer_config = WriterConfig::new(
         inner.arrow_schema.clone(),

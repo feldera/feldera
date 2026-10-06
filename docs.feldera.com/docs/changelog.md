@@ -10,6 +10,20 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Incompatible change (ad-hoc queries): the `hash` result format, and
+  `Pipeline.query_hash()` in the Python SDK, now return different hashes than
+  earlier releases.  DataFusion computes the hash, and this release upgrades
+  DataFusion, so the same rows hash to a new value.  A hash identifies a
+  result set within one Feldera release: compare only hashes taken from the
+  same release.
+
+- Incompatible change (Delta Lake output connector): the connector no longer
+  sets `AWS_S3_ALLOW_UNSAFE_RENAME` on S3.  A commit is now a conditional put,
+  so one writer cannot overwrite another writer's commit.  An S3-compatible
+  store without conditional put rejects the commit; on those stores, set
+  `AWS_S3_ALLOW_UNSAFE_RENAME` to `true` in the connector's
+  [storage parameters](/connectors/sinks/delta#storage-parameters).
+
 ## v0.362.0
 
 - Incompatible change (SQL): the `emit_final` property of a view must
@@ -24,13 +38,6 @@ Source edition can be found on github.
   the rows before `emit_final` held them back, not the final rows.  Define
   a separate view without `emit_final` and use that view instead.  See
   [`emit_final`](/tutorials/time-series#emitting-final-values-of-a-view-with-emit_final).
-
-- Incompatible change (ad-hoc queries): the `hash` result format, and
-  `Pipeline.query_hash()` in the Python SDK, return a different hash for
-  every query.  The hash is computed by DataFusion, which this release
-  upgrades, so the same rows now hash to a different value.  A hash
-  identifies a result set within one Feldera release: compare hashes taken
-  from the same release.
 
 ## v0.360.0
 
