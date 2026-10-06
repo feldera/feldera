@@ -17,9 +17,13 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-#: Must match the audience the Databricks federation policy accepts (see
-#: infrastructure/terraform/databricks/access_control.tf).
+#: Must match the audience feldera-ci's Databricks federation policy accepts.
 GITHUB_OIDC_AUDIENCE = "feldera-databricks-unity-test"
+
+#: Refresh this many seconds before the cached token's reported expiry, so a
+#: call that starts just under the deadline doesn't hand out a token that
+#: expires moments later.
+TOKEN_REFRESH_MARGIN_S = 60
 
 #: The API caps `wait_timeout` at 50s, so anything longer has to be polled.
 STATEMENT_TIMEOUT_S = 1800
@@ -81,14 +85,36 @@ def _github_oidc_token(audience: str) -> str:
     ]
 
 
+#: (access_token, monotonic deadline). Module-level and per-process: under
+#: pytest-xdist each worker is a separate process, so this doesn't dedupe
+#: across workers, but only one test currently calls this at all, so that
+#: doesn't matter in practice. Keeps repeat calls within one worker (or a
+#: retried test) from minting a fresh GitHub ID token every time -- GitHub
+#: rate-limits that endpoint, and Databricks' own federated token is good
+#: for about an hour, not the few minutes a GitHub Actions ID token is.
+_cached_databricks_token: tuple[str, float] | None = None
+
+
 def token_from_github_oidc(host: str, client_id: str) -> str:
     """Exchange this job's own GitHub OIDC token for a Databricks one.
 
-    Minted fresh on every call rather than once up front: a long parallel
-    pytest run can take close to the hour a federated token is good for, and
-    which test draws the stale one depends on xdist's scheduling, not
-    anything the test itself does wrong.
+    Cached until close to Databricks' own reported expiry (`expires_in`,
+    typically ~3600s for `scope=all-apis` -- `all-apis` is the standard,
+    and as far as we've found only, scope Databricks' workspace OAuth
+    supports for this kind of token; it doesn't widen what the token can
+    do; that's enforced by the Unity Catalog grants on feldera-ci, which
+    are scoped per table). Checking expiry on every call, rather than
+    minting once for the whole test run, is what actually fixes the
+    staleness problem a long pytest-xdist run could hit: a call late in a
+    30+ minute suite still gets a fresh token instead of a stale one
+    whichever worker happened to run first.
     """
+    global _cached_databricks_token
+    if _cached_databricks_token is not None:
+        cached, deadline = _cached_databricks_token
+        if time.monotonic() < deadline:
+            return cached
+
     subject_token = _github_oidc_token(GITHUB_OIDC_AUDIENCE)
     request = urllib.request.Request(
         f"{host}/oidc/v1/token",
@@ -103,9 +129,12 @@ def token_from_github_oidc(host: str, client_id: str) -> str:
         ).encode(),
         headers={"Content-Type": "application/x-www-form-urlencoded"},
     )
-    return json.load(urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_S))[
-        "access_token"
-    ]
+    response = json.load(urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_S))
+    access_token = response["access_token"]
+    expires_in = int(response.get("expires_in", 0))
+    deadline = time.monotonic() + max(expires_in - TOKEN_REFRESH_MARGIN_S, 0)
+    _cached_databricks_token = (access_token, deadline)
+    return access_token
 
 
 def token_from_env(host: str) -> str:
@@ -116,8 +145,7 @@ def token_from_env(host: str) -> str:
     GitHub-OIDC exchange (only possible inside a GitHub Actions job with
     `id-token: write`, which sets ACTIONS_ID_TOKEN_REQUEST_URL); and finally
     a client_secret, for whoever already has one in hand. feldera-ci itself
-    has no standing client_secret (see infra#239), so CI always takes the
-    OIDC path.
+    has no standing client_secret, so CI always takes the OIDC path.
     """
     direct = os.environ.get("DELTA_TABLE_TEST_UNITY_TOKEN")
     if direct:
