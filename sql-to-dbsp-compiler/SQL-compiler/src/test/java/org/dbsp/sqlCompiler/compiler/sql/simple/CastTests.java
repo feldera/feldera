@@ -904,6 +904,23 @@ public class CastTests extends SqlIoTest {
         this.checkFoldedCasts(casts);
     }
 
+    /** Casts of temporal literals that Calcite would convert into constants with values
+     * different from the runtime while converting SQL to relational expressions. */
+    @Test
+    public void foldedTemporalCastsMatchRuntime() {
+        this.checkFoldedCasts(List.of(
+                // Calcite would truncate the excess fractional digits, the runtime rounds them
+                new FoldedCasts("VARCHAR", false,
+                        List.of("'2000-01-01 00:00:00.1234567'", "'2000-01-01 00:00:00.9999996'"),
+                        List.of("TIMESTAMP")),
+                // Calcite would generate the significant fractional digits, the runtime generates
+                // 6 digits for a TIMESTAMP and 9 digits for a TIME
+                new FoldedCasts("TIMESTAMP", false,
+                        List.of("TIMESTAMP '2020-01-01 10:00:00.5'", "TIMESTAMP '2020-01-01 10:00:00'"),
+                        List.of("VARCHAR")),
+                new FoldedCasts("TIME", false, List.of("TIME '10:20:30.5'"), List.of("VARCHAR"))));
+    }
+
     /** Compile a program that compares each folded cast in {@code casts} with the runtime
      * cast of the same value, and check that no comparison differs. */
     void checkFoldedCasts(List<FoldedCasts> casts) {

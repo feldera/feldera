@@ -321,7 +321,9 @@ public class Simplify extends ExpressionTranslator {
                                 " String " + Utilities.singleQuote(str.value) +
                                         " cannot be interpreted as a time");
                     }
-                } else if (type.is(DBSPTypeTimestamp.class)) {
+                } else if (type.is(DBSPTypeTimestamp.class)
+                        // The literal would truncate the digits after the 6th, which the runtime rounds
+                        && Utilities.fractionalDigits(str.value) <= 6) {
                     try {
                         TimestampString ts = new TimestampString(str.value);
                         result = new DBSPTimestampLiteral(lit.getNode(), type, ts);
