@@ -175,7 +175,10 @@ WITH (
 For the available metadata properties that can be extracted, see the
 documentation for each connector.  One property, `is_delete`, is reported by any
 input connector configured with
-[soft deletes](/connectors#soft-deletes).
+[soft deletes](/connectors#soft-deletes).  A request to the
+[HTTP input connector](/connectors/sources/http#connector-metadata) can
+attach any properties to its records through the `connector_metadata` query
+parameter.
 
 #### Materialized tables
 

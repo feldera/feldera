@@ -13,8 +13,10 @@ use atomic::Atomic;
 use chrono::{DateTime, Utc};
 use circular_queue::CircularQueue;
 use dbsp::circuit::tokio::TOKIO;
+use feldera_adapterlib::ConnectorMetadata;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{Resume, Watermark};
+use feldera_sqllib::Variant;
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::http::HttpInputConfig;
@@ -23,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 use std::{
     hash::Hasher,
+    iter::repeat,
     sync::{Arc, Mutex, atomic::Ordering},
     time::Duration,
 };
@@ -55,10 +58,47 @@ impl HttpInputTransport {
     // }
 }
 
+/// Connector metadata that a client attaches to an `/ingress` request.
+///
+/// The connector passes the metadata to the parser with every chunk of the
+/// request, so `CONNECTOR_METADATA()` returns it for every record of the
+/// request.
+#[derive(Clone, Debug)]
+pub(crate) struct RequestMetadata {
+    /// The JSON object as the client sent it.  The exactly-once journal
+    /// stores it with each chunk of the request, and a replay decodes it
+    /// again.
+    json: Arc<str>,
+    metadata: ConnectorMetadata,
+}
+
+impl RequestMetadata {
+    /// Decodes the `connector_metadata` query parameter.
+    pub(crate) fn parse(json: &str) -> Result<Self, String> {
+        let value: Variant = serde_json::from_str(json)
+            .map_err(|e| format!("'connector_metadata' is not valid JSON: {e}"))?;
+        let Variant::Map(attributes) = value else {
+            return Err("'connector_metadata' must be a JSON object".to_string());
+        };
+        Ok(Self {
+            json: Arc::from(json),
+            metadata: ConnectorMetadata::from(Arc::unwrap_or_clone(attributes)),
+        })
+    }
+}
+
+/// What the exactly-once journal keeps about one chunk of a request.
+#[derive(Default)]
+struct JournaledChunk {
+    data: Vec<u8>,
+    /// The `connector_metadata` of the chunk's request, as the client sent it.
+    connector_metadata: Option<Arc<str>>,
+}
+
 struct HttpInputEndpointDetails {
     consumer: Box<dyn InputConsumer>,
     parser: Box<dyn Parser>,
-    queue: InputQueue<Vec<u8>>,
+    queue: InputQueue<JournaledChunk>,
 }
 
 struct HttpInputEndpointInner {
@@ -90,13 +130,27 @@ impl HttpInputEndpointInner {
         while let Some(message) = receiver.recv().await {
             input_span.in_scope(|| match message {
                 InputReaderCommand::Replay { data, .. } => {
-                    let Data { chunks } = rmpv::ext::from_value(data).unwrap();
+                    let Data {
+                        chunks,
+                        connector_metadata,
+                    } = rmpv::ext::from_value(data).unwrap();
                     let mut guard = self.details.lock().unwrap();
                     let details = guard.as_mut().unwrap();
                     let mut total = BufferSize::empty();
                     let mut hasher = Xxh3Default::new();
+                    // A journal written before `connector_metadata` existed holds no
+                    // entries for its chunks.
+                    let mut connector_metadata = connector_metadata.into_iter().chain(repeat(None));
                     for chunk in chunks {
-                        let (mut buffer, errors) = details.parser.parse(&chunk, None);
+                        // The replay parses
+                        // each chunk with the metadata of its request to reproduce the
+                        // records and their hash.
+                        let metadata = connector_metadata.next().flatten().map(|json| {
+                            RequestMetadata::parse(&json)
+                                .expect("journaled connector metadata was valid when the request was accepted")
+                                .metadata
+                        });
+                        let (mut buffer, errors) = details.parser.parse(&chunk, metadata);
                         let len = buffer.len();
                         details.consumer.buffered(len);
                         details.consumer.parse_errors(errors);
@@ -114,12 +168,7 @@ impl HttpInputEndpointInner {
                     let (num_records, hasher, chunks) = details.queue.flush_with_aux();
                     let (timestamps, chunks) = chunks.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
                     let resume = Resume::new_data_only(
-                        || {
-                            rmpv::ext::to_value(Data {
-                                chunks: chunks.into_iter().map(ByteBuf::from).collect(),
-                            })
-                            .unwrap()
-                        },
+                        || rmpv::ext::to_value(Data::from(chunks)).unwrap(),
                         hasher.map(|h| h.finish()),
                     );
                     details.consumer.extended(
@@ -182,17 +231,24 @@ impl HttpInputEndpoint {
     fn push(
         &self,
         chunk: &[u8],
+        connector_metadata: Option<&RequestMetadata>,
         errors: &mut CircularQueue<ParseError>,
         timestamp: DateTime<Utc>,
     ) -> usize {
         let mut guard = self.inner.details.lock().unwrap();
         let details = guard.as_mut().unwrap();
         let mut total_errors = 0;
-        let (buffer, new_errors) = details.parser.parse(chunk, None);
+        let (buffer, new_errors) = details.parser.parse(
+            chunk,
+            connector_metadata.map(|metadata| metadata.metadata.clone()),
+        );
         let aux = if details.consumer.pipeline_fault_tolerance() == Some(FtModel::ExactlyOnce) {
-            Vec::from(chunk)
+            JournaledChunk {
+                data: Vec::from(chunk),
+                connector_metadata: connector_metadata.map(|metadata| metadata.json.clone()),
+            }
         } else {
-            Vec::new()
+            JournaledChunk::default()
         };
         details
             .queue
@@ -234,6 +290,7 @@ impl HttpInputEndpoint {
         &self,
         mut payload: Payload,
         force: bool,
+        connector_metadata: Option<RequestMetadata>,
     ) -> Result<(), PipelineError> {
         debug!("HTTP input endpoint '{}': start of request", self.name());
 
@@ -292,7 +349,8 @@ impl HttpInputEndpoint {
                         Ok(None) => true,
                     };
                     while let Some(chunk) = splitter.next(eoi) {
-                        num_errors += self.push(chunk, &mut errors, timestamp);
+                        num_errors +=
+                            self.push(chunk, connector_metadata.as_ref(), &mut errors, timestamp);
                     }
                     if eoi {
                         break;
@@ -354,4 +412,23 @@ impl InputReader for HttpInputEndpoint {
 #[derive(Serialize, Deserialize)]
 struct Data {
     chunks: Vec<ByteBuf>,
+    /// The `connector_metadata` of each chunk's request.
+    /// Empty in a journal written before the parameter existed.
+    #[serde(default)]
+    connector_metadata: Vec<Option<String>>,
+}
+
+impl From<Vec<JournaledChunk>> for Data {
+    fn from(chunks: Vec<JournaledChunk>) -> Self {
+        Self {
+            connector_metadata: chunks
+                .iter()
+                .map(|chunk| chunk.connector_metadata.as_deref().map(str::to_string))
+                .collect(),
+            chunks: chunks
+                .into_iter()
+                .map(|chunk| ByteBuf::from(chunk.data))
+                .collect(),
+        }
+    }
 }

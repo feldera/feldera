@@ -23,6 +23,7 @@ use crate::{
     samply::{SamplyProfile, SamplyState, SamplyStatus},
     transport::http::{
         HttpInputEndpoint, HttpInputTransport, HttpOutputEndpoint, HttpOutputTransport,
+        RequestMetadata,
     },
 };
 use actix_web::HttpResponseBuilder;
@@ -2734,6 +2735,9 @@ struct IngressArgs {
     /// Push data to the pipeline even if the pipeline is in a paused state.
     #[serde(default)]
     force: bool,
+    /// Connector metadata for every record of this request: a JSON object
+    /// that `CONNECTOR_METADATA()` returns for the records.
+    connector_metadata: Option<String>,
 }
 
 impl IngressArgs {
@@ -2884,6 +2888,13 @@ async fn input_endpoint(
 
     let table_name = path.into_inner();
 
+    let connector_metadata = args
+        .connector_metadata
+        .as_deref()
+        .map(RequestMetadata::parse)
+        .transpose()
+        .map_err(|error| PipelineError::InvalidParam { error })?;
+
     // Generate deterministic endpoint name per (table_name, FormatConfig).
     let parser_endpoint_name = format!("{table_name}.api-ingress-{}", args.format);
     let format = parser_config_from_http_request(&parser_endpoint_name, &args.format, &req)?;
@@ -2915,7 +2926,7 @@ async fn input_endpoint(
 
     // Call endpoint to complete request.
     endpoint
-        .complete_request(payload, args.force)
+        .complete_request(payload, args.force, connector_metadata)
         .instrument(info_span!("http_input"))
         .await?;
 
@@ -3812,10 +3823,16 @@ mod test_http_helpers {
         web::{self, Data as WebData},
     };
     use csv::ReaderBuilder as CsvReaderBuilder;
+    use dbsp::DBData;
     use dbsp::storage::dirlock::LockedDirectory;
+    use feldera_sqllib::Variant;
     use feldera_types::adapter_stats::{ExternalControllerStatus, ExternalOutputEndpointMetrics};
+    use feldera_types::program_schema::Field;
     use feldera_types::runtime_status::{
         BootstrapConfig, ExtendedRuntimeStatus, RuntimeDesiredStatus,
+    };
+    use feldera_types::serde_with_context::{
+        DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
     };
     use feldera_types::{
         completion_token::{CompletionStatus, CompletionStatusResponse, CompletionTokenResponse},
@@ -4293,6 +4310,33 @@ outputs:
         persistent_output_ids: &'static [Option<&'static str>],
         program_ir: Option<ProgramIr>,
     ) -> (TestServer, WebData<ServerState>) {
+        start_test_server_for::<TestStruct>(
+            config_str,
+            deployment_id,
+            bootstrap_config,
+            persistent_output_ids,
+            program_ir,
+            TestStruct::schema(),
+        )
+        .await
+    }
+
+    /// Like [`start_test_server_with_state`], but the tables and views of the
+    /// circuit hold records of type `T`, described by `schema`.
+    pub(super) async fn start_test_server_for<T>(
+        config_str: &str,
+        deployment_id: Uuid,
+        bootstrap_config: BootstrapConfig,
+        persistent_output_ids: &'static [Option<&'static str>],
+        program_ir: Option<ProgramIr>,
+        schema: Vec<Field>,
+    ) -> (TestServer, WebData<ServerState>)
+    where
+        T: DBData
+            + SerializeWithContext<SqlSerdeConfig>
+            + for<'de> DeserializeWithContext<'de, SqlSerdeConfig, Variant>
+            + Sync,
+    {
         let mut config_file = NamedTempFile::new().unwrap();
         config_file.write_all(config_str.as_bytes()).unwrap();
 
@@ -4336,12 +4380,8 @@ outputs:
         thread::spawn(move || {
             bootstrap(
                 builder,
-                Box::new(|workers| {
-                    Ok(test_circuit::<TestStruct>(
-                        workers,
-                        &TestStruct::schema(),
-                        persistent_output_ids,
-                    ))
+                Box::new(move |workers| {
+                    Ok(test_circuit::<T>(workers, &schema, persistent_output_ids))
                 }),
                 state_clone,
             )
@@ -4717,6 +4757,27 @@ outputs:
             .unwrap_or(0)
     }
 
+    /// The rows of an ad-hoc query, as the `/query` endpoint returns them in
+    /// its JSON format: one JSON object per line.
+    pub(super) async fn adhoc_query_rows(server: &TestServer, sql: &str) -> Vec<serde_json::Value> {
+        let qs = form_urlencoded::Serializer::new(String::new())
+            .append_pair("sql", sql)
+            .append_pair("format", "json")
+            .finish();
+        let mut resp = server.get(format!("/query?{qs}")).send().await.unwrap();
+        assert!(
+            resp.status().is_success(),
+            "ad-hoc query failed: {}",
+            resp.status()
+        );
+        let body = resp.body().await.unwrap();
+        let text = String::from_utf8(body.to_vec()).unwrap();
+        text.lines()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
+    }
+
     fn output_metrics(stats: &ExternalControllerStatus) -> &ExternalOutputEndpointMetrics {
         stats
             .outputs
@@ -4787,17 +4848,20 @@ mod test_http {
     use crate::{
         ensure_default_crypto_provider,
         server::test_http_helpers::{
-            adhoc_query_count, assert_no_file_output, batch_num_records, commit_transaction,
-            crash_pipeline, output_progress, pause_pipeline, send_input, send_input_no_wait,
-            start_pipeline, start_test_server_with_options, start_test_server_with_state,
-            start_transaction, suspend_pipeline, test_batches, test_program_ir,
-            wait_for_file_output,
+            adhoc_query_count, adhoc_query_rows, assert_no_file_output, batch_num_records,
+            commit_transaction, crash_pipeline, output_progress, pause_pipeline, send_input,
+            send_input_no_wait, start_pipeline, start_test_server_for,
+            start_test_server_with_options, start_test_server_with_state, start_transaction,
+            suspend_pipeline, test_batches, test_program_ir, wait_for_file_output,
         },
         test::{
-            TestStruct, async_wait, generate_test_batches,
+            TestStruct, async_wait,
+            data::TestStructMetadata,
+            generate_test_batches,
             http::{TestHttpReceiver, TestHttpSender},
         },
     };
+    use actix_test::TestServer;
     use actix_web::http::StatusCode;
     use feldera_types::{
         adapter_stats::TransactionStatus,
@@ -4862,11 +4926,170 @@ mod test_http {
     fn test_handler_arg_names() {
         use super::{EgressArgs, IngressArgs};
 
-        assert_eq!(IngressArgs::names(), ["format", "force"]);
+        assert_eq!(
+            IngressArgs::names(),
+            ["format", "force", "connector_metadata"]
+        );
         assert_eq!(
             EgressArgs::names(),
             ["backpressure", "format", "send_snapshot"]
         );
+    }
+
+    /// Connector metadata that the `connector_metadata` tests attach to a
+    /// request, with one attribute for each metadata column of
+    /// `TestStructMetadata`.
+    const CONNECTOR_METADATA: &str = r#"{"kafka_headers":{"h":"v"},"kafka_topic":"events","kafka_timestamp":"2025-01-01 10:00:00","kafka_partition":3,"kafka_offset":42}"#;
+
+    /// Posts `body` to `/ingress/test_input1` as raw JSON with the given
+    /// `connector_metadata`; returns the response status and body.
+    async fn post_with_connector_metadata(
+        server: &TestServer,
+        connector_metadata: &str,
+        body: &'static str,
+    ) -> (StatusCode, String) {
+        let query = form_urlencoded::Serializer::new(String::new())
+            .append_pair("format", "json")
+            .append_pair("update_format", "raw")
+            .append_pair("connector_metadata", connector_metadata)
+            .finish();
+        let mut response = server
+            .post(format!("/ingress/test_input1?{query}"))
+            .send_body(body)
+            .await
+            .unwrap();
+        let status = response.status();
+        let body = response.body().await.unwrap();
+        (status, String::from_utf8_lossy(&body).into_owned())
+    }
+
+    /// Checks that `test_output1` holds exactly the records with the given
+    /// `ids`, each with the metadata columns from `CONNECTOR_METADATA`.
+    async fn assert_records_carry_connector_metadata(server: &TestServer, ids: &[i64]) {
+        let rows = adhoc_query_rows(
+            server,
+            "SELECT i, kafka_topic, kafka_partition, kafka_offset, kafka_timestamp, kafka_headers \
+             FROM test_output1 ORDER BY i",
+        )
+        .await;
+        assert_eq!(rows.len(), ids.len(), "{rows:?}");
+        for (row, id) in rows.iter().zip(ids) {
+            assert_eq!(row["i"], serde_json::json!(id), "{row}");
+            assert_eq!(row["kafka_topic"], serde_json::json!("events"), "{row}");
+            assert_eq!(row["kafka_partition"], serde_json::json!(3), "{row}");
+            assert_eq!(row["kafka_offset"], serde_json::json!(42), "{row}");
+            let timestamp = row["kafka_timestamp"].as_str().expect("timestamp string");
+            assert!(
+                timestamp.starts_with("2025-01-01") && timestamp.contains("10:00:00"),
+                "{row}"
+            );
+            // The query engine returns a VARIANT either as a JSON value or as
+            // its JSON text.
+            let headers = &row["kafka_headers"];
+            let headers = headers
+                .as_str()
+                .map(|text| serde_json::from_str::<serde_json::Value>(text).unwrap())
+                .unwrap_or_else(|| headers.clone());
+            assert_eq!(headers, serde_json::json!({"h": "v"}), "{row}");
+        }
+    }
+
+    /// The `connector_metadata` query parameter of `/ingress` reaches every
+    /// record of the request through `CONNECTOR_METADATA()`, and an invalid
+    /// parameter is rejected before any record is ingested.
+    #[actix_web::test]
+    async fn test_ingress_connector_metadata() {
+        ensure_default_crypto_provider();
+
+        let (server, _state) = start_test_server_for::<TestStructMetadata>(
+            "name: test\ninputs:\noutputs:\n",
+            Uuid::new_v4(),
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            &[None],
+            None,
+            TestStructMetadata::schema(),
+        )
+        .await;
+        start_pipeline(&server).await;
+
+        let (status, body) =
+            post_with_connector_metadata(&server, CONNECTOR_METADATA, "{\"i\": 1}\n{\"i\": 2}")
+                .await;
+        assert!(status.is_success(), "{body}");
+        let CompletionTokenResponse { token } = serde_json::from_str(&body).unwrap();
+        wait_for_completion(&server, &token).await;
+        assert_records_carry_connector_metadata(&server, &[1, 2]).await;
+
+        for invalid in ["not json", "[1, 2]", "\"text\""] {
+            let (status, body) = post_with_connector_metadata(&server, invalid, "{\"i\": 3}").await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{invalid}: {body}");
+            assert!(body.contains("connector_metadata"), "{body}");
+        }
+        assert_eq!(
+            adhoc_query_count(&server, "SELECT COUNT(*) AS c FROM test_output1").await,
+            2
+        );
+    }
+
+    /// A fault-tolerant replay parses the journaled chunks with the
+    /// `connector_metadata` of their requests, so the replayed records carry
+    /// the same metadata columns as the original ones.
+    #[actix_web::test]
+    async fn test_ft_replay_connector_metadata() {
+        ensure_default_crypto_provider();
+
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        std::fs::create_dir(&storage_dir).unwrap();
+        let config_str = format!(
+            r#"
+name: test
+workers: 1
+storage_config:
+    path: "{}"
+storage: true
+fault_tolerance: latest_checkpoint
+clock_resolution_usecs:
+inputs:
+outputs:
+"#,
+            storage_dir.display()
+        );
+
+        let (server, state) = start_test_server_for::<TestStructMetadata>(
+            &config_str,
+            Uuid::new_v4(),
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            &[Some("v0")],
+            Some(test_program_ir("v0")),
+            TestStructMetadata::schema(),
+        )
+        .await;
+        start_pipeline(&server).await;
+        let (status, body) =
+            post_with_connector_metadata(&server, CONNECTOR_METADATA, "{\"i\": 1}").await;
+        assert!(status.is_success(), "{body}");
+        let CompletionTokenResponse { token } = serde_json::from_str(&body).unwrap();
+        wait_for_completion(&server, &token).await;
+        assert_records_carry_connector_metadata(&server, &[1]).await;
+
+        // Crash without a checkpoint, so that the restart replays the journal.
+        crash_pipeline(&state, &storage_dir).await;
+        drop(server);
+
+        let (server, _state) = start_test_server_for::<TestStructMetadata>(
+            &config_str,
+            Uuid::new_v4(),
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            &[Some("v0")],
+            Some(test_program_ir("v0")),
+            TestStructMetadata::schema(),
+        )
+        .await;
+        start_pipeline(&server).await;
+        assert_records_carry_connector_metadata(&server, &[1]).await;
+
+        suspend_pipeline(&server, Some(&storage_dir)).await;
     }
 
     /// Avro over `/ingress`: the schema travels in the query string, and each

@@ -1271,6 +1271,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         serialize: bool = True,
         wait: bool = True,
         wait_timeout_s: Optional[float] = None,
+        connector_metadata: Optional[Mapping[str, Any]] = None,
     ) -> str:
         """
         Insert data into a pipeline
@@ -1291,6 +1292,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param wait: If True, blocks until this input has been processed by the pipeline
         :param wait_timeout_s: The timeout in seconds to wait for this set of
             inputs to be processed by the pipeline. None by default
+        :param connector_metadata: Connector metadata for every record of this request,
+            as a dict of attribute names to values. ``CONNECTOR_METADATA()`` returns it
+            for the records. None by default.
 
         :returns: The completion token to this input.
         """
@@ -1320,6 +1324,13 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 "json_flavor must be one of 'default', 'debezium_mysql', 'snowflake', 'kafka_connect_json_converter', 'pandas'"
             )
 
+        if connector_metadata is not None and not isinstance(
+            connector_metadata, Mapping
+        ):
+            raise ValueError(
+                "connector_metadata must be a dict of attribute names to values"
+            )
+
         if update_format == "insert_delete":
             if array:
                 for datum in data:
@@ -1347,6 +1358,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         if json_flavor is not None:
             params["json_flavor"] = json_flavor
+
+        if connector_metadata is not None:
+            params["connector_metadata"] = json.dumps(connector_metadata)
 
         content_type = "application/json"
 

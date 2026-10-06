@@ -8294,6 +8294,10 @@ export type HttpInputData = {
      * JSON data change event format (used in conjunction with `format=json`).  The default value is 'insert_delete'.
      */
     update_format?: JsonUpdateFormat | null
+    /**
+     * Connector metadata for every record of this request, as a JSON object.  `CONNECTOR_METADATA()` returns the object for the records, so a column declared with `DEFAULT CAST(CONNECTOR_METADATA()['name'] AS type)` takes its value from the object's `name` attribute.  Works with every input format.
+     */
+    connector_metadata?: string | null
   }
   url: '/v0/pipelines/{pipeline_name}/ingress/{table_name}'
 }
