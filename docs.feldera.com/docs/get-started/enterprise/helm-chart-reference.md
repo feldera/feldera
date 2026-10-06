@@ -127,6 +127,7 @@ When running multiple compiler replicas, sccache allows them to share compiled a
 | Key | Default | Description |
 |-----|---------|-------------|
 | `parallelCompilation.sccache.enabled` | `false` | Enable sccache for sharing compilation artifacts between compiler pods. |
+| `parallelCompilation.sccache.idleTimeoutSeconds` | `0` | Seconds the sccache server may stay idle before it exits. `0` keeps it running. With a higher value, Rust compilation on an idle compiler can fail until the compiler restarts. |
 | `parallelCompilation.sccache.s3.bucket` | `"sccache-bucket"` | S3 bucket name for the sccache backend. |
 | `parallelCompilation.sccache.s3.region` | `"us-east-1"` | AWS region of the S3 bucket. |
 | `parallelCompilation.sccache.s3.keyPrefix` | `"sccache"` | Key prefix for cache objects in the bucket. |
