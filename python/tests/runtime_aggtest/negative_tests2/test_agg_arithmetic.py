@@ -11,7 +11,9 @@ class neg_sum_tiny_int(TstView):
         self.sql = """CREATE MATERIALIZED VIEW sum_tiny_int AS SELECT
                       SUM(tiny_int) AS tiny_int
                       FROM numeric_tbl1"""
-        self.expected_error = "Error converting 128 to TINYINT: number too large to fit in target type"
+        self.expected_error = (
+            "Error converting 128 to TINYINT: number too large to fit in target type"
+        )
 
 
 class neg_sum_small_int(TstView):
@@ -20,7 +22,9 @@ class neg_sum_small_int(TstView):
         self.sql = """CREATE MATERIALIZED VIEW sum_small_int AS SELECT
                       SUM(small_int) AS small_int
                       FROM numeric_tbl1"""
-        self.expected_error = "Error converting 32768 to SMALLINT: number too large to fit in target type"
+        self.expected_error = (
+            "Error converting 32768 to SMALLINT: number too large to fit in target type"
+        )
 
 
 class neg_sum_big_int(TstView):
