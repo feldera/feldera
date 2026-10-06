@@ -289,7 +289,7 @@ impl Display for RustCompilerMessage {
 }
 
 /// Rust compilation information.
-#[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone)]
+#[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone, Default)]
 pub struct RustCompilationInfo {
     /// Exit code of the `cargo` compilation command.
     pub exit_code: i32,
@@ -300,17 +300,6 @@ pub struct RustCompilationInfo {
     /// Parsed rustc diagnostics. Older stored JSON omits this field.
     #[serde(default)]
     pub messages: Vec<RustCompilerMessage>,
-}
-
-impl Default for RustCompilationInfo {
-    fn default() -> Self {
-        Self {
-            exit_code: 0,
-            stdout: String::new(),
-            stderr: String::new(),
-            messages: Vec::new(),
-        }
-    }
 }
 
 impl RustCompilationInfo {
