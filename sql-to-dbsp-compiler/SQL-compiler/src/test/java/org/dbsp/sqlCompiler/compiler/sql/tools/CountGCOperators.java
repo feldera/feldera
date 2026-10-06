@@ -14,7 +14,7 @@ import java.util.Collections;
 import java.util.List;
 
 /** Records the GC operators of a circuit, and its star joins. */
-public final class CountGCOperators extends CircuitVisitor {
+public class CountGCOperators extends CircuitVisitor {
     /** One letter per GC operator: K for RetainKeys, V for RetainValues, N for RetainNValues. */
     private final List<String> kinds = new ArrayList<>();
     /** The kinds of star join operators, in circuit order. */

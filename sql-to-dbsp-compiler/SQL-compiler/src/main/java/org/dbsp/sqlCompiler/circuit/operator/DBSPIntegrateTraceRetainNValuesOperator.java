@@ -142,6 +142,11 @@ public final class DBSPIntegrateTraceRetainNValuesOperator
         return this;
     }
 
+    @Override
+    public OutputPort data() {
+        return this.left();
+    }
+
     /** The data passes through unchanged; the control input carries the bound. */
     @Override
     protected StreamKind computeOutputKind() {
