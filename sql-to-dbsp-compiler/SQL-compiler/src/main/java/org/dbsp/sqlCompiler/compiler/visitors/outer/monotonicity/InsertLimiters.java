@@ -1249,61 +1249,23 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
         ReplacementDeltaExpansion repl = expansion.to(ReplacementDeltaExpansion.class);
         DBSPAsofJoinOperator expanded = repl.replacement.to(DBSPAsofJoinOperator.class);
+        // The retention below needs a left row to match the latest right row preceding its timestamp
+        if (!join.isLeftAfterRight()) {
+            super.postorder(join);
+            this.nonMonotone(join);
+            return;
+        }
         this.processJoin(expanded);
 
-        OutputPort leftLimiter = this.bound.get(join.left());
-        OutputPort rightLimiter = this.bound.get(join.right());
-        if (leftLimiter == null || rightLimiter == null) {
+        // A left row l with l.ts < WL(right) has a final match: every later right change r has
+        // r.ts >= WL(right) > l.ts, and a later delete of l finds its match in the right trace.
+        // WL(right) therefore bounds the left trace.
+        OutputPort rightTS = this.asofTimestampBound(join.right(), expanded.right(), join.rightTimestampIndex);
+        if (rightTS == null) {
             super.postorder(join);
             this.nonMonotone(join);
             return;
         }
-
-        PartiallyMonotoneTuple leftMono = null;
-        MonotoneExpression lm = this.expansionMonotoneValues.get(expanded.left());
-        if (lm != null) {
-            leftMono = Monotonicity.getBodyType(lm).to(PartiallyMonotoneTuple.class);
-        }
-        PartiallyMonotoneTuple rightMono = null;
-        MonotoneExpression rm = this.expansionMonotoneValues.get(expanded.right());
-        if (rm != null) {
-            rightMono = Monotonicity.getBodyType(rm).to(PartiallyMonotoneTuple.class);
-        }
-
-        if (leftMono == null || rightMono == null) {
-            super.postorder(join);
-            this.nonMonotone(join);
-            return;
-        }
-
-        // Extract the value part from the key-value tuple
-        IMaybeMonotoneType leftValue = leftMono.getFieldType(1);
-        IMaybeMonotoneType rightValue = rightMono.getFieldType(1);
-        if (!leftValue.mayBeMonotone() || !rightValue.mayBeMonotone()) {
-            super.postorder(join);
-            this.nonMonotone(join);
-            return;
-        }
-
-        PartiallyMonotoneTuple leftValueTuple = leftValue.to(PartiallyMonotoneTuple.class);
-        PartiallyMonotoneTuple rightValueTuple = rightValue.to(PartiallyMonotoneTuple.class);
-        IMaybeMonotoneType leftTS = leftValueTuple.getFieldType(join.leftTimestampIndex);
-        IMaybeMonotoneType rightTS = rightValueTuple.getFieldType(join.rightTimestampIndex);
-        if (!leftTS.mayBeMonotone() || !rightTS.mayBeMonotone()) {
-            super.postorder(join);
-            this.nonMonotone(join);
-            return;
-        }
-
-        // Extract the timestamps from the limiters
-        OutputPort extractLeftTS = this.extractTimestamp(leftMono, join.leftTimestampIndex, leftLimiter);
-        OutputPort extractRightTS = this.extractTimestamp(rightMono, join.rightTimestampIndex, rightLimiter);
-
-        // Compute the min of the timestamps
-        DBSPVariablePath leftVar = this.getLimiterDataOutputType(extractLeftTS).ref().var();
-        DBSPVariablePath rightVar = this.getLimiterDataOutputType(extractRightTS).ref().var();
-        DBSPExpression minValue = new DBSPTupleExpression(min(leftVar.deref(), rightVar.deref()));
-        OutputPort minOperator = this.createApply2(extractLeftTS, extractRightTS, minValue.closure(leftVar, rightVar));
 
         DBSPTypeTuple keyType = join.getKeyType().to(DBSPTypeTuple.class);
         PartiallyMonotoneTuple keyPart = PartiallyMonotoneTuple.noMonotoneFields(keyType);
@@ -1340,19 +1302,55 @@ public class InsertLimiters extends CircuitCloneVisitor {
         PartiallyMonotoneTuple rightDataProjection = new PartiallyMonotoneTuple(
                 Linq.list(keyPart, rightValuePart), true, false);
 
-
         if (INSERT_RETAIN_VALUES) {
+            // The bound is a tuple, like the projection of the trace
+            DBSPVariablePath boundVar = this.getLimiterDataOutputType(rightTS).ref().var();
+            OutputPort leftBound = this.createApply(rightTS,
+                    new DBSPTupleExpression(boundVar.deref()).closure(boundVar));
             DBSPSimpleOperator retainLeft = DBSPIntegrateTraceRetainValuesOperator.create(
-                    join.getRelNode(), this.mapped(join.left()), leftDataProjection, this.createDelay(minOperator));
+                    join.getRelNode(), this.mapped(join.left()), leftDataProjection, this.createDelay(leftBound));
             this.addOperator(retainLeft);
+        }
 
+        // The retention of the right trace uses WL(left) and WL(right).  A later left row l has
+        // l.ts >= WL(left); its match, the latest right row r with r.ts <= l.ts, has
+        // r.ts >= WL(left) or is the latest right row below WL(left).  A later delete of a right
+        // row d has d.ts >= WL(right); the left rows that matched d now matches the latest right
+        // row before d, which has r.ts >= WL(right) or is the latest right row below WL(right).
+        OutputPort leftTS = this.asofTimestampBound(join.left(), expanded.left(), join.leftTimestampIndex);
+        if (leftTS != null && INSERT_RETAIN_VALUES) {
+            DBSPVariablePath leftVar = this.getLimiterDataOutputType(leftTS).ref().var();
+            DBSPVariablePath rightVar = this.getLimiterDataOutputType(rightTS).ref().var();
+            // Keep the rows r with r.ts >= min(WL(left), WL(right)), plus the latest row below
+            DBSPExpression minValue = new DBSPTupleExpression(min(leftVar.deref(), rightVar.deref()));
+            OutputPort minOperator = this.createApply2(leftTS, rightTS, minValue.closure(leftVar, rightVar));
             DBSPSimpleOperator retainRight = DBSPIntegrateTraceRetainNValuesOperator.create(
                     this.compiler, join.getRelNode(), this.mapped(join.right()), rightDataProjection,
                     this.createDelay(minOperator), 1, DBSPIntegrateTraceRetainNValuesOperator.WhichN.LastN, null);
             this.addOperator(retainRight);
         }
-
         super.postorder(join);
+    }
+
+    /** The bound of the timestamp of an input of an ASOF join, or null if the timestamp has none.
+     * @param input           The input of the join.
+     * @param expandedInput   The same input of the expanded join.
+     * @param timestampIndex  Index of the timestamp in the value of the input. */
+    @Nullable
+    OutputPort asofTimestampBound(OutputPort input, OutputPort expandedInput, int timestampIndex) {
+        OutputPort limiter = this.bound.get(input);
+        MonotoneExpression monotone = this.expansionMonotoneValues.get(expandedInput);
+        if (limiter == null || monotone == null)
+            return null;
+        PartiallyMonotoneTuple mono = Monotonicity.getBodyType(monotone).to(PartiallyMonotoneTuple.class);
+        // The value part of the key-value tuple
+        IMaybeMonotoneType value = mono.getFieldType(1);
+        if (!value.mayBeMonotone())
+            return null;
+        IMaybeMonotoneType timestamp = value.to(PartiallyMonotoneTuple.class).getFieldType(timestampIndex);
+        if (!timestamp.mayBeMonotone())
+            return null;
+        return this.extractTimestamp(mono, timestampIndex, limiter);
     }
 
     /** Value retention for one join input trace.
