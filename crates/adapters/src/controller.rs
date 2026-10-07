@@ -9159,6 +9159,25 @@ impl ControllerInner {
         Ok(())
     }
 
+    /// In a multihost pipeline, returns the transaction that input flushed now
+    /// lands in, if any (see [InputConsumer::open_transaction]).  That is the
+    /// transaction that the coordinator has started and not yet committed: a
+    /// step flushes its input before it starts or commits the circuit's
+    /// transaction, so input flushed now lands in the transaction that the
+    /// next step runs in.  Returns `None` in a single-host pipeline, which
+    /// acts on connectors' requests at once.
+    pub fn open_transaction_for_inputs(&self) -> Option<Option<TransactionId>> {
+        let transaction_info = self.transaction_info.lock().unwrap();
+        transaction_info.is_multihost.then(|| {
+            let initiators = &transaction_info.initiators;
+            if initiators.initiated_by_api == Some(TransactionPhase::Started) {
+                initiators.transaction_id
+            } else {
+                None
+            }
+        })
+    }
+
     pub fn start_transaction_from_connector(
         &self,
         endpoint_name: &str,
@@ -9562,6 +9581,10 @@ impl InputConsumer for InputProbe {
                 self.transaction_in_progress.store(true, Ordering::Release);
             }
         }
+    }
+
+    fn open_transaction(&self) -> Option<Option<TransactionId>> {
+        self.controller.open_transaction_for_inputs()
     }
 
     fn commit_transaction(&self) {
