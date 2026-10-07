@@ -107,8 +107,9 @@
    This shows only when the button is wider than its content. The auto margins of the
    icon and of a zero-width ::after share the spare width. The ::after's negative end
    margin cancels the flex gap before it, so a button that fits its content keeps its
-   size. */
-.btn:has(> .fd:first-child) {
+   size. A button that is also `.btn-icon` (a labelled button shrunk to its icon on small
+   screens) keeps the icon centred instead. */
+.btn:not(.btn-icon):has(> .fd:first-child) {
   & > .fd:first-child {
     margin-inline-end: auto;
   }
