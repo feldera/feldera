@@ -148,6 +148,7 @@ pub fn create_integrated_input_endpoint(
                 pipeline_config,
                 runtime_env,
                 consumer,
+                distributed,
             ))
         }
         TransportConfig::PostgresInput(config) => {
