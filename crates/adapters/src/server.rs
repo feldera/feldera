@@ -5031,6 +5031,64 @@ mod test_http {
         );
     }
 
+    /// A client that hangs up in the middle of an `/ingress` upload fails
+    /// only its own request. The table's ingress endpoint is shared by every
+    /// later request, so it keeps accepting data and `/stats` must not report
+    /// it as failed.
+    #[actix_web::test]
+    async fn test_ingress_aborted_upload_is_not_fatal() {
+        use tokio::io::AsyncWriteExt;
+
+        ensure_default_crypto_provider();
+
+        let server = start_test_server("name: test\ninputs:\noutputs:\n", Uuid::new_v4()).await;
+        start_pipeline(&server).await;
+
+        // Announce a larger body than is sent, then close the connection.
+        let row = r#"{"id": 1, "b": true, "i": null, "s": "a"}"#;
+        let request = format!(
+            "POST /ingress/test_input1?format=json&update_format=raw HTTP/1.1\r\n\
+             Host: localhost\r\nContent-Type: application/json\r\n\
+             Content-Length: 1000000\r\n\r\n{row}\n"
+        );
+        let mut connection = tokio::net::TcpStream::connect(server.addr()).await.unwrap();
+        connection.write_all(request.as_bytes()).await.unwrap();
+        drop(connection);
+
+        // Wait until the server has read the broken body.
+        let errors_seen = async_wait(
+            || async {
+                get_stats(&server)
+                    .await
+                    .inputs
+                    .iter()
+                    .any(|input| input.metrics.num_transport_errors > 0)
+            },
+            20_000,
+        )
+        .await;
+        assert!(errors_seen.is_ok(), "the aborted upload was never noticed");
+
+        let mut response = server
+            .post("/ingress/test_input1?format=json&update_format=raw")
+            .send_body(r#"{"id": 2, "b": false, "i": 2, "s": "b"}"#)
+            .await
+            .unwrap();
+        assert!(
+            response.status().is_success(),
+            "{:?}",
+            response.body().await
+        );
+
+        for input in get_stats(&server).await.inputs {
+            assert_eq!(
+                input.fatal_error, None,
+                "input endpoint '{}' is reported as failed",
+                input.endpoint_name
+            );
+        }
+    }
+
     /// A fault-tolerant replay parses the journaled chunks with the
     /// `connector_metadata` of their requests, so the replayed records carry
     /// the same metadata columns as the original ones.
