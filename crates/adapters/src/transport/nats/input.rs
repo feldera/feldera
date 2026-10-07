@@ -290,7 +290,7 @@ impl NatsReader {
         stream_name: &str,
     ) -> AnyResult<jetstream::Context> {
         let init_deadline = Duration::from(connection_config.connection_timeout())
-            + Duration::from(connection_config.request_timeout());
+            .saturating_add(connection_config.request_timeout().into());
         tokio::time::timeout(init_deadline, async {
             let client = Self::connect_nats(connection_config).await?;
             let js = jetstream::new(client);
