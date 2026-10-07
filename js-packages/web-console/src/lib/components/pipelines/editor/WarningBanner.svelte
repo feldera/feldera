@@ -3,9 +3,10 @@
   import type { Snippet } from '$lib/types/svelte'
 
   const styles = {
+    // The warning tone of the status chips (see the status tones in feldera-modern.css).
     warning: {
       iconClass: 'fd fd-triangle-alert',
-      colorClass: 'preset-tonal-warning'
+      colorClass: 'bg-status-warning-subtle text-status-warning'
     },
     info: {
       iconClass: 'fd fd-info',
