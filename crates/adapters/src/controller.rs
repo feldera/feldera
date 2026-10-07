@@ -5708,7 +5708,9 @@ impl StepTrigger {
                 Action::Step
             } else {
                 if buffered_records > 0 && self.buffer_timeout.is_none() {
-                    self.buffer_timeout = Some(now + self.max_buffering_delay);
+                    // A delay too long for an `Instant` to hold never expires,
+                    // so the step waits for `min_batch_size_records`.
+                    self.buffer_timeout = now.checked_add(self.max_buffering_delay);
                 }
                 let wakeup = [self.buffer_timeout, next_checkpoint]
                     .into_iter()
@@ -8663,7 +8665,8 @@ impl ControllerInner {
                     let timeout = output_buffer_config.max_output_buffer_time().as_millis() as i128
                         - buffer_since.elapsed().as_millis() as i128;
                     if timeout > 0 {
-                        parker.park_timeout(Duration::from_millis(timeout as u64));
+                        let timeout = u64::try_from(timeout).unwrap_or(u64::MAX);
+                        parker.park_timeout(Duration::from_millis(timeout));
                     }
                 } else {
                     parker.park();

@@ -22,7 +22,7 @@ use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
 use crate::runner::pipeline_logs::{
     FollowRequest, LogMessage, LogsSender, start_thread_pipeline_logs,
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{
     ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus, RuntimeStatusDetails,
@@ -109,6 +109,16 @@ fn program_config_is_gen2(program_config: &serde_json::Value) -> bool {
     validate_program_config(program_config, false)
         .map(|config| config.runtime_version().is_gen2())
         .unwrap_or(false)
+}
+
+/// Whether more than `timeout` has passed between `since` and `now`. A timeout
+/// longer than `i64::MAX` milliseconds never passes; cast to `i64` it would go
+/// negative and time out at once.
+fn provisioning_timed_out(since: DateTime<Utc>, now: DateTime<Utc>, timeout: Duration) -> bool {
+    let elapsed = now
+        .timestamp_millis()
+        .saturating_sub(since.timestamp_millis());
+    i64::try_from(timeout.as_millis()).is_ok_and(|timeout| elapsed > timeout)
 }
 
 /// Whether the program configuration pins a runtime other than the platform's
@@ -1514,12 +1524,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 );
 
                 // Provisioning can time out if it takes too long
-                if Utc::now().timestamp_millis()
-                    - pipeline
-                        .deployment_resources_status_since
-                        .timestamp_millis()
-                    > provisioning_timeout.as_millis() as i64
-                {
+                if provisioning_timed_out(
+                    pipeline.deployment_resources_status_since,
+                    Utc::now(),
+                    provisioning_timeout,
+                ) {
                     error!(
                         pipeline_id = %pipeline.id,
                         pipeline = %pipeline.name,
@@ -1999,6 +2008,29 @@ mod test {
         assert!(!program_config_pins_runtime(
             &serde_json::json!({"runtime_version": 7})
         ));
+    }
+
+    /// A provisioning timeout longer than `i64::MAX` milliseconds, which a
+    /// duration setting can now say, never passes rather than passing at once.
+    #[test]
+    fn a_huge_provisioning_timeout_never_passes() {
+        use super::provisioning_timed_out;
+        use chrono::{TimeDelta, Utc};
+        use std::time::Duration;
+        let since = Utc::now();
+        let later = since + TimeDelta::seconds(2);
+        assert!(provisioning_timed_out(since, later, Duration::from_secs(1)));
+        assert!(!provisioning_timed_out(
+            since,
+            later,
+            Duration::from_secs(3)
+        ));
+        assert!(!provisioning_timed_out(
+            since,
+            later,
+            Duration::from_secs(u64::MAX)
+        ));
+        assert!(!provisioning_timed_out(since, later, Duration::MAX));
     }
 
     struct MockRunner {
