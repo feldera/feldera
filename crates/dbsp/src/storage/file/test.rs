@@ -33,7 +33,7 @@ use crate::{
 };
 
 use super::{
-    Factories, FilterPlan,
+    BatchKeyFilter, Factories, FilterPlan,
     reader::{ColumnSpec, RowGroup},
     writer::{Parameters, Writer1, Writer2},
 };
@@ -1829,6 +1829,72 @@ fn roaring_filter_planned_below_the_first_key_survives_reopen() {
             );
         }
     });
+}
+
+/// A writer that receives no rows writes no filter, whichever filter it was
+/// created with.
+///
+/// A merge picks its output's filter before it knows whether any key survives,
+/// so a writer can hold a filter and receive no rows. The finished file must
+/// then be byte for byte the file that a writer without a filter produces,
+/// which every binary that reads this format version can read. Both the
+/// writer's own reader and a reader that reopens the file must report no
+/// filter.
+#[test]
+fn empty_file_gets_no_filter() {
+    init_test_logger();
+
+    let tempdir = tempdir().unwrap();
+    let storage_backend = backend_at(&tempdir.path().to_string_lossy());
+    let factories = Factories::<DynData, DynData>::new::<u32, ()>();
+    let write_empty_file = |key_filter| {
+        let writer = Writer1::new(
+            &factories,
+            test_buffer_cache,
+            &*storage_backend,
+            Parameters::default(),
+            key_filter,
+        )
+        .unwrap();
+        let path = writer.path().clone();
+        let (reader, filters) = writer.into_reader(BatchMetadata::default()).unwrap();
+        let contents = storage_backend.read(&path).unwrap().as_slice().to_vec();
+        (reader, filters, contents)
+    };
+
+    let (_, _, unfiltered_contents) = write_empty_file(None);
+    for (label, key_filter) in [
+        ("Bloom", BatchKeyFilter::new_bloom(100, 1e-4)),
+        (
+            "roaring",
+            Some(BatchKeyFilter::new_roaring_u32((&0u32) as &DynData)),
+        ),
+    ] {
+        assert!(key_filter.is_some(), "{label}: the writer needs a filter");
+        let (reader, filters, contents) = write_empty_file(key_filter);
+        assert_eq!(
+            filters.membership_filter_kind(),
+            FilterKind::None,
+            "{label}: the writer kept its filter"
+        );
+        assert!(
+            contents == unfiltered_contents,
+            "{label}: the file differs from one written without a filter"
+        );
+
+        let (_reopened, membership_filter): (Reader<(&'static DynData, &'static DynData, ())>, _) =
+            Reader::open_with_filter(
+                &[&factories.any_factories()],
+                test_buffer_cache,
+                &*storage_backend,
+                reader.path(),
+            )
+            .unwrap();
+        assert!(
+            membership_filter.is_none(),
+            "{label}: the reopened file has a filter"
+        );
+    }
 }
 
 #[test]
