@@ -1,9 +1,10 @@
 """Duration settings of :class:`RuntimeConfig`.
 
 Every duration-shaped runtime setting has two spellings: a string with a unit,
-and a deprecated integer under the older name. These tests pin down what the shim
-produces for each spelling, because the conversion is the only place that
-decides which unit an integer meant.
+and a deprecated integer under the older name. The SDK sends each setting in the
+spelling it was given, so code written against the older argument keeps working
+against a server that knows only that spelling. These tests pin down what goes
+out for each spelling and what the attributes read back.
 """
 
 import warnings
@@ -30,7 +31,10 @@ DURATION_SETTINGS = [
 
 # The checkpoint interval lives under `fault_tolerance`, and the pipeline only
 # accepts it once a model is chosen.
-NESTED_SETTINGS = {"checkpoint_interval": "fault_tolerance"}
+NESTED_SETTINGS = {
+    "checkpoint_interval": "fault_tolerance",
+    "checkpoint_interval_secs": "fault_tolerance",
+}
 
 
 def _setting(config: dict, name: str):
@@ -62,10 +66,14 @@ def test_duration_argument_reaches_the_dictionary_unchanged(new_name):
     DURATION_SETTINGS,
     ids=[s[0] for s in DURATION_SETTINGS],
 )
-def test_deprecated_integer_becomes_a_duration_string(old_name, new_name, unit, value):
+def test_deprecated_integer_is_sent_under_its_own_key(old_name, new_name, unit, value):
+    """A server from before the current names reads only the older key, so the
+    integer goes out as it came in rather than translated."""
     with pytest.warns(DeprecationWarning):
         config = _build(**{old_name: value})
-    assert _setting(config, new_name) == f"{value}{unit}"
+    assert _setting(config, old_name) == value
+    assert new_name not in config
+    assert new_name not in config.get("fault_tolerance", {})
 
 
 @pytest.mark.parametrize(
@@ -110,7 +118,7 @@ def test_deprecated_integer_zero_converts_rather_than_dropping_out():
     """Zero is a length of time, not an absent setting."""
     with pytest.warns(DeprecationWarning):
         config = _build(max_buffering_delay_usecs=0)
-    assert config["max_buffering_delay"] == "0us"
+    assert config["max_buffering_delay_usecs"] == 0
 
 
 def test_unset_durations_stay_out_of_the_dictionary():
@@ -156,25 +164,16 @@ def test_nested_storage_and_resources_keep_their_own_shape():
     assert config["fault_tolerance"]["checkpoint_interval"] == "30s"
 
 
-def test_round_trip_moves_older_keys_and_keeps_current_ones():
-    """`from_dict` then `to_dict` moves each older key to its current name and
-    leaves keys already in the current spelling as they are."""
+def test_round_trip_keeps_every_key_in_the_spelling_it_was_read_in():
+    """`from_dict` then `to_dict` changes nothing, so a configuration read from
+    a server goes back to it in the spelling that server knows."""
     original = {
         "workers": 8,
         "max_buffering_delay_usecs": 0,
         "clock_resolution": "1s",
-        "fault_tolerance": {
-            "model": "at_least_once",
-            "checkpoint_interval_secs": 60,
-            "checkpoint_interval": "60s",
-        },
+        "fault_tolerance": {"model": "at_least_once", "checkpoint_interval_secs": 60},
     }
-    assert RuntimeConfig.from_dict(original).to_dict() == {
-        "workers": 8,
-        "max_buffering_delay": "0us",
-        "clock_resolution": "1s",
-        "fault_tolerance": {"model": "at_least_once", "checkpoint_interval": "60s"},
-    }
+    assert RuntimeConfig.from_dict(original).to_dict() == original
 
 
 def test_storage_rejects_a_value_that_is_neither_flag_nor_storage():
@@ -186,18 +185,19 @@ def test_storage_rejects_a_value_that_is_neither_flag_nor_storage():
     "unit,value,expected",
     [("us", 1500, "1500us"), ("ms", 500, "500ms"), ("s", 30, "30s"), ("d", 7, "7d")],
 )
-def test_helper_appends_the_unit_it_is_given(unit, value, expected):
+def test_helper_names_the_replacement_in_the_unit_it_is_given(unit, value, expected):
     """The helper serves fields in every unit the configuration uses, so cover
-    the units no RuntimeConfig field happens to take yet."""
-    with pytest.warns(DeprecationWarning):
-        assert _duration_setting("new", None, "old", value, unit) == expected
+    the units no RuntimeConfig field happens to take yet. The unit only shows
+    in the advice: the value itself goes out under the older key."""
+    with pytest.warns(DeprecationWarning, match=f"new='{expected}'"):
+        assert _duration_setting("new", None, "old", value, unit) == ("old", value)
 
 
 def test_helper_passes_an_absent_value_through_without_warning():
     with warnings.catch_warnings():
         warnings.simplefilter("error", DeprecationWarning)
-        assert _duration_setting("new", None, "old", None, "s") is None
-        assert _duration_setting("new", "30s", "old", None, "s") == "30s"
+        assert _duration_setting("new", None, "old", None, "s") == ("new", None)
+        assert _duration_setting("new", "30s", "old", None, "s") == ("new", "30s")
 
 
 # The three deprecated attributes, as (attribute, replacement, unit, nanoseconds
@@ -243,23 +243,38 @@ def test_deprecated_attribute_rounds_to_the_nearest_old_unit(
 def test_deprecated_attribute_can_still_be_assigned(
     old_name, new_name, unit, unit_nanos
 ):
-    """Assigning the old attribute stores the duration under the new name,
-    so the dictionary sent to the server carries one spelling."""
-    config = RuntimeConfig()
+    """Assigning the old attribute stores the integer under the old key, which
+    every server reads, and the current attribute reads it back as a duration.
+    The dictionary sent to the server carries one spelling."""
+    config = RuntimeConfig(**{new_name: "1s"})
     with pytest.warns(DeprecationWarning, match=f"set '{new_name}'"):
         setattr(config, old_name, 7)
-    assert config.to_dict()[new_name] == f"7{unit}"
-    assert old_name not in config.to_dict()
+    assert config.to_dict()[old_name] == 7
+    assert new_name not in config.to_dict()
+    assert getattr(config, new_name) == f"7{unit}"
 
 
-def test_from_dict_reads_older_keys_under_the_current_names():
-    """`from_dict` moves the older keys a stored configuration may carry to the
-    current names, so both the current and the deprecated attribute read it."""
+@pytest.mark.parametrize("old_name, new_name, unit, unit_nanos", LEGACY_ATTRIBUTES)
+def test_a_bare_number_under_the_current_name_reads_back_as_it_is(
+    old_name, new_name, unit, unit_nanos
+):
+    """The server reads a bare number under the current name in the old unit,
+    so the deprecated attribute hands it back unconverted rather than failing
+    to parse it as a duration string."""
+    config = RuntimeConfig.from_dict({new_name: 1000})
+    with pytest.warns(DeprecationWarning):
+        assert getattr(config, old_name) == 1000
+
+
+def test_from_dict_reads_an_older_key_under_both_names():
+    """A configuration stored before the current names carries the older keys.
+    Both the current and the deprecated attribute read such a key, and it goes
+    back out as it came in."""
     config = RuntimeConfig.from_dict({"clock_resolution_usecs": 250})
     assert config.clock_resolution == "250us"
     with pytest.warns(DeprecationWarning):
         assert config.clock_resolution_usecs == 250
-    assert config.to_dict() == {"clock_resolution": "250us"}
+    assert config.to_dict() == {"clock_resolution_usecs": 250}
 
 
 # A runtime configuration as a release before the rename stored it: every
@@ -274,33 +289,20 @@ PRE_RENAME_STORED = {
 
 
 def test_read_modify_write_of_a_stored_pre_rename_config_sends_one_spelling():
-    """Reading a configuration stored before the rename, changing one setting
-    under its current name and writing it back must send each setting once:
-    the server rejects a configuration that carries both spellings."""
+    """Reading a configuration stored before the current names, changing one
+    setting under its current name and writing it back must send that setting
+    once, because the server rejects a configuration that carries both
+    spellings, and must leave the other settings as they were read."""
     config = RuntimeConfig.from_dict(PRE_RENAME_STORED)
     config.max_buffering_delay = "5ms"
     sent = config.to_dict()
     assert sent == {
         "workers": 4,
         "max_buffering_delay": "5ms",
-        "provisioning_timeout": "600s",
-        "fault_tolerance": {"model": "at_least_once", "checkpoint_interval": None},
+        "provisioning_timeout_secs": 600,
+        "fault_tolerance": {"model": "at_least_once", "checkpoint_interval_secs": None},
     }
-    for old in (
-        "max_buffering_delay_usecs",
-        "clock_resolution_usecs",
-        "provisioning_timeout_secs",
-    ):
-        assert old not in sent
-
-
-def test_from_dict_keeps_the_current_spelling_when_both_are_present():
-    """A dictionary that carries both spellings keeps the current one, which is
-    the one the caller meant to change."""
-    config = RuntimeConfig.from_dict(
-        {"clock_resolution_usecs": 5, "clock_resolution": "1s"}
-    )
-    assert config.to_dict() == {"clock_resolution": "1s"}
+    assert "max_buffering_delay_usecs" not in sent
 
 
 def test_from_dict_leaves_the_caller_dictionary_alone():

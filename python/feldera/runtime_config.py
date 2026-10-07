@@ -128,60 +128,25 @@ def _parse_duration_nanos(text: str) -> int:
     return total
 
 
-# The older duration keys a stored configuration may carry, as
-# (older key, current key, unit of the older key's number).
-_LEGACY_DURATION_KEYS = [
-    ("max_buffering_delay_usecs", "max_buffering_delay", "us"),
-    ("clock_resolution_usecs", "clock_resolution", "us"),
-    ("provisioning_timeout_secs", "provisioning_timeout", "s"),
-]
-
-
-def _current_duration_spelling(config: Mapping[str, Any]) -> dict:
-    """A copy of a runtime configuration with its older duration keys moved to
-    the current names, each number written with its unit.
-
-    Where both spellings are present the current one is kept, as the server
-    would keep only one. A ``null`` under an older key means "unset" and is
-    dropped, except for the checkpoint interval, where it disables periodic
-    checkpoints under either name.
-    """
-    result = dict(config)
-    for old, new, unit in _LEGACY_DURATION_KEYS:
-        if old in result:
-            value = result.pop(old)
-            if new not in result and value is not None:
-                result[new] = f"{value}{unit}"
-    fault_tolerance = result.get("fault_tolerance")
-    if (
-        isinstance(fault_tolerance, Mapping)
-        and "checkpoint_interval_secs" in fault_tolerance
-    ):
-        fault_tolerance = dict(fault_tolerance)
-        value = fault_tolerance.pop("checkpoint_interval_secs")
-        if "checkpoint_interval" not in fault_tolerance:
-            fault_tolerance["checkpoint_interval"] = (
-                None if value is None else f"{value}s"
-            )
-        result["fault_tolerance"] = fault_tolerance
-    return result
-
-
 def _duration_setting(
     new_name: str,
     new_value: Optional[str],
     old_name: str,
     old_value: Optional[int],
     unit: str,
-) -> Optional[str]:
+) -> tuple[str, Any]:
     """Resolves a duration setting given through either its current name or the
-    deprecated integer field it replaces.
+    deprecated integer argument, as the key to send and its value.
 
-    The current name wins. Either use of the deprecated field warns, so that a
-    caller who passes both learns that only one of the two took effect.
+    The setting is sent under the spelling the caller used. A server from
+    before the current names accepts only the deprecated key, and one from
+    after accepts both, so code written against the older argument keeps
+    working against either. The current name wins when both are given. Either
+    use of the deprecated argument warns, so that a caller who passes both
+    learns that only one of the two took effect.
     """
     if old_value is None:
-        return new_value
+        return new_name, new_value
     equivalent = f"{old_value}{unit}"
     if new_value is None:
         warnings.warn(
@@ -189,7 +154,7 @@ def _duration_setting(
             DeprecationWarning,
             stacklevel=3,
         )
-        return equivalent
+        return old_name, old_value
     warnings.warn(
         f"'{old_name}' is deprecated and was ignored because "
         f"{new_name}='{new_value}' is also set; drop "
@@ -197,7 +162,26 @@ def _duration_setting(
         DeprecationWarning,
         stacklevel=3,
     )
-    return new_value
+    return new_name, new_value
+
+
+def _duration_attribute(new_name: str, old_name: str, unit: str) -> property:
+    """A duration attribute that reads whichever spelling the configuration
+    holds and, when assigned, replaces both."""
+
+    def get(self) -> Optional[str]:
+        value = self.__dict__.get(new_name)
+        if value is None:
+            legacy = self.__dict__.get(old_name)
+            if legacy is not None:
+                return f"{legacy}{unit}"
+        return value
+
+    def set(self, value: Optional[str]) -> None:
+        self.__dict__.pop(old_name, None)
+        self.__dict__[new_name] = value
+
+    return property(get, set, doc=f'``{new_name}``, a duration such as ``"30s"``.')
 
 
 class RuntimeConfig:
@@ -207,12 +191,8 @@ class RuntimeConfig:
     :meth:`.RuntimeConfig.from_dict`.
 
     Duration settings take a string made of a number and a unit, such as
-    ``"500ms"``, ``"30s"``, ``"1h30m"`` or ``"30d"``. The integer arguments
-    they replace (``max_buffering_delay_usecs``, ``clock_resolution_usecs``,
-    ``provisioning_timeout_secs`` and ``checkpoint_interval_secs``) still work
-    but emit a :class:`DeprecationWarning`, and so do the attributes of the
-    same names, which convert the duration back to a whole number of the old
-    unit. All of them go away at the 1.0 release.
+    ``"500ms"``, ``"30s"``, ``"1h30m"`` or ``"30d"``. The deprecated integer
+    arguments and attributes still work but emit a :class:`DeprecationWarning`.
 
     Documentation:
         https://docs.feldera.com/pipelines/configuration/#runtime-configuration
@@ -251,7 +231,7 @@ class RuntimeConfig:
         self.tracing = tracing
         self.tracing_endpoint_jaeger = tracing_endpoint_jaeger
         self.cpu_profiler = cpu_profiler
-        self.max_buffering_delay = _duration_setting(
+        self._store_duration(
             "max_buffering_delay",
             max_buffering_delay,
             "max_buffering_delay_usecs",
@@ -259,7 +239,7 @@ class RuntimeConfig:
             "us",
         )
         self.min_batch_size_records = min_batch_size_records
-        self.clock_resolution = _duration_setting(
+        self._store_duration(
             "clock_resolution",
             clock_resolution,
             "clock_resolution_usecs",
@@ -267,7 +247,7 @@ class RuntimeConfig:
             "us",
         )
         self.clock_timezone_offset = clock_timezone_offset
-        self.provisioning_timeout = _duration_setting(
+        self._store_duration(
             "provisioning_timeout",
             provisioning_timeout,
             "provisioning_timeout_secs",
@@ -277,16 +257,14 @@ class RuntimeConfig:
         if fault_tolerance_model is not None:
             # An explicit null interval disables periodic checkpoints, so the
             # key is always sent when a model is chosen.
-            self.fault_tolerance = {
-                "model": str(fault_tolerance_model),
-                "checkpoint_interval": _duration_setting(
-                    "checkpoint_interval",
-                    checkpoint_interval,
-                    "checkpoint_interval_secs",
-                    checkpoint_interval_secs,
-                    "s",
-                ),
-            }
+            key, value = _duration_setting(
+                "checkpoint_interval",
+                checkpoint_interval,
+                "checkpoint_interval_secs",
+                checkpoint_interval_secs,
+                "s",
+            )
+            self.fault_tolerance = {"model": str(fault_tolerance_model), key: value}
         if resources is not None:
             self.resources = resources.__dict__
         if storage is not None:
@@ -300,30 +278,59 @@ class RuntimeConfig:
         self.env = env
         self.logging = logging
 
+    def _store_duration(
+        self,
+        new_name: str,
+        new_value: Optional[str],
+        old_name: str,
+        old_value: Optional[int],
+        unit: str,
+    ) -> None:
+        """Stores a duration setting under the spelling it was given in."""
+        key, value = _duration_setting(new_name, new_value, old_name, old_value, unit)
+        self.__dict__[key] = value
+
     def _legacy_integer(self, old_name: str, new_name: str, unit: str) -> Optional[int]:
-        """The value of a deprecated integer attribute, derived from the duration
-        stored under its replacement."""
+        """The value of a deprecated integer attribute, whichever spelling the
+        configuration holds. A duration under the current name converts to a
+        whole number of the old unit, rounded to the nearest; a bare number
+        under it already counts that unit."""
         warnings.warn(
             f"'{old_name}' is deprecated; read '{new_name}' instead",
             DeprecationWarning,
             stacklevel=3,
         )
+        legacy = self.__dict__.get(old_name)
+        if legacy is not None:
+            return legacy
         duration = self.__dict__.get(new_name)
-        if duration is None:
-            return None
+        if duration is None or not isinstance(duration, str):
+            return duration
         unit_nanos = _NANOS_PER_UNIT[unit]
         return (_parse_duration_nanos(duration) + unit_nanos // 2) // unit_nanos
 
     def _set_legacy_integer(
         self, old_name: str, new_name: str, unit: str, value: Optional[int]
     ) -> None:
-        """Stores a deprecated integer attribute as the equivalent duration."""
+        """Stores a deprecated integer attribute under its own key, which every
+        server reads, in place of the current one."""
         warnings.warn(
             f"'{old_name}' is deprecated; set '{new_name}' instead",
             DeprecationWarning,
             stacklevel=3,
         )
-        self.__dict__[new_name] = None if value is None else f"{value}{unit}"
+        self.__dict__.pop(new_name, None)
+        self.__dict__[old_name] = value
+
+    max_buffering_delay = _duration_attribute(
+        "max_buffering_delay", "max_buffering_delay_usecs", "us"
+    )
+    clock_resolution = _duration_attribute(
+        "clock_resolution", "clock_resolution_usecs", "us"
+    )
+    provisioning_timeout = _duration_attribute(
+        "provisioning_timeout", "provisioning_timeout_secs", "s"
+    )
 
     @property
     def max_buffering_delay_usecs(self) -> Optional[int]:
@@ -371,17 +378,13 @@ class RuntimeConfig:
         """
         Create a :class:`.RuntimeConfig` object from a dictionary.
 
-        Duration settings under their older names, as a pipeline stored before
-        the rename carries them until it is next saved, are read under the
-        current names: ``{"clock_resolution_usecs": 1000}`` becomes
-        ``clock_resolution="1000us"``. Otherwise setting a current attribute on
-        the result would send both spellings, which the server rejects. No
-        warning is raised, because such a dictionary usually comes from the
-        server rather than from the caller's code.
+        The dictionary is kept as it is, so writing it back sends each setting
+        in the spelling it was read in. A duration attribute reads whichever
+        spelling is present, and assigning one replaces both.
         """
 
         conf = cls()
-        conf.__dict__ = _current_duration_spelling(d)
+        conf.__dict__ = dict(d)
         return conf
 
     def to_dict(self) -> dict:
