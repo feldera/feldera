@@ -238,7 +238,6 @@
   --tw-brightness: brightness(1.3);
 } */
 
-.checkbox,
 .radio {
   @apply border-none bg-white dark:bg-dark;
 }
@@ -302,9 +301,25 @@ input:focus {
   background-position: right calc(var(--spacing) * 2) /* 8px */ center;
 }
 
+/* Checkboxes follow the Figma "Checkbox" component at its 16px size: an outlined box when
+   unchecked, and the primary fill with a white check mark when checked. */
 .checkbox {
+  @apply border border-surface-950-50/20 bg-white dark:bg-dark;
+  appearance: none;
+  flex-shrink: 0;
   width: 16px;
   height: 16px;
+  border-radius: var(--radius-control-sm) /* 3px */;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 16px 16px;
+  print-color-adjust: exact;
+
+  &:checked {
+    border-color: transparent;
+    background-color: var(--color-primary-500);
+    background-image: url("../assets/icons/generic/checkbox-check.svg");
+  }
 }
 
 /* The end of Skeleton UI overrides */
