@@ -52,7 +52,7 @@ describe('initConceptualHq', () => {
     initConceptualHq(config('my-key'), profile)
 
     expect(script.src).toBe('https://oqiset.feldera.com/analytics/loader-v1.js?key=my-key&v=1.1.0')
-    // `signin` comes from `reportLogin` in `analytics.ts`.
+    // `signin` and `signup` come from `reportLogin` in `analytics.ts`.
     expect(queued()).toEqual([['identify', 'a@b.com', { email: 'a@b.com', name: 'Ann' }]])
   })
 
@@ -141,5 +141,101 @@ describe('trackConceptualHq', () => {
   it('is a no-op outside the browser', async () => {
     const { trackConceptualHq } = await freshModule(false)
     expect(() => trackConceptualHq('demo_opened')).not.toThrow()
+  })
+})
+
+describe('trackConceptualHqSignup', () => {
+  const now = Date.parse('2026-10-07T12:00:00Z')
+  const hoursAgo = (h: number) => new Date(now - h * 3600_000).toISOString()
+
+  const stubStorage = () => {
+    const store = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => store.set(k, v)
+    })
+  }
+
+  const signupCalls = () => queued().filter((call) => call[1] === 'signup')
+
+  const setup = async () => {
+    stubDom()
+    stubStorage()
+    const mod = await freshModule(true)
+    Object.assign(window, { location: { hostname: 'try.feldera.com' } })
+    mod.initConceptualHq(config('my-key'), profile)
+    return mod
+  }
+
+  it('tracks a user created within the window, with a dedupe id', async () => {
+    const { trackConceptualHqSignup } = await setup()
+    trackConceptualHqSignup(profile, hoursAgo(5), now)
+    expect(signupCalls()).toEqual([
+      ['track', 'signup', { host: 'try.feldera.com', dedupe_id: 'signup:try.feldera.com:a@b.com' }]
+    ])
+  })
+
+  it('tolerates a creation time slightly ahead of the client clock', async () => {
+    const { trackConceptualHqSignup } = await setup()
+    trackConceptualHqSignup(profile, hoursAgo(-0.01), now)
+    expect(signupCalls()).toHaveLength(1)
+  })
+
+  it('skips a user created before the window or of unknown age', async () => {
+    const { trackConceptualHqSignup } = await setup()
+    trackConceptualHqSignup(profile, hoursAgo(7), now)
+    trackConceptualHqSignup(profile, null, now)
+    trackConceptualHqSignup(profile, undefined, now)
+    expect(signupCalls()).toEqual([])
+  })
+
+  it('measures the age on the server clock', async () => {
+    const { trackConceptualHqSignup } = await setup()
+    // Import after `setup`, so that both use the same `ServerDate` instance.
+    const { ServerDate } = await import('$lib/compositions/serverTime')
+    // The browser clock is 7 h ahead of the server.
+    vi.useFakeTimers({ now: now + 7 * 3600_000 })
+    try {
+      ServerDate.sync(now)
+      trackConceptualHqSignup(profile, hoursAgo(1))
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(signupCalls()).toHaveLength(1)
+  })
+
+  it('tracks once per user, and a second account in the same browser too', async () => {
+    const { trackConceptualHqSignup } = await setup()
+    trackConceptualHqSignup(profile, hoursAgo(1), now)
+    trackConceptualHqSignup(profile, hoursAgo(1), now)
+    expect(signupCalls()).toHaveLength(1)
+    // Log out, then sign up as another user.
+    const other = { id: 'user-2', email: 'c@d.com' }
+    trackConceptualHqSignup(other, hoursAgo(1), now)
+    expect(signupCalls()).toEqual([
+      ['track', 'signup', { host: 'try.feldera.com', dedupe_id: 'signup:try.feldera.com:a@b.com' }],
+      ['track', 'signup', { host: 'try.feldera.com', dedupe_id: 'signup:try.feldera.com:c@d.com' }]
+    ])
+    // The first user logs in again. The marker stops a second event.
+    trackConceptualHqSignup(profile, hoursAgo(1), now)
+    expect(signupCalls()).toHaveLength(2)
+  })
+
+  it('still tracks when storage is unavailable', async () => {
+    const { trackConceptualHqSignup } = await setup()
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('blocked')
+      }
+    })
+    trackConceptualHqSignup(profile, hoursAgo(1), now)
+    expect(signupCalls()).toHaveLength(1)
+  })
+
+  it('is a no-op when analytics is disabled (loader never installed)', async () => {
+    stubStorage()
+    const { trackConceptualHqSignup } = await freshModule(true)
+    expect(() => trackConceptualHqSignup(profile, hoursAgo(1), now)).not.toThrow()
+    expect(window.ca).toBeUndefined()
   })
 })

@@ -1,6 +1,6 @@
 import posthog from 'posthog-js'
 
-import { trackConceptualHq } from '$lib/services/conceptualHq'
+import { trackConceptualHq, trackConceptualHqSignup } from '$lib/services/conceptualHq'
 import type { UserProfile } from '$lib/types/auth'
 
 // Holds the `auth_time` of the last reported login, one key per user.
@@ -20,18 +20,26 @@ export const captureEvent = (event: string, properties?: Record<string, unknown>
 }
 
 /**
- * Report `signin` to all backends, once per authentication at the identity
- * provider. A reload or a token refresh keeps the `auth_time` claim, so the
- * function does not send `signin` again.
+ * Report a login once per page load, in this order:
+ * 1. `signup` to ConceptualHQ, if the backend created the user recently.
+ * 2. `signin` to all backends, once per authentication at the identity provider.
+ *    A reload or a token refresh keeps the `auth_time` claim, so the function
+ *    does not send `signin` again.
  *
+ * Give only a `userCreatedAt` from a new fetch, see `trackConceptualHqSignup`.
  * If the provider does not send `auth_time`, the function sends `signin` on
  * each page load.
  */
-export const reportLogin = (profile: UserProfile, authTime: number | undefined) => {
+export const reportLogin = (
+  profile: UserProfile,
+  authTime: number | undefined,
+  userCreatedAt: string | null | undefined
+) => {
   if (loginReported) {
     return
   }
   loginReported = true
+  trackConceptualHqSignup(profile, userCreatedAt)
   if (isNewLogin(profile, authTime)) {
     captureEvent('signin')
   }
