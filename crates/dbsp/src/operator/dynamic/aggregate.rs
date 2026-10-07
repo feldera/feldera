@@ -666,7 +666,8 @@ where
             .region("aggregate_linear_retain_keys", || {
                 let weighted =
                     self.dyn_weigh(&factories.aggregate_factories.input_factories, agg_func);
-                weighted.dyn_integrate_trace_retain_keys(waterline, retain_key_func);
+                // The aggregate reads the accumulate trace of `weighted`, which has bounds of its own
+                weighted.dyn_accumulate_integrate_trace_retain_keys(waterline, retain_key_func);
 
                 weighted
                     .set_persistent_id(
@@ -1707,6 +1708,63 @@ pub mod test {
     #[test]
     fn aggregate_linear_postprocess_test_big_step() {
         aggregate_linear_postprocess_test(true)
+    }
+
+    /// Issue 7415: the key filter of `aggregate_linear_postprocess_retain_keys` applies to the
+    /// trace the aggregate reads.  One new key per step with a waterline ten keys behind: after
+    /// each half of the stream the traces hold a few dozen records, against the 1000 keys of the
+    /// half; without the filter they hold every key.
+    #[test]
+    fn aggregate_linear_retain_keys_prunes_input() {
+        let (mut dbsp, (input_handle, waterline_handle, output_handle)) =
+            Runtime::init_circuit(CircuitConfig::from(2), |circuit| {
+                let (input, input_handle) = circuit.add_input_zset::<Tup2<i32, i32>>();
+                let (waterline, waterline_handle) = circuit.add_input_stream::<i32>();
+                let sum = input
+                    .map_index(|Tup2(k, v)| (*k, *v))
+                    .aggregate_linear_postprocess_retain_keys(
+                        &waterline.typed_box(),
+                        |k, ts| k >= ts,
+                        |v: &i32| *v as i64,
+                        |sum: i64| sum,
+                    );
+                // The output trace is retained the same way, as the SQL compiler does
+                sum.accumulate_integrate_trace_retain_keys(&waterline.typed_box(), |k, ts| k >= ts);
+                Ok((input_handle, waterline_handle, sum.accumulate_output()))
+            })
+            .unwrap();
+
+        /// The records in the traces of the circuit after compaction.
+        fn state(dbsp: &mut crate::DBSPHandle) -> usize {
+            dbsp.start_compaction().unwrap();
+            dbsp.wait_for_compaction(std::time::Duration::from_secs(60))
+                .unwrap();
+            let profile = dbsp.retrieve_profile().unwrap();
+            profile
+                .attribute_total_as_count(&crate::circuit::metadata::STATE_RECORDS_COUNT)
+                .unwrap()
+        }
+
+        const KEYS: i32 = 1000;
+        let mut sizes = Vec::new();
+        for half in 0..2 {
+            for k in half * KEYS..(half + 1) * KEYS {
+                input_handle.append(&mut vec![Tup2(Tup2(k, 1), 1)]);
+                waterline_handle.set_for_all(k - 10);
+                dbsp.transaction().unwrap();
+                output_handle.take_from_all();
+            }
+            sizes.push(state(&mut dbsp));
+        }
+        // A merge applies the filter it reads when it starts, and a slot with one batch is pushed
+        // up unmerged, so the traces hold the live keys plus the keys since the last merge
+        for size in sizes {
+            assert!(
+                size < KEYS as usize,
+                "the input trace of the aggregate kept its keys: {size} records"
+            );
+        }
+        dbsp.kill().unwrap();
     }
 
     fn aggregate_linear_postprocess_test(transaction: bool) {
