@@ -35,6 +35,10 @@ pub struct MockInputConsumerState {
     error_cb: Option<ErrorCallback>,
 
     pub transaction_in_progress: bool,
+
+    /// True if the transaction in progress is one that every host requests
+    /// (see `InputConsumer::start_transaction_on_all_hosts`).
+    pub transaction_on_all_hosts: bool,
 }
 
 impl MockInputConsumerState {
@@ -46,6 +50,7 @@ impl MockInputConsumerState {
             endpoint_error: None,
             error_cb: None,
             transaction_in_progress: false,
+            transaction_on_all_hosts: false,
         }
     }
 
@@ -55,6 +60,7 @@ impl MockInputConsumerState {
         self.n_extended = 0;
         self.endpoint_error = None;
         self.transaction_in_progress = false;
+        self.transaction_on_all_hosts = false;
     }
 }
 
@@ -136,11 +142,21 @@ impl InputConsumer for MockInputConsumer {
     }
 
     fn start_transaction(&self, _label: Option<&str>) {
-        self.state().transaction_in_progress = true;
+        let mut state = self.state();
+        state.transaction_in_progress = true;
+        state.transaction_on_all_hosts = false;
+    }
+
+    fn start_transaction_on_all_hosts(&self, _label: Option<&str>) {
+        let mut state = self.state();
+        state.transaction_in_progress = true;
+        state.transaction_on_all_hosts = true;
     }
 
     fn commit_transaction(&self) {
-        self.state().transaction_in_progress = false;
+        let mut state = self.state();
+        state.transaction_in_progress = false;
+        state.transaction_on_all_hosts = false;
     }
 
     fn update_connector_health(&self, _health: ConnectorHealth) {}
