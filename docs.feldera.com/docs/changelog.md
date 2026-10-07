@@ -63,11 +63,16 @@ Source edition can be found on github.
   either; adding a current key beside an older one already there is a
   duplicate. The OpenAPI schema lists only the current names, so a validator
   built from it rejects the older ones that the pipeline still accepts. And
-  the Python SDK's `RuntimeConfig` stores the current names, so
-  `.clock_resolution` holds `"1ms"` rather than a number; `from_dict` moves
-  the older keys of a stored configuration to the current names, and the old
-  attributes such as `.clock_resolution_usecs` remain as deprecated properties
-  that convert back to a whole number of the old unit and warn.
+  the Python SDK's `RuntimeConfig` reads `.clock_resolution` as a duration
+  such as `"1ms"` rather than a number, whichever spelling the configuration
+  holds; the old attributes such as `.clock_resolution_usecs` remain as
+  deprecated properties that read back a whole number of the old unit and
+  warn. The SDK sends each setting in the spelling it was given, so code
+  written against the old arguments keeps working against an older server.
+  One cosmetic effect: an output connector compiled by an older release shows
+  its buffer time as `"213503982334d14h25m51s615ms"`, which is the old
+  default of 2^64 - 1 milliseconds spelled as a duration, means the same, and
+  can be left alone.
 
   Upgrade `fda` together with the server. An `fda` older than this release
   reads a configuration stored under the current names as defaults, and
@@ -84,14 +89,17 @@ Source edition can be found on github.
   configuration key`, its Kafka output hands the name to librdkafka, which
   rejects it as an unknown property, and its other connectors silently use
   their defaults. Clear the pipeline's storage to start it from scratch
-  instead. And an older release's SQL compiler rejects the current names in a
-  program's connector configuration, as does its Avro format, so a program
-  written with them fails to compile there.
+  instead. The same happens during a rolling upgrade to a standby still on an
+  older release once it pulls a checkpoint written by an upgraded leader, so
+  upgrade the standby before the leader. And an older release's SQL compiler
+  rejects the current names in a program's connector configuration, as does
+  its Avro format, so a program written with them fails to compile there.
 
   A pipeline pinned to another runtime with `runtime_version`, or compiled by
   an earlier release and not yet updated to this one, is handed its duration
   settings under the old keys, in the runtime configuration and in every
-  connector, which every runtime up to 1.0 reads.
+  connector, which every runtime up to 1.0 reads. A value that is not a whole
+  number of the old unit rounds up, so a short timeout never becomes `0`.
   Pinning a runtime older than this release in the Enterprise edition does not
   compile, because the platform's enterprise crates, which such a pipeline
   builds against, use the new settings.
