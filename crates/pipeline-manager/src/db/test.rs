@@ -1012,6 +1012,70 @@ async fn membership_origin_is_recorded() {
     );
 }
 
+/// A new user record has a creation time. An unknown identity and a user from
+/// before V37 (NULL) have none.
+#[tokio::test]
+async fn user_created_at_is_recorded() {
+    let handle = test_setup().await;
+    let provider = "https://idp.test";
+    assert_eq!(
+        handle
+            .db
+            .get_user_created_at(provider, "alice")
+            .await
+            .unwrap(),
+        None
+    );
+
+    let before = Utc::now();
+    handle
+        .db
+        .get_or_create_user(Uuid::now_v7(), provider, "alice", None)
+        .await
+        .unwrap();
+    let created_at = handle
+        .db
+        .get_user_created_at(provider, "alice")
+        .await
+        .unwrap()
+        .expect("a new user records its creation time");
+    assert!(created_at >= before - chrono::Duration::seconds(5));
+
+    // A later login does not move the creation time.
+    handle
+        .db
+        .get_or_create_user(Uuid::now_v7(), provider, "alice", Some("a@x.test"))
+        .await
+        .unwrap();
+    assert_eq!(
+        handle
+            .db
+            .get_user_created_at(provider, "alice")
+            .await
+            .unwrap(),
+        Some(created_at)
+    );
+
+    // Rows from before the migration hold NULL.
+    handle
+        .db
+        .pool
+        .get()
+        .await
+        .unwrap()
+        .execute("UPDATE app_user SET created_at = NULL", &[])
+        .await
+        .unwrap();
+    assert_eq!(
+        handle
+            .db
+            .get_user_created_at(provider, "alice")
+            .await
+            .unwrap(),
+        None
+    );
+}
+
 /// Creation, deletion and validation of API keys.
 #[tokio::test]
 async fn api_key_store_and_validation() {
@@ -6612,6 +6676,7 @@ struct UserRecord {
     profile: UserProfile,
     refreshed_at: Option<DateTime<Utc>>,
     refreshed_auth_time: Option<i64>,
+    created_at: DateTime<Utc>,
 }
 
 /// Model of the database to which its operations are compared.
@@ -7523,6 +7588,7 @@ impl Storage for Mutex<DbModel> {
                         },
                         refreshed_at: None,
                         refreshed_auth_time: None,
+                        created_at: Utc::now(),
                     },
                 );
                 Ok(id)
@@ -7549,6 +7615,7 @@ impl Storage for Mutex<DbModel> {
                     profile: UserProfile::default(),
                     refreshed_at: Some(now),
                     refreshed_auth_time: auth_time,
+                    created_at: now,
                 },
             );
             return Ok(true);
@@ -7658,6 +7725,17 @@ impl Storage for Mutex<DbModel> {
                 .or_insert((role, origin));
         }
         Ok(())
+    }
+
+    async fn get_user_created_at(
+        &self,
+        provider: &str,
+        subject: &str,
+    ) -> DBResult<Option<DateTime<Utc>>> {
+        let s = self.lock().await;
+        Ok(s.users
+            .get(&(provider.to_string(), subject.to_string()))
+            .map(|user| user.created_at))
     }
 
     async fn list_user_memberships(

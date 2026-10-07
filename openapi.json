@@ -15702,6 +15702,12 @@
             "type": "string",
             "description": "Acting tenant name; `null` exactly when `tenant_id` is.",
             "nullable": true
+          },
+          "user_created_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the user record was created, usually at the first login. The web\nconsole uses it to report a signup. Is `null` for principals that are\nnot human logins, and for users created before this field was added.",
+            "nullable": true
           }
         }
       },

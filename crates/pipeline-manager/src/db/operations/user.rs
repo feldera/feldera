@@ -8,6 +8,7 @@ use crate::db::operations::utils::{
 use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
 use crate::db::types::user::{MembershipOrigin, TenantMember, UserId, UserMembership, UserProfile};
+use chrono::{DateTime, Utc};
 use deadpool_postgres::Transaction;
 use std::str::FromStr;
 use uuid::Uuid;
@@ -276,6 +277,20 @@ pub async fn enroll_in_existing_tenants(
             .await?;
     }
     Ok(())
+}
+
+/// When the user record for an OIDC `(provider, subject)` was created. `None`
+/// for an unknown identity and for a user created before V37.
+pub async fn get_user_created_at(
+    txn: &Transaction<'_>,
+    provider: &str,
+    subject: &str,
+) -> Result<Option<DateTime<Utc>>, DBError> {
+    let stmt = txn
+        .prepare_cached("SELECT created_at FROM app_user WHERE provider = $1 AND subject = $2")
+        .await?;
+    let row = txn.query_opt(&stmt, &[&provider, &subject]).await?;
+    Ok(row.and_then(|row| row.get(0)))
 }
 
 /// Lists the tenants a user may act in, joined with each tenant's name and
