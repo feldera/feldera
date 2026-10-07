@@ -204,8 +204,10 @@
   color: var(--color-surface-950-50);
 }
 
+/* Selects share the buttons' hover, so a select next to a button reacts the same way. */
 .btn,
-.btn-icon {
+.btn-icon,
+.select {
   &:not(:disabled, .disabled) {
     &:hover {
       filter: brightness(93%);

@@ -21,7 +21,7 @@
   import OpenSupportBundleDialog from '$lib/components/supportBundle/OpenSupportBundleDialog.svelte'
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
-  import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
+  import { useIsScreenMd, useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
@@ -58,6 +58,16 @@
   const darkMode = useDarkMode()
   let selectedPipelines = $state([]) as string[]
   const drawer = useAdaptiveDrawer('right')
+  // The header's links and buttons fit from 768px; only below that do they move into the
+  // drawer (rather than below 1280px, where the drawer itself switches to overlay mode).
+  const isScreenMd = useIsScreenMd()
+  // The drawer's toggle lives in the collapsed header, so close the drawer once the header
+  // expands and the toggle is gone.
+  $effect(() => {
+    if (isScreenMd.current) {
+      drawer.value = false
+    }
+  })
 
   const demos = useDemos()
   const globalDialog = useGlobalDialog()
@@ -67,9 +77,10 @@
   <OpenSupportBundleDialog></OpenSupportBundleDialog>
 {/snippet}
 
-<AppHeader>
+<!-- The home page uses 20px side gutters (as the pipeline page) rather than the default 32px. -->
+<AppHeader paddingX="px-2 md:px-5">
   {#snippet beforeEnd()}
-    {#if drawer.isMobileDrawer}
+    {#if !isScreenMd.current}
       <button
         onclick={() => (drawer.value = !drawer.value)}
         class="fd fd-book-open btn-icon flex preset-tonal-surface text-[16px]"
@@ -89,14 +100,21 @@
     {/if}
   {/snippet}
 </AppHeader>
+<!-- The scrollbar's space is always reserved, so the content keeps one width whether or
+     not the page scrolls (expanding the use cases no longer narrows the table), and the
+     pipelines toolbar can make up that fixed width to line up with the header. -->
 <div
-  class="scrollbar flex h-full flex-col justify-between overflow-y-auto"
+  class="scrollbar flex h-full flex-col justify-between overflow-y-auto [scrollbar-gutter:stable]"
   data-testid="box-home-scroll-area"
 >
   <div class="@container">
     <div class="flex flex-col gap-8 pb-2 md:pb-8" style="width: max-content; min-width: 100%;">
       {#if !welcomed.value}
-        <div class="sticky left-0 max-w-[100cqi] px-2 pt-0 md:px-8">
+        <!-- The right padding gives back the reserved scrollbar gutter, so the banner ends
+             where the header's buttons do (as the pipelines toolbar does). -->
+        <div
+          class="sticky left-0 max-w-[100cqi] px-2 pt-0 md:pr-[calc(--spacing(5)-var(--scrollbar-width))] md:pl-5"
+        >
           <div class="relative flex min-h-40 w-full gap-4 p-6 sm:gap-12">
             <div class="absolute top-0 left-0 -z-10 flex h-full w-full overflow-clip card">
               <div
@@ -139,10 +157,10 @@
       <!-- Without the banner, pad the section so it starts 40px below the header logo. -->
       <div class="flex flex-col" class:pt-4={welcomed.value} data-testid="box-pipelines-section">
         {#snippet header()}
-          <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
-            <span class="fd fd-network text-[20px] text-surface-500"></span><span
-              >Your pipelines</span
-            >
+          <!-- Raised 2px so its baseline (and lowercase letters) line up with the labels of
+               the controls beside it; box-centred, the mostly lowercase title reads low. -->
+          <div class="relative -top-0.5 text-xl font-semibold whitespace-nowrap">
+            Your pipelines
           </div>
         {/snippet}
         {#if !pipelines.pipelines}
@@ -162,13 +180,14 @@
               {#if !selectedPipelines.length}
                 <CreatePipelineButton
                   inputClass="max-w-64"
-                  btnClass="hidden sm:flex preset-filled-surface-50-950"
+                  btnClass="preset-filled-surface-50-950"
+                  shortLabelOnMobile
                 ></CreatePipelineButton>
               {/if}
             {/snippet}
           </PipelineTable>
         {:else}
-          <div class="px-2 md:px-8">
+          <div class="px-2 md:px-5">
             {@render header()}
           </div>
           <div class="flex w-full flex-col items-center gap-4 pt-8 sm:pt-16">
@@ -187,7 +206,8 @@
       {#if demos.current.length}
         <!-- Held at the bottom of the screen while the pipelines table scrolls. -->
         <PinnedSections class="max-w-[100cqi] gap-8">
-          <div class="px-2 md:px-8">
+          <!-- Right padding less the scrollbar gutter, as for the banner above. -->
+          <div class="px-2 md:pr-[calc(--spacing(5)-var(--scrollbar-width))] md:pl-5">
             <InlineDropdown bind:open={showSuggestedDemos.value}>
               {#snippet header(open, toggle)}
                 <div
