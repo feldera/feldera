@@ -858,8 +858,8 @@ impl RootCircuit {
     ///                                                  ┌──────────── integral ─────────┐
     ///                                                  ▼                               │
     ///  updates ──► Stamp ──┬──► shard_accumulate ──► LazyUpsert ──────────► integrate ─┘
-    ///                      │                            │       accumulator  
-    ///                      │                 adjustments│   
+    ///                      │                            │       accumulator
+    ///                      │                 adjustments│
     ///                      │                            │
     ///                      └────────► project ──────► concat ──► delta
     /// ```
