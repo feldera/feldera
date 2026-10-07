@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Result as AnyResult, bail};
 use dashmap::DashMap;
 use feldera_adapterlib::catalog::SerCursor;
+pub(crate) use feldera_adapterlib::utils::long_operation::LongOperationWarning;
 use feldera_types::program_schema::SqlIdentifier;
 use itertools::Itertools;
 use size_of::HumanBytes;
@@ -632,36 +633,6 @@ impl<K: Eq + Hash> TokenBucketRateLimiter<K> {
             .entry(key)
             .or_insert_with(|| TokenBucket::new(self.max_tokens, self.refill_window, now));
         bucket.check(now)
-    }
-}
-
-pub(crate) struct LongOperationWarning {
-    start: Instant,
-    warn_threshold: Duration,
-}
-
-impl LongOperationWarning {
-    pub fn new(warn_threshold: Duration) -> Self {
-        Self {
-            start: Instant::now(),
-            warn_threshold,
-        }
-    }
-
-    pub fn check(&mut self, warn: impl FnOnce(Duration)) {
-        let elapsed = self.start.elapsed();
-        if elapsed >= self.warn_threshold {
-            warn(elapsed);
-            self.warn_threshold *= 2;
-        }
-    }
-
-    pub fn next_warning(&self) -> Instant {
-        self.start + self.warn_threshold
-    }
-
-    pub fn elapsed(&self) -> Duration {
-        self.start.elapsed()
     }
 }
 
