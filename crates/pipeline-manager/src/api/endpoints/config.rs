@@ -3,6 +3,7 @@ use actix_web::{
     HttpMessage, HttpRequest, HttpResponse, get,
     web::{Data as WebData, ReqData},
 };
+use chrono::{DateTime, Utc};
 use feldera_cloud1_client::license::DisplaySchedule;
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -233,6 +234,11 @@ pub(crate) struct SessionInfo {
     /// no-auth mode) and for platform owners without explicit memberships,
     /// who act in any tenant regardless.
     pub memberships: Vec<UserMembership>,
+    /// When the user got the first tenant membership, usually at the first
+    /// login. The web console uses it to report a signup. Is `null` for
+    /// principals that are not human logins, for users without memberships, and
+    /// for users with a membership from before the manager recorded this time.
+    pub user_created_at: Option<DateTime<Utc>>,
 }
 
 impl SessionInfo {
@@ -241,6 +247,7 @@ impl SessionInfo {
         tenant_id: TenantId,
         role: Role,
         memberships: Vec<UserMembership>,
+        user_created_at: Option<DateTime<Utc>>,
     ) -> Result<Self, ManagerError> {
         let tenant_name = state.db.lock().await.get_tenant_name(tenant_id).await?;
         Ok(SessionInfo {
@@ -248,6 +255,7 @@ impl SessionInfo {
             tenant_name: Some(tenant_name),
             role: Some(role),
             memberships,
+            user_created_at,
         })
     }
 }
@@ -282,16 +290,17 @@ pub(crate) async fn get_config_session(
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     let identity = req.extensions().get::<LoginIdentity>().cloned();
-    let memberships = match &identity {
+    let (memberships, user_created_at) = match &identity {
         Some(identity) => {
-            state
-                .db
-                .lock()
-                .await
-                .list_user_memberships(&identity.provider, &identity.subject)
-                .await?
+            let db = state.db.lock().await;
+            (
+                db.list_user_memberships(&identity.provider, &identity.subject)
+                    .await?,
+                db.get_user_created_at(&identity.provider, &identity.subject)
+                    .await?,
+            )
         }
-        None => vec![],
+        None => (vec![], None),
     };
     let session_info = if req.extensions().get::<UnresolvedActingTenant>().is_some() {
         SessionInfo {
@@ -299,9 +308,17 @@ pub(crate) async fn get_config_session(
             tenant_name: None,
             role: None,
             memberships,
+            user_created_at,
         }
     } else {
-        SessionInfo::gather(&state, *tenant_id, principal.role, memberships).await?
+        SessionInfo::gather(
+            &state,
+            *tenant_id,
+            principal.role,
+            memberships,
+            user_created_at,
+        )
+        .await?
     };
     Ok(HttpResponse::Ok().json(session_info))
 }

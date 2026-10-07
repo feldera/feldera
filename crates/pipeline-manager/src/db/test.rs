@@ -1015,6 +1015,77 @@ async fn membership_origin_is_recorded() {
     );
 }
 
+/// The creation time of a user is the time of the first tenant membership. A
+/// user without memberships, and a user with a membership from before V36
+/// (NULL), have none.
+#[tokio::test]
+async fn user_created_at_is_recorded() {
+    let handle = test_setup().await;
+    let provider = "https://idp.test";
+    let created_at = async |subject: &str| {
+        handle
+            .db
+            .get_user_created_at(provider, subject)
+            .await
+            .unwrap()
+    };
+    let login = async |tenant: &str| {
+        handle
+            .db
+            .resolve_login(
+                Uuid::now_v7(),
+                Uuid::now_v7(),
+                tenant.to_string(),
+                provider.to_string(),
+                "alice".to_string(),
+                None,
+                Role::Read,
+                Role::Admin,
+                MembershipOrigin::Derived,
+            )
+            .await
+            .unwrap()
+    };
+    assert_eq!(created_at("alice").await, None);
+
+    // A user record without a membership has no creation time.
+    handle
+        .db
+        .get_or_create_user(Uuid::now_v7(), provider, "alice", None)
+        .await
+        .unwrap();
+    assert_eq!(created_at("alice").await, None);
+
+    let before = Utc::now();
+    login("acme").await;
+    let first = created_at("alice")
+        .await
+        .expect("the first membership records the creation time");
+    assert!(first >= before - chrono::Duration::seconds(5));
+
+    // A later login and a later membership do not move the creation time.
+    login("acme").await;
+    let (beta, alice, _) = login("beta").await;
+    assert_eq!(created_at("alice").await, Some(first));
+
+    // Make the `acme` membership older than V36. The `beta` membership has a
+    // time, but it is not the signup time.
+    handle
+        .db
+        .pool
+        .get()
+        .await
+        .unwrap()
+        .execute(
+            "UPDATE tenant_membership SET created_at = NULL \
+             WHERE user_id = $1 AND tenant_id <> $2",
+            &[&alice.0, &beta.0],
+        )
+        .await
+        .unwrap();
+    assert_eq!(created_at("alice").await, None);
+}
+
 /// Creation, deletion and validation of API keys.
 #[tokio::test]
 async fn api_key_store_and_validation() {
@@ -6616,6 +6687,7 @@ struct UserRecord {
     profile: UserProfile,
     refreshed_at: Option<DateTime<Utc>>,
     refreshed_auth_time: Option<i64>,
+    created_at: DateTime<Utc>,
 }
 
 /// Model of the database to which its operations are compared.
@@ -7527,6 +7599,7 @@ impl Storage for Mutex<DbModel> {
                         },
                         refreshed_at: None,
                         refreshed_auth_time: None,
+                        created_at: Utc::now(),
                     },
                 );
                 Ok(id)
@@ -7553,6 +7626,7 @@ impl Storage for Mutex<DbModel> {
                     profile: UserProfile::default(),
                     refreshed_at: Some(now),
                     refreshed_auth_time: auth_time,
+                    created_at: now,
                 },
             );
             return Ok(true);
@@ -7662,6 +7736,17 @@ impl Storage for Mutex<DbModel> {
                 .or_insert((role, origin));
         }
         Ok(())
+    }
+
+    async fn get_user_created_at(
+        &self,
+        provider: &str,
+        subject: &str,
+    ) -> DBResult<Option<DateTime<Utc>>> {
+        let s = self.lock().await;
+        Ok(s.users
+            .get(&(provider.to_string(), subject.to_string()))
+            .map(|user| user.created_at))
     }
 
     async fn list_user_memberships(
