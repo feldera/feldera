@@ -322,6 +322,7 @@
     <label class="flex cursor-pointer items-center gap-2 rounded">
       Verbatim errors
       <Switch
+        class="switch-sm"
         name="verbatimErrors"
         checked={layoutSettings.verbatimErrors.value}
         onCheckedChange={(e) => (layoutSettings.verbatimErrors.value = e.checked)}

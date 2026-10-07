@@ -325,4 +325,29 @@ input:focus {
   }
 }
 
+/* The small Skeleton `Switch`, after the smallest Figma "Switch" (28 × 16px with a 14px
+   thumb) for use beside 16px checkboxes and small controls. Put `switch-sm` on the
+   `<Switch>` root; the colours stay Skeleton's (Feldera primary when on). The thumb fills
+   the control's height, so only the control is sized. */
+.switch-sm [data-part="control"] {
+  width: 28px;
+  height: 16px;
+  padding: 1px;
+}
+
+.switch-sm [data-part="thumb"] {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+}
+
+/* Skeleton slides the checked thumb a fixed 16px, sized for its default track. On the
+   28px track it travels 28 - 2 × 1px padding - 14px thumb = 12px, or it overhangs the
+   right edge. */
+.switch-sm [data-part="thumb"][data-state="checked"] {
+  transform: translateX(12px);
+}
+
+[dir="rtl"] .switch-sm [data-part="thumb"][data-state="checked"] {
+  transform: translateX(-12px);
+}
+
 /* The end of Skeleton UI overrides */
