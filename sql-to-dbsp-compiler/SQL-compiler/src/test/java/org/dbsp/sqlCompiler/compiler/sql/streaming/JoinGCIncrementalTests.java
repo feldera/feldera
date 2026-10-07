@@ -106,7 +106,10 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
         LR(LATENESS, LATENESS),
         /** Both inputs, with a larger LATENESS on the right, so that the right input accepts
          * older rows than the left. */
-        LR_LARGE(LATENESS, 6 * LATENESS);
+        LR_LARGE(LATENESS, 6 * LATENESS),
+        /** Both inputs, with a larger LATENESS on the left, so that the left input accepts rows
+         * older than the bound that the right waterline gives its trace. */
+        LARGE_LR(6 * LATENESS, LATENESS);
 
         /** The LATENESS of t in the left input; 0 for none. */
         final int left;
@@ -189,6 +192,9 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
         tester.insert(Set.of("RIGHT_L"), new Right(0, 100, 24));
         // The mirror case: a left row far below the right waterline
         tester.insert(Set.of("LEFT_R"), new Left(1, 99, 25));
+        // Delete a left row below the right waterline, which only the right input has: the ASOF
+        // join no longer keeps the row, and computes the retraction from the right trace
+        tester.delete(Set.of("LEFT_R"), new Left(0, 100, 1));
         // A right row that gives an unmatched left row of the outer joins its first match
         tester.insert(Set.of("RIGHT_L"), new Right(4, 105, 26));
         // Rows with a NULL t, which are never late, and the delete of an old one
@@ -419,26 +425,26 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
     /** The GC operators of each join shape, for each choice of the inputs with LATENESS: K is a
      * RetainKeys operator, V a RetainValues operator, and N a RetainNValues operator. */
     static final String EXPECTED_GC = """
-            shape            | L        | R        | LR       | LR_LARGE
-            inner_t          | K        | K        | KK       | KK
-            inner_kt         | K        | K        | KK       | KK
-            inner_expr       | K        | K        | KK       | KK
-            inner_k          | -        | -        | -        | -
-            inner_filter     | -        | V        | V        | V
-            left_t           | -        | K        | KK       | KK
-            left_kt          | -        | K        | KK       | KK
-            left_k           | -        | -        | -        | -
-            left_filter_anti | -        | V        | V        | V
-            right_t          | K        | -        | KK       | KK
-            right_k          | -        | -        | -        | -
-            full_t_anti      | K        | K        | KK       | KK
-            full_k_anti      | -        | -        | -        | -
-            asof             | -        | -        | NV       | NV
-            not_exists_t     | -        | KKN      | KKN      | KKN
-            not_exists_k     | -        | N        | N        | N
-            exists_t         | K        | KK       | KKK      | KKK
-            exists_k         | -        | -        | -        | -
-            not_in_t         | -        | KKN      | KKN      | KKN
+            shape            | L        | R        | LR       | LR_LARGE | LARGE_LR
+            inner_t          | K        | K        | KK       | KK       | KK
+            inner_kt         | K        | K        | KK       | KK       | KK
+            inner_expr       | K        | K        | KK       | KK       | KK
+            inner_k          | -        | -        | -        | -        | -
+            inner_filter     | -        | V        | V        | V        | V
+            left_t           | -        | K        | KK       | KK       | KK
+            left_kt          | -        | K        | KK       | KK       | KK
+            left_k           | -        | -        | -        | -        | -
+            left_filter_anti | -        | V        | V        | V        | V
+            right_t          | K        | -        | KK       | KK       | KK
+            right_k          | -        | -        | -        | -        | -
+            full_t_anti      | K        | K        | KK       | KK       | KK
+            full_k_anti      | -        | -        | -        | -        | -
+            asof             | -        | V        | NV       | NV       | NV
+            not_exists_t     | -        | KKN      | KKN      | KKN      | KKN
+            not_exists_k     | -        | N        | N        | N        | N
+            exists_t         | K        | KK       | KKK      | KKK      | KKK
+            exists_k         | -        | -        | -        | -        | -
+            not_in_t         | -        | KKN      | KKN      | KKN      | KKN
             """;
 
     /** The declaration of an input of a join, with LATENESS on t unless {@code lateness} is 0. */

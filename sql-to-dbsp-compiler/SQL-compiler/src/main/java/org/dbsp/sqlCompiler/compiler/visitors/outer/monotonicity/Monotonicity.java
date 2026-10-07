@@ -681,6 +681,9 @@ public class Monotonicity extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPAsofJoinOperator node) {
+        // The output timestamp has a waterline only when the match condition is >= or >
+        if (!node.isLeftAfterRight())
+            return;
         MonotoneExpression left = this.getMonotoneExpression(node.left());
         MonotoneExpression right = this.getMonotoneExpression(node.right());
         if (left == null && right == null)
