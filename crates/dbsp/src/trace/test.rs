@@ -2372,6 +2372,13 @@ fn run_indexed_wset_storage_merges(
             fc.allowed_filter_kinds().contains(&kind),
             "filter kind {kind:?} is not allowed under {fc:?}",
         );
+        if merged.is_empty() {
+            assert_eq!(
+                kind,
+                FilterKind::None,
+                "the empty merged batch has a filter"
+            );
+        }
         assert_batch_eq(&merged, &expected);
 
         // Check some absent probes across the input range.
@@ -2447,6 +2454,13 @@ fn run_indexed_wset_storage_merges_dense(batches: MergeInputBatches, fc: FilterC
             fc.allowed_filter_kinds().contains(&kind),
             "filter kind {kind:?} is not allowed under {fc:?}",
         );
+        if merged.is_empty() {
+            assert_eq!(
+                kind,
+                FilterKind::None,
+                "the empty merged batch has a filter"
+            );
+        }
 
         assert_batch_eq(&merged, &expected);
 
@@ -2549,6 +2563,39 @@ proptest! {
         ),
     ) {
         run_indexed_wset_storage_merges_dense(batches, FilterConfig::Neither);
+    }
+}
+
+/// Merges an empty input, inputs whose weights cancel, and an input whose keys
+/// a key filter drops, under every filter configuration.
+///
+/// Each merge picks its output's filter before it learns that no key survives.
+/// The runners check that the empty output has no filter, both as the merge
+/// built it and as reopened from its file.
+#[test]
+fn indexed_wset_storage_merges_to_empty_batch() {
+    for fc in [
+        FilterConfig::BloomOnly,
+        FilterConfig::RoaringOnly,
+        FilterConfig::Both,
+        FilterConfig::Neither,
+    ] {
+        run_indexed_wset_storage_merges_dense(vec![(Vec::new(), BatchLocation::Storage)], fc);
+        run_indexed_wset_storage_merges_dense(
+            vec![
+                (vec![Tup2(Tup2(5, 1), 2)], BatchLocation::Storage),
+                (vec![Tup2(Tup2(5, 1), -2)], BatchLocation::Memory),
+            ],
+            fc,
+        );
+        run_indexed_wset_storage_merges(
+            vec![(
+                vec![Tup2(Tup2(-5, 1), 1), Tup2(Tup2(7, 0), -1)],
+                BatchLocation::Storage,
+            )],
+            Some(7),
+            fc,
+        );
     }
 }
 

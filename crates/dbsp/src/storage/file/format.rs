@@ -232,6 +232,11 @@ pub struct FileTrailer {
     ///
     /// This is 0 if there is no filter block, or if the filter block size is
     /// bigger than `i32::MAX`.
+    ///
+    /// The writer never puts a filter block at offset 0: it writes the block
+    /// after the data, and it writes none for a file with no rows. Older
+    /// writers did put one at offset 0 in a file with no rows, with a nonzero
+    /// `filter_size`, and readers must ignore it.
     pub filter_offset: u64,
 
     /// Size in bytes of the filter block.
