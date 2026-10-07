@@ -1513,10 +1513,11 @@ fn default_model() -> Option<FtModel> {
 /// [`PipelineConfig`], which flattens one and carries the connectors in
 /// `inputs` and `outputs`; both levels are rewritten. The pipeline manager
 /// applies this to the configuration it hands a pipeline pinned to another
-/// runtime version: such a runtime may predate the rename, and a runtime that
-/// does ignores the current names and silently runs on its defaults, or, for a
+/// runtime version, or compiled by a platform before the rename and not yet
+/// updated: such a runtime may predate the rename, and a runtime that does
+/// ignores the current names and silently runs on its defaults, or, for a
 /// Kafka connector, rejects them. Every release up to 1.0 still accepts the
-/// older spelling, so writing it is safe whichever runtime is pinned.
+/// older spelling, so writing it is safe whichever runtime runs.
 ///
 /// A duration that is not a whole number of the older unit rounds up to the
 /// next one, so a positive duration never becomes a `0` the older runtime

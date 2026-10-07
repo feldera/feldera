@@ -121,6 +121,20 @@ fn provisioning_timed_out(since: DateTime<Utc>, now: DateTime<Utc>, timeout: Dur
     i64::try_from(timeout.as_millis()).is_ok_and(|timeout| elapsed > timeout)
 }
 
+/// The release that renamed the duration settings. A binary compiled by an
+/// earlier platform reads only the older spelling.
+const DURATION_RENAME_VERSION: Version = Version::new(0, 363, 0);
+
+/// Whether a pipeline compiled by `platform_version` predates the duration
+/// rename, in which case the executor hands it its duration settings in the
+/// older spelling. A pipeline keeps the binary it was compiled with until its
+/// runtime is updated, so after an upgrade it may still run an older one.
+/// A version that does not parse is taken to predate the rename: every runtime
+/// up to 1.0 reads the older spelling, so writing it is safe either way.
+fn platform_version_predates_duration_rename(platform_version: &str) -> bool {
+    !Version::parse(platform_version).is_ok_and(|version| version >= DURATION_RENAME_VERSION)
+}
+
 /// Whether the program configuration pins a runtime other than the platform's
 /// (Gen-2 runs on the platform's engine). Such a runtime may predate the
 /// duration rename, so the executor hands it its duration settings in the older
@@ -1413,6 +1427,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Some(program_info) => program_info,
         };
 
+        // A runtime from before the duration rename, whether pinned or the one
+        // this pipeline was compiled with, reads only the older spelling.
+        let legacy_duration_spelling = program_config_pins_runtime(&pipeline.program_config)
+            || platform_version_predates_duration_rename(&pipeline.platform_version);
+
         match self
             .pipeline_handle
             .provision(
@@ -1425,7 +1444,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 &program_info_url,
                 pipeline.program_version,
                 engine_is_gen2,
-                program_config_pins_runtime(&pipeline.program_config),
+                legacy_duration_spelling,
             )
             .await
         {
@@ -1983,6 +2002,25 @@ mod test {
     use uuid::Uuid;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate, http};
+
+    /// A pipeline compiled by a platform before the duration rename runs a
+    /// binary that reads only the older spelling, however it is pinned. One
+    /// compiled by that release or a later one reads the current spelling.
+    #[test]
+    fn a_platform_before_the_rename_gets_the_older_duration_spelling() {
+        use super::platform_version_predates_duration_rename as predates;
+        assert!(predates("0.362.0"));
+        assert!(predates("0.362.9+enterprise"));
+        assert!(predates("0.357.0+enterprise-dev.abc123"));
+        assert!(!predates("0.363.0"));
+        assert!(!predates("0.363.0+enterprise"));
+        assert!(!predates("0.364.1"));
+        assert!(!predates("1.0.0"));
+        // A version that does not parse is treated as predating the rename:
+        // the older spelling is safe for every runtime.
+        assert!(predates("v0"));
+        assert!(predates(""));
+    }
 
     /// Only a pinned runtime other than the platform's is handed the older
     /// duration spelling: the platform's own runtime and the Gen-2 engine read

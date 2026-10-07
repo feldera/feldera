@@ -68,9 +68,10 @@ pub trait PipelineExecutor: Sync + Send {
     /// engine, so no pipeline binary was compiled: the executor launches the
     /// Gen-2 engine and ignores `program_binary_url`.
     ///
-    /// When `legacy_duration_spelling` is true the pipeline runs a runtime
-    /// other than the platform's, which may predate the duration rename: the
-    /// executor writes the configuration the pipeline reads through
+    /// When `legacy_duration_spelling` is true the pipeline runs a runtime that
+    /// may predate the duration rename, because it is pinned to one other than
+    /// the platform's or was compiled by an earlier platform: the executor
+    /// writes the configuration the pipeline reads through
     /// [`feldera_types::config::to_legacy_duration_spelling`].
     #[allow(clippy::too_many_arguments)]
     async fn provision(

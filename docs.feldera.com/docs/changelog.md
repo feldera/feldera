@@ -88,9 +88,10 @@ Source edition can be found on github.
   program's connector configuration, as does its Avro format, so a program
   written with them fails to compile there.
 
-  A pipeline pinned to another runtime with `runtime_version` is handed its
-  duration settings under the old keys, in the runtime configuration and in
-  every connector, which every runtime up to 1.0 reads.
+  A pipeline pinned to another runtime with `runtime_version`, or compiled by
+  an earlier release and not yet updated to this one, is handed its duration
+  settings under the old keys, in the runtime configuration and in every
+  connector, which every runtime up to 1.0 reads.
   Pinning a runtime older than this release in the Enterprise edition does not
   compile, because the platform's enterprise crates, which such a pipeline
   builds against, use the new settings.
