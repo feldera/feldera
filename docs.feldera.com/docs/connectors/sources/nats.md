@@ -25,16 +25,16 @@ The connector configuration consists of three main sections:
 | `server_url`           | string | Yes      | NATS server URL (e.g., `nats://localhost:4222`) |
 | `auth`                 | object | No       | Authentication configuration (see [Authentication](#authentication)) |
 | `tls`                  | object | No       | TLS configuration (see [TLS](#tls)) |
-| `connection_timeout` | duration | No | Connection timeout, for example `10s`. How long to wait when establishing the initial connection to the NATS server. Replaces the deprecated `connection_timeout_secs` (integer seconds). Default: `10s` |
-| `request_timeout` | duration | No | Request timeout, for example `10s`. How long to wait for responses to requests. Replaces the deprecated `request_timeout_secs` (integer seconds). Default: `10s` |
+| `connection_timeout` | duration | No | Connection timeout, for example `10s`. How long to wait when establishing the initial connection to the NATS server. Replaces the deprecated `connection_timeout_secs`. Default: `10s` |
+| `request_timeout` | duration | No | Request timeout, for example `10s`. How long to wait for responses to requests. Replaces the deprecated `request_timeout_secs`. Default: `10s` |
 
 ### Stream Configuration
 
 | Property      | Type   | Required | Description |
 |--------------|--------|----------|-------------|
 | `stream_name` | string | Yes      | The name of the NATS JetStream stream to consume from |
-| `inactivity_timeout` | duration | No | Maximum idle time while waiting for the next message before running a stream/server health check, for example `60s`. Must be at least one second. Replaces the deprecated `inactivity_timeout_secs` (integer seconds). Default: `60s` |
-| `retry_interval` | duration | No | Delay between automatic retry attempts while the connector is in retry mode, for example `5s`. Must be at least one second. Replaces the deprecated `retry_interval_secs` (integer seconds). Default: `5s` |
+| `inactivity_timeout` | duration | No | Maximum idle time while waiting for the next message before running a stream/server health check, for example `60s`. Must be at least one second. Replaces the deprecated `inactivity_timeout_secs`. Default: `60s` |
+| `retry_interval` | duration | No | Delay between automatic retry attempts while the connector is in retry mode, for example `5s`. Must be at least one second. Replaces the deprecated `retry_interval_secs`. Default: `5s` |
 
 ### Consumer Configuration
 
@@ -50,7 +50,7 @@ The connector configuration consists of three main sections:
 | `metadata`        | map (string → string)   | No       | Consumer metadata key-value pairs |
 | `max_batch`       | integer                 | No       | Maximum messages per batch |
 | `max_bytes`       | integer                 | No       | Maximum bytes per batch |
-| `max_expiry` | duration | No | Maximum time a pull request stays parked on the server, for example `30s`. Replaces the deprecated `max_expires` (`{"secs": .., "nanos": ..}` object). |
+| `max_expiry` | duration | No | Maximum time a pull request stays parked on the server, for example `30s`. Replaces the deprecated `max_expires`. |
 
 #### Deliver Policy
 
