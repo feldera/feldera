@@ -8,6 +8,7 @@ use crate::db::operations::utils::{
 use crate::db::types::role::Role;
 use crate::db::types::tenant::TenantId;
 use crate::db::types::user::{MembershipOrigin, TenantMember, UserId, UserMembership, UserProfile};
+use chrono::{DateTime, Utc};
 use deadpool_postgres::Transaction;
 use std::str::FromStr;
 use uuid::Uuid;
@@ -276,6 +277,27 @@ pub async fn enroll_in_existing_tenants(
             .await?;
     }
     Ok(())
+}
+
+/// When the OIDC `(provider, subject)` got its first tenant membership, usually
+/// at the first login. `None` for a user without memberships, and for a user
+/// with a membership from before V36. The time of a later membership is not
+/// the signup time of such a user.
+pub async fn get_user_created_at(
+    txn: &Transaction<'_>,
+    provider: &str,
+    subject: &str,
+) -> Result<Option<DateTime<Utc>>, DBError> {
+    let stmt = txn
+        .prepare_cached(
+            "SELECT CASE WHEN bool_or(m.created_at IS NULL) THEN NULL ELSE min(m.created_at) END \
+             FROM tenant_membership m \
+             JOIN app_user u ON u.id = m.user_id \
+             WHERE u.provider = $1 AND u.subject = $2",
+        )
+        .await?;
+    let row = txn.query_one(&stmt, &[&provider, &subject]).await?;
+    Ok(row.get(0))
 }
 
 /// Lists the tenants a user may act in, joined with each tenant's name and
