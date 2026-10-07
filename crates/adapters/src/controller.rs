@@ -7004,6 +7004,10 @@ impl TransactionPhase {
 struct ConnectorTransactionPhase {
     phase: TransactionPhase,
     label: Option<String>,
+
+    /// True if every host of a distributed connector requests this
+    /// transaction (see [TransactionCoordination::all_hosts]).
+    all_hosts: bool,
 }
 
 impl ConnectorTransactionPhase {
@@ -7145,6 +7149,11 @@ pub struct TransactionInfo {
     /// This field is modified by each transaction initiator: the REST API and connectors.
     initiators: TransactionInitiators,
 
+    /// In a multihost pipeline, the connectors that made a request that every
+    /// host makes, and withdrew it, in the current transaction (see
+    /// [TransactionCoordination::all_hosts_done]).
+    all_hosts_done: HashSet<String>,
+
     /// Actual pipeline state, set by the circuit thread.
     transaction_state: TransactionState,
 
@@ -7174,6 +7183,7 @@ impl TransactionInfo {
             is_multihost,
             last_transaction_id: 0,
             initiators: TransactionInitiators::default(),
+            all_hosts_done: HashSet::new(),
             transaction_state: TransactionState::None,
             replay_transaction_id: None,
             replay_open_transaction_id: None,
@@ -7215,6 +7225,7 @@ impl TransactionInfo {
         &mut self,
         endpoint_name: &str,
         label: Option<&str>,
+        all_hosts: bool,
     ) -> Result<(), ControllerError> {
         if self.is_multihost {
             match self
@@ -7226,6 +7237,7 @@ impl TransactionInfo {
                     entry.insert(ConnectorTransactionPhase {
                         phase: TransactionPhase::Started,
                         label: label.map(String::from),
+                        all_hosts,
                     });
                     debug!("Connector {endpoint_name} initiated request for transaction");
                     return Ok(());
@@ -7260,6 +7272,7 @@ impl TransactionInfo {
                 entry.insert(ConnectorTransactionPhase {
                     phase: TransactionPhase::Started,
                     label: label.map(String::from),
+                    all_hosts,
                 });
                 debug!(
                     "Connector {endpoint_name} {} transaction {}{} ({} participants)",
@@ -7288,16 +7301,19 @@ impl TransactionInfo {
     ) -> Result<(), ControllerError> {
         if self.is_multihost {
             debug!("Connector {endpoint_name} requests transaction commit");
-            if self
+            return match self
                 .initiators
                 .initiated_by_connectors
                 .remove(endpoint_name)
-                .is_some()
             {
-                return Ok(());
-            } else {
-                return Err(ControllerError::NoTransactionInProgress);
-            }
+                Some(phase) => {
+                    if phase.all_hosts {
+                        self.all_hosts_done.insert(endpoint_name.to_string());
+                    }
+                    Ok(())
+                }
+                None => Err(ControllerError::NoTransactionInProgress),
+            };
         }
 
         let num_active_participants = self.initiators.num_active_participants();
@@ -7349,23 +7365,30 @@ impl TransactionInfo {
 
     fn clear_initiators(&mut self) {
         self.initiators.clear(self.is_multihost);
+        if !self.all_hosts_done.is_empty() {
+            self.all_hosts_done.clear();
+            self.update_transaction_status();
+        }
     }
 
     /// Sends an update to the transaction coordination status, if it has
     /// changed.
     fn update_transaction_status(&self) {
-        let coordination = TransactionCoordination {
-            requests: self
-                .initiators
+        let started = || {
+            self.initiators
                 .initiated_by_connectors
                 .iter()
-                .filter_map(
-                    |(name, phase)| match phase.phase == TransactionPhase::Started {
-                        true => Some((name.clone(), phase.label.clone())),
-                        false => None,
-                    },
-                )
+                .filter(|(_name, phase)| phase.phase == TransactionPhase::Started)
+        };
+        let coordination = TransactionCoordination {
+            requests: started()
+                .map(|(name, phase)| (name.clone(), phase.label.clone()))
                 .collect(),
+            all_hosts: started()
+                .filter(|(_name, phase)| phase.all_hosts)
+                .map(|(name, _phase)| name.clone())
+                .collect(),
+            all_hosts_done: self.all_hosts_done.clone(),
         };
         if *self.sender.borrow() != coordination {
             self.sender.send_replace(coordination);
@@ -9327,14 +9350,19 @@ impl ControllerInner {
         })
     }
 
+    /// Starts a transaction, or joins the one that is open, for connector
+    /// `endpoint_name`.  `all_hosts` is true if every host of a distributed
+    /// connector requests the transaction (see
+    /// [TransactionCoordination::all_hosts]).
     pub fn start_transaction_from_connector(
         &self,
         endpoint_name: &str,
         label: Option<&str>,
+        all_hosts: bool,
     ) -> Result<(), ControllerError> {
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
-        transaction_info.start_transaction_from_connector(endpoint_name, label)?;
+        transaction_info.start_transaction_from_connector(endpoint_name, label, all_hosts)?;
         transaction_info.update_transaction_status();
 
         Ok(())
@@ -9636,6 +9664,31 @@ impl Drop for InputProbe {
     }
 }
 
+impl InputProbe {
+    fn start_transaction_from_connector(&self, label: Option<&str>, all_hosts: bool) {
+        match self.controller.start_transaction_from_connector(
+            &self.endpoint_name,
+            label,
+            all_hosts,
+        ) {
+            Err(error) => {
+                self.controller.input_transport_error(
+                    self.endpoint_id,
+                    &self.endpoint_name,
+                    false,
+                    anyhow!(format!(
+                        "connector attempted to initiate a transaction, but failed: {error}"
+                    )),
+                    Some("connector_start_transaction"),
+                );
+            }
+            _ => {
+                self.transaction_in_progress.store(true, Ordering::Release);
+            }
+        }
+    }
+}
+
 impl InputConsumer for InputProbe {
     fn max_batch_size(&self) -> usize {
         self.max_batch_size
@@ -9711,25 +9764,11 @@ impl InputConsumer for InputProbe {
     }
 
     fn start_transaction(&self, label: Option<&str>) {
-        match self
-            .controller
-            .start_transaction_from_connector(&self.endpoint_name, label)
-        {
-            Err(error) => {
-                self.controller.input_transport_error(
-                    self.endpoint_id,
-                    &self.endpoint_name,
-                    false,
-                    anyhow!(format!(
-                        "connector attempted to initiate a transaction, but failed: {error}"
-                    )),
-                    Some("connector_start_transaction"),
-                );
-            }
-            _ => {
-                self.transaction_in_progress.store(true, Ordering::Release);
-            }
-        }
+        self.start_transaction_from_connector(label, false);
+    }
+
+    fn start_transaction_on_all_hosts(&self, label: Option<&str>) {
+        self.start_transaction_from_connector(label, true);
     }
 
     fn open_transaction(&self) -> Option<Option<TransactionId>> {
@@ -10513,5 +10552,49 @@ mod controller_init_tests {
             "max_worker_batch_size": max_queued_records + 2,
         }))
         .unwrap()
+    }
+}
+
+#[cfg(test)]
+mod all_hosts_transaction_tests {
+    use std::collections::HashSet;
+
+    use feldera_types::coordination::TransactionCoordination;
+
+    use super::TransactionInfo;
+
+    fn names(names: &[&str]) -> HashSet<String> {
+        names.iter().map(|name| name.to_string()).collect()
+    }
+
+    /// A multihost host reports a request that every host makes, and after
+    /// the connector commits, reports that it finished until the transaction
+    /// commits.
+    #[test]
+    fn host_reports_all_hosts_requests() {
+        let (sender, receiver) = tokio::sync::watch::channel(TransactionCoordination::default());
+        let mut info = TransactionInfo::new(true, sender);
+
+        info.start_transaction_from_connector("d", Some("snapshot-0"), true)
+            .unwrap();
+        info.start_transaction_from_connector("x", None, false)
+            .unwrap();
+        info.update_transaction_status();
+        let status = receiver.borrow().clone();
+        assert_eq!(status.requests.len(), 2);
+        assert_eq!(status.all_hosts, names(&["d"]));
+        assert!(status.all_hosts_done.is_empty());
+
+        info.commit_transaction_from_connector("d").unwrap();
+        info.commit_transaction_from_connector("x").unwrap();
+        info.update_transaction_status();
+        let status = receiver.borrow().clone();
+        assert!(status.requests.is_empty());
+        assert!(status.all_hosts.is_empty());
+        assert_eq!(status.all_hosts_done, names(&["d"]));
+
+        // The transaction starts committing.
+        info.clear_initiators();
+        assert!(receiver.borrow().all_hosts_done.is_empty());
     }
 }

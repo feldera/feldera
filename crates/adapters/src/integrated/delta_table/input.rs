@@ -788,21 +788,16 @@ fn validate_distributed(config: &DeltaTableReaderConfig) -> AnyResult<()> {
             "a distributed DeltaLake connector does not support 'cdc' mode, because 'cdc_order_by' requires a single reader"
         );
     }
-    // Each host would join the snapshot's transaction only when it reads its
-    // first records, so the hosts' parts of the snapshot could commit in
-    // different transactions.
-    if config.transaction_mode != DeltaTableTransactionMode::None {
-        bail!(
-            "a distributed DeltaLake connector supports only 'transaction_mode' 'none', because the hosts cannot yet read the snapshot in one transaction"
-        );
-    }
     // Only the home host follows the table, and it starts as soon as it has
-    // read its own part of the snapshot.  Unless a transaction holds them
-    // back, the changes that it reads could then reach the pipeline before
-    // the rows that they change, which other hosts are still reading.
-    if matches!(config.mode, DeltaTableIngestMode::SnapshotAndFollow) {
+    // read its own part of the snapshot.  The changes that it reads could then
+    // reach the pipeline before the rows that they change, which other hosts
+    // are still reading, unless the snapshot's transaction across the hosts
+    // holds them back.
+    if matches!(config.mode, DeltaTableIngestMode::SnapshotAndFollow)
+        && config.transaction_mode == DeltaTableTransactionMode::None
+    {
         bail!(
-            "a distributed DeltaLake connector does not support 'snapshot_and_follow' mode, because the host that follows the table could read changes to rows before the other hosts read those rows from the snapshot"
+            "a distributed DeltaLake connector in 'snapshot_and_follow' mode requires a 'transaction_mode' other than 'none', so that the host that follows the table does not read changes to rows before the other hosts read those rows from the snapshot"
         );
     }
     Ok(())
@@ -1585,6 +1580,11 @@ struct DeltaTableInputEndpointInner {
     /// for the other hosts to read the snapshot at (see
     /// [`InputReader::startup_choice`]).
     startup_choice: Mutex<Option<JsonValue>>,
+
+    /// The label of the snapshot transaction that
+    /// [`Self::start_distributed_snapshot_transaction`] requested, until the
+    /// snapshot query takes it.
+    started_snapshot_transaction: Mutex<Option<Option<Option<String>>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -1639,6 +1639,7 @@ impl DeltaTableInputEndpointInner {
             change_data_feed_enabled: AtomicBool::new(false),
             distributed,
             startup_choice: Mutex::new(None),
+            started_snapshot_transaction: Mutex::new(None),
         }
     }
 
@@ -1804,6 +1805,64 @@ impl DeltaTableInputEndpointInner {
             Some(end_version) => min(latest, end_version),
             None => latest,
         })
+    }
+
+    /// Returns true if we haven't completed a snapshot before the checkpoint
+    /// that `resume_status` came from was taken, that is, if:
+    /// - there is no checkpoint,
+    /// - the checkpoint was taken in the initial state, or
+    /// - the checkpoint was taken mid-snapshot (`snapshot_timestamp` is set).
+    fn snapshot_incomplete(resume_status: &Option<DeltaResumeInfo>) -> bool {
+        matches!(
+            resume_status,
+            None | Some(DeltaResumeInfo { version: None, .. })
+                | Some(DeltaResumeInfo {
+                    snapshot_timestamp: Some(_),
+                    ..
+                })
+        )
+    }
+
+    /// For a distributed connector that reads its snapshot in a transaction,
+    /// requests the transaction during initialization, before any host reads.
+    ///
+    /// Otherwise, a host requests the transaction only when it reads its first
+    /// records, and a host whose part of the snapshot has no files never
+    /// requests it.  The request marks the transaction as one that every host
+    /// requests, so the coordinator commits it only after every host has
+    /// committed its part of the snapshot.  The snapshot query reuses the label (see
+    /// [`Self::snapshot_transaction_label`]), and the snapshot's final queue
+    /// entry commits the transaction as usual.
+    fn start_distributed_snapshot_transaction(&self) {
+        if self.distributed.is_none()
+            || !self.config.snapshot()
+            || !Self::snapshot_incomplete(&self.last_resume_status.lock().unwrap())
+        {
+            return;
+        }
+        let Some(label) = self.allocate_snapshot_transaction_label() else {
+            return;
+        };
+        // Every host makes this request, so the coordinator keeps the
+        // transaction open until every host has committed its part.  During a
+        // snapshot, every queue entry's resume info is `None`.
+        self.queue.push_entry(
+            InputQueueEntry::new_with_aux(Utc::now(), QueueEntry::ResumeInfo(None))
+                .with_start_transaction_on_all_hosts(label.clone()),
+            Vec::new(),
+        );
+        *self.started_snapshot_transaction.lock().unwrap() = Some(Some(label));
+    }
+
+    /// Returns the label of the transaction for the snapshot query: the one
+    /// that [`Self::start_distributed_snapshot_transaction`] requested, if any,
+    /// or a new one.
+    fn snapshot_transaction_label(&self) -> Option<Option<String>> {
+        self.started_snapshot_transaction
+            .lock()
+            .unwrap()
+            .take()
+            .unwrap_or_else(|| self.allocate_snapshot_transaction_label())
     }
 
     fn allocate_snapshot_transaction_label(&self) -> Option<Option<String>> {
@@ -2370,6 +2429,8 @@ impl DeltaTableInputEndpointInner {
             return;
         }
 
+        self.start_distributed_snapshot_transaction();
+
         // Code before this point is part of endpoint initialization.
         // After this point, the thread should continue running until it receives a
         // shutdown command from the controller.
@@ -2391,18 +2452,7 @@ impl DeltaTableInputEndpointInner {
         // We verified that the table version is not None in the open_table method.
         let mut version = table.version().unwrap() as i64;
 
-        // We haven't completed a snapshot before the checkpoint was taken if
-        // - there is no checkpoint
-        // - the checkpoint was taken in the initial state
-        // - the checkpoint was taken mid-snapshot (snapshot_timestamp is set)
-        let snapshot_incomplete = matches!(
-            last_resume_status,
-            None | Some(DeltaResumeInfo { version: None, .. })
-                | Some(DeltaResumeInfo {
-                    snapshot_timestamp: Some(_),
-                    ..
-                })
-        );
+        let snapshot_incomplete = Self::snapshot_incomplete(&last_resume_status);
 
         let snapshot_record_count = if snapshot_incomplete
             && self.config.snapshot()
@@ -3166,7 +3216,7 @@ impl DeltaTableInputEndpointInner {
             &descr,
             input_stream,
             receiver,
-            self.allocate_snapshot_transaction_label(),
+            self.snapshot_transaction_label(),
             num_retries,
             None,
             // The snapshot reads through delta-rs's table provider, which
@@ -6701,8 +6751,24 @@ mod distributed_snapshot_tests {
         shard: Option<InputShard>,
         choice: Option<serde_json::Value>,
     ) -> DeltaTableInputEndpointInner {
-        let config: DeltaTableReaderConfig =
-            serde_json::from_value(json!({"uri": uri, "mode": mode})).unwrap();
+        endpoint_with_config(json!({"uri": uri, "mode": mode}), shard, choice)
+    }
+
+    fn endpoint_with_config(
+        config: serde_json::Value,
+        shard: Option<InputShard>,
+        choice: Option<serde_json::Value>,
+    ) -> DeltaTableInputEndpointInner {
+        endpoint_with_consumer(config, shard, choice, MockInputConsumer::new())
+    }
+
+    fn endpoint_with_consumer(
+        config: serde_json::Value,
+        shard: Option<InputShard>,
+        choice: Option<serde_json::Value>,
+        consumer: MockInputConsumer,
+    ) -> DeltaTableInputEndpointInner {
+        let config: DeltaTableReaderConfig = serde_json::from_value(config).unwrap();
         let relation = Relation::new(
             SqlIdentifier::new("t", false),
             vec![
@@ -6716,7 +6782,7 @@ mod distributed_snapshot_tests {
             "t.delta",
             config,
             SessionContext::new(),
-            Box::new(MockInputConsumer::new()),
+            Box::new(consumer),
             relation,
             None,
             shard.map(|shard| DistributedInput { shard, choice }),
@@ -6738,6 +6804,46 @@ mod distributed_snapshot_tests {
         assert!(!follows("snapshot", Some(shard(1))));
     }
 
+    /// A distributed connector that reads its snapshot in a transaction
+    /// requests the transaction at initialization, and the snapshot query
+    /// reuses its label.  Other connectors request it only when they read.
+    #[test]
+    fn distributed_snapshot_transaction_starts_early() {
+        let endpoint = |transaction_mode, shard| {
+            endpoint_with_config(
+                json!({"uri": "/tmp/t", "mode": "snapshot", "transaction_mode": transaction_mode}),
+                shard,
+                None,
+            )
+        };
+
+        let consumer = MockInputConsumer::new();
+        let distributed = endpoint_with_consumer(
+            json!({"uri": "/tmp/t", "mode": "snapshot", "transaction_mode": "snapshot"}),
+            Some(shard(2)),
+            None,
+            consumer.clone(),
+        );
+        distributed.start_distributed_snapshot_transaction();
+        assert_eq!(distributed.queue.len(), 1);
+        // The request is one that every host makes.
+        distributed.queue.flush_with_aux();
+        assert!(consumer.state().transaction_on_all_hosts);
+        let label = Some(Some("snapshot-0".to_string()));
+        assert_eq!(distributed.snapshot_transaction_label(), label);
+        // Only the first snapshot query reuses it.
+        assert_eq!(
+            distributed.snapshot_transaction_label(),
+            Some(Some("snapshot-1".to_string()))
+        );
+
+        for (transaction_mode, shard) in [("none", Some(shard(2))), ("snapshot", None)] {
+            let endpoint = endpoint(transaction_mode, shard);
+            endpoint.start_distributed_snapshot_transaction();
+            assert_eq!(endpoint.queue.len(), 0, "{transaction_mode} {shard:?}");
+        }
+    }
+
     /// A distributed connector rejects the settings that it cannot honor.
     #[test]
     fn distributed_rejects_unsupported_settings() {
@@ -6746,14 +6852,18 @@ mod distributed_snapshot_tests {
             config["uri"] = json!("/tmp/t");
             validate_distributed(&serde_json::from_value(config).unwrap())
         };
-        for config in [json!({"mode": "snapshot"}), json!({"mode": "follow"})] {
+        for config in [
+            json!({"mode": "snapshot"}),
+            json!({"mode": "follow"}),
+            json!({"mode": "snapshot", "transaction_mode": "snapshot"}),
+            json!({"mode": "snapshot_and_follow", "transaction_mode": "snapshot"}),
+        ] {
             assert!(validate(config.clone()).is_ok(), "{config}");
         }
         for config in [
             json!({"mode": "snapshot_and_follow"}),
             json!({"mode": "cdc"}),
             json!({"mode": "snapshot", "timestamp_column": "ts"}),
-            json!({"mode": "snapshot", "transaction_mode": "snapshot"}),
         ] {
             assert!(validate(config.clone()).is_err(), "{config}");
         }

@@ -327,6 +327,10 @@ ingested in a separate transaction.
 
 See `timestamp_column` documentation for more details.
 
+A [distributed connector](#distributed-connectors) ingests the snapshot
+in one transaction across all of the hosts: the transaction commits
+only after every host has ingested its part of the snapshot.
+
 ### Ingesting the Delta transaction log using transactions
 
 If the connector is configured in the `follow`, `snapshot_and_follow`, or `cdc` mode, and its
@@ -472,7 +476,8 @@ the hosts read each file exactly once.
     "name": "delta_table_input",
     "config": {
       "uri": "s3://my-bucket/big_table",
-      "mode": "snapshot"
+      "mode": "snapshot_and_follow",
+      "transaction_mode": "snapshot"
     }
   },
   "distributed": true
@@ -487,9 +492,16 @@ A distributed connector works as follows:
   that all of the hosts read one snapshot.
 - The hosts divide the snapshot's data files, not its partitions, so an
   unpartitioned table divides as well as a partitioned one.
-- In `follow` mode, only one host follows the table's transaction log,
-  because the log is a single sequence of commits.  The other hosts
-  end their input at once.
+- In `follow` and `snapshot_and_follow` modes, only one host follows the
+  table's transaction log after the snapshot, because the log is a
+  single sequence of commits.  The other hosts end their input after
+  their part of the snapshot.
+- In `snapshot_and_follow` mode, a distributed connector requires a
+  [`transaction_mode`](#transactions) other than `none`.  The hosts
+  then read the snapshot in one transaction, which commits after every
+  host has read its part, and the host that follows the table reads
+  changes only after that.  Otherwise, it could read changes to rows
+  before the other hosts read those rows from the snapshot.
 - When the pipeline resumes from a checkpoint, each host continues from
   its own checkpointed state.
   As for any multihost pipeline, the pipeline must have the same number
@@ -504,11 +516,6 @@ Limits:
   Thus, [tables with LATENESS] that need the snapshot in timestamp order
   cannot use a distributed connector.
 - A distributed connector does not support `cdc` mode.
-- A distributed connector supports only `transaction_mode` `none`,
-  because the hosts cannot yet read the snapshot in one transaction.
-- A distributed connector does not support `snapshot_and_follow` mode.
-  The host that follows the table could read changes to rows before
-  the other hosts read those rows from the snapshot.
 - The pipeline and its multihost coordinator must both support
   distributed Delta Lake connectors.  Otherwise, the pipeline fails to
   start.
