@@ -115,38 +115,38 @@
         <div
           class="sticky left-0 max-w-[100cqi] px-2 pt-0 md:pr-[calc(--spacing(5)-var(--scrollbar-width))] md:pl-5"
         >
-          <div class="relative flex min-h-40 w-full gap-4 p-6 sm:gap-12">
-            <div class="absolute top-0 left-0 -z-10 flex h-full w-full overflow-clip card">
-              <div
-                class="w-1/2 bg-gradient-to-br from-fuchsia-300 via-amber-50 to-orange-300 dark:from-fuchsia-700 dark:via-amber-950 dark:to-orange-700"
-              ></div>
-              <div
-                class="w-1/2 bg-gradient-to-tr from-orange-300 via-amber-50 to-amber-50 dark:from-orange-700 dark:via-amber-950 dark:to-amber-950"
-              ></div>
-            </div>
+          <div class="relative flex w-full items-center gap-4 p-6 sm:gap-12">
+            <div class="welcome-banner-bg absolute top-0 left-0 -z-10 h-full w-full card"></div>
+            <!-- A fixed, whole-pixel size (102 × 70px) close to the logo's 1.4516 ratio. The even
+                 height keeps it on whole pixels when centred beside the 76px text. -->
             {#if darkMode.current === 'dark'}
-              <FelderaLogomarkDark class="hidden h-full max-h-28 sm:inline"></FelderaLogomarkDark>
+              <FelderaLogomarkDark class="hidden h-[70px] w-[102px] shrink-0 sm:inline"
+              ></FelderaLogomarkDark>
             {:else}
-              <FelderaLogomarkLight class="hidden h-full max-h-28 sm:inline"></FelderaLogomarkLight>
+              <FelderaLogomarkLight class="hidden h-[70px] w-[102px] shrink-0 sm:inline"
+              ></FelderaLogomarkLight>
             {/if}
-            <div class="flex w-full flex-col justify-between gap-y-4">
+            <!-- The title (styled as "Your pipelines") with its links right below it, the
+                 two centred together beside the logo. -->
+            <div class="flex w-full flex-col justify-center gap-y-4">
               <div class="flex flex-nowrap justify-between">
-                <div class="text-2xl font-semibold">Explore our communities and documentation</div>
+                <div class="text-xl font-semibold">Explore our communities and documentation</div>
+                <!-- The negative margins keep the title row's height and the ×'s position. -->
                 <button
-                  class="fd fd-x w-7 text-[20px]"
+                  class="fd fd-x -my-0.5 -mr-2 btn-icon text-[16px] hover:preset-tonal-surface"
                   aria-label="Close"
                   onclick={() => (welcomed.value = !welcomed.value)}
                 ></button>
               </div>
 
-              <div class="flex flex-col gap-x-8 gap-y-4 lg:flex-row">
+              <div class="flex flex-col gap-3 lg:flex-row">
                 {#each featured as link}
                   <a
                     class="bg-white-dark btn px-6! py-3!"
                     href={link.href}
                     target="_blank"
                     rel="noreferrer"
-                    ><link.icon class="h-6 w-6 fill-surface-950-50"></link.icon>{link.title}</a
+                    ><link.icon class="h-4 w-4 fill-surface-950-50"></link.icon>{link.title}</a
                   >
                 {/each}
               </div>

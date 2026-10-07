@@ -325,6 +325,31 @@ input:focus {
   }
 }
 
+/* The home page's welcome banner: one continuous background instead of two gradient
+   halves, which met in a visible seam. A soft primary glow fans out from the top-left
+   corner and a faint warm yellow glow rises from the bottom, over a smooth base. */
+.welcome-banner-bg {
+  background:
+    radial-gradient(
+      55% 140% at 0% 0%,
+      color-mix(in oklab, var(--color-primary-300) 60%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(45% 120% at 55% 130%, oklch(92.4% 0.12 95.75 / 0.6), transparent 70%),
+    linear-gradient(100deg, oklch(98.7% 0.022 95.28), oklch(98% 0.016 73.68));
+
+  &:where(.dark, .dark *) {
+    background:
+      radial-gradient(
+        55% 140% at 0% 0%,
+        color-mix(in oklab, var(--color-primary-500) 50%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(45% 120% at 55% 130%, oklch(82.8% 0.189 84.43 / 0.22), transparent 70%),
+      linear-gradient(100deg, oklch(24% 0.02 70), oklch(22% 0.01 80) 60%, oklch(21% 0.005 90));
+  }
+}
+
 /* The small Skeleton `Switch`, after the smallest Figma "Switch" (28 × 16px with a 14px
    thumb) for use beside 16px checkboxes and small controls. Put `switch-sm` on the
    `<Switch>` root; the colours stay Skeleton's (Feldera primary when on). The thumb fills
