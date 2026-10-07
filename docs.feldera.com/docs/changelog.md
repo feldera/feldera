@@ -17,9 +17,8 @@ Source edition can be found on github.
   [Resizing a running pipeline](/pipelines/configuration#resizing-a-running-pipeline).
 
 - Behavior change (Enterprise, Kubernetes): pipeline StatefulSets now use the
-  `OnDelete` update strategy, so that a resized pod is not replaced when its
-  StatefulSet changes.  `kubectl rollout restart` no longer restarts a
-  pipeline pod; delete the pod with `kubectl delete pod` instead.
+  `OnDelete` update strategy.  To apply StatefulSet changes (e.g.,
+  `kubectl rollout restart`, `kubectl edit`, etc.), delete the pod.
 
 ## v0.362.0
 
