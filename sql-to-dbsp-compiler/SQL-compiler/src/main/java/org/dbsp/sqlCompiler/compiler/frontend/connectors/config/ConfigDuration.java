@@ -398,6 +398,10 @@ public final class ConfigDuration {
     private static BigInteger wholeNumber(JsonNode value) {
         if (!value.isNumber())
             return null;
+        // Jackson reads a literal such as 1e400 as an infinite double, which has no
+        // decimal value; it is no count of units either.
+        if (value.isFloatingPointNumber() && !Double.isFinite(value.doubleValue()))
+            return null;
         BigDecimal number = value.decimalValue();
         if (number.signum() < 0)
             return null;

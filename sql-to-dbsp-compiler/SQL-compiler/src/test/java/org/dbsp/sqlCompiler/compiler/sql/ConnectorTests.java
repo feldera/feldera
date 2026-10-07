@@ -2276,6 +2276,25 @@ public class ConnectorTests extends BaseSQLTests {
                     "expected a duration such as \"30s\", or a {secs, nanos} object");
     }
 
+    /**
+     * Jackson reads a number literal past the range of a double as infinity. Such a
+     * number is reported like any other value that is not a duration, rather than
+     * crashing the compiler on its conversion.
+     */
+    @Test
+    public void legacyKeyRejectsAnInfiniteNumber() {
+        for (String number : new String[] { "1e400", "-1e400" })
+            tableConnectorTest("""
+                    "transport": {
+                      "name": "url_input",
+                      "config": {
+                        "path": "https://example.com/data.csv",
+                        "pause_timeout": %s
+                      }
+                    }""".formatted(number),
+                    "expected a duration such as \"30s\"");
+    }
+
     /** A deprecated spelling also takes a duration string, which means what it says. */
     @Test
     public void legacyKeyAcceptsADurationString() {
