@@ -28,7 +28,8 @@ vi.mock('posthog-js', () => ({ default: m.posthog }))
 vi.mock('$lib/services/conceptualHq', () => ({
   initConceptualHq: () => {},
   isConceptualHqInitialized: () => false,
-  trackConceptualHq: () => {}
+  trackConceptualHq: () => {},
+  trackConceptualHqSignup: () => {}
 }))
 vi.mock('$lib/services/productFruits', () => ({ initProductFruits: () => {} }))
 vi.mock('$app/navigation', () => ({ goto: vi.fn(), invalidateAll: vi.fn() }))
