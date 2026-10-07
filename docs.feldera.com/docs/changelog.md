@@ -26,11 +26,13 @@ Source edition can be found on github.
   [`emit_final`](/tutorials/time-series#emitting-final-values-of-a-view-with-emit_final).
 
 - In a multihost pipeline, a Kafka input connector can now divide the
-  partitions of its topic among the hosts, and a Delta Lake input connector
-  can divide the data files of its snapshot.  Set the new connector attribute
-  [`distributed`](/connectors#distributed) to `true`.  See distributed
-  connectors for [Kafka](/connectors/sources/kafka#distributed-connectors) and
-  [Delta Lake](/connectors/sources/delta#distributed-connectors).
+  partitions of its topic among the hosts, and a Delta Lake or Iceberg input
+  connector can divide the data files of its snapshot.  Set the new connector
+  attribute [`distributed`](/connectors#distributed) to `true`.  See
+  distributed connectors for
+  [Kafka](/connectors/sources/kafka#distributed-connectors),
+  [Delta Lake](/connectors/sources/delta#distributed-connectors), and
+  [Iceberg](/connectors/sources/iceberg#distributed-connectors).
 
 ## v0.360.0
 

@@ -1,4 +1,5 @@
 mod input;
+mod share;
 
 pub use input::IcebergInputEndpoint;
 

@@ -5520,6 +5520,7 @@ name = "feldera-iceberg"
 version = "0.364.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "atomic",
  "bytemuck",
  "chrono",

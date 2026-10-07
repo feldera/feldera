@@ -2025,8 +2025,8 @@ pub struct ConnectorConfig {
     ///
     /// When `false` (the default), the connector runs on one host, which
     /// reads all of its input. When `true`, the connector runs on every host,
-    /// and each host reads a different part of the input. Only the Kafka
-    /// and Delta Lake input transports support this setting.
+    /// and each host reads a different part of the input. Only the Kafka,
+    /// Delta Lake, and Iceberg input transports support this setting.
     ///
     /// In a single-host pipeline, this setting has no effect.
     ///
@@ -2298,7 +2298,9 @@ impl TransportConfig {
     pub fn supports_distribution(&self) -> bool {
         matches!(
             self,
-            TransportConfig::KafkaInput(_) | TransportConfig::DeltaTableInput(_)
+            TransportConfig::KafkaInput(_)
+                | TransportConfig::DeltaTableInput(_)
+                | TransportConfig::IcebergInput(_)
         )
     }
 
@@ -2307,13 +2309,17 @@ impl TransportConfig {
     /// input.
     ///
     /// For example, the hosts of a Delta Lake connector must read the snapshot
-    /// at the same table version, or they could lose or duplicate records.
+    /// at the same table version, and the hosts of an Iceberg connector at the
+    /// same snapshot ID, or they could lose or duplicate records.
     /// Host 0 chooses the value, and the coordinator passes it to the other
     /// hosts in [CoordinationActivate::input_choices].
     ///
     /// [CoordinationActivate::input_choices]: crate::coordination::CoordinationActivate::input_choices
     pub fn needs_input_choice(&self) -> bool {
-        matches!(self, TransportConfig::DeltaTableInput(_))
+        matches!(
+            self,
+            TransportConfig::DeltaTableInput(_) | TransportConfig::IcebergInput(_)
+        )
     }
 }
 

@@ -9618,7 +9618,7 @@
             "properties": {
               "distributed": {
                 "type": "boolean",
-                "description": "Divide the input of this connector among the hosts of a multihost\npipeline. Valid for input connectors only.\n\nWhen `false` (the default), the connector runs on one host, which\nreads all of its input. When `true`, the connector runs on every host,\nand each host reads a different part of the input. Only the Kafka\nand Delta Lake input transports support this setting.\n\nIn a single-host pipeline, this setting has no effect.\n\nVersions of Feldera that predate this option ignore it."
+                "description": "Divide the input of this connector among the hosts of a multihost\npipeline. Valid for input connectors only.\n\nWhen `false` (the default), the connector runs on one host, which\nreads all of its input. When `true`, the connector runs on every host,\nand each host reads a different part of the input. Only the Kafka,\nDelta Lake, and Iceberg input transports support this setting.\n\nIn a single-host pipeline, this setting has no effect.\n\nVersions of Feldera that predate this option ignore it."
               },
               "format": {
                 "allOf": [

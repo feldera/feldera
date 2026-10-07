@@ -825,8 +825,8 @@ export type ConnectorConfig = OutputBufferConfig & {
    *
    * When `false` (the default), the connector runs on one host, which
    * reads all of its input. When `true`, the connector runs on every host,
-   * and each host reads a different part of the input. Only the Kafka
-   * and Delta Lake input transports support this setting.
+   * and each host reads a different part of the input. Only the Kafka,
+   * Delta Lake, and Iceberg input transports support this setting.
    *
    * In a single-host pipeline, this setting has no effect.
    *
