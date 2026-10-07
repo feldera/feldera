@@ -334,10 +334,15 @@ impl HttpInputEndpoint {
                     let eoi = match timeout(Duration::from_millis(1_000), payload.next()).await {
                         Err(_elapsed) => continue,
                         Ok(Some(Err(e))) => {
-                            self.error(true, anyhow!(e.to_string()), None);
+                            // A broken request body, for example a client that
+                            // hangs up, fails this request only. The endpoint is
+                            // shared by later requests to the same table, so a
+                            // fatal error here would stay in `/stats` while the
+                            // endpoint keeps accepting data.
+                            self.error(false, anyhow!(e.to_string()), None);
                             Err(ControllerError::input_transport_error(
                                 self.name(),
-                                true,
+                                false,
                                 anyhow!(e),
                             ))?
                         }
