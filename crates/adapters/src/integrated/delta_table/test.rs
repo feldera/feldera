@@ -9,7 +9,7 @@ use crate::test::{
     DeltaTestStruct, file_to_zset, list_files_recursive, test_circuit, test_circuit_with_index,
     wait,
 };
-use crate::{Catalog, CircuitCatalog};
+use crate::{Catalog, CircuitCatalog, PipelineState};
 use arrow::datatypes::{DataType as ArrowDataType, FieldRef, Schema as ArrowSchema};
 use chrono::NaiveDate;
 use dbsp::circuit::CircuitConfig;
@@ -311,6 +311,11 @@ struct CatchupLagExperimentOptions<'a> {
     clear_read_failure_after_unhealthy: bool,
     /// When true, ingestion must not reach the round's target version; skips output validation.
     expect_ingest_failure: bool,
+    /// In this round, append the first version while the endpoint runs, with listing of the
+    /// input table's `_delta_log` blocked (Unix only), so that the connector reads the version but
+    /// keeps retrying the catchup target listing. Pause during those retries, unblock the listing,
+    /// and write the round's other versions while paused.
+    pause_during_listing_round: Option<usize>,
 }
 
 fn catchup_lag_options<'a>(
@@ -328,6 +333,7 @@ fn catchup_lag_options<'a>(
         inject_read_failure_before_resume_round: None,
         clear_read_failure_after_unhealthy: false,
         expect_ingest_failure: false,
+        pause_during_listing_round: None,
     }
 }
 
@@ -389,6 +395,7 @@ async fn run_catchup_lag_experiment(
         inject_read_failure_before_resume_round,
         clear_read_failure_after_unhealthy,
         expect_ingest_failure,
+        pause_during_listing_round,
     } = opts;
 
     let relation_schema = DeltaTestStruct::schema();
@@ -514,6 +521,38 @@ async fn run_catchup_lag_experiment(
     let mut ingest_failed_as_expected = false;
 
     'rounds: for (round, &num_versions) in versions_per_round.iter().enumerate() {
+        let metric_at_round_start = delta_follow_transaction_starts(&pipeline);
+        let version_before_burst = table.version().unwrap() as i64;
+        let pause_during_listing = pause_during_listing_round == Some(round);
+        #[cfg(unix)]
+        let mut listing_restore = Vec::new();
+        let mut written_while_running = 0;
+        if pause_during_listing {
+            assert!(
+                snapshot_and_follow || round > 0,
+                "the endpoint must be running at the start of round {round}"
+            );
+            #[cfg(not(unix))]
+            panic!("blocking the catchup target listing requires a Unix platform");
+            let record = delta_test_record(record_index * 2);
+            record_index += 1;
+            // Reading a commit by name still works, but listing the log fails and is retried.
+            #[cfg(unix)]
+            append_table_version_with_listing_blocked(
+                &table,
+                &input_table_root,
+                &arrow_schema,
+                &record,
+                &mut listing_restore,
+            )
+            .await;
+            let mut record = record;
+            record.unused = None;
+            expected_output.push(record);
+            written_while_running = 1;
+            // The connector read the new version and failed to list the log.
+            wait_input_endpoint_unhealthy(&pipeline, 60_000);
+        }
         if snapshot_and_follow || round > 0 {
             pipeline
                 .pause_input_endpoint(DELTA_TEST_INPUT_ENDPOINT)
@@ -528,11 +567,25 @@ async fn run_catchup_lag_experiment(
             )
             .expect("timeout waiting for input endpoint to pause");
         }
+        #[cfg(unix)]
+        if pause_during_listing {
+            // The pause reaches the connector asynchronously. Wait for it, then let the listing
+            // succeed while paused.
+            let reader = pipeline
+                .get_input_endpoint(DELTA_TEST_INPUT_ENDPOINT)
+                .unwrap()
+                .as_any()
+                .downcast::<super::input::DeltaTableInputReader>()
+                .unwrap();
+            wait(|| reader.state() == PipelineState::Paused, 60_000)
+                .expect("timeout waiting for the pause to reach the connector");
+            restore_delta_input_table_read_permission(std::mem::take(&mut listing_restore))
+                .unwrap_or_else(|e| panic!("round {round}: unblock listing of the delta log: {e}"));
+            wait_input_endpoint_healthy(&pipeline, 60_000);
+            table.update_incremental(None).await.unwrap();
+        }
 
-        let metric_at_round_start = delta_follow_transaction_starts(&pipeline);
-        let version_before_burst = table.version().unwrap() as i64;
-
-        for _ in 0..num_versions {
+        for _ in written_while_running..num_versions {
             let record = delta_test_record(record_index * 2);
             record_index += 1;
             table = append_table_version(table, &arrow_schema, &record).await;
@@ -2281,6 +2334,14 @@ fn delta_data(max_records: usize) -> impl Strategy<Value = Vec<DeltaTestStruct>>
     })
 }
 
+/// Whether the tests run as root, which ignores the directory permissions that the read failure
+/// tests remove.
+#[cfg(unix)]
+fn running_as_root() -> bool {
+    // SAFETY: `geteuid` cannot fail and has no side effects.
+    unsafe { libc::geteuid() == 0 }
+}
+
 /// Remove owner read and execute on the delta table **root directory only**, and push that path
 /// and its original mode onto `saved` for [`restore_delta_input_table_read_permission`].
 ///
@@ -2309,6 +2370,80 @@ fn strip_delta_input_table_read_permission(
     let mut perms = meta.permissions();
     perms.set_mode(new_mode);
     fs::set_permissions(table_root, perms)?;
+    Ok(())
+}
+
+/// Append `record` as one new version of the table at `table_root`, with read permission on its
+/// `_delta_log` directory removed first, and push the directory's original mode onto `saved` for
+/// [`restore_delta_input_table_read_permission`]. Commits can still be read by name, but listing
+/// the log fails. `table` is not updated.
+///
+/// The delta-rs writer lists the log, so the commit is written in a copy of the table and then
+/// moved into place.
+#[cfg(unix)]
+async fn append_table_version_with_listing_blocked(
+    table: &DeltaTable,
+    table_root: &Path,
+    arrow_schema: &ArrowSchema,
+    record: &DeltaTestStruct,
+    saved: &mut Vec<(PathBuf, u32)>,
+) {
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    // Write the new version in a copy of the table.
+    let copy_dir = TempDir::new().unwrap();
+    copy_dir_recursive(table_root, copy_dir.path()).unwrap();
+    let copy =
+        DeltaTableBuilder::from_url(ensure_table_uri(copy_dir.path().to_str().unwrap()).unwrap())
+            .unwrap()
+            .load()
+            .await
+            .unwrap();
+    let copy = append_table_version(copy, arrow_schema, record).await;
+    let version = copy.version().unwrap();
+    assert_eq!(version, table.version().unwrap() + 1);
+
+    // Copy the new data files, then block listing and move the commit into place.
+    copy_new_files(copy_dir.path(), table_root).unwrap();
+    let log_dir = table_root.join("_delta_log");
+    let mode = fs::metadata(&log_dir).unwrap().permissions().mode();
+    saved.push((log_dir.clone(), mode));
+    fs::set_permissions(&log_dir, fs::Permissions::from_mode(mode & !0o444)).unwrap();
+    let commit = format!("{version:020}.json");
+    let staged = table_root.join(format!("{commit}.tmp"));
+    fs::copy(copy_dir.path().join("_delta_log").join(&commit), &staged).unwrap();
+    fs::rename(&staged, log_dir.join(&commit)).unwrap();
+}
+
+fn copy_dir_recursive(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&entry.path(), &target)?;
+        } else {
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
+/// Copy the files under `from`, outside `_delta_log`, that do not exist under `to`.
+fn copy_new_files(from: &Path, to: &Path) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            if entry.file_name() != "_delta_log" {
+                std::fs::create_dir_all(&target)?;
+                copy_new_files(&entry.path(), &target)?;
+            }
+        } else if !target.exists() {
+            std::fs::copy(entry.path(), target)?;
+        }
+    }
     Ok(())
 }
 
@@ -3635,6 +3770,27 @@ async fn delta_table_catchup_batches_multiple_versions_test() {
     );
 }
 
+/// A pause that lands while the connector lists the table to choose a catchup target must not
+/// latch a target from before the pause: the commits written during the pause belong to the
+/// same window as the one that started the listing.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_catchup_pause_during_target_listing_test() {
+    if running_as_root() {
+        eprintln!("skipping: root ignores directory permissions");
+        return;
+    }
+    let mut options =
+        catchup_lag_options(DeltaTableTransactionMode::Catchup, &[2, 3], None, Some(4));
+    options.pause_during_listing_round = Some(1);
+    let result = run_catchup_lag_experiment(options).await;
+    assert_eq!(
+        result.follow_transactions_per_round,
+        vec![1, 1],
+        "a pause during the catchup target listing must not split the round into two windows"
+    );
+}
+
 /// Control for [`delta_table_catchup_batches_multiple_versions_test`]: `always` mode commits once
 /// per Delta log version in each round.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -3694,6 +3850,10 @@ async fn delta_table_catchup_rapid_versions_test() {
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delta_table_catchup_transient_read_failure_test() {
+    if running_as_root() {
+        eprintln!("skipping: root ignores directory permissions");
+        return;
+    }
     let result = run_catchup_lag_experiment(CatchupLagExperimentOptions {
         transaction_mode: DeltaTableTransactionMode::Catchup,
         versions_per_round: &[2, 2],
@@ -3703,6 +3863,7 @@ async fn delta_table_catchup_transient_read_failure_test() {
         inject_read_failure_before_resume_round: Some(0),
         clear_read_failure_after_unhealthy: true,
         expect_ingest_failure: false,
+        pause_during_listing_round: None,
     })
     .await;
     assert_eq!(
@@ -3725,6 +3886,10 @@ async fn delta_table_catchup_transient_read_failure_test() {
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delta_table_catchup_max_retries_fatal_test() {
+    if running_as_root() {
+        eprintln!("skipping: root ignores directory permissions");
+        return;
+    }
     let result = run_catchup_lag_experiment(CatchupLagExperimentOptions {
         transaction_mode: DeltaTableTransactionMode::Catchup,
         versions_per_round: &[1],
@@ -3734,6 +3899,7 @@ async fn delta_table_catchup_max_retries_fatal_test() {
         inject_read_failure_before_resume_round: Some(0),
         clear_read_failure_after_unhealthy: false,
         expect_ingest_failure: true,
+        pause_during_listing_round: None,
     })
     .await;
     assert!(
