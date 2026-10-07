@@ -1518,10 +1518,11 @@ fn default_model() -> Option<FtModel> {
 /// Kafka connector, rejects them. Every release up to 1.0 still accepts the
 /// older spelling, so writing it is safe whichever runtime is pinned.
 ///
-/// A duration that is not a whole number of the older unit rounds to the
-/// nearest one, halves up, and is capped at the largest value the older field
-/// holds; a value that does not parse is left as it is, for the runtime to
-/// reject.
+/// A duration that is not a whole number of the older unit rounds up to the
+/// next one, so a positive duration never becomes a `0` the older runtime
+/// reads as "no timeout" or "pull without pause", and is capped at the largest
+/// value the older field holds; a value that does not parse is left as it is,
+/// for the runtime to reject.
 pub fn to_legacy_duration_spelling(config: &mut serde_json::Value) {
     use crate::duration::LegacyUnit;
     use serde_json::{Map, Value};
@@ -1566,7 +1567,7 @@ pub fn to_legacy_duration_spelling(config: &mut serde_json::Value) {
                     Ok(duration) => {
                         let nanos = std::time::Duration::from(duration).as_nanos();
                         let unit_nanos = u128::from(rule.unit.nanos());
-                        let whole = (nanos + unit_nanos / 2) / unit_nanos;
+                        let whole = nanos.div_ceil(unit_nanos);
                         Value::from(u64::try_from(whole).unwrap_or(U64).min(rule.max))
                     }
                     Err(_) => {
@@ -2235,10 +2236,10 @@ mod test {
         );
     }
 
-    /// Durations that are not a whole number of the older unit round to the
-    /// nearest one; a disabled checkpoint stays disabled; an unset required
-    /// field is dropped rather than written as `null`; a value that does not
-    /// parse is left for the runtime to reject.
+    /// Durations that are not a whole number of the older unit round up, so a
+    /// short timeout never becomes a zero one; a disabled checkpoint stays
+    /// disabled; an unset required field is dropped rather than written as
+    /// `null`; a value that does not parse is left for the runtime to reject.
     #[test]
     fn legacy_duration_spelling_edge_cases() {
         let mut config = serde_json::json!({
@@ -2247,7 +2248,8 @@ mod test {
             "fault_tolerance": {"checkpoint_interval": null},
             "clock_resolution": "10sec",
             "storage": {"backend": {"name": "file", "config": {
-                "sync": {"bucket": "b", "min_retention": "12h"}}}},
+                "ioop_latency": "400us",
+                "sync": {"bucket": "b", "min_retention": "11h", "standby_pull_interval": "400ms"}}}},
         });
         super::to_legacy_duration_spelling(&mut config);
         assert_eq!(
@@ -2257,9 +2259,15 @@ mod test {
                 "fault_tolerance": {"checkpoint_interval_secs": null},
                 "clock_resolution": "10sec",
                 "storage": {"backend": {"name": "file", "config": {
-                    "sync": {"bucket": "b", "retention_min_age": 1}}}},
+                    "ioop_delay": 1,
+                    "sync": {"bucket": "b", "retention_min_age": 1, "pull_interval": 1}}}},
             })
         );
+
+        // A zero stays a zero: only a positive duration is pushed up to one unit.
+        let mut zero = serde_json::json!({"provisioning_timeout": "0"});
+        super::to_legacy_duration_spelling(&mut zero);
+        assert_eq!(zero, serde_json::json!({"provisioning_timeout_secs": 0}));
 
         // Already in the older spelling: nothing to do.
         let legacy = serde_json::json!({"clock_resolution_usecs": 5, "workers": 1});
