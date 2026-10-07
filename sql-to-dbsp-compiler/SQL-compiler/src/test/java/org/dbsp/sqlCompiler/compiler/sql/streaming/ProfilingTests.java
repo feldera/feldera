@@ -413,6 +413,92 @@ public class ProfilingTests extends StreamingTestBase {
         Assert.assertEquals(0L, (long) measured[2]);
     }
 
+    /** A linear aggregate grouped by a column with LATENESS keeps in its input trace only the
+     * groups at or above the waterline. */
+    @Test
+    public void profileLinearAggregateRetainKeys() throws IOException, InterruptedException, SQLException {
+        if (BaseSQLTests.skipRust)
+            return;
+        String sql = """
+                CREATE TABLE events (
+                    event_time TIMESTAMP NOT NULL LATENESS INTERVAL 5 MINUTES,
+                    id BIGINT NOT NULL,
+                    amount BIGINT NOT NULL
+                );
+                CREATE VIEW event_totals AS
+                SELECT event_time, id, COUNT(*) AS row_count, SUM(amount) AS amount_sum
+                FROM events
+                GROUP BY event_time, id;""";
+        // One batch per minute with a row for each id: a new group for every (minute, id).
+        // The five minute LATENESS keeps six minutes of groups live, about 300 of 100,000.
+        String main = """
+                #![allow(unused_imports)]
+
+                use dbsp::{
+                    circuit::{CircuitConfig, metrics::TOTAL_LATE_RECORDS},
+                    utils::Tup3,
+                    zset,
+                };
+                use feldera_sqllib::{append_to_collection_handle, read_output_spine, Timestamp};
+
+                use std::fs::File;
+                use std::io::Write;
+                use std::sync::atomic::Ordering;
+                use std::time::Duration;
+                use temp::circuit;
+
+                const MINUTES: i64 = 2000;
+                // The state is measured here and at the end of the stream
+                const HALF: i64 = MINUTES / 2;
+                const IDS: i64 = 50;
+                const MS_PER_MINUTE: i64 = 60000;
+                // Milliseconds of the first batch
+                const START_MS: i64 = 1788858000000;
+
+                #[test]
+                pub fn test() {
+                    let (mut circuit, streams) = circuit(
+                        CircuitConfig::with_workers(3)).expect("could not build circuit");
+                    let mut half: u64 = 0;
+                    for minute in 0..MINUTES {
+                        let event_time = Timestamp::from_milliseconds(START_MS + minute * MS_PER_MINUTE);
+                        for id in 0..IDS {
+                            let batch = zset!(Tup3::new(event_time, id, minute + id) => 1);
+                            append_to_collection_handle(&batch, &streams.0);
+                        }
+                        let _ = circuit.transaction().expect("could not run circuit");
+                        let _ = &read_output_spine(&streams.1);
+                        if minute == HALF - 1 {
+                            half = state(&mut circuit);
+                        }
+                    }
+                    let full = state(&mut circuit);
+                    let late = TOTAL_LATE_RECORDS.load(Ordering::Relaxed);
+                    let data = format!("{},{},{}\n", half, full, late);
+                    let mut file = File::create("mem.txt").expect("Could not create file");
+                    file.write_all(data.as_bytes()).expect("Could not write data");
+                }
+
+                /// The size of the circuit state, in bytes.
+                fn state(circuit: &mut dbsp::DBSPHandle) -> u64 {
+                    circuit.start_compaction().expect("could not start compaction");
+                    circuit.wait_for_compaction(Duration::from_secs(600))
+                        .expect("compaction did not converge");
+                    let profile = circuit.retrieve_profile().expect("could not get profile");
+                    profile.total_used_bytes().unwrap().bytes as u64
+                }""";
+        // The three numbers are the bytes at half the stream, the bytes at the end, and the
+        // late rows.
+        Long[] measured = this.measure(sql, main);
+        if (measured[1] > 1.05 * measured[0]) {
+            System.err.println("State after half the stream and after all of it:");
+            System.err.println(Arrays.toString(measured));
+            Assert.fail("The input trace of the aggregate grew with the stream");
+        }
+        // No row is late
+        Assert.assertEquals(0L, (long) measured[2]);
+    }
+
     @Test
     public void profileRetainValues() throws IOException, InterruptedException, SQLException {
         // Based on Q9.  Check whether integrate_trace_retain_values works as expected.
