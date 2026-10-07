@@ -6,14 +6,13 @@ import type { UserProfile } from '$lib/types/auth'
 let initialized = false
 
 /**
- * Initialize PostHog for the signed-in user: start the SDK, identify the user,
- * and report a `signin` event. The telemetry key is served by the
- * pipeline-manager in `/config` (`config.posthog`), so deployments configure it
- * without rebuilding the console.
+ * Initialize PostHog for the signed-in user: start the SDK and identify the
+ * user. `reportLogin` in `analytics.ts` sends the `signin` event. The
+ * pipeline-manager serves the telemetry key in `/config` (`config.posthog`), so
+ * deployments configure it without a rebuild of the console.
  *
- * Mirrors `initConceptualHq`: idempotent via its own `initialized` guard, so the
- * warm-cache reconcile and `invalidateAll()` re-runs report `signin` once per
- * session. No-op when the key is empty or outside the browser.
+ * Mirrors `initConceptualHq`: idempotent via its own `initialized` guard. No-op
+ * when the key is empty or outside the browser.
  */
 export const initPosthog = (config: Configuration, profile: UserProfile) => {
   if (initialized || !config.posthog || typeof window === 'undefined') {
@@ -35,6 +34,4 @@ export const initPosthog = (config: Configuration, profile: UserProfile) => {
       auth_id: profile.id
     })
   }
-
-  posthog.capture('signin')
 }

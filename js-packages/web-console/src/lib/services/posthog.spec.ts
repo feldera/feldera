@@ -32,7 +32,7 @@ afterEach(() => {
 })
 
 describe('initPosthog', () => {
-  it('starts the SDK, identifies the user, and captures signin', async () => {
+  it('starts the SDK and identifies the user, without signin', async () => {
     const { initPosthog } = await freshModule(true)
     initPosthog(config('ph-key'), profile)
     expect(init).toHaveBeenCalledExactlyOnceWith('ph-key', {
@@ -46,22 +46,23 @@ describe('initPosthog', () => {
       name: 'Ann',
       auth_id: 'user-1'
     })
-    expect(capture).toHaveBeenCalledExactlyOnceWith('signin')
+    // `signin` comes from `reportLogin` in `analytics.ts`.
+    expect(capture).not.toHaveBeenCalled()
   })
 
-  it('captures signin even when the profile has no email (skips identify)', async () => {
+  it('skips identify when the profile has no email', async () => {
     const { initPosthog } = await freshModule(true)
     initPosthog(config('ph-key'), { id: 'user-1' })
+    expect(init).toHaveBeenCalledOnce()
     expect(identify).not.toHaveBeenCalled()
-    expect(capture).toHaveBeenCalledExactlyOnceWith('signin')
   })
 
-  it('is idempotent: a second call reports signin once', async () => {
+  it('is idempotent: a second call is a no-op', async () => {
     const { initPosthog } = await freshModule(true)
     initPosthog(config('ph-key'), profile)
     initPosthog(config('ph-key'), profile)
     expect(init).toHaveBeenCalledOnce()
-    expect(capture).toHaveBeenCalledOnce()
+    expect(identify).toHaveBeenCalledOnce()
   })
 
   it('does nothing when the key is empty', async () => {

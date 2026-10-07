@@ -22,6 +22,8 @@ export type SignInDetails = {
   userInfo: OidcUserInfo
   profile: UserProfile
   accessToken: string
+  /** The `auth_time` claim: when the user last authenticated at the identity provider. */
+  authTime?: number
 }
 
 export type AuthDetails =
