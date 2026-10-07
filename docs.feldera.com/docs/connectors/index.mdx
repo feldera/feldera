@@ -184,8 +184,9 @@ The following attributes are common to all connectors:
   connector runs on one host, which reads all of its input.  In a single-host
   pipeline, this setting has no effect.
 
-  Only the [Kafka](/connectors/sources/kafka#distributed-connectors) and
-  [Delta Lake](/connectors/sources/delta#distributed-connectors) input
+  Only the [Kafka](/connectors/sources/kafka#distributed-connectors),
+  [Delta Lake](/connectors/sources/delta#distributed-connectors), and
+  [Iceberg](/connectors/sources/iceberg#distributed-connectors) input
   connectors support this setting.  For other connectors, a pipeline with
   `distributed` set to `true` fails to start.
 
