@@ -9,10 +9,45 @@
 //!
 //! # Startup
 //!
-//! At startup, a pipeline within a multihost pipeline enters a special
-//! [RuntimeStatus::Coordination] state, in which it waits for instructions from
-//! the coordinator.  When it is ready, the coordinator sends a
-//! [CoordinationActivate] request to properly start the pipeline.
+//! A pipeline within a multihost pipeline starts up as follows:
+//!
+//! 1. It enters a special [RuntimeStatus::Coordination] state, in which it
+//!    waits for instructions from the coordinator.  It reports its status, and
+//!    the coordination features that it supports (see
+//!    [CoordinationCapabilities]), at `/coordination/status`.
+//!
+//! 2. The coordinator sends a [CoordinationActivate] request.  It tells the
+//!    pipeline the addresses of all of the hosts, the checkpoint to start
+//!    from, the input and output connectors that this host runs, and, for
+//!    distributed input connectors, how their input is divided among the hosts
+//!    ([CoordinationActivate::input_distribution]) and the values that
+//!    host 0 chose for them ([CoordinationActivate::input_choices]).
+//!
+//! 3. The pipeline builds its circuit and restores the checkpoint.  If the
+//!    pipeline changed since the checkpoint and the change needs approval, it
+//!    waits for the coordinator to forward `/approve`.  An `/approve` that
+//!    arrives before activation is remembered, so a host that the coordinator
+//!    activates late does not wait again.
+//!
+//! 4. The pipeline initializes its connectors, and makes the values that its
+//!    distributed input connectors chose available at
+//!    `/coordination/input/choices` (see [InputChoices]).
+//!
+//! 5. Unless it must bootstrap, the pipeline runs one step, which needs every
+//!    other host to be at this stage too.  Then it reports that it is paused,
+//!    or bootstrapping.
+//!
+//! The pipeline exchanges no data with the other hosts before stage 5, so it
+//! can do stages 1 to 4 while the other hosts have not started yet.  The
+//! coordinator relies on that when a distributed input connector needs one
+//! host to choose a value for all of them, such as a Delta Lake table's
+//! version: it activates host 0 alone, waits until
+//! `/coordination/input/choices` on host 0 succeeds, and then activates the
+//! other hosts with those values.
+//! It cannot wait for host 0 to be paused, because host 0 cannot get there
+//! until the other hosts reach stage 5.
+//!
+//! The coordinator's documentation lists the stages of startup in order.
 //!
 //! [RuntimeStatus::Coordination]: crate::runtime_status::RuntimeStatus::Coordination
 //!
