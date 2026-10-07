@@ -303,6 +303,10 @@ pub struct InputQueueEntry<A, B> {
     /// unless a transaction is already in progress.
     start_transaction: Option<Option<String>>,
 
+    /// Whether every host of a distributed connector requests the transaction
+    /// in `start_transaction` (see [InputConsumer::start_transaction_on_all_hosts]).
+    on_all_hosts: bool,
+
     /// Commit the transaction after pushing the buffer to the circuit if there is a transaction in progress.
     commit_transaction: bool,
 
@@ -317,6 +321,7 @@ impl<A, B> InputQueueEntry<A, B> {
             buffer: None,
             timestamp,
             start_transaction: None,
+            on_all_hosts: false,
             commit_transaction: false,
             aux,
         }
@@ -332,6 +337,18 @@ impl<A, B> InputQueueEntry<A, B> {
     pub fn with_start_transaction(self, start_transaction: Option<Option<String>>) -> Self {
         Self {
             start_transaction,
+            on_all_hosts: false,
+            ..self
+        }
+    }
+
+    /// Like [Self::with_start_transaction], for a transaction that every host
+    /// of a distributed connector requests (see
+    /// [InputConsumer::start_transaction_on_all_hosts]).
+    pub fn with_start_transaction_on_all_hosts(self, label: Option<String>) -> Self {
+        Self {
+            start_transaction: Some(label),
+            on_all_hosts: true,
             ..self
         }
     }
@@ -593,6 +610,7 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
                 timestamp,
                 aux,
                 start_transaction,
+                on_all_hosts,
                 commit_transaction,
             }) = self.queue.lock().unwrap().pop_front()
             else {
@@ -600,7 +618,7 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
             };
 
             if let Some(label) = start_transaction {
-                self.start_transaction(label.as_deref());
+                self.start_transaction(label.as_deref(), on_all_hosts);
                 if self.awaiting_boundary() {
                     // Keep the entry, without its request, for when the
                     // transaction opens.
@@ -609,6 +627,7 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
                         timestamp,
                         aux,
                         start_transaction: None,
+                        on_all_hosts: false,
                         commit_transaction,
                     });
                     stop = true;
@@ -644,6 +663,7 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
                 timestamp,
                 aux,
                 start_transaction,
+                on_all_hosts,
                 commit_transaction,
                 ..
             }) = queue.pop_front()
@@ -652,13 +672,14 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
             };
 
             if let Some(label) = start_transaction {
-                self.start_transaction(label.as_deref());
+                self.start_transaction(label.as_deref(), on_all_hosts);
                 if self.awaiting_boundary() {
                     queue.push_front(InputQueueEntry {
                         buffer: None,
                         timestamp,
                         aux,
                         start_transaction: None,
+                        on_all_hosts: false,
                         commit_transaction,
                     });
                     break;
@@ -686,13 +707,17 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
         self.len() == 0
     }
 
-    fn start_transaction(&self, label: Option<&str>) -> bool {
+    fn start_transaction(&self, label: Option<&str>, on_all_hosts: bool) -> bool {
         if self
             .transaction_in_progress
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_ok()
         {
-            self.consumer.start_transaction(label);
+            if on_all_hosts {
+                self.consumer.start_transaction_on_all_hosts(label);
+            } else {
+                self.consumer.start_transaction(label);
+            }
             self.set_pending_boundary(PendingBoundary::Open);
             true
         } else {
@@ -749,6 +774,7 @@ impl InputQueue<(), Box<dyn InputBuffer>> {
                 buffer,
                 timestamp,
                 start_transaction,
+                on_all_hosts,
                 commit_transaction,
                 ..
             }) = self.queue.lock().unwrap().pop_front()
@@ -757,7 +783,7 @@ impl InputQueue<(), Box<dyn InputBuffer>> {
             };
 
             if let Some(label) = start_transaction {
-                self.start_transaction(label.as_deref());
+                self.start_transaction(label.as_deref(), on_all_hosts);
                 if self.awaiting_boundary() {
                     // Keep the entry, without its request, for when the
                     // transaction opens.
@@ -765,6 +791,7 @@ impl InputQueue<(), Box<dyn InputBuffer>> {
                         buffer,
                         timestamp,
                         start_transaction: None,
+                        on_all_hosts: false,
                         commit_transaction,
                         aux: (),
                     });
@@ -783,6 +810,7 @@ impl InputQueue<(), Box<dyn InputBuffer>> {
                         buffer: Some(buffer),
                         timestamp,
                         start_transaction: None,
+                        on_all_hosts: false,
                         commit_transaction,
                         aux: (),
                     });
@@ -971,6 +999,16 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// updates will be combined into a single transaction. The transaction will be committed
     /// when all the connectors have committed it.
     fn start_transaction(&self, label: Option<&str>);
+
+    /// Like [`start_transaction`](Self::start_transaction), for a transaction
+    /// that every host of a distributed connector requests, so that the
+    /// pipeline keeps it open until all of the hosts have committed.
+    ///
+    /// The default implementation calls `start_transaction`, which is right
+    /// for a single-host pipeline.
+    fn start_transaction_on_all_hosts(&self, label: Option<&str>) {
+        self.start_transaction(label);
+    }
 
     /// The connector is committing a transaction started by a previous `start_transaction` call.
     ///
@@ -1621,6 +1659,9 @@ mod transaction_boundary_tests {
         /// Errors that the connector reported.
         errors: Vec<String>,
 
+        /// The number of requests that every host makes.
+        on_all_hosts: usize,
+
         /// The number of requests to start a transaction.
         starts: usize,
     }
@@ -1665,6 +1706,10 @@ mod transaction_boundary_tests {
             if state.immediate {
                 state.open = Some(1);
             }
+        }
+        fn start_transaction_on_all_hosts(&self, label: Option<&str>) {
+            self.0.lock().unwrap().on_all_hosts += 1;
+            self.start_transaction(label);
         }
         fn commit_transaction(&self) {
             let mut state = self.0.lock().unwrap();
@@ -1860,6 +1905,30 @@ mod transaction_boundary_tests {
             pipeline.set_open(Some(2));
             flush.flush(&queue);
             assert_eq!(pipeline.take_flushed(), [(2, true)], "{flush:?}");
+        }
+    }
+
+    /// A request that every host makes reaches the consumer as one.
+    #[test]
+    fn requests_on_all_hosts_are_marked() {
+        for flush in FLUSHES {
+            let pipeline = Pipeline::default();
+            pipeline.set_open(Some(1));
+            let queue = InputQueue::new(Box::new(pipeline.clone()));
+            queue.push_entry(
+                records(&pipeline, &[1]).with_start_transaction_on_all_hosts(None),
+                Vec::new(),
+            );
+            queue.push_entry(marker().with_commit_transaction(true), Vec::new());
+            queue.push_entry(
+                records(&pipeline, &[2]).with_start_transaction(None),
+                Vec::new(),
+            );
+            flush.flush(&queue);
+            pipeline.set_open(Some(2));
+            flush.flush(&queue);
+            assert_eq!(pipeline.take_flushed(), [(1, true), (2, true)], "{flush:?}");
+            assert_eq!(pipeline.0.lock().unwrap().on_all_hosts, 1, "{flush:?}");
         }
     }
 
