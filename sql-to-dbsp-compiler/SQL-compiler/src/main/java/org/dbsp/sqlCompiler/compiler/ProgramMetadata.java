@@ -49,6 +49,7 @@ public class ProgramMetadata implements IJson {
             DBSPCompiler.WARNINGS_ARE_ERRORS.toLowerCase(Locale.ENGLISH),
             ProgramMetadata.AVOID_STAR_JOINS.toLowerCase(Locale.ENGLISH),
             ProgramMetadata.ENFORCE_POSITIVE_INPUTS.toLowerCase(Locale.ENGLISH),
+            ProgramMetadata.LAZY_UPSERT.toLowerCase(Locale.ENGLISH),
             ProgramMetadata.USE_FLAT_VARIANT.toLowerCase(Locale.ENGLISH),
             ProgramMetadata.WINDOW_SHARING_THRESHOLD.toLowerCase(Locale.ENGLISH)
     );
@@ -169,6 +170,10 @@ public class ProgramMetadata implements IJson {
     /** When set to {@code true}, inserts a weight-validation check after every
      * input table that has no primary key. */
     public static final String ENFORCE_POSITIVE_INPUTS = "ENFORCE_POSITIVE_INPUTS";
+    /** When set to {@code false}, every table with a primary key takes the eager input
+     * map, which applies each record as it arrives and accepts partial updates, instead
+     * of the lazy input map.  On by default. */
+    public static final String LAZY_UPSERT = "FELDERA_LAZY_UPSERT";
     /** When set to {@code true}, VARIANT columns use the flat-buffer
      * {@code FlatVariant} runtime type instead of the enum {@code Variant}.
      * Programs that cast or index VARIANT values cannot enable this yet:
@@ -210,6 +215,14 @@ public class ProgramMetadata implements IJson {
      * inputs without a primary key. */
     public boolean enforcePositiveInputs() {
         return this.isExplicitlyOn(ENFORCE_POSITIVE_INPUTS);
+    }
+
+    /** Whether tables with a primary key may take the lazy input map.
+     *
+     * @return {@code false} if the program sets {@link #LAZY_UPSERT} to a false value,
+     *         {@code true} otherwise. */
+    public boolean lazyUpsert() {
+        return !this.isExplicitlyOff(LAZY_UPSERT);
     }
 
     /** True if a feature is not set or set to 'false' */

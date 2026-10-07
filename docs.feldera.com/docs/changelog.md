@@ -22,8 +22,12 @@ Source edition can be found on github.
   empty, and its input connectors are reset.  A table that sets the
   property keeps its state, so setting it during the upgrade avoids
   re-ingesting the table; removing it later moves the table to the
-  faster ingestion, at the cost of one bootstrap.  See
-  [`partial_updates`](/sql/grammar#partial-updates) and
+  faster ingestion, at the cost of one bootstrap.
+  `SET FELDERA_LAZY_UPSERT = OFF;` does the same for every table of a
+  program at once: all its tables keep their state and accept partial
+  updates.  See
+  [`partial_updates`](/sql/grammar#partial-updates),
+  [`FELDERA_LAZY_UPSERT`](/sql/grammar#experimental-options) and
   [Bootstrapping](/pipelines/modifying#bootstrapping).
 
 ## v0.362.0

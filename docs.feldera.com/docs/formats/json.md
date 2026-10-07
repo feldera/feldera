@@ -214,7 +214,7 @@ Full or partial updates are also supported if the table has a [primary key](/sql
 ```json
 {"update": {"vendor_id": 2, "vendor_address": "123 Feldera Place, San Francisco, CA"}}
 ```
-The `vendor_id` column must be a primary key. The vendors table may have more columns, but only the `vendor_address` column will be updated by the update event above. An `update` payload that contains all of the table columns is equivalent to an `insert`.  Unless it has a `LATENESS` column, a table with a primary key that does not set `partial_updates` rejects `update` events; send an `insert` of the whole row instead, which replaces the row with the same key.
+The `vendor_id` column must be a primary key. The vendors table may have more columns, but only the `vendor_address` column will be updated by the update event above. An `update` payload that contains all of the table columns is equivalent to an `insert`.  Unless it has a `LATENESS` column or the program sets [`FELDERA_LAZY_UPSERT`](/sql/grammar#experimental-options) to `OFF`, a table with a primary key that does not set `partial_updates` rejects `update` events; send an `insert` of the whole row instead, which replaces the row with the same key.
 
 ### The raw format
 

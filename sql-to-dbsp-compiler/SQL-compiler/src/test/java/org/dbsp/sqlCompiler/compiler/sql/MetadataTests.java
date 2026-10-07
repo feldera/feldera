@@ -721,18 +721,66 @@ public class MetadataTests extends BaseSQLTests {
         return id;
     }
 
+    /** The persistent id that the compiler gave table
+     * {@code t(id INT NOT NULL PRIMARY KEY, s VARCHAR)} before the lazy input map existed.
+     * A change of this id makes every pipeline that keeps the table on the eager map
+     * re-ingest it, so update it only deliberately. */
+    static final String OLDER_TABLE_ID = "576512a6e7fdfc2c49389c46920ddca6bd6c7caf401c8543269cdb2827cd1fba";
+
     /** A table that sets the property keeps the persistent id that the compiler gave it
      * before the lazy input map existed, so that a pipeline upgraded from an older version
      * resumes the table from its checkpoint instead of re-ingesting it; without the
-     * property, the table takes the lazy map and a new id.  A change of the pinned id
-     * makes every such pipeline re-ingest the table, so update it only deliberately. */
+     * property, the table takes the lazy map and a new id. */
     @Test
     public void partialUpdatesKeepTheIdOfOlderVersions() throws IOException, SQLException {
         String table = "CREATE TABLE t(id INT NOT NULL PRIMARY KEY, s VARCHAR)";
-        String olderId = "576512a6e7fdfc2c49389c46920ddca6bd6c7caf401c8543269cdb2827cd1fba";
-        Assert.assertEquals(olderId,
+        Assert.assertEquals(OLDER_TABLE_ID,
                 this.dataflowTableId(table + " WITH ('partial_updates' = 'true');"));
-        Assert.assertNotEquals(olderId, this.dataflowTableId(table + ";"));
+        Assert.assertNotEquals(OLDER_TABLE_ID, this.dataflowTableId(table + ";"));
+    }
+
+    /** A program that turns lazy upserts off keeps every table with a primary key on the
+     * eager input map, whatever the table's property says; on, the default, each table
+     * follows its property.  A table without a primary key accepts no partial updates
+     * either way.  The SET statement applies wherever it appears, here after the tables,
+     * and is a known setting. */
+    @Test
+    public void lazyUpsertDecidesForEveryKeyedTable() {
+        String tables = """
+                CREATE TABLE lazy_t(id INT NOT NULL PRIMARY KEY, s VARCHAR);
+                CREATE TABLE off_t(id INT NOT NULL PRIMARY KEY, s VARCHAR)
+                    WITH ('partial_updates' = 'false');
+                CREATE TABLE eager_t(id INT NOT NULL PRIMARY KEY, s VARCHAR)
+                    WITH ('partial_updates' = 'true');
+                CREATE TABLE keyless_t(id INT, s VARCHAR);
+                """;
+        Map<String, Boolean> byProperty = Map.of("lazy_t", true, "off_t", true, "eager_t", false);
+        Map<String, Boolean> allEager = Map.of("lazy_t", false, "off_t", false, "eager_t", false);
+        for (String value : List.of("ON", "true", "OFF", "false")) {
+            DBSPCompiler compiler = this.testCompiler();
+            compiler.submitStatementsForCompilation(tables + "SET FELDERA_LAZY_UPSERT = " + value + ";");
+            DBSPCircuit circuit = getCircuit(compiler);
+            boolean on = value.equals("ON") || value.equals("true");
+            Assert.assertEquals(value, on ? byProperty : allEager, lazyInputMaps(circuit));
+            Map<String, Boolean> partialUpdates = new HashMap<>();
+            for (IInputOperator input : circuit.sourceOperators.values())
+                partialUpdates.put(input.getTableName().name(), input.getMetadata().partialUpdates);
+            Assert.assertEquals(value, Boolean.FALSE, partialUpdates.get("keyless_t"));
+            // Test compilers are quiet, which keeps warnings out of messages.toString().
+            for (var message : compiler.messages.messages)
+                Assert.assertFalse(message.toString(), message.toString().contains("Unknown setting"));
+        }
+    }
+
+    /** A program that turns lazy upserts off gives each table with a primary key the
+     * persistent id that the compiler gave it before the lazy input map existed, so that a
+     * pipeline upgraded from an older version resumes every such table from its checkpoint
+     * and keeps accepting partial updates. */
+    @Test
+    public void lazyUpsertOffKeepsTheIdOfOlderVersions() throws IOException, SQLException {
+        Assert.assertEquals(OLDER_TABLE_ID, this.dataflowTableId("""
+                SET FELDERA_LAZY_UPSERT = OFF;
+                CREATE TABLE t(id INT NOT NULL PRIMARY KEY, s VARCHAR);"""));
     }
 
     /** The version of the lazy input map's state format changes the persistent id of the

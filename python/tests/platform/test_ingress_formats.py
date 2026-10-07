@@ -938,6 +938,63 @@ def test_upsert_without_partial_updates(pipeline_name):
 
 
 @gen_pipeline_name
+def test_upsert_with_lazy_upsert_off(pipeline_name):
+    """
+    In a program that sets FELDERA_LAZY_UPSERT to OFF, a table with a primary
+    key accepts partial updates without setting the `partial_updates` property:
+    - Insert two rows with composite PK.
+    - Update one column of each row, which keeps the other columns.
+    """
+    sql = (
+        "SET FELDERA_LAZY_UPSERT = OFF;"
+        "CREATE TABLE t1("
+        "id1 bigint not null,"
+        "id2 bigint not null,"
+        "str1 varchar not null,"
+        "str2 varchar,"
+        "primary key(id1,id2));"
+    )
+    create_pipeline(pipeline_name, sql)
+    start_pipeline(pipeline_name)
+    wait_for_pipeline_reachable(pipeline_name)
+
+    stream = _change_stream_start(pipeline_name, "T1", True)
+    reader = JsonLineReader(stream)
+
+    _ingress_and_wait_token(
+        pipeline_name,
+        "T1",
+        '[{"insert":{"id1":1,"id2":1,"str1":"1"}},'
+        '{"insert":{"id1":2,"id2":1,"str1":"1","str2":"bar"}}]',
+        format="json",
+        update_format="insert_delete",
+        array=True,
+    )
+    evs = reader.read_events(2)
+    assert evs == [
+        {"insert": {"id1": 1, "id2": 1, "str1": "1", "str2": None}},
+        {"insert": {"id1": 2, "id2": 1, "str1": "1", "str2": "bar"}},
+    ]
+
+    _ingress_and_wait_token(
+        pipeline_name,
+        "T1",
+        '[{"update":{"id1":1,"id2":1,"str2":"foo"}},'
+        '{"update":{"id1":2,"id2":1,"str1":"2"}}]',
+        format="json",
+        update_format="insert_delete",
+        array=True,
+    )
+    evs = reader.read_events(4)
+    assert evs == [
+        {"delete": {"id1": 1, "id2": 1, "str1": "1", "str2": None}},
+        {"delete": {"id1": 2, "id2": 1, "str1": "1", "str2": "bar"}},
+        {"insert": {"id1": 1, "id2": 1, "str1": "1", "str2": "foo"}},
+        {"insert": {"id1": 2, "id2": 1, "str1": "2", "str2": "bar"}},
+    ]
+
+
+@gen_pipeline_name
 def test_avro_ingress(pipeline_name):
     """
     Avro over `/ingress`: the schema travels in the query string, and each

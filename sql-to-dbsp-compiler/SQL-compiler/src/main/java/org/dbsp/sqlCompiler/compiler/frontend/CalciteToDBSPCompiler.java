@@ -3228,9 +3228,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
         }
 
+        // A program that turns lazy upserts off keeps every table with a primary key on the
+        // eager input map, which accepts partial updates.
+        boolean partialUpdates = create.acceptsPartialUpdates()
+                || (!this.compiler.metadata.lazyUpsert() && Linq.any(metadata, column -> column.isPrimaryKey));
         TableMetadata tableMeta = new TableMetadata(
                 tableName, metadata, create.foreignKeys, expectedSize, materialized, appendOnly, skipUnusedColumns,
-                create.acceptsPartialUpdates());
+                partialUpdates);
         DBSPSourceMultisetOperator result = new DBSPSourceMultisetOperator(
                 new RelAnd(), identifier, TypeCompiler.makeZSet(rowType), originalRowType,
                 tableMeta, tableName, StreamKind.COLLECTION, def.getStatement());
