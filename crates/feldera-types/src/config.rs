@@ -2318,6 +2318,50 @@ mod test {
         assert!(!stored.equal_for_input_checkpoint_replay(&changed));
     }
 
+    /// An Avro schema registry timeout compares equal across the rename.
+    ///
+    /// The format configuration stays raw JSON until the format parses it, so
+    /// the connector comparison has to read the timeout the way the format
+    /// does: otherwise following the deprecation warning, from
+    /// `registry_timeout_secs: 10` to `registry_timeout: "10s"`, reads as a
+    /// modified connector and an Avro input is read again from the beginning.
+    #[test]
+    fn an_avro_registry_timeout_compares_equal_across_the_rename() {
+        let connector = |registry: serde_json::Value| -> ConnectorConfig {
+            let mut format = serde_json::json!({"registry_urls": ["http://registry:8081"]});
+            format
+                .as_object_mut()
+                .unwrap()
+                .extend(registry.as_object().unwrap().clone());
+            serde_json::from_value(serde_json::json!({
+                "transport": {
+                    "name": "url_input",
+                    "config": {"path": "http://example.com/x"},
+                },
+                "format": {"name": "avro", "config": format},
+            }))
+            .unwrap()
+        };
+        let stored = connector(serde_json::json!({"registry_timeout_secs": 10}));
+        let current = connector(serde_json::json!({"registry_timeout": "10s"}));
+        let spelled_out = connector(serde_json::json!({"registry_timeout": "10000ms"}));
+        let changed = connector(serde_json::json!({"registry_timeout": "11s"}));
+        let unset = connector(serde_json::json!({}));
+
+        assert!(stored.equal_modulo_paused(&current));
+        assert!(stored.equal_for_input_checkpoint_replay(&current));
+        assert!(current.equal_modulo_paused(&spelled_out));
+        assert!(!stored.equal_modulo_paused(&changed));
+        assert!(!stored.equal_modulo_paused(&unset));
+        // The other formats carry no duration and are left alone.
+        let json: ConnectorConfig = serde_json::from_value(serde_json::json!({
+            "transport": {"name": "url_input", "config": {"path": "http://example.com/x"}},
+            "format": {"name": "json", "config": {"registry_timeout_secs": 10}},
+        }))
+        .unwrap();
+        assert!(!json.equal_modulo_paused(&stored));
+    }
+
     /// The defaults an older release wrote out still load.
     ///
     /// `max_output_buffer_time_millis` defaulted to `usize::MAX` and was
@@ -3042,6 +3086,9 @@ impl ConnectorConfig {
         self.transport.normalize_durations();
         self.output_buffer_config.max_output_buffer_time =
             Some(self.output_buffer_config.max_output_buffer_time());
+        if let Some(format) = &mut self.format {
+            format.normalize_durations();
+        }
     }
 
     /// Compare two input connector configs modulo fields that only affect
@@ -3312,6 +3359,40 @@ pub struct FormatConfig {
     #[serde(default)]
     #[schema(value_type = Object)]
     pub config: JsonValue,
+}
+
+impl FormatConfig {
+    /// Writes the Avro schema registry timeout, the one duration a format
+    /// carries, in one spelling; see `ConnectorConfig::normalize_durations`.
+    ///
+    /// The format configuration stays raw JSON until the format parses it, so
+    /// the timeout is read the way the format reads it and written back under
+    /// the current key. A configuration the format would reject is left alone.
+    pub fn normalize_durations(&mut self) {
+        if self.name != "avro" {
+            return;
+        }
+        let has_timeout = self.config.as_object().is_some_and(|object| {
+            object.contains_key("registry_timeout") || object.contains_key("registry_timeout_secs")
+        });
+        if !has_timeout {
+            return;
+        }
+        let Ok(registry) = serde_json::from_value::<crate::format::avro::AvroSchemaRegistryConfig>(
+            self.config.clone(),
+        ) else {
+            return;
+        };
+        let object = self.config.as_object_mut().unwrap();
+        object.remove("registry_timeout_secs");
+        match registry.registry_timeout {
+            Some(timeout) => object.insert(
+                "registry_timeout".to_string(),
+                JsonValue::String(timeout.to_string()),
+            ),
+            None => object.remove("registry_timeout"),
+        };
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, ToSchema)]
