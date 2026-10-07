@@ -362,10 +362,10 @@ example = "1.0"`
     {#snippet editor()}
       <!-- No top padding: the file tabs' 12px margins centre the header row, as in the
            tabbed panels below (`TabsPanel`). -->
-      <div class="flex h-full flex-col rounded-container bg-surface-50-950 px-4 pt-0 pb-2">
+      <div class="panel flex h-full flex-col px-2 pt-0 pb-2">
         {@render textEditor()}
         <div
-          class="bg-white-dark mb-2 flex flex-wrap items-center gap-x-8 rounded-b border-t border-surface-50-950 p-2 pl-4"
+          class="bg-white-dark flex flex-wrap items-center gap-x-8 rounded-b border-t border-surface-50-950 p-2 pl-4"
         >
           {@render statusBar()}
         </div>
