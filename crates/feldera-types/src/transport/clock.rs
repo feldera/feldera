@@ -114,11 +114,10 @@ impl ClockConfig {
     }
 
     pub fn clock_resolution_ms(&self) -> u64 {
-        // Refuse to set 0 clock resolution.
-        max(
-            (self.clock_resolution().as_micros() as u64 + 500) / 1_000,
-            1,
-        )
+        // Rounds to the nearest millisecond, saturating past what a `u64`
+        // holds, and refuses a 0 clock resolution.
+        let millis = (self.clock_resolution().as_micros() + 500) / 1_000;
+        max(u64::try_from(millis).unwrap_or(u64::MAX), 1)
     }
 }
 
@@ -177,6 +176,11 @@ mod test {
             ("1500us", 2),
             ("400us", 1),
             ("0", 1),
+            // Past what a `u64` of microseconds holds: the resolution saturates
+            // rather than wrapping to a millisecond.
+            ("18446744073709551616us", 18_446_744_073_709_552),
+            ("18446744073709551615us", 18_446_744_073_709_552),
+            ("18446744073709551615s", u64::MAX),
         ] {
             let config: ClockConfig =
                 serde_json::from_value(serde_json::json!({"clock_resolution": resolution}))
