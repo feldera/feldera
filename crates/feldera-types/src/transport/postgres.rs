@@ -95,7 +95,10 @@ pub struct PostgresCdcBatchConfig {
     /// a per-stream share of the global memory budget.
     ///
     /// Default: 0.2.
-    #[serde(default = "default_batch_memory_budget_ratio")]
+    #[serde(
+        default = "default_batch_memory_budget_ratio",
+        deserialize_with = "crate::serde_via_value::deserialize"
+    )]
     #[schema(default = default_batch_memory_budget_ratio)]
     pub memory_budget_ratio: f32,
 
@@ -167,7 +170,10 @@ pub struct PostgresCdcMemoryBackpressureConfig {
     /// `(0.0, 1.0]` interval.
     ///
     /// Default: 0.85.
-    #[serde(default = "default_memory_backpressure_activate_threshold")]
+    #[serde(
+        default = "default_memory_backpressure_activate_threshold",
+        deserialize_with = "crate::serde_via_value::deserialize"
+    )]
     #[schema(default = default_memory_backpressure_activate_threshold)]
     pub activate_threshold: f32,
 
@@ -175,7 +181,10 @@ pub struct PostgresCdcMemoryBackpressureConfig {
     /// `[0.0, 1.0)` interval. Must be lower than `activate_threshold`.
     ///
     /// Default: 0.75.
-    #[serde(default = "default_memory_backpressure_resume_threshold")]
+    #[serde(
+        default = "default_memory_backpressure_resume_threshold",
+        deserialize_with = "crate::serde_via_value::deserialize"
+    )]
     #[schema(default = default_memory_backpressure_resume_threshold)]
     pub resume_threshold: f32,
 }
@@ -724,5 +733,43 @@ mod tests {
 
         let err = config.validate().unwrap_err();
         assert!(err.contains("memory_backpressure.activate_threshold"));
+    }
+
+    /// Regression test: the `f32` fields must survive the JSON-string
+    /// round-trip a checkpoint takes through `PipelineConfig`, whose
+    /// `InputEndpointConfig` flattens the connector config. With `serde_json`'s
+    /// `arbitrary_precision` feature enabled, the serde `Content` buffer that
+    /// `#[serde(flatten)]` uses represents floats as maps, which breaks plain
+    /// `f32` deserialization (serde-rs/json#1157). `serde_via_value` on each
+    /// `f32` field fixes this.
+    #[test]
+    fn postgres_cdc_config_f32_fields_roundtrip_through_pipeline_config() {
+        use crate::config::PipelineConfig;
+
+        let pipeline: PipelineConfig = serde_json::from_value(json!({
+            "name": "cdc_test",
+            "workers": 1,
+            "inputs": {
+                "cdc_in": {
+                    "stream": "test_input1",
+                    "transport": {
+                        "name": "postgres_cdc_input",
+                        "config": {
+                            "uri": "postgres://user:password@localhost:5432/database",
+                            "publication": "publication",
+                            "source_table": "public.table",
+                            "batch": {"memory_budget_ratio": 0.3},
+                            "memory_backpressure": {"activate_threshold": 0.9, "resume_threshold": 0.7},
+                        },
+                    },
+                },
+            },
+            "outputs": {},
+        }))
+        .unwrap();
+
+        let json = serde_json::to_string(&pipeline).unwrap();
+        let back: PipelineConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, pipeline);
     }
 }
