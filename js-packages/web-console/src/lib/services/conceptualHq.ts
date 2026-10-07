@@ -30,6 +30,8 @@ const LOADER_VERSION = '1.1.0'
 
 let initialized = false
 
+export const isConceptualHqInitialized = () => initialized
+
 /**
  * Install the `window.ca` command queue and inject the ConceptualHQ loader.
  * Mirrors the vendor snippet: define the queue stub, stamp the load time, then
@@ -65,8 +67,8 @@ const loadConceptualAnalytics = (key: string): ConceptualAnalytics => {
 /**
  * Initialize ConceptualHQ analytics for the signed-in user.
  *
- * Identifies the user (keyed on email to match PostHog identity) and tracks a
- * `signin` event.
+ * Identifies the user (keyed on email to match PostHog identity).
+ * `reportLogin` in `analytics.ts` sends the `signin` event.
  *
  * Idempotent: repeated calls (warm-cache reconcile, re-navigation) are ignored
  * after the first success. No-op when the key is empty or outside the browser.
@@ -86,7 +88,6 @@ export const initConceptualHq = (config: Configuration, profile: UserProfile) =>
       name: profile.name ?? undefined
     })
   }
-  ca('track', 'signin')
 }
 
 /**

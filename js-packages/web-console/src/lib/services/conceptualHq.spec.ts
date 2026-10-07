@@ -46,23 +46,14 @@ afterEach(() => {
 })
 
 describe('initConceptualHq', () => {
-  it('injects the loader keyed by config, then identifies and tracks signin', async () => {
+  it('injects the loader keyed by config, then identifies only', async () => {
     const { script } = stubDom()
     const { initConceptualHq } = await freshModule(true)
     initConceptualHq(config('my-key'), profile)
 
     expect(script.src).toBe('https://oqiset.feldera.com/analytics/loader-v1.js?key=my-key&v=1.1.0')
-    expect(queued()).toEqual([
-      ['identify', 'a@b.com', { email: 'a@b.com', name: 'Ann' }],
-      ['track', 'signin']
-    ])
-  })
-
-  it('does not track signup (OIDC login cannot distinguish it)', async () => {
-    stubDom()
-    const { initConceptualHq } = await freshModule(true)
-    initConceptualHq(config('my-key'), profile)
-    expect(queued().some((call) => call[1] === 'signup')).toBe(false)
+    // `signin` comes from `reportLogin` in `analytics.ts`.
+    expect(queued()).toEqual([['identify', 'a@b.com', { email: 'a@b.com', name: 'Ann' }]])
   })
 
   it('falls back to the user id when email is missing', async () => {
