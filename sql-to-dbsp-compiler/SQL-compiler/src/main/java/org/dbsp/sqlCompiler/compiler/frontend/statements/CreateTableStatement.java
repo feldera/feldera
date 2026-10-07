@@ -41,6 +41,8 @@ public class CreateTableStatement extends CreateRelationStatement {
     public static final String MATERIALIZED = "materialized";
     public static final String APPEND_ONLY = "append_only";
     public static final String SKIP_UNUSED_COLUMNS = "skip_unused_columns";
+    /** Table property: the table accepts partial updates.  Only a table with a primary key may set it. */
+    public static final String PARTIAL_UPDATES = "partial_updates";
     public static final String CONNECTORS = "connectors";
     public static final String EXPECTED_SIZE = "expected_size";
     public static final String PREPROCESSOR = "preprocessor";
@@ -71,6 +73,15 @@ public class CreateTableStatement extends CreateRelationStatement {
         if (mat == null)
             return false;
         return mat.equalsIgnoreCase("true");
+    }
+
+    /** Whether the table accepts partial updates: records that carry some of a row's
+     * columns and patch the row the table holds for the record's key.
+     *
+     * @return true if the {@code partial_updates} property is {@code 'true'}. */
+    public boolean acceptsPartialUpdates() {
+        String value = this.getPropertyValue(PARTIAL_UPDATES);
+        return value != null && value.equalsIgnoreCase("true");
     }
 
     /** Return 'null' if the field is not defined */

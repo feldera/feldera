@@ -18,8 +18,8 @@ use crate::{
             TouchedWindowCount,
             format::{
                 BLOOM_FILTER_BLOCK_MAGIC, BatchMetadata, Compression, FileTrailer,
-                INCOMPATIBLE_FEATURE_MODULAR_FILTERS, MODULAR_BLOOM_FILTER_BLOCK_MAGIC,
-                ROARING_BITMAP_FILTER_BLOCK_MAGIC,
+                INCOMPATIBLE_FEATURE_MODULAR_FILTERS, INCOMPATIBLE_FEATURE_ROARING_FILTERS,
+                MODULAR_BLOOM_FILTER_BLOCK_MAGIC, ROARING_BITMAP_FILTER_BLOCK_MAGIC,
             },
             reader::{BulkRows, FilteredKeys, Reader},
         },
@@ -39,6 +39,7 @@ use super::{
 };
 
 use crate::storage::file::FilterKind;
+use crate::storage::file::format::{INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN, ValueStampFlag};
 use crate::storage::{backend::StorageError, buffer_cache::FBuf};
 use crate::{
     DBData,
@@ -2437,4 +2438,667 @@ fn a_legacy_filter_has_no_ladder_to_descend() {
             assert!(filters.maybe_contains_key(key as &DynData, None));
         }
     });
+}
+
+/// A stamped value column survives a write/reopen cycle.
+///
+/// A successful reopen also proves the writer set
+/// [`INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN`]: the reader rejects a trailer
+/// whose feature bit and stamp disagree, so a stamped file that opens at all
+/// must carry the bit.
+#[test]
+fn value_stamp_roundtrip() {
+    init_test_logger();
+
+    for stamp in [ValueStampFlag::NONE, ValueStampFlag::UPSERT_INDEX] {
+        let factories = Factories::<DynData, DynData>::new::<i64, ()>();
+        let tempdir = tempdir().unwrap();
+        let storage_backend = <dyn StorageBackend>::new(
+            &StorageConfig {
+                path: tempdir.path().to_string_lossy().to_string(),
+                cache: Default::default(),
+            },
+            &StorageOptions::default(),
+        )
+        .unwrap();
+
+        let mut writer = Writer1::new(
+            &factories,
+            test_buffer_cache,
+            &*storage_backend,
+            Parameters::default(),
+            FilterPlan::<DynData>::decide_filter(None, 3),
+        )
+        .unwrap();
+        for key in [1i64, 3, 7] {
+            writer.write0((&key, &())).unwrap();
+        }
+
+        let path = writer.path().clone();
+        // Hold the handle: the file is removed when the last one drops.
+        let (_file_handle, _key_filter, _key_bounds) = writer
+            .close(BatchMetadata {
+                value_stamp: stamp,
+                ..BatchMetadata::default()
+            })
+            .unwrap();
+
+        let (reader, _membership_filter) =
+            Reader::<(&'static DynData, &'static DynData, ())>::open_with_filter(
+                &[&factories.any_factories()],
+                test_buffer_cache,
+                &*storage_backend,
+                &path,
+            )
+            .unwrap();
+        assert_eq!(reader.metadata().value_stamp, stamp);
+        assert_eq!(
+            reader.metadata().value_stamp.is_stamped(),
+            stamp != ValueStampFlag::NONE
+        );
+    }
+}
+
+/// Negative control for the downgrade guarantee.
+///
+/// A binary that predates the stamp must REFUSE a stamped file rather than read
+/// `Tup2<V, u32>` bytes as `V`.  It refuses because the stamp is advertised in
+/// the incompatible bitmap and its bit is absent from that binary's known set,
+/// which this reproduces.  Once every reader in the tree knows the bit, this
+/// test is the only thing left holding the guarantee: moving the stamp to the
+/// compatible bitmap, or folding it into the older mask, breaks it here.
+#[test]
+fn old_reader_refuses_stamped_file() {
+    const KNOWN_BEFORE_STAMP: u64 =
+        INCOMPATIBLE_FEATURE_ROARING_FILTERS | INCOMPATIBLE_FEATURE_MODULAR_FILTERS;
+
+    assert_ne!(
+        INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN & !KNOWN_BEFORE_STAMP,
+        0,
+        "a reader predating the stamp must see the bit as unknown and refuse the file"
+    );
+}
+
+/// Read-ahead on a cursor that declared a sequential walk.
+///
+/// The counters these tests read are recorded per thread type, and a thread
+/// outside a circuit has none, so each test runs on a worker.  A file is
+/// written, then opened again under a new file id, which is what makes every
+/// block a cache miss on the first visit.
+mod read_ahead {
+    use super::{BatchMetadata, Parameters, Reader, Writer1, Writer2};
+    use crate::{
+        Runtime,
+        circuit::{
+            CircuitConfig, CircuitStorageConfig, StorageCacheConfig, StorageConfig, StorageOptions,
+        },
+        dynamic::{DynData, Erase},
+        storage::{
+            buffer_cache::{CacheAccess, CacheStats},
+            file::{Factories, FilterPlan},
+        },
+        trace::{cursor::AccessHint, test::run_in_circuit_with_storage_config},
+    };
+    use feldera_buffer_cache::ThreadType;
+    use feldera_storage::{FileReader, StoragePath};
+    use feldera_types::config::{FileBackendConfig, StorageBackendConfig};
+    use std::{path::Path, sync::Arc};
+    use tempfile::tempdir;
+
+    type Column = (&'static DynData, &'static DynData, ());
+    type TwoColumns = (&'static DynData, &'static DynData, Column);
+
+    pub(super) fn config(
+        dir: &Path,
+        read_ahead: Option<u64>,
+        ioop_delay_ms: Option<u64>,
+    ) -> CircuitConfig {
+        let mut config = CircuitConfig::with_workers(1).with_storage(Some(
+            CircuitStorageConfig::for_config(
+                StorageConfig {
+                    path: dir.to_string_lossy().into_owned(),
+                    cache: StorageCacheConfig::default(),
+                },
+                StorageOptions {
+                    min_storage_bytes: Some(0),
+                    backend: StorageBackendConfig::File(Box::new(FileBackendConfig {
+                        async_threads: Some(true),
+                        ioop_delay: ioop_delay_ms,
+                        sync: None,
+                        sync_mode: None,
+                    })),
+                    ..Default::default()
+                },
+            )
+            .unwrap(),
+        ));
+        config.dev_tweaks.layer_file_read_ahead_blocks = read_ahead;
+        config
+    }
+
+    pub(super) fn foreground(stats: &CacheStats, access: CacheAccess) -> u64 {
+        stats.0[ThreadType::Foreground][access].count
+    }
+
+    /// A one-column file of `keys` ascending keys.  The handle keeps the file
+    /// alive: the writer's file is deleted when its last handle drops.
+    ///
+    /// # Arguments
+    ///
+    /// * `keys` - how many keys to write.
+    ///
+    /// # Returns
+    ///
+    /// A handle on the written file, its path, and the factories that read it.
+    fn write_keys(
+        keys: u64,
+    ) -> (
+        Arc<dyn FileReader>,
+        StoragePath,
+        Factories<DynData, DynData>,
+    ) {
+        write_keys_with(keys, Parameters::default())
+    }
+
+    pub(super) fn write_keys_with(
+        keys: u64,
+        parameters: Parameters,
+    ) -> (
+        Arc<dyn FileReader>,
+        StoragePath,
+        Factories<DynData, DynData>,
+    ) {
+        let factories = Factories::<DynData, DynData>::new::<i64, ()>();
+        let backend = Runtime::storage_backend().unwrap();
+        let mut writer = Writer1::new(
+            &factories,
+            Runtime::buffer_cache,
+            &*backend,
+            parameters,
+            FilterPlan::<DynData>::decide_filter(None, keys as usize),
+        )
+        .unwrap();
+        for key in 0..keys as i64 {
+            writer.write0((key.erase(), ().erase())).unwrap();
+        }
+        let path = writer.path().clone();
+        let (handle, _filter, _bounds) = writer.close(BatchMetadata::default()).unwrap();
+        (handle, path, factories)
+    }
+
+    pub(super) fn reopen(
+        path: &StoragePath,
+        factories: &Factories<DynData, DynData>,
+    ) -> Reader<Column> {
+        Reader::open(
+            &[&factories.any_factories()],
+            Runtime::buffer_cache,
+            &*Runtime::storage_backend().unwrap(),
+            path,
+        )
+        .unwrap()
+    }
+
+    /// Walks every key with a cursor made under `hint` and returns how many it
+    /// saw together with the file's cache statistics.
+    ///
+    /// # Arguments
+    ///
+    /// * `reader` - the file to walk.
+    /// * `hint` - how to tell the cursor it will be moved.
+    ///
+    /// # Returns
+    ///
+    /// How many keys the walk saw, and the cache statistics it left.
+    pub(super) fn walk(reader: &Reader<Column>, hint: AccessHint) -> (u64, CacheStats) {
+        let rows = reader.rows().with_hint(hint);
+        let mut cursor = unsafe { rows.first() }.unwrap();
+        let mut seen = 0;
+        while cursor.has_value() {
+            seen += 1;
+            unsafe { cursor.move_next() }.unwrap();
+        }
+        (seen, reader.cache_stats())
+    }
+
+    /// About a thousand keys fit a data block, so this is a few hundred
+    /// blocks: enough for the read-ahead to matter and to outrun.
+    const KEYS: u64 = 300_000;
+
+    /// With the walk declared, all but the first data block (and the trailer
+    /// and index block read to reach it) arrive through read-ahead.  Without
+    /// the declaration every block is a synchronous miss and nothing is asked
+    /// for ahead.
+    #[test]
+    fn a_declared_walk_reads_ahead_and_an_undeclared_one_does_not() {
+        let dir = tempdir().unwrap();
+        run_in_circuit_with_storage_config(config(dir.path(), None, None), || {
+            let (_handle, path, factories) = write_keys(KEYS);
+
+            let hinted = reopen(&path, &factories);
+            let (seen, stats) = walk(&hinted, AccessHint::Sequential);
+            assert_eq!(seen, KEYS);
+            let misses = foreground(&stats, CacheAccess::Miss);
+            let prefetches = foreground(&stats, CacheAccess::Prefetch);
+            let served =
+                foreground(&stats, CacheAccess::Hit) + foreground(&stats, CacheAccess::Wait);
+            // The trailer on open, the root index block, and the first data
+            // block: everything after that arrives through read-ahead.
+            assert!(
+                misses <= 3,
+                "a declared walk read {misses} blocks synchronously"
+            );
+            assert!(
+                prefetches >= 100,
+                "a declared walk asked for only {prefetches} blocks ahead"
+            );
+            assert!(
+                served <= prefetches,
+                "{served} blocks were served from the cache but only {prefetches} were read ahead"
+            );
+
+            let plain = reopen(&path, &factories);
+            let (seen, stats) = walk(&plain, AccessHint::Unknown);
+            assert_eq!(seen, KEYS);
+            assert_eq!(foreground(&stats, CacheAccess::Prefetch), 0);
+            assert_eq!(foreground(&stats, CacheAccess::Wait), 0);
+            assert!(foreground(&stats, CacheAccess::Miss) >= 100);
+        });
+    }
+
+    /// A depth of zero switches the read-ahead off, whatever the hint.
+    #[test]
+    fn a_zero_depth_disables_read_ahead() {
+        let dir = tempdir().unwrap();
+        run_in_circuit_with_storage_config(config(dir.path(), Some(0), None), || {
+            let (_handle, path, factories) = write_keys(KEYS);
+            let reader = reopen(&path, &factories);
+            let (seen, stats) = walk(&reader, AccessHint::Sequential);
+            assert_eq!(seen, KEYS);
+            assert_eq!(foreground(&stats, CacheAccess::Prefetch), 0);
+            assert!(foreground(&stats, CacheAccess::Miss) >= 100);
+        });
+    }
+
+    /// With every read taking 20 ms, the walk reaches the next block long
+    /// before its read-ahead lands.  It must wait for that read rather than
+    /// issue its own: each block crosses the device once, so the blocks read
+    /// ahead account for every block the cache served.
+    #[test]
+    fn a_walk_that_overtakes_its_read_ahead_waits_rather_than_reading_twice() {
+        let dir = tempdir().unwrap();
+        run_in_circuit_with_storage_config(config(dir.path(), None, Some(20)), || {
+            let (_handle, path, factories) = write_keys(40_000);
+            let reader = reopen(&path, &factories);
+            let (seen, stats) = walk(&reader, AccessHint::Sequential);
+            assert_eq!(seen, 40_000);
+            let misses = foreground(&stats, CacheAccess::Miss);
+            let prefetches = foreground(&stats, CacheAccess::Prefetch);
+            let waits = foreground(&stats, CacheAccess::Wait);
+            let served = foreground(&stats, CacheAccess::Hit) + waits;
+            assert!(waits > 0, "the walk never caught up with its read-ahead");
+            assert!(
+                misses <= 3,
+                "the walk read {misses} blocks itself instead of waiting"
+            );
+            assert_eq!(
+                prefetches, served,
+                "{prefetches} blocks read ahead but {served} served: a block crossed the device twice"
+            );
+        });
+    }
+
+    /// A cursor made from a declared row group's next column walks its values
+    /// with the same read-ahead.
+    #[test]
+    fn the_value_column_inherits_the_declaration() {
+        let dir = tempdir().unwrap();
+        run_in_circuit_with_storage_config(config(dir.path(), None, None), || {
+            const VALUES: i64 = 100_000;
+            let factories0 = Factories::<DynData, DynData>::new::<i64, ()>();
+            let factories1 = Factories::<DynData, DynData>::new::<i64, ()>();
+            let backend = Runtime::storage_backend().unwrap();
+            let mut writer = Writer2::new(
+                &factories0,
+                &factories1,
+                Runtime::buffer_cache,
+                &*backend,
+                Parameters::default(),
+                FilterPlan::<DynData>::decide_filter(None, 1),
+            )
+            .unwrap();
+            for value in 0..VALUES {
+                writer.write1((value.erase(), ().erase())).unwrap();
+            }
+            writer.write0((1i64.erase(), ().erase())).unwrap();
+            let path = writer.path().clone();
+            let (_handle, _filter, _bounds) = writer.close(BatchMetadata::default()).unwrap();
+
+            let reader: Reader<TwoColumns> = Reader::open(
+                &[&factories0.any_factories(), &factories1.any_factories()],
+                Runtime::buffer_cache,
+                &*backend,
+                &path,
+            )
+            .unwrap();
+            let keys = reader.rows().with_hint(AccessHint::Sequential);
+            let key = unsafe { keys.first() }.unwrap();
+            let values = key.next_column().unwrap();
+            let mut cursor = unsafe { values.first() }.unwrap();
+            let mut seen = 0;
+            while cursor.has_value() {
+                seen += 1;
+                unsafe { cursor.move_next() }.unwrap();
+            }
+            assert_eq!(seen, VALUES);
+            let stats = reader.cache_stats();
+            assert!(
+                foreground(&stats, CacheAccess::Prefetch) >= 50,
+                "the value column was not read ahead: {stats:?}"
+            );
+            assert!(foreground(&stats, CacheAccess::Miss) <= 4);
+        });
+    }
+}
+
+/// A data block size of its own for the key column.
+mod key_block_size {
+    use super::read_ahead::{config, foreground, reopen, walk, write_keys_with};
+    use super::{BatchMetadata, Parameters, Reader, Writer2};
+    use crate::{
+        DynZWeight, Runtime, ZWeight,
+        circuit::runtime::tests::with_mock_process_rss,
+        dynamic::{DynData, DynUnit, Erase},
+        storage::{
+            buffer_cache::CacheAccess,
+            file::{Factories, FilterPlan},
+        },
+        trace::{
+            Batch, BatchLayout, BatchReader, BatchReaderFactories, Builder, FallbackIndexedWSet,
+            FallbackIndexedWSetFactories, Spine, Trace, TraceRole, cursor::AccessHint,
+            spine_async::MIN_LEVEL0_MERGE_BATCHES, test::run_in_circuit_with_storage_config,
+        },
+    };
+    use feldera_storage::StoragePath;
+    use feldera_types::memory_pressure::MemoryPressure;
+    use futures::executor::block_on;
+    use std::{
+        sync::Arc,
+        thread::sleep,
+        time::{Duration, Instant},
+    };
+    use tempfile::tempdir;
+
+    type TwoColumns = (
+        &'static DynData,
+        &'static DynData,
+        (&'static DynData, &'static DynData, ()),
+    );
+
+    /// Every block a cold, undeclared walk reads is a miss, so the misses
+    /// count the key blocks: four times the block, about a quarter of them.
+    #[test]
+    fn a_larger_key_block_means_fewer_key_blocks() {
+        let dir = tempdir().unwrap();
+        run_in_circuit_with_storage_config(config(dir.path(), Some(0), None), || {
+            let key_blocks = |parameters: Parameters| {
+                let (_handle, path, factories) = write_keys_with(300_000, parameters);
+                let (seen, stats) = walk(&reopen(&path, &factories), AccessHint::Unknown);
+                assert_eq!(seen, 300_000);
+                foreground(&stats, CacheAccess::Miss)
+            };
+            let small = key_blocks(Parameters::default());
+            let large = key_blocks(Parameters::default().with_min_key_data_block(32 * 1024));
+            assert!(small >= 100, "{small} key blocks at 8 KiB");
+            assert!(
+                large * 3 <= small,
+                "32 KiB key blocks gave {large} misses against {small} at 8 KiB"
+            );
+        });
+    }
+
+    /// The value column keeps its own size: a two-column file with one key
+    /// and many values has as many value blocks whatever the key block.
+    #[test]
+    fn value_blocks_keep_their_size_when_key_blocks_grow() {
+        let dir = tempdir().unwrap();
+        run_in_circuit_with_storage_config(config(dir.path(), Some(0), None), || {
+            let value_blocks = |parameters: Parameters| {
+                const VALUES: i64 = 100_000;
+                let factories0 = Factories::<DynData, DynData>::new::<i64, ()>();
+                let factories1 = Factories::<DynData, DynData>::new::<i64, ()>();
+                let backend = Runtime::storage_backend().unwrap();
+                let mut writer = Writer2::new(
+                    &factories0,
+                    &factories1,
+                    Runtime::buffer_cache,
+                    &*backend,
+                    parameters,
+                    FilterPlan::<DynData>::decide_filter(None, 1),
+                )
+                .unwrap();
+                for value in 0..VALUES {
+                    writer.write1((value.erase(), ().erase())).unwrap();
+                }
+                writer.write0((1i64.erase(), ().erase())).unwrap();
+                let path = writer.path().clone();
+                let (_handle, _filter, _bounds) = writer.close(BatchMetadata::default()).unwrap();
+                let reader: Reader<TwoColumns> = Reader::open(
+                    &[&factories0.any_factories(), &factories1.any_factories()],
+                    Runtime::buffer_cache,
+                    &*backend,
+                    &path,
+                )
+                .unwrap();
+                let key = unsafe { reader.rows().first() }.unwrap();
+                let mut cursor = unsafe { key.next_column().unwrap().first() }.unwrap();
+                let mut seen = 0;
+                while cursor.has_value() {
+                    seen += 1;
+                    unsafe { cursor.move_next() }.unwrap();
+                }
+                assert_eq!(seen, VALUES);
+                foreground(&reader.cache_stats(), CacheAccess::Miss)
+            };
+            let small = value_blocks(Parameters::default());
+            let large = value_blocks(Parameters::default().with_min_key_data_block(32 * 1024));
+            assert!(small >= 50, "{small} value blocks");
+            assert!(
+                small.abs_diff(large) <= 2,
+                "value blocks changed with the key block: {small} against {large}"
+            );
+        });
+    }
+
+    type IndexedWSet = FallbackIndexedWSet<DynData, DynData, DynZWeight>;
+    type IndexedWSetFactories = FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>;
+    type KeyValueColumns = (
+        &'static DynData,
+        &'static DynUnit,
+        (&'static DynData, &'static DynZWeight, ()),
+    );
+
+    fn indexed_wset_factories() -> IndexedWSetFactories {
+        <IndexedWSetFactories>::new::<i64, i64, ZWeight>()
+    }
+
+    /// An in-memory batch of `keys` keys starting at `first`, each with one value.
+    ///
+    /// # Arguments
+    ///
+    /// * `factories` - factories for the batch.
+    /// * `first` - the first key.
+    /// * `keys` - how many keys to write.
+    ///
+    /// # Returns
+    ///
+    /// The batch, held in memory.
+    fn memory_batch(factories: &IndexedWSetFactories, first: i64, keys: i64) -> IndexedWSet {
+        let mut builder =
+            <IndexedWSet as Batch>::Builder::with_capacity(factories, keys as usize, keys as usize);
+        for key in first..first + keys {
+            builder.push_val_diff(0i64.erase(), 1i64.erase());
+            builder.push_key(key.erase());
+        }
+        builder.done()
+    }
+
+    /// Key blocks per 100k keys of the file at `path`, from a cold walk over
+    /// its key column: every block such a walk reads is a miss, less the
+    /// trailer and the index blocks, which are a handful.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - the file to measure.
+    ///
+    /// # Returns
+    ///
+    /// Key blocks per 100k keys, which compares files of different sizes.
+    fn key_blocks_per_100k(path: &StoragePath) -> u64 {
+        let column0 = Factories::<DynData, DynUnit>::new::<i64, ()>();
+        let column1 = Factories::<DynData, DynZWeight>::new::<i64, ZWeight>();
+        let reader: Reader<KeyValueColumns> = Reader::open(
+            &[&column0.any_factories(), &column1.any_factories()],
+            Runtime::buffer_cache,
+            &*Runtime::storage_backend().unwrap(),
+            path,
+        )
+        .unwrap();
+        let mut cursor = unsafe { reader.rows().first() }.unwrap();
+        let mut rows = 0u64;
+        while cursor.has_value() {
+            rows += 1;
+            unsafe { cursor.move_next() }.unwrap();
+        }
+        assert!(rows > 0, "an empty file at {path}");
+        foreground(&reader.cache_stats(), CacheAccess::Miss) * 100_000 / rows
+    }
+
+    /// The batches a spine's merger writes take the spine's layout: 32 KiB
+    /// key blocks hold about four times the keys of the default 8 KiB.
+    #[test]
+    fn a_spine_merges_in_its_layout() {
+        let dir = tempdir().unwrap();
+        run_in_circuit_with_storage_config(config(dir.path(), Some(0), None), || {
+            let small = merged_key_blocks_per_100k(BatchLayout::default());
+            let large = merged_key_blocks_per_100k(BatchLayout {
+                key_block_bytes: Some(32 * 1024),
+            });
+            assert!(
+                small >= 80,
+                "{small} key blocks per 100k keys in the default layout"
+            );
+            assert!(
+                large * 3 <= small,
+                "32 KiB key blocks gave {large} key blocks per 100k keys against {small}"
+            );
+        });
+    }
+
+    /// Fills a spine laid out as `layout` with more in-memory batches than a
+    /// level-0 merge waits for, and measures the file the merger wrote.
+    ///
+    /// # Arguments
+    ///
+    /// * `layout` - the layout to give the spine.
+    ///
+    /// # Returns
+    ///
+    /// Key blocks per 100k keys of the merger's output.
+    fn merged_key_blocks_per_100k(layout: BatchLayout) -> u64 {
+        let factories = indexed_wset_factories();
+        let mut spine = Spine::<IndexedWSet>::new(
+            &factories,
+            Arc::new("merged".to_string()),
+            TraceRole::Integral,
+        )
+        .with_layout(layout);
+        const KEYS: i64 = 30_000;
+        for batch in 0..(MIN_LEVEL0_MERGE_BATCHES + 2) as i64 {
+            block_on(spine.insert(memory_batch(&factories, batch * KEYS, KEYS)));
+        }
+        let deadline = Instant::now() + Duration::from_secs(60);
+        loop {
+            // A merge under a zero storage threshold writes a file; the inputs
+            // stay in memory, so the largest file is the merge that landed.
+            let merged = spine
+                .get_batches()
+                .into_iter()
+                .filter(|batch| batch.file_path().is_some())
+                .max_by_key(|batch| batch.approximate_len());
+            if let Some(merged) = merged {
+                return key_blocks_per_100k(merged.file_path().unwrap());
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the merger wrote no file in a minute"
+            );
+            sleep(Duration::from_millis(20));
+        }
+    }
+
+    /// A batch a spine spills as it is inserted, which it does from High
+    /// memory pressure up, takes the spine's layout too.
+    #[test]
+    fn a_spine_spills_in_its_layout_under_pressure() {
+        const GIB: u64 = 1 << 30;
+        // 9.2 GiB against a 10 GiB ceiling reads as High: a spine spills what
+        // it is handed, while a builder still builds in memory (that takes
+        // Critical), so the file measured below is the spine's.
+        with_mock_process_rss(GIB * 92 / 10, || {
+            let dir = tempdir().unwrap();
+            let config = config(dir.path(), Some(0), None).with_max_rss_bytes(Some(10 * GIB));
+            run_in_circuit_with_storage_config(config, || {
+                let deadline = Instant::now() + Duration::from_secs(30);
+                while Runtime::memory_pressure().unwrap() < MemoryPressure::High {
+                    assert!(
+                        Instant::now() < deadline,
+                        "the runtime never saw the pinned RSS"
+                    );
+                    sleep(Duration::from_millis(50));
+                }
+                let small = spilled_key_blocks_per_100k(BatchLayout::default());
+                let large = spilled_key_blocks_per_100k(BatchLayout {
+                    key_block_bytes: Some(32 * 1024),
+                });
+                assert!(
+                    small >= 80,
+                    "{small} key blocks per 100k keys in the default layout"
+                );
+                assert!(
+                    large * 3 <= small,
+                    "32 KiB key blocks gave {large} key blocks per 100k keys against {small}"
+                );
+            });
+        });
+    }
+
+    /// Inserts one in-memory batch into a spine laid out as `layout` and
+    /// measures the file the insert spilled it to.
+    ///
+    /// # Arguments
+    ///
+    /// * `layout` - the layout to give the spine.
+    ///
+    /// # Returns
+    ///
+    /// Key blocks per 100k keys of the spilled file.
+    fn spilled_key_blocks_per_100k(layout: BatchLayout) -> u64 {
+        let factories = indexed_wset_factories();
+        let mut spine = Spine::<IndexedWSet>::new(
+            &factories,
+            Arc::new("spilled".to_string()),
+            TraceRole::Integral,
+        )
+        .with_layout(layout);
+        block_on(spine.insert(memory_batch(&factories, 0, 300_000)));
+        let batches = spine.get_batches();
+        let [batch] = batches.as_slice() else {
+            panic!("{} batches after one insert", batches.len());
+        };
+        let path = batch
+            .file_path()
+            .expect("a batch inserted under High memory pressure is spilled to storage");
+        key_blocks_per_100k(path)
+    }
 }

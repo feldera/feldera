@@ -24,13 +24,18 @@ use crate::{
     },
     circuit::{CircuitConfig, mkconfig},
     dynamic::{DowncastTrait, DynData, DynUnit, DynWeightedPairs, Erase, LeanVec, pair::DynPair},
-    storage::{buffer_cache::CacheStats, file::FilterKind},
+    storage::{
+        buffer_cache::CacheStats,
+        file::FilterKind,
+        file::reader::{CorruptionError, Error as ReaderError},
+    },
     trace::{
-        Batch, BatchLocation, BatchReader, BatchReaderFactories, Builder, FileIndexedWSetFactories,
+        Batch, BatchLayout, BatchLocation, BatchReader, BatchReaderFactories, Builder,
+        FallbackIndexedWSet, FallbackIndexedWSetFactories, FileIndexedWSetFactories,
         FileWSetFactories, GroupFilter, ListMerger, Spine, Trace, TraceRole, VecIndexedWSet,
         VecIndexedWSetFactories, VecKeyBatch, VecKeyBatchFactories, VecValBatch,
         VecValBatchFactories, VecWSet, VecWSetFactories,
-        cursor::{Cursor, CursorPair},
+        cursor::{Cursor, CursorList, CursorPair},
         ord::{
             FileIndexedWSet, FileKeyBatch, FileKeyBatchFactories, FileValBatch,
             FileValBatchFactories, FileWSet, OrdKeyBatch, OrdKeyBatchFactories, OrdValBatch,
@@ -627,6 +632,294 @@ fn test_file_wset_neg_by_ref_preserves_key_bounds() {
         assert_batch_eq(&negated, &expected);
         assert_out_of_range_seek_uses_range_filter(&negated, -20, 40);
     });
+}
+
+/// A layer file records whether its value column carries a hidden trailing
+/// column, and opening one through factories that disagree is a loud error
+/// rather than a misdecode.
+///
+/// This is the guard that keeps a projected batch from being read as though its
+/// values were plain, which would deserialize `Tup2<V, u32>` bytes as `V`
+/// through unchecked rkyv.
+#[test]
+fn test_file_indexed_wset_value_stamp_guards_from_path() {
+    run_in_circuit_with_storage(|| {
+        let stamped =
+            <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::stamped::<i32, i32, ZWeight>();
+        let plain =
+            <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+
+        let mut tuples = indexed_zset_tuples(vec![Tup2(Tup2(1, 10), 1), Tup2(Tup2(2, 20), 1)]);
+        let batch = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+            &stamped,
+            (),
+            &mut tuples,
+        );
+
+        let path = batch.file_reader().unwrap().path().to_string().into();
+
+        // Same factories: reopens, and the contents survive. This also proves
+        // the builder wrote the stamp, since the guard compares the two.
+        let reopened = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::from_path(&stamped, &path)
+            .expect("a stamped file reopens through stamped factories");
+        assert_eq!(reopened.approximate_len(), batch.approximate_len());
+
+        // Plain factories: refused, not misdecoded.
+        let err = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::from_path(&plain, &path)
+            .expect_err("plain factories must refuse a stamped file");
+        assert!(
+            format!("{err}").contains("stamped"),
+            "expected a value-stamp mismatch, got: {err}"
+        );
+    });
+}
+
+/// `(key, value, hidden stamp, weight)` for a projected batch.
+type ProjectedRow = (i32, i32, u32, ZWeight);
+
+type ProjectedPair = DynPair<DynData, DynData>;
+type Projectable = FallbackIndexedWSet<DynData, DynData, DynZWeight>;
+
+/// The inner batch a projected variant wraps: values are `(value, stamp)`
+/// pairs, and the batch consolidates rows agreeing on all three of key, value
+/// and stamp.
+///
+/// # Arguments
+///
+/// * `rows` - the rows to hold.
+///
+/// # Returns
+///
+/// The inner batch, held in memory.
+fn projected_inner(rows: &[ProjectedRow]) -> VecIndexedWSet<DynData, ProjectedPair, DynZWeight> {
+    let factories = <VecIndexedWSetFactories<DynData, ProjectedPair, DynZWeight>>::new::<
+        i32,
+        Tup2<i32, u32>,
+        ZWeight,
+    >();
+    let tuples: Vec<Tup2<Tup2<i32, Tup2<i32, u32>>, ZWeight>> = rows
+        .iter()
+        .map(|&(key, value, stamp, weight)| Tup2(Tup2(key, Tup2(value, stamp)), weight))
+        .collect();
+    let mut tuples = Box::new(LeanVec::from(tuples)).erase_box();
+    VecIndexedWSet::dyn_from_tuples(&factories, (), &mut tuples)
+}
+
+/// [`projected_inner`] on storage, written through the stamped factories so the
+/// file records that its values carry a trailing column.
+///
+/// # Arguments
+///
+/// * `factories` - factories describing both value types.
+/// * `rows` - the rows to hold.
+///
+/// # Returns
+///
+/// The inner batch, on storage.
+fn projected_inner_file(
+    factories: &FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>,
+    rows: &[ProjectedRow],
+) -> FileIndexedWSet<DynData, ProjectedPair, DynZWeight> {
+    let tuples: Vec<Tup2<Tup2<i32, Tup2<i32, u32>>, ZWeight>> = rows
+        .iter()
+        .map(|&(key, value, stamp, weight)| Tup2(Tup2(key, Tup2(value, stamp)), weight))
+        .collect();
+    let mut tuples = Box::new(LeanVec::from(tuples)).erase_box();
+    FileIndexedWSet::dyn_from_tuples(factories.projected(), (), &mut tuples)
+}
+
+/// Every `(key, value, weight)` a batch's cursor exposes.
+///
+/// # Arguments
+///
+/// * `batch` - the batch to walk.
+///
+/// # Returns
+///
+/// Its records, in key and value order.
+fn projected_contents<B>(batch: &B) -> Vec<(i32, i32, ZWeight)>
+where
+    B: BatchReader<Key = DynData, Val = DynData, Time = (), R = DynZWeight>,
+{
+    let mut contents = Vec::new();
+    let mut cursor = batch.cursor();
+    while cursor.key_valid() {
+        while cursor.val_valid() {
+            contents.push((
+                *unsafe { cursor.key().downcast::<i32>() },
+                *unsafe { cursor.val().downcast::<i32>() },
+                **cursor.weight(),
+            ));
+            cursor.step_val();
+        }
+        cursor.step_key();
+    }
+    contents
+}
+
+/// A batch over values that carry a trailing column reads back as a batch over
+/// the leading column alone: values differing only in the stamp become one
+/// value carrying their summed weight.
+#[test]
+fn test_fallback_indexed_wset_projects_hidden_column() {
+    let factories = <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::with_projection::<
+        i32,
+        i32,
+        ZWeight,
+    >();
+    // Key 1 holds value 10 at two stamps and value 20 at one; key 2 holds a
+    // value whose two stamps cancel, so it disappears along with its key.
+    let rows: &[ProjectedRow] = &[
+        (1, 10, 0, 1),
+        (1, 10, 5, 2),
+        (1, 20, 1, 1),
+        (2, 30, 0, 1),
+        (2, 30, 7, -1),
+    ];
+
+    let batch = Projectable::from_projected_vec(&factories, projected_inner(rows));
+    assert_eq!(
+        projected_contents(&batch),
+        vec![(1, 10, 3), (1, 20, 1)],
+        "the stamps must be invisible and their runs consolidated"
+    );
+
+    // The count is over the inner batch, so it counts the stamps rather than
+    // the values they project to; `approximate_len` promises only an upper bound.
+    assert!(
+        batch.approximate_len() >= 2,
+        "approximate_len is an upper bound on the projected length"
+    );
+}
+
+/// Spilling a projected batch to storage drops the trailing column: the file
+/// holds the values a reader of the batch sees, so it is an ordinary batch that
+/// reopens without one.
+#[test]
+fn test_fallback_indexed_wset_persisting_drops_the_hidden_column() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::with_projection::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+        // Value 10 is held at two stamps, so the inner batch has one more record
+        // than the projection exposes.
+        let rows: &[ProjectedRow] = &[(1, 10, 0, 1), (1, 10, 5, 2), (1, 20, 1, 1)];
+        let expected = vec![(1, 10, 3), (1, 20, 1)];
+
+        let batch = Projectable::from_projected_vec(&factories, projected_inner(rows));
+        assert_eq!(
+            batch.approximate_len(),
+            3,
+            "the inner batch still counts stamps"
+        );
+
+        let persisted = batch
+            .persisted()
+            .expect("an in-memory batch persists to storage");
+        assert_eq!(persisted.location(), BatchLocation::Storage);
+        assert_eq!(
+            projected_contents(&persisted),
+            expected,
+            "spilling must not disturb the projection"
+        );
+        assert_eq!(
+            persisted.approximate_len(),
+            expected.len(),
+            "the spilled batch counts values, so the column is gone rather than hidden"
+        );
+
+        let path: StoragePath = persisted.file_reader().unwrap().path().to_string().into();
+        let reopened = Projectable::from_path(&factories, &path)
+            .expect("a batch spilled from a projected one reopens as an ordinary batch");
+        assert_eq!(projected_contents(&reopened), expected);
+        assert_eq!(reopened.approximate_len(), expected.len());
+    });
+}
+
+/// A file whose values do carry the trailing column reopens as a projected
+/// batch, on the stamp the file records.
+#[test]
+fn test_fallback_indexed_wset_reopens_a_stamped_file_as_projected() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::with_projection::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+        let rows: &[ProjectedRow] = &[(1, 10, 0, 1), (1, 10, 5, 2), (1, 20, 1, 1)];
+        let expected = vec![(1, 10, 3), (1, 20, 1)];
+
+        let batch =
+            Projectable::from_projected_file(&factories, projected_inner_file(&factories, rows));
+        assert_eq!(projected_contents(&batch), expected);
+
+        let path: StoragePath = batch.file_reader().unwrap().path().to_string().into();
+        let reopened = Projectable::from_path(&factories, &path).expect("a stamped file reopens");
+        assert_eq!(
+            projected_contents(&reopened),
+            expected,
+            "the stamp must route the file back to the projected variant"
+        );
+        assert_eq!(
+            reopened.approximate_len(),
+            3,
+            "reopened as projected, so the count is still over the stamped records"
+        );
+    });
+}
+
+/// A stamped file opened through factories that describe no projection is
+/// refused.
+///
+/// Nothing in the bundle can read the file: its values carry a column the plain
+/// factories know nothing about, and decoding one as the other would hand rkyv a
+/// record of the wrong type.  The stamp the file records is what makes the
+/// refusal possible.
+#[test]
+fn test_fallback_indexed_wset_refuses_a_stamped_file_without_projection() {
+    run_in_circuit_with_storage(|| {
+        let projecting =
+            <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::with_projection::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+        let batch = Projectable::from_projected_file(
+            &projecting,
+            projected_inner_file(&projecting, &[(1, 10, 0, 1)]),
+        );
+        let path: StoragePath = batch.file_reader().unwrap().path().to_string().into();
+
+        let plain =
+            <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::new::<i32, i32, ZWeight>(
+            );
+        assert!(
+            matches!(
+                Projectable::from_path(&plain, &path),
+                Err(ReaderError::Corruption(
+                    CorruptionError::ValueStampMismatch {
+                        expected: false,
+                        found: true,
+                    }
+                ))
+            ),
+            "a stamped file must be refused, not read as an unstamped one"
+        );
+    });
+}
+
+/// Factories that describe no projection cannot hold a projected batch, and say
+/// so rather than reading its values as though they had no trailing column.
+#[test]
+#[should_panic(expected = "with_projection")]
+fn test_fallback_indexed_wset_projection_requires_its_factories() {
+    let plain =
+        <FallbackIndexedWSetFactories<DynData, DynData, DynZWeight>>::new::<i32, i32, ZWeight>();
+    let _ = Projectable::from_projected_vec(&plain, projected_inner(&[(1, 10, 0, 1)]));
 }
 
 #[test]
@@ -1399,6 +1692,7 @@ fn test_fallback_wset_roaring_filter_rebuilt_after_storage_merge() {
                 &factories,
                 [&lhs, &rhs],
                 Some(BatchLocation::Storage),
+                BatchLayout::default(),
             ),
             vec![lhs.merge_cursor(None, None), rhs.merge_cursor(None, None)],
         );
@@ -1500,6 +1794,7 @@ fn assert_roaring_filter_survives_reload<B>(
                     &factories,
                     [&with_minimum, &cancels_minimum],
                     Some(BatchLocation::Storage),
+                    BatchLayout::default(),
                 ),
                 vec![
                     with_minimum.merge_cursor(None, None),
@@ -1674,7 +1969,12 @@ fn build_fallback_indexed_wset_i32_at(
         DynI32,
         DynI32,
         DynZWeight,
-    > as Batch>::Builder::for_merge(&factories, [&initial], Some(location));
+    > as Batch>::Builder::for_merge(
+        &factories,
+        [&initial],
+        Some(location),
+        BatchLayout::default(),
+    );
     ListMerger::merge(&factories, builder, vec![initial.merge_cursor(None, None)])
 }
 
@@ -1948,6 +2248,59 @@ fn a_fetch_waiting_for_a_block_read_declares_the_read() {
         },
     );
 }
+
+/// The hint reaches the file cursor through everything between: a spine
+/// snapshot, its cursor list, the fallback batch.  A walk declared sequential
+/// reads ahead; the same walk undeclared reads one block at a time.
+#[test]
+fn a_hint_reaches_the_file_cursor_through_a_snapshot() {
+    run_in_circuit_with_storage(|| {
+        const KEYS: i32 = 60_000;
+        let tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>> = (0..KEYS)
+            .map(|key| Tup2(Tup2(key, key), 1 as ZWeight))
+            .collect();
+        let written = build_fallback_indexed_wset_i32_at(tuples, BatchLocation::Storage);
+        let path = written.file_path().expect("built on storage").clone();
+        let factories =
+            <crate::trace::FallbackIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<
+                i32,
+                i32,
+                ZWeight,
+            >();
+
+        // Opened by path the file has a new id the cache knows nothing about,
+        // so every block is cold; `written` keeps the file on disk meanwhile.
+        let prefetches_under = |hint: crate::trace::AccessHint| {
+            let batch = Arc::new(
+                crate::trace::FallbackIndexedWSet::<DynI32, DynI32, DynZWeight>::from_path(
+                    &factories, &path,
+                )
+                .unwrap(),
+            );
+            let snapshot =
+                crate::trace::SpineSnapshot::with_batches(&factories, vec![batch.clone()]);
+            let mut cursor = snapshot.cursor_with_hint(hint);
+            let mut keys = 0;
+            while cursor.key_valid() {
+                keys += 1;
+                cursor.step_key();
+            }
+            assert_eq!(keys, KEYS);
+            let stats = batch.cache_stats().0[feldera_buffer_cache::ThreadType::Foreground];
+            let count = |access| stats[access].count;
+            use crate::storage::buffer_cache::CacheAccess::{Hit, Miss, Prefetch, Wait};
+            (count(Prefetch), count(Hit), count(Miss), count(Wait))
+        };
+        let (prefetches, hits, misses, waits) =
+            prefetches_under(crate::trace::AccessHint::Sequential);
+        assert!(
+            prefetches >= 16,
+            "a walk declared sequential read little ahead: prefetches {prefetches}, hits {hits}, misses {misses}, waits {waits}"
+        );
+        assert_eq!(prefetches_under(crate::trace::AccessHint::Unknown).0, 0);
+    });
+}
+
 /// Under a zero step threshold, which is what Critical memory pressure
 /// imposes, a builder that receives nothing must finish in memory.  It has
 /// nothing to spill, and a layer file costs two fsyncs on the way out, which a
@@ -2325,7 +2678,7 @@ fn run_indexed_wset_storage_merges(
 
         // Sanity check that each input batch resides where we requested it to be.
         for (input, (_tuples, requested_loc)) in inputs.iter().zip(batches.iter()) {
-            if input.key_count() > 0 {
+            if input.approximate_key_count() > 0 {
                 assert_eq!(input.location(), *requested_loc);
             }
         }
@@ -2356,6 +2709,7 @@ fn run_indexed_wset_storage_merges(
             &factories,
             input_refs,
             Some(BatchLocation::Storage),
+            BatchLayout::default(),
         );
         let cursors: Vec<_> = inputs
             .iter()
@@ -2413,7 +2767,7 @@ fn run_indexed_wset_storage_merges_dense(batches: MergeInputBatches, fc: FilterC
             .collect();
 
         for (input, (_tuples, requested_loc)) in inputs.iter().zip(batches.iter()) {
-            if input.key_count() > 0 {
+            if input.approximate_key_count() > 0 {
                 assert_eq!(input.location(), *requested_loc);
             }
         }
@@ -2436,6 +2790,7 @@ fn run_indexed_wset_storage_merges_dense(batches: MergeInputBatches, fc: FilterC
             &factories,
             input_refs,
             Some(BatchLocation::Storage),
+            BatchLayout::default(),
         );
         let cursors: Vec<_> = inputs.iter().map(|b| b.merge_cursor(None, None)).collect();
         let merged: crate::trace::FallbackIndexedWSet<DynI32, DynI32, DynZWeight> =
@@ -2817,8 +3172,8 @@ mod non_monotone_retention {
     use crate::algebra::{OrdIndexedZSet, OrdIndexedZSetFactories};
     use crate::dynamic::{DowncastTrait, DynData, WithFactory};
     use crate::trace::{
-        Batch, BatchLocation, BatchReader, BatchReaderFactories, Builder, GroupFilter, ListMerger,
-        cursor::Cursor,
+        Batch, BatchLayout, BatchLocation, BatchReader, BatchReaderFactories, Builder, GroupFilter,
+        ListMerger, cursor::Cursor,
     };
     use crate::utils::Tup2;
     use crate::{Runtime, ZWeight};
@@ -2907,6 +3262,7 @@ mod non_monotone_retention {
                 &factories,
                 inputs.iter(),
                 Some(BatchLocation::Memory),
+                BatchLayout::default(),
             );
             let cursors = inputs
                 .iter()
@@ -3451,4 +3807,529 @@ mod non_monotone_retention {
                 expected(&merged_of(&entries), keep_last_n(&spine, threshold, n)));
         }
     }
+}
+
+/// Builds an indexed w-set whose keys carry a known number of values each:
+/// key `i` holds values `0..i`, so key 1 holds one and key 4 holds four.
+///
+/// # Arguments
+///
+/// * `keys` - how many keys to build.
+///
+/// # Returns
+///
+/// The tuples of the batch, ready for a builder.
+fn indexed_wset_tuples_with_fanout(
+    keys: i32,
+) -> Box<DynWeightedPairs<DynPair<DynI32, DynI32>, DynZWeight>> {
+    let mut tuples = Vec::new();
+    for key in 1..=keys {
+        for val in 0..key {
+            tuples.push(Tup2(Tup2(key, val), 1));
+        }
+    }
+    let mut result = indexed_zset_tuples(tuples);
+    result.consolidate();
+    result
+}
+
+/// Walks a cursor and collects `(key, bound, values actually stepped through)`.
+///
+/// # Arguments
+///
+/// * `cursor` - the cursor to walk.
+///
+/// # Returns
+///
+/// Per key, the bound it reported and the values the walk actually found.
+fn fanout_reported_and_walked<C>(cursor: &mut C) -> Vec<(i32, usize, usize)>
+where
+    C: Cursor<DynI32, DynI32, (), DynZWeight>,
+{
+    let mut seen = Vec::new();
+    while cursor.key_valid() {
+        let key = *unsafe { cursor.key().downcast::<i32>() };
+        let bound = cursor.value_count_upper_bound();
+
+        let mut walked = 0;
+        while cursor.val_valid() {
+            walked += 1;
+            cursor.step_val();
+        }
+        seen.push((key, bound, walked));
+        cursor.step_key();
+    }
+    seen
+}
+
+/// A cursor over one batch reports exactly what stepping through the key's
+/// values would find.
+#[test]
+fn value_count_upper_bound_is_exact_for_one_batch() {
+    run_in_circuit_with_storage(|| {
+        let vec_factories =
+            <VecIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let vec = VecIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+            &vec_factories,
+            (),
+            &mut indexed_wset_tuples_with_fanout(4),
+        );
+        assert_eq!(
+            fanout_reported_and_walked(&mut vec.cursor()),
+            vec![(1, 1, 1), (2, 2, 2), (3, 3, 3), (4, 4, 4)]
+        );
+
+        let file_factories =
+            <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let file = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+            &file_factories,
+            (),
+            &mut indexed_wset_tuples_with_fanout(4),
+        );
+        assert_eq!(
+            fanout_reported_and_walked(&mut file.cursor()),
+            vec![(1, 1, 1), (2, 2, 2), (3, 3, 3), (4, 4, 4)]
+        );
+    });
+}
+
+/// The point of the method: asking a file-backed batch how many values a key
+/// has must not read the value column.
+///
+/// The key's own block is already in memory once the cursor is on the key, and
+/// the row group recorded beside it carries the answer.
+#[test]
+fn value_count_upper_bound_reads_nothing() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let batch = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+            &factories,
+            (),
+            &mut indexed_wset_tuples_with_fanout(4),
+        );
+
+        let cursor = batch.cursor();
+        assert!(cursor.key_valid());
+
+        // Settle whatever the first key's position needed, then measure only
+        // the bound.
+        let _ = cursor.value_count_upper_bound();
+        let before = total_cache_accesses(batch.cache_stats());
+        for _ in 0..100 {
+            assert_eq!(cursor.value_count_upper_bound(), 1);
+        }
+        assert_eq!(total_cache_accesses(batch.cache_stats()), before);
+    });
+}
+
+/// A cursor that has run off the end of the keys reports nothing.
+#[test]
+fn value_count_upper_bound_is_zero_off_the_end() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let batch = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+            &factories,
+            (),
+            &mut indexed_wset_tuples_with_fanout(2),
+        );
+
+        let mut cursor = batch.cursor();
+        while cursor.key_valid() {
+            cursor.step_key();
+        }
+        assert_eq!(cursor.value_count_upper_bound(), 0);
+    });
+}
+
+/// A spine merges batches through a cursor list, and that is where undercounting
+/// would do real harm: a caller that trusts a bound of one, on a key two batches
+/// both hold a value for, concludes the key is unambiguous when it is not.
+#[test]
+fn value_count_upper_bound_sums_a_spine_s_batches() {
+    run_in_circuit_with_storage(|| {
+        let factories = <OrdIndexedZSetFactories<DynI32, DynI32>>::new::<i32, i32, ZWeight>();
+        let mut trace: Spine<OrdIndexedZSet<DynI32, DynI32>> = Spine::new(
+            &factories,
+            Arc::new(String::from("Test")),
+            TraceRole::Integral,
+        );
+
+        // Key 1 gets value 7 from one batch and value 7 again from another, so
+        // it really holds one value; key 2 gets two distinct values from one
+        // batch, where the count is exact.
+        for tuples in [
+            vec![
+                Tup2(Tup2(1, 7), 1),
+                Tup2(Tup2(2, 5), 1),
+                Tup2(Tup2(2, 6), 1),
+            ],
+            vec![Tup2(Tup2(1, 7), 1)],
+        ] {
+            let batch = OrdIndexedZSet::<DynI32, DynI32>::dyn_from_tuples(
+                &factories,
+                (),
+                &mut indexed_zset_tuples(tuples),
+            );
+            TOKIO.block_on(trace.insert(batch));
+        }
+
+        let walked = fanout_reported_and_walked(&mut trace.cursor());
+        assert_eq!(walked.len(), 2);
+
+        let (key, bound, values) = walked[0];
+        assert_eq!((key, values), (1, 1), "key 1 really holds one value");
+        assert_eq!(
+            bound, 2,
+            "and both batches hold it, so the bound counts two"
+        );
+
+        let (key, bound, values) = walked[1];
+        assert_eq!((key, bound, values), (2, 2, 2), "one batch, so exact");
+
+        for (key, bound, values) in walked {
+            assert!(bound >= values, "key {key} was undercounted");
+        }
+    });
+}
+
+/// Across several batches the figure is a bound, not a count: two batches
+/// holding the same value for a key contribute it twice, because finding out
+/// otherwise would mean reading the values.
+#[test]
+fn value_count_upper_bound_overestimates_across_batches() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <VecIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let build = |tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>>| {
+            let mut erased = indexed_zset_tuples(tuples);
+            erased.consolidate();
+            VecIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+                &factories,
+                (),
+                &mut erased,
+            )
+        };
+
+        // Both batches hold key 1 at value 7, so the key really has one value.
+        let left = build(vec![Tup2(Tup2(1, 7), 1)]);
+        let right = build(vec![Tup2(Tup2(1, 7), 1)]);
+        let mut first = left.cursor();
+        let mut second = right.cursor();
+        assert_eq!(first.value_count_upper_bound(), 1);
+        assert_eq!(second.value_count_upper_bound(), 1);
+
+        let mut pair = CursorPair::new(&mut first, &mut second);
+        let walked = fanout_reported_and_walked(&mut pair);
+        assert_eq!(walked.len(), 1);
+        let (key, bound, values) = walked[0];
+        assert_eq!((key, values), (1, 1), "the key really holds one value");
+        assert_eq!(bound, 2, "and the bound counts it once per batch");
+        assert!(bound >= values, "a bound that undercounts is unusable");
+    });
+}
+
+#[test]
+fn probe_step_key_value_reads() {
+    run_in_circuit_with_storage(|| {
+        // Same keys in both, but one has eight times the value rows, so any
+        // difference in a key-only sweep is the value column being read.
+        for fanout in [1, 8] {
+            let factories =
+                <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+            let tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>> = (0..50_000)
+                .flat_map(|k| (0..fanout).map(move |v| Tup2(Tup2(k, v), 1)))
+                .collect();
+            let batch = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+                &factories,
+                (),
+                &mut indexed_zset_tuples(tuples),
+            );
+
+            let base = total_cache_accesses(batch.cache_stats());
+            let mut cursor = batch.cursor();
+            let mut keys = 0u64;
+            while cursor.key_valid() {
+                keys += 1;
+                cursor.step_key();
+            }
+            let keys_only = total_cache_accesses(batch.cache_stats()) - base;
+
+            let base = total_cache_accesses(batch.cache_stats());
+            let mut cursor = batch.cursor();
+            let mut vals = 0u64;
+            while cursor.key_valid() {
+                while cursor.val_valid() {
+                    let _ = unsafe { cursor.val().downcast::<i32>() };
+                    vals += 1;
+                    cursor.step_val();
+                }
+                cursor.step_key();
+            }
+            let with_values = total_cache_accesses(batch.cache_stats()) - base;
+
+            println!(
+                "fanout={fanout}: keys={keys} vals={vals}  step_key_only={keys_only}  \
+                 step_key_and_read={with_values}"
+            );
+        }
+    });
+}
+
+/// Walking a file-backed batch's keys must not read its values.
+///
+/// The value cursor is positioned only when something asks for a value, so the
+/// cost of a key-only sweep is set by the key column alone.  Two batches with
+/// the same keys and eight times the values settle it: if the values were being
+/// read, the second would cost about eight times the first.
+#[test]
+fn stepping_keys_does_not_read_values() {
+    run_in_circuit_with_storage(|| {
+        let sweep = |fanout: i32| {
+            let factories =
+                <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+            let tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>> = (0..50_000)
+                .flat_map(|key| (0..fanout).map(move |val| Tup2(Tup2(key, val), 1)))
+                .collect();
+            let batch = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+                &factories,
+                (),
+                &mut indexed_zset_tuples(tuples),
+            );
+
+            let base = total_cache_accesses(batch.cache_stats());
+            let mut cursor = batch.cursor();
+            let mut keys = 0;
+            while cursor.key_valid() {
+                keys += 1;
+                cursor.step_key();
+            }
+            let keys_only = total_cache_accesses(batch.cache_stats()) - base;
+
+            // Asking how many values a key has must be free too, or a caller
+            // that wants the count still pays for the column it is avoiding.
+            let base = total_cache_accesses(batch.cache_stats());
+            let mut cursor = batch.cursor();
+            let mut counted = 0;
+            while cursor.key_valid() {
+                counted += cursor.value_count_upper_bound();
+                cursor.step_key();
+            }
+            let counting = total_cache_accesses(batch.cache_stats()) - base;
+
+            // And so must asking whether a key has any, which is what a scan
+            // calls on every key before deciding whether it wants the value.
+            let base = total_cache_accesses(batch.cache_stats());
+            let mut cursor = batch.cursor();
+            let mut nonempty = 0;
+            while cursor.key_valid() {
+                nonempty += cursor.val_valid() as usize;
+                cursor.step_key();
+            }
+            let checking = total_cache_accesses(batch.cache_stats()) - base;
+            assert_eq!(nonempty, 50_000);
+
+            // Reading the values still has to cost what it always did: the
+            // position handed to `first_with_hint` is what keeps a scan at one
+            // read per value block rather than one descent per key.
+            let base = total_cache_accesses(batch.cache_stats());
+            let mut cursor = batch.cursor();
+            let mut read = 0;
+            while cursor.key_valid() {
+                while cursor.val_valid() {
+                    read += 1;
+                    cursor.step_val();
+                }
+                cursor.step_key();
+            }
+            let reading = total_cache_accesses(batch.cache_stats()) - base;
+
+            assert_eq!(keys, 50_000);
+            assert_eq!(counted, 50_000 * fanout as usize);
+            assert_eq!(read, 50_000 * fanout as usize);
+            (keys_only, counting, checking, reading)
+        };
+
+        let (thin_keys, thin_counting, thin_checking, thin_reading) = sweep(1);
+        let (fat_keys, fat_counting, fat_checking, fat_reading) = sweep(8);
+
+        assert_eq!(
+            thin_counting, thin_keys,
+            "counting a key's values cost more than stepping past it"
+        );
+        assert_eq!(fat_counting, fat_keys);
+        assert_eq!(
+            thin_checking, thin_keys,
+            "asking whether a key has values cost more than stepping past it"
+        );
+        assert_eq!(fat_checking, fat_keys);
+
+        assert!(
+            fat_keys < thin_keys * 2,
+            "eight times the values cost {fat_keys} against {thin_keys}, so they are being read"
+        );
+        assert!(
+            fat_reading > fat_keys * 4,
+            "reading the values cost {fat_reading} against {fat_keys} for the keys alone, \
+             which is too close to be reading anything"
+        );
+        assert!(thin_reading > thin_keys);
+
+        // Reading has to stay at one read per value block.  Losing the hint
+        // handed to `first_with_hint` would put it at one descent per key, so
+        // anything approaching the key count means the fast path is gone.
+        for (reading, label) in [(thin_reading, "one value"), (fat_reading, "eight values")] {
+            assert!(
+                reading < 50_000 / 4,
+                "with {label} a key, reading cost {reading} against 50000 keys, \
+                 which is a descent per key rather than a read per block"
+            );
+        }
+    });
+}
+
+/// A cursor list over one batch must cost what that batch's own cursor costs.
+///
+/// Stepping a key checks whether the values under it cancel, and summing their
+/// weights means reading the block those weights sit in.  With one cursor there
+/// is nothing to cancel against, so the check is skipped and the sweep stays on
+/// the key column.
+#[test]
+fn a_cursor_list_over_one_batch_does_not_read_values() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <FileIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+
+        for fanout in [1, 8] {
+            let tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>> = (0..50_000)
+                .flat_map(|key| (0..fanout).map(move |val| Tup2(Tup2(key, val), 1)))
+                .collect();
+            let batch = FileIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+                &factories,
+                (),
+                &mut indexed_zset_tuples(tuples),
+            );
+
+            let base = total_cache_accesses(batch.cache_stats());
+            let mut cursor = CursorList::new(factories.weight_factory(), vec![batch.cursor()]);
+            let mut keys = 0;
+            while cursor.key_valid() {
+                keys += 1;
+                cursor.step_key();
+            }
+            let through_list = total_cache_accesses(batch.cache_stats()) - base;
+
+            let base = total_cache_accesses(batch.cache_stats());
+            let mut cursor = batch.cursor();
+            while cursor.key_valid() {
+                cursor.step_key();
+            }
+            let through_batch = total_cache_accesses(batch.cache_stats()) - base;
+
+            assert_eq!(keys, 50_000);
+            assert_eq!(
+                through_list, through_batch,
+                "with {fanout} values a key, a list of one cursor cost {through_list} \
+                 against the batch cursor's {through_batch}"
+            );
+        }
+    });
+}
+
+/// `map_values` hands out weights, so it has to add them up where stepping the
+/// cursor deliberately did not.
+#[test]
+fn a_cursor_list_reports_weights_it_did_not_sum() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <VecIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let batch = VecIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+            &factories,
+            (),
+            &mut indexed_zset_tuples(vec![
+                Tup2(Tup2(1, 4), 2),
+                Tup2(Tup2(1, 5), 3),
+                Tup2(Tup2(2, 6), -7),
+            ]),
+        );
+
+        // One cursor, so nothing cancels and no weight is summed while stepping.
+        let mut cursor = CursorList::new(factories.weight_factory(), vec![batch.cursor()]);
+
+        let mut seen = Vec::new();
+        while cursor.key_valid() {
+            let key = *unsafe { cursor.key().downcast::<i32>() };
+            cursor.map_values(&mut |val, weight| {
+                seen.push((key, *unsafe { val.downcast::<i32>() }, *unsafe {
+                    weight.downcast::<ZWeight>()
+                }));
+            });
+            cursor.step_key();
+        }
+        assert_eq!(seen, vec![(1, 4, 2), (1, 5, 3), (2, 6, -7)]);
+
+        // And so does `weight`, reached the usual way.
+        let mut cursor = CursorList::new(factories.weight_factory(), vec![batch.cursor()]);
+        let mut seen = Vec::new();
+        while cursor.key_valid() {
+            let key = *unsafe { cursor.key().downcast::<i32>() };
+            while cursor.val_valid() {
+                let val = *unsafe { cursor.val().downcast::<i32>() };
+                seen.push((key, val, *unsafe { cursor.weight().downcast::<ZWeight>() }));
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+        assert_eq!(seen, vec![(1, 4, 2), (1, 5, 3), (2, 6, -7)]);
+    });
+}
+
+/// Skipping the check for a lone cursor must not stop values from cancelling
+/// when there is something to cancel against.
+#[test]
+fn a_cursor_list_still_cancels_across_batches() {
+    run_in_circuit_with_storage(|| {
+        let factories =
+            <VecIndexedWSetFactories<DynI32, DynI32, DynZWeight>>::new::<i32, i32, ZWeight>();
+        let build = |tuples: Vec<Tup2<Tup2<i32, i32>, ZWeight>>| {
+            VecIndexedWSet::<DynI32, DynI32, DynZWeight>::dyn_from_tuples(
+                &factories,
+                (),
+                &mut indexed_zset_tuples(tuples),
+            )
+        };
+
+        // Key 1 is written and retracted, so it cancels away entirely; key 2
+        // keeps one of its two values and key 3 is only in one batch.
+        let left = build(vec![
+            Tup2(Tup2(1, 7), 1),
+            Tup2(Tup2(2, 4), 1),
+            Tup2(Tup2(2, 5), 1),
+            Tup2(Tup2(3, 9), 1),
+        ]);
+        let right = build(vec![Tup2(Tup2(1, 7), -1), Tup2(Tup2(2, 4), -1)]);
+
+        let mut cursor = CursorList::new(
+            factories.weight_factory(),
+            vec![left.cursor(), right.cursor()],
+        );
+
+        let mut survived = Vec::new();
+        while cursor.key_valid() {
+            let key = *unsafe { cursor.key().downcast::<i32>() };
+            while cursor.val_valid() {
+                let val = *unsafe { cursor.val().downcast::<i32>() };
+                survived.push((key, val));
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+
+        assert_eq!(
+            survived,
+            vec![(2, 5), (3, 9)],
+            "a value whose weights cancel across batches has to stay hidden"
+        );
+    });
 }

@@ -1876,6 +1876,42 @@ export type DevTweaks = {
    */
   integral_merge_threshold_batches?: number | null
   /**
+   * How many data blocks a layer-file cursor that declared a sequential
+   * walk reads ahead of its position.
+   *
+   * Each block a cursor steps into that the buffer cache does not hold is a
+   * device round trip the worker waits out, and a key column is a strided
+   * subset of its file that the kernel's readahead never serves.  Reading
+   * ahead this many blocks keeps that many round trips in flight.  Zero
+   * disables it.  The default is 8.
+   */
+  layer_file_read_ahead_blocks?: number | null
+  /**
+   * Minimum size of the key blocks in the batches a lazy input map's
+   * accumulator writes for itself, in bytes.  A power of two, at least
+   * 4096.
+   *
+   * The map resolves a transaction by walking the accumulated updates in
+   * key order without reading values, one storage request per key block,
+   * so larger blocks mean fewer requests.  Only the accumulator's own
+   * batches (merge outputs and spills) take this size; the batches that
+   * reach the integral keep it until its merger rewrites them at the
+   * default size.  The default is 32768; 8192 is the file writer's default.
+   */
+  lazy_input_map_key_block_bytes?: number | null
+  /**
+   * How many keys a lazy input map resolves against its integral before it
+   * yields to the rest of the circuit.
+   *
+   * The map yields once it has produced a chunk of adjustments, which bounds
+   * a step by its output.  A transaction that rewrites keys with the values
+   * they already hold produces almost no adjustments, so this bounds the same
+   * step by its input.
+   *
+   * The default is 100,000.
+   */
+  lazy_input_map_keys_per_step?: number | null
+  /**
    * Maximum batch size in records for level 0 merges.
    */
   max_level0_batch_size_records?: number | null

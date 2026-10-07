@@ -2362,6 +2362,12 @@ public class SqlToRelCompiler implements IWritesLogs {
             case CreateTableStatement.SKIP_UNUSED_COLUMNS:
                 this.validateBooleanProperty(node, key, value);
                 break;
+            case CreateTableStatement.PARTIAL_UPDATES:
+                this.validateBooleanProperty(node, key, value);
+                if (primaryKey.isEmpty())
+                    throw new CompilationError("Property " + Utilities.singleQuote(keyString) +
+                            " is only allowed on a table with a PRIMARY KEY", node);
+                break;
             case CreateTableStatement.CONNECTORS:
                 this.validateConnectorsProperty(node, true, table, primaryKey, null, key, value);
                 break;

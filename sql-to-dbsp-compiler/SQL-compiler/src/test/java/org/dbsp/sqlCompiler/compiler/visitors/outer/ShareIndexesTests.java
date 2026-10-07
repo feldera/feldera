@@ -464,7 +464,7 @@ public class ShareIndexesTests extends StreamingTestBase {
         DBSPTypeStruct struct = new DBSPTypeStruct(CalciteObject.EMPTY, tableName, fields, false);
         DBSPSourceMultisetOperator result = new DBSPSourceMultisetOperator(
                 CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY, new DBSPTypeZSet(struct.toTuple()), struct,
-                new TableMetadata(tableName, columnMetadata, new ArrayList<>(), null, false, false, null),
+                new TableMetadata(tableName, columnMetadata, new ArrayList<>(), null, false, false, null, false),
                 tableName, StreamKind.DELTA, null);
         circuit.addOperator(result);
         return result;

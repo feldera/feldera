@@ -11,6 +11,7 @@ use crate::operator::communication::{Exchange, ExchangeActivity};
 use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
 use crate::storage::file::writer::Parameters;
+use crate::trace::BatchLayout;
 use crate::utils::process_rss_bytes;
 use crate::{
     DetailedError,
@@ -1393,6 +1394,25 @@ impl Runtime {
         Parameters::default()
             .with_compression(Self::file_compression(options.compression))
             .with_compression_level(options.compression_level)
+    }
+
+    /// The parameters a layer file writer takes for a batch laid out as
+    /// `layout` asks.
+    ///
+    /// # Arguments
+    ///
+    /// * `layout` - what the batch being written asks of its file.
+    ///
+    /// # Returns
+    ///
+    /// The writer's defaults with `layout` applied, which for a batch that asks nothing
+    /// are the defaults themselves.
+    pub fn file_writer_parameters_for(layout: BatchLayout) -> Parameters {
+        let parameters = Self::file_writer_parameters();
+        match layout.key_block_bytes {
+            Some(bytes) => parameters.with_min_key_data_block(bytes),
+            None => parameters,
+        }
     }
 
     /// Maps the configured storage compression to the file-format algorithm.

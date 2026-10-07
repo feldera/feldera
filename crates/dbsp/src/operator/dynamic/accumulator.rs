@@ -23,11 +23,10 @@ use crate::{
         operator_traits::{Operator, OperatorName, UnaryOperator},
     },
     circuit_cache_key,
-    trace::{Batch, BatchReader, Spine, Trace, TraceRole},
+    trace::{Batch, BatchLayout, BatchReader, Spine, Trace, TraceRole},
 };
 
 circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => Accumulation<Stream<C, Option<Spine<B>>>>));
-circuit_cache_key!(ShardedAccumulatorId<C, B: Batch>(StreamId => Stream<C, Option<Spine<B>>>));
 
 /// A stream produced by accumulating batches into a spine.
 ///
@@ -149,9 +148,29 @@ where
         &self,
         factories: &B::Factories,
     ) -> Accumulation<Stream<C, Option<Spine<B>>>> {
+        self.dyn_accumulate_with_layout(factories, BatchLayout::default())
+    }
+
+    /// Like [`dyn_accumulate`](Self::dyn_accumulate), with `layout` applied to
+    /// accumulator's spine.
+    ///
+    /// # Arguments
+    ///
+    /// * `factories` - factories for the batches the spine holds.
+    /// * `layout` - how the spine lays out the batches it writes for itself.
+    ///
+    /// # Returns
+    ///
+    /// The accumulation, whose stream carries the spine at the end of each transaction.
+    #[track_caller]
+    pub fn dyn_accumulate_with_layout(
+        &self,
+        factories: &B::Factories,
+        layout: BatchLayout,
+    ) -> Accumulation<Stream<C, Option<Spine<B>>>> {
         self.circuit()
             .cache_get_or_insert_with(AccumulatorId::new(self.stream_id()), || {
-                let accumulator = Accumulator::<B>::new(factories, Location::caller());
+                let accumulator = Accumulator::<B>::new(factories, Location::caller(), layout);
                 let enable_count = accumulator.enable_count.clone();
 
                 let stream = self
@@ -174,6 +193,8 @@ where
     factories: B::Factories,
     name: OperatorName,
     state: Spine<B>,
+    /// How `state` lays out the batches it writes for itself.
+    layout: BatchLayout,
     flush: bool,
     location: &'static Location<'static>,
 
@@ -199,7 +220,11 @@ impl<B> Accumulator<B>
 where
     B: Batch,
 {
-    pub fn new(factories: &B::Factories, location: &'static Location<'static>) -> Self {
+    pub fn new(
+        factories: &B::Factories,
+        location: &'static Location<'static>,
+        layout: BatchLayout,
+    ) -> Self {
         let enable_count = match Runtime::runtime() {
             None => EnableCount::default(),
             Some(runtime) => {
@@ -216,8 +241,9 @@ where
         let name = OperatorName::new("Accumulator");
         Self {
             factories: factories.clone(),
-            state: Spine::new(factories, name.get(), TraceRole::Accumulator),
+            state: Spine::new(factories, name.get(), TraceRole::Accumulator).with_layout(layout),
             name,
+            layout,
             flush: false,
             location,
             input_batch_stats: BatchSizeStats::new(),
@@ -230,6 +256,7 @@ where
     /// An empty spine to accumulate the next transaction into.
     fn new_spine(&self) -> Spine<B> {
         Spine::new(&self.factories, self.name.get(), TraceRole::Accumulator)
+            .with_layout(self.layout)
     }
 }
 
@@ -311,7 +338,7 @@ where
         // after the last one that was flushed, since the accumulator should not receive any
         // non-empty batches from the previous transaction at that point (in the top-level circuit).
         // This may not be the first batch in the transaction, but it's ok to admit some empty batches.
-        let len = batch.len();
+        let len = batch.approximate_len();
 
         if len > 0 {
             if self.enabled_during_current_transaction.is_none() {
@@ -331,10 +358,44 @@ where
             let mut spine = self.new_spine();
             std::mem::swap(&mut self.state, &mut spine);
 
-            self.output_batch_stats.add_batch(spine.len());
+            self.output_batch_stats.add_batch(spine.approximate_len());
             Some(spine)
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Accumulator;
+    use crate::{
+        ZWeight,
+        algebra::{OrdIndexedZSet, OrdIndexedZSetFactories},
+        circuit::operator_traits::Operator,
+        dynamic::DynData,
+        trace::{BatchLayout, BatchReaderFactories, test::run_in_circuit_with_storage},
+    };
+    use std::panic::Location;
+
+    /// The accumulator's spine takes the layout it was created with, and so
+    /// does every spine that replaces it.
+    #[test]
+    fn the_accumulator_keeps_its_layout_across_spines() {
+        run_in_circuit_with_storage(|| {
+            let factories = <OrdIndexedZSetFactories<DynData, DynData>>::new::<i64, i64, ZWeight>();
+            let layout = BatchLayout {
+                key_block_bytes: Some(64 * 1024),
+            };
+            let mut accumulator = Accumulator::<OrdIndexedZSet<DynData, DynData>>::new(
+                &factories,
+                Location::caller(),
+                layout,
+            );
+            assert_eq!(accumulator.state.layout(), layout);
+            accumulator.clear_state().unwrap();
+            assert_eq!(accumulator.state.layout(), layout);
+            assert_eq!(accumulator.new_spine().layout(), layout);
+        });
     }
 }

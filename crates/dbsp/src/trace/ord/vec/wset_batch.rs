@@ -317,6 +317,9 @@ where
 }
 
 impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, R> {
+    fn is_empty(&self) -> bool {
+        self.approximate_len() == 0
+    }
     type Key = K;
     type Val = DynUnit;
     type Time = ();
@@ -360,12 +363,12 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
     }*/
 
     #[inline]
-    fn key_count(&self) -> usize {
+    fn approximate_key_count(&self) -> usize {
         Trie::keys(&self.layer)
     }
 
     #[inline]
-    fn len(&self) -> usize {
+    fn approximate_len(&self) -> usize {
         self.layer.tuples()
     }
 
@@ -431,6 +434,11 @@ where
 impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Cursor<K, DynUnit, (), R>
     for VecWSetCursor<'_, K, R>
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // A w-set has no values of its own: a key is one tuple.
+        self.key_valid() as usize
+    }
+
     // fn key_factory(&self) -> &'static Factory<K> {
     //     self.cursor.storage.vtables.key
     // }

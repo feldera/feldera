@@ -29,6 +29,10 @@ where
     T: 'static,
     R: WeightTrait + ?Sized,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        0
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.weight_factory
     }

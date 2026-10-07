@@ -552,7 +552,9 @@ impl<Z: IndexedZSet, I, S> DistinctIncrementalTotal<Z, I, S> {
             );
 
             let result = builder.done();
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats
+                .borrow_mut()
+                .add_batch(result.approximate_len());
 
             Some((result, false, delta_cursor.position()))
         } else {
@@ -590,15 +592,15 @@ where
 impl<Z, I, S> StreamingBinaryOperator<Option<Spine<Z>>, I, Z> for DistinctIncrementalTotal<Z, I, S>
 where
     Z: IndexedZSet,
-    I: WithSnapshot<Batch = Z> + 'static,
+    I: WithSnapshot<Batch = Z> + Clone + 'static,
     S: DistinctSemantics,
 {
     fn eval(
         self: Rc<Self>,
-        delta: &Option<Spine<Z>>,
-        delayed_integral: &I,
+        delta: Cow<'_, Option<Spine<Z>>>,
+        delayed_integral: Cow<'_, I>,
     ) -> impl AsyncStream<Item = (Z, bool, Option<Position>)> + 'static {
-        let delta = delta.as_ref().map(|b| b.ro_snapshot());
+        let delta = (*delta).as_ref().map(|b| b.ro_snapshot());
 
         // We assume that delta.is_some() implies that the operator is being flushed:
         // since delayed_integral is always flushed before delta.
@@ -614,7 +616,7 @@ where
                 return
             };
 
-            self.input_batch_stats.borrow_mut().add_batch(delta.len());
+            self.input_batch_stats.borrow_mut().add_batch(delta.approximate_len());
 
             // Limit the initial capacity of the builder in case the chunk size
             // is bigger than memory (e.g. `usize::MAX`).
@@ -692,7 +694,7 @@ where
             }
 
             let result = builder.done();
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats.borrow_mut().add_batch(result.approximate_len());
 
             yield (result, true, delta_cursor.position())
         }
@@ -955,7 +957,9 @@ where
             let result = builder.done();
             self.empty_output
                 .update(|empty_output| empty_output & result.is_empty());
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats
+                .borrow_mut()
+                .add_batch(result.approximate_len());
 
             Some((result, false, delta_cursor.position()))
         } else {
@@ -1070,7 +1074,7 @@ impl<Z, T, Clk, S> StreamingBinaryOperator<Option<Spine<Z>>, T, Z>
     for DistinctIncremental<Z, T, Clk, S>
 where
     Z: IndexedZSet,
-    T: WithSnapshot + 'static,
+    T: WithSnapshot + Clone + 'static,
     T::Batch: ZBatchReader<Key = Z::Key, Val = Z::Val>,
     Clk: WithClock<Time = <T::Batch as BatchReader>::Time> + 'static,
     S: DistinctSemantics,
@@ -1079,10 +1083,10 @@ where
     // cloning.
     fn eval(
         self: Rc<Self>,
-        delta: &Option<Spine<Z>>,
-        trace: &T,
+        delta: Cow<'_, Option<Spine<Z>>>,
+        trace: Cow<'_, T>,
     ) -> impl AsyncStream<Item = (Z, bool, Option<Position>)> + 'static {
-        let delta = delta.as_ref().map(|b| b.ro_snapshot());
+        let delta = (*delta).as_ref().map(|b| b.ro_snapshot());
 
         // We assume that delta.is_some() implies that the operator is being flushed:
         // since the integral is always flushed in same step as delta.
@@ -1101,7 +1105,7 @@ where
             };
 
             let time = self.clock.time();
-            self.input_batch_stats.borrow_mut().add_batch(delta.len());
+            self.input_batch_stats.borrow_mut().add_batch(delta.approximate_len());
 
             Self::init_distinct_vals(&mut self.distinct_vals.borrow_mut(), Some(time.clone()));
             self.empty_input.set(delta.is_empty());
@@ -1305,7 +1309,7 @@ where
 
             let result = result_builder.done();
             self.empty_output.update(|empty_output| empty_output & result.is_empty());
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats.borrow_mut().add_batch(result.approximate_len());
             yield (result, true, delta_cursor.position());
         }
     }

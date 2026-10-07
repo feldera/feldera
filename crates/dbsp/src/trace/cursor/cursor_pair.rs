@@ -259,6 +259,20 @@ where
     C2: Cursor<K, V, T, R> + ?Sized,
     T: 'static,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // Both halves contribute when they sit on the same key, and their
+        // values may coincide, so this is a bound rather than a count.
+        let first = match self.key_order {
+            Ordering::Greater => 0,
+            _ => self.cursor1.value_count_upper_bound(),
+        };
+        let second = match self.key_order {
+            Ordering::Less => 0,
+            _ => self.cursor2.value_count_upper_bound(),
+        };
+        first + second
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.cursor1.weight_factory()
     }

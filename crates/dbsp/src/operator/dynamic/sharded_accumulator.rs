@@ -37,7 +37,9 @@ use crate::{
             shard_batch,
         },
     },
-    trace::{Batch, BatchReader as _, Spine, Trace, TraceRole, deserialize_indexed_wset},
+    trace::{
+        Batch, BatchLayout, BatchReader as _, Spine, Trace, TraceRole, deserialize_indexed_wset,
+    },
 };
 
 circuit_cache_key!(local StreamingExchangeCacheId<B: Batch>(ExchangeId => Arc<ShardedAccumulator<B>>));
@@ -64,11 +66,53 @@ where
         self.dyn_shard_workers_accumulate(factories, 0..Runtime::num_workers())
     }
 
+    /// Like [`dyn_shard_accumulate`](Self::dyn_shard_accumulate), with
+    /// `batch_layout` configured for the accumulator's spine.
+    ///
+    /// # Arguments
+    ///
+    /// * `factories` - factories for the batches the spines hold.
+    /// * `batch_layout` - how those spines lay out the batches they write for
+    ///   themselves.
+    ///
+    /// # Returns
+    ///
+    /// The accumulation, whose stream carries this worker's shard of the transaction at
+    /// the end of it.
+    #[track_caller]
+    pub fn dyn_shard_accumulate_with_layout(
+        &self,
+        factories: &B::Factories,
+        batch_layout: BatchLayout,
+    ) -> Accumulation<Stream<C, Option<Spine<B>>>>
+    where
+        B: Batch<Time = ()>,
+    {
+        self.dyn_shard_workers_accumulate_with_layout(
+            factories,
+            0..Runtime::num_workers(),
+            batch_layout,
+        )
+    }
+
     #[track_caller]
     pub fn dyn_shard_workers_accumulate(
         &self,
         factories: &B::Factories,
         workers: Range<usize>,
+    ) -> Accumulation<Stream<C, Option<Spine<B>>>>
+    where
+        B: Batch<Time = ()>,
+    {
+        self.dyn_shard_workers_accumulate_with_layout(factories, workers, BatchLayout::default())
+    }
+
+    #[track_caller]
+    pub fn dyn_shard_workers_accumulate_with_layout(
+        &self,
+        factories: &B::Factories,
+        workers: Range<usize>,
+        batch_layout: BatchLayout,
     ) -> Accumulation<Stream<C, Option<Spine<B>>>>
     where
         B: Batch<Time = ()>,
@@ -104,6 +148,7 @@ where
                             workers.clone(),
                             exchange_id,
                             factories,
+                            batch_layout,
                         );
                         let enable_count = exchange.enable_count.clone();
                         let local_waiter =
@@ -141,7 +186,7 @@ where
                 .clone()
         } else {
             self.dyn_shard_workers(workers, factories)
-                .dyn_accumulate(factories)
+                .dyn_accumulate_with_layout(factories, batch_layout)
         }
     }
 }
@@ -161,6 +206,9 @@ where
     workers: Range<usize>,
 
     factories: B::Factories,
+
+    /// How the receiving spines lay out the batches they write for themselves.
+    batch_layout: BatchLayout,
 
     /// Range of worker IDs on the local host.
     local_workers: Range<usize>,
@@ -183,6 +231,7 @@ where
         workers: Range<usize>,
         exchange_id: ExchangeId,
         factories: &B::Factories,
+        batch_layout: BatchLayout,
     ) -> Arc<Self> {
         // It's tempting to move the following calls to create the
         // `ExchangeDirectory` and `ExchangeClients` into
@@ -201,6 +250,7 @@ where
                     exchange_id,
                     &directory,
                     factories,
+                    batch_layout,
                 )
             })
             .value()
@@ -216,6 +266,7 @@ where
         exchange_id: ExchangeId,
         directory: &ExchangeDirectory,
         factories: &B::Factories,
+        batch_layout: BatchLayout,
     ) -> Arc<Self> {
         let layout = runtime.layout();
         let npeers = layout.n_workers();
@@ -227,11 +278,19 @@ where
             workers,
             local_workers: layout.local_workers(),
             factories: factories.clone(),
+            batch_layout,
             clients,
             rxq: layout
                 .local_workers()
                 .map(|receiver| {
-                    Mutex::new(Rxq::new(runtime, receiver, factories, npeers, name.get()))
+                    Mutex::new(Rxq::new(
+                        runtime,
+                        receiver,
+                        factories,
+                        npeers,
+                        name.get(),
+                        batch_layout,
+                    ))
                 })
                 .collect(),
             name,
@@ -262,8 +321,13 @@ where
         flush: bool,
     ) -> bool {
         // Spill the batch to disk, if we should, without taking the rxq lock.
-        let batch =
-            Spine::maybe_flush_batch(Some(&self.runtime), batch, factories, || (None, None));
+        let batch = Spine::maybe_flush_batch(
+            Some(&self.runtime),
+            batch,
+            factories,
+            self.batch_layout,
+            || (None, None),
+        );
         if flush || !batch.is_empty() {
             self.rxq(receiver).deliver(factories, sender, batch, flush)
         } else {
@@ -470,6 +534,9 @@ where
 
     /// Name for use in profiles.
     name: Arc<String>,
+
+    /// How the spines lay out the batches they write for themselves.
+    batch_layout: BatchLayout,
 }
 
 /// A spine that a [ShardedAccumulatorReceiver] is building from batches
@@ -498,6 +565,7 @@ where
         worker_index: usize,
         factories: &B::Factories,
         name: Arc<String>,
+        batch_layout: BatchLayout,
     ) -> Self {
         Self {
             n_unflushed: npeers,
@@ -507,7 +575,8 @@ where
                 factories,
                 name,
                 TraceRole::Accumulator,
-            ),
+            )
+            .with_layout(batch_layout),
         }
     }
 }
@@ -522,6 +591,7 @@ where
         factories: &B::Factories,
         npeers: usize,
         name: Arc<String>,
+        batch_layout: BatchLayout,
     ) -> Self {
         Self {
             runtime: runtime.clone(),
@@ -533,8 +603,10 @@ where
                 worker_index,
                 factories,
                 name.clone(),
+                batch_layout,
             )]),
             name,
+            batch_layout,
             n_flushes: repeat_n(0, npeers).collect(),
             n_received: 0,
         }
@@ -562,6 +634,7 @@ where
                     self.worker_index,
                     factories,
                     self.name.clone(),
+                    self.batch_layout,
                 ));
             }
         }
@@ -692,7 +765,7 @@ where
         // receive any non-empty batches from the previous transaction at that
         // point (in the top-level circuit).  This may not be the first batch in
         // the transaction, but it's ok to admit some empty batches.
-        let len = batch.len();
+        let len = batch.approximate_len();
         if (len > 0 || self.flushed) && self.enabled_during_current_transaction.is_none() {
             self.enabled_during_current_transaction = Some(match &self.metadata_exchange {
                 Some(metadata_exchange) => metadata_exchange
@@ -928,7 +1001,7 @@ where
     async fn eval(&mut self) -> Option<Spine<B>> {
         let output = self.exchange.receive();
         if let Some(spine) = &output {
-            self.output_batch_stats.add_batch(spine.len());
+            self.output_batch_stats.add_batch(spine.approximate_len());
             spine.backpressure_wait().await;
             self.flushed = true;
         }

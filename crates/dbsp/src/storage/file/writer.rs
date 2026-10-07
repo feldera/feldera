@@ -15,10 +15,10 @@ use crate::storage::{
             BatchMetadata, BlockHeader, BloomFilterBlockRef, COMPATIBLE_FEATURE_FILTER64,
             COMPATIBLE_FEATURE_NEGATIVE_WEIGHT_COUNT, DATA_BLOCK_MAGIC, DataBlockHeader,
             FILE_TRAILER_BLOCK_MAGIC, FileTrailer, FileTrailerColumn, FixedLen,
-            INCOMPATIBLE_FEATURE_MODULAR_FILTERS, INCOMPATIBLE_FEATURE_ROARING_FILTERS,
-            INDEX_BLOCK_MAGIC, IndexBlockHeader, MODULAR_BLOOM_FILTER_BLOCK_MAGIC,
-            ModularBloomFilterBlockRef, NodeType, ROARING_BITMAP_FILTER_BLOCK_MAGIC,
-            RoaringBitmapFilterBlockRef, VERSION_NUMBER, Varint,
+            INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN, INCOMPATIBLE_FEATURE_MODULAR_FILTERS,
+            INCOMPATIBLE_FEATURE_ROARING_FILTERS, INDEX_BLOCK_MAGIC, IndexBlockHeader,
+            MODULAR_BLOOM_FILTER_BLOCK_MAGIC, ModularBloomFilterBlockRef, NodeType,
+            ROARING_BITMAP_FILTER_BLOCK_MAGIC, RoaringBitmapFilterBlockRef, VERSION_NUMBER, Varint,
         },
         reader::TreeNode,
     },
@@ -90,8 +90,18 @@ impl VarintWriter {
 /// The default parameters should usually be good enough.
 #[derive(Clone, Debug)]
 pub struct Parameters {
-    /// Minimum size of a data block, in bytes.  Must be a power of 2 and at
-    /// least 4096.
+    /// Minimum size of a data block in column 0, in bytes.  Must be a power of
+    /// 2 and at least 4096.
+    ///
+    /// Column 0 holds the keys, and a cursor that walks keys without touching
+    /// values reads this column alone, one block per request, with the other
+    /// columns' blocks interleaved between them on disk.  A larger block here
+    /// means fewer requests for the same keys, at the price of more to
+    /// decompress per point lookup and coarser cache entries.
+    pub min_key_data_block: usize,
+
+    /// Minimum size of a data block in every column but the first, in bytes.
+    /// Must be a power of 2 and at least 4096.
     ///
     /// Larger data blocks reduce the size of the indexes (by allowing an
     /// individual index entry to span a wider range of data, reducing the
@@ -163,6 +173,41 @@ impl Parameters {
         Self { max_branch, ..self }
     }
 
+    /// Set the minimum data block size of column 0 to `bytes`;
+    /// see [`min_key_data_block`](Self::min_key_data_block).
+    ///
+    /// # Arguments
+    ///
+    /// * `bytes` - the minimum size, which must be a power of two.
+    pub fn with_min_key_data_block(self, bytes: usize) -> Self {
+        assert!(
+            bytes.is_power_of_two() && bytes >= 4096,
+            "a key data block minimum must be a power of two and at least 4096, not {bytes}",
+        );
+        Self {
+            min_key_data_block: bytes,
+            ..self
+        }
+    }
+
+    /// The minimum data block size for `column`.
+    ///
+    /// # Arguments
+    ///
+    /// * `column` - which column to size.
+    ///
+    /// # Returns
+    ///
+    /// [`min_key_data_block`](Self::min_key_data_block) for column 0 and
+    /// [`min_data_block`](Self::min_data_block) for the rest.
+    pub(crate) fn min_data_block_for(&self, column: usize) -> usize {
+        if column == 0 {
+            self.min_key_data_block
+        } else {
+            self.min_data_block
+        }
+    }
+
     /// Returns these parameters with `compression` updated.
     pub fn with_compression(self, compression: Option<Compression>) -> Self {
         Self {
@@ -183,6 +228,7 @@ impl Parameters {
 impl Default for Parameters {
     fn default() -> Self {
         Self {
+            min_key_data_block: 8192,
             min_data_block: 8192,
             min_index_block: 8192,
             min_branch: 32,
@@ -230,11 +276,11 @@ struct ColumnWriter {
 }
 
 impl ColumnWriter {
-    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>) -> Self {
+    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>, column: usize) -> Self {
         ColumnWriter {
             parameters: parameters.clone(),
             rows: 0..0,
-            data_block: DataBlockBuilder::new(factories, parameters),
+            data_block: DataBlockBuilder::new(factories, parameters, column),
             index_blocks: Vec::new(),
             factories: factories.clone(),
         }
@@ -469,6 +515,8 @@ impl StrideBuilder {
 
 struct DataBlockBuilder {
     parameters: Arc<Parameters>,
+    /// The column's minimum, resolved once from `parameters`.
+    min_data_block: usize,
     raw: FBuf,
     value_offsets: Vec<usize>,
     value_offset_stride: StrideBuilder,
@@ -501,11 +549,13 @@ where
 }
 
 impl DataBlockBuilder {
-    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>) -> Self {
-        let mut raw = FBuf::with_capacity(parameters.min_data_block);
+    fn new(factories: &AnyFactories, parameters: &Arc<Parameters>, column: usize) -> Self {
+        let min_data_block = parameters.min_data_block_for(column);
+        let mut raw = FBuf::with_capacity(min_data_block);
         raw.resize(DataBlockHeader::LEN, 0);
         Self {
             parameters: parameters.clone(),
+            min_data_block,
             raw,
             row_groups: ContiguousRanges::with_capacity(parameters.min_branch),
             value_offsets: Vec::with_capacity(parameters.min_branch),
@@ -577,7 +627,7 @@ impl DataBlockBuilder {
                 self.specs()
                     .len
                     .next_multiple_of(512)
-                    .max(self.parameters.min_data_block),
+                    .max(self.min_data_block),
             );
         }
 
@@ -1212,7 +1262,8 @@ impl Writer {
         let parameters = Arc::new(parameters);
         let cws = factories
             .iter()
-            .map(|factories| ColumnWriter::new(factories, &parameters))
+            .enumerate()
+            .map(|(column, factories)| ColumnWriter::new(factories, &parameters, column))
             .collect();
         let finished_columns = Vec::with_capacity(n_columns);
         let worker = format!("w{}-", Runtime::worker_index());
@@ -1349,6 +1400,12 @@ impl Writer {
         } else {
             BlockLocation { offset: 0, size: 0 }
         };
+
+        // A stamped value column is unreadable to a binary that does not know to
+        // hide the trailing column, so advertise it as incompatible.
+        if metadata.value_stamp.is_stamped() {
+            incompatible_features |= INCOMPATIBLE_FEATURE_HIDDEN_VALUE_COLUMN;
+        }
 
         // Write the file trailer block.
 

@@ -10,6 +10,26 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Incompatible change (SQL): a table with a primary key no longer
+  accepts partial updates via JSON `update` events, unless it sets the new
+  property `'partial_updates' = 'true'`.  Without the property, the table rejects
+  `update` events, but an `insert` event still replaces the row with the
+  same primary key.  Such a table ingests data faster in a transaction,
+  since it looks up the rows that the events replace in a single pass
+  when the transaction commits.  After the upgrade, a pipeline that
+  resumes from a checkpoint bootstraps every table with a primary key and
+  no `LATENESS` column that does not set the property: the table starts
+  empty, and its input connectors are reset.  A table that sets the
+  property keeps its state, so setting it during the upgrade avoids
+  re-ingesting the table; removing it later moves the table to the
+  faster ingestion, at the cost of one bootstrap.
+  `SET FELDERA_LAZY_UPSERT = OFF;` does the same for every table of a
+  program at once: all its tables keep their state and accept partial
+  updates.  See
+  [`partial_updates`](/sql/grammar#partial-updates),
+  [`FELDERA_LAZY_UPSERT`](/sql/grammar#experimental-options) and
+  [Bootstrapping](/pipelines/modifying#bootstrapping).
+
 ## v0.362.0
 
 - Incompatible change (SQL): the `emit_final` property of a view must

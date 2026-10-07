@@ -7,7 +7,7 @@ use crate::storage::file::{FilterKind, FilterStats, TouchedWindowCount};
 use crate::trace::cursor::{DelegatingCursor, PushCursor};
 use crate::trace::ord::file::val_batch::FileValBuilder;
 use crate::trace::ord::vec::val_batch::VecValBuilder;
-use crate::trace::{BatchLocation, GroupFilter, MergeCursor};
+use crate::trace::{BatchLayout, BatchLocation, GroupFilter, MergeCursor};
 use crate::{
     DBData, DBWeight, NumEntries, Timestamp,
     dynamic::{
@@ -212,6 +212,9 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    fn is_empty(&self) -> bool {
+        self.approximate_len() == 0
+    }
     type Factories = FallbackValBatchFactories<K, V, T, R>;
     type Key = K;
     type Val = V;
@@ -251,17 +254,17 @@ where
         }
     }
 
-    fn key_count(&self) -> usize {
+    fn approximate_key_count(&self) -> usize {
         match &self.inner {
-            Inner::Vec(vec) => vec.key_count(),
-            Inner::File(file) => file.key_count(),
+            Inner::Vec(vec) => vec.approximate_key_count(),
+            Inner::File(file) => file.approximate_key_count(),
         }
     }
 
-    fn len(&self) -> usize {
+    fn approximate_len(&self) -> usize {
         match &self.inner {
-            Inner::Vec(vec) => vec.len(),
-            Inner::File(file) => file.len(),
+            Inner::Vec(vec) => vec.approximate_len(),
+            Inner::File(file) => file.approximate_len(),
         }
     }
 
@@ -339,8 +342,8 @@ where
             Inner::Vec(vec) => {
                 let mut file = FileValBuilder::with_capacity(
                     &self.factories.file,
-                    self.key_count(),
-                    self.len(),
+                    self.approximate_key_count(),
+                    self.approximate_len(),
                 );
                 copy_to_builder(&mut file, vec.cursor());
                 Some(Self {
@@ -446,13 +449,22 @@ where
         factories: &FallbackValBatchFactories<K, V, T, R>,
         batches: I,
         location: Option<BatchLocation>,
+        layout: BatchLayout,
     ) -> Self
     where
         B: Batch<Key = K, Val = V, Time = T, R = R>,
         I: IntoIterator<Item = &'a B> + Clone,
     {
-        let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
-        let value_capacity = batches.clone().into_iter().map(|b| b.len()).sum();
+        let key_capacity = batches
+            .clone()
+            .into_iter()
+            .map(|b| b.approximate_key_count())
+            .sum();
+        let value_capacity = batches
+            .clone()
+            .into_iter()
+            .map(|b| b.approximate_len())
+            .sum();
         Self {
             factories: factories.clone(),
             inner: match pick_merge_destination(batches.clone(), location) {
@@ -465,6 +477,7 @@ where
                     &factories.file,
                     batches,
                     location,
+                    layout,
                 )),
             },
         }

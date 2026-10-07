@@ -6,22 +6,41 @@ pub mod cursor_group;
 pub mod cursor_list;
 pub mod cursor_pair;
 pub mod cursor_with_polarity;
+pub mod projected_val;
 mod reverse;
 pub mod saturating_cursor;
 
 use std::{fmt::Debug, marker::PhantomData};
 
 pub use cursor_empty::CursorEmpty;
+
+/// How the code that asked for a cursor expects to move it.
+///
+/// A file-backed cursor reads a block from storage the moment it steps into
+/// it, and a block the buffer cache does not hold costs a device round trip
+/// while the worker waits.  A cursor told it will walk keys in order reads the
+/// blocks ahead of itself instead; one that will probe reads nothing it was
+/// not asked for.  The hint changes what a cursor costs, never what it says.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum AccessHint {
+    /// Nothing is known.  Blocks are read as they are reached.
+    #[default]
+    Unknown,
+    /// The cursor will step forward through most of its keys in order.
+    Sequential,
+}
 pub use cursor_group::CursorGroup;
 pub use cursor_list::CursorList;
 pub use cursor_pair::CursorPair;
 pub use cursor_with_polarity::CursorWithPolarity;
+pub use projected_val::ProjectedValCursor;
 pub use saturating_cursor::SaturatingCursor;
 
 pub use reverse::ReverseKeyCursor;
 use size_of::SizeOf;
 
-use crate::dynamic::{DataTrait, Factory};
+use crate::Timestamp;
+use crate::dynamic::{DataTrait, Factory, WeightTrait};
 
 use super::BatchReader;
 use super::{Filter, GroupFilter};
@@ -132,6 +151,28 @@ pub trait Cursor<K: ?Sized, V: ?Sized, T, R: ?Sized> {
     /// A value of `false` indicates that the cursor has exhausted all values
     /// for this key.
     fn val_valid(&self) -> bool;
+
+    /// An upper bound on the number of values under the current key.
+    ///
+    /// For an indexed Z-set this is the key's tuple count, since each value
+    /// carries one weight.  A batch that also carries times keeps several of
+    /// them under one value; this counts the values, not the times.
+    ///
+    /// A bound rather than a count because a cursor that merges several batches
+    /// cannot tell, without reading them, how many of their values coincide: it
+    /// returns the sum, which is exact only when they are disjoint.  A cursor
+    /// over a single batch returns the exact number.
+    ///
+    /// Must not do I/O.  This exists so that a caller can learn how many values
+    /// a key has without reading any of them: a batch on storage keeps its keys
+    /// in one column and its values in another, and the row group recorded
+    /// beside a key already says how many value rows it owns.
+    ///
+    /// # Returns
+    ///
+    /// A bound on the values under the current key, and zero when the cursor is
+    /// not on a key.
+    fn value_count_upper_bound(&self) -> usize;
 
     /// A reference to the current key. Panics if invalid.
     fn key(&self) -> &K;
@@ -421,6 +462,10 @@ where
     R: ?Sized,
     C: Cursor<K, V, T, R> + ?Sized,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        (**self).value_count_upper_bound()
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         (**self).weight_factory()
     }
@@ -605,6 +650,10 @@ where
     V: ?Sized,
     R: ?Sized,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        self.0.value_count_upper_bound()
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.0.weight_factory()
     }
@@ -1309,6 +1358,40 @@ impl<V: DataTrait + ?Sized> GroupFilterCursor<V> {
                 }
             }
         }
+    }
+}
+
+/// Wraps `cursor` in whichever merge cursor `key_filter` and `value_filter` call for.
+///
+/// # Arguments
+///
+/// * `cursor` - the cursor to wrap.
+/// * `key_filter` - keys the merge cursor hides, or `None` to hide none.
+/// * `value_filter` - values the merge cursor hides, or `None` to hide none.
+///
+/// # Returns
+///
+/// `cursor` itself when neither filter is given, and a filtering wrapper otherwise.
+pub fn merge_cursor_over<'a, K, V, T, R, C>(
+    cursor: C,
+    key_filter: Option<Filter<K>>,
+    value_filter: Option<GroupFilter<V>>,
+) -> Box<dyn MergeCursor<K, V, T, R> + Send + 'a>
+where
+    K: DataTrait + ?Sized,
+    V: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+    T: Timestamp,
+    C: Cursor<K, V, T, R> + Send + 'a,
+{
+    if key_filter.is_none() && value_filter.is_none() {
+        Box::new(UnfilteredMergeCursor::new(cursor))
+    } else if let Some(GroupFilter::Simple(filter)) = value_filter {
+        Box::new(FilteredMergeCursor::new(cursor, key_filter, Some(filter)))
+    } else {
+        // Other forms of GroupFilter cannot be evaluated without a trace
+        // snapshot -- don't filter values in such cursors.
+        Box::new(FilteredMergeCursor::new(cursor, key_filter, None))
     }
 }
 

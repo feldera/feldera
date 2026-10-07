@@ -12,6 +12,15 @@ use utoipa::ToSchema;
 /// conservative choice; `merge_threshold_test` pins it.
 pub const MAX_MERGE_THRESHOLD_BATCHES: u16 = 15;
 
+/// Smallest key block a layer file writer accepts, in bytes; see
+/// [`DevTweaks::lazy_input_map_key_block_bytes`].
+///
+/// A copy of the floor the writer asserts on `Parameters::min_key_data_block`,
+/// kept here because this crate sits below the one that owns it.  It buys the
+/// user a named error where they set the size, instead of a panic once a
+/// builder reaches for it.
+pub const MIN_KEY_BLOCK_BYTES: u64 = 4096;
+
 /// Optional settings for tweaking Feldera internals.
 ///
 /// These settings reflect experiments that may come and go and change from
@@ -89,6 +98,42 @@ pub struct DevTweaks {
     // than records, and if it were configurable per-operator.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub splitter_chunk_size_records: Option<u64>,
+
+    /// How many keys a lazy input map resolves against its integral before it
+    /// yields to the rest of the circuit.
+    ///
+    /// The map yields once it has produced a chunk of adjustments, which bounds
+    /// a step by its output.  A transaction that rewrites keys with the values
+    /// they already hold produces almost no adjustments, so this bounds the same
+    /// step by its input.
+    ///
+    /// The default is 100,000.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lazy_input_map_keys_per_step: Option<u64>,
+
+    /// Minimum size of the key blocks in the batches a lazy input map's
+    /// accumulator writes for itself, in bytes.  A power of two, at least
+    /// 4096.
+    ///
+    /// The map resolves a transaction by walking the accumulated updates in
+    /// key order without reading values, one storage request per key block,
+    /// so larger blocks mean fewer requests.  Only the accumulator's own
+    /// batches (merge outputs and spills) take this size; the batches that
+    /// reach the integral keep it until its merger rewrites them at the
+    /// default size.  The default is 32768; 8192 is the file writer's default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lazy_input_map_key_block_bytes: Option<u64>,
+
+    /// How many data blocks a layer-file cursor that declared a sequential
+    /// walk reads ahead of its position.
+    ///
+    /// Each block a cursor steps into that the buffer cache does not hold is a
+    /// device round trip the worker waits out, and a key column is a strided
+    /// subset of its file that the kernel's readahead never serves.  Reading
+    /// ahead this many blocks keeps that many round trips in flight.  Zero
+    /// disables it.  The default is 8.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub layer_file_read_ahead_blocks: Option<u64>,
 
     /// Enable adaptive joins.
     ///
@@ -347,6 +392,15 @@ impl DevTweaks {
     pub fn splitter_chunk_size_records(&self) -> u64 {
         self.splitter_chunk_size_records.unwrap_or(10_000)
     }
+    pub fn lazy_input_map_keys_per_step(&self) -> u64 {
+        self.lazy_input_map_keys_per_step.unwrap_or(100_000)
+    }
+    pub fn lazy_input_map_key_block_bytes(&self) -> u64 {
+        self.lazy_input_map_key_block_bytes.unwrap_or(32 * 1024)
+    }
+    pub fn layer_file_read_ahead_blocks(&self) -> u64 {
+        self.layer_file_read_ahead_blocks.unwrap_or(8)
+    }
     pub fn adaptive_joins(&self) -> bool {
         self.adaptive_joins.unwrap_or(false)
     }
@@ -376,6 +430,11 @@ impl DevTweaks {
 
     /// Rejects settings outside their valid range, naming the field, the
     /// value and the range.
+    ///
+    /// # Returns
+    ///
+    /// `Ok` if every setting is in range, otherwise the first one that is not,
+    /// described for the user who wrote it.
     pub fn validate(&self) -> Result<(), String> {
         for (name, value) in [
             (
@@ -402,6 +461,14 @@ impl DevTweaks {
             return Err(format!(
                 "dev_tweaks.top_level_negative_weight_fraction is {fraction}, but the valid \
                  range is 0 through 1"
+            ));
+        }
+        if let Some(bytes) = self.lazy_input_map_key_block_bytes
+            && !(bytes.is_power_of_two() && bytes >= MIN_KEY_BLOCK_BYTES)
+        {
+            return Err(format!(
+                "dev_tweaks.lazy_input_map_key_block_bytes is {bytes}, but it must be a \
+                 power of two and at least {MIN_KEY_BLOCK_BYTES}"
             ));
         }
         Ok(())
@@ -562,6 +629,32 @@ mod tests {
                 "{error}"
             );
             assert!(error.contains("0 through 1"), "{error}");
+        }
+    }
+
+    /// The lazy map's key block size is accepted at the bound and above it on a
+    /// power of two, and rejected otherwise, by name and with the value.
+    ///
+    /// The writer asserts the same thing, but only a caller that reached it: a
+    /// value this rejects never gets that far, and the user is told which
+    /// setting of theirs is wrong instead of losing a pipeline to a panic.
+    #[test]
+    fn the_key_block_size_must_be_a_power_of_two() {
+        let with = |bytes: u64| DevTweaks {
+            lazy_input_map_key_block_bytes: Some(bytes),
+            ..DevTweaks::default()
+        };
+        for good in [MIN_KEY_BLOCK_BYTES, 8192, 32768, 1 << 30] {
+            assert_eq!(with(good).validate(), Ok(()), "{good} bytes");
+        }
+        for bad in [0, 1, 512, MIN_KEY_BLOCK_BYTES - 1, 5000, 6144, u64::MAX] {
+            let error = with(bad)
+                .validate()
+                .expect_err("a size off a power of two, or under the bound, must be rejected");
+            assert!(error.contains("lazy_input_map_key_block_bytes"), "{error}");
+            assert!(error.contains(&bad.to_string()), "{error}");
+            assert!(error.contains("power of two"), "{error}");
+            assert!(error.contains("4096"), "{error}");
         }
     }
 

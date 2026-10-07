@@ -352,6 +352,9 @@ where
     T: Timestamp,
     O: OrdOffset,
 {
+    fn is_empty(&self) -> bool {
+        self.approximate_len() == 0
+    }
     type Key = K;
     type Val = V;
     type Time = T;
@@ -379,11 +382,11 @@ where
         todo!()
     }*/
 
-    fn key_count(&self) -> usize {
+    fn approximate_key_count(&self) -> usize {
         <VecValBatchLayer<K, V, T, R, O> as Trie>::keys(&self.layer)
     }
 
-    fn len(&self) -> usize {
+    fn approximate_len(&self) -> usize {
         <VecValBatchLayer<K, V, T, R, O> as Trie>::tuples(&self.layer)
     }
 
@@ -464,6 +467,13 @@ where
     T: Timestamp,
     O: OrdOffset,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        // The layer stores a key's values contiguously, so the value cursor's
+        // bounds are the count.  The times under each value are not counted.
+        let (start, end) = self.cursor.child.bounds();
+        end - start
+    }
+
     fn weight_factory(&self) -> &'static dyn Factory<R> {
         self.cursor.child.child.storage.factories.diff
     }

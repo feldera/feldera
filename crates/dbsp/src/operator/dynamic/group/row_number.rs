@@ -418,8 +418,8 @@ where
 {
     fn eval(
         self: std::rc::Rc<Self>,
-        delta: &Option<Spine<OrdIndexedZSet<K, V>>>,
-        delayed_trace: &Spine<RankedBatch<K, V>>,
+        delta: Cow<'_, Option<Spine<OrdIndexedZSet<K, V>>>>,
+        delayed_trace: Cow<'_, Spine<RankedBatch<K, V>>>,
     ) -> impl AsyncStream<Item = (RankedBatch<K, V>, bool, Option<Position>)> + 'static {
         let chunk_size = splitter_output_chunk_size();
 
@@ -427,7 +427,7 @@ where
         //     "{}: AggregateIncremental::eval({delta:?})",
         //     Runtime::worker_index()
         // );
-        let delta = delta.as_ref().map(|b| b.ro_snapshot());
+        let delta = (*delta).as_ref().map(|b| b.ro_snapshot());
 
         // We assume that delta.is_some() implies that the operator is being flushed,
         // since the integral is always flushed in the same step as delta.
@@ -444,7 +444,7 @@ where
                 return;
             };
 
-            self.input_batch_stats.borrow_mut().add_batch(delta.len());
+            self.input_batch_stats.borrow_mut().add_batch(delta.approximate_len());
 
             // println!("delta");
             // for (k, v, w) in delta.iter() {
@@ -584,7 +584,7 @@ where
                                 has_values = false;
                             }
                             let result = builder.done();
-                            self.output_batch_stats.borrow_mut().add_batch(result.len());
+                            self.output_batch_stats.borrow_mut().add_batch(result.approximate_len());
                             yield (result, false, joint_cursor.position());
                             builder = <RankedBatch::<K, V> as Batch>::Builder::with_capacity(&self.batch_factories, chunk_size + 1, chunk_size + 1);
                         }
@@ -610,7 +610,7 @@ where
                             builder.push_key(delta_cursor.key());
                             has_values = false;
                             let result = builder.done();
-                            self.output_batch_stats.borrow_mut().add_batch(result.len());
+                            self.output_batch_stats.borrow_mut().add_batch(result.approximate_len());
                             yield (result, false, delta_cursor.position());
                             builder = <RankedBatch::<K, V> as Batch>::Builder::with_capacity(&self.batch_factories, chunk_size + 1, chunk_size + 1);
                         }
@@ -626,7 +626,7 @@ where
             }
 
             let result = builder.done();
-            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            self.output_batch_stats.borrow_mut().add_batch(result.approximate_len());
             yield (result, true, None);
         }
     }

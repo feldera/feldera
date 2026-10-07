@@ -925,7 +925,7 @@ where
     }
 
     fn tuples(&self) -> usize {
-        self.result.len()
+        self.result.approximate_len()
     }
 
     fn seal(mut self) -> TestBatch<K, V, T, R> {
@@ -1096,6 +1096,20 @@ where
     R: WeightTrait + ?Sized,
     T: Timestamp,
 {
+    fn value_count_upper_bound(&self) -> usize {
+        if !self.key_valid() {
+            return 0;
+        }
+        // The reference model holds one entry per key, value and time, so
+        // counting the current key's entries bounds its values from above,
+        // which is what the trait asks for.
+        let current_key = clone_box(self.data[self.index].0.0.as_ref());
+        self.data[self.index..]
+            .iter()
+            .take_while(|((key, _, _), _)| *key == current_key)
+            .count()
+    }
+
     // fn key_factory(&self) -> &'static Factory<K> {
     //     &K::VTABLE
     // }
@@ -1313,6 +1327,9 @@ where
     R: WeightTrait + ?Sized,
     T: Timestamp,
 {
+    fn is_empty(&self) -> bool {
+        self.approximate_len() == 0
+    }
     type Key = K;
     type Val = V;
     type Time = T;
@@ -1337,7 +1354,7 @@ where
         todo!()
     }*/
 
-    fn key_count(&self) -> usize {
+    fn approximate_key_count(&self) -> usize {
         self.data
             .keys()
             .map(|(k, _, _)| clone_box(k.as_ref()))
@@ -1345,7 +1362,7 @@ where
             .len()
     }
 
-    fn len(&self) -> usize {
+    fn approximate_len(&self) -> usize {
         self.data.len()
     }
 
@@ -1532,18 +1549,26 @@ where
     sample.clear();
 
     // Sample size == batch size - must return all keys in the batch.
-    batch.sample_keys(&mut thread_rng(), batch.key_count(), sample.as_mut());
+    batch.sample_keys(
+        &mut thread_rng(),
+        batch.approximate_key_count(),
+        sample.as_mut(),
+    );
     assert_eq!(&sample, &all_keys);
     sample.clear();
 
     // Sample size > batch size - must return all keys in the batch.
-    batch.sample_keys(&mut thread_rng(), batch.key_count() << 1, sample.as_mut());
+    batch.sample_keys(
+        &mut thread_rng(),
+        batch.approximate_key_count() << 1,
+        sample.as_mut(),
+    );
     assert_eq!(&sample, &all_keys);
     sample.clear();
 
     // Sample size < batch size - return the exact number of keys requested,
     // no duplicates, all returned keys must belong to the batch.
-    let sample_size = batch.key_count() >> 1;
+    let sample_size = batch.approximate_key_count() >> 1;
     batch.sample_keys(&mut thread_rng(), sample_size, sample.as_mut());
     assert_eq!(sample.len(), sample_size);
     assert!(sample.is_sorted_by(&|k1, k2| k1.cmp(k2)));
@@ -1599,7 +1624,11 @@ pub fn test_trace_sampling<T: Trace<Time = ()>>(trace: &T) {
     // Sample size == size - must return all keys in the batch.
     let (all_keys, sample) = retry_until_stable(trace, || {
         let mut sample = trace.factories().keys_factory().default_box();
-        trace.sample_keys(&mut thread_rng(), trace.key_count(), sample.as_mut());
+        trace.sample_keys(
+            &mut thread_rng(),
+            trace.approximate_key_count(),
+            sample.as_mut(),
+        );
         sample
     });
     assert_eq!(&sample, &all_keys);
@@ -1607,7 +1636,11 @@ pub fn test_trace_sampling<T: Trace<Time = ()>>(trace: &T) {
     // Sample size > trace size - must return all keys in the trace.
     let (all_keys, sample) = retry_until_stable(trace, || {
         let mut sample = trace.factories().keys_factory().default_box();
-        trace.sample_keys(&mut thread_rng(), trace.key_count() << 1, sample.as_mut());
+        trace.sample_keys(
+            &mut thread_rng(),
+            trace.approximate_key_count() << 1,
+            sample.as_mut(),
+        );
         sample
     });
     assert_eq!(&sample, &all_keys);
@@ -1615,7 +1648,7 @@ pub fn test_trace_sampling<T: Trace<Time = ()>>(trace: &T) {
     // Sample size < trace size - return at most the number of keys requested,
     // no duplicates, all returned keys must belong to the trace.
     let (all_keys, sample) = retry_until_stable(trace, || {
-        let sample_size = trace.key_count() >> 1;
+        let sample_size = trace.approximate_key_count() >> 1;
         let mut sample = trace.factories().keys_factory().default_box();
         trace.sample_keys(&mut thread_rng(), sample_size, sample.as_mut());
         assert!(sample.len() <= sample_size);

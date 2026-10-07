@@ -263,6 +263,35 @@ CREATE TABLE t(x INT, unused INT DEFAULT 0)
 WITH ('skip_unused_columns' = 'true');
 ```
 
+#### Partial updates
+
+`partial_updates` is an optional Boolean property allowed only on tables with a primary key.
+When set to `true`, the table accepts partial row updates:
+JSON [`update` events](/formats/json#the-insertdelete-format) that contain the primary key
+and a subset of the other columns. Each event replaces only the specified columns in the
+row with the matching key.
+
+Tables that omit this property or set it to `false` reject `update` events. Tables with
+a `LATENESS` column are an exception: they always accept partial updates. So do all tables
+with a primary key in a program that sets
+[`FELDERA_LAZY_UPSERT`](#experimental-options) to `OFF`.
+
+Enabling `partial_updates` can slow data ingestion, especially during backfill, when the table
+ingests a large number of records in a single [transaction](/pipelines/transactions).
+
+Turning this property on or off changes the table definition and causes the entire table to
+be re-ingested from scratch. See [Bootstrapping](/pipelines/modifying#bootstrapping).
+
+Example:
+
+```sql
+CREATE TABLE vendor (
+    vendor_id BIGINT NOT NULL PRIMARY KEY,
+    vendor_name VARCHAR,
+    vendor_address VARCHAR
+) WITH ('partial_updates' = 'true');
+```
+
 
 ### LATENESS
 
@@ -839,6 +868,21 @@ default in a future release.  The storage formats of the two
 representations are not compatible: changing the option modifies the
 circuit and therefore forces the pipeline to rebuild its state from
 scratch, so switching back and forth is not recommended.
+
+`FELDERA_LAZY_UPSERT` decides how tables with a primary key ingest
+data.  When `ON`, the default, a table without a `LATENESS` column that
+does not set [`partial_updates`](#partial-updates) to `true` looks up the
+rows that a transaction's records replace in a single pass when the
+transaction commits, which is faster, and rejects partial updates.  When
+`OFF`, every table with a primary key applies each record as it arrives,
+as earlier versions did, and accepts partial updates whatever its
+`partial_updates` property says.  Turn it off if the faster ingestion
+misbehaves or turns out slower for a workload.  Changing the option
+changes every table with a primary key and no `LATENESS` column that does
+not set `'partial_updates' = 'true'`, so the pipeline re-ingests those
+tables from scratch (see [Bootstrapping](/pipelines/modifying#bootstrapping)).
+A pipeline upgraded from an earlier version with the option `OFF` keeps
+the state of all its tables.
 
 `FELDERA_WINDOW_SHARING_THRESHOLD` how windows formed by temporal
 filters share inputs.  Two temporal filters that share an input keep

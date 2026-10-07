@@ -14,6 +14,7 @@ use super::SpineCursor;
 use crate::NumEntries;
 use crate::dynamic::{DynVec, Factory};
 use crate::storage::file::FilterStats;
+use crate::trace::AccessHint;
 use crate::trace::cursor::{CursorFactory, CursorList};
 use crate::trace::{
     Batch, BatchReader, BatchReaderFactories, Cursor, Spine, merge_batches,
@@ -186,7 +187,9 @@ where
     const CONST_NUM_ENTRIES: Option<usize> = None;
 
     fn num_entries_shallow(&self) -> usize {
-        self.batches.iter().fold(0, |acc, batch| acc + batch.len())
+        self.batches
+            .iter()
+            .fold(0, |acc, batch| acc + batch.approximate_len())
     }
 
     fn num_entries_deep(&self) -> usize {
@@ -198,6 +201,9 @@ impl<B> BatchReader for SpineSnapshot<B>
 where
     B: Batch + Send + Sync,
 {
+    fn is_empty(&self) -> bool {
+        self.approximate_len() == 0
+    }
     type Factories = B::Factories;
     type Key = B::Key;
     type Val = B::Val;
@@ -214,14 +220,20 @@ where
         SpineCursor::new_cursor(&self.factories, self.batches.clone())
     }
 
-    fn key_count(&self) -> usize {
-        self.batches
-            .iter()
-            .fold(0, |acc, batch| acc + batch.key_count())
+    fn cursor_with_hint(&self, hint: AccessHint) -> Self::Cursor<'_> {
+        SpineCursor::new_cursor_with_hint(&self.factories, self.batches.clone(), hint)
     }
 
-    fn len(&self) -> usize {
-        self.batches.iter().fold(0, |acc, batch| acc + batch.len())
+    fn approximate_key_count(&self) -> usize {
+        self.batches
+            .iter()
+            .fold(0, |acc, batch| acc + batch.approximate_key_count())
+    }
+
+    fn approximate_len(&self) -> usize {
+        self.batches
+            .iter()
+            .fold(0, |acc, batch| acc + batch.approximate_len())
     }
 
     fn approximate_byte_size(&self) -> usize {
@@ -418,7 +430,10 @@ mod partition_keys_test {
             sizes[range] += 1;
             cursor.step_key();
         }
-        assert_eq!(sizes.iter().sum::<u64>(), snapshot.key_count() as u64);
+        assert_eq!(
+            sizes.iter().sum::<u64>(),
+            snapshot.approximate_key_count() as u64
+        );
         sizes
     }
 
@@ -444,8 +459,13 @@ mod partition_keys_test {
         const PARTITIONS: usize = 12;
 
         let snapshot = snapshot(BATCHES, KEYS_PER_BATCH, interleaved(BATCHES));
-        assert_eq!(snapshot.key_count() as u64, BATCHES * KEYS_PER_BATCH);
-        assert!(KEYS_PER_BATCH < snapshot.key_count() as u64 / PARTITIONS.pow(2) as u64);
+        assert_eq!(
+            snapshot.approximate_key_count() as u64,
+            BATCHES * KEYS_PER_BATCH
+        );
+        assert!(
+            KEYS_PER_BATCH < snapshot.approximate_key_count() as u64 / PARTITIONS.pow(2) as u64
+        );
 
         assert_within(&partition(&snapshot, PARTITIONS), 3);
     }
@@ -460,7 +480,7 @@ mod partition_keys_test {
         const PARTITIONS: usize = 6;
 
         let snapshot = snapshot(BATCHES, KEYS_PER_BATCH, interleaved(BATCHES));
-        let sample_size = partition_sample_size(snapshot.key_count(), PARTITIONS);
+        let sample_size = partition_sample_size(snapshot.approximate_key_count(), PARTITIONS);
         assert!(
             sample_size > PARTITIONS.pow(2),
             "fixture is meant to be sampled above the floor, drew {sample_size}"
@@ -485,7 +505,7 @@ mod partition_keys_test {
 
         let snapshot = snapshot(BATCHES, KEYS_PER_BATCH, contiguous(KEYS_PER_BATCH));
         assert!(
-            partition_sample_size(snapshot.key_count(), PARTITIONS) < BATCHES as usize,
+            partition_sample_size(snapshot.approximate_key_count(), PARTITIONS) < BATCHES as usize,
             "the sample is meant to be too small to reach every batch"
         );
 
