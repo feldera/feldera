@@ -118,15 +118,18 @@
 
 <div class="pipeline-table-wrapper bg-white-dark w-fit min-w-full">
   <div class="bg-white-dark sticky top-0 z-10 pb-2" bind:clientHeight={controlsHeight}>
-    <div class="sticky left-0 max-w-[100cqi] px-2 md:px-8">
+    <!-- The header and the controls share one wrapping row: the controls sit beside the
+         header and drop to their own line only when they no longer fit next to it. -->
+    <div
+      class="sticky left-0 flex max-w-[100cqi] flex-wrap items-center gap-x-4 gap-y-2 px-2 md:px-5"
+    >
       {#if header}
         {@render header()}
       {/if}
-      <div
-        class="relative mt-2 flex flex-row items-center gap-2 sm:justify-end sm:gap-4"
-        class:lg:-mt-7={!!header}
-        class:lg:mb-0={!!header}
-      >
+      <!-- The page reserves a scrollbar gutter that the header above it doesn't have; the
+           negative margin carries the controls into it so they end where the header's
+           buttons do. -->
+      <div class="relative -mr-[var(--scrollbar-width)] ml-auto flex flex-row items-center gap-2">
         <input
           data-testid="input-pipeline-search"
           class="input sm:w-60"
@@ -136,9 +139,11 @@
             nameSearch = e.currentTarget.value
           }}
         />
+        <!-- Same fill as the New Pipeline button next to it (`preset-filled-surface-50-950`).
+             `!` because `Select`'s own background utility would otherwise win by CSS order. -->
         <Select
           data-testid="select-pipeline-status"
-          class="sm:w-40"
+          class="bg-surface-50-950! sm:w-40"
           onchange={(e) => {
             statusFilter.value = filterStatuses.find((v) => e.currentTarget.value === v[0])![0]
             statusFilter.set()
@@ -152,7 +157,7 @@
       </div>
     </div>
   </div>
-  <div class="flex md:px-6">
+  <div class="flex md:px-3">
     <table class="w-full border-separate border-spacing-0">
       <thead class="bg-white-dark sticky" style="top: {controlsHeight}px; z-index: 1;">
         <tr>

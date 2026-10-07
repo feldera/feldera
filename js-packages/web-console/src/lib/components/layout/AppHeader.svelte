@@ -9,13 +9,22 @@
   import { resolve } from '$lib/functions/svelte'
   import type { Snippet } from '$lib/types/svelte'
 
-  const { afterStart, beforeEnd }: { afterStart?: Snippet; beforeEnd?: Snippet } = $props()
+  const {
+    afterStart,
+    beforeEnd,
+    paddingX = 'px-2 md:px-8'
+  }: {
+    afterStart?: Snippet
+    beforeEnd?: Snippet
+    /** Side padding, so the header can line up with a page whose content uses other gutters. */
+    paddingX?: string
+  } = $props()
   const darkMode = useDarkMode()
 
   const healthStatus = useClusterHealth()
 </script>
 
-<div class="flex flex-row items-center justify-between gap-2 px-2 py-1.5 md:px-8">
+<div class="flex flex-row items-center justify-between gap-2 py-1.5 {paddingX}">
   <a class="flex h-12 items-center lg:items-start lg:pr-2.5" href={resolve('/')}>
     <span class="hidden lg:flex">
       {#if darkMode.current === 'dark'}
