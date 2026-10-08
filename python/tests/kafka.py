@@ -22,9 +22,11 @@ def kafka_admin() -> AdminClient:
     return AdminClient({"bootstrap.servers": KAFKA_BOOTSTRAP})
 
 
-def create_topic(admin: AdminClient, topic: str, timeout_s: float = 30.0) -> None:
+def create_topic(
+    admin: AdminClient, topic: str, timeout_s: float = 30.0, num_partitions: int = 1
+) -> None:
     futures = admin.create_topics(
-        [NewTopic(topic=topic, num_partitions=1, replication_factor=1)]
+        [NewTopic(topic=topic, num_partitions=num_partitions, replication_factor=1)]
     )
     futures[topic].result(timeout=timeout_s)
 
@@ -39,12 +41,13 @@ def delete_topic_best_effort(admin: AdminClient, topic: str) -> None:
 
 
 @contextmanager
-def kafka_topics(*prefixes: str) -> Iterator[list[str]]:
-    """Create one random topic per prefix, and delete them all on exit."""
+def kafka_topics(*prefixes: str, num_partitions: int = 1) -> Iterator[list[str]]:
+    """Create one random topic per prefix, each with `num_partitions`
+    partitions, and delete them all on exit."""
     admin = kafka_admin()
     topics = [random_topic(prefix) for prefix in prefixes]
     for topic in topics:
-        create_topic(admin, topic)
+        create_topic(admin, topic, num_partitions=num_partitions)
     try:
         yield topics
     finally:

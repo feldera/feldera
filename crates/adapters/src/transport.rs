@@ -109,7 +109,7 @@ pub fn input_transport_config_to_endpoint(
     let endpoint: Box<dyn TransportInputEndpoint> = match config {
         TransportConfig::FileInput(config) => Box::new(FileInputEndpoint::new(config)),
         #[cfg(feature = "with-kafka")]
-        TransportConfig::KafkaInput(config) => Box::new(KafkaFtInputEndpoint::new(config)?),
+        TransportConfig::KafkaInput(config) => Box::new(KafkaFtInputEndpoint::new(config, shard)?),
         #[cfg(not(feature = "with-kafka"))]
         TransportConfig::KafkaInput(_) => return Ok(None),
         #[cfg(feature = "with-nats")]

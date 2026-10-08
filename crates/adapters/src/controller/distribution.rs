@@ -119,7 +119,7 @@ mod tests {
     use dbsp::circuit::Layout;
     use feldera_types::{
         config::{ConnectorConfig, TransportConfig},
-        coordination::InputDistribution,
+        coordination::{InputDistribution, InputShard},
         transport::{datagen::DatagenInputConfig, kafka::KafkaInputConfig},
     };
 
@@ -170,16 +170,56 @@ mod tests {
     }
 
     #[test]
+    fn single_host_gets_the_whole_shard() {
+        let shard = input_shard("c", &kafka(true), &Layout::new_solo(4), None).unwrap();
+        assert_eq!(shard, Some(InputShard::ALL));
+    }
+
+    #[test]
+    fn multihost_follows_the_coordinator() {
+        let shard = input_shard("c", &kafka(true), &multihost(2), Some(&HOME_1)).unwrap();
+        assert_eq!(shard, Some(InputShard::new(2, 3, HOME_1).unwrap()));
+    }
+
+    /// An old coordinator puts a distributed connector on one host and sends
+    /// no distribution.  That host must read everything, or input is lost.
+    #[test]
+    fn undistributed_by_coordinator_reads_everything() {
+        assert_eq!(
+            input_shard("c", &kafka(true), &multihost(0), None).unwrap(),
+            None
+        );
+    }
+
+    #[test]
     fn inconsistent_instructions_are_rejected() {
         // Distributing a connector that did not ask for it would make every
         // host read all of its input.
         assert!(input_shard("c", &kafka(false), &multihost(0), Some(&HOME_1)).is_err());
+
+        // A home host that does not exist.
+        let bad = InputDistribution { home: 3 };
+        assert!(input_shard("c", &kafka(true), &multihost(0), Some(&bad)).is_err());
+    }
+
+    /// A checkpoint taken with more hosts can give a connector a home host
+    /// that no longer exists.  The error says why, and what to do.
+    #[test]
+    fn resume_on_fewer_hosts_blames_the_checkpoint() {
+        let resumed = resume_distribution(
+            BTreeMap::from([("c".to_string(), InputDistribution { home: 0 })]),
+            &BTreeMap::from([("c".to_string(), InputDistribution { home: 3 })]),
+        );
+        let error = input_shard("c", &kafka(true), &multihost(0), resumed.get("c")).unwrap_err();
+        assert!(error.to_string().contains("checkpoint"), "{error}");
+        assert!(error.to_string().contains("number of hosts"), "{error}");
     }
 
     #[test]
     fn unsupported_transports_are_rejected() {
         assert!(validate_distribution("c", &datagen(true)).is_err());
         assert!(validate_distribution("c", &datagen(false)).is_ok());
+        assert!(validate_distribution("c", &kafka(true)).is_ok());
         assert!(input_shard("c", &datagen(true), &Layout::new_solo(1), None).is_err());
     }
 
