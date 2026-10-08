@@ -65,6 +65,31 @@ edited:
 - `resources.storage_class`
 - `clock_timezone_offset`
 
+#### Resizing a running pipeline
+
+:::caution Experimental feature
+Resizing a running pipeline is an experimental feature and may change.
+:::
+
+On Kubernetes, the CPU and memory of a running pipeline can be changed without a restart:
+
+```bash
+curl -X PATCH "http://localhost:8080/v0/pipelines/example/deployment" \
+  -H "Content-Type: application/json" \
+  -d '{"resources": {"cpu_cores_max": 4, "memory_mb_max": 16000}}'
+```
+
+`GET /v0/pipelines/example/deployment` returns the resources the running pipeline is set to.
+
+- Only `cpu_cores_min`, `cpu_cores_max`, `memory_mb_min` and `memory_mb_max` can be changed, and only if they are set.
+- Each request must stay equal to, or different from, its limit, so the pod keeps its Kubernetes QoS class.
+- Only single-host pipelines can be resized.
+- The runtime configuration does not change. The resize lasts across restarts until storage is
+  cleared or CPU or memory is changed in the runtime configuration.
+- Memory budgets set at start, such as `max_rss_mb` derived from `memory_mb_max`, do not change.
+- Requires Kubernetes 1.33 or later (1.34 or later to lower a memory limit) and
+  `kubernetesRunner.enablePipelineResize` in the [Helm chart](/get-started/enterprise/helm-chart-reference#kubernetes-runner).
+
 ### Program configuration
 
 The "optimized" compilation profile (default) should be used when running production pipelines where performance is important.

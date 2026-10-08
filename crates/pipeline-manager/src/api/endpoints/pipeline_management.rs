@@ -8,6 +8,7 @@ use crate::config::CommonConfig;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::types::combined_status::{CombinedDesiredStatus, CombinedStatus, combine_since};
+use crate::db::types::deployment::{PipelineDeployment, running_deployment_config};
 use crate::db::types::pipeline::{
     ClientMetadata, ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PatchClientMetadata,
     PipelineDescr, PipelineId,
@@ -2224,6 +2225,125 @@ pub(crate) async fn post_pipeline_testing(
     Ok(HttpResponse::Ok().finish())
 }
 
+/// Get Pipeline Deployment
+///
+/// Returns the deployment of a running pipeline.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name")
+    ),
+    responses(
+        (status = OK
+            , description = "Deployment of the running pipeline"
+            , body = PipelineDeployment),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = BAD_REQUEST
+            , description = "Pipeline is not running"
+            , body = ErrorResponse
+            , example = json!(examples::error_deployment_restricted_to_running())),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline Lifecycle"
+)]
+#[get("/pipelines/{pipeline_name}/deployment")]
+pub(crate) async fn get_pipeline_deployment(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline = state
+        .db
+        .lock()
+        .await
+        .get_pipeline(*tenant_id, &path.into_inner())
+        .await?;
+    let deployment_config = running_deployment_config(&pipeline)?;
+    Ok(
+        HttpResponse::Ok().json(PipelineDeployment::from_deployment_config(
+            deployment_config,
+        )?),
+    )
+}
+
+/// Patch Pipeline Deployment
+///
+/// Changes the CPU and memory of a running pipeline in its deployment config. The change lasts
+/// across restarts until storage is cleared or CPU or memory is changed in the runtime config.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name")
+    ),
+    request_body(
+        content = RuntimeConfig,
+        description = "Partial runtime configuration. Only `resources.cpu_cores_min`, \
+                       `resources.cpu_cores_max`, `resources.memory_mb_min` and \
+                       `resources.memory_mb_max` can change.",
+    ),
+    responses(
+        (status = OK
+            , description = "Deployment changed; returns the new deployment"
+            , body = PipelineDeployment),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = BAD_REQUEST
+            , description = "Pipeline is not running, or the patch is invalid"
+            , body = ErrorResponse
+            , examples(
+                ("Not running" = (value = json!(examples::error_deployment_restricted_to_running()))),
+                ("Invalid patch" = (value = json!(examples::error_invalid_deployment_patch()))),
+            )
+        ),
+        (status = METHOD_NOT_ALLOWED
+            , description = "The runner of this installation cannot resize a running pipeline in place"
+            , body = ErrorResponse
+            , example = json!(examples::error_unsupported_pipeline_action())),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline Lifecycle"
+)]
+#[patch("/pipelines/{pipeline_name}/deployment")]
+pub(crate) async fn patch_pipeline_deployment(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    body: web::Json<serde_json::Value>,
+) -> Result<HttpResponse, ManagerError> {
+    if !state.config.enable_pipeline_resize {
+        Err(ApiError::UnsupportedPipelineAction {
+            action: "PATCH /deployment".to_string(),
+            reason: "the runner of this installation cannot resize a running pipeline in place"
+                .to_string(),
+        })?;
+    }
+    let pipeline_name = path.into_inner();
+    let deployment_config = state
+        .db
+        .lock()
+        .await
+        .patch_pipeline_deployment(*tenant_id, &pipeline_name, &body)
+        .await?;
+    info!(
+        pipeline = %pipeline_name,
+        tenant = %tenant_id.0,
+        "Pipeline deployment patched with {:?}",
+        body.into_inner()
+    );
+    Ok(
+        HttpResponse::Ok().json(PipelineDeployment::from_deployment_config(
+            &deployment_config,
+        )?),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use crate::api::endpoints::pipeline_management::{
@@ -2231,6 +2351,44 @@ mod tests {
     };
     use feldera_types::runtime_status::{ConnectorStats, RuntimeStatusDetails};
     use serde_json::json;
+
+    /// `PATCH /deployment` is refused unless the runner can change a running deployment.
+    #[actix_web::test]
+    async fn patch_deployment_requires_enable_pipeline_resize() {
+        use crate::api::main::ServerState;
+        use crate::db::test::setup_pg;
+        use crate::db::types::tenant::TenantId;
+        use actix_web::{App, HttpMessage, test, web};
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+        use uuid::Uuid;
+
+        crate::ensure_default_crypto_provider();
+        let (db, _temp) = setup_pg().await;
+        let db = Arc::new(Mutex::new(db));
+        for (enabled, expected_status, expected_code) in [
+            (false, 405, "UnsupportedPipelineAction"),
+            (true, 404, "UnknownPipelineName"),
+        ] {
+            let mut state = ServerState::test_state(db.clone()).await;
+            state.config.enable_pipeline_resize = enabled;
+            let app = test::init_service(
+                App::new()
+                    .app_data(web::Data::new(state))
+                    .service(super::patch_pipeline_deployment),
+            )
+            .await;
+            let req = test::TestRequest::patch()
+                .uri("/pipelines/missing/deployment")
+                .set_json(json!({"resources": {"cpu_cores_min": 1.0}}))
+                .to_request();
+            req.extensions_mut().insert(TenantId(Uuid::nil()));
+            let resp = test::call_service(&app, req).await;
+            assert_eq!(resp.status(), expected_status, "enabled: {enabled}");
+            let body: serde_json::Value = test::read_body_json(resp).await;
+            assert_eq!(body["error_code"], expected_code, "enabled: {enabled}");
+        }
+    }
 
     /// The API never returns the large program info fields. The circuit IR in
     /// particular reaches the pipeline through the program info artifact, so

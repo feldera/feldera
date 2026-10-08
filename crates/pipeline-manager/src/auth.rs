@@ -1960,6 +1960,7 @@ mod test {
             first_user_role: Role::Admin,
             provision_on_login: true,
             http_base_path: String::new(),
+            enable_pipeline_resize: false,
         }
     }
 

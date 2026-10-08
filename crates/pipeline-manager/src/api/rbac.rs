@@ -64,6 +64,8 @@ static ROUTE_MIN_ROLE: &[(&str, &str, Role)] = &[
     ("POST", "/v0/pipelines/{pipeline_name}/commit_transaction", Role::Write), // commit_transaction
     ("GET", "/v0/pipelines/{pipeline_name}/completion_status", Role::Read), // completion_status
     ("GET", "/v0/pipelines/{pipeline_name}/dataflow_graph", Role::Read), // get_pipeline_dataflow_graph
+    ("GET", "/v0/pipelines/{pipeline_name}/deployment", Role::Read), // get_pipeline_deployment
+    ("PATCH", "/v0/pipelines/{pipeline_name}/deployment", Role::Write), // patch_pipeline_deployment
     ("POST", "/v0/pipelines/{pipeline_name}/diff", Role::Write), // post_pipeline_diff (submits a candidate program to the shared compiler)
     ("POST", "/v0/pipelines/{pipeline_name}/dismiss_error", Role::Write), // post_pipeline_dismiss_error
     ("POST", "/v0/pipelines/{pipeline_name}/egress/{table_name}", Role::Write), // http_output

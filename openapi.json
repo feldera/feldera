@@ -3928,6 +3928,206 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/deployment": {
+      "get": {
+        "tags": [
+          "Pipeline Lifecycle"
+        ],
+        "summary": "Get Pipeline Deployment",
+        "description": "Required role: `read` or higher.\n\nReturns the deployment of a running pipeline.",
+        "operationId": "get_pipeline_deployment",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deployment of the running pipeline",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineDeployment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Pipeline is not running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Pipeline deployment is only available while it is running. Start it with '/start', or change 'runtime_config.resources' while it is stopped.",
+                  "error_code": "DeploymentRestrictedToRunning",
+                  "details": null
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      },
+      "patch": {
+        "tags": [
+          "Pipeline Lifecycle"
+        ],
+        "summary": "Patch Pipeline Deployment",
+        "description": "Required role: `write` or higher.\n\nChanges the CPU and memory of a running pipeline in its deployment config. The change lasts\nacross restarts until storage is cleared or CPU or memory is changed in the runtime config.",
+        "operationId": "patch_pipeline_deployment",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "Partial runtime configuration. Only `resources.cpu_cores_min`, `resources.cpu_cores_max`, `resources.memory_mb_min` and `resources.memory_mb_max` can change.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuntimeConfig"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Deployment changed; returns the new deployment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineDeployment"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Pipeline is not running, or the patch is invalid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Invalid patch": {
+                    "value": {
+                      "message": "Invalid deployment patch: cpu_cores_min (9) exceeds cpu_cores_max (8)",
+                      "error_code": "InvalidDeploymentPatch",
+                      "details": {
+                        "reason": "cpu_cores_min (9) exceeds cpu_cores_max (8)"
+                      }
+                    }
+                  },
+                  "Not running": {
+                    "value": {
+                      "message": "Pipeline deployment is only available while it is running. Start it with '/start', or change 'runtime_config.resources' while it is stopped.",
+                      "error_code": "DeploymentRestrictedToRunning",
+                      "details": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "The runner of this installation cannot resize a running pipeline in place",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unsupported pipeline action 'suspend': this pipeline does not support the suspend action for the following reason(s):\n    - Storage must be configured",
+                  "error_code": "UnsupportedPipelineAction",
+                  "details": {
+                    "action": "suspend",
+                    "reason": "this pipeline does not support the suspend action for the following reason(s):\n    - Storage must be configured"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/diff": {
       "post": {
         "tags": [
@@ -13214,6 +13414,18 @@
           }
         ],
         "description": "Pipeline deployment configuration.\nIt represents configuration entries directly provided by the user\n(e.g., runtime configuration) and entries derived from the schema\nof the compiled program (e.g., connectors). Storage configuration,\nif applicable, is set by the runner."
+      },
+      "PipelineDeployment": {
+        "type": "object",
+        "description": "The deployment of a running pipeline.",
+        "required": [
+          "resources"
+        ],
+        "properties": {
+          "resources": {
+            "$ref": "#/components/schemas/ResourceConfig"
+          }
+        }
       },
       "PipelineDiff": {
         "type": "object",

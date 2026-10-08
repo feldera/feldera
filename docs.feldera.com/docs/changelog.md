@@ -10,6 +10,16 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Experimental (Enterprise, Kubernetes): `PATCH /v0/pipelines/{name}/deployment`
+  changes the CPU and memory of a running pipeline without a restart, and
+  `GET` returns them.  The resize lasts across restarts until storage is
+  cleared or CPU or memory is changed in the runtime configuration.  Enable it with the Helm value `kubernetesRunner.enablePipelineResize`.  See
+  [Resizing a running pipeline](/pipelines/configuration#resizing-a-running-pipeline).
+
+- Behavior change (Enterprise, Kubernetes): pipeline StatefulSets now use the
+  `OnDelete` update strategy.  To apply StatefulSet changes (e.g.,
+  `kubectl rollout restart`, `kubectl edit`, etc.), delete the pod.
+
 ## v0.362.0
 
 - Incompatible change (SQL): the `emit_final` property of a view must

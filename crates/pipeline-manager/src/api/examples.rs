@@ -418,6 +418,16 @@ pub(crate) fn error_update_restricted_to_stopped() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::UpdateRestrictedToStopped)
 }
 
+pub(crate) fn error_deployment_restricted_to_running() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&DBError::DeploymentRestrictedToRunning)
+}
+
+pub(crate) fn error_invalid_deployment_patch() -> ErrorResponse {
+    ErrorResponse::from_error_nolog(&DBError::InvalidDeploymentPatch {
+        reason: "cpu_cores_min (9) exceeds cpu_cores_max (8)".to_string(),
+    })
+}
+
 pub(crate) fn error_delete_restricted_to_fully_stopped() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::DeleteRestrictedToFullyStopped)
 }
