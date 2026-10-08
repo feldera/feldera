@@ -1947,11 +1947,14 @@ pub(crate) fn cargo_profile_dir(workspace_dir: &Path, profile: &CompilationProfi
     target_dir.join(profile.to_target_folder())
 }
 
-/// Prebuilt binary named by `source_checksum`, if the configuration has a
+/// Prebuilt binary named by `prebuilt_binary_key`, if the configuration has a
 /// prebuilt binaries directory and it contains one.
-async fn find_prebuilt_binary(config: &CompilerConfig, source_checksum: &str) -> Option<PathBuf> {
+async fn find_prebuilt_binary(
+    config: &CompilerConfig,
+    prebuilt_binary_key: &str,
+) -> Option<PathBuf> {
     let prebuilt_binaries_directory = config.prebuilt_binaries_directory.as_ref()?;
-    let prebuilt_binary_path = Path::new(prebuilt_binaries_directory).join(source_checksum);
+    let prebuilt_binary_path = Path::new(prebuilt_binaries_directory).join(prebuilt_binary_key);
     match fs::metadata(&prebuilt_binary_path).await {
         Ok(metadata) if metadata.is_file() => Some(prebuilt_binary_path),
         _ => None,
@@ -3038,9 +3041,9 @@ mod test {
         );
     }
 
-    /// Only a regular file named by the source checksum in the configured directory is a hit.
+    /// Only a regular file named by the key in the configured directory is a hit.
     #[tokio::test]
-    async fn find_prebuilt_binary_by_source_checksum() {
+    async fn find_prebuilt_binary_by_key() {
         use crate::compiler::rust_compiler::find_prebuilt_binary;
         use crate::config::CompilerConfig;
         use crate::db::types::program::CompilationProfile;
