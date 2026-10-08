@@ -10,6 +10,15 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- The Kafka output connector with exactly-once fault tolerance no longer
+  forces `batch.size`, `batch.num.messages` and `linger.ms` to their
+  minimums, which sent every message in its own request and limited
+  throughput.  librdkafka's defaults now apply, so output batches messages,
+  and large transactions finish before the transaction timeout.  The three
+  options can now be set in `fault_tolerance.producer_options`; before, any
+  other value was rejected.  See
+  [fault tolerance options](/connectors/sinks/kafka#fault-tolerance-options).
+
 ## v0.362.0
 
 - Incompatible change (SQL): the `emit_final` property of a view must
