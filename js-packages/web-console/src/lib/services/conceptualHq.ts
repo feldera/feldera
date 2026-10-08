@@ -118,7 +118,7 @@ export const trackConceptualHqSignup = (
     return
   }
   const userId = conceptualHqUserId(profile)
-  // A small negative age is clock skew between the server and the browser.
+  // A slow browser clock can count an old user as new, once per user because of `dedupe_id`.
   const age = now - Date.parse(userCreatedAt)
   if (!userId || !(age < SIGNUP_WINDOW_MS)) {
     return
