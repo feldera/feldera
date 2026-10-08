@@ -41,17 +41,27 @@ from tests.platform.fixtures import unity_api, unity_deletion_vectors as fixture
 
 REQUIRED_ENV = ["DELTA_TABLE_TEST_UNITY_DV_TABLE", "DELTA_TABLE_TEST_UNITY_HOST"]
 MISSING_ENV = [name for name in REQUIRED_ENV if not os.environ.get(name)]
-# feldera-ci authenticates via a token CI mints per run rather than a
-# standing client_secret; a client_secret still works for a by-hand run.
-if not os.environ.get("DELTA_TABLE_TEST_UNITY_TOKEN"):
-    MISSING_ENV += [
-        name
-        for name in (
-            "DELTA_TABLE_TEST_UNITY_CLIENT_ID",
-            "DELTA_TABLE_TEST_UNITY_CLIENT_SECRET",
-        )
-        if not os.environ.get(name)
-    ]
+# Mirrors unity_api.token_from_env's precedence: a token already minted, a
+# live GitHub-OIDC exchange (what feldera-ci actually uses, via
+# UNITY_CI_SERVICE_PRINCIPAL_APPLICATION_ID + ACTIONS_ID_TOKEN_REQUEST_URL),
+# or a client_secret for a by-hand run.
+_authenticated = bool(
+    os.environ.get("DELTA_TABLE_TEST_UNITY_TOKEN")
+    or (
+        os.environ.get("UNITY_CI_SERVICE_PRINCIPAL_APPLICATION_ID")
+        and os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL")
+    )
+    or (
+        os.environ.get("DELTA_TABLE_TEST_UNITY_CLIENT_ID")
+        and os.environ.get("DELTA_TABLE_TEST_UNITY_CLIENT_SECRET")
+    )
+)
+if not _authenticated:
+    MISSING_ENV.append(
+        "DELTA_TABLE_TEST_UNITY_TOKEN (or UNITY_CI_SERVICE_PRINCIPAL_APPLICATION_ID "
+        "+ ACTIONS_ID_TOKEN_REQUEST_URL, or DELTA_TABLE_TEST_UNITY_CLIENT_ID + "
+        "DELTA_TABLE_TEST_UNITY_CLIENT_SECRET)"
+    )
 
 # A silent skip in CI is exactly how this test went dormant the first time:
 # IN_CI is set on every CI run, so a skip there is always a bug (a missing
