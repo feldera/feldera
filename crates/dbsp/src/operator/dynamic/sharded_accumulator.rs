@@ -332,7 +332,7 @@ where
                             .clients
                             .connect(receivers.start, MessageType::Streaming)
                             .await
-                            .send(name.clone(), this.exchange_id, sender, items)
+                            .send(name.clone(), this.exchange_id, sender, 0, items)
                         {
                             remote_waiters.push(waiter);
                         }
@@ -421,11 +421,12 @@ where
         self.name.get()
     }
 
-    fn received<'a>(
-        &'a self,
+    fn received(
+        self: Arc<Self>,
         sender: usize,
+        _round: u64,
         data: Vec<AlignedVec>,
-    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         Box::pin(async move {
             for (receiver, mut data) in zip_eq(self.local_workers.clone(), data) {
                 let flush = pop_flushed(&mut data);
