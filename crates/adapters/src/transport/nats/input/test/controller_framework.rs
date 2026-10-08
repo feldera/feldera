@@ -1,6 +1,6 @@
 use super::mock_framework::{STREAM_NAME, SUBJECT_NAME};
 use super::util;
-use crate::controller::{ControllerStatusContext, TransactionInfo};
+use crate::controller::{ControllerBuilder, ControllerStatusContext, TransactionInfo};
 use crate::test::{TestStruct, init_test_logger, test_circuit, wait};
 use crate::{Controller, PipelineConfig};
 use anyhow::Result as AnyResult;
@@ -56,6 +56,28 @@ pub(super) enum NatsControllerAction {
         name_prefix: &'static str,
         metadata: &'static [(&'static str, &'static str)],
     },
+
+    /// Publish `publish` records, start the pipeline, wait for them and
+    /// checkpoint. Then freeze the server until the connector's retry
+    /// breaker gives up with a fatal error, thaw it, and let the pipeline
+    /// run a few more steps. Needs a runner configured with
+    /// `retry_max_attempts`.
+    RunUntilConnectorFatal { publish: usize },
+
+    /// Assert that the input endpoint is still listed in the pipeline status
+    /// and reports its fatal error.
+    AssertInputKeepsFatalError,
+
+    /// Checkpoint the running pipeline and stop it.
+    CheckpointAndStop,
+
+    /// Assert that restarting from the latest checkpoint with the unchanged
+    /// pipeline configuration reports no change to the input connector.
+    AssertRestartSeesNoConnectorChanges,
+
+    /// Restart from the latest checkpoint and assert that the pipeline does
+    /// not ingest again any record it already checkpointed.
+    AssertRestartIngestsNothingNew,
 }
 
 /// Timeout for the server to reflect consumers deleted by a stopped pipeline.
@@ -81,6 +103,7 @@ pub(super) struct NatsControllerRunner {
     consumer_metadata: Vec<(String, String)>,
     given_name: Option<String>,
     inactivity_timeout_secs: Option<u64>,
+    connector_options: Vec<(String, serde_json::Value)>,
 
     // Parsed pipeline config (built lazily after NATS URL is known)
     pipeline_config: Option<PipelineConfig>,
@@ -110,6 +133,7 @@ impl NatsControllerRunner {
             consumer_metadata: Vec::new(),
             given_name: None,
             inactivity_timeout_secs: None,
+            connector_options: Vec::new(),
             pipeline_config: None,
             controller: None,
             total_published: 0,
@@ -138,6 +162,16 @@ impl NatsControllerRunner {
 
     pub(super) fn with_inactivity_timeout_secs(mut self, secs: u64) -> Self {
         self.inactivity_timeout_secs = Some(secs);
+        self
+    }
+
+    /// Adds `key: value` to the NATS connector configuration.
+    pub(super) fn with_connector_option(
+        mut self,
+        key: &str,
+        value: impl Into<serde_json::Value>,
+    ) -> Self {
+        self.connector_options.push((key.to_string(), value.into()));
         self
     }
 
@@ -223,6 +257,9 @@ impl NatsControllerRunner {
                         .cloned()
                         .collect::<BTreeMap<_, _>>()
                 );
+            }
+            for (key, value) in &self.connector_options {
+                transport_config[key] = value.clone();
             }
             if let Some(given_name) = &self.given_name {
                 config["given_name"] = json!(given_name);
@@ -620,6 +657,96 @@ impl NatsControllerRunner {
                 }
 
                 controller.stop().unwrap();
+            }
+
+            NatsControllerAction::RunUntilConnectorFatal { publish } => {
+                self.publish_records(*publish)?;
+                let config = self.pipeline_config().clone();
+                let controller = Controller::with_test_config(
+                    |circuit_config| {
+                        Ok(test_circuit::<TestStruct>(
+                            circuit_config,
+                            &[],
+                            &[Some("output")],
+                        ))
+                    },
+                    &config,
+                    Box::new(|e, _tag| println!("Controller error: {e}")),
+                )
+                .unwrap();
+                controller.start();
+                self.controller = Some(controller);
+                self.wait_for_transmitted();
+                self.checkpoint();
+                self.mark_checkpointed();
+
+                let guard = self.nats_guard.as_ref().expect("StartNats first");
+                guard.freeze()?;
+                let controller = self.controller();
+                let failed = wait(
+                    || match controller.status().input_status().get(&0) {
+                        Some(status) => status.fatal_error.lock().unwrap().is_some(),
+                        // Removed after the fatal error.
+                        None => true,
+                    },
+                    120_000,
+                );
+                guard.thaw()?;
+                assert!(
+                    failed.is_ok(),
+                    "connector did not fail within 120s of the server freezing"
+                );
+
+                // A real pipeline keeps stepping (at least once per clock
+                // tick); the test config has no clock, so request steps.
+                for _ in 0..10 {
+                    controller.request_step();
+                    sleep(Duration::from_millis(200));
+                }
+            }
+
+            NatsControllerAction::AssertInputKeepsFatalError => {
+                let status = self.controller().status();
+                let inputs = status.input_status();
+                let input = inputs
+                    .get(&0)
+                    .expect("the failed input endpoint vanished from the pipeline status");
+                assert!(
+                    input.fatal_error.lock().unwrap().is_some(),
+                    "the input endpoint no longer reports its fatal error"
+                );
+            }
+
+            NatsControllerAction::CheckpointAndStop => {
+                self.checkpoint();
+                self.stop_pipeline();
+            }
+
+            NatsControllerAction::AssertRestartSeesNoConnectorChanges => {
+                let config = self.pipeline_config().clone();
+                let init = ControllerBuilder::new(&config)?.open_latest_checkpoint()?;
+                if let Some(diff) = init.pipeline_diff.as_ref() {
+                    assert!(
+                        !diff.is_affected_connector("test_input1"),
+                        "restart with an unchanged configuration reports connector changes: {diff}"
+                    );
+                }
+            }
+
+            NatsControllerAction::AssertRestartIngestsNothingNew => {
+                self.start_pipeline();
+                sleep(Duration::from_secs(3));
+                self.stop_pipeline();
+                // The output file holds what this run produced.
+                let rows = CsvReaderBuilder::new()
+                    .has_headers(false)
+                    .from_path(&self.output_path)?
+                    .records()
+                    .count();
+                assert_eq!(
+                    rows, 0,
+                    "the restarted pipeline output {rows} records it had already checkpointed"
+                );
             }
         }
         Ok(())
