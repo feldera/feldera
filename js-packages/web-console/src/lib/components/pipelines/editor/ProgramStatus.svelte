@@ -45,7 +45,7 @@
   )
 </script>
 
-<div class="flex flex-nowrap justify-end gap-2 self-center">
+<div class="flex flex-nowrap items-center justify-end gap-2 self-center">
   {#if sqlClass !== spinnerClass}
     <span class={sqlClass}> </span>
   {:else}
@@ -57,7 +57,7 @@
 <div
   class="{rustClass === 'hidden'
     ? 'hidden'
-    : 'flex'} flex-nowrap gap-2 self-center whitespace-nowrap"
+    : 'flex'} flex-nowrap items-center gap-2 self-center whitespace-nowrap"
 >
   {#if rustClass !== spinnerClass}
     <span class={rustClass}> </span>
