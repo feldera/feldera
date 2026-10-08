@@ -229,6 +229,11 @@ Source edition can be found on github.
   `CAST(DATE '0001-01-01' AS VARCHAR)` is `'0001-01-01'`.  For years
   before 1000 the result used to omit the leading zeros (`'1-01-01'`).
 
+- In a multihost pipeline, a Kafka input connector can now divide the
+  partitions of its topic among the hosts.  Set the new connector attribute
+  [`distributed`](/connectors#distributed) to `true`.  See [Distributed
+  connectors](/connectors/sources/kafka#distributed-connectors).
+
 ## v0.360.0
 
 - Storage now uses LZ4 compression by default, instead of Snappy.  LZ4

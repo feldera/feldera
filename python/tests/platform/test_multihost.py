@@ -1,7 +1,11 @@
-from feldera.enums import PipelineStatus
+import json
+
+from confluent_kafka import Producer
+from feldera.enums import FaultToleranceModel, PipelineStatus
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
-from tests import TEST_CLIENT
+from tests import KAFKA_BOOTSTRAP, TEST_CLIENT
+from tests.kafka import kafka_topics
 from .helper import gen_pipeline_name, wait_for_condition
 from feldera.testutils import FELDERA_TEST_NUM_WORKERS, FELDERA_TEST_NUM_HOSTS
 
@@ -327,3 +331,188 @@ CREATE VIEW l2 AS SELECT * FROM t;
         assert sorted(received) == list(range(n_records))
 
     pipeline.stop(force=True)
+
+
+@gen_pipeline_name
+def test_distributed_kafka_input(pipeline_name):
+    """
+    A distributed Kafka input connector runs on every host, and each host
+    reads different partitions of the topic.  Together, the hosts must read
+    each record exactly once.
+
+    The table has no primary key, so a record that two hosts read would count
+    twice.  The topic has more partitions than hosts, so that every host has
+    some partitions, and a number of partitions that is not a multiple of the
+    number of hosts, so that the hosts read different numbers of partitions.
+
+    (This test passes with single-host also, where the one host reads all of
+    the partitions.)
+    """
+    n_records = 3000
+    n_partitions = 2 * FELDERA_TEST_NUM_HOSTS + 1
+
+    with kafka_topics("distributed-input", num_partitions=n_partitions) as [topic]:
+        producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP})
+        for record_id in range(n_records):
+            producer.produce(
+                topic,
+                value=json.dumps({"id": record_id}).encode("utf-8"),
+                partition=record_id % n_partitions,
+            )
+        assert producer.flush(timeout=30) == 0
+
+        connector = {
+            "name": "kafka_in",
+            "distributed": True,
+            "transport": {
+                "name": "kafka_input",
+                "config": {
+                    "topic": topic,
+                    "bootstrap.servers": KAFKA_BOOTSTRAP,
+                    "start_from": "earliest",
+                },
+            },
+            "format": {
+                "name": "json",
+                "config": {"update_format": "raw", "array": False},
+            },
+        }
+        sql = f"""
+CREATE TABLE t (id BIGINT NOT NULL) WITH (
+  'connectors' = '{json.dumps([connector])}'
+);
+CREATE MATERIALIZED VIEW counts AS
+  SELECT COUNT(*) AS n, COUNT(DISTINCT id) AS n_distinct FROM t;
+"""
+        pipeline = PipelineBuilder(
+            TEST_CLIENT,
+            pipeline_name,
+            sql,
+            runtime_config=RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=None,
+            ),
+        ).create_or_replace()
+
+        pipeline.start()
+        try:
+
+            def counts():
+                return list(pipeline.query("SELECT n, n_distinct FROM counts"))
+
+            # Kafka input never ends, so wait for the records to arrive.
+            wait_for_condition(
+                f"{n_records} records ingested",
+                lambda: counts() == [{"n": n_records, "n_distinct": n_records}],
+                timeout_s=120.0,
+                poll_interval_s=1.0,
+            )
+
+            # The statistics list the connector once, with the records of all
+            # of its hosts.
+            inputs = [
+                status
+                for status in pipeline.stats().inputs
+                if status.endpoint_name.endswith("kafka_in")
+            ]
+            assert len(inputs) == 1
+            assert inputs[0].metrics.total_records == n_records
+
+            # No host read a record twice, even after time to do so.
+            assert counts() == [{"n": n_records, "n_distinct": n_records}]
+        finally:
+            pipeline.stop(force=True)
+
+
+@gen_pipeline_name
+def test_distributed_kafka_input_resume(pipeline_name):
+    """
+    A pipeline with a distributed Kafka input connector resumes from a
+    checkpoint with each host reading the same partitions from where it left
+    off: records produced while the pipeline was suspended arrive once, and
+    records from before the checkpoint do not arrive again.
+
+    (This test passes with single-host also.)
+    """
+    n_before = 1000
+    n_after = 500
+    n_partitions = 2 * FELDERA_TEST_NUM_HOSTS + 1
+
+    with kafka_topics("distributed-input-resume", num_partitions=n_partitions) as [
+        topic
+    ]:
+        producer = Producer({"bootstrap.servers": KAFKA_BOOTSTRAP})
+
+        def produce(record_ids):
+            for record_id in record_ids:
+                producer.produce(
+                    topic,
+                    value=json.dumps({"id": record_id}).encode("utf-8"),
+                    partition=record_id % n_partitions,
+                )
+            assert producer.flush(timeout=30) == 0
+
+        produce(range(n_before))
+        connector = {
+            "name": "kafka_in",
+            "distributed": True,
+            "transport": {
+                "name": "kafka_input",
+                "config": {
+                    "topic": topic,
+                    "bootstrap.servers": KAFKA_BOOTSTRAP,
+                    "start_from": "earliest",
+                },
+            },
+            "format": {
+                "name": "json",
+                "config": {"update_format": "raw", "array": False},
+            },
+        }
+        sql = f"""
+CREATE TABLE t (id BIGINT NOT NULL) WITH (
+  'materialized' = 'true',
+  'connectors' = '{json.dumps([connector])}'
+);
+CREATE MATERIALIZED VIEW counts AS
+  SELECT COUNT(*) AS n, COUNT(DISTINCT id) AS n_distinct FROM t;
+"""
+        pipeline = PipelineBuilder(
+            TEST_CLIENT,
+            pipeline_name,
+            sql,
+            runtime_config=RuntimeConfig(
+                workers=FELDERA_TEST_NUM_WORKERS,
+                hosts=FELDERA_TEST_NUM_HOSTS,
+                fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
+            ),
+        ).create_or_replace()
+
+        def counts():
+            return list(pipeline.query("SELECT n, n_distinct FROM counts"))
+
+        def wait_for_records(n):
+            wait_for_condition(
+                f"{n} records ingested",
+                lambda: counts() == [{"n": n, "n_distinct": n}],
+                timeout_s=120.0,
+                poll_interval_s=1.0,
+            )
+
+        pipeline.start()
+        try:
+            wait_for_records(n_before)
+            pipeline.checkpoint(wait=True)
+            pipeline.stop(force=False)
+
+            produce(range(n_before, n_before + n_after))
+            pipeline.start()
+            wait_for_records(n_before + n_after)
+
+            # Nothing arrives twice, even after time to do so.
+            assert counts() == [
+                {"n": n_before + n_after, "n_distinct": n_before + n_after}
+            ]
+        finally:
+            pipeline.stop(force=True)

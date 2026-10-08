@@ -25,6 +25,7 @@ use feldera_adapterlib::transport::{
 };
 use feldera_sqllib::{ByteArray, SqlString, Timestamp, Variant};
 use feldera_types::config::FtModel;
+use feldera_types::coordination::InputShard;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::{
     CompiledHeaderFilter, KafkaInputConfig, KafkaStartFromConfig,
@@ -59,7 +60,7 @@ use std::{
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 use tracing::span::EnteredSpan;
-use tracing::{debug, info_span, warn};
+use tracing::{debug, info, info_span, warn};
 use xxhash_rust::xxh3::Xxh3Default;
 
 /// Poll timeout must be low, as it bounds the amount of time it takes to resume the connector.
@@ -77,13 +78,76 @@ type HeaderPairs<'a> = SmallVec<[(&'a str, Option<&'a [u8]>); 8]>;
 
 pub struct KafkaFtInputEndpoint {
     config: KafkaInputConfig,
+
+    /// For a distributed connector, the partitions that this host reads.
+    shard: Option<InputShard>,
 }
 
 impl KafkaFtInputEndpoint {
-    pub fn new(mut config: KafkaInputConfig) -> AnyResult<KafkaFtInputEndpoint> {
+    pub fn new(
+        mut config: KafkaInputConfig,
+        shard: Option<InputShard>,
+    ) -> AnyResult<KafkaFtInputEndpoint> {
         config.validate()?;
-        Ok(KafkaFtInputEndpoint { config })
+        if shard.is_some() && config.synchronize_partitions {
+            bail!(
+                "a distributed Kafka connector does not support 'synchronize_partitions', because the hosts do not synchronize their partitions with each other"
+            );
+        }
+        Ok(KafkaFtInputEndpoint { config, shard })
     }
+}
+
+/// Returns `config` modified to read only the partitions that belong to
+/// `shard`, out of the `partition_count` partitions in the topic.
+///
+/// The partitions are the units of the input: in ascending order, the `i`th
+/// partition to read goes to the host that owns unit `i`.  Going by position,
+/// rather than by partition number, divides an explicit `partitions` list
+/// evenly even if its numbers are not consecutive, such as `[0, 2, 4, 6]`.
+///
+/// The result lists its partitions explicitly in ascending order, so the reader
+/// treats it like any configuration with a `partitions` list.  The resume
+/// metadata is positional in that list, and partitions that the topic gains
+/// later always sort after the existing ones on each host, so the reader's
+/// support for new partitions continues to work.
+pub(super) fn select_partitions(
+    config: KafkaInputConfig,
+    partition_count: usize,
+    shard: &InputShard,
+) -> AnyResult<KafkaInputConfig> {
+    let mut config = sort_partitions(config);
+    let partitions = config
+        .partitions
+        .clone()
+        .unwrap_or_else(|| (0..partition_count as i32).collect());
+    let keep = (0..partitions.len())
+        .map(|index| shard.contains(index as u64))
+        .collect::<Vec<bool>>();
+    fn select<T: Copy>(items: &[T], keep: &[bool]) -> Vec<T> {
+        iter::zip(items, keep)
+            .filter_map(|(item, keep)| keep.then_some(*item))
+            .collect()
+    }
+
+    if let KafkaStartFromConfig::Offsets(offsets) = &mut config.start_from {
+        if offsets.len() != partitions.len() {
+            bail!(
+                "Topic {} has {} partitions but configuration specifies {} offsets.",
+                config.topic,
+                partitions.len(),
+                offsets.len()
+            );
+        }
+        *offsets = select(offsets, &keep);
+    }
+    config.partitions = Some(select(&partitions, &keep));
+    info!(
+        "distributed connector reads partitions {:?} of topic {}",
+        config.partitions.as_deref().unwrap_or_default(),
+        config.topic
+    );
+    Ok(config)
 }
 
 /// Returns `config` modified so that its `partitions` list, if any, is in
@@ -110,6 +174,14 @@ pub(super) fn sort_partitions(mut config: KafkaInputConfig) -> KafkaInputConfig 
         }
     }
     config
+}
+
+/// Returns true if `config` turns on end-of-partition reporting.
+fn partition_eof_enabled(config: &KafkaInputConfig) -> bool {
+    config
+        .kafka_options
+        .get("enable.partition.eof")
+        .is_some_and(|value| value == "true")
 }
 
 struct KafkaFtInputReader {
@@ -324,6 +396,7 @@ impl KafkaFtInputReaderInner {
         consumer: &Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
         n_partitions: usize,
+        shard: Option<InputShard>,
         command_receiver: UnboundedReceiver<InputReaderCommand>,
         resume_info: Option<Metadata>,
         latest_offsets: Option<Vec<Offset>>,
@@ -337,7 +410,7 @@ impl KafkaFtInputReaderInner {
         let initial_offsets = match resume_info {
             Some(metadata) => {
                 let offsets = metadata
-                    .parse(n_partitions, &mut persisted_partitions)?
+                    .parse(n_partitions, shard.as_ref(), &mut persisted_partitions)?
                     .into_iter()
                     .map(|range| range.end)
                     .collect::<Vec<_>>();
@@ -389,11 +462,16 @@ impl KafkaFtInputReaderInner {
                             .map_err(|error| self.refine_error(error).1)?;
                     }
 
-                    // Translate the timestamps to offsets.
-                    let offsets = self
-                        .kafka_consumer
-                        .offsets_for_times(timestamps, METADATA_TIMEOUT)
-                        .map_err(|error| self.refine_error(error).1)?;
+                    // Translate the timestamps to offsets.  librdkafka
+                    // rejects an empty list, which a host of a distributed
+                    // connector has if it reads no partitions.
+                    let offsets = if partitions.is_empty() {
+                        TopicPartitionList::new()
+                    } else {
+                        self.kafka_consumer
+                            .offsets_for_times(timestamps, METADATA_TIMEOUT)
+                            .map_err(|error| self.refine_error(error).1)?
+                    };
 
                     // Extract the offsets from the returned value.
                     offsets
@@ -506,7 +584,7 @@ impl KafkaFtInputReaderInner {
         // should go to the split queues.
         while let Some(message) = self.kafka_consumer.poll(Duration::ZERO) {
             match message {
-                Err(KafkaError::PartitionEOF(p)) if (0..n_partitions as i32).contains(&p) => {
+                Err(KafkaError::PartitionEOF(p)) if receivers.contains_key(&p) => {
                     receivers[&p].eof.store(true, Ordering::Relaxed);
                 }
                 Err(e) => {
@@ -540,7 +618,8 @@ impl KafkaFtInputReaderInner {
         // Then replay as many steps as requested.
         while let Some((metadata, ())) = command_receiver.blocking_recv_replay()? {
             let n_offsets = metadata.offsets.len();
-            let metadata = metadata.parse(n_partitions, &mut persisted_partitions)?;
+            let metadata =
+                metadata.parse(n_partitions, shard.as_ref(), &mut persisted_partitions)?;
             let mut incomplete_partitions = HashSet::new();
             for (offsets, (partition, receiver)) in metadata.iter().zip(receivers.iter()) {
                 if !offsets.is_empty() {
@@ -721,6 +800,7 @@ impl KafkaFtInputReaderInner {
                         buffer.buffers.flush();
                         let metadata = serde_json::to_value(&Metadata {
                             offsets: buffer.offsets,
+                            shard,
                         })
                         .unwrap();
                         consumer.extended(
@@ -840,7 +920,12 @@ impl KafkaFtInputReaderInner {
             if receivers.values().any(|r| r.fatal_error()) {
                 return Ok(());
             }
-            if receivers.values().all(|r| r.eof()) {
+            // A host with no partitions reports end of input only if
+            // end-of-partition reporting is on, as a host with partitions
+            // would once it reads all of them.
+            if receivers.values().all(|r| r.eof())
+                && (!receivers.is_empty() || partition_eof_enabled(&config))
+            {
                 tracing::info!("reached end of all partitions (`enable.partition.eof` configured)");
                 consumer.eoi();
                 return Ok(());
@@ -885,6 +970,7 @@ fn span(topic: &str) -> EnteredSpan {
 impl KafkaFtInputReader {
     fn new(
         config: KafkaInputConfig,
+        shard: Option<&InputShard>,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         resume_info: Option<serde_json::Value>,
@@ -920,7 +1006,11 @@ impl KafkaFtInputReader {
         // is set.
         kafka_consumer.poll(std::time::Duration::from_nanos(0));
         let partition_count = count_partitions_in_topic(&kafka_consumer, &config.topic)?;
-        let config = Arc::new(sort_partitions(config));
+        let mut config = sort_partitions(config);
+        if let Some(shard) = shard {
+            config = select_partitions(config, partition_count, shard)?;
+        }
+        let config = Arc::new(config);
 
         let inner = Arc::new(KafkaFtInputReaderInner {
             kafka_consumer: Arc::new(kafka_consumer),
@@ -951,6 +1041,7 @@ impl KafkaFtInputReader {
             .spawn({
                 let endpoint = inner.clone();
                 let config = config.clone();
+                let shard = shard.copied();
                 move || {
                     let _guard = span(&config.topic);
                     if let Err(e) = endpoint.poller_thread(
@@ -958,6 +1049,7 @@ impl KafkaFtInputReader {
                         &consumer,
                         parser,
                         n_partitions,
+                        shard,
                         command_receiver,
                         resume_info,
                         latest_offsets,
@@ -993,6 +1085,7 @@ impl TransportInputEndpoint for KafkaFtInputEndpoint {
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(KafkaFtInputReader::new(
             self.config.clone(),
+            self.shard.as_ref(),
             consumer,
             parser,
             resume_info,
@@ -1033,14 +1126,42 @@ impl Drop for KafkaFtInputReader {
 pub(super) struct Metadata {
     /// Per-partition ranges of offsets.
     pub offsets: Vec<Range<i64>>,
+
+    /// For a distributed connector, the shard of the partitions that this host
+    /// read.  `offsets` is positional in this shard's partitions, so it is only
+    /// meaningful to a host that reads the same shard.
+    ///
+    /// This is `None` for a connector that is not distributed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shard: Option<InputShard>,
 }
 
 impl Metadata {
+    /// Returns the offsets for each of this host's `n_partitions` partitions,
+    /// or an error if the metadata does not fit the partitions.  This host
+    /// reads `shard`, if it is distributed.
     fn parse(
         self,
         n_partitions: usize,
+        shard: Option<&InputShard>,
         persisted_partitions: &mut Option<usize>,
     ) -> AnyResult<Vec<Range<i64>>> {
+        // Growth in the topic's partitions does not change the shard, because a
+        // shard assigns each partition by its number.  But a different shard
+        // gives this host different partitions, so applying `offsets` to them
+        // by position would skip or repeat records.
+        if let Some(recorded) = self.shard
+            && Some(&recorded) != shard
+        {
+            bail!(
+                "this host read shard {recorded:?} of the topic's partitions before the pipeline restarted, but now it reads {}; the pipeline cannot resume because the offsets that it recorded do not apply to the new partitions",
+                shard.map_or_else(
+                    || "all of the partitions".to_string(),
+                    |shard| format!("shard {shard:?}")
+                )
+            );
+        }
+
         // Kafka supports increasing the number of partitions in a topic, but
         // not decreasing it.  If we are restarted with more partitions than we
         // previously had, then we interpret checkpoints and journal entries as
