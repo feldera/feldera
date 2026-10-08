@@ -1,4 +1,5 @@
 import { unzip, type ZipItem } from 'but-unzip'
+import type { ConnectorStatus } from 'common-lib/connectorMetrics'
 import type { Dataflow, JsonProfiles } from 'profiler-lib'
 import sortOn from 'sort-on'
 import { groupBy } from './array'
@@ -62,6 +63,8 @@ export interface ProcessedProfile {
   pipelineName?: string
   /** Cumulative pipeline-wide metrics from `stats.json`, when the bundle includes them. */
   globalMetrics?: GlobalMetrics
+  /** Input and output connector statistics from `stats.json`, when the bundle includes them. */
+  connectorStatus?: ConnectorStatus
   /** Pipeline runtime configuration (`runtime_config` from `pipeline_config.json`), when the
    *  bundle includes it. */
   runtimeConfig?: unknown
@@ -164,19 +167,24 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
     logText = decoder.decode(await logsFile.read())
   }
 
-  // `stats.json` is the `/stats` response; the overview tile only needs its `global_metrics`.
-  // A malformed or missing file leaves `globalMetrics` undefined rather than failing the load,
-  // since the stats are supplementary to the profile.
+  // `stats.json` holds the `/stats` response. The overview tile reads its `global_metrics`, and the
+  // Connectors tab reads its `inputs` and `outputs`. A malformed or missing file leaves both
+  // undefined and does not fail the load, because the profile does not need the stats.
   const statsFile = files.find((file) => statsRegex.test(file.filename))
   let globalMetrics: GlobalMetrics | undefined
+  let connectorStatus: ConnectorStatus | undefined
   if (statsFile) {
     try {
-      const stats = JSON.parse(decoder.decode(await statsFile.read())) as {
+      const stats = JSON.parse(
+        decoder.decode(await statsFile.read())
+      ) as Partial<ConnectorStatus> & {
         global_metrics?: GlobalMetrics
       }
       globalMetrics = stats.global_metrics
+      connectorStatus = parseConnectorStatus(stats)
     } catch {
       globalMetrics = undefined
+      connectorStatus = undefined
     }
   }
 
@@ -187,6 +195,22 @@ export async function processProfileFiles(files: ZipItem[]): Promise<ProcessedPr
     logText,
     pipelineName,
     globalMetrics,
+    connectorStatus,
     runtimeConfig
   }
+}
+
+/**
+ * Returns the connector statistics of a parsed `stats.json`, or `undefined` when it lists no
+ * input and no output connectors.
+ */
+export function parseConnectorStatus(
+  stats: Partial<ConnectorStatus> | null | undefined
+): ConnectorStatus | undefined {
+  const inputs = Array.isArray(stats?.inputs) ? stats.inputs : []
+  const outputs = Array.isArray(stats?.outputs) ? stats.outputs : []
+  if (inputs.length === 0 && outputs.length === 0) {
+    return undefined
+  }
+  return { inputs, outputs, global_metrics: stats?.global_metrics }
 }
