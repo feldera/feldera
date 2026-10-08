@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use dyn_clone::DynClone;
 use feldera_types::adapter_stats::ConnectorHealth;
 use feldera_types::config::FtModel;
-use feldera_types::coordination::Completion;
+use feldera_types::coordination::{Completion, InputShard};
 use feldera_types::program_schema::Relation;
 use feldera_types::transaction::TransactionId;
 use rmpv::{Value as RmpValue, ext::Error as RmpDecodeError};
@@ -76,6 +76,19 @@ pub trait TransportInputEndpoint: InputEndpoint {
         schema: Relation,
         resume_info: Option<JsonValue>,
     ) -> AnyResult<Box<dyn InputReader>>;
+}
+
+/// What a host of a distributed integrated input connector needs to know to
+/// read its part of the input.
+#[derive(Clone, Debug)]
+pub struct DistributedInput {
+    /// The part of the input that this host reads.
+    pub shard: InputShard,
+
+    /// The value that host 0 chose for all the hosts to use, if the transport
+    /// needs a choice and this host is not host 0 (see
+    /// `CoordinationActivate::input_choices`).
+    pub choice: Option<JsonValue>,
 }
 
 #[doc(hidden)]
@@ -834,6 +847,17 @@ pub trait InputReader: Send + Sync {
     /// substantial amount of memory, so the default implementation returns 0.
     fn memory(&self) -> usize {
         0
+    }
+
+    /// For a distributed connector whose hosts must all use a value that one
+    /// host chooses before they read input, returns the value that this host
+    /// chose, if this host is the one that chooses it (see
+    /// `TransportConfig::needs_input_choice`).  The reader must choose the
+    /// value before its endpoint's `open` returns.
+    ///
+    /// The default implementation returns `None`.
+    fn startup_choice(&self) -> Option<JsonValue> {
+        None
     }
 }
 

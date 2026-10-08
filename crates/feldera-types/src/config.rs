@@ -2298,6 +2298,21 @@ impl TransportConfig {
     pub fn supports_distribution(&self) -> bool {
         matches!(self, TransportConfig::KafkaInput(_))
     }
+
+    /// Returns true if host 0 of a distributed input connector with this
+    /// transport must choose a value for all of the hosts before they read any
+    /// input.
+    ///
+    /// For example, the hosts of a connector that divides a snapshot of a
+    /// table must read the same version of the table, or they could lose or
+    /// duplicate records.  Host 0 chooses the value, and the coordinator
+    /// passes it to the other hosts in [CoordinationActivate::input_choices].
+    /// No transport needs this yet.
+    ///
+    /// [CoordinationActivate::input_choices]: crate::coordination::CoordinationActivate::input_choices
+    pub fn needs_input_choice(&self) -> bool {
+        false
+    }
 }
 
 /// Data format specification used to parse raw data received from the

@@ -72,8 +72,8 @@ use feldera_types::completion_token::{
 use feldera_types::config::{PipelineIdentity, SyncConfig};
 use feldera_types::constants::STATUS_FILE;
 use feldera_types::coordination::{
-    AdHocScan, CoordinationActivate, CoordinationCapabilities, CoordinationStatus, Labels,
-    RestartArgs, Step, StepRequest,
+    AdHocScan, CoordinationActivate, CoordinationCapabilities, CoordinationStatus, InputChoices,
+    Labels, RestartArgs, Step, StepRequest,
 };
 use feldera_types::format::json::JsonEncoderConfig;
 use feldera_types::pipeline_diff::PipelineDiff;
@@ -104,7 +104,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::convert::Infallible;
 use std::ffi::OsStr;
 use std::hash::{BuildHasherDefault, DefaultHasher, Hash, Hasher};
@@ -314,6 +314,14 @@ pub(crate) struct ServerState {
 
     coordination_activate: Mutex<Option<CoordinationActivate>>,
 
+    /// Leaf lock.
+    ///
+    /// The values that this host's distributed input connectors chose for all
+    /// the hosts to use, once the connectors have initialized.  This is set
+    /// before initialization completes, because completing it needs the other
+    /// hosts, which the coordinator activates only after it reads this.
+    input_choices: Mutex<Option<BTreeMap<String, serde_json::Value>>>,
+
     /// Current collection of leases.
     leases: Mutex<HashMap<Step, Lease>>,
 }
@@ -400,6 +408,7 @@ impl ServerState {
             rate_limiter,
             samply_state: Default::default(),
             coordination_activate: Default::default(),
+            input_choices: Default::default(),
             leases: Default::default(),
             incarnation_uuid: Uuid::now_v7(),
         }
@@ -557,6 +566,12 @@ impl ServerState {
 
     fn phase(&self) -> PipelinePhase {
         self.lifecycle.lock().unwrap().phase.clone()
+    }
+
+    /// Publishes the values that this host's distributed input connectors
+    /// chose for all the hosts to use (see `/coordination/input/choices`).
+    pub fn set_input_choices(&self, choices: BTreeMap<String, serde_json::Value>) {
+        *self.input_choices.lock().unwrap() = Some(choices);
     }
 
     /// Records `phase` and leaves the controller as it is.
@@ -1313,7 +1328,10 @@ fn do_bootstrap(
                     }
                     builder.config.inputs = std::mem::take(&mut ca.inputs);
                     builder.config.outputs = std::mem::take(&mut ca.outputs);
-                    builder = builder.with_input_distribution(take(&mut ca.input_distribution));
+                    builder = builder.with_input_distribution(
+                        take(&mut ca.input_distribution),
+                        take(&mut ca.input_choices),
+                    );
                     *state.desired_status.lock().unwrap() = ca.desired_status;
                     match ca.checkpoint {
                         Some(checkpoint_uuid) => {
@@ -1475,6 +1493,7 @@ where
         .service(coordination_adhoc_lease)
         .service(coordination_adhoc_scan)
         .service(coordination_labels_incomplete)
+        .service(coordination_input_choices)
         .service(coordination_restart)
         .service(clock_advance)
 }
@@ -3704,6 +3723,25 @@ async fn coordination_adhoc_scan(
         }
     };
     Ok(HttpResponseBuilder::new(StatusCode::OK).streaming::<_, PipelineError>(response_stream))
+}
+
+/// Reports the values that this host's distributed input connectors chose for
+/// all the hosts to use.  The coordinator reads this from host 0 before it
+/// activates the other hosts (see `CoordinationActivate::input_choices`).
+///
+/// This is available while the pipeline is still initializing, as soon as the
+/// connectors have initialized.  Before that, it fails like other endpoints
+/// that need a controller.
+#[get("/coordination/input/choices")]
+async fn coordination_input_choices(
+    state: WebData<ServerState>,
+) -> Result<HttpResponse, PipelineError> {
+    let choices = state.input_choices.lock().unwrap().clone();
+    let choices = match choices {
+        Some(choices) => choices,
+        None => state.controller()?.input_choices(),
+    };
+    Ok(HttpResponse::Ok().json(InputChoices { choices }))
 }
 
 /// Stream the set of incomplete labels.

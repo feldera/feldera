@@ -71,7 +71,7 @@ use dbsp::{
     profile::{DbspProfile, GraphProfile},
 };
 use dbsp::{Error as DbspError, Runtime, WeakRuntime};
-use distribution::{input_shard, resume_distribution};
+use distribution::{ActivationInput, input_shard, resume_distribution};
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::soft_delete::SoftDeleteHandle;
@@ -182,7 +182,7 @@ use crate::format::{
     MessageOrientedPreprocessedParser, PostprocessedConsumer, StreamingPreprocessedParser,
 };
 use crate::format::{get_input_format, get_output_format};
-use crate::integrated::create_integrated_input_endpoint;
+use crate::integrated::{DistributedInput, create_integrated_input_endpoint};
 pub use error::{ConfigError, ControllerError};
 pub use feldera_types::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
@@ -257,6 +257,11 @@ pub struct ControllerBuilder {
     /// coordinator.
     input_distribution: BTreeMap<String, InputDistribution>,
 
+    /// The values that host 0 chose for the distributed input connectors that
+    /// need a choice (see
+    /// [coordination::CoordinationActivate::input_choices]).
+    input_choices: BTreeMap<String, JsonValue>,
+
     storage: Option<CircuitStorageConfig>,
 }
 
@@ -304,6 +309,7 @@ impl ControllerBuilder {
             config: config.clone(),
             layout: None,
             input_distribution: BTreeMap::new(),
+            input_choices: BTreeMap::new(),
             storage,
         })
     }
@@ -404,9 +410,11 @@ impl ControllerBuilder {
     pub(crate) fn with_input_distribution(
         self,
         input_distribution: BTreeMap<String, InputDistribution>,
+        input_choices: BTreeMap<String, JsonValue>,
     ) -> Self {
         Self {
             input_distribution,
+            input_choices,
             ..self
         }
     }
@@ -424,7 +432,7 @@ impl ControllerBuilder {
             self.storage.clone().unwrap(),
             checkpoint_uuid,
         )
-        .map(|init| init.with_input_distribution(self.input_distribution))
+        .map(|init| init.with_input_distribution(self.input_distribution, self.input_choices))
     }
 
     /// Creates a [ControllerInit] that will start fresh without using a
@@ -432,7 +440,7 @@ impl ControllerBuilder {
     pub(crate) fn open_without_checkpoint(self) -> Result<ControllerInit, ControllerError> {
         self.take_bucket_ownership()?;
         ControllerInit::without_checkpoint(self.layout, self.config.clone(), self.storage.clone())
-            .map(|init| init.with_input_distribution(self.input_distribution))
+            .map(|init| init.with_input_distribution(self.input_distribution, self.input_choices))
     }
 
     /// Creates a [ControllerInit] that will start from the latest checkpoint,
@@ -444,7 +452,7 @@ impl ControllerBuilder {
             self.config.clone(),
             self.storage.clone(),
         )
-        .map(|init| init.with_input_distribution(self.input_distribution))
+        .map(|init| init.with_input_distribution(self.input_distribution, self.input_choices))
     }
 
     pub(crate) fn storage(&self) -> Option<Arc<dyn StorageBackend>> {
@@ -2393,6 +2401,11 @@ impl Controller {
             .map(|(_step, snapshot)| snapshot.clone())
     }
 
+    /// See [ControllerInner::input_choices].
+    pub fn input_choices(&self) -> BTreeMap<String, JsonValue> {
+        self.inner.input_choices()
+    }
+
     pub fn incomplete_labels(&self) -> HashSet<String> {
         let mut incomplete_labels = HashSet::new();
         for status in self.inner.status.inputs.read().values() {
@@ -3080,6 +3093,7 @@ impl CircuitThread {
             incarnation_uuid,
             input_distribution,
             checkpointed_input_distribution: _,
+            input_choices,
         } = controller_init;
 
         let storage = circuit_config
@@ -3285,11 +3299,19 @@ impl CircuitThread {
             checkpoint_receiver,
             incarnation_uuid,
             input_distribution,
+            input_choices,
             storage
                 .as_ref()
                 .and_then(|backend| backend.file_system_path())
                 .map(PathBuf::from),
         )?;
+
+        // The connectors have initialized.  Publish their choices now: the
+        // first step, below in `run`, needs the other hosts, and the
+        // coordinator activates them only after it reads these.
+        if let Some(state) = &state {
+            state.set_input_choices(controller.input_choices());
+        }
 
         let bootstrapping = circuit.bootstrap_in_progress();
 
@@ -5823,6 +5845,9 @@ pub struct ControllerInit {
 
     /// The input distribution recorded in the checkpoint, if one was read.
     checkpointed_input_distribution: BTreeMap<String, InputDistribution>,
+
+    /// See [ControllerBuilder::input_choices].
+    input_choices: BTreeMap<String, JsonValue>,
 }
 
 impl ControllerInit {
@@ -5832,12 +5857,14 @@ impl ControllerInit {
     fn with_input_distribution(
         self,
         input_distribution: BTreeMap<String, InputDistribution>,
+        input_choices: BTreeMap<String, JsonValue>,
     ) -> Self {
         Self {
             input_distribution: resume_distribution(
                 input_distribution,
                 &self.checkpointed_input_distribution,
             ),
+            input_choices,
             ..self
         }
     }
@@ -5862,6 +5889,7 @@ impl ControllerInit {
             incarnation_uuid: Uuid::nil(),
             input_distribution: BTreeMap::new(),
             checkpointed_input_distribution: BTreeMap::new(),
+            input_choices: BTreeMap::new(),
         })
     }
 
@@ -6102,6 +6130,7 @@ impl ControllerInit {
             incarnation_uuid: Uuid::nil(),
             input_distribution: BTreeMap::new(),
             checkpointed_input_distribution,
+            input_choices: BTreeMap::new(),
         })
     }
 
@@ -7457,6 +7486,7 @@ impl ControllerInner {
         checkpoint_receiver: tokio::sync::watch::Receiver<Option<CheckpointCoordination>>,
         incarnation_uuid: Uuid,
         input_distribution: BTreeMap<String, InputDistribution>,
+        input_choices: BTreeMap<String, JsonValue>,
         storage_path: Option<PathBuf>,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let status = Arc::new(ControllerStatus::new(
@@ -7532,7 +7562,13 @@ impl ControllerInner {
                     let input_config = input_config.clone();
 
                     let resume_info = resume_info.get(&*input_name).cloned();
-                    let distribution = input_distribution.get(&*input_name).copied();
+                    let activation =
+                        input_distribution
+                            .get(&*input_name)
+                            .map(|distribution| ActivationInput {
+                                distribution: *distribution,
+                                choice: input_choices.get(&*input_name).cloned(),
+                            });
 
                     (
                         format!("'{input_name}' input connector initialization"),
@@ -7542,7 +7578,7 @@ impl ControllerInner {
                                     &input_name,
                                     &input_config,
                                     resume_info,
-                                    distribution.as_ref(),
+                                    activation.as_ref(),
                                 )
                             }))
                             .unwrap_or_else(|_| Err(ControllerError::ControllerPanic))
@@ -7725,22 +7761,22 @@ impl ControllerInner {
 
     /// Creates input endpoint `endpoint_name` from `endpoint_config`.
     ///
-    /// `distribution` is the coordinator's distribution for the connector.
-    /// Only connector initialization at activation passes `Some`: a connector
-    /// added at runtime is not distributed, even if it reuses the name of a
-    /// connector that was.
+    /// `activation` is the coordinator's instructions for a distributed
+    /// connector.  Only connector initialization at activation passes `Some`: a
+    /// connector added at runtime is not distributed, even if it reuses the
+    /// name of a connector that was.
     fn connect_input(
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: &InputEndpointConfig,
         resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
-        distribution: Option<&InputDistribution>,
+        activation: Option<&ActivationInput>,
     ) -> Result<EndpointId, ControllerError> {
         let shard = input_shard(
             endpoint_name,
             &endpoint_config.connector_config,
             &self.layout,
-            distribution,
+            activation.map(|activation| &activation.distribution),
         )?;
         let endpoint = input_transport_config_to_endpoint(
             &endpoint_config.connector_config.transport,
@@ -7752,12 +7788,31 @@ impl ControllerInner {
 
         // If `endpoint` is `None`, it means that the endpoint config specifies an integrated
         // input connector.  Such endpoints are instantiated inside `add_input_endpoint`.
-        self.add_input_endpoint(
+        let distributed = shard.map(|shard| DistributedInput {
+            shard,
+            choice: activation.and_then(|activation| activation.choice.clone()),
+        });
+        self.add_input_endpoint_inner(
             endpoint_name,
             endpoint_config.clone(),
             endpoint,
             resume_info,
+            distributed,
         )
+    }
+
+    /// Returns the values that this host's distributed input connectors chose
+    /// for all the hosts to use (see
+    /// [coordination::CoordinationActivate::input_choices]).
+    pub fn input_choices(&self) -> BTreeMap<String, JsonValue> {
+        self.status
+            .input_status()
+            .values()
+            .filter_map(|endpoint| {
+                let choice = endpoint.reader.as_ref()?.startup_choice()?;
+                Some((endpoint.endpoint_name.clone(), choice))
+            })
+            .collect()
     }
 
     pub fn disconnect_input(self: &Arc<Self>, endpoint_id: &EndpointId) {
@@ -7781,6 +7836,19 @@ impl ControllerInner {
         endpoint_config: InputEndpointConfig,
         endpoint: Option<Box<dyn TransportInputEndpoint>>,
         resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
+    ) -> Result<EndpointId, ControllerError> {
+        self.add_input_endpoint_inner(endpoint_name, endpoint_config, endpoint, resume_info, None)
+    }
+
+    /// Like [Self::add_input_endpoint], with `distributed` passed to an
+    /// integrated connector.
+    fn add_input_endpoint_inner(
+        self: &Arc<Self>,
+        endpoint_name: &str,
+        endpoint_config: InputEndpointConfig,
+        endpoint: Option<Box<dyn TransportInputEndpoint>>,
+        resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
+        distributed: Option<DistributedInput>,
     ) -> Result<EndpointId, ControllerError> {
         let (seek, initial_statistics) = resume_info.unzip();
 
@@ -7983,6 +8051,7 @@ impl ControllerInner {
                     &self.status.pipeline_config,
                     self.datafusion_runtime_env.clone(),
                     probe,
+                    distributed,
                 )?;
 
                 let fault_tolerance = endpoint.fault_tolerance();

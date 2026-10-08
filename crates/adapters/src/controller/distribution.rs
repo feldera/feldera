@@ -13,7 +13,18 @@ use feldera_types::{
     config::ConnectorConfig,
     coordination::{InputDistribution, InputShard},
 };
+use serde_json::Value as JsonValue;
 use tracing::{info, warn};
+
+/// The coordinator's instructions for one distributed input connector at
+/// activation.
+#[derive(Clone, Debug)]
+pub struct ActivationInput {
+    pub distribution: InputDistribution,
+
+    /// See `CoordinationActivate::input_choices`.
+    pub choice: Option<JsonValue>,
+}
 
 /// Returns the distribution to use when this host resumes from a checkpoint
 /// whose distribution was `checkpointed`, given the coordinator's current
