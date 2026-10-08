@@ -29,6 +29,7 @@ rkyv = { workspace = true, features = ["size_64"], optional = true }
 dbsp = { workspace = true, optional = true }
 feldera-types = { workspace = true, optional = true }
 rand = { workspace = true, features = ["small_rng"] }
+ryu = { workspace = true }
 
 [dev-dependencies]
 serde_json = { workspace = true }
