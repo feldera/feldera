@@ -72,7 +72,10 @@
     <div class=" flex w-full flex-col">
       <div class="flex justify-between pb-2 font-semibold">
         <span class={textClass}>{header}</span>
-        <div class="flex flex-nowrap gap-4">
+        <!-- The icons sit 8px apart. Each 32px button has `-m-2`, so 10px of gap overlaps
+             the buttons by 6px, which the icons' side padding (8px around the 16px copy
+             icon, 6px around the 20px close icon) turns back into 8px. -->
+        <div class="flex flex-nowrap gap-2.5">
           {#if message}
             <ClipboardCopyButton value={message} class="-m-2"></ClipboardCopyButton>
           {/if}
