@@ -2026,7 +2026,7 @@ pub struct ConnectorConfig {
     /// When `false` (the default), the connector runs on one host, which
     /// reads all of its input. When `true`, the connector runs on every host,
     /// and each host reads a different part of the input. Only the Kafka
-    /// input transport supports this setting.
+    /// and Delta Lake input transports support this setting.
     ///
     /// In a single-host pipeline, this setting has no effect.
     ///
@@ -2296,22 +2296,24 @@ impl TransportConfig {
     /// input among the hosts of a multihost pipeline (see
     /// [`ConnectorConfig::distributed`]).
     pub fn supports_distribution(&self) -> bool {
-        matches!(self, TransportConfig::KafkaInput(_))
+        matches!(
+            self,
+            TransportConfig::KafkaInput(_) | TransportConfig::DeltaTableInput(_)
+        )
     }
 
     /// Returns true if host 0 of a distributed input connector with this
     /// transport must choose a value for all of the hosts before they read any
     /// input.
     ///
-    /// For example, the hosts of a connector that divides a snapshot of a
-    /// table must read the same version of the table, or they could lose or
-    /// duplicate records.  Host 0 chooses the value, and the coordinator
-    /// passes it to the other hosts in [CoordinationActivate::input_choices].
-    /// No transport needs this yet.
+    /// For example, the hosts of a Delta Lake connector must read the snapshot
+    /// at the same table version, or they could lose or duplicate records.
+    /// Host 0 chooses the value, and the coordinator passes it to the other
+    /// hosts in [CoordinationActivate::input_choices].
     ///
     /// [CoordinationActivate::input_choices]: crate::coordination::CoordinationActivate::input_choices
     pub fn needs_input_choice(&self) -> bool {
-        false
+        matches!(self, TransportConfig::DeltaTableInput(_))
     }
 }
 
