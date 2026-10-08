@@ -1038,6 +1038,9 @@ fn patch_runtime_config(
         RuntimeConfigKey::StorageClass => {
             rc.resources.storage_class = Some(value.parse().map_err(|_| ())?);
         }
+        RuntimeConfigKey::VolumeAttributesClass => {
+            rc.resources.volume_attributes_class = Some(value.parse().map_err(|_| ())?);
+        }
         RuntimeConfigKey::MinStorageBytes => {
             if let Some(storage) = rc.storage.as_mut() {
                 storage.min_storage_bytes = Some(value.parse().map_err(|_| ())?);

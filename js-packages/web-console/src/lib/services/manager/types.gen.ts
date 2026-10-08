@@ -5282,6 +5282,14 @@ export type ResourceConfig = {
    * autoscaling.
    */
   storage_mb_min?: number | null
+  /**
+   * Kubernetes volume attributes class to use for the storage of an
+   * instance of this pipeline. The class sets mutable storage parameters
+   * such as IOPS and throughput. Requires Kubernetes 1.34 or later (or
+   * the `VolumeAttributesClass` feature gate) and CSI driver support.
+   * A change takes effect on the next start, also for existing storage.
+   */
+  volume_attributes_class?: string | null
 }
 
 export type ResourcesDesiredStatus = 'Stopped' | 'Provisioned'

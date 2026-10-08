@@ -2334,6 +2334,14 @@ pub struct ResourceConfig {
     /// The class determines storage performance such as IOPS and throughput.
     pub storage_class: Option<String>,
 
+    /// Kubernetes volume attributes class to use for the storage of an
+    /// instance of this pipeline. The class sets mutable storage parameters
+    /// such as IOPS and throughput. Requires Kubernetes 1.34 or later (or
+    /// the `VolumeAttributesClass` feature gate) and CSI driver support.
+    /// A change takes effect on the next start, also for existing storage.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub volume_attributes_class: Option<String>,
+
     /// Kubernetes service account name to use for an instance of this pipeline.
     /// The account determines permissions and access controls.
     pub service_account_name: Option<String>,

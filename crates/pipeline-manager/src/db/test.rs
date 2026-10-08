@@ -308,6 +308,7 @@ struct RuntimeConfigPropVal {
     val21: Option<u64>,
     val22: Option<u64>,
     val23: bool,
+    val24: Option<String>,
 }
 type ProgramConfigPropVal = (u8, bool, bool, bool, u8);
 type ProgramInfoPropVal = (u8, u8, u8);
@@ -454,6 +455,7 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
                     }),
                 }),
                 storage_class: val.val12,
+                volume_attributes_class: val.val24,
                 service_account_name: val.val13,
                 namespace: val.val14,
             },
@@ -2485,6 +2487,7 @@ async fn pipeline_versioning() {
             storage_mb_max: None,
             autoscaling: None,
             storage_class: None,
+            volume_attributes_class: None,
             service_account_name: None,
             namespace: None,
         },
