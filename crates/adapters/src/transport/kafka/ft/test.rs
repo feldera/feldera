@@ -8,7 +8,7 @@ use crate::test::{
 use crate::transport::kafka::ft::input::{BACKPRESSURE, Metadata};
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
 use crate::{
-    Controller, InputConsumer, ParseError,
+    Controller, InputConsumer, OutputEndpoint, ParseError,
     test::{
         TestStruct,
         kafka::{KafkaResources, TestProducer},
@@ -42,7 +42,7 @@ use rdkafka::ClientConfig;
 use rdkafka::consumer::{BaseConsumer, Consumer};
 use rdkafka::message::{BorrowedMessage, Header, Headers};
 use rdkafka::producer::BaseRecord;
-use rdkafka::{Message, Timestamp};
+use rdkafka::{Message, Offset, Timestamp, TopicPartitionList};
 use rmpv::Value as RmpValue;
 use serde_json::{Value as JsonValue, json};
 use size_of::SizeOf;
@@ -1110,18 +1110,16 @@ fn output_headers_test() {
         .unwrap();
     endpoint.batch_end().unwrap();
 
-    // An exactly-once connector deduplicates output by Kafka message key, so
-    // it cannot also write a caller-supplied key.
+    // With a caller-supplied key, the position header goes first, ahead of
+    // the configured and per-message headers.
     endpoint.batch_start(2, OutputBatchType::Delta).unwrap();
-    let error = endpoint
-        .push_key(Some(b"key".as_slice()), Some(b"value".as_slice()), &[])
-        .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("does not support key-value pairs"),
-        "unexpected error: {error}"
-    );
+    endpoint
+        .push_key(
+            Some(b"key".as_slice()),
+            Some(b"from keyed push_key".as_slice()),
+            &[("header3", Some(b"baz".as_slice())), ("header4", None)],
+        )
+        .unwrap();
     endpoint.batch_end().unwrap();
 
     let configured = [
@@ -1132,15 +1130,555 @@ fn output_headers_test() {
         ("header3".to_string(), Some(b"baz".to_vec())),
         ("header4".to_string(), None),
     ];
+    let position = [(
+        super::output::POSITION_HEADER.to_string(),
+        Some(br#"{"transaction":2,"substep":0}"#.to_vec()),
+    )];
     assert_eq!(
-        read_messages(output_topic, 2),
+        read_messages(output_topic, 3),
         vec![
             (b"from push_buffer".to_vec(), configured.to_vec()),
             (
                 b"from push_key".to_vec(),
                 [configured.as_slice(), per_message.as_slice()].concat()
             ),
+            (
+                b"from keyed push_key".to_vec(),
+                [
+                    position.as_slice(),
+                    configured.as_slice(),
+                    per_message.as_slice()
+                ]
+                .concat()
+            ),
         ]
+    );
+}
+
+/// A keyed Kafka message's partition, key, payload, and position header value.
+type KeyedMessage = (i32, Vec<u8>, Vec<u8>, Vec<u8>);
+
+/// Polls `consumer` for a keyed output message.
+fn read_keyed_message(consumer: &BaseConsumer) -> Option<KeyedMessage> {
+    let message = consumer.poll(Duration::from_millis(100))?.unwrap();
+    let headers = message
+        .headers()
+        .expect("keyed messages should have headers");
+    let position = headers
+        .iter()
+        .find(|header| header.key == super::output::POSITION_HEADER)
+        .expect("keyed messages should have a position header")
+        .value
+        .expect("position header should have a value")
+        .to_vec();
+    Some((
+        message.partition(),
+        message.key().unwrap().to_vec(),
+        message.payload().unwrap().to_vec(),
+        position,
+    ))
+}
+
+/// Verifies that a fault-tolerant Kafka output connector supports
+/// caller-supplied keys: the key is written as-is, the position travels in a
+/// header, and records with the same key land in the same partition, so that
+/// a consumer of a subset of partitions sees them in order (issue #7355).
+#[test]
+fn output_keyed_test() {
+    init_test_logger();
+    let output_topic = "ft_output_keyed_test_output_topic";
+
+    // Create topic with multiple partitions.
+    let _kafka_resources = KafkaResources::create_topics(&[(output_topic, 2)]);
+
+    let config = serde_json::from_value(json!({
+      "name": "kafka_output",
+      "config": { "topic": output_topic }
+    }))
+    .unwrap();
+
+    let mut endpoint = output_transport_config_to_endpoint(
+        &config,
+        "",
+        true,
+        default_secrets_directory(),
+        CancellationToken::new(),
+    )
+    .unwrap()
+    .unwrap();
+    endpoint
+        .connect(Box::new(|fatal, error, tag| {
+            info!("({fatal:?}, {error:?}, {tag:?})")
+        }))
+        .unwrap();
+
+    endpoint.batch_start(0, OutputBatchType::Delta).unwrap();
+    endpoint
+        .push_key(Some(b"key-a".as_slice()), Some(b"1".as_slice()), &[])
+        .unwrap();
+    endpoint
+        .push_key(Some(b"key-b".as_slice()), Some(b"2".as_slice()), &[])
+        .unwrap();
+    endpoint
+        .push_key(Some(b"key-a".as_slice()), Some(b"3".as_slice()), &[])
+        .unwrap();
+    endpoint.batch_end().unwrap();
+
+    let consumer = ClientConfig::new()
+        .set("bootstrap.servers", default_redpanda_server())
+        .set("auto.offset.reset", "earliest")
+        .set("enable.auto.commit", "false")
+        .set("group.id", format!("{output_topic}_reader"))
+        // Fault-tolerant output connectors write inside transactions.
+        .set("isolation.level", "read_committed")
+        .create::<BaseConsumer>()
+        .unwrap();
+    consumer.subscribe(&[output_topic]).unwrap();
+
+    let mut messages: Vec<KeyedMessage> = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while messages.len() < 3 {
+        assert!(
+            Instant::now() < deadline,
+            "read only {} of 3 messages in {output_topic} before timing out",
+            messages.len()
+        );
+        let Some(message) = read_keyed_message(&consumer) else {
+            continue;
+        };
+        messages.push(message);
+    }
+
+    // The caller-supplied key is written as-is, and messages with the same
+    // key land in the same partition, in the order they were pushed.  The
+    // order across partitions is arbitrary, so we only check within
+    // partitions.
+    assert!(
+        messages
+            .iter()
+            .all(|message| message.1 == b"key-a".to_vec() || message.1 == b"key-b".to_vec()),
+        "unexpected key: {messages:?}"
+    );
+    let key_a_messages: Vec<_> = messages
+        .iter()
+        .filter(|message| message.1 == b"key-a".to_vec())
+        .collect();
+    let key_b_messages: Vec<_> = messages
+        .iter()
+        .filter(|message| message.1 == b"key-b".to_vec())
+        .collect();
+    assert_eq!(key_a_messages.len(), 2, "in {messages:?}");
+    assert_eq!(key_b_messages.len(), 1, "in {messages:?}");
+    assert_eq!(
+        key_a_messages[0].0, key_a_messages[1].0,
+        "messages with the same key should land in the same partition: {messages:?}"
+    );
+    assert_eq!(
+        key_a_messages
+            .iter()
+            .map(|(_, _, payload, _)| payload.clone())
+            .collect::<Vec<_>>(),
+        vec![b"1".to_vec(), b"3".to_vec()],
+        "messages with the same key should stay in order: {messages:?}"
+    );
+
+    // The position header lets recovery pick up where this run left off.
+    for (_, _, _, position) in &messages {
+        let position: serde_json::Value = serde_json::from_slice(position).unwrap();
+        assert_eq!(position["transaction"], json!(0), "in {messages:?}");
+    }
+
+    // A restarted endpoint recovers the transaction number from the position
+    // headers, so it drops the already-written transaction 0 and only writes
+    // transaction 1.
+    let mut endpoint = output_transport_config_to_endpoint(
+        &config,
+        "",
+        true,
+        default_secrets_directory(),
+        CancellationToken::new(),
+    )
+    .unwrap()
+    .unwrap();
+    endpoint
+        .connect(Box::new(|fatal, error, tag| {
+            info!("({fatal:?}, {error:?}, {tag:?})")
+        }))
+        .unwrap();
+    endpoint.batch_start(0, OutputBatchType::Delta).unwrap();
+    endpoint
+        .push_key(Some(b"key-a".as_slice()), Some(b"dropped".as_slice()), &[])
+        .unwrap();
+    endpoint.batch_end().unwrap();
+    endpoint.batch_start(1, OutputBatchType::Delta).unwrap();
+    endpoint
+        .push_key(Some(b"key-a".as_slice()), Some(b"4".as_slice()), &[])
+        .unwrap();
+    endpoint.batch_end().unwrap();
+
+    // The consumer is already positioned after the first three messages, so
+    // this reads the one new message from transaction 1.
+    let mut new_messages: Vec<KeyedMessage> = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while new_messages.is_empty() {
+        assert!(
+            Instant::now() < deadline,
+            "no new messages in {output_topic} before timing out"
+        );
+        let Some(message) = read_keyed_message(&consumer) else {
+            continue;
+        };
+        new_messages.push(message);
+    }
+    // The first message read must be transaction 1's record; if the replayed
+    // transaction 0 record ("dropped") had been written, it would come first.
+    assert_eq!(new_messages[0].2, b"4".to_vec(), "in {new_messages:?}");
+    let position: serde_json::Value = serde_json::from_slice(&new_messages[0].3).unwrap();
+    assert_eq!(position["transaction"], json!(1), "in {new_messages:?}");
+}
+
+/// Verifies that a fault-tolerant Kafka output connector refuses keyed
+/// messages that recovery could not rely on: tombstones, which compaction
+/// eventually removes, and messages too large for the broker.  A refused
+/// message writes nothing and takes no substep, so the next message in the
+/// same transaction gets substep 0.
+#[test]
+fn output_keyed_refused_test() {
+    init_test_logger();
+    let output_topic = "ft_output_keyed_refused_test_output_topic";
+
+    let _kafka_resources = KafkaResources::create_topics(&[(output_topic, 1)]);
+
+    let config = serde_json::from_value(json!({
+      "name": "kafka_output",
+      "config": {
+        "topic": output_topic,
+        "message.max.bytes": "1000"
+      }
+    }))
+    .unwrap();
+
+    let mut endpoint = output_transport_config_to_endpoint(
+        &config,
+        "",
+        true,
+        default_secrets_directory(),
+        CancellationToken::new(),
+    )
+    .unwrap()
+    .unwrap();
+    endpoint
+        .connect(Box::new(|fatal, error, tag| {
+            info!("({fatal:?}, {error:?}, {tag:?})")
+        }))
+        .unwrap();
+
+    endpoint.batch_start(0, OutputBatchType::Delta).unwrap();
+    let error = endpoint
+        .push_key(Some(b"key".as_slice()), None, &[])
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("tombstones"),
+        "unexpected error: {error}"
+    );
+    let error = endpoint
+        .push_key(Some(b"key".as_slice()), Some(&[0u8; 1000]), &[])
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("exceeds the maximum"),
+        "unexpected error: {error}"
+    );
+    endpoint
+        .push_key(Some(b"key".as_slice()), Some(b"kept".as_slice()), &[])
+        .unwrap();
+    endpoint.batch_end().unwrap();
+
+    let consumer = ClientConfig::new()
+        .set("bootstrap.servers", default_redpanda_server())
+        .set("auto.offset.reset", "earliest")
+        .set("enable.auto.commit", "false")
+        .set("group.id", format!("{output_topic}_reader"))
+        .set("isolation.level", "read_committed")
+        .create::<BaseConsumer>()
+        .unwrap();
+    consumer.subscribe(&[output_topic]).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let message = loop {
+        assert!(
+            Instant::now() < deadline,
+            "no message in {output_topic} before timing out"
+        );
+        if let Some(message) = read_keyed_message(&consumer) {
+            break message;
+        }
+    };
+    assert_eq!(message.2, b"kept".to_vec());
+    let position: serde_json::Value = serde_json::from_slice(&message.3).unwrap();
+    assert_eq!(position, json!({"transaction": 0, "substep": 0}));
+
+    // Nothing else was written.
+    let extra = (0..20).find_map(|_| read_keyed_message(&consumer));
+    assert_eq!(extra, None, "unexpected extra message");
+}
+
+/// Returns the payloads of the committed messages that survive in partition
+/// 0 of `topic`, reading from the start every time, so that it reflects what
+/// compaction has removed so far.
+fn surviving_payloads(topic: &str) -> Vec<String> {
+    let consumer = ClientConfig::new()
+        .set("bootstrap.servers", default_redpanda_server())
+        .set("group.id", format!("{topic}_scan"))
+        .set("enable.auto.commit", "false")
+        .set("enable.partition.eof", "true")
+        .set("isolation.level", "read_committed")
+        .create::<BaseConsumer>()
+        .unwrap();
+    let mut assignment = TopicPartitionList::new();
+    assignment
+        .add_partition_offset(topic, 0, Offset::Beginning)
+        .unwrap();
+    consumer.assign(&assignment).unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let mut payloads = Vec::new();
+    loop {
+        assert!(Instant::now() < deadline, "timed out scanning {topic}");
+        match consumer.poll(Duration::from_millis(100)) {
+            None => continue,
+            Some(Ok(message)) => payloads
+                .push(String::from_utf8(message.payload().unwrap_or_default().to_vec()).unwrap()),
+            Some(Err(rdkafka::error::KafkaError::PartitionEOF(_))) => return payloads,
+            Some(Err(error)) => panic!("error scanning {topic}: {error}"),
+        }
+    }
+}
+
+/// Waits until the message with payload `removed` no longer survives in
+/// partition 0 of `topic`, which shows that compaction ran, and returns the
+/// payloads that do survive.  Panics if it is still there after `timeout`:
+/// a compaction test whose topic was never compacted proves nothing.
+fn wait_for_compaction(topic: &str, removed: &str, timeout: Duration) -> Vec<String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let payloads = surviving_payloads(topic);
+        if !payloads.iter().any(|payload| payload == removed) {
+            info!("payloads surviving compaction in {topic}: {payloads:?}");
+            return payloads;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "compaction did not remove {removed:?} from {topic} within {timeout:?}; the broker's compaction settings may be too slow for this test: {payloads:?}"
+        );
+        sleep(Duration::from_secs(2));
+    }
+}
+
+/// Creates a compacted topic whose segments roll after a message or two, so
+/// that the broker's cleaner compacts closed segments as soon as it runs.
+fn create_compacted_topic(topic: &str) -> KafkaResources {
+    KafkaResources::create_topics_with_config(
+        &[(topic, 1)],
+        &[
+            ("cleanup.policy", "compact"),
+            // Redpanda never makes a partition ready with segments smaller
+            // than one record batch, such as 1 byte.
+            ("segment.bytes", "1024"),
+            ("min.cleanable.dirty.ratio", "0.01"),
+            ("min.compaction.lag.ms", "0"),
+        ],
+    )
+}
+
+/// Creates and connects a fault-tolerant Kafka output endpoint for `topic`.
+fn new_ft_output_endpoint(topic: &str) -> Box<dyn OutputEndpoint> {
+    let config = serde_json::from_value(json!({
+      "name": "kafka_output",
+      "config": { "topic": topic }
+    }))
+    .unwrap();
+    let mut endpoint = output_transport_config_to_endpoint(
+        &config,
+        "",
+        true,
+        default_secrets_directory(),
+        CancellationToken::new(),
+    )
+    .unwrap()
+    .unwrap();
+    endpoint
+        .connect(Box::new(|fatal, error, tag| {
+            info!("({fatal:?}, {error:?}, {tag:?})")
+        }))
+        .unwrap();
+    endpoint
+}
+
+/// Reads the committed payloads in `topic` that start with `prefix`, waiting
+/// until at least one arrives and then for any stragglers, so that an extra
+/// replayed transaction is caught too.
+fn read_payloads_with_prefix(topic: &str, prefix: &str) -> Vec<String> {
+    let consumer = ClientConfig::new()
+        .set("bootstrap.servers", default_redpanda_server())
+        .set("auto.offset.reset", "earliest")
+        .set("enable.auto.commit", "false")
+        .set("group.id", format!("{topic}_reader"))
+        .set("isolation.level", "read_committed")
+        .create::<BaseConsumer>()
+        .unwrap();
+    consumer.subscribe(&[topic]).unwrap();
+    let mut payloads = Vec::new();
+    let mut idle_polls = 0;
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while payloads.is_empty() || idle_polls < 20 {
+        assert!(
+            Instant::now() < deadline,
+            "no payload starting with {prefix:?} appeared in {topic}"
+        );
+        match consumer.poll(Duration::from_millis(100)) {
+            None => idle_polls += 1,
+            Some(message) => {
+                let payload =
+                    String::from_utf8(message.unwrap().payload().unwrap().to_vec()).unwrap();
+                if payload.starts_with(prefix) {
+                    payloads.push(payload);
+                }
+                idle_polls = 0;
+            }
+        }
+    }
+    payloads
+}
+
+/// Verifies that keyed exactly-once output recovers correctly from a
+/// compacted topic.  Keyed messages repeat keys, so compaction removes older
+/// messages for each key, but it keeps the newest message for each key, and
+/// the newest message in the partition is the newest for its own key, so
+/// recovery still reads the last position.
+#[test]
+fn output_keyed_compacted_test() {
+    init_test_logger();
+    let output_topic = "ft_output_keyed_compacted_test_output_topic";
+    let _kafka_resources = create_compacted_topic(output_topic);
+
+    // Write `key-a` in transactions 0, 1 and 2, so that compaction can remove
+    // the first two, then `key-b` in transaction 3, so that `key-a`'s last
+    // message is in a closed segment too.
+    let mut endpoint = new_ft_output_endpoint(output_topic);
+    for (transaction, key) in [(0, "key-a"), (1, "key-a"), (2, "key-a"), (3, "key-b")] {
+        endpoint
+            .batch_start(transaction, OutputBatchType::Delta)
+            .unwrap();
+        endpoint
+            .push_key(
+                Some(key.as_bytes()),
+                Some(format!("{key} in transaction {transaction}").as_bytes()),
+                &[],
+            )
+            .unwrap();
+        endpoint.batch_end().unwrap();
+    }
+    drop(endpoint);
+
+    // Compaction removes `key-a`'s older messages and keeps its newest.
+    let survivors = wait_for_compaction(
+        output_topic,
+        "key-a in transaction 1",
+        Duration::from_secs(300),
+    );
+    assert!(
+        !survivors.contains(&"key-a in transaction 0".to_string()),
+        "{survivors:?}"
+    );
+    assert!(
+        survivors.contains(&"key-a in transaction 2".to_string()),
+        "{survivors:?}"
+    );
+
+    // Replay transactions 0 through 3, then write transaction 4.  Only
+    // transaction 4 should appear, which means recovery read transaction 3
+    // even after compaction.
+    let mut endpoint = new_ft_output_endpoint(output_topic);
+    for transaction in 0..5 {
+        endpoint
+            .batch_start(transaction, OutputBatchType::Delta)
+            .unwrap();
+        endpoint
+            .push_key(
+                Some(b"key-c".as_slice()),
+                Some(format!("key-c in transaction {transaction}").as_bytes()),
+                &[],
+            )
+            .unwrap();
+        endpoint.batch_end().unwrap();
+    }
+    assert_eq!(
+        read_payloads_with_prefix(output_topic, "key-c"),
+        vec!["key-c in transaction 4"]
+    );
+}
+
+/// Verifies that keyless exactly-once output still recovers correctly from a
+/// compacted topic: every keyless message has a unique key, so compaction
+/// removes none of them.  This is how the connector behaved before keyed
+/// output was supported, and it must not change.
+#[test]
+fn output_keyless_compacted_test() {
+    init_test_logger();
+    let output_topic = "ft_output_keyless_compacted_test_output_topic";
+    let _kafka_resources = create_compacted_topic(output_topic);
+
+    // Two keyed messages with the same key come first, as a control:
+    // compaction removing the older one shows that the cleaner compacted this
+    // partition.  They are written by the connector, so that every message in
+    // the topic carries a position that recovery can read.
+    let mut endpoint = new_ft_output_endpoint(output_topic);
+    for (transaction, payload) in [(0, "control 1"), (1, "control 2")] {
+        endpoint
+            .batch_start(transaction, OutputBatchType::Delta)
+            .unwrap();
+        endpoint
+            .push_key(Some(b"control"), Some(payload.as_bytes()), &[])
+            .unwrap();
+        endpoint.batch_end().unwrap();
+    }
+    for transaction in 2..6 {
+        endpoint
+            .batch_start(transaction, OutputBatchType::Delta)
+            .unwrap();
+        endpoint
+            .push_buffer(format!("first run, transaction {transaction}").as_bytes())
+            .unwrap();
+        endpoint.batch_end().unwrap();
+    }
+    drop(endpoint);
+
+    // Compaction removes the first control message and none of the four
+    // keyless messages, because each has its own key.
+    let survivors = wait_for_compaction(output_topic, "control 1", Duration::from_secs(300));
+    for transaction in 2..6 {
+        let payload = format!("first run, transaction {transaction}");
+        assert!(
+            survivors.contains(&payload),
+            "{payload:?} not in {survivors:?}"
+        );
+    }
+
+    // Replay transactions 0 through 5, then write transaction 6.  Only
+    // transaction 6 should appear, which means recovery read transaction 5
+    // after compaction.
+    let mut endpoint = new_ft_output_endpoint(output_topic);
+    for transaction in 0..7 {
+        endpoint
+            .batch_start(transaction, OutputBatchType::Delta)
+            .unwrap();
+        endpoint
+            .push_buffer(format!("second run, transaction {transaction}").as_bytes())
+            .unwrap();
+        endpoint.batch_end().unwrap();
+    }
+    assert_eq!(
+        read_payloads_with_prefix(output_topic, "second run"),
+        vec!["second run, transaction 6"]
     );
 }
 
