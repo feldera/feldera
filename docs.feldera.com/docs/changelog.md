@@ -10,6 +10,9 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Pipelines write a checkpoint on `SIGTERM` before they exit.  See
+  [Writing checkpoints](/pipelines/fault-tolerance#writing-checkpoints).
+
 ## v0.362.0
 
 - Incompatible change (SQL): the `emit_final` property of a view must

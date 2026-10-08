@@ -146,7 +146,7 @@ futures-util = { workspace = true }
 proptest = { workspace = true, optional = true }
 proptest-derive = { workspace = true, optional = true }
 clap = { workspace = true }
-tokio = { workspace = true, features = ["sync", "macros", "fs", "rt", "time"] }
+tokio = { workspace = true, features = ["sync", "macros", "fs", "rt", "time", "signal"] }
 utoipa = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 colored = { workspace = true }
@@ -259,6 +259,7 @@ jemalloc_pprof = { workspace = true, features = ["symbolize"], optional = true }
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
 nix = { workspace = true, features = ["signal", "mman", "feature"] }
+signal-hook = { workspace = true }
 
 [build-dependencies]
 vergen-gitcl = { workspace = true }

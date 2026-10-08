@@ -976,6 +976,9 @@ pub fn run_server(
         config.global.workers as usize
     };
 
+    #[cfg(unix)]
+    let sigterm_state = state.clone();
+
     let server = HttpServer::new({
         move || {
             let state = state.clone();
@@ -1033,6 +1036,10 @@ pub fn run_server(
     // The default in actix is 30s. We may consider making this configurable.
     .shutdown_timeout(10);
 
+    // Otherwise actix stops the server on SIGTERM before the checkpoint.
+    #[cfg(unix)]
+    let server = server.disable_signals();
+
     let server = if args.enable_https
         || args.https_tls_cert_path.is_some()
         || args.https_tls_key_path.is_some()
@@ -1084,6 +1091,14 @@ pub fn run_server(
             if args.enable_https { "HTTPS" } else { "HTTP" }
         );
 
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix::{SignalKind, signal};
+            let sigterm = signal(SignalKind::terminate())
+                .map_err(|e| ControllerError::io_error("listening for SIGTERM", e))?;
+            spawn(checkpoint_on_sigterm(sigterm, sigterm_state));
+        }
+
         // We don't want outside observers (e.g., the local runner) to observe a partially
         // written port file, so we write it to a temporary file first, and then rename the
         // temporary.
@@ -1100,6 +1115,40 @@ pub fn run_server(
     })?;
 
     Ok(())
+}
+
+/// Writes a checkpoint on SIGTERM, then exits by raising SIGTERM again.
+#[cfg(unix)]
+async fn checkpoint_on_sigterm(
+    mut sigterm: tokio::signal::unix::Signal,
+    state: WebData<ServerState>,
+) {
+    use signal_hook::{consts::SIGTERM, low_level::emulate_default_handler};
+
+    sigterm.recv().await;
+    info!("received SIGTERM, writing a checkpoint before exit");
+    match checkpoint_before_exit(&state).await {
+        Ok(true) => info!("checkpoint written, exiting"),
+        Ok(false) => info!("pipeline has no circuit or more than one host, exiting"),
+        Err(error) => error!("checkpoint failed ({error}), exiting"),
+    }
+    // Does not return: if raising SIGTERM fails, it aborts.
+    let _ = emulate_default_handler(SIGTERM);
+}
+
+/// Writes a checkpoint.
+///
+/// # Returns
+/// `false` if there is no circuit, or if the pipeline is multihost (only the
+/// coordinator can checkpoint all hosts at once).
+async fn checkpoint_before_exit(state: &ServerState) -> Result<bool, Arc<ControllerError>> {
+    let Ok(controller) = state.controller() else {
+        return Ok(false);
+    };
+    if controller.layout().is_multihost() {
+        return Ok(false);
+    }
+    controller.async_checkpoint().await.map(|_| true)
 }
 
 fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, ControllerError> {
@@ -6022,6 +6071,269 @@ outputs:
         assert_eq!(status.success, None);
 
         suspend_pipeline(&server, Some(&storage_dir)).await;
+    }
+
+    /// A failed SIGTERM checkpoint must not hang or lose the previous checkpoint.
+    #[cfg(unix)]
+    #[actix_web::test]
+    async fn test_checkpoint_before_exit() {
+        use super::{ControllerError, ServerState, checkpoint_before_exit};
+        use std::{os::unix::fs::PermissionsExt, sync::Arc};
+
+        async fn checkpoint(state: &ServerState) -> Result<bool, Arc<ControllerError>> {
+            timeout(Duration::from_secs(20), checkpoint_before_exit(state))
+                .await
+                .expect("the SIGTERM checkpoint must not hang")
+        }
+
+        ensure_default_crypto_provider();
+
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        std::fs::create_dir(&storage_dir).unwrap();
+
+        let config_str = format!(
+            r#"
+name: test
+workers: 1
+storage_config:
+    path: "{}"
+storage: true
+clock_resolution_usecs:
+inputs:
+outputs:
+"#,
+            storage_dir.display()
+        );
+        let start = || {
+            start_test_server_with_state(
+                &config_str,
+                Uuid::new_v4(),
+                BootstrapConfig::from(BootstrapPolicy::Allow),
+                &[Some("v0")],
+                Some(test_program_ir("v0")),
+            )
+        };
+
+        let (server, state) = start().await;
+        start_pipeline(&server).await;
+        send_input(&server, &test_batches(0, 10)).await;
+        assert!(checkpoint(&state).await.unwrap());
+
+        // Root can write to read-only storage, so skip the failure case.
+        start_pipeline(&server).await;
+        send_input(&server, &test_batches(10, 10)).await;
+        let mode = std::fs::Permissions::from_mode;
+        std::fs::set_permissions(&storage_dir, mode(0o555)).unwrap();
+        if std::fs::write(storage_dir.join("probe"), b"").is_err() {
+            let result = checkpoint(&state).await;
+            assert!(
+                result.is_err(),
+                "checkpoint into read-only storage succeeded"
+            );
+        }
+        std::fs::set_permissions(&storage_dir, mode(0o755)).unwrap();
+
+        crash_pipeline(&state, &storage_dir).await;
+        drop(server);
+
+        // Rows 10..20 were never checkpointed.
+        let (server, _state) = start().await;
+        start_pipeline(&server).await;
+        let count = adhoc_query_count(&server, "SELECT COUNT(*) AS c FROM test_output1").await;
+        assert_eq!(count, 10);
+
+        suspend_pipeline(&server, Some(&storage_dir)).await;
+    }
+
+    /// SIGTERM must not wait without storage or a circuit.
+    #[actix_web::test]
+    async fn test_checkpoint_before_exit_without_storage() {
+        use super::{ControllerError, ServerState, checkpoint_before_exit};
+
+        ensure_default_crypto_provider();
+
+        let (server, state) = start_test_server_with_state(
+            "name: test\ninputs:\noutputs:\n",
+            Uuid::new_v4(),
+            BootstrapConfig::from(BootstrapPolicy::Allow),
+            &[None],
+            None,
+        )
+        .await;
+        start_pipeline(&server).await;
+        let result = timeout(Duration::from_secs(20), checkpoint_before_exit(&state))
+            .await
+            .expect("the SIGTERM checkpoint must not hang");
+        assert!(result.is_err(), "checkpoint without storage succeeded");
+
+        let error = ControllerError::io_error("test", std::io::Error::other("test"));
+        let state = ServerState::for_error(error, Uuid::new_v4());
+        assert!(!checkpoint_before_exit(&state).await.unwrap());
+    }
+
+    /// A real SIGTERM, sent to a pipeline in a child process, must write a
+    /// checkpoint and stop the process with SIGTERM.
+    #[cfg(unix)]
+    #[test]
+    fn test_sigterm_checkpoint_process() {
+        use super::{SERVER_PORT_FILE, ServerArgs, run_server};
+        use crate::test::test_circuit;
+        use feldera_types::{config::PipelineConfig, runtime_status::RuntimeDesiredStatus};
+        use nix::{sys::signal, unistd::Pid};
+        use std::{
+            os::unix::process::ExitStatusExt,
+            path::Path,
+            process::{Child, Command},
+        };
+
+        const DIR: &str = "FELDERA_SIGTERM_TEST_DIR";
+
+        // The child process runs the pipeline.
+        if let Ok(dir) = std::env::var(DIR) {
+            let args = ServerArgs {
+                config_file: Path::new(&dir).join("config.json").display().to_string(),
+                metadata_file: None,
+                bind_address: "127.0.0.1".to_string(),
+                default_port: None,
+                storage_location: None,
+                enable_https: false,
+                https_tls_cert_path: None,
+                https_tls_key_path: None,
+                initial: RuntimeDesiredStatus::Running,
+                bootstrap_policy: BootstrapPolicy::Allow,
+                silent_bootstrap: false,
+                concurrent_bootstrap: false,
+                deployment_id: Uuid::new_v4(),
+                host_id: None,
+            };
+            run_server(
+                args,
+                Box::new(|config| {
+                    Ok(test_circuit::<TestStruct>(
+                        config,
+                        &TestStruct::schema(),
+                        &[Some("v0")],
+                    ))
+                }),
+            )
+            .unwrap();
+            return;
+        }
+
+        let tempdir = TempDir::new().unwrap();
+        let storage_dir = tempdir.path().join("storage");
+        std::fs::create_dir(&storage_dir).unwrap();
+        let mut config: PipelineConfig = serde_yaml::from_str(&format!(
+            "name: test\nworkers: 1\nstorage_config:\n    path: \"{}\"\nstorage: true\nclock_resolution_usecs:\ninputs:\noutputs:\n",
+            storage_dir.display()
+        ))
+        .unwrap();
+        config.program_ir = Some(test_program_ir("v0"));
+        std::fs::write(
+            tempdir.path().join("config.json"),
+            serde_json::to_vec(&config).unwrap(),
+        )
+        .unwrap();
+
+        let test_name = format!(
+            "{}::test_sigterm_checkpoint_process",
+            module_path!().split_once("::").unwrap().1
+        );
+        // Kills the child process if the test fails.
+        struct KillOnDrop(Child);
+        impl Drop for KillOnDrop {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+
+        let port_file = tempdir.path().join(SERVER_PORT_FILE);
+        let start = || -> (KillOnDrop, String) {
+            let _ = std::fs::remove_file(&port_file);
+            let child = KillOnDrop(
+                Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", &test_name, "--nocapture"])
+                    .env(DIR, tempdir.path())
+                    .current_dir(tempdir.path())
+                    .spawn()
+                    .unwrap(),
+            );
+            let start = Instant::now();
+            let port = loop {
+                if let Ok(port) = std::fs::read_to_string(&port_file) {
+                    break port.trim().to_string();
+                }
+                assert!(start.elapsed() < Duration::from_secs(60), "no port file");
+                sleep(Duration::from_millis(100));
+            };
+            (child, format!("http://127.0.0.1:{port}"))
+        };
+        let client = reqwest::blocking::Client::new();
+        let count = |url: &str| -> Option<i64> {
+            let qs = form_urlencoded::Serializer::new(String::new())
+                .append_pair("sql", "SELECT COUNT(*) AS c FROM test_output1")
+                .append_pair("format", "json")
+                .finish();
+            let response = client.get(format!("{url}/query?{qs}")).send().ok()?;
+            let text = response.error_for_status().ok()?.text().ok()?;
+            let row: serde_json::Value = serde_json::from_str(text.lines().next()?).ok()?;
+            row["c"].as_i64()
+        };
+        let wait_for = |what: &str, mut done: Box<dyn FnMut() -> bool + '_>| {
+            let start = Instant::now();
+            while !done() {
+                assert!(start.elapsed() < Duration::from_secs(60), "{what}");
+                sleep(Duration::from_millis(100));
+            }
+        };
+        let sigterm = |mut child: KillOnDrop| {
+            signal::kill(Pid::from_raw(child.0.id() as i32), signal::SIGTERM).unwrap();
+            let start = Instant::now();
+            let status = loop {
+                if let Some(status) = child.0.try_wait().unwrap() {
+                    break status;
+                }
+                assert!(
+                    start.elapsed() < Duration::from_secs(60),
+                    "the pipeline did not exit on SIGTERM"
+                );
+                sleep(Duration::from_millis(100));
+            };
+            assert_eq!(status.signal(), Some(signal::SIGTERM as i32), "{status}");
+        };
+
+        let (child, url) = start();
+        wait_for(
+            "the pipeline did not take the input",
+            Box::new(|| {
+                let rows: String = (0..10).map(|id| format!("{id},false,,\n")).collect();
+                client
+                    .post(format!("{url}/ingress/test_input1"))
+                    .body(rows)
+                    .send()
+                    .is_ok_and(|r| r.status().is_success())
+            }),
+        );
+        wait_for(
+            "the input did not reach the view",
+            Box::new(|| count(&url) == Some(10)),
+        );
+        sigterm(child);
+
+        // Only the SIGTERM checkpoint holds the rows.
+        let (child, url) = start();
+        let mut restored = None;
+        wait_for(
+            "the restarted pipeline did not answer",
+            Box::new(|| {
+                restored = count(&url);
+                restored.is_some()
+            }),
+        );
+        sigterm(child);
+        assert_eq!(restored, Some(10));
     }
 
     #[actix_web::test]
