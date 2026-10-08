@@ -760,6 +760,40 @@ public class CastTests extends SqlIoTest {
     }
 
     @Test
+    public void issue7395() {
+        // A cast from DOUBLE or REAL to DECIMAL follows Calcite: it uses the shortest decimal
+        // form of the value, and truncates it to the scale.  REAL is converted to DOUBLE first.
+        // Calcite can fold a cast of a literal, so test both a literal and a column.
+        this.qs("""
+                SELECT CAST(0.29e0 AS DECIMAL(10, 5)), CAST(-99.99e0 AS DECIMAL(38, 20));
+                 d5 | d20
+                ----------
+                 0.29000 | -99.99000000000000000000
+                (1 row)
+
+                SELECT CAST(0.123456e0 AS DECIMAL(10, 5)), CAST(CAST(0.1e0 AS REAL) AS DECIMAL(38, 20));
+                 d5 | r20
+                ----------
+                 0.12345 | 0.10000000149011612000
+                (1 row)""");
+
+        var ccs = this.getCCS("""
+                CREATE TABLE TD(x DOUBLE, r REAL);
+                CREATE VIEW V AS SELECT
+                  CAST(x AS DECIMAL(10, 5)) AS d5,
+                  CAST(x AS DECIMAL(38, 20)) AS d20,
+                  CAST(r AS DECIMAL(38, 20)) AS r20
+                FROM TD;""");
+        ccs.step("INSERT INTO TD VALUES (0.29, 0.1), (1.15, 0.1), (-99.99, 0.1), (0.123456, 0.1)", """
+                 d5 | d20 | r20 | weight
+                -------------------------
+                 0.29000 | 0.29000000000000000000 | 0.10000000149011612000 | 1
+                 1.15000 | 1.15000000000000000000 | 0.10000000149011612000 | 1
+                 -99.99000 | -99.99000000000000000000 | 0.10000000149011612000 | 1
+                 0.12345 | 0.12345600000000000000 | 0.10000000149011612000 | 1""");
+    }
+
+    @Test
     public void issue6257() {
         // Calcite rounds by truncating, so we are tied to that behavior
         this.qst("""

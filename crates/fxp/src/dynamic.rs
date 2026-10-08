@@ -1,11 +1,9 @@
 use std::{
     cmp::Ordering,
-    fmt::{Debug, Display, Write},
+    fmt::{Debug, Display},
     ops::{Add, Div, Mul, Neg, Rem, Sub},
     str::FromStr,
 };
-
-use smallstr::SmallString;
 
 use crate::{
     Fixed, OutOfRange, ParseDecimalError, checked_pow10, debug_decimal, display_decimal,
@@ -462,15 +460,17 @@ impl TryFrom<f64> for DynamicDecimal {
 
     /// Convert `value` to `DynamicDecimal`, reporting an error if `value` is
     /// out of range.
+    ///
+    /// This uses the shortest decimal string that round-trips to `value`, the
+    /// same digits as `TryFrom<f64> for Fixed`.
     fn try_from(value: f64) -> Result<Self, Self::Error> {
-        // We need to convert binary to decimal.  We could do better, in theory,
-        // than formatting to a string and parsing back, but possibly not much
-        // better.  If this shows up as important in profiles, then we can
-        // improve it, especially if there are important special cases
-        // (e.g. integers).
-        let mut buf = SmallString::<[u8; 64]>::new();
-        write!(&mut buf, "{value:.15e}").unwrap();
-        buf.parse().map_err(|_| OutOfRange)
+        if !value.is_finite() {
+            return Err(OutOfRange);
+        }
+        ryu::Buffer::new()
+            .format_finite(value)
+            .parse()
+            .map_err(|_| OutOfRange)
     }
 }
 

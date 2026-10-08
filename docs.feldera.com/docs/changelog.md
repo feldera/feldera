@@ -10,6 +10,19 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Incompatible change (SQL): a cast from `DOUBLE` or `REAL` to `DECIMAL`
+  now gives the same result as Calcite.  It uses the shortest decimal form
+  of the value, then truncates it to the scale.  Before, the cast
+  sometimes lost a digit or added digits: `CAST(0.29e0 AS DECIMAL(10, 5))`
+  gave `0.28999` and now gives `0.29000`, and
+  `CAST(-99.99e0 AS DECIMAL(38, 20))` gave `-99.99000000000000262144` and
+  now gives `-99.99000000000000000000`.  A `REAL` is converted to `DOUBLE`
+  first, so `CAST(CAST(0.1e0 AS REAL) AS DECIMAL(38, 20))` gives
+  `0.10000000149011612000`.  An input format that gives a binary
+  floating-point value for a `DECIMAL` column now also keeps all the
+  digits of its shortest form, instead of only 16.  JSON input does not
+  change.
+
 ## v0.362.0
 
 - Incompatible change (SQL): the `emit_final` property of a view must
