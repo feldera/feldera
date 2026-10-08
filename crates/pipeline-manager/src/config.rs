@@ -2017,6 +2017,23 @@ pub struct CompilerConfig {
     #[serde(skip)]
     #[arg(long)]
     pub precompile: bool,
+
+    /// Directory of pipeline binaries built ahead of time, each named by the
+    /// source checksum of the program it was built from.
+    ///
+    /// A Rust compilation whose source checksum names a file in this directory
+    /// delivers that file instead of running `cargo`. Environments that cannot
+    /// compile at runtime (no network, little CPU) can thus still run a fixed
+    /// set of programs.
+    #[serde(default)]
+    #[arg(long)]
+    pub prebuilt_binaries_directory: Option<String>,
+
+    /// SQL program file that `--precompile` also compiles into
+    /// `--prebuilt-binaries-directory`. Can be repeated.
+    #[serde(skip)]
+    #[arg(long, requires_all = ["precompile", "prebuilt_binaries_directory"])]
+    pub prebuild_sql_program: Vec<String>,
 }
 
 impl CompilerConfig {
@@ -2067,6 +2084,16 @@ impl CompilerConfig {
                  '--gen2-udf-sdk-version' must name a 'feldera-udf' release, such as '0.0.1'"
             )));
         }
+        if let Some(prebuilt_binaries_directory) = &self.prebuilt_binaries_directory {
+            help_create_dir(prebuilt_binaries_directory)?;
+            self.prebuilt_binaries_directory =
+                Some(help_canonicalize_path(prebuilt_binaries_directory)?);
+        }
+        self.prebuild_sql_program = self
+            .prebuild_sql_program
+            .iter()
+            .map(|path| help_canonicalize_path(path))
+            .collect::<AnyResult<_>>()?;
         Ok(self)
     }
 }
@@ -2562,6 +2589,8 @@ mod tests {
             gen2_udf_sdk_path,
             gen2_udf_sdk_version: None,
             precompile: false,
+            prebuilt_binaries_directory: None,
+            prebuild_sql_program: vec![],
         };
         let sdk_path = format!("{}/.", sdk_dir.path().display());
 
@@ -2601,6 +2630,8 @@ mod tests {
                 gen2_udf_sdk_path,
                 gen2_udf_sdk_version: Some(gen2_udf_sdk_version.to_string()),
                 precompile: false,
+                prebuilt_binaries_directory: None,
+                prebuild_sql_program: vec![],
             };
 
         for version in ["0.1.0", "1.2.3-rc.1"] {
