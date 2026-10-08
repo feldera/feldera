@@ -153,6 +153,9 @@ Source edition can be found on github.
   durations, and its `checkpoint_interval` key accepts a duration such as
   `5m` as well as the bare number of seconds it took before.
 
+- Pipelines write a checkpoint on `SIGTERM` before they exit.  See
+  [Writing checkpoints](/pipelines/fault-tolerance#writing-checkpoints).
+
 ## v0.365.0
 
 - New connector (`nats_output`): write view output to a NATS subject. The
