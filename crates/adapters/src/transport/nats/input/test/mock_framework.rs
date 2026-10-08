@@ -1,4 +1,5 @@
 use super::NatsTestRecord;
+use super::jetstream_proxy::{JetStreamProxy, ProxyFaults};
 use super::util;
 use crate::test::{
     DEFAULT_TIMEOUT_MS, MockDeZSet, MockInputConsumer, init_test_logger, mock_input_pipeline, wait,
@@ -112,6 +113,28 @@ pub(super) enum NatsMockAction {
     WaitForConsumerCount { count: usize, timeout: Duration },
     /// Assert that every consumer on the stream is named `<prefix>_<suffix>`.
     AssertConsumerNamesStartWith(&'static str),
+
+    /// Put a fault-injecting proxy in front of the server. Pipelines created
+    /// afterwards connect through it; the runner's own requests do not.
+    StartProxy(ProxyFaults),
+    /// Suspend the server (SIGSTOP), so requests time out.
+    FreezeServer,
+    /// Resume a frozen server (SIGCONT).
+    ThawServer,
+    /// Delete every consumer on the stream through the JetStream API.
+    DeleteConsumers,
+    /// Call `endpoint.queue()` repeatedly for the given duration.
+    QueueFor(Duration),
+    /// Call `endpoint.queue()` once and assert that the endpoint reports the
+    /// step (`extended`) within the given duration.
+    QueueCompletesWithin(Duration),
+    /// Call `endpoint.disconnect()` and assert that the worker exits within
+    /// the given duration.
+    DisconnectWithin(Duration),
+    /// Assert that the consumer counters agree with the server: the
+    /// connector cannot have deleted more consumers than it created, and
+    /// `created - deleted` equals the consumers left on the stream.
+    AssertConsumerCountersMatchServer,
 }
 
 /// Internal state held by the test runner.
@@ -128,6 +151,7 @@ struct NatsMockRunner {
     pipeline_create_error: Option<AnyError>,
     got_fatal: Arc<AtomicBool>,
     error_count: Arc<AtomicUsize>,
+    proxy: Option<JetStreamProxy>,
     rt: tokio::runtime::Runtime,
 }
 
@@ -148,6 +172,7 @@ impl NatsMockRunner {
             pipeline_create_error: None,
             got_fatal: Arc::new(AtomicBool::new(false)),
             error_count: Arc::new(AtomicUsize::new(0)),
+            proxy: None,
             rt: tokio::runtime::Runtime::new()?,
         })
     }
@@ -155,6 +180,20 @@ impl NatsMockRunner {
     fn nats_url(&self) -> &str {
         self.nats_url
             .as_deref()
+            .expect("StartNats must be called before this action")
+    }
+
+    /// The URL pipelines connect to: the proxy when one is running.
+    fn pipeline_url(&self) -> &str {
+        self.proxy
+            .as_ref()
+            .map(|proxy| proxy.url())
+            .unwrap_or_else(|| self.nats_url())
+    }
+
+    fn nats_guard(&self) -> &util::ProcessKillGuard {
+        self.nats_guard
+            .as_ref()
             .expect("StartNats must be called before this action")
     }
 
@@ -224,7 +263,7 @@ impl NatsMockRunner {
             }
 
             NatsMockAction::CreatePipeline => {
-                let config = pipeline_config(self.nats_url());
+                let config = pipeline_config(self.pipeline_url());
                 println!("Config:\n{config:#}");
 
                 match mock_input_pipeline::<NatsTestRecord, NatsTestRecord>(
@@ -715,6 +754,82 @@ impl NatsMockRunner {
                         info.name
                     );
                 }
+            }
+
+            NatsMockAction::StartProxy(faults) => {
+                let proxy = JetStreamProxy::start(&self.rt, self.nats_url(), faults.clone())?;
+                self.proxy = Some(proxy);
+            }
+
+            NatsMockAction::FreezeServer => self.nats_guard().freeze()?,
+
+            NatsMockAction::ThawServer => self.nats_guard().thaw()?,
+
+            NatsMockAction::DeleteConsumers => {
+                let nats_url = self.nats_url().to_string();
+                let deleted = self
+                    .rt
+                    .block_on(util::delete_consumers(&nats_url, STREAM_NAME))?;
+                println!("Deleted {deleted} consumers");
+            }
+
+            NatsMockAction::QueueFor(duration) => {
+                let deadline = Instant::now() + *duration;
+                while Instant::now() < deadline {
+                    self.endpoint().queue(false);
+                    sleep(Duration::from_millis(50));
+                }
+            }
+
+            NatsMockAction::QueueCompletesWithin(duration) => {
+                let before = self.mock_input_consumer().state().n_extended;
+                let start = Instant::now();
+                self.endpoint().queue(false);
+                let completed = wait(
+                    || self.mock_input_consumer().state().n_extended > before,
+                    DEFAULT_TIMEOUT_MS,
+                );
+                let elapsed = start.elapsed();
+                assert!(completed.is_ok(), "queue() never completed");
+                assert!(
+                    elapsed <= *duration,
+                    "queue() took {elapsed:?}, more than {duration:?}"
+                );
+            }
+
+            NatsMockAction::DisconnectWithin(duration) => {
+                let start = Instant::now();
+                self.endpoint().disconnect();
+                self.wait_for_disconnect()?;
+                let elapsed = start.elapsed();
+                assert!(
+                    elapsed <= *duration,
+                    "disconnect took {elapsed:?}, more than {duration:?}"
+                );
+            }
+
+            NatsMockAction::AssertConsumerCountersMatchServer => {
+                let consumer = self.mock_input_consumer();
+                let created = consumer
+                    .custom_metric("input_connector_nats_consumers_created_total")
+                    .expect("connector should register its metrics");
+                let deleted = consumer
+                    .custom_metric("input_connector_nats_consumers_deleted_total")
+                    .expect("connector should register its metrics");
+                let nats_url = self.nats_url().to_string();
+                let live = self
+                    .rt
+                    .block_on(util::list_consumers(&nats_url, STREAM_NAME))?
+                    .len() as f64;
+                assert!(
+                    deleted <= created,
+                    "consumers_deleted_total ({deleted}) exceeds consumers_created_total ({created})"
+                );
+                assert_eq!(
+                    created - deleted,
+                    live,
+                    "created ({created}) - deleted ({deleted}) should equal the {live} consumers on the server"
+                );
             }
         }
         Ok(())
