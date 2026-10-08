@@ -121,6 +121,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
                 storage_mb_max: Some(10000),
                 autoscaling: None,
                 storage_class: None,
+                volume_attributes_class: None,
                 service_account_name: None,
                 namespace: None,
             },
