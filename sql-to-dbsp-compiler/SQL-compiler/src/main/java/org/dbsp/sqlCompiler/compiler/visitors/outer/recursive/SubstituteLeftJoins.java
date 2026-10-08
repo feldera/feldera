@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.recursive;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
@@ -23,10 +24,10 @@ public class SubstituteLeftJoins extends CircuitCloneVisitor {
     }
 
     /**
-     * Specializes the closure from a LeftJoinOperator, i.e.,
+     * Specializes the closure of a left join, i.e.,
      * Given a function `closure` with 3 parameters closure(k, l, r), where r is nullable,
      * produces a closure with the following body: |x| closure(*x.0, *x.1, None) */
-    public static DBSPClosureExpression createMapFunction(DBSPCompiler compiler, DBSPLeftJoinOperator join) {
+    public static DBSPClosureExpression createMapFunction(DBSPCompiler compiler, DBSPJoinBaseOperator join) {
         DBSPClosureExpression closure = join.getClosureFunction();
         // Result type is from the left input
         DBSPTypeIndexedZSet ix = join.left().getOutputIndexedZSetType();

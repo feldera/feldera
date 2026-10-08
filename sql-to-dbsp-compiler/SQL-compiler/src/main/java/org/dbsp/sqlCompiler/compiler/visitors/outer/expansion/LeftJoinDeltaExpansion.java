@@ -2,28 +2,31 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.expansion;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDelayedIntegralOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 
-
+/** Expansion of a left join: ΔL ⋈ I(R) + I(L) ⋈ ΔR + ΔL ⋈ ΔR + pad(antijoin(ΔL, ΔR)), where the
+ * incremental antijoin produces the change of the left rows without a match in R, and pad fills
+ * their right columns with NULL.  The joins and pad produce indexed collections when the left join
+ * does. */
 public class LeftJoinDeltaExpansion extends OperatorDeltaExpansion implements CommonJoinDeltaExpansion {
     public final DBSPDelayedIntegralOperator leftIntegrator;
     public final DBSPDelayedIntegralOperator rightIntegrator;
-    public final DBSPStreamJoinOperator leftDelta;
-    public final DBSPStreamJoinOperator rightDelta;
-    public final DBSPStreamJoinOperator join;
+    public final DBSPJoinBaseOperator leftDelta;
+    public final DBSPJoinBaseOperator rightDelta;
+    public final DBSPJoinBaseOperator join;
     public final DBSPAntiJoinOperator antiJoin;
-    public final DBSPMapOperator map;
+    public final DBSPSimpleOperator map;
     public final DBSPSumOperator sum;
 
     public LeftJoinDeltaExpansion(DBSPDelayedIntegralOperator leftIntegrator,
                                   DBSPDelayedIntegralOperator rightIntegrator,
-                                  DBSPStreamJoinOperator leftDelta,
-                                  DBSPStreamJoinOperator rightDelta,
-                                  DBSPStreamJoinOperator join,
+                                  DBSPJoinBaseOperator leftDelta,
+                                  DBSPJoinBaseOperator rightDelta,
+                                  DBSPJoinBaseOperator join,
                                   DBSPAntiJoinOperator anti,
-                                  DBSPMapOperator map,
+                                  DBSPSimpleOperator map,
                                   DBSPSumOperator sum) {
         this.leftIntegrator = leftIntegrator;
         this.rightDelta = rightDelta;
