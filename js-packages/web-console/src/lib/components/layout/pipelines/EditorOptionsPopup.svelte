@@ -11,7 +11,7 @@
 <Popup wrapperClass="flex">
   {#snippet trigger(toggle)}
     <button
-      class="fd fd-more_horiz btn-icon btn-icon-sm text-[16px] !brightness-100 hover:preset-tonal-surface"
+      class="fd fd-more_horiz btn-icon btn-icon-sm text-[16px] hover:bg-surface-50-950 hover:text-surface-950-50"
       onclick={toggle}
       aria-label="Editor settings"
     ></button>

@@ -388,7 +388,7 @@
                   {statusBarEnd}
                 ></PipelineCodePanel>
               {:else}
-                <div class="panel flex h-full flex-col justify-end px-2 py-2">
+                <div class="panel flex h-full flex-col justify-end px-2 pt-2 pb-0">
                   <div class="-mx-8 -mt-2 flex flex-1 flex-col items-center gap-4">
                     <Progress class="h-1 w-full px-4" value={null} max={100}>
                       <Progress.Track>
@@ -398,9 +398,9 @@
                     <p class="text-surface-600-400">Loading pipeline...</p>
                   </div>
                   <div
-                    class="bg-white-dark flex flex-wrap items-center gap-x-8 rounded-b border-t border-surface-50-950 p-2 pl-4"
+                    class="flex flex-wrap items-center gap-x-8 border-t border-surface-200-800 px-2 py-2 pl-4"
                   >
-                    <div class="flex h-9 flex-nowrap gap-3">
+                    <div class="flex h-6 flex-nowrap gap-3">
                       {@render statusBarCenter()}
                     </div>
                     <div class="ml-auto flex flex-nowrap gap-x-2">
@@ -469,7 +469,7 @@
     {#each layoutControls as { icon, text, value, show }}
       {#if show !== false}
         <button
-          class="btn btn-sm text-surface-700-300 !brightness-100 hover:preset-tonal-surface"
+          class="btn btn-sm text-surface-700-300 hover:bg-surface-50-950 hover:text-surface-950-50"
           onclick={() => (value.value = !value.value)}
         >
           <span class="hidden sm:inline">

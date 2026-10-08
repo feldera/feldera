@@ -417,7 +417,7 @@
 {/snippet}
 
 {#snippet statusBar()}
-  <div class="flex h-9 flex-nowrap gap-3">
+  <div class="flex h-6 flex-nowrap gap-3">
     {@render statusBarCenter?.()}
   </div>
   <div class="ml-auto flex flex-nowrap gap-x-2">
