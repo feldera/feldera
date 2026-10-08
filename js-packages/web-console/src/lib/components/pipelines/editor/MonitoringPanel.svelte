@@ -28,8 +28,7 @@
   import { untrack } from 'svelte'
   import { usePermission } from '$lib/compositions/usePermission.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
-  import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
-  import { Tooltip } from 'common-ui'
+  import { ClipboardCopyButton, Tooltip } from 'common-ui'
   import DownloadSupportBundle from '$lib/components/pipelines/editor/DownloadSupportBundle.svelte'
   import {
     extractProgramErrors,

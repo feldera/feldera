@@ -6,7 +6,7 @@
 
 /* Scan profiler packages for Tailwind classes */
 @source "../../node_modules/profiler-layout/**/*.{svelte}";
-@source "../../node_modules/common-ui/**/*.{svelte}";
+@source "../../node_modules/common-ui/src/**/*.{svelte,ts}";
 
 @import "@skeletonlabs/skeleton";
 @import "@skeletonlabs/skeleton-svelte";

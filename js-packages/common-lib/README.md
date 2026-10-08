@@ -33,6 +33,7 @@ import type { SameNullability } from 'common-lib/types/nullable'
 | `d3-random-bignumber` | Random `BigNumber` generators | `bignumber.js` |
 | `felderaRelation` | SQL relation name normalization | |
 | `latencyColor` | Color scale for connector latencies | `tiny-invariant` |
+| `connectorMetrics` | Connector statistics types, grouped by relation | |
 
 The libraries in the "Needs" column are optional peer dependencies. A package
 that imports a module must also depend on the libraries that the module needs.
