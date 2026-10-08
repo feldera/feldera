@@ -48,6 +48,31 @@ The connector leaves producer batching (`batch.size`, `batch.num.messages` and
 }
 ```
 
+### Message keys with exactly-once fault tolerance
+
+To discard duplicate output after a restart, an exactly-once connector
+records a position in every message, and on startup reads the last message
+in each partition. Where the position goes depends on whether the format
+supplies a message key:
+
+- **No key** (for example, JSON with `insert_delete`): the position is the
+  message key, and messages are spread across partitions in turn.
+- **A key** (for example, JSON `debezium`, or JSON or Avro with `key_fields`):
+  the format's key is the message key, and the position is in a header named
+  `__feldera_position`, ahead of any other headers. Kafka assigns the
+  partition from the key, so all messages with the same key go to the same
+  partition in order, and consumers can share a topic's partitions.
+  `__feldera_position` is reserved; consumers can ignore it.
+
+A message with a key but no value (a tombstone) is not supported in this
+mode, because compaction eventually removes tombstones, and recovery would
+then read an older position and write committed output again. The Avro
+`confluent_jdbc` format and the JSON `redis` format write deletions as
+tombstones, so with exactly-once fault tolerance their deletions are reported
+as errors and not written. Use a format that writes a deletion with a value,
+such as `debezium`, or at-least-once fault tolerance. Other formats are safe
+on compacted topics.
+
 ## Example usage
 
 We will create a Kafka output connector named `total-sales`.

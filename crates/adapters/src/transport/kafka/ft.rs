@@ -1,10 +1,11 @@
 //! Fault-tolerant Kafka input and output transports.
 //!
 //! For output to Kafka, we need to be able to discard duplicate output.  We do
-//! that by recording the step number as the key in each output message.  On
-//! initialization, we read the final step number and discard any output for
-//! duplicate steps.  We use Kafka transactions to avoid writing partial output
-//! for a step.
+//! that by recording the transaction number in each output message: as the
+//! key of a keyless message, or in a header of a message whose key the caller
+//! supplies.  On initialization, we read the final transaction number and
+//! discard any output for duplicate transactions.  We use Kafka transactions
+//! to avoid writing partial output for a transaction.
 mod input;
 mod output;
 

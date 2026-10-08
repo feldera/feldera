@@ -105,6 +105,13 @@ impl KafkaResources {
     /// `(topic, n_partitions)` creates a topic with `n_partitions` partitions.
     /// If `n_partitions` is 0 then the topic is deleted instead.
     pub fn create_topics(topics: &[(&str, i32)]) -> Self {
+        Self::create_topics_with_config(topics, &[])
+    }
+
+    /// Like [`Self::create_topics`], but also sets each `(name, value)` in
+    /// `config` (for example, `("cleanup.policy", "compact")`) on every topic
+    /// that it creates.
+    pub fn create_topics_with_config(topics: &[(&str, i32)], config: &[(&str, &str)]) -> Self {
         // Kafka does not handle topic deletion and creation consistently when
         // multiple operations are performed in parallel, so serialize calls to
         // this function.
@@ -138,7 +145,10 @@ impl KafkaResources {
             .iter()
             .filter(|&(_topic_name, partitions)| *partitions > 0)
             .map(|(topic_name, partitions)| {
-                NewTopic::new(topic_name, *partitions, TopicReplication::Fixed(1))
+                config.iter().fold(
+                    NewTopic::new(topic_name, *partitions, TopicReplication::Fixed(1)),
+                    |topic, (name, value)| topic.set(name, value),
+                )
             })
             .collect::<Vec<_>>();
         if !new_topics.is_empty() {
