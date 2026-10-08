@@ -901,8 +901,8 @@ where
             // `Builder` API (instead of `Batcher`) to construct output batches.
             builders.push(B::Builder::with_capacity(
                 &self.batch_factories,
-                batch.key_count() / shards,
-                batch.len() / shards,
+                batch.key_count_upper_bound() / shards,
+                batch.len_upper_bound() / shards,
             ));
         }
 
@@ -959,8 +959,8 @@ where
                 &self.batch_factories,
                 B::Builder::with_capacity(
                     &self.batch_factories,
-                    batch.key_count() / shards,
-                    batch.len() / shards,
+                    batch.key_count_upper_bound() / shards,
+                    batch.len_upper_bound() / shards,
                 ),
             ));
         }
@@ -1065,8 +1065,8 @@ where
             .into_iter()
             .map(|builder| builder.done())
             .inspect(|batch| {
-                if batch.key_count() > *capacity {
-                    *capacity = batch.key_count();
+                if batch.key_count_upper_bound() > *capacity {
+                    *capacity = batch.key_count_upper_bound();
                 }
             });
 
@@ -1405,9 +1405,9 @@ where
                 rebalance_trace,
             } = self.rebalance_state.borrow_mut().take().unwrap();
 
-            self.rebalance_accumulator_size.set(accumulator.len());
+            self.rebalance_accumulator_size.set(accumulator.len_upper_bound());
             self.rebalance_integral_size.set(if rebalance_trace {
-                delayed_trace.len()
+                delayed_trace.len_upper_bound()
             } else {
                 0
             });
