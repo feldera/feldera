@@ -15,16 +15,16 @@
   const healthStatus = useClusterHealth()
 </script>
 
-<div class="flex flex-row items-center justify-between gap-2 px-2 py-2 md:px-8">
-  <a class="py-3 lg:pt-2 lg:pr-6 lg:pb-4" href={resolve('/')}>
-    <span class="hidden lg:block">
+<div class="flex flex-row items-center justify-between gap-2 px-2 py-1.5 md:px-8">
+  <a class="flex h-12 items-center lg:items-start lg:pr-2.5" href={resolve('/')}>
+    <span class="hidden lg:flex">
       {#if darkMode.current === 'dark'}
-        <FelderaModernLogoColorLight class="h-8"></FelderaModernLogoColorLight>
+        <FelderaModernLogoColorLight class="h-[30px]"></FelderaModernLogoColorLight>
       {:else}
-        <FelderaModernLogoColorDark class="h-8"></FelderaModernLogoColorDark>
+        <FelderaModernLogoColorDark class="h-[30px]"></FelderaModernLogoColorDark>
       {/if}
     </span>
-    <span class="inline lg:hidden">
+    <span class="flex lg:hidden">
       {#if darkMode.current === 'dark'}
         <FelderaModernLogomarkColorLight class="h-8"></FelderaModernLogomarkColorLight>
       {:else}

@@ -379,15 +379,12 @@ example = "1.0"`
   {/snippet}
   {#snippet fileTab(text, onClick, isCurrent, isSaved)}
     <!-- The shared `.tab` (see feldera-modern.css), as in the tabbed panels (`TabsPanel`).
-         An unsaved file keeps room on the right for its dot. -->
-    <button
-      class="tab {isCurrent ? 'tab-active' : ''} {isSaved ? '' : 'pr-5!'}"
-      onclick={onClick}
-    >
+         An unsaved file gets a dot after its name, centred by the tab's flex row. -->
+    <button class="tab {isCurrent ? 'tab-active' : ''}" onclick={onClick}>
       {text}
-      <div
-        class="h-0 w-0 -translate-x-2 -translate-y-1.5 text-4xl {isSaved ? '' : 'fd fd-dot'}"
-      ></div>
+      {#if !isSaved}
+        <span class="size-1.5 shrink-0 rounded-full bg-current" title="Unsaved changes"></span>
+      {/if}
     </button>
   {/snippet}
   {#snippet toolBarEnd()}
