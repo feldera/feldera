@@ -234,6 +234,36 @@ pub struct ExternalInputEndpointMetrics {
     pub processing_latency_p99_micros: Option<u64>,
 }
 
+impl ExternalInputEndpointMetrics {
+    /// Adds `other`, which another host reports for its part of the same
+    /// distributed connector, to these metrics.
+    pub fn merge(&mut self, other: &Self) {
+        // Naming every field makes a new field a compile error until it is
+        // merged here.
+        let &Self {
+            total_bytes,
+            total_records,
+            buffered_records,
+            buffered_bytes,
+            num_transport_errors,
+            num_parse_errors,
+            end_of_input,
+            processing_latency_p99_micros,
+        } = other;
+        self.total_bytes += total_bytes;
+        self.total_records += total_records;
+        self.buffered_records += buffered_records;
+        self.buffered_bytes += buffered_bytes;
+        self.num_transport_errors += num_transport_errors;
+        self.num_parse_errors += num_parse_errors;
+        self.end_of_input &= end_of_input;
+        // The worst host's latency bounds the connector's latency.
+        self.processing_latency_p99_micros = self
+            .processing_latency_p99_micros
+            .max(processing_latency_p99_micros);
+    }
+}
+
 /// Input endpoint status information.
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 #[schema(as = InputEndpointStatus)]
@@ -263,6 +293,66 @@ pub struct ExternalInputEndpointStatus {
     /// The latest completed watermark.
     #[schema(value_type = Option<CompletedWatermark>)]
     pub completed_frontier: Option<CompletedWatermark>,
+}
+
+impl ExternalInputEndpointStatus {
+    /// Combines this status with `other`, which another host reports for its
+    /// part of the same distributed connector, into the status of the
+    /// connector as a whole.
+    ///
+    /// The combined connector is healthy, at end of input, or free of a fatal
+    /// error only if every part is.  It is paused or a barrier if any part is.
+    /// Its completed frontier is the oldest one that a host reports, because
+    /// input after that point is not complete on that host.  A host that has
+    /// completed no input yet, for example a host that has no part of the
+    /// input to read, does not hold back the frontier.
+    pub fn merge(&mut self, other: Self) {
+        // Naming every field makes a new field a compile error until it is
+        // merged here.
+        let Self {
+            // Every host reports the same name and configuration.
+            endpoint_name: _,
+            config: _,
+            metrics,
+            fatal_error,
+            parse_errors,
+            transport_errors,
+            health,
+            paused,
+            barrier,
+            completed_frontier,
+        } = other;
+        self.metrics.merge(&metrics);
+        if self.fatal_error.is_none() {
+            self.fatal_error = fatal_error;
+        }
+        merge_errors(&mut self.parse_errors, parse_errors);
+        merge_errors(&mut self.transport_errors, transport_errors);
+        self.health = match (self.health.take(), health) {
+            (Some(a), Some(b)) => Some(if matches!(a.status, ConnectorHealthStatus::Unhealthy) {
+                a
+            } else {
+                b
+            }),
+            (a, b) => a.or(b),
+        };
+        self.paused |= paused;
+        self.barrier |= barrier;
+        self.completed_frontier = match (self.completed_frontier.take(), completed_frontier) {
+            (Some(a), Some(b)) => Some(if b.ingested_at < a.ingested_at { b } else { a }),
+            (a, b) => a.or(b),
+        };
+    }
+}
+
+/// Appends `b` to `a` and sorts the result by time, because each host numbers
+/// its own errors.
+fn merge_errors(a: &mut Option<Vec<ConnectorError>>, b: Option<Vec<ConnectorError>>) {
+    if let Some(b) = b {
+        let errors = a.get_or_insert_with(Vec::new);
+        errors.extend(b);
+        errors.sort_by_key(|error| error.timestamp);
+    }
 }
 
 /// Performance metrics for an output endpoint.
@@ -603,5 +693,143 @@ mod tests {
         let json = r#"{"transmitted_records":0,"transmitted_bytes":0,"queued_records":0,"queued_batches":0,"buffered_records":0,"buffered_batches":0,"num_encode_errors":0,"num_transport_errors":0,"total_processed_input_records":0,"total_processed_steps":0,"memory":0}"#;
         let metrics: ExternalOutputEndpointMetrics = serde_json::from_str(json).unwrap();
         assert_eq!(metrics.batch_records_written, None);
+    }
+
+    mod merge {
+        use chrono::{DateTime, TimeZone, Utc};
+
+        use crate::adapter_stats::{
+            CompletedWatermark, ConnectorError, ConnectorHealth, ConnectorHealthStatus,
+            ExternalInputEndpointMetrics, ExternalInputEndpointStatus, ShortEndpointConfig,
+        };
+
+        fn time(secs: i64) -> DateTime<Utc> {
+            Utc.timestamp_opt(secs, 0).unwrap()
+        }
+
+        fn error(secs: i64, message: &str) -> ConnectorError {
+            ConnectorError {
+                timestamp: time(secs),
+                index: 0,
+                tag: None,
+                message: message.into(),
+            }
+        }
+
+        fn frontier(ingested_secs: i64) -> CompletedWatermark {
+            CompletedWatermark {
+                metadata: serde_json::json!(ingested_secs),
+                ingested_at: time(ingested_secs),
+                processed_at: time(ingested_secs + 1),
+                completed_at: time(ingested_secs + 2),
+            }
+        }
+
+        fn status() -> ExternalInputEndpointStatus {
+            ExternalInputEndpointStatus {
+                endpoint_name: "t.kafka".into(),
+                config: ShortEndpointConfig { stream: "t".into() },
+                metrics: ExternalInputEndpointMetrics {
+                    total_bytes: 10,
+                    total_records: 1,
+                    buffered_records: 2,
+                    buffered_bytes: 20,
+                    num_transport_errors: 3,
+                    num_parse_errors: 4,
+                    end_of_input: true,
+                    processing_latency_p99_micros: Some(100),
+                },
+                fatal_error: None,
+                parse_errors: None,
+                transport_errors: None,
+                health: Some(ConnectorHealth::healthy()),
+                paused: false,
+                barrier: false,
+                completed_frontier: None,
+            }
+        }
+
+        #[test]
+        fn counters_add_up() {
+            let mut a = status();
+            let mut b = status();
+            b.metrics.processing_latency_p99_micros = Some(500);
+            b.metrics.end_of_input = false;
+            a.merge(b);
+            let m = &a.metrics;
+            assert_eq!(
+                (
+                    m.total_bytes,
+                    m.total_records,
+                    m.buffered_records,
+                    m.buffered_bytes
+                ),
+                (20, 2, 4, 40)
+            );
+            assert_eq!((m.num_transport_errors, m.num_parse_errors), (6, 8));
+            assert!(!m.end_of_input);
+            assert_eq!(m.processing_latency_p99_micros, Some(500));
+        }
+
+        #[test]
+        fn worst_host_decides() {
+            let mut a = status();
+            let mut b = status();
+            b.fatal_error = Some("broken".into());
+            b.health = Some(ConnectorHealth::unhealthy("sick"));
+            b.paused = true;
+            b.barrier = true;
+            a.merge(b);
+            assert_eq!(a.fatal_error.as_deref(), Some("broken"));
+            assert!(matches!(
+                a.health.unwrap().status,
+                ConnectorHealthStatus::Unhealthy
+            ));
+            assert!(a.paused && a.barrier);
+
+            // The first fatal error stays.
+            let mut a = status();
+            a.fatal_error = Some("first".into());
+            let mut b = status();
+            b.fatal_error = Some("second".into());
+            a.merge(b);
+            assert_eq!(a.fatal_error.as_deref(), Some("first"));
+        }
+
+        #[test]
+        fn errors_are_combined_in_time_order() {
+            let mut a = status();
+            a.parse_errors = Some(vec![error(1, "a1"), error(5, "a5")]);
+            let mut b = status();
+            b.parse_errors = Some(vec![error(3, "b3")]);
+            b.transport_errors = Some(vec![error(2, "b2")]);
+            a.merge(b);
+            let messages = |errors: &Option<Vec<ConnectorError>>| {
+                errors
+                    .iter()
+                    .flatten()
+                    .map(|e| e.message.clone())
+                    .collect::<Vec<_>>()
+            };
+            assert_eq!(messages(&a.parse_errors), ["a1", "b3", "a5"]);
+            assert_eq!(messages(&a.transport_errors), ["b2"]);
+        }
+
+        #[test]
+        fn frontier_is_the_oldest_reported() {
+            let merged = |a: Option<i64>, b: Option<i64>| {
+                let mut x = status();
+                x.completed_frontier = a.map(frontier);
+                let mut y = status();
+                y.completed_frontier = b.map(frontier);
+                x.merge(y);
+                x.completed_frontier.map(|f| f.ingested_at)
+            };
+            assert_eq!(merged(Some(10), Some(5)), Some(time(5)));
+            assert_eq!(merged(Some(5), Some(10)), Some(time(5)));
+            assert_eq!(merged(None, Some(10)), Some(time(10)));
+            assert_eq!(merged(Some(10), None), Some(time(10)));
+            assert_eq!(merged(None, None), None);
+        }
     }
 }
