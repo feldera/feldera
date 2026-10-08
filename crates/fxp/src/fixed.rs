@@ -5,7 +5,7 @@ use std::{
     str::FromStr,
 };
 
-use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, One, Zero, cast};
+use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub, One, Zero};
 
 use crate::{
     Halfway, OutOfRange, ParseDecimalError, checked_pow10, debug_decimal, display_decimal,
@@ -913,10 +913,17 @@ impl<const P: usize, const S: usize> TryFrom<f64> for Fixed<P, S> {
 
     /// Convert `value` to `Fixed`, rounding toward zero, reporting an error if
     /// `value` is out of range.
+    ///
+    /// This follows Calcite: it converts the shortest decimal string that
+    /// round-trips to `value` (as Java's `Double.toString`), then truncates.
     fn try_from(value: f64) -> Result<Self, Self::Error> {
-        cast(value * Self::scale() as f64)
-            .and_then(Self::try_new)
-            .ok_or(OutOfRange)
+        if !value.is_finite() {
+            return Err(OutOfRange);
+        }
+        let mut buf = ryu::Buffer::new();
+        let (sig, exp) =
+            parse_decimal(buf.format_finite(value), S as i32).map_err(|_| OutOfRange)?;
+        Self::try_new_with_exponent(sig, exp).ok_or(OutOfRange)
     }
 }
 
@@ -925,10 +932,11 @@ impl<const P: usize, const S: usize> TryFrom<f32> for Fixed<P, S> {
 
     /// Convert `value` to `Fixed`, rounding toward zero, reporting an error if
     /// `value` is out of range.
+    ///
+    /// This follows Calcite, which converts `value` to `f64` first, so that
+    /// 0.1f32 becomes 0.10000000149011612.
     fn try_from(value: f32) -> Result<Self, Self::Error> {
-        cast(value as f64 * Self::scale() as f64)
-            .and_then(Self::try_new)
-            .ok_or(OutOfRange)
+        Self::try_from(value as f64)
     }
 }
 
@@ -1418,7 +1426,7 @@ mod test {
 
     use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub};
 
-    use crate::Fixed;
+    use crate::{Fixed, OutOfRange};
 
     type F = Fixed<10, 2>;
     fn f(n: f64) -> F {
@@ -1871,6 +1879,58 @@ mod test {
         assert_eq!(f(99_999_999.1).checked_ceil(), None);
         assert_eq!(f(99_999_999.5).checked_ceil(), None);
         assert_eq!(f(99_999_999.6).checked_ceil(), None);
+    }
+
+    /// Expected values are Calcite's: Java `BigDecimal.valueOf(x)` then
+    /// `setScale(S, RoundingMode.DOWN)`.
+    #[test]
+    #[allow(clippy::excessive_precision)]
+    fn from_float() {
+        fn test<const P: usize, const S: usize>(x: f64, expected: &str) {
+            assert_eq!(
+                Fixed::<P, S>::try_from(x),
+                Ok(expected.parse::<Fixed<P, S>>().unwrap()),
+                "{x} as DECIMAL({P},{S})"
+            );
+        }
+
+        // Issue #7395.
+        test::<10, 5>(0.29, "0.29");
+        test::<10, 5>(1.15, "1.15");
+        test::<10, 5>(-99.99, "-99.99");
+        test::<38, 20>(0.29, "0.29");
+        test::<38, 20>(1.15, "1.15");
+        test::<38, 20>(-99.99, "-99.99");
+
+        // Truncate toward zero.
+        test::<10, 5>(0.123456, "0.12345");
+        test::<10, 5>(-0.123456, "-0.12345");
+
+        // Exact ties between two shortest forms take the even digit.  The
+        // literals are the exact binary values.
+        test::<38, 1>(789047698662240.25, "789047698662240.2");
+        test::<38, 3>(233115890514796.125, "233115890514796.12");
+
+        // Keep all digits of the shortest form.
+        test::<38, 20>(0.1 + 0.2, "0.30000000000000004");
+        test::<38, 0>(1e23, "100000000000000000000000");
+        test::<10, 2>(-0.0, "0");
+        test::<38, 38>(5e-324, "0");
+
+        // REAL is converted to DOUBLE first.
+        assert_eq!(
+            Fixed::<38, 20>::try_from(0.1f32),
+            Ok("0.10000000149011612".parse().unwrap())
+        );
+
+        assert_eq!(Fixed::<10, 2>::try_from(f64::NAN), Err(OutOfRange));
+        assert_eq!(Fixed::<10, 2>::try_from(f64::INFINITY), Err(OutOfRange));
+        assert_eq!(Fixed::<10, 2>::try_from(f64::NEG_INFINITY), Err(OutOfRange));
+        assert_eq!(Fixed::<10, 2>::try_from(1e8), Err(OutOfRange));
+        assert_eq!(
+            Fixed::<10, 2>::try_from(99_999_999.99),
+            Ok("99999999.99".parse().unwrap())
+        );
     }
 
     #[test]

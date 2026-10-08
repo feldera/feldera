@@ -285,4 +285,26 @@ mod test {
         );
         assert!(serde_json::from_str::<DynamicDecimal>("1e39").is_err());
     }
+
+    /// A deserializer that gives an `f64` keeps all the digits of its shortest
+    /// form, as does `CAST(x AS DECIMAL)`.  JSON text does not come here,
+    /// because `serde_json` has `arbitrary_precision`.
+    #[test]
+    fn deserialize_float_matches_cast() {
+        use serde::{
+            Deserialize,
+            de::{IntoDeserializer, value::Error},
+        };
+
+        let x = 0.1 + 0.2;
+        let de = || IntoDeserializer::<Error>::into_deserializer(x);
+        assert_eq!(
+            DynamicDecimal::deserialize(de()),
+            Ok(DynamicDecimal::from_str("0.30000000000000004").unwrap())
+        );
+        assert_eq!(
+            Fixed::<38, 20>::deserialize(de()),
+            Ok(Fixed::<38, 20>::try_from(x).unwrap())
+        );
+    }
 }

@@ -5508,6 +5508,7 @@ dependencies = [
  "num-traits",
  "rand 0.8.6",
  "rkyv",
+ "ryu",
  "serde",
  "serde_json",
  "smallstr",
