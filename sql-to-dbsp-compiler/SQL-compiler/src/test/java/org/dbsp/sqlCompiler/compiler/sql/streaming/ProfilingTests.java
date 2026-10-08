@@ -429,8 +429,10 @@ public class ProfilingTests extends StreamingTestBase {
                 SELECT event_time, id, COUNT(*) AS row_count, SUM(amount) AS amount_sum
                 FROM events
                 GROUP BY event_time, id;""";
-        // One batch per minute with a row for each id: a new group for every (minute, id).
-        // The five minute LATENESS keeps six minutes of groups live, about 300 of 100,000.
+        // One batch per second with a row for each id: a new group for every (second, id).  The
+        // five minute LATENESS keeps 300 batches of groups live, 15,000 of 100,000.  A trace drops
+        // the groups below the waterline when it merges their batch, so after a compaction a few
+        // batches of them remain, a small share of the live groups.
         String main = """
                 #![allow(unused_imports)]
 
@@ -447,11 +449,11 @@ public class ProfilingTests extends StreamingTestBase {
                 use std::time::Duration;
                 use temp::circuit;
 
-                const MINUTES: i64 = 2000;
+                const BATCHES: i64 = 2000;
                 // The state is measured here and at the end of the stream
-                const HALF: i64 = MINUTES / 2;
+                const HALF: i64 = BATCHES / 2;
                 const IDS: i64 = 50;
-                const MS_PER_MINUTE: i64 = 60000;
+                const MS_PER_BATCH: i64 = 1000;
                 // Milliseconds of the first batch
                 const START_MS: i64 = 1788858000000;
 
@@ -460,15 +462,15 @@ public class ProfilingTests extends StreamingTestBase {
                     let (mut circuit, streams) = circuit(
                         CircuitConfig::with_workers(3)).expect("could not build circuit");
                     let mut half: u64 = 0;
-                    for minute in 0..MINUTES {
-                        let event_time = Timestamp::from_milliseconds(START_MS + minute * MS_PER_MINUTE);
+                    for batch in 0..BATCHES {
+                        let event_time = Timestamp::from_milliseconds(START_MS + batch * MS_PER_BATCH);
                         for id in 0..IDS {
-                            let batch = zset!(Tup3::new(event_time, id, minute + id) => 1);
-                            append_to_collection_handle(&batch, &streams.0);
+                            let row = zset!(Tup3::new(event_time, id, batch + id) => 1);
+                            append_to_collection_handle(&row, &streams.0);
                         }
                         let _ = circuit.transaction().expect("could not run circuit");
                         let _ = &read_output_spine(&streams.1);
-                        if minute == HALF - 1 {
+                        if batch == HALF - 1 {
                             half = state(&mut circuit);
                         }
                     }
