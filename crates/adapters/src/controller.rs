@@ -71,6 +71,7 @@ use dbsp::{
     profile::{DbspProfile, GraphProfile},
 };
 use dbsp::{Error as DbspError, Runtime, WeakRuntime};
+use distribution::{input_shard, resume_distribution};
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::soft_delete::SoftDeleteHandle;
@@ -93,8 +94,8 @@ use feldera_types::adapter_stats::{
 };
 use feldera_types::checkpoint::{CheckpointActivity, CheckpointMetadata, HostInfo};
 use feldera_types::coordination::{
-    self, AdHocCatalog, AdHocTableType, CheckpointCoordination, Completion, StepAction, StepInputs,
-    StepRequest, StepStatus, TransactionCoordination,
+    self, AdHocCatalog, AdHocTableType, CheckpointCoordination, Completion, InputDistribution,
+    StepAction, StepInputs, StepRequest, StepStatus, TransactionCoordination,
 };
 use feldera_types::format::json::JsonLines;
 use feldera_types::pipeline_diff::PipelineDiff;
@@ -150,6 +151,7 @@ use uuid::Uuid;
 use validate::validate_config;
 
 mod checkpoint;
+mod distribution;
 mod error;
 mod journal;
 #[cfg(target_os = "macos")]
@@ -250,6 +252,11 @@ pub struct ControllerBuilder {
     /// workers).
     layout: Option<Layout>,
 
+    /// The coordinator's instructions for distributed input connectors (see
+    /// [coordination::CoordinationActivate::input_distribution]).  This is empty without a
+    /// coordinator.
+    input_distribution: BTreeMap<String, InputDistribution>,
+
     storage: Option<CircuitStorageConfig>,
 }
 
@@ -296,6 +303,7 @@ impl ControllerBuilder {
         Ok(Self {
             config: config.clone(),
             layout: None,
+            input_distribution: BTreeMap::new(),
             storage,
         })
     }
@@ -393,6 +401,16 @@ impl ControllerBuilder {
         }
     }
 
+    pub(crate) fn with_input_distribution(
+        self,
+        input_distribution: BTreeMap<String, InputDistribution>,
+    ) -> Self {
+        Self {
+            input_distribution,
+            ..self
+        }
+    }
+
     /// Creates a [ControllerInit] that will open the specific
     /// `checkpoint_uuid`.
     pub(crate) fn open_checkpoint(
@@ -406,6 +424,7 @@ impl ControllerBuilder {
             self.storage.clone().unwrap(),
             checkpoint_uuid,
         )
+        .map(|init| init.with_input_distribution(self.input_distribution))
     }
 
     /// Creates a [ControllerInit] that will start fresh without using a
@@ -413,6 +432,7 @@ impl ControllerBuilder {
     pub(crate) fn open_without_checkpoint(self) -> Result<ControllerInit, ControllerError> {
         self.take_bucket_ownership()?;
         ControllerInit::without_checkpoint(self.layout, self.config.clone(), self.storage.clone())
+            .map(|init| init.with_input_distribution(self.input_distribution))
     }
 
     /// Creates a [ControllerInit] that will start from the latest checkpoint,
@@ -424,6 +444,7 @@ impl ControllerBuilder {
             self.config.clone(),
             self.storage.clone(),
         )
+        .map(|init| init.with_input_distribution(self.input_distribution))
     }
 
     pub(crate) fn storage(&self) -> Option<Arc<dyn StorageBackend>> {
@@ -901,7 +922,8 @@ impl Controller {
     ) -> Result<EndpointId, ControllerError> {
         debug!("Connecting input endpoint '{endpoint_name}'; config: {config:?}");
         self.inner.fail_if_bootstrapping_or_restoring()?;
-        self.inner.connect_input(endpoint_name, config, resume_info)
+        self.inner
+            .connect_input(endpoint_name, config, resume_info, None)
     }
 
     /// Disconnect an existing input endpoint.
@@ -3056,6 +3078,8 @@ impl CircuitThread {
             modified_output_endpoints,
             pipeline_diff,
             incarnation_uuid,
+            input_distribution,
+            checkpointed_input_distribution: _,
         } = controller_init;
 
         let storage = circuit_config
@@ -3260,6 +3284,7 @@ impl CircuitThread {
             step_receiver,
             checkpoint_receiver,
             incarnation_uuid,
+            input_distribution,
             storage
                 .as_ref()
                 .and_then(|backend| backend.file_system_path())
@@ -5113,6 +5138,7 @@ impl FtState {
             input_metadata: CheckpointOffsets::default(),
             input_statistics: HashMap::new(),
             output_statistics: HashMap::new(),
+            input_distribution: controller.input_distribution.clone(),
         };
         checkpoint.write(&*backend, &StoragePath::from(STATE_FILE))?;
 
@@ -5186,7 +5212,7 @@ impl FtState {
             controller.disconnect_input(&endpoint_id);
         }
         for (endpoint_name, config) in &metadata.add_inputs {
-            controller.connect_input(endpoint_name, config, None)?;
+            controller.connect_input(endpoint_name, config, None, None)?;
         }
         for (endpoint_name, pause) in &metadata.changed_inputs {
             if *pause {
@@ -5791,9 +5817,31 @@ pub struct ControllerInit {
 
     /// The incarnation UUID to report in controller statistics.
     pub incarnation_uuid: Uuid,
+
+    /// See [ControllerBuilder::input_distribution].
+    input_distribution: BTreeMap<String, InputDistribution>,
+
+    /// The input distribution recorded in the checkpoint, if one was read.
+    checkpointed_input_distribution: BTreeMap<String, InputDistribution>,
 }
 
 impl ControllerInit {
+    /// Sets the coordinator's input distribution.  For connectors that the
+    /// checkpoint distributed, the checkpoint's distribution wins (see
+    /// [resume_distribution]).
+    fn with_input_distribution(
+        self,
+        input_distribution: BTreeMap<String, InputDistribution>,
+    ) -> Self {
+        Self {
+            input_distribution: resume_distribution(
+                input_distribution,
+                &self.checkpointed_input_distribution,
+            ),
+            ..self
+        }
+    }
+
     fn without_checkpoint(
         layout: Option<Layout>,
         config: PipelineConfig,
@@ -5812,6 +5860,8 @@ impl ControllerInit {
             modified_output_endpoints: HashSet::new(),
             pipeline_diff: None,
             incarnation_uuid: Uuid::nil(),
+            input_distribution: BTreeMap::new(),
+            checkpointed_input_distribution: BTreeMap::new(),
         })
     }
 
@@ -5869,6 +5919,7 @@ impl ControllerInit {
             input_metadata,
             input_statistics,
             output_statistics,
+            input_distribution: checkpointed_input_distribution,
         } = checkpoint;
         info!("Resuming from checkpoint:\n{checkpoint_summary}");
 
@@ -6049,6 +6100,8 @@ impl ControllerInit {
             initial_start_time: Some(initial_start_time),
             pipeline_diff: Some(pipeline_diff),
             incarnation_uuid: Uuid::nil(),
+            input_distribution: BTreeMap::new(),
+            checkpointed_input_distribution,
         })
     }
 
@@ -7342,6 +7395,11 @@ pub struct ControllerInner {
     /// Layout of the [Runtime].
     layout: Layout,
 
+    /// The input distribution that this host used at activation, which each
+    /// checkpoint records.  Only connector initialization applies it (see
+    /// [ControllerInner::connect_input]).
+    input_distribution: BTreeMap<String, InputDistribution>,
+
     /// Current transaction number.
     ///
     /// This is not the same as transaction ID. We increment this counter
@@ -7398,6 +7456,7 @@ impl ControllerInner {
         step_receiver: tokio::sync::watch::Receiver<StepStatus>,
         checkpoint_receiver: tokio::sync::watch::Receiver<Option<CheckpointCoordination>>,
         incarnation_uuid: Uuid,
+        input_distribution: BTreeMap<String, InputDistribution>,
         storage_path: Option<PathBuf>,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let status = Arc::new(ControllerStatus::new(
@@ -7432,6 +7491,7 @@ impl ControllerInner {
                 outputs: ShardedLock::new(outputs),
                 next_output_id: Atomic::new(0),
                 layout: runtime.layout().clone(),
+                input_distribution: input_distribution.clone(),
                 runtime: runtime.downgrade(),
                 shutdown: runtime.cancellation_token().child_token(),
                 circuit_thread_unparker: circuit_thread_parker.unparker().clone(),
@@ -7472,12 +7532,18 @@ impl ControllerInner {
                     let input_config = input_config.clone();
 
                     let resume_info = resume_info.get(&*input_name).cloned();
+                    let distribution = input_distribution.get(&*input_name).copied();
 
                     (
                         format!("'{input_name}' input connector initialization"),
                         Box::new(move || {
                             catch_unwind(AssertUnwindSafe(|| {
-                                controller.connect_input(&input_name, &input_config, resume_info)
+                                controller.connect_input(
+                                    &input_name,
+                                    &input_config,
+                                    resume_info,
+                                    distribution.as_ref(),
+                                )
                             }))
                             .unwrap_or_else(|_| Err(ControllerError::ControllerPanic))
                         })
@@ -7524,7 +7590,7 @@ impl ControllerInner {
         })?;
 
         if controller.layout.local_host_idx() == 0 {
-            let _ = controller.connect_input("now", &now_endpoint_config(&config), None);
+            let _ = controller.connect_input("now", &now_endpoint_config(&config), None, None);
         }
 
         let backpressure_thread =
@@ -7657,16 +7723,30 @@ impl ControllerInner {
         tables
     }
 
+    /// Creates input endpoint `endpoint_name` from `endpoint_config`.
+    ///
+    /// `distribution` is the coordinator's distribution for the connector.
+    /// Only connector initialization at activation passes `Some`: a connector
+    /// added at runtime is not distributed, even if it reuses the name of a
+    /// connector that was.
     fn connect_input(
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: &InputEndpointConfig,
         resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
+        distribution: Option<&InputDistribution>,
     ) -> Result<EndpointId, ControllerError> {
+        let shard = input_shard(
+            endpoint_name,
+            &endpoint_config.connector_config,
+            &self.layout,
+            distribution,
+        )?;
         let endpoint = input_transport_config_to_endpoint(
             &endpoint_config.connector_config.transport,
             endpoint_name,
             &self.secrets_dir,
+            shard,
         )
         .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
 
@@ -9956,6 +10036,7 @@ impl RunningCheckpoint {
             input_metadata: CheckpointOffsets(input_metadata),
             input_statistics,
             output_statistics,
+            input_distribution: circuit.controller.input_distribution.clone(),
         };
         Span::new("blocking")
             .with_category("Checkpoint")

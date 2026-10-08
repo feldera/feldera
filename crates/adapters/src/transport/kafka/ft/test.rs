@@ -173,9 +173,10 @@ fn create_reader_config(
     }))
     .unwrap();
 
-    let endpoint = input_transport_config_to_endpoint(&config, "", default_secrets_directory())
-        .unwrap()
-        .unwrap();
+    let endpoint =
+        input_transport_config_to_endpoint(&config, "", default_secrets_directory(), None)
+            .unwrap()
+            .unwrap();
     assert!(endpoint.fault_tolerance() == Some(FtModel::ExactlyOnce));
 
     let receiver = DummyInputReceiver::new();
@@ -3212,9 +3213,10 @@ mod unsorted_partitions {
           "config": inner_config,
         }))
         .unwrap();
-        let endpoint = input_transport_config_to_endpoint(&config, "", default_secrets_directory())
-            .unwrap()
-            .unwrap();
+        let endpoint =
+            input_transport_config_to_endpoint(&config, "", default_secrets_directory(), None)
+                .unwrap()
+                .unwrap();
         let receiver = DummyInputReceiver::new();
         let reader = endpoint
             .open(

@@ -1178,6 +1178,7 @@ fn fault_tolerance_mismatch_unregisters_the_endpoint() {
         &serde_json::from_value(connector.clone()).unwrap(),
         "weak_ft",
         tempdir.path(),
+        None,
     )
     .unwrap()
     .unwrap();

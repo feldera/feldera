@@ -72,7 +72,8 @@ use feldera_types::completion_token::{
 use feldera_types::config::{PipelineIdentity, SyncConfig};
 use feldera_types::constants::STATUS_FILE;
 use feldera_types::coordination::{
-    AdHocScan, CoordinationActivate, CoordinationStatus, Labels, RestartArgs, Step, StepRequest,
+    AdHocScan, CoordinationActivate, CoordinationCapabilities, CoordinationStatus, Labels,
+    RestartArgs, Step, StepRequest,
 };
 use feldera_types::format::json::JsonEncoderConfig;
 use feldera_types::pipeline_diff::PipelineDiff;
@@ -1312,6 +1313,7 @@ fn do_bootstrap(
                     }
                     builder.config.inputs = std::mem::take(&mut ca.inputs);
                     builder.config.outputs = std::mem::take(&mut ca.outputs);
+                    builder = builder.with_input_distribution(take(&mut ca.input_distribution));
                     *state.desired_status.lock().unwrap() = ca.desired_status;
                     match ca.checkpoint {
                         Some(checkpoint_uuid) => {
@@ -3307,6 +3309,7 @@ async fn coordination_status(state: WebData<ServerState>) -> Result<HttpResponse
             CoordinationStatus {
                 incarnation_uuid: state.incarnation_uuid,
                 status: status.clone(),
+                capabilities: CoordinationCapabilities::current(),
             },
             (state, Some(status)),
         ))
