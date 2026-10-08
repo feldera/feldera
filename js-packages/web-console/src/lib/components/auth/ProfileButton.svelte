@@ -92,9 +92,11 @@
               ? 'border-2 border-surface-400'
               : combinedStatus === 'healthy'
                 ? 'bg-success-500'
-                : combinedStatus === 'unhealthy' || combinedStatus === 'stale'
-                  ? 'bg-warning-500'
-                  : 'bg-error-500'}"
+                : combinedStatus === 'transitioning'
+                  ? 'bg-blue-500'
+                  : combinedStatus === 'unhealthy' || combinedStatus === 'stale'
+                    ? 'bg-warning-500'
+                    : 'bg-error-500'}"
           ></div>
         {/snippet}
 

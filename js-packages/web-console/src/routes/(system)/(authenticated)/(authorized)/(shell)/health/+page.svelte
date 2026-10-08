@@ -104,6 +104,13 @@
         barColor: (h: boolean) => (h ? 'fill-yellow-600' : 'fill-yellow-500'),
         statusStyle: { bg: 'bg-yellow-500', text: 'text-yellow-500', label: 'Service degradation' }
       }))
+      .with('transitioning', () => ({
+        iconClass: 'fd fd-circle-dot text-blue-500',
+        statusColor: 'bg-blue-500',
+        severity: 1,
+        barColor: (h: boolean) => (h ? 'fill-blue-600' : 'fill-blue-500'),
+        statusStyle: { bg: 'bg-blue-500', text: 'text-blue-500', label: 'Transitioning' }
+      }))
       .with('healthy', () => ({
         iconClass: 'fd fd-circle-check-big text-success-500',
         statusColor: 'bg-green-500',
@@ -303,7 +310,7 @@
               class="flex flex-col gap-2"
               onBarClick={(group) => handleBarClick(tag as EventTag, group)}
               legend={i === 2
-                ? (['healthy', 'unhealthy', 'major_issue'] as ClusterEventType[])
+                ? (['healthy', 'transitioning', 'unhealthy', 'major_issue'] as ClusterEventType[])
                 : []}
               selectedBars={selectedEventTimestamp?.tag === tag
                 ? { from: selectedEventTimestamp.from, to: selectedEventTimestamp.to }
