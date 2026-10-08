@@ -59,6 +59,7 @@ use std::{
 
 use arrow_schema::Schema;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -95,6 +96,12 @@ pub struct CoordinationCapabilities {
     /// so each host would read all of the input of a distributed connector.
     #[serde(default)]
     pub distributed_inputs: bool,
+
+    /// The pipeline reports the values that its distributed input connectors
+    /// chose at `/coordination/input/choices`, and it obeys
+    /// [CoordinationActivate::input_choices].
+    #[serde(default)]
+    pub input_choices: bool,
 }
 
 impl CoordinationCapabilities {
@@ -102,6 +109,7 @@ impl CoordinationCapabilities {
     pub const fn current() -> Self {
         Self {
             distributed_inputs: true,
+            input_choices: true,
         }
     }
 }
@@ -144,6 +152,25 @@ pub struct CoordinationActivate {
     /// not in this map reads all of its input on the one host that has it.
     #[serde(default)]
     pub input_distribution: BTreeMap<String, InputDistribution>,
+
+    /// For distributed input connectors that need one value for all of their
+    /// hosts before they read input, the value that host 0 chose.
+    ///
+    /// The coordinator activates host 0 first, reads its choices from
+    /// `/coordination/input/choices` (see [InputChoices]), and then
+    /// activates the other hosts with this map.  Host 0's own map is empty.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub input_choices: BTreeMap<String, JsonValue>,
+}
+
+/// `/coordination/input/choices` reply.
+///
+/// Maps from the name of each distributed input connector that needs a choice
+/// (see `TransportConfig::needs_input_choice`) to the value that this host
+/// chose for it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct InputChoices {
+    pub choices: BTreeMap<String, JsonValue>,
 }
 
 /// How the coordinator divides the input of a distributed input connector
@@ -209,6 +236,24 @@ impl InputShard {
             n_hosts,
             home: distribution.home,
         })
+    }
+
+    /// Returns the ordinal of this host.
+    pub fn host(&self) -> usize {
+        self.host
+    }
+
+    /// Returns true if this host chooses the values that all of the hosts use
+    /// (see [CoordinationActivate::input_choices]).
+    pub fn is_leader(&self) -> bool {
+        self.host == 0
+    }
+
+    /// Returns true if this host is the connector's home host (see
+    /// [InputDistribution::home]).  A connector that has work that cannot be
+    /// divided, such as following a Delta table's log, does it on this host.
+    pub fn is_home(&self) -> bool {
+        self.host == self.home
     }
 
     /// Returns the ordinal of the host that reads `unit`.
