@@ -11,6 +11,7 @@
 </script>
 
 <script lang="ts">
+  import { enclosure, reclosureKey } from 'common-lib/function'
   import { type ExtendedPipeline } from '$lib/services/pipelineManager'
   import Query, { type QueryData } from '$lib/components/adhoc/Query.svelte'
   import { isDataRow, type Row } from '$lib/types/adhocQuery'
@@ -19,7 +20,6 @@
   import { type AsyncRecordBatchStreamReader, RecordBatchReader } from 'apache-arrow'
   import invariant from 'tiny-invariant'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
-  import { enclosure, reclosureKey } from '$lib/functions/common/function'
   import { useReverseScrollContainer } from 'common-ui'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { getSelectedTenant } from '$lib/services/auth'

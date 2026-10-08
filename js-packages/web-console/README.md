@@ -33,8 +33,8 @@ Install dependencies (needs to be done whenever package.json depencies change):
 bun install
 ```
 
-Installing also builds the workspace libraries (`common-ui`, `profiler-lib`, `profiler-layout`
-and others) and runs `svelte-kit sync`, through each package's `prepare` script.
+Installing also builds the workspace libraries (`common-lib`, `common-ui`, `profiler-lib`,
+`profiler-layout` and others) and runs `svelte-kit sync`, through each package's `prepare` script.
 
 Start the development server:
 
@@ -201,8 +201,12 @@ report one each time.
 - `src/lib/components/`: Reusable Svelte components
 - `src/lib/compositions/`: Stateful functions that app state management
 - `src/lib/functions/`: Pure functions, or functions that perform side effects through dependency injection
-- `src/lib/functions/common`: Utility functions that are not specific to this project
 - `src/lib/services/`: Functions that describe side effects (persistent storage, networking etc.)
 - `src/lib/types/`: Types used throughout the app
 - `src/routes/`: Web app pages used in file-based routing
 - `static/`: Static assets served as-is
+
+Code shared with other packages lives in sibling workspace packages:
+
+- `../common-lib/`: Framework-independent TypeScript utilities, imported per module (e.g. `common-lib/array`)
+- `../common-ui/`: Reusable Svelte components

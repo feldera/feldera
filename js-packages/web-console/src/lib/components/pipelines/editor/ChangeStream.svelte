@@ -12,9 +12,9 @@
 </script>
 
 <script lang="ts">
+  import { humanSize } from 'common-lib/string'
   import JSONbig from 'true-json-bigint'
 
-  import { humanSize } from '$lib/functions/common/string'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
   import List from '$lib/components/common/virtualList/HeadlessVirtualList.svelte'
   import SQLValue from '$lib/components/relationData/SQLValue.svelte'

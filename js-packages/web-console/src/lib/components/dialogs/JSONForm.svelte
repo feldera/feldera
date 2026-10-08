@@ -6,7 +6,7 @@
   import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
-  import { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
+  import { isMonacoEditorDisabled } from '$lib/functions/monacoEditor'
 
   let {
     filePath,

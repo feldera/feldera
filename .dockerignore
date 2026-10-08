@@ -6,6 +6,8 @@
 **/__pycache__
 **/.venv
 **/.git
+js-packages/common-lib/node_modules/
+js-packages/common-lib/dist/
 js-packages/profiler-lib/node_modules/
 js-packages/profiler-lib/dist/
 js-packages/profiler-app/node_modules/

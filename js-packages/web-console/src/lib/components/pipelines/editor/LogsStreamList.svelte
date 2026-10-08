@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { humanSize } from 'common-lib/string'
   import {
     type CopySlice,
     emptySearchState,
@@ -7,7 +8,6 @@
     sliceLinesForCopy
   } from 'common-ui'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
-  import { humanSize } from '$lib/functions/common/string'
 
   const {
     logs,

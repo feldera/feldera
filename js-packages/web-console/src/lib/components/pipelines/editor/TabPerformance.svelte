@@ -5,6 +5,8 @@
 </script>
 
 <script lang="ts">
+  import { formatDateTime, formatQty } from 'common-lib/format'
+  import { sleep } from 'common-lib/promise'
   import { SegmentedControl } from 'common-ui'
   import Dayjs from 'dayjs'
   import PipelineMemoryGraph from '$lib/components/layout/pipelines/PipelineMemoryGraph.svelte'
@@ -17,7 +19,6 @@
   import CheckpointsStatus from '$lib/components/pipelines/editor/performance/CheckpointsStatus.svelte'
   import { useIsScreenXl } from '$lib/compositions/layout/useIsMobile.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import { formatDateTime, formatQty } from '$lib/functions/format'
   import { useElapsedTime } from '$lib/compositions/common/useElapsedTime'
   import { staleSampleCount, type PipelineMetrics } from '$lib/functions/pipelineMetrics'
   import { JSONParser } from '@streamparser/json-whatwg'
@@ -30,7 +31,6 @@
   import CommitProgressIndicator from './performance/CommitProgressIndicator.svelte'
   import Drawer from '$lib/components/layout/Drawer.svelte'
   import WarningBanner from './WarningBanner.svelte'
-  import { sleep } from '$lib/functions/common/promise'
 
   const RECONNECT_BACKOFF_MS = 1000
   /** Time span the graphs plot. */

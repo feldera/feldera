@@ -1,5 +1,5 @@
+import { pushSortedOn } from 'common-lib/array'
 import { match } from 'ts-pattern'
-import { pushSortedOn } from '$lib/functions/common/array'
 import type { ClusterMonitorEventSelectedInfo, MonitorStatus } from '$lib/services/manager'
 
 /** Which cluster sub-service a health event belongs to. */

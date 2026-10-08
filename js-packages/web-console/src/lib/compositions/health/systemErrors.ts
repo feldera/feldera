@@ -1,4 +1,4 @@
-import { count, groupBy } from '$lib/functions/common/array'
+import { count, groupBy } from 'common-lib/array'
 import type { PipelineMetrics } from '$lib/functions/pipelineMetrics'
 import { resolve } from '$lib/functions/svelte'
 import { defaultGithubReportSections, type ReportDetails } from '$lib/services/githubReport'
