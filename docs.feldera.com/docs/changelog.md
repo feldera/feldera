@@ -230,9 +230,11 @@ Source edition can be found on github.
   before 1000 the result used to omit the leading zeros (`'1-01-01'`).
 
 - In a multihost pipeline, a Kafka input connector can now divide the
-  partitions of its topic among the hosts.  Set the new connector attribute
-  [`distributed`](/connectors#distributed) to `true`.  See [Distributed
-  connectors](/connectors/sources/kafka#distributed-connectors).
+  partitions of its topic among the hosts, and a Delta Lake input connector
+  can divide the data files of its snapshot.  Set the new connector attribute
+  [`distributed`](/connectors#distributed) to `true`.  See distributed
+  connectors for [Kafka](/connectors/sources/kafka#distributed-connectors) and
+  [Delta Lake](/connectors/sources/delta#distributed-connectors).
 
 ## v0.360.0
 
