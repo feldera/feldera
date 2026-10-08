@@ -1,11 +1,12 @@
 use super::rustc_diagnostics::parse_cargo_json_messages;
 use crate::compiler::util::{
     CleanupDecision, DirectoryContent, DiskSpace, ProcessGroupTerminator, UtilError,
-    checksum_buffer, checksum_file, cleanup_specific_directories, cleanup_specific_files,
-    copy_file, copy_file_if_checksum_differs, crate_name_pipeline_globals,
-    crate_name_pipeline_main, create_dir_if_not_exists, create_new_file, decode_string_as_dir,
-    pipeline_binary_filename, program_info_filename, read_file_content, recreate_dir,
-    recreate_file_with_content, sha256, truncate_sha256_checksum, write_file,
+    checksum_buffer, checksum_encoded_dir_contents, checksum_file, cleanup_specific_directories,
+    cleanup_specific_files, copy_file, copy_file_if_checksum_differs, crate_name_pipeline_base,
+    crate_name_pipeline_globals, crate_name_pipeline_main, create_dir_if_not_exists,
+    create_new_file, decode_string_as_dir, pipeline_binary_filename, program_info_filename,
+    read_file_content, recreate_dir, recreate_file_with_content, sha256, truncate_sha256_checksum,
+    write_file,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::error::DBError;
@@ -38,6 +39,7 @@ use tokio::{
     time::{Duration, sleep},
 };
 use tracing::{debug, error, info, trace, warn};
+use uuid::Uuid;
 
 /// The frequency at which the compiler polls the database for new Rust compilation requests.
 /// It balances resource consumption due to polling and a fast Rust compilation response.
@@ -272,6 +274,7 @@ async fn attempt_end_to_end_rust_compilation(
             profile,
             duration,
             rustc_result,
+            prebuilt_binary_key: _,
         }) => {
             info!(
                 pipeline_id = %pipeline.id,
@@ -472,6 +475,37 @@ fn calculate_source_checksum(
         );
     }
     hex::encode(hasher.finish())
+}
+
+/// Name of the prebuilt binary of a program: its source checksum, except that
+/// the generated Rust code counts by file contents with the crate names of the
+/// nil pipeline. The encoded generated code carries file modification times,
+/// and its crate names embed the pipeline id, so the plain source checksum
+/// differs on every compilation. `--precompile` builds as the nil pipeline.
+#[allow(clippy::too_many_arguments)]
+fn prebuilt_binary_key(
+    platform_version: &str,
+    runtime_version: &RuntimeSelector,
+    profile: &CompilationProfile,
+    pipeline_id: PipelineId,
+    main_rust: &str,
+    udf_stubs: &str,
+    udf_rust: &str,
+    udf_toml: &str,
+) -> Result<String, RustCompilationError> {
+    let pipeline_crate_base = crate_name_pipeline_base(pipeline_id);
+    let nil_crate_base = crate_name_pipeline_base(PipelineId(Uuid::nil()));
+    let to_nil_pipeline = |text: &str| text.replace(&pipeline_crate_base, &nil_crate_base);
+    let generated_rust_checksum = checksum_encoded_dir_contents(main_rust, to_nil_pipeline)?;
+    Ok(calculate_source_checksum(
+        platform_version,
+        runtime_version,
+        profile,
+        &generated_rust_checksum,
+        &to_nil_pipeline(udf_stubs),
+        udf_rust,
+        udf_toml,
+    ))
 }
 
 /// Metadata for a compiler output file (binary or program info)
@@ -999,6 +1033,9 @@ pub(super) struct RustCompilationResult {
     pub(super) profile: CompilationProfile,
     pub(super) duration: Duration,
     pub(super) rustc_result: RustCompilationInfo,
+    /// Name of the program's prebuilt binary, set when the configuration has a
+    /// prebuilt binaries directory.
+    pub(super) prebuilt_binary_key: Option<String>,
 }
 
 /// Performs the Rust compilation.
@@ -1109,6 +1146,58 @@ pub async fn perform_rust_compilation(
     );
     trace!("Rust compilation: calculated source checksum: {source_checksum}");
 
+    let prebuilt_binary_key = match config.prebuilt_binaries_directory {
+        None => None,
+        Some(_) => Some(prebuilt_binary_key(
+            platform_version,
+            &runtime_selector,
+            &profile,
+            pipeline_id,
+            &main_rust,
+            &udf_stubs,
+            udf_rust,
+            udf_toml,
+        )?),
+    };
+    let prebuilt_binary_path = match &prebuilt_binary_key {
+        None => None,
+        Some(prebuilt_binary_key) => find_prebuilt_binary(config, prebuilt_binary_key).await,
+    };
+    if let Some(prebuilt_binary_path) = prebuilt_binary_path {
+        info!(
+            pipeline_id = %pipeline_id,
+            pipeline = pipeline_name_for_log.as_str(),
+            "Rust compilation skipped: delivering prebuilt binary {}",
+            prebuilt_binary_path.display()
+        );
+        let (binary_integrity_checksum, binary_size, program_info_integrity_checksum) =
+            deliver_compilation_output(
+                common_config,
+                config,
+                pipeline_id,
+                program_version,
+                &source_checksum,
+                &prebuilt_binary_path,
+                &program_info.to_pipeline_config_program_info(),
+            )
+            .await?;
+        return Ok(RustCompilationResult {
+            source_checksum,
+            binary_integrity_checksum,
+            binary_size,
+            program_info_integrity_checksum,
+            profile,
+            duration: start.elapsed(),
+            rustc_result: RustCompilationInfo {
+                exit_code: 0,
+                stdout: String::new(),
+                stderr: format!("Used prebuilt binary {}", prebuilt_binary_path.display()),
+                messages: vec![],
+            },
+            prebuilt_binary_key,
+        });
+    }
+
     // Prepare the workspace for the compilation of this specific pipeline
     prepare_workspace(
         config,
@@ -1145,6 +1234,7 @@ pub async fn perform_rust_compilation(
         profile,
         duration: start.elapsed(),
         rustc_result: compilation_info,
+        prebuilt_binary_key,
     })
 }
 
@@ -1635,10 +1725,6 @@ async fn call_compiler(
         )));
     }
 
-    // Create pipeline-binaries directory if it does not yet exist
-    let pipeline_binaries_dir = workspace_dir.join("pipeline-binaries");
-    create_dir_if_not_exists(&pipeline_binaries_dir).await?;
-
     let pipeline_name_for_log = pipeline_name.unwrap_or_else(|| "N/A".to_string());
 
     // Create file where stdout will be written to
@@ -1693,6 +1779,13 @@ async fn call_compiler(
     }
     if let Some(env_rustflags) = optional_env_rustflags {
         command.env("RUSTFLAGS", env_rustflags);
+    }
+
+    // An explicit build target keeps RUSTFLAGS away from build scripts and
+    // proc macros, which instrumentation flags (e.g., sanitizer coverage)
+    // would otherwise fail to link.
+    if let Some(cargo_build_target) = std::env::var_os("CARGO_BUILD_TARGET") {
+        command.env("CARGO_BUILD_TARGET", cargo_build_target);
     }
 
     if let Some(rustc_wrapper) = std::env::var_os("RUSTC_WRAPPER") {
@@ -1813,76 +1906,117 @@ async fn call_compiler(
     };
 
     // Compilation is successful if the return exit code is present and zero
-    if exit_status.success() {
-        // Source file
-        let source_file_path = workspace_dir
-            .join("target")
-            .join(profile.to_target_folder())
-            .join(crate_name_pipeline_main(pipeline_id));
-        if !source_file_path.is_file() {
-            return Err(RustCompilationError::SystemError(format!(
-                "Rust compilation was successful but no binary was generated at '{}'",
-                source_file_path.display()
-            )));
-        }
-
-        // Integrity checksum of the source file
-        let (file_size, binary_integrity_checksum) = checksum_file(&source_file_path).await?;
-
-        // Create binary metadata
-        let binary_metadata = FileUploadMetadata {
-            pipeline_id,
-            program_version,
-            source_checksum: source_checksum.to_string(),
-            integrity_checksum: binary_integrity_checksum.clone(),
-        };
-
-        // Determine binary delivery mode from configuration
-        let delivery_mode = FileDeliveryMode::from_config(config);
-
-        // Deliver binary according to the configured mode
-        let _binary_location = deliver_binary(
-            common_config,
-            &delivery_mode,
-            &source_file_path,
-            &binary_metadata,
-            &pipeline_binaries_dir,
-        )
-        .await?;
-
-        let program_info_str = serde_json::to_string(&program_info).map_err(|e| {
-            RustCompilationError::SystemError(format!("failed to serialize program info: {e}"))
-        })?;
-        // Integrity checksum of the source file
-        let program_info_integrity_checksum = checksum_buffer(program_info_str.as_bytes()).await?;
-
-        // Create binary metadata
-        let program_info_metadata = FileUploadMetadata {
-            pipeline_id,
-            program_version,
-            source_checksum: source_checksum.to_string(),
-            integrity_checksum: program_info_integrity_checksum.clone(),
-        };
-
-        deliver_program_info(
-            common_config,
-            &delivery_mode,
-            &program_info_str,
-            &program_info_metadata,
-            &pipeline_binaries_dir,
-        )
-        .await?;
-
-        // Success
-        Ok((
-            compilation_info,
-            binary_integrity_checksum,
-            file_size,
-            program_info_integrity_checksum,
-        ))
-    } else {
-        Err(RustCompilationError::RustError(compilation_info))
+    if !exit_status.success() {
+        return Err(RustCompilationError::RustError(compilation_info));
     }
+    let source_file_path =
+        cargo_profile_dir(&workspace_dir, profile).join(crate_name_pipeline_main(pipeline_id));
+    if !source_file_path.is_file() {
+        return Err(RustCompilationError::SystemError(format!(
+            "Rust compilation was successful but no binary was generated at '{}'",
+            source_file_path.display()
+        )));
+    }
+    let (binary_integrity_checksum, binary_size, program_info_integrity_checksum) =
+        deliver_compilation_output(
+            common_config,
+            config,
+            pipeline_id,
+            program_version,
+            source_checksum,
+            &source_file_path,
+            program_info,
+        )
+        .await?;
+    Ok((
+        compilation_info,
+        binary_integrity_checksum,
+        binary_size,
+        program_info_integrity_checksum,
+    ))
+}
+
+/// Directory cargo writes the artifacts of `profile` to. Cargo nests it under
+/// the target triple when `CARGO_BUILD_TARGET` selects one explicitly.
+pub(crate) fn cargo_profile_dir(workspace_dir: &Path, profile: &CompilationProfile) -> PathBuf {
+    let target_dir = workspace_dir.join("target");
+    let target_dir = match std::env::var_os("CARGO_BUILD_TARGET") {
+        Some(target_triple) => target_dir.join(target_triple),
+        None => target_dir,
+    };
+    target_dir.join(profile.to_target_folder())
+}
+
+/// Prebuilt binary named by `source_checksum`, if the configuration has a
+/// prebuilt binaries directory and it contains one.
+async fn find_prebuilt_binary(config: &CompilerConfig, source_checksum: &str) -> Option<PathBuf> {
+    let prebuilt_binaries_directory = config.prebuilt_binaries_directory.as_ref()?;
+    let prebuilt_binary_path = Path::new(prebuilt_binaries_directory).join(source_checksum);
+    match fs::metadata(&prebuilt_binary_path).await {
+        Ok(metadata) if metadata.is_file() => Some(prebuilt_binary_path),
+        _ => None,
+    }
+}
+
+/// Delivers the pipeline binary at `binary_path` and the program info as the
+/// compilation output of the program, returning the binary integrity checksum,
+/// the binary size and the program info integrity checksum.
+async fn deliver_compilation_output(
+    common_config: &CommonConfig,
+    config: &CompilerConfig,
+    pipeline_id: PipelineId,
+    program_version: Version,
+    source_checksum: &str,
+    binary_path: &Path,
+    program_info: &PipelineConfigProgramInfo,
+) -> Result<(String, usize, String), RustCompilationError> {
+    let pipeline_binaries_dir = config
+        .working_dir()
+        .join("rust-compilation")
+        .join("pipeline-binaries");
+    create_dir_if_not_exists(&pipeline_binaries_dir).await?;
+    let delivery_mode = FileDeliveryMode::from_config(config);
+
+    let (binary_size, binary_integrity_checksum) = checksum_file(binary_path).await?;
+    let binary_metadata = FileUploadMetadata {
+        pipeline_id,
+        program_version,
+        source_checksum: source_checksum.to_string(),
+        integrity_checksum: binary_integrity_checksum.clone(),
+    };
+    deliver_binary(
+        common_config,
+        &delivery_mode,
+        binary_path,
+        &binary_metadata,
+        &pipeline_binaries_dir,
+    )
+    .await?;
+
+    let program_info_str = serde_json::to_string(program_info).map_err(|e| {
+        RustCompilationError::SystemError(format!("failed to serialize program info: {e}"))
+    })?;
+    let program_info_integrity_checksum = checksum_buffer(program_info_str.as_bytes()).await?;
+    let program_info_metadata = FileUploadMetadata {
+        pipeline_id,
+        program_version,
+        source_checksum: source_checksum.to_string(),
+        integrity_checksum: program_info_integrity_checksum.clone(),
+    };
+    deliver_program_info(
+        common_config,
+        &delivery_mode,
+        &program_info_str,
+        &program_info_metadata,
+        &pipeline_binaries_dir,
+    )
+    .await?;
+
+    Ok((
+        binary_integrity_checksum,
+        binary_size,
+        program_info_integrity_checksum,
+    ))
 }
 
 /// Rust compilation cleanup possible error outcomes.
@@ -2403,9 +2537,7 @@ async fn cleanup_rust_compilation(
         CompilationProfile::Optimized,
     ] {
         let target_profile_folder = profile.to_target_folder();
-        let target_subdir = rust_compilation_dir
-            .join("target")
-            .join(target_profile_folder);
+        let target_subdir = cargo_profile_dir(&rust_compilation_dir, &profile);
         if target_subdir.is_dir() {
             // target/<folder>: "<artifact name>.<other>" or else "<artifact name>"
             let deletion_clone = deletion.clone();
@@ -2837,6 +2969,114 @@ mod test {
     }
 
     /// Tests the binary delivery mode configuration.
+    /// A program has the same prebuilt binary key in every pipeline and every compilation,
+    /// and a different program has a different key.
+    #[test]
+    fn prebuilt_binary_key_depends_only_on_program() {
+        use crate::compiler::rust_compiler::prebuilt_binary_key;
+        use crate::compiler::util::{crate_name_pipeline_base, encode_dir_as_string};
+        use crate::db::types::program::{CompilationProfile, RuntimeSelector};
+        use std::time::{Duration, SystemTime};
+
+        // Generated code as the SQL compiler writes it for `pipeline_id`
+        let generate = |pipeline_id: PipelineId, extra_code: &str, modified: SystemTime| {
+            let crate_base = crate_name_pipeline_base(pipeline_id);
+            let dir = tempfile::tempdir().unwrap();
+            let crate_dir = dir.path().join(format!("feldera_pipe_{crate_base}_main"));
+            std::fs::create_dir(&crate_dir).unwrap();
+            let main_rs = crate_dir.join("main.rs");
+            std::fs::write(
+                &main_rs,
+                format!("use feldera_pipe_{crate_base}_globals::*;{extra_code}"),
+            )
+            .unwrap();
+            std::fs::File::options()
+                .write(true)
+                .open(&main_rs)
+                .unwrap()
+                .set_modified(modified)
+                .unwrap();
+            encode_dir_as_string(dir.path()).unwrap()
+        };
+        let key = |pipeline_id: PipelineId, main_rust: &str| {
+            prebuilt_binary_key(
+                "1.0.0",
+                &RuntimeSelector::Platform("abc".to_string()),
+                &CompilationProfile::Optimized,
+                pipeline_id,
+                main_rust,
+                "",
+                "",
+                "",
+            )
+            .unwrap()
+        };
+
+        let first_compilation = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let later_compilation = first_compilation + Duration::from_secs(3600);
+        let nil_pipeline_id = PipelineId(uuid::Uuid::nil());
+        let nil_key = key(
+            nil_pipeline_id,
+            &generate(nil_pipeline_id, "", first_compilation),
+        );
+        for pipeline_id in [
+            PipelineId(uuid::Uuid::now_v7()),
+            PipelineId(uuid::Uuid::now_v7()),
+        ] {
+            assert_eq!(
+                key(pipeline_id, &generate(pipeline_id, "", later_compilation)),
+                nil_key
+            );
+        }
+        let pipeline_id = PipelineId(uuid::Uuid::now_v7());
+        assert_ne!(
+            key(
+                pipeline_id,
+                &generate(pipeline_id, "fn f() {}", first_compilation)
+            ),
+            nil_key
+        );
+    }
+
+    /// Only a regular file named by the source checksum in the configured directory is a hit.
+    #[tokio::test]
+    async fn find_prebuilt_binary_by_source_checksum() {
+        use crate::compiler::rust_compiler::find_prebuilt_binary;
+        use crate::config::CompilerConfig;
+        use crate::db::types::program::CompilationProfile;
+
+        let prebuilt_dir = tempfile::tempdir().unwrap();
+        std::fs::write(prebuilt_dir.path().join("abc123"), b"binary").unwrap();
+        std::fs::create_dir(prebuilt_dir.path().join("def456")).unwrap();
+        let config = CompilerConfig {
+            compiler_working_directory: "/tmp".to_string(),
+            compilation_profile: CompilationProfile::Optimized,
+            sql_compiler_path: "test.jar".to_string(),
+            sql_compiler_cache_url: "http://test.com".to_string(),
+            compilation_cargo_lock_path: "Cargo.lock".to_string(),
+            dbsp_override_path: ".".to_string(),
+            binary_upload_endpoint: None,
+            binary_upload_timeout_secs: 300,
+            binary_upload_max_retries: 3,
+            binary_upload_retry_delay_ms: 1000,
+            precompile: false,
+            prebuilt_binaries_directory: Some(prebuilt_dir.path().to_string_lossy().to_string()),
+            prebuild_sql_program: vec![],
+        };
+
+        assert_eq!(
+            find_prebuilt_binary(&config, "abc123").await,
+            Some(prebuilt_dir.path().join("abc123"))
+        );
+        assert_eq!(find_prebuilt_binary(&config, "def456").await, None);
+        assert_eq!(find_prebuilt_binary(&config, "missing").await, None);
+        let config = CompilerConfig {
+            prebuilt_binaries_directory: None,
+            ..config
+        };
+        assert_eq!(find_prebuilt_binary(&config, "abc123").await, None);
+    }
+
     #[tokio::test]
     async fn binary_delivery_mode_from_config() {
         use crate::compiler::rust_compiler::FileDeliveryMode;
@@ -2856,6 +3096,8 @@ mod test {
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
             precompile: false,
+            prebuilt_binaries_directory: None,
+            prebuild_sql_program: vec![],
         };
 
         let delivery_mode = FileDeliveryMode::from_config(&config);

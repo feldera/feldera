@@ -2,8 +2,8 @@ use crate::api::error::ApiError;
 use crate::common_error::CommonError;
 use crate::compiler::error::CompilerError;
 use crate::compiler::rust_compiler::{
-    CLEANUP_INTERVAL, RustCompilationError, RustCompilationResult, cleanup_pipeline_binaries,
-    perform_rust_compilation, rust_compiler_task,
+    CLEANUP_INTERVAL, RustCompilationError, RustCompilationResult, cargo_profile_dir,
+    cleanup_pipeline_binaries, perform_rust_compilation, rust_compiler_task,
 };
 use crate::compiler::sql_compiler::{
     ProgramValidationRequest, SqlCompilationError, SqlCompilationOutput, decide_stale_jar,
@@ -12,7 +12,8 @@ use crate::compiler::sql_compiler::{
 };
 use crate::compiler::util::{
     CleanupDecision, DiskSpace, cleanup_specific_directories, cleanup_specific_files,
-    pipeline_binary_filename, program_info_filename, validate_is_sha256_checksum,
+    crate_name_pipeline_main, pipeline_binary_filename, program_info_filename,
+    validate_is_sha256_checksum,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::probe::DbProbe;
@@ -802,6 +803,8 @@ async fn create_working_directory_if_not_exists(
 
 /// Performs SQL and Rust compilation of a dummy program such that subsequent
 /// compilations are faster and a `Cargo.lock` has already been generated.
+/// Afterward, builds the binaries of `--prebuild-sql-program` into
+/// `--prebuilt-binaries-directory`.
 pub async fn compiler_precompile(
     common_config: CommonConfig,
     config: CompilerConfig,
@@ -809,7 +812,80 @@ pub async fn compiler_precompile(
     // Compiler working directory
     create_working_directory_if_not_exists(&config).await?;
 
-    // Dummy pipeline program values
+    let (rust_result, sql_duration) = precompile_program(&common_config, &config, "").await?;
+    info!(
+        "Pre-compilation finished: SQL took {:.2}s and Rust took {:.2}s (source checksum: {}; binary integrity checksum: {}, binary size: {} bytes, program info integrity checksum: {}, profile: {})",
+        sql_duration.as_secs_f64(),
+        rust_result.duration.as_secs_f64(),
+        rust_result.source_checksum,
+        rust_result.binary_integrity_checksum,
+        rust_result.binary_size,
+        rust_result.program_info_integrity_checksum,
+        rust_result.profile
+    );
+
+    for sql_program_path in &config.prebuild_sql_program {
+        prebuild_program(&common_config, &config, Path::new(sql_program_path)).await?;
+    }
+    Ok(())
+}
+
+/// Builds the binary of the SQL program at `sql_program_path` into the
+/// prebuilt binaries directory.
+async fn prebuild_program(
+    common_config: &CommonConfig,
+    config: &CompilerConfig,
+    sql_program_path: &Path,
+) -> Result<(), ManagerError> {
+    let prebuilt_binaries_directory = config
+        .prebuilt_binaries_directory
+        .as_ref()
+        .expect("clap requires --prebuilt-binaries-directory with --prebuild-sql-program");
+    let program_code = fs::read_to_string(sql_program_path).await.map_err(|e| {
+        CompilerError::PrecompilationError {
+            error: format!("unable to read '{}': {e}", sql_program_path.display()),
+        }
+    })?;
+    let (rust_result, _sql_duration) =
+        precompile_program(common_config, config, &program_code).await?;
+    let prebuilt_binary_key = rust_result
+        .prebuilt_binary_key
+        .as_ref()
+        .expect("Rust compilation names the prebuilt binary when the directory is configured");
+    let prebuilt_binary_path = Path::new(prebuilt_binaries_directory).join(prebuilt_binary_key);
+    // A program already present was delivered from the directory without building it.
+    if !prebuilt_binary_path.is_file() {
+        let built_binary_path = cargo_profile_dir(
+            &config.working_dir().join("rust-compilation"),
+            &rust_result.profile,
+        )
+        .join(crate_name_pipeline_main(PipelineId(Uuid::nil())));
+        fs::copy(&built_binary_path, &prebuilt_binary_path)
+            .await
+            .map_err(|e| CompilerError::PrecompilationError {
+                error: format!(
+                    "unable to copy '{}' to '{}': {e}",
+                    built_binary_path.display(),
+                    prebuilt_binary_path.display()
+                ),
+            })?;
+    }
+    info!(
+        "Prebuilt binary of '{}' (profile: {}): {}",
+        sql_program_path.display(),
+        rust_result.profile,
+        prebuilt_binary_path.display()
+    );
+    Ok(())
+}
+
+/// Performs SQL and Rust compilation of `program_code` as the nil pipeline,
+/// returning the Rust compilation result and the SQL compilation duration.
+async fn precompile_program(
+    common_config: &CommonConfig,
+    config: &CompilerConfig,
+    program_code: &str,
+) -> Result<(RustCompilationResult, Duration), ManagerError> {
     let tenant_id = TenantId(Uuid::nil());
     let pipeline_id = PipelineId(Uuid::nil());
     let platform_version = &common_config.platform_version;
@@ -826,14 +902,13 @@ pub async fn compiler_precompile(
             e,
         )
     })?;
-    let program_code = "";
     let udf_rust = "";
     let udf_toml = "";
 
     // SQL
     let (program_info, sql_duration, _) = perform_sql_compilation(
-        &common_config,
-        &config,
+        common_config,
+        config,
         None,
         tenant_id,
         pipeline_id,
@@ -864,17 +939,9 @@ pub async fn compiler_precompile(
     })?;
 
     // Rust
-    let RustCompilationResult {
-        source_checksum,
-        binary_integrity_checksum,
-        binary_size,
-        program_info_integrity_checksum,
-        profile,
-        duration: rust_duration,
-        rustc_result: _rustc_result,
-    } = perform_rust_compilation(
-        &common_config,
-        &config,
+    let rust_result = perform_rust_compilation(
+        common_config,
+        config,
         None,
         tenant_id,
         pipeline_id,
@@ -905,19 +972,7 @@ pub async fn compiler_precompile(
             CompilerError::PrecompilationError { error }
         }
     })?;
-
-    // Success
-    info!(
-        "Pre-compilation finished: SQL took {:.2}s and Rust took {:.2}s (source checksum: {}; binary integrity checksum: {}, binary size: {} bytes, program info integrity checksum: {}, profile: {})",
-        sql_duration.as_secs_f64(),
-        rust_duration.as_secs_f64(),
-        source_checksum,
-        binary_integrity_checksum,
-        binary_size,
-        program_info_integrity_checksum,
-        profile
-    );
-    Ok(())
+    Ok((rust_result, sql_duration))
 }
 
 /// Main to start the compiler, which consists of:
@@ -1187,6 +1242,8 @@ mod test {
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
             precompile: false,
+            prebuilt_binaries_directory: None,
+            prebuild_sql_program: vec![],
         })
         .await
         .unwrap();
@@ -1207,6 +1264,8 @@ mod test {
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
             precompile: false,
+            prebuilt_binaries_directory: None,
+            prebuild_sql_program: vec![],
         })
         .await
         .unwrap();
@@ -1615,6 +1674,8 @@ mod test {
             binary_upload_max_retries: 3,
             binary_upload_retry_delay_ms: 1000,
             precompile: false,
+            prebuilt_binaries_directory: None,
+            prebuild_sql_program: vec![],
         };
 
         (tempdir, config)

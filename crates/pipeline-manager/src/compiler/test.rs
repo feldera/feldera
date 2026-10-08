@@ -61,6 +61,8 @@ impl CompilerTest {
             dbsp_override_path: "../../".to_owned(),
             compilation_profile: CompilationProfile::Optimized,
             precompile: false,
+            prebuilt_binaries_directory: None,
+            prebuild_sql_program: vec![],
             compiler_working_directory: workdir.to_owned(),
             binary_upload_endpoint: None,
             binary_upload_timeout_secs: 600,

@@ -301,6 +301,47 @@ pub fn encode_dir_as_string(dir_path: &Path) -> Result<String, UtilError> {
     Ok(data_str)
 }
 
+/// Checksum over the paths and contents of the files in a directory encoded by
+/// [`encode_dir_as_string`], after `normalize` rewrites each path and content.
+/// Unlike a checksum of the encoding, file metadata such as modification times
+/// does not affect it.
+pub fn checksum_encoded_dir_contents(
+    data_str: &str,
+    normalize: impl Fn(&str) -> String,
+) -> Result<String, UtilError> {
+    let data_bytes = BASE64_STANDARD
+        .decode(data_str)
+        .map_err(|e| UtilError::Base64(format!("invalid base64 encoding: {e}")))?;
+    let mut archive = tar::Archive::new(flate2::read::GzDecoder::new(data_bytes.as_slice()));
+    let entries = archive
+        .entries()
+        .map_err(|e| UtilError::IoError("reading gzipped tar archive".to_string(), e))?;
+    let mut files = std::collections::BTreeMap::new();
+    for entry in entries {
+        let mut entry = entry
+            .map_err(|e| UtilError::IoError("reading gzipped tar archive entry".to_string(), e))?;
+        if !entry.header().entry_type().is_file() {
+            continue;
+        }
+        let path = entry
+            .path()
+            .map_err(|e| UtilError::IoError("reading gzipped tar archive path".to_string(), e))?
+            .to_string_lossy()
+            .to_string();
+        let mut content = String::new();
+        std::io::Read::read_to_string(&mut entry, &mut content).map_err(|e| {
+            UtilError::IoError(format!("reading '{path}' from gzipped tar archive"), e)
+        })?;
+        files.insert(normalize(&path), normalize(&content));
+    }
+    let mut hasher = Sha256::new();
+    for (path, content) in &files {
+        hasher.update(sha256(path.as_bytes()));
+        hasher.update(sha256(content.as_bytes()));
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
 /// Decodes the base64-encoded gzipped tar archive into a directory.
 pub fn decode_string_as_dir(data_str: &str, target_dir_path: &Path) -> Result<(), UtilError> {
     // Base-64 decode the UTF-8 string into raw bytes

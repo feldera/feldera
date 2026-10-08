@@ -1517,6 +1517,23 @@ pub struct CompilerConfig {
     #[serde(skip)]
     #[arg(long)]
     pub precompile: bool,
+
+    /// Directory of pipeline binaries built ahead of time, each named by the
+    /// source checksum of the program it was built from.
+    ///
+    /// A Rust compilation whose source checksum names a file in this directory
+    /// delivers that file instead of running `cargo`. Environments that cannot
+    /// compile at runtime (no network, little CPU) can thus still run a fixed
+    /// set of programs.
+    #[serde(default)]
+    #[arg(long)]
+    pub prebuilt_binaries_directory: Option<String>,
+
+    /// SQL program file that `--precompile` also compiles into
+    /// `--prebuilt-binaries-directory`. Can be repeated.
+    #[serde(skip)]
+    #[arg(long, requires_all = ["precompile", "prebuilt_binaries_directory"])]
+    pub prebuild_sql_program: Vec<String>,
 }
 
 impl CompilerConfig {
@@ -1532,6 +1549,16 @@ impl CompilerConfig {
         self.compilation_cargo_lock_path =
             help_canonicalize_path(&self.compilation_cargo_lock_path)?;
         self.dbsp_override_path = help_canonicalize_path(&self.dbsp_override_path)?;
+        if let Some(prebuilt_binaries_directory) = &self.prebuilt_binaries_directory {
+            help_create_dir(prebuilt_binaries_directory)?;
+            self.prebuilt_binaries_directory =
+                Some(help_canonicalize_path(prebuilt_binaries_directory)?);
+        }
+        self.prebuild_sql_program = self
+            .prebuild_sql_program
+            .iter()
+            .map(|path| help_canonicalize_path(path))
+            .collect::<AnyResult<_>>()?;
         Ok(self)
     }
 }
