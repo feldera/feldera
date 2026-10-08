@@ -375,4 +375,21 @@ input:focus {
   transform: translateX(-12px);
 }
 
+/* The medium Skeleton `Switch`, between `switch-sm` and Skeleton's 40 × 24px default:
+   34 × 20px with a 16px thumb, for settings lists. Put `switch-md` on the `<Switch>` root.
+   The checked thumb travels 34 - 2 × 2px padding - 16px thumb = 14px. */
+.switch-md [data-part="control"] {
+  width: 34px;
+  height: 20px;
+  padding: 2px;
+}
+
+.switch-md [data-part="thumb"][data-state="checked"] {
+  transform: translateX(14px);
+}
+
+[dir="rtl"] .switch-md [data-part="thumb"][data-state="checked"] {
+  transform: translateX(-14px);
+}
+
 /* The end of Skeleton UI overrides */
