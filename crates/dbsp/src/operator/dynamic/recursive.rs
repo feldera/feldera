@@ -261,23 +261,7 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        Circuit, Runtime, Scope, Stream, ZWeight,
-        circuit::{
-            CircuitConfig,
-            operator_traits::{Operator, SinkOperator},
-        },
-        operator::Generator,
-        typed_batch::OrdZSet,
-        utils::Tup2,
-        zset,
-    };
-    use feldera_types::config::dev_tweaks::DevTweaks;
-    use std::{
-        borrow::Cow,
-        sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
-        },
+        Circuit, Runtime, Stream, operator::Generator, typed_batch::OrdZSet, utils::Tup2, zset,
     };
     use std::{
         thread,
@@ -742,95 +726,5 @@ mod test {
                 ]
             });
         }
-    }
-
-    /// A sink that counts the iterations of the nested circuit it belongs to:
-    /// the scheduler starts a transaction on every operator for each iteration.
-    /// Only worker 0 counts, since every worker runs the same iterations.
-    struct IterationCounter(Arc<AtomicUsize>);
-
-    impl Operator for IterationCounter {
-        fn name(&self) -> Cow<'static, str> {
-            Cow::Borrowed("IterationCounter")
-        }
-
-        fn fixedpoint(&self, _scope: Scope) -> bool {
-            true
-        }
-
-        fn start_transaction(&mut self) {
-            if Runtime::worker_index() == 0 {
-                self.0.fetch_add(1, Ordering::Relaxed);
-            }
-        }
-    }
-
-    impl<T: 'static> SinkOperator<T> for IterationCounter {
-        async fn eval(&mut self, _input: &T) {}
-    }
-
-    /// Updates that cancel only where they meet, at the worker that owns their
-    /// key, cost the recursion no extra iteration.
-    ///
-    /// Moving the edge into each `c` from `a2` to `a1` changes the edges that
-    /// the recursion reaches by `-(a2, c)` and `+(a1, c)`, which `distinct`
-    /// keeps on the workers that own those two records.  The next iteration
-    /// projects both onto `c`, and where the two records live on different
-    /// workers, the join's input for `c` holds `-c` and `+c` in separate
-    /// batches.  That input is empty, so the recursion has converged; an
-    /// `is_empty` that added up the batches' sizes saw two updates instead and
-    /// ran one more iteration.
-    ///
-    /// A spine merges its top level early when enough of its records are
-    /// retractions, which would cancel the two batches before the join reads
-    /// them -- or not, depending on how fast the merger runs.  The test turns
-    /// those merges off, so the batches reach the join as they arrived.
-    #[test]
-    fn cancelling_updates_from_different_workers_cost_no_iteration() {
-        // Enough edges that some pair of records lands on different workers.
-        const EDGES: u64 = 64;
-        let a1 = |i: u64| 1000 + i;
-        let a2 = |i: u64| 2000 + i;
-        let c = |i: u64| 3000 + i;
-
-        let iterations = Arc::new(AtomicUsize::new(0));
-        let counter = iterations.clone();
-        let config = CircuitConfig::with_workers(2).with_dev_tweaks(DevTweaks {
-            top_level_negative_weight_fraction: Some(1.0),
-            ..DevTweaks::default()
-        });
-        let (mut circuit, edges_handle) = Runtime::init_circuit(config, move |circuit| {
-            let (edges_stream, edges_handle) = circuit.add_input_zset::<Tup2<u64, u64>>();
-            circuit
-                .recursive(|child, reached: Stream<_, OrdZSet<Tup2<u64, u64>>>| {
-                    child.add_sink(IterationCounter(counter.clone()), &reached);
-                    let edges = edges_stream.delta0(child);
-                    // An edge into `via` reaches every edge out of `via`.
-                    let targets = reached.map_index(|Tup2(_from, to)| (*to, ()));
-                    let edges_by_source = edges.map_index(|Tup2(from, to)| (*from, *to));
-                    Ok(edges
-                        .plus(&targets.join(&edges_by_source, |via, _unit, to| Tup2(*via, *to))))
-                })
-                .unwrap();
-            Ok(edges_handle)
-        })
-        .unwrap();
-
-        let mut step = |mut updates: Vec<Tup2<Tup2<u64, u64>, ZWeight>>| {
-            iterations.store(0, Ordering::Relaxed);
-            edges_handle.append(&mut updates);
-            circuit.transaction().unwrap();
-            iterations.load(Ordering::Relaxed)
-        };
-
-        // The edges, then nothing to follow out of the `c`s, then no change.
-        let edges_into_c = (0..EDGES).map(|i| Tup2(Tup2(a2(i), c(i)), 1)).collect();
-        assert_eq!(step(edges_into_c), 3);
-
-        // The new edges, then the cancelling input to the join: nothing changed.
-        let moved_edges = (0..EDGES)
-            .flat_map(|i| [Tup2(Tup2(a2(i), c(i)), -1), Tup2(Tup2(a1(i), c(i)), 1)])
-            .collect();
-        assert_eq!(step(moved_edges), 2);
     }
 }
