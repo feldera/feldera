@@ -136,6 +136,7 @@ pub(super) async fn perform_gen2_udf_compilation(
     .map_err(RustCompilationError::SystemError)?;
 
     Ok(RustCompilationResult {
+        prebuilt_binary_key: None,
         source_checksum,
         binary_integrity_checksum: udf_library.integrity_checksum,
         binary_size: library_size,
@@ -576,6 +577,8 @@ mod test {
             gen2_udf_sdk_path: None,
             gen2_udf_sdk_version: None,
             precompile: false,
+            prebuilt_binaries_directory: None,
+            prebuild_sql_program: vec![],
         }
     }
 
