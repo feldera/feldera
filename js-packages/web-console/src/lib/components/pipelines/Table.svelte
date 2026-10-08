@@ -265,12 +265,10 @@
             <td
               class="{rowTd} relative border-surface-100-900 whitespace-pre-wrap group-hover:bg-surface-50-950"
             >
-              <span
-                class="absolute inset-x-3 top-2.5 overflow-hidden align-middle overflow-ellipsis whitespace-nowrap"
-              >
+              <span class="absolute inset-x-3 top-2.5 flex items-center gap-2 whitespace-nowrap">
                 {#if pipeline.deploymentError}
                   {@const message = pipeline.deploymentError.message}
-                  <span class="fd fd-circle-alert pr-2 text-[16px] text-error-500"></span>
+                  <span class="fd fd-circle-alert shrink-0 text-[16px] text-error-500"></span>
                   <Popover class="z-20" strategy="fixed">
                     <div
                       class="scrollbar flex max-h-[50vh] max-w-[80vw] overflow-auto whitespace-pre-wrap"
@@ -278,7 +276,12 @@
                       {message}
                     </div>
                   </Popover>
-                  {message.slice(0, ((idx) => (idx > 0 ? idx : undefined))(message.indexOf('\n')))}
+                  <span class="truncate">
+                    {message.slice(
+                      0,
+                      ((idx) => (idx > 0 ? idx : undefined))(message.indexOf('\n'))
+                    )}
+                  </span>
                 {/if}
               </span>
             </td>
