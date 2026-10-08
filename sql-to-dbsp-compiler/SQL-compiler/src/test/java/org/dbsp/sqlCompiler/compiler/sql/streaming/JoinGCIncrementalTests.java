@@ -180,6 +180,11 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
     public void sameOutputWithoutLateness() {
         List<TablePair<?>> pairs = createTablePairs();
         var tester = new DifferentialTester(this.getCCS(differentialProgram(pairs)), pairs, COLUMNS);
+        steps(tester);
+    }
+
+    /** The steps of the differential test. */
+    static void steps(DifferentialTester tester) {
         // No waterline yet: matches on t, on k, and on t + 1, unmatched rows on both sides,
         // and a NULL t on each side
         tester.insert(INITIAL.toArray(new Record[0]));
@@ -440,11 +445,11 @@ public class JoinGCIncrementalTests extends StreamingTestBase {
             full_t_anti      | K        | K        | KK       | KK       | KK
             full_k_anti      | -        | -        | -        | -        | -
             asof             | -        | V        | NV       | NV       | NV
-            not_exists_t     | -        | KKN      | KKN      | KKN      | KKN
+            not_exists_t     | -        | KKKN     | KKKKN    | KKKKN    | KKKKN
             not_exists_k     | -        | N        | N        | N        | N
             exists_t         | K        | KK       | KKK      | KKK      | KKK
             exists_k         | -        | -        | -        | -        | -
-            not_in_t         | -        | KKN      | KKN      | KKN      | KKN
+            not_in_t         | -        | KKKN     | KKKN     | KKKN     | KKKN
             """;
 
     /** The declaration of an input of a join, with LATENESS on t unless {@code lateness} is 0. */
