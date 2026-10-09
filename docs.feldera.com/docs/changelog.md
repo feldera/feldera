@@ -10,6 +10,106 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Deprecation (pipeline and connector configuration): every duration setting
+  now takes a string with a unit, such as `"500ms"`, `"30s"`, `"1h30m"` or
+  `"30d"`. Accepted units are `ns`, `us` (or `µs`), `ms`, `s`, `m`, `h`, and
+  `d`, and several terms in a row are summed; a bare `0` is also accepted.
+  Most settings keep their name with the unit dropped, so
+  `clock_resolution_usecs` becomes `clock_resolution`; the six whose old name
+  carried no unit take a new name instead. The old key remains an alias of the
+  new one, so an existing configuration keeps working, and a bare number is
+  still read in the unit it always meant. The pipeline logs a warning naming
+  the equivalent duration to write instead. The 1.0 release stops accepting
+  the old keys and the bare numbers. Because both keys reach one setting,
+  writing both is an error rather than a contest one of them wins.
+
+  The old keys could not say everything the new ones can. Each held a whole
+  number of one unit, so a retention age measured in days could not be twelve
+  hours, and a checkpoint interval measured in seconds could not be half a
+  second; `"12h"` and `"500ms"` now work everywhere. And a large value such as
+  the output buffer's default of 2^64 - 1 milliseconds is not a number a
+  JavaScript client can hold exactly, where the string
+  `"213503982334d14h25m51s615ms"` is.
+
+  The Delta connector's `log_retention_duration` is not part of this scheme:
+  it passes a `"interval 30 days"` string through to Delta Lake and keeps its
+  own syntax.
+
+  | Old field (unit)                        | New field                            |
+  |-----------------------------------------|--------------------------------------|
+  | `max_buffering_delay_usecs` (µs)        | `max_buffering_delay`       |
+  | `clock_resolution_usecs` (µs)           | `clock_resolution`          |
+  | `provisioning_timeout_secs` (s)         | `provisioning_timeout`      |
+  | `fault_tolerance.checkpoint_interval_secs` (s) | `fault_tolerance.checkpoint_interval` |
+  | `storage.backend.config.ioop_delay` (ms) | `storage.backend.config.ioop_latency` |
+  | `storage.backend.config.sync.pull_interval` (s) | `storage.backend.config.sync.standby_pull_interval` |
+  | `storage.backend.config.sync.push_interval` (s) | `storage.backend.config.sync.checkpoint_push_interval` |
+  | `storage.backend.config.sync.retention_min_age` (days) | `storage.backend.config.sync.min_retention` |
+  | `max_output_buffer_time_millis` (ms)    | `max_output_buffer_time`    |
+  | URL input `pause_timeout` (s)           | `pause_linger`             |
+  | Kafka input `group_join_timeout_secs` (s) | `group_join_timeout`      |
+  | Kafka output `initialization_timeout_secs` (s) | `initialization_timeout` |
+  | NATS `connection_timeout_secs`, `request_timeout_secs`, `inactivity_timeout_secs`, `retry_interval_secs` (s) | the same names without `_secs` |
+  | NATS consumer `max_expires` (`{secs, nanos}` object) | `max_expiry`  |
+  | Pub/Sub `timeout_seconds`, `connect_timeout_seconds` (s) | `timeout`, `connect_timeout` |
+  | Avro `registry_timeout_secs` (s)        | `registry_timeout`          |
+
+  Three things change for anyone reading the configuration back rather than
+  only writing it. A configuration is stored under the current names the next
+  time it is saved, and from then on the API returns it under those names
+  only: a client that reads `clock_resolution_usecs` from a response must read
+  `clock_resolution` instead. A pipeline stored before this release and not
+  saved since still comes back under the older names, so a client must accept
+  either; adding a current key beside an older one already there is a
+  duplicate. The OpenAPI schema lists only the current names, so a validator
+  built from it rejects the older ones that the pipeline still accepts. And
+  the Python SDK's `RuntimeConfig` reads `.clock_resolution` as a duration
+  such as `"1ms"` rather than a number, whichever spelling the configuration
+  holds; the old attributes such as `.clock_resolution_usecs` remain as
+  deprecated properties that read back a whole number of the old unit and
+  warn. The SDK sends each setting in the spelling it was given, so code
+  written against the old arguments keeps working against an older server.
+  One cosmetic effect: an output connector compiled by an older release shows
+  its buffer time as `"213503982334d14h25m51s615ms"`, which is the old
+  default of 2^64 - 1 milliseconds spelled as a duration, means the same, and
+  can be left alone.
+
+  Upgrade `fda` together with the server. An `fda` older than this release
+  reads a configuration stored under the current names as defaults, and
+  `fda set-config` then writes those defaults back over every duration
+  setting it did not change.
+
+  The current names also matter for a downgrade, in three places. A runtime
+  configuration saved by this release reaches an older release under names it
+  does not know, so it silently runs every duration setting on its default;
+  rewrite the configuration under the old keys first. A checkpoint this
+  release writes carries each connector under the current names, for the
+  settings that connector set: an older release's Kafka input rejects such a
+  name and the pipeline fails to start with `Invalid Kafka input connector
+  configuration key`, its Kafka output hands the name to librdkafka, which
+  rejects it as an unknown property, and its other connectors silently use
+  their defaults. Clear the pipeline's storage to start it from scratch
+  instead. The same happens during a rolling upgrade to a standby still on an
+  older release once it pulls a checkpoint written by an upgraded leader, so
+  upgrade the standby before the leader. And an older release's SQL compiler
+  rejects the current names in a program's connector configuration, as does
+  its Avro format, so a program written with them fails to compile there.
+
+  A pipeline pinned to another runtime with `runtime_version`, or compiled by
+  an earlier release and not yet updated to this one, is handed its duration
+  settings under the old keys, in the runtime configuration and in every
+  connector, which every runtime up to 1.0 reads. A value that is not a whole
+  number of the old unit rounds up, so a short timeout never becomes `0`.
+  Pinning a runtime older than this release in the Enterprise edition does not
+  compile, because the platform's enterprise crates, which such a pipeline
+  builds against, use the new settings.
+
+  `fda set-config` takes `max_buffering_delay` and `clock_resolution` as
+  durations, and its `checkpoint_interval` key now accepts a duration such as
+  `5m` alongside the bare number of seconds it took before. The Python SDK's
+  `RuntimeConfig` gains the matching duration arguments and warns when the old
+  ones are used.
+
 ## v0.362.0
 
 - Incompatible change (SQL): the `emit_final` property of a view must

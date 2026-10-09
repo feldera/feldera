@@ -32,7 +32,7 @@ Enabling it takes three steps, covered in full in [Fault Tolerance]:
 | `at_least_once` | Every input record is processed at least once; some inputs near the failure point may be processed twice. | Lower. Requires [connectors that support fault tolerance](/pipelines/fault-tolerance/#fault-tolerant-connectors)|
 | `exactly_once` | Every input record is processed exactly once. | Higher; requires connectors that support it. |
 
-A shorter `checkpoint_interval_secs` is a bound on the amount of redundant work performed when a pipeline restarts,
+A shorter `checkpoint_interval` is a bound on the amount of redundant work performed when a pipeline restarts,
 at the cost of more checkpoint writes.  Sixty seconds is the default and a
 reasonable starting point.
 
@@ -163,13 +163,13 @@ The flat representation stores variants more compactly.
 
 ## Set a clock resolution when `NOW()` is used outside of a filter
 
-`clock_resolution_usecs` controls how often the pipeline advances its clock and
+`clock_resolution` controls how often the pipeline advances its clock and
 re-evaluates everything that depends on [`NOW()`][NOW()].  The default is one
-second:
+second; this sets it to one minute:
 
 ```json
 {
-  "clock_resolution_usecs": 60000000
+  "clock_resolution": "1m"
 }
 ```
 
@@ -180,7 +180,7 @@ The setting's cost depends on the SQL program structure:
 | A temporal filter, e.g. `WHERE ts > NOW() - INTERVAL 1 HOUR` | Relatively inexpensive.  Feldera uses the filter to garbage-collect expired records. |
 | Outside of a filter: a projection, an aggregate, a join condition, a `CASE` | Every dependent operator recomputes once per tick, whether or not any input arrived. |
 
-If `NOW()` outside of a temporal filter, set `clock_resolution_usecs` to the coarsest resolution
+If `NOW()` outside of a temporal filter, set `clock_resolution` to the coarsest resolution
 your business logic tolerates. The compiler will emit a warning if `NOW()` is used outside of a filter.
 
 If `NOW()` appears only inside temporal filters, lowering the clock resolution can still be helpful for performance.

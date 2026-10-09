@@ -24,8 +24,18 @@ public class KafkaOutputConfig implements IValidateConfig {
     @JsonProperty("log_level")
     public KafkaLogLevel logLevel = null;
 
+    /**
+     * Maximum time to wait for the endpoint to connect to a Kafka broker, for example
+     * {@code "60s"}.
+     */
+    @Nullable
+    @JsonProperty("initialization_timeout")
+    public JsonNode initializationTimeout = null;
+
+    /** Deprecated; use {@link #initializationTimeout}. */
     @JsonProperty("initialization_timeout_secs")
-    public int initializationTimeoutSecs = 60;
+    @Nullable
+    public JsonNode initializationTimeoutSecs = null;
 
     @Nullable
     @JsonProperty("fault_tolerance")
@@ -45,7 +55,9 @@ public class KafkaOutputConfig implements IValidateConfig {
 
     @Override
     public boolean validate(ConfigReporter reporter) {
-        boolean ok = true;
+        boolean ok = ConfigDuration.check(reporter,
+                "initialization_timeout", this.initializationTimeout,
+                "initialization_timeout_secs", this.initializationTimeoutSecs);
         if (topic.isBlank()) {
             reporter.warn("Invalid configuration",
                     "required field \"topic\" is missing or empty");

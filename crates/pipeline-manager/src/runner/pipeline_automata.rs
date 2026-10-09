@@ -22,7 +22,7 @@ use crate::runner::pipeline_executor::{PipelineExecutor, ProvisionStatus};
 use crate::runner::pipeline_logs::{
     FollowRequest, LogMessage, LogsSender, start_thread_pipeline_logs,
 };
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{
     ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus, RuntimeStatusDetails,
@@ -111,6 +111,44 @@ fn program_config_is_gen2(program_config: &serde_json::Value) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether more than `timeout` has passed between `since` and `now`. A timeout
+/// longer than `i64::MAX` milliseconds never passes; cast to `i64` it would go
+/// negative and time out at once.
+fn provisioning_timed_out(since: DateTime<Utc>, now: DateTime<Utc>, timeout: Duration) -> bool {
+    let elapsed = now
+        .timestamp_millis()
+        .saturating_sub(since.timestamp_millis());
+    i64::try_from(timeout.as_millis()).is_ok_and(|timeout| elapsed > timeout)
+}
+
+/// The release that renamed the duration settings. A binary compiled by an
+/// earlier platform reads only the older spelling.
+const DURATION_RENAME_VERSION: Version = Version::new(0, 363, 0);
+
+/// Whether a pipeline compiled by `platform_version` predates the duration
+/// rename, in which case the executor hands it its duration settings in the
+/// older spelling. A pipeline keeps the binary it was compiled with until its
+/// runtime is updated, so after an upgrade it may still run an older one.
+/// A version that does not parse is taken to predate the rename: every runtime
+/// up to 1.0 reads the older spelling, so writing it is safe either way.
+fn platform_version_predates_duration_rename(platform_version: &str) -> bool {
+    !Version::parse(platform_version).is_ok_and(|version| version >= DURATION_RENAME_VERSION)
+}
+
+/// Whether the program configuration pins a runtime other than the platform's
+/// (Gen-2 runs on the platform's engine). Such a runtime may predate the
+/// duration rename, so the executor hands it its duration settings in the older
+/// spelling, which every runtime up to 1.0 accepts. A configuration that fails
+/// to parse is treated as not pinning.
+fn program_config_pins_runtime(program_config: &serde_json::Value) -> bool {
+    validate_program_config(program_config, false)
+        .map(|config| {
+            let runtime = config.runtime_version();
+            !runtime.is_platform() && !runtime.is_gen2()
+        })
+        .unwrap_or(false)
+}
+
 /// Pipeline automaton monitors the runtime state of a single pipeline and continually reconciles
 /// actual with desired state. The automaton runs as a separate tokio task.
 pub struct PipelineAutomaton<T>
@@ -146,8 +184,8 @@ where
     client: reqwest::Client,
 
     /// Set when the pipeline executor `provision()` is called in the `Provisioning` stage.
-    /// Content is the provisioning timeout in seconds.
-    provision_called: Option<u64>,
+    /// Content is the provisioning timeout.
+    provision_called: Option<Duration>,
 
     /// Default maximum time to wait for the pipeline resources to be provisioned.
     /// This can differ significantly between the type of runner.
@@ -1389,6 +1427,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Some(program_info) => program_info,
         };
 
+        // A runtime from before the duration rename, whether pinned or the one
+        // this pipeline was compiled with, reads only the older spelling.
+        let legacy_duration_spelling = program_config_pins_runtime(&pipeline.program_config)
+            || platform_version_predates_duration_rename(&pipeline.platform_version);
+
         match self
             .pipeline_handle
             .provision(
@@ -1401,15 +1444,18 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 &program_info_url,
                 pipeline.program_version,
                 engine_is_gen2,
+                legacy_duration_spelling,
             )
             .await
         {
             Ok(()) => {
+                // Keep the configured value whole: truncating to seconds would
+                // turn a sub-second timeout into no timeout at all.
                 self.provision_called = Some(
                     deployment_config
                         .global
-                        .provisioning_timeout_secs
-                        .unwrap_or(self.default_provisioning_timeout.as_secs()),
+                        .provisioning_timeout
+                        .map_or(self.default_provisioning_timeout, Into::into),
                 );
                 info!(
                     pipeline_id = %pipeline.id,
@@ -1450,10 +1496,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> Action {
         assert!(self.provision_called.is_some());
-        let provisioning_timeout = Duration::from_secs(
-            self.provision_called
-                .expect("Provision must have been called"),
-        );
+        let provisioning_timeout = self
+            .provision_called
+            .expect("Provision must have been called");
 
         // Deployment initial runtime desired state is expected
         let deployment_initial = match &pipeline.deployment_initial {
@@ -1498,12 +1543,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 );
 
                 // Provisioning can time out if it takes too long
-                if Utc::now().timestamp_millis()
-                    - pipeline
-                        .deployment_resources_status_since
-                        .timestamp_millis()
-                    > provisioning_timeout.as_millis() as i64
-                {
+                if provisioning_timed_out(
+                    pipeline.deployment_resources_status_since,
+                    Utc::now(),
+                    provisioning_timeout,
+                ) {
                     error!(
                         pipeline_id = %pipeline.id,
                         pipeline = %pipeline.name,
@@ -1959,6 +2003,74 @@ mod test {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate, http};
 
+    /// A pipeline compiled by a platform before the duration rename runs a
+    /// binary that reads only the older spelling, however it is pinned. One
+    /// compiled by that release or a later one reads the current spelling.
+    #[test]
+    fn a_platform_before_the_rename_gets_the_older_duration_spelling() {
+        use super::platform_version_predates_duration_rename as predates;
+        assert!(predates("0.362.0"));
+        assert!(predates("0.362.9+enterprise"));
+        assert!(predates("0.357.0+enterprise-dev.abc123"));
+        assert!(!predates("0.363.0"));
+        assert!(!predates("0.363.0+enterprise"));
+        assert!(!predates("0.364.1"));
+        assert!(!predates("1.0.0"));
+        // A version that does not parse is treated as predating the rename:
+        // the older spelling is safe for every runtime.
+        assert!(predates("v0"));
+        assert!(predates(""));
+    }
+
+    /// Only a pinned runtime other than the platform's is handed the older
+    /// duration spelling: the platform's own runtime and the Gen-2 engine read
+    /// the current one.
+    #[test]
+    fn only_a_pinned_runtime_gets_the_older_duration_spelling() {
+        crate::enable_test_unstable_features();
+        use super::program_config_pins_runtime;
+        assert!(!program_config_pins_runtime(&serde_json::json!({})));
+        assert!(!program_config_pins_runtime(
+            &serde_json::json!({"runtime_version": null})
+        ));
+        assert!(!program_config_pins_runtime(
+            &serde_json::json!({"runtime_version": "gen2"})
+        ));
+        assert!(program_config_pins_runtime(
+            &serde_json::json!({"runtime_version": "v0.357.0"})
+        ));
+        assert!(program_config_pins_runtime(
+            &serde_json::json!({"runtime_version": "d0b45d8f87056c9d2c89c6f63b2531b0c5905f9b"})
+        ));
+        // A configuration that does not parse pins nothing.
+        assert!(!program_config_pins_runtime(
+            &serde_json::json!({"runtime_version": 7})
+        ));
+    }
+
+    /// A provisioning timeout longer than `i64::MAX` milliseconds, which a
+    /// duration setting can now say, never passes rather than passing at once.
+    #[test]
+    fn a_huge_provisioning_timeout_never_passes() {
+        use super::provisioning_timed_out;
+        use chrono::{TimeDelta, Utc};
+        use std::time::Duration;
+        let since = Utc::now();
+        let later = since + TimeDelta::seconds(2);
+        assert!(provisioning_timed_out(since, later, Duration::from_secs(1)));
+        assert!(!provisioning_timed_out(
+            since,
+            later,
+            Duration::from_secs(3)
+        ));
+        assert!(!provisioning_timed_out(
+            since,
+            later,
+            Duration::from_secs(u64::MAX)
+        ));
+        assert!(!provisioning_timed_out(since, later, Duration::MAX));
+    }
+
     struct MockRunner {
         deployment_location: String,
         /// The config each of `is_provisioned`, `check`, `stop` and `clear` received.
@@ -2002,6 +2114,7 @@ mod test {
             _: &str,
             _: Version,
             _is_gen2: bool,
+            _legacy_duration_spelling: bool,
         ) -> Result<(), ManagerError> {
             Ok(())
         }

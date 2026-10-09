@@ -7,6 +7,7 @@ import re
 import time
 import json
 import unittest
+import warnings
 from pathlib import Path
 from typing import List, Optional, cast
 from datetime import datetime
@@ -446,14 +447,12 @@ def build_pipeline(
     """
     sql = generate_program(tables, views)
 
-    pipeline = PipelineBuilder(
-        TEST_CLIENT,
-        pipeline_name,
-        sql=sql,
-        udf_rust=udf_rust,
-        udf_toml=udf_toml,
-        compilation_profile=CompilationProfile.OPTIMIZED,
-        runtime_config=RuntimeConfig(
+    with warnings.catch_warnings():
+        # The older spelling of the timeout, so that a deployment from before
+        # the current names reads it too; it warns, and the warning is noise
+        # here.
+        warnings.simplefilter("ignore", DeprecationWarning)
+        runtime_config = RuntimeConfig(
             # Covers node auto-provisioning: a pipeline that needs a fresh
             # node shape waits for node boot plus image pull, and parallel
             # test workers can request several fresh nodes at once.
@@ -463,7 +462,16 @@ def build_pipeline(
             hosts=FELDERA_TEST_NUM_HOSTS,
             dev_tweaks=dev_tweaks,
             datafusion_memory_mb=datafusion_memory_mb,
-        ),
+        )
+
+    pipeline = PipelineBuilder(
+        TEST_CLIENT,
+        pipeline_name,
+        sql=sql,
+        udf_rust=udf_rust,
+        udf_toml=udf_toml,
+        compilation_profile=CompilationProfile.OPTIMIZED,
+        runtime_config=runtime_config,
     ).create_or_replace()
 
     return pipeline

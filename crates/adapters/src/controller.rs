@@ -5585,15 +5585,15 @@ impl StepTrigger {
     /// Returns a new [StepTrigger].
     fn new(controller: Arc<ControllerInner>) -> Self {
         let config = &controller.status.pipeline_config.global;
-        let max_buffering_delay = Duration::from_micros(config.max_buffering_delay_usecs);
+        let max_buffering_delay = config.max_buffering_delay().into();
         let min_batch_size_records = config.min_batch_size_records;
         let checkpoint_interval = config.fault_tolerance.checkpoint_interval();
         let sync_interval = config.storage.as_ref().and_then(|s| match &s.backend {
             StorageBackendConfig::File(file) => file
                 .sync
                 .as_ref()
-                .and_then(|s| s.push_interval)
-                .map(Duration::from_secs),
+                .and_then(|s| s.checkpoint_push_interval)
+                .map(Into::into),
             _ => None,
         });
 
@@ -5708,7 +5708,9 @@ impl StepTrigger {
                 Action::Step
             } else {
                 if buffered_records > 0 && self.buffer_timeout.is_none() {
-                    self.buffer_timeout = Some(now + self.max_buffering_delay);
+                    // A delay too long for an `Instant` to hold never expires,
+                    // so the step waits for `min_batch_size_records`.
+                    self.buffer_timeout = now.checked_add(self.max_buffering_delay);
                 }
                 let wakeup = [self.buffer_timeout, next_checkpoint]
                     .into_iter()
@@ -5984,10 +5986,7 @@ impl ControllerInit {
                 // configuration (so far just the checkpoint interval).
                 fault_tolerance: FtConfig {
                     model: checkpoint_config.global.fault_tolerance.model,
-                    checkpoint_interval_secs: config
-                        .global
-                        .fault_tolerance
-                        .checkpoint_interval_secs,
+                    checkpoint_interval: config.global.fault_tolerance.checkpoint_interval,
                 },
 
                 // Take all the other settings from the pipeline manager.
@@ -5996,15 +5995,15 @@ impl ControllerInit {
                 tracing: config.global.tracing,
                 tracing_endpoint_jaeger: config.global.tracing_endpoint_jaeger,
                 min_batch_size_records: config.global.min_batch_size_records,
-                max_buffering_delay_usecs: config.global.max_buffering_delay_usecs,
+                max_buffering_delay: config.global.max_buffering_delay,
                 resources: config.global.resources,
-                clock_resolution_usecs: config.global.clock_resolution_usecs,
+                clock_resolution: config.global.clock_resolution,
                 // `NOW()` values shifted by the offset are baked into
                 // journaled steps and materialized state; adopting a new
                 // offset on resume would make `NOW()` jump.
                 clock_timezone_offset: checkpoint_config.global.clock_timezone_offset,
                 pin_cpus: config.global.pin_cpus,
-                provisioning_timeout_secs: config.global.provisioning_timeout_secs,
+                provisioning_timeout: config.global.provisioning_timeout,
                 max_parallel_connector_init: config.global.max_parallel_connector_init,
                 init_containers: config.global.init_containers,
                 checkpoint_during_suspend: config.global.checkpoint_during_suspend,
@@ -6770,9 +6769,7 @@ impl OutputBuffer {
                 return true;
             }
 
-            if self.buffer_since.elapsed().as_millis()
-                > config.max_output_buffer_time_millis as u128
-            {
+            if self.buffer_since.elapsed() > Duration::from(config.max_output_buffer_time()) {
                 return true;
             }
         }
@@ -8665,10 +8662,11 @@ impl ControllerInner {
                 );
                 if let Some(buffer_since) = output_buffer.buffer_since() {
                     // Buffering is enabled: wake us up when the buffer timeout has expired.
-                    let timeout = output_buffer_config.max_output_buffer_time_millis as i128
+                    let timeout = output_buffer_config.max_output_buffer_time().as_millis() as i128
                         - buffer_since.elapsed().as_millis() as i128;
                     if timeout > 0 {
-                        parker.park_timeout(Duration::from_millis(timeout as u64));
+                        let timeout = u64::try_from(timeout).unwrap_or(u64::MAX);
+                        parker.park_timeout(Duration::from_millis(timeout));
                     }
                 } else {
                     parker.park();
