@@ -10,6 +10,8 @@ Source edition can be found on github.
 
 ## Unreleased
 
+- Python SDK: preserve view columns and their pandas types when an output batch is empty.
+
 - New connector (`nats_output`): write view output to a NATS subject. The
   connector publishes to JetStream: each message is acknowledged by the
   server before the pipeline moves on, every message carries a `Nats-Msg-Id`

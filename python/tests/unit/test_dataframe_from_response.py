@@ -12,6 +12,22 @@ def nullable_field(name: str, sql_type: str) -> dict:
 
 
 class TestDataframeFromResponse(unittest.TestCase):
+    def test_empty_batches_keep_schema(self):
+        fields = [
+            nullable_field("ID", "INTEGER"),
+            nullable_field("S", "VARCHAR"),
+            {**nullable_field("Quoted", "BOOLEAN"), "case_sensitive": True},
+        ]
+        for buffer in [[], [[]], [[], []]]:
+            with self.subTest(buffer=buffer):
+                df = dataframe_from_response(buffer, fields)
+
+                self.assertTrue(df.empty)
+                self.assertEqual(list(df.columns), ["id", "s", "Quoted", "insert_delete"])
+                self.assertEqual(str(df["id"].dtype), "Int32")
+                self.assertEqual(str(df["s"].dtype), "string")
+                self.assertEqual(str(df["Quoted"].dtype), "boolean")
+
     def test_null_strings_stay_null(self):
         fields = [
             nullable_field("id", "INTEGER"),
