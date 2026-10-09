@@ -494,9 +494,9 @@ impl ConfigError {
         }
     }
 
-    pub fn duplicate_input_endpoint(endpoint_name: &str) -> Self {
+    pub fn duplicate_input_endpoint(endpoint_name: impl Into<String>) -> Self {
         Self::DuplicateInputEndpoint {
-            endpoint_name: endpoint_name.to_owned(),
+            endpoint_name: endpoint_name.into(),
         }
     }
 
@@ -1388,7 +1388,7 @@ impl ControllerError {
         }
     }
 
-    pub fn duplicate_input_endpoint(endpoint_name: &str) -> Self {
+    pub fn duplicate_input_endpoint(endpoint_name: impl Into<String>) -> Self {
         Self::Config {
             config_error: Box::new(ConfigError::duplicate_input_endpoint(endpoint_name)),
         }
