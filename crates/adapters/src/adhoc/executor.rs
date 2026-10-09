@@ -8,7 +8,7 @@ use arrow_json::writer::LineDelimited;
 use async_stream::{stream, try_stream};
 use bytes::{BufMut, Bytes, BytesMut};
 use bytestring::ByteString;
-use datafusion::common::hash_utils::create_hashes;
+use datafusion::common::hash_utils::{RandomState as DfRandomState, create_hashes};
 use datafusion::common::{DataFusionError, Result as DFResult};
 use datafusion::dataframe::DataFrame;
 use datafusion::execution::SendableRecordBatchStream;
@@ -120,13 +120,13 @@ pub(crate) fn stream_text_query(
 
 /// Incremental, order-independent hasher for record batches.
 ///
-/// Uses DataFusion's `create_hashes` (ahash) per batch with two independent
+/// Uses DataFusion's `create_hashes` per batch with two independent
 /// seeds for ~128-bit collision resistance. Row hashes are combined via
 /// wrapping u64 addition (commutative), so no sorting is required. Memory
 /// usage is O(batch_size).
 struct BatchHasher {
-    rs1: ahash::RandomState,
-    rs2: ahash::RandomState,
+    rs1: DfRandomState,
+    rs2: DfRandomState,
     buf1: Vec<u64>,
     buf2: Vec<u64>,
     acc1: u64,
@@ -137,8 +137,8 @@ struct BatchHasher {
 impl BatchHasher {
     fn new() -> Self {
         Self {
-            rs1: ahash::RandomState::with_seeds('M' as u64, 'U' as u64, 'A' as u64, 'Y' as u64),
-            rs2: ahash::RandomState::with_seeds('T' as u64, 'H' as u64, 'A' as u64, 'I' as u64),
+            rs1: DfRandomState::with_seed(u64::from_be_bytes(*b"MUAY____")),
+            rs2: DfRandomState::with_seed(u64::from_be_bytes(*b"THAI____")),
             buf1: Vec::new(),
             buf2: Vec::new(),
             acc1: 0,
@@ -357,7 +357,7 @@ pub(crate) fn stream_parquet_query(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arrow::array::{Int32Array, Int64Array, StringArray};
+    use arrow::array::{Float64Array, Int32Array, Int64Array, StringArray};
     use arrow::datatypes::{DataType, Field, Schema};
     use std::sync::Arc;
 
@@ -367,6 +367,39 @@ mod tests {
             hasher.update(batch).unwrap();
         }
         hasher.finalize(schema)
+    }
+
+    /// Pins the digest of a fixed batch.
+    ///
+    /// DataFusion's `create_hashes` and the foldhash seed under it promise
+    /// nothing across releases. A new value here changes every `query_hash` a
+    /// user has stored, so it needs a release note and new expected values in
+    /// the Python tests that pin hashes.
+    #[test]
+    fn hash_digest_is_pinned() {
+        let schema = Schema::new(vec![
+            Field::new("id", DataType::Int64, false),
+            Field::new("name", DataType::Utf8, true),
+            Field::new("amt", DataType::Float64, false),
+        ]);
+        let batch = RecordBatch::try_new(
+            Arc::new(schema.clone()),
+            vec![
+                Arc::new(Int64Array::from(vec![1i64, 2, 3, 4])),
+                Arc::new(StringArray::from(vec![
+                    Some("alpha"),
+                    None,
+                    Some("gamma"),
+                    Some("a-much-longer-string-value-here"),
+                ])),
+                Arc::new(Float64Array::from(vec![0.5f64, 1.5, 2.5, 3.5])),
+            ],
+        )
+        .unwrap();
+        assert_eq!(
+            hash_batches(&schema, &[batch]),
+            "93824BD255DBBF538A4568A5C03508643A736A7B9D4E4653CB768EFF49C24091"
+        );
     }
 
     #[test]

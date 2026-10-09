@@ -163,7 +163,7 @@ class TestPipeline(SharedTestPipeline):
             self.pipeline.name, "SELECT * FROM tbl ORDER BY id"
         )
         assert (
-            resp == "CCACBC763D343FB9855F285385B5A8A04FB5DAC4926DA3802F071B0C05BDF852"
+            resp == "EAA17D83271D48F5B0A2871210F102DAF5A0FC6F3CB8367FB757BBA6B0378086"
         )
 
     def test_adhoc_query_parquet(self):

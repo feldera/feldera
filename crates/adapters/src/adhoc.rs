@@ -422,7 +422,7 @@ fn parse_sql_statements(
     })?;
     let statements = DFParserBuilder::new(sql)
         .with_dialect(dialect.as_ref())
-        .with_recursion_limit(recursion_limit)
+        .with_recursion_limit(recursion_limit.get())
         .build()?
         .parse_statements()
         .map_err(format_parser_error)?;

@@ -17,9 +17,8 @@ use datafusion::common::tree_node::{Transformed, TransformedResult, TreeNode};
 use datafusion::common::{DataFusionError, Result, ScalarValue, exec_err};
 use datafusion::logical_expr::ColumnarValue;
 use datafusion::physical_expr::PhysicalExpr;
-use datafusion::physical_expr::expressions::{CastColumnExpr, Column, lit};
+use datafusion::physical_expr::expressions::{CastExpr, Column, lit};
 use datafusion::physical_expr_adapter::{PhysicalExprAdapter, PhysicalExprAdapterFactory};
-use std::any::Any;
 use std::collections::HashMap;
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -81,7 +80,7 @@ struct FieldIdAdapter {
 impl PhysicalExprAdapter for FieldIdAdapter {
     fn rewrite(&self, expr: Arc<dyn PhysicalExpr>) -> Result<Arc<dyn PhysicalExpr>> {
         let by_id = field_index_by_id(self.physical_file_schema.fields());
-        expr.transform(|expr| match expr.as_any().downcast_ref::<Column>() {
+        expr.transform(|expr| match expr.downcast_ref::<Column>() {
             Some(column) => self.rewrite_column(Arc::clone(&expr), column, &by_id),
             None => Ok(Transformed::no(expr)),
         })
@@ -167,9 +166,8 @@ impl FieldIdAdapter {
         }
         // A plain column keeps DataFusion's own cast, which the simplifier can
         // move to the literal side of a predicate and so still prune row groups.
-        Ok(Transformed::yes(Arc::new(CastColumnExpr::new(
+        Ok(Transformed::yes(Arc::new(CastExpr::new_with_target_field(
             found,
-            Arc::new(source.clone()),
             Arc::new(want.clone()),
             None,
         ))))
@@ -228,10 +226,6 @@ impl fmt::Display for RealignExpr {
 }
 
 impl PhysicalExpr for RealignExpr {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-
     fn data_type(&self, _input_schema: &Schema) -> Result<DataType> {
         Ok(self.target.data_type().clone())
     }
@@ -323,7 +317,7 @@ mod tests {
             vec![written("label", "1", DataType::Utf8)],
         )
         .unwrap();
-        let column = expr.as_any().downcast_ref::<Column>().unwrap();
+        let column = expr.downcast_ref::<Column>().unwrap();
         assert_eq!(column.name(), "label");
     }
 
@@ -335,7 +329,7 @@ mod tests {
             vec![written("label", "1", DataType::Utf8)],
         )
         .unwrap();
-        assert!(expr.as_any().downcast_ref::<Literal>().is_some());
+        assert!(expr.downcast_ref::<Literal>().is_some());
     }
 
     /// NULL is not an answer the table accepts, so say so rather than fail a
@@ -380,7 +374,7 @@ mod tests {
             )],
         )
         .unwrap();
-        assert!(expr.as_any().downcast_ref::<RealignExpr>().is_some());
+        assert!(expr.downcast_ref::<RealignExpr>().is_some());
     }
 
     /// A scalar keeps DataFusion's own cast, which the simplifier can move to
@@ -392,7 +386,7 @@ mod tests {
             vec![written("label", "1", DataType::Utf8)],
         )
         .unwrap();
-        assert!(expr.as_any().downcast_ref::<CastColumnExpr>().is_some());
+        assert!(expr.downcast_ref::<CastExpr>().is_some());
     }
 
     /// Delta names a file's columns the way the log does, and the rewrite must
@@ -404,7 +398,7 @@ mod tests {
             vec![written("col-1", "1", DataType::Utf8)],
         )
         .unwrap();
-        let column = expr.as_any().downcast_ref::<Column>().unwrap();
+        let column = expr.downcast_ref::<Column>().unwrap();
         assert_eq!((column.name(), column.index()), ("col-1", 0));
     }
 
@@ -422,7 +416,7 @@ mod tests {
             Column::new("row_index", 0),
         )
         .unwrap();
-        let column = expr.as_any().downcast_ref::<Column>().unwrap();
+        let column = expr.downcast_ref::<Column>().unwrap();
         assert_eq!((column.name(), column.index()), ("row_index", 1));
     }
 

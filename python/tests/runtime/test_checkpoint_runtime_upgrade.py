@@ -37,7 +37,7 @@ Caching:
   ``CHECKPOINT_CACHE_KEY``. When ``checkpoints.feldera`` already exists
   under that prefix, phase 1 is skipped and only phase 2 runs (it
   compares the restored view hashes against ``EXPECTED_VIEW_HASHES``).
-  Bump the key when the SQL or expected hashes change.
+  Bump the key when the SQL changes.
 
 Requirements:
 
@@ -84,23 +84,22 @@ TABLE_ROWS = 1000
 #   older legacy-version checkpoint is expected to remain compatible
 #   with newer current-version pipelines.
 DELTA_SOURCE_CACHE_KEY = "checkpoint_runtime_upgrade_delta_v1"
-CHECKPOINT_CACHE_KEY = "checkpoint_runtime_upgrade_checkpoint_v2"
+CHECKPOINT_CACHE_KEY = "checkpoint_runtime_upgrade_checkpoint_v3"
 
-# Expected per-view hashes after ingesting the cached Delta source. We
-# deliberately compare phase 2 against fixed hashes (rather than against
-# phase 1's output) so phase 1 can be skipped on cache hits and we still
-# detect a regression. Recompute by running the test once, copying the
-# values printed by ``pipeline.query_hash`` for each view, and pasting
-# them here. Bump ``CHECKPOINT_CACHE_KEY`` whenever these change.
+# Per-view hashes after ingesting the cached Delta source, as the current
+# runtime computes them. Phase 2 compares against these fixed values rather
+# than against phase 1's output, so phase 1 can be skipped on a cache hit and
+# a regression is still caught. Recompute by running the test once and pasting
+# the values it prints.
 EXPECTED_VIEW_HASHES = {
-    "v_passthrough": "844C02F1F5D4FDF07BBA13545502CE9D94B09C773491F695AC56839F4060EEB9",
-    "v_filtered": "53FFCCDDE1F1053E543EA2B31D73748AB12A67421318A6828E38D17364542653",
-    "v_distinct_tags": "1B63E4F38BC40A2982B8176397F7E5EB6E56D12D17465A2C164302B212713607",
-    "v_grouped": "B8B58C67487E45EFC4F5786F3573E0A0CCF4A167D703FAB4075E9128B42338AF",
-    "v_joined": "A07E1680990BABC69EFD0FFC89E44837D771A7A796BA6AD3C1A876F5103B98CA",
-    "v_three_way": "FEF6DB37149C29441364C0FA40594AE77BF40855FB0523CE9AF2D9577436E9C9",
-    "v_window_count": "95DB57846E76A5F8DC073F9614ACFAEA8E932DC50FFC07D6F5899A70F36C4FC7",
-    "closure": "4CF3EE5BA9183E48DFDDAAB9D33EE33E4086F2284B2192ABF863CF06A591A5B2",
+    "v_passthrough": "173AE251F246C742C3E936675D6373E26792114FCB419136E03765F6FE5B44A2",
+    "v_filtered": "DB3D56D6A4CD629C522FDC9B2FF0F3F3A7C2AC88705A9E92306FDD01D4F81DC7",
+    "v_distinct_tags": "E81D29DAE1E2F0FB4EDAAA48A7FE425DDA53277F0EA427CC6C0CB57A38A9BA8C",
+    "v_grouped": "97EE1FA0657BC5A0A08DF7A05388D383F699A6FF8CA1B6C0F8E889FB744C63AD",
+    "v_joined": "27AAF2482E36A4CB8C5742FA5839C77DA33F0CEC4E69228ED22A835F99F476CA",
+    "v_three_way": "74D8D192BDAFE6712D65F4E15B8FBCDBA809B897E84E7592E501C866EAE37004",
+    "v_window_count": "210481AB7CA59EB78AC0E6CE4955C0FF4389752F27881BA51EB18B7D1EDE3217",
+    "closure": "4B21416A9EC3B698ECEC5892D93FEDB62801EBE50C78ABB04D710D7F812C6122",
     # v_emit_final omitted: see TODO in _build_sql
 }
 
@@ -584,8 +583,6 @@ def test_runtime_upgrade_round_trip(pipeline_name: str) -> None:
             token = legacy_pipeline.generate_completion_token("input_table", "delta_in")
             legacy_pipeline.wait_for_token(token)
 
-            _assert_view_hashes(legacy_pipeline)
-
             legacy_pipeline.checkpoint(wait=True)
             synced_uuid = legacy_pipeline.sync_checkpoint(wait=True)
             print(
@@ -630,6 +627,9 @@ def test_runtime_upgrade_round_trip(pipeline_name: str) -> None:
         # SQL); allow the diff to apply.
         current_pipeline.start(bootstrap_policy=BootstrapPolicy.ALLOW, timeout_s=600)
 
+        # Phase 1 does not hash: the previous release may hash the same rows
+        # differently, and a wrong phase 1 shows up here anyway, because this
+        # reads back what phase 1 checkpointed.
         _assert_view_hashes(current_pipeline)
     finally:
         current_pipeline.stop(force=True)

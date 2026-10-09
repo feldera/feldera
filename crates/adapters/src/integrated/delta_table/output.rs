@@ -467,15 +467,12 @@ impl WriterTask {
         inner: Arc<DeltaTableWriterInner>,
         continue_previous_state: bool,
     ) -> AnyResult<Self> {
-        let mut storage_options = inner.config.object_store_config.clone();
+        let storage_options = inner.config.object_store_config.clone();
 
-        // FIXME: S3 does not support the atomic rename operation required by delta. This is not a problem
-        // with a single writer, but multiple writers require an external coordinator service.
-        // `delta-rs` users tend to rely on the DynamoDB lock client for this
-        // (see `object_store::aws::DynamoCommit`), but that only helps if all writers use the
-        // same lock service.  For now we simply tell the object store client to use unsafe renames
-        // and hope for the best.  Without this config option, writes to S3-based delta tables will fail.
-        storage_options.insert("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".to_string());
+        // S3 has no atomic rename, so a delta commit is a conditional put,
+        // which delta-rs enables by default. A store without conditional put can
+        // set `AWS_S3_ALLOW_UNSAFE_RENAME` in `object_store_config`, trading the
+        // atomic commit for an overwriting rename.
 
         // On restart (resuming from a checkpoint), open the existing table
         // without truncating or error-checking.  This prevents data loss when
@@ -940,12 +937,19 @@ async fn stream_encode_and_write(
         .set_compression(Compression::SNAPPY)
         .set_max_row_group_bytes(Some(MAX_ROW_GROUP_BYTES))
         .build();
+    // delta-rs compares the encoded size against `TARGET_FILE_SIZE` only between
+    // slices of `write_batch_size` rows, and its encoders report that size one
+    // slice late. At the 8192-row default a slice is tens of MiB, so the file
+    // overshoots the target until the object store rejects the upload past 10000
+    // parts. A smaller slice keeps the stale reading near the target.
+    const WRITE_BATCH_ROWS: usize = 1024;
     let writer_config = WriterConfig::new(
         inner.arrow_schema.clone(),
         vec![],
         Some(writer_properties),
-        Some(TARGET_FILE_SIZE),
         None,
+        Some(TARGET_FILE_SIZE),
+        Some(WRITE_BATCH_ROWS),
         DataSkippingNumIndexedCols::NumColumns(num_indexed_cols),
         None,
     );
@@ -1909,6 +1913,9 @@ mod parallel {
     /// file. delta-rs rolls over only when the writer config carries a target
     /// size; without one it writes a single object per key range, which an object
     /// store rejects once the multipart upload passes 10000 parts.
+    ///
+    /// It pins `WRITE_BATCH_ROWS` too: at delta-rs's 8192-row default these
+    /// 16000 rows still land in one file.
     #[test]
     fn test_batch_larger_than_target_file_size_rolls_over() {
         const PAYLOAD_LEN: usize = 8 * 1024;
