@@ -10531,6 +10531,14 @@
             "nullable": true,
             "minimum": 0
           },
+          "lazy_input_map_keys_per_step": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many keys a lazy input map resolves against its integral in one step.\n\nThe lazy upsert operator may scan a large number of keys without\nproducing any output. Therefore bounding its step by the number of\noutputs is not sufficient. This setting additionally bounds it by its\ninput.\n\nThe default is 100,000.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
           "max_level0_batch_size_records": {
             "type": "integer",
             "format": "int32",

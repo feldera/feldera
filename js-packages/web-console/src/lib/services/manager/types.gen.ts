@@ -1876,6 +1876,17 @@ export type DevTweaks = {
    */
   integral_merge_threshold_batches?: number | null
   /**
+   * How many keys a lazy input map resolves against its integral in one step.
+   *
+   * The lazy upsert operator may scan a large number of keys without
+   * producing any output. Therefore bounding its step by the number of
+   * outputs is not sufficient. This setting additionally bounds it by its
+   * input.
+   *
+   * The default is 100,000.
+   */
+  lazy_input_map_keys_per_step?: number | null
+  /**
    * Maximum batch size in records for level 0 merges.
    */
   max_level0_batch_size_records?: number | null

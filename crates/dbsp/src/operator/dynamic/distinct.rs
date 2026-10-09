@@ -592,15 +592,15 @@ where
 impl<Z, I, S> StreamingBinaryOperator<Option<Spine<Z>>, I, Z> for DistinctIncrementalTotal<Z, I, S>
 where
     Z: IndexedZSet,
-    I: WithSnapshot<Batch = Z> + 'static,
+    I: WithSnapshot<Batch = Z> + Clone + 'static,
     S: DistinctSemantics,
 {
     fn eval(
         self: Rc<Self>,
-        delta: &Option<Spine<Z>>,
-        delayed_integral: &I,
+        delta: Cow<'_, Option<Spine<Z>>>,
+        delayed_integral: Cow<'_, I>,
     ) -> impl AsyncStream<Item = (Z, bool, Option<Position>)> + 'static {
-        let delta = delta.as_ref().map(|b| b.ro_snapshot());
+        let delta = (*delta).as_ref().map(|b| b.ro_snapshot());
 
         // We assume that delta.is_some() implies that the operator is being flushed:
         // since delayed_integral is always flushed before delta.
@@ -1074,7 +1074,7 @@ impl<Z, T, Clk, S> StreamingBinaryOperator<Option<Spine<Z>>, T, Z>
     for DistinctIncremental<Z, T, Clk, S>
 where
     Z: IndexedZSet,
-    T: WithSnapshot + 'static,
+    T: WithSnapshot + Clone + 'static,
     T::Batch: ZBatchReader<Key = Z::Key, Val = Z::Val>,
     Clk: WithClock<Time = <T::Batch as BatchReader>::Time> + 'static,
     S: DistinctSemantics,
@@ -1083,10 +1083,10 @@ where
     // cloning.
     fn eval(
         self: Rc<Self>,
-        delta: &Option<Spine<Z>>,
-        trace: &T,
+        delta: Cow<'_, Option<Spine<Z>>>,
+        trace: Cow<'_, T>,
     ) -> impl AsyncStream<Item = (Z, bool, Option<Position>)> + 'static {
-        let delta = delta.as_ref().map(|b| b.ro_snapshot());
+        let delta = (*delta).as_ref().map(|b| b.ro_snapshot());
 
         // We assume that delta.is_some() implies that the operator is being flushed:
         // since the integral is always flushed in same step as delta.
