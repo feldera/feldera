@@ -819,6 +819,14 @@ fn change_data_feed_state(actions: &[Action]) -> Option<bool> {
     })
 }
 
+/// For testing only: if this environment variable is set, a distributed
+/// connector does not request its snapshot transaction on every host (see
+/// `DeltaTableInputEndpointInner::start_distributed_snapshot_transaction`).
+/// Instead, each host requests an ordinary transaction when it reads its first
+/// records, so that several hosts request one connector's transaction
+/// separately, which exercises how the coordinator handles that.
+const PER_HOST_SNAPSHOT_TRANSACTIONS_ENV: &str = "FELDERA_TEST_PER_HOST_SNAPSHOT_TRANSACTIONS";
+
 /// Returns an error if a distributed connector cannot honor `config`.
 fn validate_distributed(config: &DeltaTableReaderConfig) -> AnyResult<()> {
     // A distributed connector divides the snapshot's files among the hosts,
@@ -1873,6 +1881,10 @@ impl DeltaTableInputEndpointInner {
     /// For a distributed connector that reads its snapshot in a transaction,
     /// requests the transaction during initialization, before any host reads.
     ///
+    /// For testing only, setting [PER_HOST_SNAPSHOT_TRANSACTIONS_ENV] in the
+    /// environment skips this, so that each host requests an ordinary
+    /// transaction when it reads its first records.
+    ///
     /// Otherwise, a host requests the transaction only when it reads its first
     /// records, and a host whose part of the snapshot has no files never
     /// requests it.  The request marks the transaction as one that every host
@@ -1882,6 +1894,7 @@ impl DeltaTableInputEndpointInner {
     /// entry commits the transaction as usual.
     fn start_distributed_snapshot_transaction(&self) {
         if self.distributed.is_none()
+            || std::env::var_os(PER_HOST_SNAPSHOT_TRANSACTIONS_ENV).is_some()
             || !self.config.snapshot()
             || !Self::snapshot_incomplete(&self.last_resume_status.lock().unwrap())
         {
