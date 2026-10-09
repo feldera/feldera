@@ -3066,7 +3066,8 @@ export type InputEndpointStatus = {
    */
   parse_errors?: Array<ConnectorError> | null
   /**
-   * Endpoint has been paused by the user.
+   * Endpoint has been paused by the user.  A distributed connector in a
+   * multihost pipeline is paused only if it is paused on every host.
    */
   paused: boolean
   /**
