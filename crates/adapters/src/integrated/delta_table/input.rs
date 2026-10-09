@@ -890,6 +890,15 @@ impl DeltaTableInputReader {
                 }
                 DeltaResumeInfo {
                     version: Some(version),
+                    snapshot_pending: true,
+                    ..
+                } => {
+                    info!(
+                        "delta_table {endpoint_name}: resuming to ingest the initial snapshot from table version {version}"
+                    );
+                }
+                DeltaResumeInfo {
+                    version: Some(version),
                     ..
                 } => {
                     info!(
@@ -1204,6 +1213,13 @@ struct DeltaResumeInfo {
 
     /// True if the connector reached the end-of-input state.
     eoi: bool,
+
+    /// True if a distributed connector opened the table at `version` to read
+    /// its share of the initial snapshot, but has not read any of it yet.  On
+    /// resume, the host reads its share at `version`, so that every host reads
+    /// the same version even if they stopped at different points.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    snapshot_pending: bool,
 }
 
 impl DeltaResumeInfo {
@@ -1213,6 +1229,7 @@ impl DeltaResumeInfo {
             version: None,
             snapshot_timestamp: None,
             eoi: false,
+            snapshot_pending: false,
         }
     }
 
@@ -1222,6 +1239,7 @@ impl DeltaResumeInfo {
             version: None,
             snapshot_timestamp: None,
             eoi: true,
+            snapshot_pending: false,
         }
     }
 
@@ -1237,6 +1255,7 @@ impl DeltaResumeInfo {
             version: Some(version),
             snapshot_timestamp: None,
             eoi,
+            snapshot_pending: false,
         }
     }
 
@@ -1249,6 +1268,18 @@ impl DeltaResumeInfo {
             version: Some(version),
             snapshot_timestamp: Some(timestamp.to_string()),
             eoi: false,
+            snapshot_pending: false,
+        }
+    }
+
+    /// Checkpoint taken after a distributed connector opened the table at
+    /// `version` to read the initial snapshot, before it read any of it.
+    fn snapshot_pending(version: i64) -> Self {
+        Self {
+            version: Some(version),
+            snapshot_timestamp: None,
+            eoi: false,
+            snapshot_pending: true,
         }
     }
 
@@ -1865,8 +1896,10 @@ impl DeltaTableInputEndpointInner {
     /// Returns true if we haven't completed a snapshot before the checkpoint
     /// that `resume_status` came from was taken, that is, if:
     /// - there is no checkpoint,
-    /// - the checkpoint was taken in the initial state, or
-    /// - the checkpoint was taken mid-snapshot (`snapshot_timestamp` is set).
+    /// - the checkpoint was taken in the initial state,
+    /// - the checkpoint was taken mid-snapshot (`snapshot_timestamp` is set), or
+    /// - the checkpoint was taken before the snapshot started
+    ///   (`snapshot_pending` is set).
     fn snapshot_incomplete(resume_status: &Option<DeltaResumeInfo>) -> bool {
         matches!(
             resume_status,
@@ -1875,7 +1908,39 @@ impl DeltaTableInputEndpointInner {
                     snapshot_timestamp: Some(_),
                     ..
                 })
+                | Some(DeltaResumeInfo {
+                    snapshot_pending: true,
+                    ..
+                })
         )
+    }
+
+    /// For a distributed connector that has not started its snapshot, records
+    /// that it opened `table` for the snapshot, so that a checkpoint taken
+    /// before it reads anything holds the version.
+    ///
+    /// Without this, such a checkpoint would hold no version.  On resume, the
+    /// host would then need host 0's choice, which a host 0 at end of input
+    /// does not make, or which names a newer version than the one that the
+    /// hosts that finished their shares read.
+    fn record_snapshot_version(&self, table: &DeltaTable) {
+        let mut last_resume_status = self.last_resume_status.lock().unwrap();
+        if self.distributed.is_some()
+            && self.config.snapshot()
+            && matches!(
+                *last_resume_status,
+                Some(DeltaResumeInfo {
+                    version: None,
+                    eoi: false,
+                    ..
+                })
+            )
+        {
+            // We verified that the table version is not None in `open_table`.
+            let pending = DeltaResumeInfo::snapshot_pending(table.version().unwrap() as i64);
+            *last_resume_status = Some(pending.clone());
+            *self.last_checkpointable_status.lock().unwrap() = pending;
+        }
     }
 
     /// For a distributed connector that reads its snapshot in a transaction,
@@ -2462,6 +2527,7 @@ impl DeltaTableInputEndpointInner {
         };
 
         let table = Arc::new(table);
+        self.record_snapshot_version(&table);
 
         if let Some(distributed) = &self.distributed
             && distributed.shard.is_leader()
@@ -2503,6 +2569,7 @@ impl DeltaTableInputEndpointInner {
 
         if let Some(DeltaResumeInfo {
             version: Some(version),
+            snapshot_pending: false,
             ..
         }) = &last_resume_status
         {
@@ -6811,7 +6878,7 @@ mod distributed_snapshot_tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::sync::Arc;
 
-    use super::{DeltaTableInputEndpointInner, validate_distributed};
+    use super::{DeltaResumeInfo, DeltaTableInputEndpointInner, validate_distributed};
     use crate::integrated::DistributedInput;
     use crate::test::MockInputConsumer;
     use arrow::array::{Array, Int64Array, RecordBatch, StringArray};
@@ -6901,6 +6968,16 @@ mod distributed_snapshot_tests {
         choice: Option<serde_json::Value>,
         consumer: MockInputConsumer,
     ) -> DeltaTableInputEndpointInner {
+        resumed_endpoint(config, shard, choice, consumer, None)
+    }
+
+    fn resumed_endpoint(
+        config: serde_json::Value,
+        shard: Option<InputShard>,
+        choice: Option<serde_json::Value>,
+        consumer: MockInputConsumer,
+        resume_info: Option<DeltaResumeInfo>,
+    ) -> DeltaTableInputEndpointInner {
         let config: DeltaTableReaderConfig = serde_json::from_value(config).unwrap();
         let relation = Relation::new(
             SqlIdentifier::new("t", false),
@@ -6917,7 +6994,7 @@ mod distributed_snapshot_tests {
             SessionContext::new(),
             Box::new(consumer),
             relation,
-            None,
+            resume_info,
             shard.map(|shard| DistributedInput { shard, choice }),
         )
     }
@@ -7014,7 +7091,8 @@ mod distributed_snapshot_tests {
         assert!(chosen(Some(shard(2)), Some(json!("seven"))).is_err());
     }
 
-    /// Returns the `(id, part)` rows of `shard`'s part of `table`'s snapshot.
+    /// Returns the `(id, part)` rows of `shard`'s part of `table`'s snapshot,
+    /// sorted.
     async fn read_share(
         table: &Arc<DeltaTable>,
         uri: &str,
@@ -7045,6 +7123,8 @@ mod distributed_snapshot_tests {
                 rows.push((ids.value(i), parts.value(i).to_string()));
             }
         }
+        // The files are read in parallel, so the order varies.
+        rows.sort();
         rows
     }
 
@@ -7072,5 +7152,73 @@ mod distributed_snapshot_tests {
                 assert_eq!(part, &format!("p{}", id % 3));
             }
         }
+    }
+
+    /// A host that opened the table for its snapshot share but read nothing
+    /// yet checkpoints the version, and on resume reads its share at that
+    /// version, even if the table changed and host 0 made no choice.
+    #[tokio::test]
+    async fn checkpoint_before_snapshot_keeps_the_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let (table, uri) = write_table(dir.path(), 60, 4).await;
+        let version = table.version().unwrap() as i64;
+        let config = json!({"uri": uri, "mode": "snapshot"});
+
+        // Host 2 opens the table at host 0's version.
+        let host2 = endpoint_with(&uri, "snapshot", Some(shard(2)), Some(json!(version)));
+        let opened = host2.open_table().await.unwrap();
+        host2.record_snapshot_version(&opened);
+        let checkpoint = host2.last_resume_status.lock().unwrap().clone().unwrap();
+        assert_eq!(checkpoint, DeltaResumeInfo::snapshot_pending(version));
+        assert_eq!(
+            *host2.last_checkpointable_status.lock().unwrap(),
+            checkpoint
+        );
+        let expected = read_share(&Arc::new(opened), &uri, shard(2)).await;
+        assert!(!expected.is_empty());
+
+        // The table changes, and host 2 resumes from the checkpoint, without
+        // a choice from host 0.
+        let (newer, _uri) = write_table(dir.path(), 90, 1).await;
+        assert!(newer.version().unwrap() as i64 > version);
+        let checkpoint =
+            serde_json::from_value(serde_json::to_value(&checkpoint).unwrap()).unwrap();
+        let resumed = resumed_endpoint(
+            config.clone(),
+            Some(shard(2)),
+            None,
+            MockInputConsumer::new(),
+            Some(checkpoint),
+        );
+        assert!(DeltaTableInputEndpointInner::snapshot_incomplete(
+            &resumed.last_resume_status.lock().unwrap()
+        ));
+        let reopened = resumed.open_table().await.unwrap();
+        assert_eq!(reopened.version().unwrap() as i64, version);
+        assert_eq!(
+            read_share(&Arc::new(reopened), &uri, shard(2)).await,
+            expected
+        );
+
+        // A connector that is not distributed records nothing, and neither
+        // does a host that resumes.
+        for endpoint in [endpoint_with(&uri, "snapshot", None, None), resumed] {
+            let before = endpoint.last_resume_status.lock().unwrap().clone();
+            let opened = endpoint.open_table().await.unwrap();
+            endpoint.record_snapshot_version(&opened);
+            assert_eq!(*endpoint.last_resume_status.lock().unwrap(), before);
+        }
+
+        // Older checkpoints, without the new field, still parse.
+        let old: DeltaResumeInfo =
+            serde_json::from_value(json!({"version": 3, "snapshot_timestamp": null, "eoi": false}))
+                .unwrap();
+        assert_eq!(old, DeltaResumeInfo::follow_mode(3, false));
+        assert!(
+            serde_json::to_value(&old)
+                .unwrap()
+                .get("snapshot_pending")
+                .is_none()
+        );
     }
 }
