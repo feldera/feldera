@@ -2372,6 +2372,11 @@ impl Controller {
     }
 
     pub fn set_coordination_request(&self, coordination_request: StepRequest) {
+        self.inner
+            .transaction_info
+            .lock()
+            .unwrap()
+            .coordinator_members = coordination_request.transaction_members.clone();
         *self.inner.coordination_request.lock().unwrap() = Some(coordination_request);
         self.inner.unpark_circuit();
     }
@@ -7214,6 +7219,12 @@ pub struct TransactionInfo {
     /// differs from this — reproducing the recorded transaction boundaries.
     replay_open_transaction_id: Option<TransactionId>,
 
+    /// In a multihost pipeline, the input connectors that the coordinator
+    /// counts in the open transaction, from its latest step request (see
+    /// [StepRequest::transaction_members]).  `None` if the coordinator does
+    /// not say, because it predates this.
+    coordinator_members: Option<BTreeSet<String>>,
+
     /// For sending updates to the coordination status to the coordinator.
     sender: tokio::sync::watch::Sender<TransactionCoordination>,
 }
@@ -7231,8 +7242,25 @@ impl TransactionInfo {
             transaction_state: TransactionState::None,
             replay_transaction_id: None,
             replay_open_transaction_id: None,
+            coordinator_members: None,
             sender,
         }
+    }
+
+    /// Returns the transaction that connector `endpoint_name`'s input
+    /// flushed now lands in, if the coordinator counts the connector in it
+    /// (see [InputConsumer::joined_transaction]).  Returns `None` in a
+    /// single-host pipeline.
+    fn joined_transaction(&self, endpoint_name: &str) -> Option<Option<TransactionId>> {
+        self.is_multihost.then(|| {
+            let open = (self.initiators.initiated_by_api == Some(TransactionPhase::Started))
+                .then_some(self.initiators.transaction_id)
+                .flatten();
+            match &self.coordinator_members {
+                Some(members) if !members.contains(endpoint_name) => None,
+                _ => open,
+            }
+        })
     }
 
     /// Start a new transaction from the API.
@@ -9756,6 +9784,14 @@ impl InputConsumer for InputProbe {
         self.controller.open_transaction_for_inputs()
     }
 
+    fn joined_transaction(&self) -> Option<Option<TransactionId>> {
+        self.controller
+            .transaction_info
+            .lock()
+            .unwrap()
+            .joined_transaction(&self.endpoint_name)
+    }
+
     fn commit_transaction(&self) {
         if let Err(error) = self
             .controller
@@ -10577,5 +10613,32 @@ mod all_hosts_transaction_tests {
         // The transaction starts committing.
         info.clear_initiators();
         assert!(receiver.borrow().all_hosts_done.is_empty());
+    }
+
+    /// A connector joins the open transaction only once the coordinator counts
+    /// it in, unless the coordinator does not say which connectors it counts.
+    #[test]
+    fn connectors_join_as_members() {
+        let (sender, _receiver) = tokio::sync::watch::channel(TransactionCoordination::default());
+        let mut info = TransactionInfo::new(true, sender);
+        assert_eq!(info.joined_transaction("c"), Some(None));
+
+        let id = info.start_transaction_from_api().unwrap();
+        // A coordinator that predates membership says nothing about it.
+        assert_eq!(info.joined_transaction("c"), Some(Some(id)));
+
+        info.coordinator_members = Some(["a".to_string()].into());
+        assert_eq!(info.joined_transaction("a"), Some(Some(id)));
+        assert_eq!(info.joined_transaction("c"), Some(None));
+
+        info.coordinator_members = Some(["a".to_string(), "c".to_string()].into());
+        assert_eq!(info.joined_transaction("c"), Some(Some(id)));
+
+        // A single-host pipeline acts on requests at once.
+        let (sender, _receiver) = tokio::sync::watch::channel(TransactionCoordination::default());
+        assert_eq!(
+            TransactionInfo::new(false, sender).joined_transaction("c"),
+            None
+        );
     }
 }
