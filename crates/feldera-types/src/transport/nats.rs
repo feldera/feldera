@@ -82,6 +82,10 @@ pub const fn default_retry_interval_secs() -> u64 {
     5
 }
 
+pub const fn default_retry_max_interval_secs() -> u64 {
+    300
+}
+
 /// Options for connecting to a NATS server.
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct ConnectOptions {
@@ -165,9 +169,20 @@ pub struct NatsInputConfig {
     /// a stream/server health check. Must be at least 1.
     #[serde(default = "default_inactivity_timeout_secs")]
     pub inactivity_timeout_secs: u64,
-    /// Delay between automatic reconnect attempts while in retry mode.
-    /// Must be at least 1.
+    /// Delay in seconds before the first automatic reconnect attempt after a
+    /// failure. The delay doubles on every consecutive failure, up to
+    /// `retry_max_interval_secs`, and is jittered to avoid synchronized
+    /// retries across connectors. Must be at least 1.
     #[serde(default = "default_retry_interval_secs")]
     pub retry_interval_secs: u64,
+    /// Upper bound in seconds on the delay between consecutive reconnect
+    /// attempts. Must be at least `retry_interval_secs`.
+    #[serde(default = "default_retry_max_interval_secs")]
+    pub retry_max_interval_secs: u64,
+    /// Maximum number of consecutive failed reconnect attempts before the
+    /// connector gives up and reports a fatal error. When unset, the connector
+    /// retries indefinitely. Must be at least 1 when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_max_attempts: Option<u32>,
     pub consumer_config: ConsumerConfig,
 }

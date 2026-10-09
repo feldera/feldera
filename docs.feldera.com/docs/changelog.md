@@ -56,6 +56,30 @@ Source edition can be found on github.
   value is a missing value (`None` in `to_dict()`), and `pandas.isna()`
   finds it.
 
+- NATS input connector: retries now back off exponentially with jitter,
+  from `retry_interval_secs` up to the new `retry_max_interval_secs`
+  (default 300). A connector that previously retried every 5 seconds now
+  waits up to 5 minutes between attempts while NATS stays unavailable; set
+  `retry_max_interval_secs` equal to `retry_interval_secs` to restore a fixed
+  interval. The new optional `retry_max_attempts` stops the connector with a
+  fatal error after that many consecutive failed retries.
+
+- NATS input connector: JetStream consumers are now always named
+  `<prefix>_<uuid>`, where the prefix is `consumer_config.name` or the table
+  name, and are deleted when the connector pauses, stops, retries, or finishes
+  a replay, instead of waiting for the server to expire them. A consumer whose
+  create request timed out is deleted too, since an overloaded server may
+  still create it after the client has given up.
+
+- NATS input connector: new metrics `input_connector_nats_consumers_created_total`,
+  `input_connector_nats_consumers_deleted_total`, `input_connector_nats_retries_total`,
+  `input_connector_nats_consecutive_failures`, and `input_connector_nats_retry_state`.
+
+- NATS input connector: the pipeline name is now injected into the JetStream
+  consumer's metadata under the `pipeline` key, so consumer metrics can be
+  correlated with pipeline metrics (e.g. `prometheus-nats-exporter` with
+  `-jsz_consumer_meta_keys=pipeline`).
+
 ## v0.356.0
 
 - Bug fix (SQL): `DATEDIFF(QUARTER, left, right)` mixed whole years with

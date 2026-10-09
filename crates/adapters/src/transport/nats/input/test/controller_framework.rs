@@ -44,7 +44,24 @@ pub(super) enum NatsControllerAction {
 
     /// Start the pipeline and assert startup fails fatally within timeout.
     ExpectStartupFatal,
+
+    /// Like [`NatsControllerAction::RunFtCycle`] without a checkpoint, but
+    /// while the pipeline runs, assert that every consumer on the stream is
+    /// named `<name_prefix>_<suffix>` and carries `metadata[key] == value`
+    /// for each entry of `metadata`. After the pipeline stops, assert that
+    /// its consumers have been deleted.
+    RunAndInspectConsumers {
+        publish: usize,
+        name_prefix: &'static str,
+        metadata: &'static [(&'static str, &'static str)],
+    },
 }
+
+/// Timeout for the server to reflect consumers deleted by a stopped pipeline.
+///
+/// Well below the 30s `inactive_threshold` of the ordered consumer, so a
+/// passing check proves explicit deletion rather than server-side expiry.
+const CONSUMER_DELETE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Internal state held by the Controller FT test runner.
 pub(super) struct NatsControllerRunner {
@@ -60,6 +77,8 @@ pub(super) struct NatsControllerRunner {
 
     // Config knobs
     consumer_name: Option<String>,
+    consumer_metadata: Vec<(String, String)>,
+    given_name: Option<String>,
     inactivity_timeout_secs: Option<u64>,
 
     // Parsed pipeline config (built lazily after NATS URL is known)
@@ -87,6 +106,8 @@ impl NatsControllerRunner {
             storage_dir,
             output_path,
             consumer_name: None,
+            consumer_metadata: Vec::new(),
+            given_name: None,
             inactivity_timeout_secs: None,
             pipeline_config: None,
             controller: None,
@@ -97,6 +118,20 @@ impl NatsControllerRunner {
 
     pub(super) fn with_consumer_name(mut self, name: &str) -> Self {
         self.consumer_name = Some(name.to_string());
+        self
+    }
+
+    /// Adds a user-supplied entry to the consumer's `metadata`.
+    pub(super) fn with_consumer_metadata(mut self, key: &str, value: &str) -> Self {
+        self.consumer_metadata
+            .push((key.to_string(), value.to_string()));
+        self
+    }
+
+    /// Sets the pipeline's `given_name`, which the controller injects into
+    /// the consumer's metadata under the `pipeline` key.
+    pub(super) fn with_given_name(mut self, name: &str) -> Self {
+        self.given_name = Some(name.to_string());
         self
     }
 
@@ -130,6 +165,23 @@ impl NatsControllerRunner {
                 .map(|n| format!("name: {n}"))
                 .unwrap_or_default();
 
+            let consumer_metadata_line = if self.consumer_metadata.is_empty() {
+                String::new()
+            } else {
+                let entries: Vec<String> = self
+                    .consumer_metadata
+                    .iter()
+                    .map(|(key, value)| format!("{key:?}: {value:?}"))
+                    .collect();
+                format!("metadata: {{{}}}", entries.join(", "))
+            };
+
+            let given_name_line = self
+                .given_name
+                .as_deref()
+                .map(|n| format!("given_name: {n:?}"))
+                .unwrap_or_default();
+
             let inactivity_timeout_line = self
                 .inactivity_timeout_secs
                 .map(|s| format!("inactivity_timeout_secs: {s}"))
@@ -138,6 +190,7 @@ impl NatsControllerRunner {
             let config_str = format!(
                 r#"
 name: test
+{given_name_line}
 workers: 4
 storage_config:
     path: {storage_dir:?}
@@ -156,6 +209,7 @@ inputs:
                 {inactivity_timeout_line}
                 consumer_config:
                     {consumer_name_line}
+                    {consumer_metadata_line}
                     deliver_policy: All
                     filter_subjects: [{SUBJECT_NAME}]
         format:
@@ -349,6 +403,57 @@ outputs:
         self.checkpointed = self.total_published;
     }
 
+    /// Asserts that the stream has at least one consumer and that each is
+    /// named `<name_prefix>_<suffix>` and carries every `metadata` entry.
+    fn verify_consumers(&self, name_prefix: &str, metadata: &[(&str, &str)]) -> AnyResult<()> {
+        let consumers = self
+            .rt
+            .block_on(util::list_consumers(self.nats_url(), STREAM_NAME))?;
+        assert!(
+            !consumers.is_empty(),
+            "expected at least one consumer on stream '{STREAM_NAME}'"
+        );
+        let expected_prefix = format!("{name_prefix}_");
+        for info in &consumers {
+            assert!(
+                info.name.starts_with(&expected_prefix),
+                "consumer '{}' is not named '{expected_prefix}<suffix>'",
+                info.name
+            );
+            for (key, value) in metadata {
+                assert_eq!(
+                    info.config.metadata.get(*key).map(String::as_str),
+                    Some(*value),
+                    "consumer '{}' metadata[{key:?}]; full metadata: {:?}",
+                    info.name,
+                    info.config.metadata
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// Waits until the stream has no consumers left.
+    fn wait_for_no_consumers(&self) -> AnyResult<()> {
+        let deadline = std::time::Instant::now() + CONSUMER_DELETE_TIMEOUT;
+        loop {
+            let consumers = self
+                .rt
+                .block_on(util::list_consumers(self.nats_url(), STREAM_NAME))?;
+            if consumers.is_empty() {
+                return Ok(());
+            }
+            if std::time::Instant::now() >= deadline {
+                let names: Vec<&str> = consumers.iter().map(|info| info.name.as_str()).collect();
+                anyhow::bail!(
+                    "{} consumers still exist {CONSUMER_DELETE_TIMEOUT:?} after the pipeline stopped: {names:?}",
+                    consumers.len()
+                );
+            }
+            sleep(Duration::from_millis(100));
+        }
+    }
+
     fn exec(&mut self, action: &NatsControllerAction) -> AnyResult<()> {
         match action {
             NatsControllerAction::StartNats => {
@@ -401,6 +506,20 @@ outputs:
                 if checkpoint {
                     self.mark_checkpointed();
                 }
+            }
+
+            NatsControllerAction::RunAndInspectConsumers {
+                publish,
+                name_prefix,
+                metadata,
+            } => {
+                self.publish_records(*publish)?;
+                self.start_pipeline();
+                self.wait_for_transmitted();
+                self.verify_consumers(name_prefix, metadata)?;
+                self.stop_pipeline();
+                self.verify_output_since_checkpoint();
+                self.wait_for_no_consumers()?;
             }
 
             NatsControllerAction::ExpectStartupRetrying => {

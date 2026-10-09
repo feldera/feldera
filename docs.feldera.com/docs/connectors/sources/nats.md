@@ -11,7 +11,7 @@ tolerance](/pipelines/fault-tolerance) using JetStream's ordered pull consumer.
 The NATS input connector uses JetStream's **ordered pull consumer**, which provides:
 - **Strict ordering**: Messages delivered in exact stream order without gaps.
 - **Automatic recovery**: On gap detection, heartbeat loss, or deletion, the consumer automatically recreates itself and resumes from the last processed position.
-- **Retry loop with health checks**: On transient startup/runtime failures, the connector enters retry mode and periodically attempts to reconnect.
+- **Retry loop with health checks**: On transient startup/runtime failures, the connector enters retry mode and reconnects with exponential backoff.
 - **Exactly-once semantics**: Combined with Feldera's checkpoint mechanism, ensures each message is processed exactly once.
 
 ## NATS Input Connector Configuration
@@ -34,13 +34,15 @@ The connector configuration consists of three main sections:
 |--------------|--------|----------|-------------|
 | `stream_name` | string | Yes      | The name of the NATS JetStream stream to consume from |
 | `inactivity_timeout_secs` | integer | No | Maximum idle time while waiting for the next message before running a stream/server health check. Must be at least 1. Default: 60 |
-| `retry_interval_secs` | integer | No | Delay between automatic retry attempts while the connector is in retry mode. Must be at least 1. Default: 5 |
+| `retry_interval_secs` | integer | No | Delay before the first automatic retry attempt in retry mode. The delay doubles after each consecutive failure. Must be at least 1. Default: 5 |
+| `retry_max_interval_secs` | integer | No | Upper bound on the delay between retry attempts. Must be at least `retry_interval_secs`. Set it equal to `retry_interval_secs` to retry at a fixed interval. Default: 300 |
+| `retry_max_attempts` | integer | No | Number of consecutive failed retry attempts after which the connector gives up with a fatal error. Must be at least 1. Default: unset (retry forever) |
 
 ### Consumer Configuration
 
 | Property           | Type                    | Required | Description |
 |-------------------|-------------------------|----------|-------------|
-| `name`            | string                  | No       | Consumer name for identification |
+| `name`            | string                  | No       | Prefix for the names of the consumers the connector creates (see [Consumer lifecycle](#consumer-lifecycle)). Default: the table name |
 | `description`     | string                  | No       | Consumer description |
 | `filter_subjects` | string list             | No       | Filter messages by subject(s). If empty, consumes all subjects in the stream |
 | `replay_policy`   | variant                 | No       | Message replay speed: `"Instant"` (default, fast) or `"Original"` (rate-limited at original timing) |
@@ -79,7 +81,7 @@ If not specified, defaults to `"Instant"`.
 
 The connector distinguishes between **retryable** and **fatal** errors:
 
-- **Retryable errors** (temporary network/server issues, missing stream during startup, transient message-stream failures, and temporary failures while fetching JetStream stream metadata used during startup, resume, or replay validation) move the connector into retry mode. It reports non-fatal endpoint errors and retries automatically every `retry_interval_secs`.
+- **Retryable errors** (temporary network/server issues, missing stream during startup, transient message-stream failures, and temporary failures while fetching JetStream stream metadata used during startup, resume, or replay validation) move the connector into retry mode. It reports non-fatal endpoint errors and retries automatically with backoff (see [Retry backoff](#retry-backoff)).
 - **Fatal errors** stop the connector and report a fatal endpoint error. This is used when checkpoint/replay metadata is incompatible with the current stream sequence space.
 
 Before reading after startup or resume, the connector validates the checkpoint resume cursor against the stream's available sequence range. During replay, it validates that the requested replay range still exists.
@@ -101,6 +103,68 @@ To recover from a fatal error caused by stream data loss, you typically need to
 reset the pipeline's checkpoint state (e.g., by recreating the pipeline) so it
 starts fresh without referencing the now-invalid sequence numbers.
 :::
+
+### Retry backoff
+
+Each retry attempt opens a new connection to the NATS server and creates a new
+JetStream consumer. Creating a consumer at a checkpointed position makes the
+server scan the stream to compute the consumer's pending count, which is
+expensive on large streams. If many connectors retried at a short, fixed
+interval against a struggling cluster, they would add load exactly when the
+cluster can least afford it.
+
+The connector therefore backs off exponentially. The first retry waits
+`retry_interval_secs`, and each consecutive failure doubles the wait, up to
+`retry_max_interval_secs`. Every wait below the maximum is lengthened by a
+random amount of up to 25%, so that connectors that failed together (for
+example, after a NATS node restart) do not retry in lockstep. The randomization
+never shortens a wait below `retry_interval_secs` or lengthens it beyond
+`retry_max_interval_secs`. With the defaults, the nominal waits are 5s, 10s,
+20s, 40s, 80s, 160s, and then 300s for every later attempt.
+A successful reconnect resets the backoff.
+
+By default the connector retries forever. Set `retry_max_attempts` to stop
+after that many consecutive failed retries with a fatal error, which leaves the
+decision to resume to an operator. The same limit applies to retries during
+replay.
+
+### Consumer lifecycle
+
+The connector creates a new ephemeral JetStream consumer when it starts,
+resumes, replays a checkpoint, or retries. Each consumer is named
+`<prefix>_<uuid>`, where the prefix is the configured `consumer_config.name`,
+or the table name if none is set. Characters that JetStream does not allow in
+consumer names are replaced with `_`. The unique suffix prevents "consumer
+already exists" errors on quick restarts, and the prefix identifies which
+connector owns a consumer when you inspect the stream with `nats consumer ls`.
+For example, to list the consumers of a connector whose prefix is `orders`:
+
+```bash
+nats consumer ls <stream> --names | grep '^orders_'
+```
+
+The connector deletes its consumer when it pauses, stops, abandons a failed
+reader before retrying, or finishes a replay. It also deletes the consumer
+after a create request that timed out, because an overloaded server may still
+create the consumer after the client has given up. Deletion is best-effort: if
+the server cannot be reached, the consumer expires on its own after 30 seconds
+of inactivity.
+
+### Metrics
+
+The connector exports the following metrics on the pipeline's metrics
+endpoint, in addition to the standard input connector metrics:
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `input_connector_nats_consumers_created_total` | counter | JetStream consumers created (start, resume, replay, and every retry) |
+| `input_connector_nats_consumers_deleted_total` | counter | JetStream consumers explicitly deleted |
+| `input_connector_nats_retries_total` | counter | Reconnect attempts made in retry mode |
+| `input_connector_nats_consecutive_failures` | gauge | Consecutive failed attempts in the current retry episode; 0 when healthy |
+| `input_connector_nats_retry_state` | gauge | `0` healthy or paused, `1` retrying, `2` stopped after a fatal error |
+
+A steadily rising `input_connector_nats_consumers_created_total` while the
+connector ingests no records signals that it is stuck reconnecting.
 
 ## Authentication
 
@@ -414,6 +478,52 @@ CREATE MATERIALIZED VIEW summary AS
     FROM raw_text
     GROUP BY text_length
 ```
+## Pipeline metadata
+
+When the pipeline configuration includes a `given_name` field, Feldera
+automatically sets `metadata["pipeline"]` on the NATS JetStream consumer to the
+value of `given_name`. If you already set `metadata.pipeline` in your connector
+configuration, your value takes precedence and is not overwritten.
+
+For example, a pipeline named `"my_pipeline"` will produce a consumer whose
+metadata contains `{"pipeline": "my_pipeline"}`:
+
+```sql
+CREATE TABLE events (
+    id BIGINT,
+    payload STRING
+) WITH (
+    'connectors' = '[{
+        "name": "nats_in",
+        "transport": {
+            "name": "nats_input",
+            "config": {
+                "connection_config": {
+                    "server_url": "nats://nats:4222"
+                },
+                "stream_name": "my_stream",
+                "consumer_config": {
+                    "deliver_policy": "All"
+                }
+            }
+        },
+        "format": {
+            "name": "json",
+            "config": {
+                "update_format": "raw"
+            }
+        }
+    }]'
+);
+```
+
+This is useful for correlating NATS consumer metrics with Feldera pipeline
+status in monitoring systems. For example, with
+[`prometheus-nats-exporter`](https://github.com/nats-io/prometheus-nats-exporter),
+use the `-jsz_consumer_meta_keys=pipeline` flag to surface the pipeline name as
+a Prometheus label on all `nats_consumer_*` metrics. This allows alert rules
+that join on the `pipeline` label with `feldera_pipeline_status`.
+
 ## Additional resources
 
 For more information, see:
