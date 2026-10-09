@@ -386,6 +386,15 @@ pub fn splitter_output_chunk_size() -> usize {
     Runtime::with_dev_tweaks(|d| d.splitter_chunk_size_records() as usize)
 }
 
+/// Returns how many keys a lazy input map resolves before it yields, in keys.
+///
+/// The `LazyUpsert` operator yields after scanning
+/// `lazy_input_map_keys_per_step` keys, regardless of the number of output
+/// updates it has produced.
+pub fn lazy_input_map_keys_per_step() -> usize {
+    Runtime::with_dev_tweaks(|d| d.lazy_input_map_keys_per_step() as usize)
+}
+
 /// Returns the number of records to preallocate in the first iteration of loops
 /// that break records into groups by the chunk size.
 ///
@@ -642,6 +651,11 @@ impl CircuitConfig {
 
     pub fn with_splitter_chunk_size_records(mut self, records: u64) -> Self {
         self.dev_tweaks.splitter_chunk_size_records = Some(records);
+        self
+    }
+
+    pub fn with_lazy_input_map_keys_per_step(mut self, keys: u64) -> Self {
+        self.dev_tweaks.lazy_input_map_keys_per_step = Some(keys);
         self
     }
 

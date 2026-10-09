@@ -1022,6 +1022,25 @@ where
         Err(ReaderError::Unsupported)
     }
 
+    /// Returns whether [`Self::from_path`], given `factories`, can restore the
+    /// file that a checkpoint records for this batch.
+    ///
+    /// A batch on storage can hide a column that its file holds, and only
+    /// factories that describe the hidden column can reopen such a file.  Any
+    /// other batch, including one in memory, which a checkpoint writes out
+    /// afresh, can be restored with any factories for its type.
+    ///
+    /// # Arguments
+    ///
+    /// * `factories` - the factories that a restore would read the file with.
+    ///
+    /// # Returns
+    ///
+    /// True unless the batch's file needs factories that `factories` lack.
+    fn restorable_with(&self, _factories: &Self::Factories) -> bool {
+        true
+    }
+
     /// Minimum and maximum keys in this batch.
     ///
     /// File-backed batches materialize these bounds at write time. In-memory

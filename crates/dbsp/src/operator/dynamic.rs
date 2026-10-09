@@ -21,6 +21,7 @@ pub mod input;
 pub(crate) mod input_upsert;
 pub mod join;
 pub mod join_range;
+pub(crate) mod lazy_input_upsert;
 pub mod multijoin;
 pub mod neighborhood;
 pub mod outer_join;

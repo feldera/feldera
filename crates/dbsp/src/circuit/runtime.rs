@@ -1421,6 +1421,29 @@ impl Runtime {
         })
     }
 
+    /// Returns the number of hosts in the runtime's [`Layout`].
+    ///
+    /// If this thread is not in a [Runtime], returns 1.
+    pub fn num_hosts() -> usize {
+        RUNTIME.with(|rt| {
+            rt.borrow()
+                .as_ref()
+                .map_or(1, |runtime| runtime.layout().n_hosts())
+        })
+    }
+
+    /// Returns the 0-based index of this thread's host in the runtime's
+    /// [`Layout`].
+    ///
+    /// If this thread is not in a [Runtime], returns 0.
+    pub fn host_index() -> usize {
+        RUNTIME.with(|rt| {
+            rt.borrow()
+                .as_ref()
+                .map_or(0, |runtime| runtime.layout().local_host_idx())
+        })
+    }
+
     /// Returns the [`Layout`] for this runtime.
     pub fn layout(&self) -> &Layout {
         &self.inner().layout

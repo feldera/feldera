@@ -2387,9 +2387,19 @@ where
     }
 
     fn save(&mut self, persistent_id: &str) -> Result<Box<dyn OperatorCheckpoint>, Error> {
+        let batches = self.get_batches();
+        // `restore` reads every batch back with this spine's factories, so a
+        // batch they cannot read would leave a checkpoint that never restores.
+        for batch in &batches {
+            assert!(
+                batch.restorable_with(&self.factories),
+                "spine {persistent_id} holds a batch on storage that its factories \
+                 could not restore from a checkpoint"
+            );
+        }
         Ok(Box::new(SpineOperatorCheckpoint {
             persistent_id: persistent_id.into(),
-            batches: self.get_batches(),
+            batches,
             dirty: self.dirty,
         }))
     }
