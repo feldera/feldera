@@ -85,10 +85,62 @@
 //! The pipelines only use transactions started through the API, as instructed
 //! by the coordinator; they report input connector requested transactions
 //! upward to the coordinator but do not otherwise act on them.
+//!
+//! ## Connector transactions
+//!
+//! An input connector's transaction must land in one pipeline transaction,
+//! and the connector's input after it must not land in that one.  A pipeline
+//! only reports a connector's request, so the connector's input queue holds
+//! the connector's records back until the coordinator has acted on the
+//! request:
+//!
+//! ```text
+//!  connector            pipeline (host)                  coordinator
+//!      |                       |                               |
+//!      | start_transaction     |                               |
+//!      |---------------------->| TransactionCoordination       |
+//!      |  (records held)       |   requests: + c               |
+//!      |                       |------------------------------>|
+//!      |                       |                               | starts T, or
+//!      |                       |                               | adds c to open T
+//!      |                       | /start_transaction (if new T) |
+//!      |                       |<------------------------------|
+//!      |                       | StepRequest                   |
+//!      |                       |   transaction_members: c, ... |
+//!      |                       |<------------------------------|
+//!      |  records flush into T |                               |
+//!      |<----------------------|                               |
+//!      | commit_transaction    |                               |
+//!      |---------------------->| TransactionCoordination       |
+//!      |  (records held)       |   requests: - c               |
+//!      |                       |------------------------------>|
+//!      |                       |                               | no member left:
+//!      |                       |                               | commits T
+//!      |                       | /commit_transaction, then     |
+//!      |                       | steps that flush no input     |
+//!      |                       |<------------------------------|
+//!      |  records flush again, |                               |
+//!      |  outside T            |                               |
+//! ```
+//!
+//! After a request to start, the connector waits until it is in the open
+//! transaction ([StepRequest::transaction_members]), not just until a
+//! transaction is open.  The coordinator learns of requests late, through the
+//! status stream, and once it has decided to commit a transaction, it ignores
+//! new requests for it.  A connector that flushed into a transaction that was
+//! open, but committing without it, would split its own transaction.  The
+//! coordinator keeps a connector in the open transaction until no pipeline
+//! reports a request for it, and never adds it again after that, so a member
+//! cannot have the transaction commit underneath it.  For a distributed
+//! connector, membership is by connector name, so a host that requests later
+//! than the others still joins.
+//!
+//! After a request to commit, the connector waits until the transaction is no
+//! longer open.
 
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
     net::SocketAddr,
 };
 
@@ -382,6 +434,17 @@ pub struct StepRequest {
     ///
     /// This is not significant for [StepAction::Idle].
     pub inputs: StepInputs,
+
+    /// The input connectors that the coordinator counts in the open
+    /// transaction, if one is open.  A connector that requested a transaction
+    /// does not flush input until it is in this set, because the coordinator
+    /// may have decided to commit the open transaction without it.
+    ///
+    /// `None` means that the coordinator predates this field.  Then a
+    /// connector that requested a transaction flushes input as soon as any
+    /// transaction is open.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transaction_members: Option<BTreeSet<String>>,
 }
 
 impl StepRequest {
@@ -390,6 +453,15 @@ impl StepRequest {
             step,
             action,
             inputs,
+            transaction_members: None,
+        }
+    }
+
+    /// Returns this request with `transaction_members` set to `members`.
+    pub fn with_transaction_members(self, members: BTreeSet<String>) -> Self {
+        Self {
+            transaction_members: Some(members),
+            ..self
         }
     }
     pub fn new_idle(step: Step) -> Self {

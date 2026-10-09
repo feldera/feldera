@@ -453,8 +453,13 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
     ///   multihost host reports its connectors' requests to the coordinator.
     ///
     /// - The coordinator opens a transaction whenever a host reports a request,
-    ///   and commits it once no host reports one, between steps and also while
-    ///   the pipeline is paused.
+    ///   adds the connector to an open transaction when it sees the request,
+    ///   and commits the transaction once no host reports a request for it,
+    ///   between steps and also while the pipeline is paused.  After a request,
+    ///   the connector waits until it is in the open transaction (see
+    ///   [InputConsumer::joined_transaction]), not just until a transaction is
+    ///   open: the coordinator may already have decided to commit that one
+    ///   without the connector.
     ///
     /// - The records that wait still count as buffered, so the host requests
     ///   another step, which flushes them once the boundary is reached.
@@ -467,12 +472,20 @@ impl<A, B: InputBuffer> InputQueue<A, B> {
         if pending.boundary == PendingBoundary::None {
             return false;
         }
-        let reached = match (pending.boundary, self.consumer.open_transaction()) {
-            (PendingBoundary::None, _) | (_, None) => true,
-            (PendingBoundary::Open, Some(open)) => open.is_some(),
+        let reached = match pending.boundary {
+            PendingBoundary::None => true,
+            PendingBoundary::Open => self
+                .consumer
+                .joined_transaction()
+                .is_none_or(|joined| joined.is_some()),
             // A transaction that opens right after the commit is a different
-            // transaction, so its records may land in it.
-            (PendingBoundary::Close(id), Some(open)) => open != Some(id),
+            // transaction, so its records may land in it.  This checks the open
+            // transaction, not membership: the coordinator may stop counting the
+            // connector in the transaction before it commits.
+            PendingBoundary::Close(id) => self
+                .consumer
+                .open_transaction()
+                .is_none_or(|open| open != Some(id)),
         };
         if reached {
             *pending = Pending::new(PendingBoundary::None);
@@ -1045,6 +1058,22 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// single-host pipeline.
     fn open_transaction(&self) -> Option<Option<TransactionId>> {
         None
+    }
+
+    /// Like [`open_transaction`](Self::open_transaction), but reports an open
+    /// transaction only if the pipeline counts this connector in it.
+    ///
+    /// In a multihost pipeline, the coordinator decides which connectors are
+    /// in a transaction, from requests that reach it late.  It may already
+    /// have decided to commit the open transaction without the connector, so
+    /// records that the connector flushes into it after a request would leave
+    /// the rest of the connector's transaction for another one, or for none.
+    /// [InputQueue] uses this to wait after a request until the connector is
+    /// in the open transaction.
+    ///
+    /// The default implementation returns the same as `open_transaction`.
+    fn joined_transaction(&self) -> Option<Option<TransactionId>> {
+        self.open_transaction()
     }
 
     /// Register connector-specific metrics for Prometheus export.
@@ -2049,6 +2078,13 @@ mod transaction_boundary_model_tests {
         /// The transaction that the coordinator has open on the host.
         open: Option<TransactionId>,
 
+        /// Whether another participant holds a transaction open.
+        other: bool,
+
+        /// Whether the coordinator counts the connector in the open
+        /// transaction.
+        membership: Membership,
+
         /// The last transaction ID that the coordinator used.
         last_id: TransactionId,
 
@@ -2057,6 +2093,20 @@ mod transaction_boundary_model_tests {
 
         /// Each flushed record, with the transaction it landed in.
         flushed: Vec<(u32, Option<TransactionId>)>,
+    }
+
+    /// Whether the coordinator counts the connector in the open transaction.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    enum Membership {
+        /// The coordinator has not seen the connector request it.
+        #[default]
+        NotMember,
+
+        /// The coordinator saw the request, and has not seen it withdrawn.
+        Member,
+
+        /// The connector joined and left, and cannot join again.
+        Left,
     }
 
     #[derive(Clone, Default)]
@@ -2079,21 +2129,37 @@ mod transaction_boundary_model_tests {
             }
         }
 
-        /// The coordinator opens or commits a transaction, if it should.
+        /// The coordinator opens a transaction, updates the connector's
+        /// membership, or commits the transaction, if it should.  It commits
+        /// once neither the connector nor the other participant is in it.
         fn coordinate(&self) -> bool {
             let mut world = self.world();
-            match (world.open, world.seen_request) {
-                (None, true) => {
-                    world.last_id += 1;
-                    world.open = Some(world.last_id);
-                    true
+            if world.open.is_none() {
+                if !world.seen_request && !world.other {
+                    return false;
                 }
-                (Some(_), false) => {
-                    world.open = None;
-                    true
-                }
-                _ => false,
+                world.last_id += 1;
+                world.open = Some(world.last_id);
+                world.membership = if world.seen_request {
+                    Membership::Member
+                } else {
+                    Membership::NotMember
+                };
+                return true;
             }
+            let membership = match (world.membership, world.seen_request) {
+                (Membership::NotMember, true) => Membership::Member,
+                (Membership::Member, false) => Membership::Left,
+                (membership, _) => membership,
+            };
+            let mut changed = membership != world.membership;
+            world.membership = membership;
+            if membership != Membership::Member && !world.other {
+                world.open = None;
+                world.membership = Membership::NotMember;
+                changed = true;
+            }
+            changed
         }
     }
 
@@ -2119,6 +2185,14 @@ mod transaction_boundary_model_tests {
         }
         fn open_transaction(&self) -> Option<Option<TransactionId>> {
             Some(self.world().open)
+        }
+        fn joined_transaction(&self) -> Option<Option<TransactionId>> {
+            let world = self.world();
+            Some(
+                world
+                    .open
+                    .filter(|_| world.membership == Membership::Member),
+            )
         }
         fn completion_watcher(&self) -> Option<tokio::sync::watch::Receiver<Completion>> {
             None
@@ -2207,6 +2281,8 @@ mod transaction_boundary_model_tests {
         Queue,
         Deliver,
         Coordinate,
+        /// Another participant starts or stops holding a transaction open.
+        ToggleOther,
     }
 
     fn action() -> impl Strategy<Value = Action> {
@@ -2216,6 +2292,7 @@ mod transaction_boundary_model_tests {
             Just(Action::Queue),
             Just(Action::Deliver),
             Just(Action::Coordinate),
+            Just(Action::ToggleOther),
         ]
     }
 
@@ -2294,8 +2371,15 @@ mod transaction_boundary_model_tests {
                 Action::Coordinate => {
                     host.coordinate();
                 }
+                Action::ToggleOther => {
+                    let mut world = host.world();
+                    world.other = !world.other;
+                }
             }
         }
+
+        // The other participant finishes, so that every transaction can commit.
+        host.world().other = false;
 
         // Drain fairly.  Every round makes progress until nothing is left,
         // so a round that makes none ends the drain.
@@ -2318,17 +2402,16 @@ mod transaction_boundary_model_tests {
         assert_eq!(world.flushed.len(), next_id as usize, "records lost");
 
         // Safety: each connector transaction lands in exactly one pipeline
-        // transaction, of its own, and plain records land in none of them.
+        // transaction, of its own, and no record after it lands in that one.
+        // (Records before it may: another participant can hold the pipeline
+        // transaction open before the connector joins it.)
         let mut landed = BTreeMap::<usize, BTreeSet<Option<TransactionId>>>::new();
-        let mut plain = BTreeSet::new();
+        let mut last_id = BTreeMap::<usize, u32>::new();
         for (id, open) in &world.flushed {
-            match owner[id] {
-                Some(transaction) => {
-                    landed.entry(transaction).or_default().insert(*open);
-                }
-                None => {
-                    plain.insert(*open);
-                }
+            if let Some(transaction) = owner[id] {
+                landed.entry(transaction).or_default().insert(*open);
+                let last = last_id.entry(transaction).or_default();
+                *last = (*last).max(*id);
             }
         }
         let mut used = BTreeSet::new();
@@ -2347,11 +2430,13 @@ mod transaction_boundary_model_tests {
                 used.insert(open),
                 "two connector transactions shared {open:?}"
             );
+            for (id, later) in &world.flushed {
+                assert!(
+                    !(*id > last_id[transaction] && owner[id].is_none() && *later == open),
+                    "record {id} after connector transaction {transaction} landed in {open:?}"
+                );
+            }
         }
-        assert!(
-            plain.is_disjoint(&used),
-            "plain records landed in a connector transaction"
-        );
     }
 
     proptest! {
