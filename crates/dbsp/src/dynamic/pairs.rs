@@ -119,3 +119,62 @@ where
         self
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::Pairs;
+    use crate::{
+        dynamic::{DynData, LeanVec},
+        utils::Tup2,
+    };
+
+    type Keyed = LeanVec<Tup2<i32, i32>>;
+
+    fn sort_and_dedup(pairs: Vec<Tup2<i32, i32>>) -> Vec<Tup2<i32, i32>> {
+        let mut pairs = Keyed::from(pairs);
+        <Keyed as Pairs<DynData, DynData>>::sort_by_key(&mut pairs);
+        <Keyed as Pairs<DynData, DynData>>::dedup_by_key_keep_last(&mut pairs);
+        pairs.as_slice().to_vec()
+    }
+
+    /// Sorting leaves a key's pairs adjacent in the order they were pushed, and
+    /// deduping then keeps the last of them.
+    ///
+    /// Callers pair the two to reduce a run of updates to a key down to the one
+    /// that survives, so which of the run is kept is the whole point.  The value
+    /// counts the pair's position among its key's, so a kept pair says which.
+    #[test]
+    fn sorting_then_deduping_keeps_a_key_s_last_pair() {
+        assert_eq!(
+            sort_and_dedup(vec![
+                Tup2(2, 0),
+                Tup2(1, 0),
+                Tup2(2, 1),
+                Tup2(1, 1),
+                Tup2(3, 0),
+                Tup2(1, 2),
+            ]),
+            vec![Tup2(1, 2), Tup2(2, 1), Tup2(3, 0)]
+        );
+    }
+
+    /// Deduping an empty vector, and one whose keys are already distinct, leaves
+    /// them as they are.
+    #[test]
+    fn deduping_distinct_keys_changes_nothing() {
+        assert_eq!(sort_and_dedup(Vec::new()), Vec::new());
+        assert_eq!(
+            sort_and_dedup(vec![Tup2(1, 10), Tup2(2, 20), Tup2(3, 30)]),
+            vec![Tup2(1, 10), Tup2(2, 20), Tup2(3, 30)]
+        );
+    }
+
+    /// Every pair sharing one key collapses to the last.
+    #[test]
+    fn deduping_one_repeated_key_keeps_its_last_pair() {
+        assert_eq!(
+            sort_and_dedup(vec![Tup2(7, 0), Tup2(7, 1), Tup2(7, 2), Tup2(7, 3)]),
+            vec![Tup2(7, 3)]
+        );
+    }
+}

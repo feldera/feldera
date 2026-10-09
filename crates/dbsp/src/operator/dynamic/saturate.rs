@@ -261,13 +261,13 @@ where
 {
     fn eval(
         self: Rc<Self>,
-        delta: &Option<Spine<OrdIndexedZSet<K, V>>>,
-        delayed_trace: &SpineSnapshot<OrdIndexedZSet<K, V>>,
+        delta: Cow<'_, Option<Spine<OrdIndexedZSet<K, V>>>>,
+        delayed_trace: Cow<'_, SpineSnapshot<OrdIndexedZSet<K, V>>>,
     ) -> impl AsyncStream<Item = (OrdIndexedZSet<K, V>, bool, Option<Position>)> + 'static {
         //println!("Saturate: eval: delta: {:?}, trace: {:?}", delta, trace);
         let chunk_size = splitter_output_chunk_size();
 
-        let delta = delta.as_ref().map(|b| b.ro_snapshot());
+        let delta = (*delta).as_ref().map(|b| b.ro_snapshot());
 
         // We assume that delta.is_some() implies that the operator is being flushed,
         // since the integral is always flushed in same step as delta.
