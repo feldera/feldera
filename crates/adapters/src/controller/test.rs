@@ -1118,54 +1118,21 @@ fn test_connector_init_error() {
 
 /// A connector rejected by the fault-tolerance check must leave nothing behind.
 ///
-/// `add_input_endpoint` registers and opens the endpoint before it compares the
-/// endpoint's fault tolerance with the pipeline's, so the rejection path has to
-/// undo both.  It used to return the error while leaving the endpoint in the
-/// status map, where the endpoint could never run yet still reserved its own
-/// name against a retry.
+/// `add_input_endpoint` used to return the error while leaving the endpoint in
+/// the status map, where the endpoint could never run yet still reserved its
+/// own name against a retry.
 #[test]
 fn fault_tolerance_mismatch_unregisters_the_endpoint() {
     init_test_logger();
 
     let tempdir = TempDir::new().unwrap();
-    let storage_dir = tempdir.path().join("storage");
-    create_dir(&storage_dir).unwrap();
+    let controller = start_exactly_once_controller(&tempdir);
     let input_file = tempdir.path().join("input.csv");
     File::create(&input_file).unwrap();
 
     // `file_input` reports at-least-once for a path with a barrier, weaker than
     // this pipeline's exactly-once requirement.
     set_barrier(input_file.to_str().unwrap(), 0);
-
-    let config: PipelineConfig = serde_json::from_value(json!({
-        "name": "test",
-        "workers": 4,
-        "storage_config": {
-            "path": storage_dir,
-        },
-        "storage": true,
-        "fault_tolerance": {},
-        "clock_resolution_usecs": null,
-    }))
-    .unwrap();
-
-    let controller = Controller::with_test_config(
-        |circuit_config| {
-            Ok(test_circuit::<TestStruct>(
-                circuit_config,
-                &TestStruct::schema(),
-                &[None],
-            ))
-        },
-        &config,
-        Box::new(|e, _| panic!("error: {e}")),
-    )
-    .unwrap();
-
-    // `add_input_endpoint` refuses to run while the pipeline is still restoring,
-    // which on a fault-tolerant pipeline is the state it starts in.
-    controller.start();
-    wait(|| !controller.is_replaying(), DEFAULT_TIMEOUT_MS).unwrap();
 
     let connector = json!({
         "name": "file_input",
@@ -1196,6 +1163,109 @@ fn fault_tolerance_mismatch_unregisters_the_endpoint() {
     assert!(
         controller.input_endpoint_id_by_name("weak_ft").is_err(),
         "the rejected endpoint stayed registered"
+    );
+    assert!(controller.status().input_status().is_empty());
+
+    controller.stop().unwrap();
+}
+
+/// Starts an exactly-once pipeline with storage in `tempdir` and waits until it
+/// accepts new input endpoints.
+fn start_exactly_once_controller(tempdir: &TempDir) -> Controller {
+    let storage_dir = tempdir.path().join("storage");
+    create_dir(&storage_dir).unwrap();
+
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": {
+            "path": storage_dir,
+        },
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+    }))
+    .unwrap();
+
+    let controller = Controller::with_test_config(
+        |circuit_config| {
+            Ok(test_circuit::<TestStruct>(
+                circuit_config,
+                &TestStruct::schema(),
+                &[None],
+            ))
+        },
+        &config,
+        Box::new(|e, _| panic!("error: {e}")),
+    )
+    .unwrap();
+
+    // `add_input_endpoint` refuses to run while the pipeline is still restoring,
+    // which on a fault-tolerant pipeline is the state it starts in.
+    controller.start();
+    wait(|| !controller.is_replaying(), DEFAULT_TIMEOUT_MS).unwrap();
+    controller
+}
+
+/// A non-fault-tolerant input endpoint that records whether it was opened.
+struct OpenRecordingEndpoint {
+    opened: Arc<AtomicBool>,
+}
+
+impl InputEndpoint for OpenRecordingEndpoint {
+    fn fault_tolerance(&self) -> Option<FtModel> {
+        None
+    }
+}
+
+impl TransportInputEndpoint for OpenRecordingEndpoint {
+    fn open(
+        &self,
+        consumer: Box<dyn InputConsumer>,
+        parser: Box<dyn Parser>,
+        schema: Relation,
+        resume_info: Option<serde_json::Value>,
+    ) -> anyhow::Result<Box<dyn InputReader>> {
+        self.opened.store(true, Ordering::Release);
+        TransactionalInputEndpoint::new().open(consumer, parser, schema, resume_info)
+    }
+}
+
+/// A connector rejected by the fault-tolerance check must never be opened.
+///
+/// Opening a connector can connect to external systems, start threads, and
+/// report end of input, so the check must come before `open`, not after it.
+#[test]
+fn fault_tolerance_mismatch_does_not_open_the_endpoint() {
+    init_test_logger();
+
+    let tempdir = TempDir::new().unwrap();
+    let controller = start_exactly_once_controller(&tempdir);
+
+    let opened = Arc::new(AtomicBool::new(false));
+    let endpoint_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": { "name": "file_input", "config": { "path": "unused" } },
+        "format": { "name": "csv" }
+    }))
+    .unwrap();
+
+    let error = controller
+        .add_input_endpoint(
+            "weak_ft",
+            endpoint_config,
+            Box::new(OpenRecordingEndpoint {
+                opened: opened.clone(),
+            }),
+            None,
+        )
+        .expect_err(
+            "a connector without fault tolerance must be rejected by an exactly-once pipeline",
+        );
+    assert!(error.to_string().contains("fault tolerance"), "{error}");
+    assert!(
+        !opened.load(Ordering::Acquire),
+        "the rejected endpoint was opened"
     );
     assert!(controller.status().input_status().is_empty());
 
