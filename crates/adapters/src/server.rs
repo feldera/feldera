@@ -2826,12 +2826,23 @@ fn field_names<T: for<'de> Deserialize<'de>>() -> &'static [&'static str] {
 }
 
 /// Lookup or create an HTTP input endpoint.
-async fn get_or_create_http_input_endpoint(
+fn get_or_create_http_input_endpoint(
     state: &WebData<ServerState>,
     format: FormatConfig,
     table_name: String,
     endpoint_name: String,
 ) -> Result<HttpInputEndpoint, PipelineError> {
+    // Serialize lookup-or-create.
+    //
+    // Adding an input endpoint is almost atomic.  However, there's a gap in
+    // [ControllerStatus::insert_input_endpoint] when the new endpoint is
+    // visible but its reader is still `None`.  Until we plug that gap, it's
+    // easiest to just serialize creating HTTP input endpoints.
+    static SERIALIZE: Mutex<()> = Mutex::new(());
+    let _guard = SERIALIZE
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+
     let controller = state.controller()?;
 
     // We rely on the name to uniquely encode connector configuration.
@@ -2916,8 +2927,7 @@ async fn input_endpoint(
                 format.clone(),
                 table_name.clone(),
                 endpoint_name.clone(),
-            )
-            .await?;
+            )?;
             TABLE_ENDPOINTS
                 .with_borrow_mut(|endpoints| endpoints.insert(endpoint_name, endpoint.clone()));
             endpoint
