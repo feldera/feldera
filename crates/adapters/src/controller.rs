@@ -7706,23 +7706,6 @@ impl ControllerInner {
 
         debug!("Adding input endpoint '{endpoint_name}'; config: {endpoint_config:?}");
 
-        // NOTE: We release the lock after the check below and then re-acquire it in the end of the function
-        // to actually insert the new inpoint in the map. This means that this function is racey (a concurrent
-        // invocation can insert an endpoint with the same name). I think it's ok the way we use it: when
-        // initializing the pipeline, we have an endpoint map with names that are guaranteed to be unique;
-        // hence it's safe to call `add_input_endpoint` concurrently. In the future we may need to maintain
-        // a separate set of reserved connector names to avoid the race. The alternative solution that keeps
-        // the lock across the entire body of the function isn't good, because it will force serial connector
-        // initialization.
-        if self
-            .status
-            .input_status()
-            .values()
-            .any(|ep| ep.endpoint_name == endpoint_name)
-        {
-            Err(ControllerError::duplicate_input_endpoint(endpoint_name))?;
-        }
-
         let resolved_connector_config = resolve_secret_references_in_connector_config(
             &self.secrets_dir,
             &endpoint_config.connector_config,
@@ -7806,7 +7789,10 @@ impl ControllerInner {
             &endpoint_config.connector_config,
             self.clone(),
         ));
-        let fault_tolerance = match endpoint {
+        let (fault_tolerance, open): (
+            _,
+            Box<dyn FnOnce() -> Result<Box<dyn InputReader>, AnyError>>,
+        ) = match endpoint {
             Some(endpoint) => {
                 // Create parser.
                 let format_config = match (
@@ -7855,39 +7841,12 @@ impl ControllerInner {
                     }
                 }
 
-                let fault_tolerance = endpoint.fault_tolerance();
-
-                // Register the endpoint, so that if the the `open` call below signals `eoi` to the controller,
-                // the eoi status is recorded and not dropped on the floor.
-                self.status.inputs.write().insert(
-                    endpoint_id,
-                    InputEndpointStatus::new(
-                        endpoint_name,
-                        endpoint_config,
-                        fault_tolerance,
-                        initial_statistics.as_ref(),
-                    ),
-                );
-
-                match endpoint
-                    .open(probe, parser, input_handle.schema.clone(), seek)
-                    .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))
-                {
-                    Ok(reader) => {
-                        self.status
-                            .inputs
-                            .write()
-                            .get_mut(&endpoint_id)
-                            .unwrap()
-                            .reader = Some(Arc::from(reader));
-                    }
-                    Err(e) => {
-                        self.status.inputs.write().remove(&endpoint_id);
-                        return Err(e);
-                    }
-                }
-
-                fault_tolerance
+                (
+                    endpoint.fault_tolerance(),
+                    Box::new(move || {
+                        endpoint.open(probe, parser, input_handle.schema.clone(), seek)
+                    }),
+                )
             }
             None => {
                 if preprocessor.is_some() {
@@ -7905,45 +7864,14 @@ impl ControllerInner {
                     probe,
                 )?;
 
-                let fault_tolerance = endpoint.fault_tolerance();
-
-                self.status.inputs.write().insert(
-                    endpoint_id,
-                    InputEndpointStatus::new(
-                        endpoint_name,
-                        endpoint_config,
-                        fault_tolerance,
-                        initial_statistics.as_ref(),
-                    ),
-                );
-
-                match endpoint
-                    .open(input_handle, seek)
-                    .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))
-                {
-                    Ok(reader) => {
-                        self.status
-                            .inputs
-                            .write()
-                            .get_mut(&endpoint_id)
-                            .unwrap()
-                            .reader = Some(Arc::from(reader));
-                    }
-                    Err(e) => {
-                        self.status.inputs.write().remove(&endpoint_id);
-                        return Err(e);
-                    }
-                }
-                fault_tolerance
+                (
+                    endpoint.fault_tolerance(),
+                    Box::new(|| endpoint.open(input_handle, seek)),
+                )
             }
         };
 
         if fault_tolerance < self.fault_tolerance {
-            // The endpoint is registered and open by now, so undo both.  A
-            // rejected endpoint left in the map can never run, yet it counts
-            // toward the pipeline's statistics and reserves its own name
-            // against a later attempt to add the connector.
-            self.disconnect_input(&endpoint_id);
             return Err(ControllerError::input_transport_error(
                 endpoint_name,
                 true,
@@ -7954,6 +7882,17 @@ impl ControllerInner {
                 ),
             ));
         }
+
+        self.status.insert_input_endpoint(
+            endpoint_id,
+            InputEndpointStatus::new(
+                endpoint_name,
+                endpoint_config,
+                fault_tolerance,
+                initial_statistics.as_ref(),
+            ),
+            open,
+        )?;
 
         self.unpark_backpressure();
         Ok(endpoint_id)

@@ -1180,10 +1180,7 @@ impl ControllerStatus {
         endpoint_id: EndpointId,
     ) -> Result<CompletionToken, ControllerError> {
         if let Some(endpoint_stats) = self.input_status().get(&endpoint_id) {
-            let num_input_records = endpoint_stats.completion_token(
-                self.global_metrics.total_initiated_steps(),
-                self.global_metrics.total_completed_steps(),
-            );
+            let num_input_records = endpoint_stats.completion_token(&self.global_metrics);
             Ok(CompletionToken::new(
                 self.global_metrics.incarnation_uuid,
                 endpoint_id,
@@ -1703,6 +1700,50 @@ impl ControllerStatus {
             inputs,
             outputs,
             host_metrics: Vec::new(),
+        }
+    }
+
+    /// Inserts `(endpoint_id, endpoint)` into `self.inputs`, then calls
+    /// `open()` and assigns the reader that it returns into the newly inserted
+    /// entry.
+    ///
+    /// Returns an error if the new endpoint would have a duplicate name or if
+    /// `open()` returns an error.  In either case, the final state is that the
+    /// endpoint is not inserted.
+    pub fn insert_input_endpoint<F>(
+        &self,
+        endpoint_id: u64,
+        endpoint: InputEndpointStatus,
+        open: F,
+    ) -> Result<(), ControllerError>
+    where
+        F: FnOnce() -> Result<Box<dyn InputReader>, AnyError>,
+    {
+        let endpoint_name = endpoint.endpoint_name.clone();
+
+        // Register the endpoint, so that if the the `open` call below signals
+        // `eoi` to the controller, the eoi status is recorded and not dropped
+        // on the floor.
+        let mut status = self.inputs.write();
+        if status.values().any(|ep| ep.endpoint_name == endpoint_name) {
+            return Err(ControllerError::duplicate_input_endpoint(endpoint_name));
+        }
+        status.insert(endpoint_id, endpoint);
+        drop(status);
+
+        match open() {
+            Ok(reader) => {
+                self.inputs.write().get_mut(&endpoint_id).unwrap().reader = Some(Arc::from(reader));
+                Ok(())
+            }
+            Err(e) => {
+                self.inputs.write().remove(&endpoint_id);
+                Err(ControllerError::input_transport_error(
+                    &endpoint_name,
+                    true,
+                    e,
+                ))
+            }
         }
     }
 }
@@ -2325,7 +2366,14 @@ pub struct InputEndpointStatus {
     completion_tokens: TokenList,
 
     pub(crate) completed_frontier: WatermarkTracker,
+
+    /// Runs inside [Self::completion_token] just before the token is added.
+    #[cfg(test)]
+    completion_token_hook: Mutex<Option<CompletionTokenHook>>,
 }
+
+#[cfg(test)]
+type CompletionTokenHook = Box<dyn FnOnce(&InputEndpointStatus) + Send>;
 
 impl InputEndpointStatus {
     /// Convert the endpoint status to the API type.
@@ -2401,6 +2449,8 @@ impl InputEndpointStatus {
             custom_metrics: None,
             completion_tokens: TokenList::new(),
             completed_frontier: WatermarkTracker::new(),
+            #[cfg(test)]
+            completion_token_hook: Mutex::new(None),
         }
     }
 
@@ -2567,8 +2617,13 @@ impl InputEndpointStatus {
     /// `completion_tokens` queue.
     ///
     /// Returns the input offset that can be used to build `CompletionToken`.
-    fn completion_token(&self, total_initiated_steps: Step, total_completed_steps: Step) -> u64 {
+    fn completion_token(&self, global_metrics: &GlobalControllerMetrics) -> u64 {
         let token_input_records = self.metrics.total_records.load(Ordering::Acquire);
+
+        #[cfg(test)]
+        if let Some(hook) = self.completion_token_hook.lock().unwrap().take() {
+            hook(self);
+        }
 
         // To avoid a race, we add a token _before_ reading the circuit_input_records
         // metric and using it to update the token list.
@@ -2577,10 +2632,13 @@ impl InputEndpointStatus {
         let connector_circuit_input_records =
             self.metrics.circuit_input_records.load(Ordering::Acquire);
 
+        // Read the step count only _after_ `circuit_input_records`.  The step
+        // that ingested those records stored its number before it ingested
+        // them, so an earlier read could label the token one step early.
         self.completion_tokens.update(
             connector_circuit_input_records,
-            total_initiated_steps,
-            total_completed_steps,
+            global_metrics.total_initiated_steps(),
+            global_metrics.total_completed_steps(),
         );
         token_input_records
     }
@@ -3218,11 +3276,58 @@ impl OutputEndpointStatus {
 #[cfg(test)]
 mod test {
     use super::{
-        ConnectorError, ConnectorErrorList, InputEndpointMetrics, MAX_CONNECTOR_ERROR_LEN,
-        bound_error_message,
+        ConnectorError, ConnectorErrorList, GlobalControllerMetrics, InputEndpointMetrics,
+        InputEndpointStatus, MAX_CONNECTOR_ERROR_LEN, StepResults, bound_error_message,
     };
+    use crate::format::BufferSize;
     use anyhow::anyhow;
     use chrono::Utc;
+    use feldera_types::config::InputEndpointConfig;
+    use serde_json::json;
+    use std::sync::{Arc, atomic::Ordering};
+    use uuid::Uuid;
+
+    /// A completion token must be labeled with the step that ingests its
+    /// records, even when that step starts while the token is being created.
+    #[test]
+    fn completion_token_is_not_labeled_before_its_step() {
+        let global = Arc::new(GlobalControllerMetrics::new(0, None, Uuid::nil()));
+
+        // Steps 0 through 4 are complete and no step is running.
+        global.total_initiated_steps.store(5, Ordering::Release);
+        global.total_completed_steps.store(5, Ordering::Release);
+
+        let config: InputEndpointConfig = serde_json::from_value(json!({
+            "stream": "test_input",
+            "transport": { "name": "file_input", "config": { "path": "unused" } },
+        }))
+        .unwrap();
+        let endpoint = InputEndpointStatus::new("test_endpoint", config, None, None);
+
+        // The connector buffers a request's 3 records.
+        let amt = BufferSize {
+            records: 3,
+            bytes: 30,
+        };
+        endpoint.add_buffered(amt);
+
+        // Step 5 starts and ingests the records just before the token is
+        // added, so the step cannot label the token itself.
+        *endpoint.completion_token_hook.lock().unwrap() = Some(Box::new({
+            let global = global.clone();
+            move |endpoint: &InputEndpointStatus| {
+                global.total_initiated_steps.store(6, Ordering::Release);
+                endpoint.extended(StepResults { amt, resume: None }, Vec::new(), 3, 6, 5);
+            }
+        }));
+
+        let token = endpoint.completion_token(&global);
+        assert_eq!(token, 3);
+
+        // The records are in step 5, so the token completes only once
+        // `total_completed_steps` reaches 6.
+        assert_eq!(endpoint.completion_status(token), Some(6));
+    }
 
     #[test]
     fn latency_p99_absent_without_samples() {
