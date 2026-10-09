@@ -495,7 +495,9 @@ A distributed connector works as follows:
   changes only after that.  Otherwise, it could read changes to rows
   before the other hosts read those rows from the snapshot.
 - When the pipeline resumes from a checkpoint, each host continues from
-  its own checkpointed state.
+  its own checkpointed state.  A host that had opened the table but not
+  yet read its part of the snapshot reads it at the version that it
+  opened, so all of the hosts still read one snapshot.
   As for any multihost pipeline, the pipeline must have the same number
   of hosts as when it took the checkpoint (see [checkpoint
   sync](/pipelines/checkpoint-sync#how-sync-works)).
