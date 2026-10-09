@@ -11829,7 +11829,7 @@
           },
           "paused": {
             "type": "boolean",
-            "description": "Endpoint has been paused by the user."
+            "description": "Endpoint has been paused by the user.  A distributed connector in a\nmultihost pipeline is paused only if it is paused on every host."
           },
           "transport_errors": {
             "type": "array",

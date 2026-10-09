@@ -286,7 +286,8 @@ pub struct ExternalInputEndpointStatus {
     /// Health status of the connector.
     #[serde(default)]
     pub health: Option<ConnectorHealth>,
-    /// Endpoint has been paused by the user.
+    /// Endpoint has been paused by the user.  A distributed connector in a
+    /// multihost pipeline is paused only if it is paused on every host.
     pub paused: bool,
     /// Endpoint is currently a barrier to checkpointing and suspend.
     pub barrier: bool,
@@ -322,8 +323,8 @@ impl ExternalInputEndpointStatus {
     /// part of the same distributed connector, into the status of the
     /// connector as a whole.
     ///
-    /// The combined connector is healthy, at end of input, or free of a fatal
-    /// error only if every part is.  It is paused or a barrier if any part is.
+    /// The combined connector is healthy, at end of input, paused, or free of
+    /// a fatal error only if every part is.  It is a barrier if any part is.
     ///
     /// Its completed frontier is the oldest one among the hosts that are not
     /// at end of input, because input after that point is not complete on
@@ -364,7 +365,7 @@ impl ExternalInputEndpointStatus {
             }),
             (a, b) => a.or(b),
         };
-        self.paused |= paused;
+        self.paused &= paused;
         self.barrier |= barrier;
         let (a, b) = (self.completed_frontier.take(), completed_frontier);
         let several = !a_eoi && !b_eoi && a.is_some() && b.is_some();
@@ -867,7 +868,6 @@ mod tests {
             let mut b = status();
             b.fatal_error = Some("broken".into());
             b.health = Some(ConnectorHealth::unhealthy("sick"));
-            b.paused = true;
             b.barrier = true;
             a.merge(b, FrontierMerge::Opaque);
             assert_eq!(a.fatal_error.as_deref(), Some("broken"));
@@ -875,7 +875,7 @@ mod tests {
                 a.health.unwrap().status,
                 ConnectorHealthStatus::Unhealthy
             ));
-            assert!(a.paused && a.barrier);
+            assert!(a.barrier);
 
             // The first fatal error stays.
             let mut a = status();
@@ -995,6 +995,33 @@ mod tests {
                     Some((time(5), Value::Null)),
                     "{other}"
                 );
+            }
+        }
+
+        /// A connector is paused only if every host is, in any order.
+        #[test]
+        fn pause_merge() {
+            let merged = |hosts: &[bool]| {
+                let mut statuses = hosts.iter().map(|&paused| {
+                    let mut s = status();
+                    s.paused = paused;
+                    s
+                });
+                let mut x = statuses.next().unwrap();
+                statuses.for_each(|y| x.merge(y, FrontierMerge::Opaque));
+                x.paused
+            };
+            assert!(merged(&[true, true, true]));
+            assert!(!merged(&[false, false, false]));
+            for hosts in [
+                [true, false, false],
+                [false, true, false],
+                [false, false, true],
+                [true, true, false],
+                [false, true, true],
+                [true, false, true],
+            ] {
+                assert!(!merged(&hosts), "{hosts:?}");
             }
         }
 
