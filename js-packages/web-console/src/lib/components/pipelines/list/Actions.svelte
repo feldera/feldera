@@ -1006,30 +1006,37 @@ groups related actions into multi-action dropdowns when multiple options are ava
   </button>
 {/snippet}
 {#snippet _storage_indicator()}
-  <!-- An action when the user may clear the storage, a plain status otherwise. Clearing is
-       only possible while the pipeline is stopped; while it runs the button is disabled and
-       its tooltip says why. -->
+  <!-- The storage status, combined with a clear icon button when the user may clear the storage.
+       Clearing is only possible while the pipeline is stopped; while it runs the button is
+       disabled and its tooltip says why. -->
   {@const storageStatus = pipeline.current.storageStatus}
   {@const isShutdown = isPipelineShutdown(pipeline.current.status)}
   {#if storageStatus === 'Clearing'}
-    <div class="pointer-events-none {buttonClass} {longClass} {basicBtnColor}">
+    <div
+      class="flex h-6 items-center gap-1 rounded-(--radius-control-sm) px-2 text-[12px] leading-4 text-nowrap {basicBtnColor}"
+    >
       <IconLoader class="h-4 w-4 flex-none animate-spin fill-current"></IconLoader>
       Clearing storage…
     </div>
     <Tooltip placement="top">Clearing pipeline storage, including any checkpoints.</Tooltip>
   {:else if storageStatus === 'InUse' && canExec.allowed}
-    <div>
-      <button
-        class="{buttonClass} {longClass} {basicBtnColor}"
-        onclick={() => (globalDialog.dialog = clearDialog)}
-      >
-        <span class="fd fd-eraser"></span>
-        Clear storage
-      </button>
+    <div
+      class="flex h-6 items-center gap-1 rounded-(--radius-control-sm) pl-2 text-[12px] leading-4 text-nowrap text-surface-700-300 {basicBtnColor}"
+    >
+      <span class="fd fd-database text-[16px]"></span>
+      Storage in use
+      <div class="ml-1 flex h-full border-l border-surface-200-800">
+        <button
+          aria-label="Clear storage"
+          class="{buttonClass} {shortClass} fd fd-eraser h-full! rounded-l-none! rounded-r-[2px]! {iconClass} hover:filter-none! hover:not-disabled:bg-surface-100-900"
+          disabled={!isShutdown}
+          onclick={() => (globalDialog.dialog = clearDialog)}
+        ></button>
+      </div>
     </div>
     <Tooltip placement="top">
       {#if isShutdown}
-        Delete the pipeline storage, including any checkpoints.
+        Pipeline storage is in use. Click to clear it.
       {:else}
         The storage is used by the running pipeline. Stop the pipeline to clear it.
       {/if}
