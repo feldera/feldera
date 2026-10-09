@@ -2041,14 +2041,20 @@ mod transaction_boundary_tests {
     }
 }
 
-/// A model-based test of transaction boundaries in a pipeline that, like a
-/// multihost pipeline, learns of a connector's requests only after a delay.
+/// A model-based test of transaction boundaries in a multihost pipeline, which
+/// learns of a connector's requests only after a delay.
 ///
-/// The model has one host, which runs the real [InputQueue], and a
-/// coordinator, which sees the host's requests after a random delay, opens a
-/// transaction when it sees one, and commits it when it sees none.  A random
-/// sequence of actions interleaves the connector, the queue, and the
-/// coordinator, and then a fair drain runs every action until nothing is left.
+/// The model has one or two hosts, each of which runs the real [InputQueue]
+/// for its part of one connector, as for a distributed connector.  A
+/// coordinator sees each host's requests after a random delay.  It opens a
+/// transaction when it sees a request or when another participant needs
+/// one, counts the connector in the open transaction once it sees a host
+/// request it, and commits the transaction once neither the connector nor the
+/// other participant is in it.  It tells each host that the connector is in
+/// the transaction only once it has seen that host's own request.  A random
+/// sequence of actions interleaves the hosts, their queues, the other
+/// participant, and the coordinator, and then a fair drain runs every action
+/// until nothing is left.
 #[cfg(test)]
 mod transaction_boundary_model_tests {
     use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -2066,8 +2072,9 @@ mod transaction_boundary_model_tests {
     use super::{InputConsumer, InputQueue, InputQueueEntry, Resume, Watermark};
     use crate::format::{BufferSize, InputBuffer, ParseError};
 
+    /// What one host reports, and what the coordinator has seen of it.
     #[derive(Default)]
-    struct World {
+    struct HostWorld {
         /// Changes to the host's request that the coordinator has not seen yet.
         updates: VecDeque<bool>,
 
@@ -2075,7 +2082,16 @@ mod transaction_boundary_model_tests {
         /// transaction.
         seen_request: bool,
 
-        /// The transaction that the coordinator has open on the host.
+        /// Each record that the host flushed, with the transaction it landed
+        /// in.
+        flushed: Vec<(u32, Option<TransactionId>)>,
+    }
+
+    #[derive(Default)]
+    struct World {
+        hosts: Vec<HostWorld>,
+
+        /// The transaction that the coordinator has open on the hosts.
         open: Option<TransactionId>,
 
         /// Whether another participant holds a transaction open.
@@ -2090,39 +2106,39 @@ mod transaction_boundary_model_tests {
 
         /// The number of records that a flush may take.
         max_batch_size: usize,
-
-        /// Each flushed record, with the transaction it landed in.
-        flushed: Vec<(u32, Option<TransactionId>)>,
     }
 
     /// Whether the coordinator counts the connector in the open transaction.
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
     enum Membership {
-        /// The coordinator has not seen the connector request it.
+        /// The coordinator has not seen any host request it.
         #[default]
         NotMember,
 
-        /// The coordinator saw the request, and has not seen it withdrawn.
+        /// The coordinator saw a host request it, and has not seen every host
+        /// withdraw.
         Member,
 
         /// The connector joined and left, and cannot join again.
         Left,
     }
 
+    /// The model's world, shared by all of its hosts.
     #[derive(Clone, Default)]
-    struct Host(Arc<Mutex<World>>);
+    struct Shared(Arc<Mutex<World>>);
 
-    impl Host {
+    impl Shared {
         fn world(&self) -> std::sync::MutexGuard<'_, World> {
             self.0.lock().unwrap()
         }
 
-        /// The coordinator sees the oldest change to the host's request.
-        fn deliver(&self) -> bool {
+        /// The coordinator sees the oldest change to host `host`'s request.
+        fn deliver(&self, host: usize) -> bool {
             let mut world = self.world();
-            match world.updates.pop_front() {
+            let host = &mut world.hosts[host];
+            match host.updates.pop_front() {
                 Some(request) => {
-                    world.seen_request = request;
+                    host.seen_request = request;
                     true
                 }
                 None => false,
@@ -2130,24 +2146,24 @@ mod transaction_boundary_model_tests {
         }
 
         /// The coordinator opens a transaction, updates the connector's
-        /// membership, or commits the transaction, if it should.  It commits
-        /// once neither the connector nor the other participant is in it.
+        /// membership, or commits the transaction, if it should.
         fn coordinate(&self) -> bool {
             let mut world = self.world();
+            let requested = world.hosts.iter().any(|host| host.seen_request);
             if world.open.is_none() {
-                if !world.seen_request && !world.other {
+                if !requested && !world.other {
                     return false;
                 }
                 world.last_id += 1;
                 world.open = Some(world.last_id);
-                world.membership = if world.seen_request {
+                world.membership = if requested {
                     Membership::Member
                 } else {
                     Membership::NotMember
                 };
                 return true;
             }
-            let membership = match (world.membership, world.seen_request) {
+            let membership = match (world.membership, requested) {
                 (Membership::NotMember, true) => Membership::Member,
                 (Membership::Member, false) => Membership::Left,
                 (membership, _) => membership,
@@ -2163,9 +2179,16 @@ mod transaction_boundary_model_tests {
         }
     }
 
+    /// One host, as its connector's [InputQueue] sees it.
+    #[derive(Clone)]
+    struct Host {
+        shared: Shared,
+        index: usize,
+    }
+
     impl InputConsumer for Host {
         fn max_batch_size(&self) -> usize {
-            self.world().max_batch_size
+            self.shared.world().max_batch_size
         }
         fn pipeline_fault_tolerance(&self) -> Option<FtModel> {
             None
@@ -2178,21 +2201,23 @@ mod transaction_boundary_model_tests {
         fn eoi(&self) {}
         fn request_step(&self) {}
         fn start_transaction(&self, _label: Option<&str>) {
-            self.world().updates.push_back(true);
+            self.shared.world().hosts[self.index]
+                .updates
+                .push_back(true);
         }
         fn commit_transaction(&self) {
-            self.world().updates.push_back(false);
+            self.shared.world().hosts[self.index]
+                .updates
+                .push_back(false);
         }
         fn open_transaction(&self) -> Option<Option<TransactionId>> {
-            Some(self.world().open)
+            Some(self.shared.world().open)
         }
         fn joined_transaction(&self) -> Option<Option<TransactionId>> {
-            let world = self.world();
-            Some(
-                world
-                    .open
-                    .filter(|_| world.membership == Membership::Member),
-            )
+            let world = self.shared.world();
+            Some(world.open.filter(|_| {
+                world.membership == Membership::Member && world.hosts[self.index].seen_request
+            }))
         }
         fn completion_watcher(&self) -> Option<tokio::sync::watch::Receiver<Completion>> {
             None
@@ -2208,9 +2233,9 @@ mod transaction_boundary_model_tests {
 
     impl InputBuffer for Records {
         fn flush(&mut self) {
-            let mut world = self.host.world();
+            let mut world = self.host.shared.world();
             let open = world.open;
-            world
+            world.hosts[self.host.index]
                 .flushed
                 .extend(self.ids.drain(..).map(|id| (id, open)));
         }
@@ -2274,68 +2299,49 @@ mod transaction_boundary_model_tests {
             .prop_map(|segments| segments.into_iter().flatten().collect())
     }
 
+    /// An action, for host `usize` if it has one.
     #[derive(Clone, Copy, Debug)]
     enum Action {
-        Push,
-        FlushWithAux,
-        Queue,
-        Deliver,
+        Push(usize),
+        FlushWithAux(usize),
+        Queue(usize),
+        Deliver(usize),
         Coordinate,
         /// Another participant starts or stops holding a transaction open.
         ToggleOther,
     }
 
-    fn action() -> impl Strategy<Value = Action> {
+    fn action(n_hosts: usize) -> impl Strategy<Value = Action> {
+        let host = 0..n_hosts;
         prop_oneof![
-            Just(Action::Push),
-            Just(Action::FlushWithAux),
-            Just(Action::Queue),
-            Just(Action::Deliver),
+            host.clone().prop_map(Action::Push),
+            host.clone().prop_map(Action::FlushWithAux),
+            host.clone().prop_map(Action::Queue),
+            host.prop_map(Action::Deliver),
             Just(Action::Coordinate),
             Just(Action::ToggleOther),
         ]
     }
 
-    /// Runs the model.  `queue_flush` selects [InputQueue::queue] instead of
-    /// [InputQueue::flush_with_aux] for flushes in the drain.
-    fn run(entries: Vec<Entry>, actions: Vec<Action>, max_batch_size: usize, queue_flush: bool) {
-        let host = Host::default();
-        host.world().max_batch_size = max_batch_size;
-        let queue = InputQueue::new(Box::new(host.clone()));
+    /// One host's connector, with the records that it has yet to push.
+    struct Connector {
+        host: Host,
+        queue: InputQueue,
+        pending: VecDeque<(Entry, Vec<u32>)>,
+    }
 
-        // Assign record IDs, and remember which connector transaction, if
-        // any, each record belongs to.
-        let mut next_id = 0;
-        let mut owner = BTreeMap::new();
-        let mut transaction = None;
-        let mut n_transactions = 0;
-        let mut pending = VecDeque::new();
-        for entry in &entries {
-            if entry.start {
-                transaction = Some(n_transactions);
-                n_transactions += 1;
-            }
-            let ids = (next_id..next_id + entry.n_records).collect::<Vec<_>>();
-            next_id += entry.n_records;
-            for id in &ids {
-                owner.insert(*id, transaction);
-            }
-            if entry.commit {
-                transaction = None;
-            }
-            pending.push_back((entry.clone(), ids));
-        }
-        let push = |pending: &mut VecDeque<(Entry, Vec<u32>)>| {
-            let Some((entry, ids)) = pending.pop_front() else {
+    impl Connector {
+        fn push(&mut self) -> bool {
+            let Some((entry, ids)) = self.pending.pop_front() else {
                 return false;
             };
             let buffer = (!ids.is_empty()).then(|| {
                 Box::new(Records {
                     ids,
-                    host: host.clone(),
+                    host: self.host.clone(),
                 }) as Box<dyn InputBuffer>
             });
-            queue.push_entry(
+            self.queue.push_entry(
                 InputQueueEntry::new_with_aux(Utc::now(), ())
                     .with_buffer(buffer)
                     .with_start_transaction(entry.start.then_some(None))
@@ -2343,71 +2349,141 @@ mod transaction_boundary_model_tests {
                 Vec::new(),
             );
             true
-        };
-        let flush = |queue_flush: bool| {
-            let before = host.world().flushed.len();
+        }
+
+        fn flush(&self, queue_flush: bool) -> bool {
+            let n_flushed = || {
+                self.host.shared.world().hosts[self.host.index]
+                    .flushed
+                    .len()
+            };
+            let before = n_flushed();
             if queue_flush {
-                queue.queue();
+                self.queue.queue();
             } else {
-                queue.flush_with_aux();
+                self.queue.flush_with_aux();
             }
-            host.world().flushed.len() > before
-        };
+            n_flushed() > before
+        }
+    }
+
+    /// Runs the model.  `queue_flush` selects [InputQueue::queue] instead of
+    /// [InputQueue::flush_with_aux] for flushes in the drain.
+    fn run(
+        host_entries: Vec<Vec<Entry>>,
+        actions: Vec<Action>,
+        max_batch_size: usize,
+        queue_flush: bool,
+    ) {
+        let shared = Shared::default();
+        {
+            let mut world = shared.world();
+            world.max_batch_size = max_batch_size;
+            world.hosts = host_entries.iter().map(|_| HostWorld::default()).collect();
+        }
+
+        // Assign record IDs, and remember which connector transaction, if
+        // any, each record belongs to.  A connector transaction is a host
+        // and that host's sequence number for it.
+        let mut next_id = 0;
+        let mut owner = BTreeMap::new();
+        let mut connectors = Vec::new();
+        for (index, entries) in host_entries.into_iter().enumerate() {
+            let host = Host {
+                shared: shared.clone(),
+                index,
+            };
+            let mut transaction = None;
+            let mut n_transactions = 0;
+            let mut pending = VecDeque::new();
+            for entry in entries {
+                if entry.start {
+                    transaction = Some((index, n_transactions));
+                    n_transactions += 1;
+                }
+                let ids = (next_id..next_id + entry.n_records).collect::<Vec<_>>();
+                next_id += entry.n_records;
+                for id in &ids {
+                    owner.insert(*id, transaction);
+                }
+                if entry.commit {
+                    transaction = None;
+                }
+                pending.push_back((entry, ids));
+            }
+            connectors.push(Connector {
+                queue: InputQueue::new(Box::new(host.clone())),
+                host,
+                pending,
+            });
+        }
 
         for action in actions {
             match action {
-                Action::Push => {
-                    push(&mut pending);
+                Action::Push(host) => {
+                    connectors[host].push();
                 }
-                Action::FlushWithAux => {
-                    flush(false);
+                Action::FlushWithAux(host) => {
+                    connectors[host].flush(false);
                 }
-                Action::Queue => {
-                    flush(true);
+                Action::Queue(host) => {
+                    connectors[host].flush(true);
                 }
-                Action::Deliver => {
-                    host.deliver();
+                Action::Deliver(host) => {
+                    shared.deliver(host);
                 }
                 Action::Coordinate => {
-                    host.coordinate();
+                    shared.coordinate();
                 }
                 Action::ToggleOther => {
-                    let mut world = host.world();
+                    let mut world = shared.world();
                     world.other = !world.other;
                 }
             }
         }
 
         // The other participant finishes, so that every transaction can commit.
-        host.world().other = false;
+        shared.world().other = false;
 
         // Drain fairly.  Every round makes progress until nothing is left,
         // so a round that makes none ends the drain.
         for _ in 0..10_000 {
-            let mut progress = push(&mut pending);
-            progress |= flush(queue_flush);
-            while host.deliver() {
-                progress = true;
+            let mut progress = false;
+            for (index, connector) in connectors.iter_mut().enumerate() {
+                progress |= connector.push();
+                progress |= connector.flush(queue_flush);
+                while shared.deliver(index) {
+                    progress = true;
+                }
+                progress |= !connector.queue.is_empty();
             }
-            progress |= host.coordinate();
-            progress |= !queue.is_empty();
+            progress |= shared.coordinate();
             if !progress {
                 break;
             }
         }
 
-        let world = host.world();
         // Liveness: everything got through.
-        assert!(queue.is_empty(), "records stuck in the queue");
-        assert_eq!(world.flushed.len(), next_id as usize, "records lost");
+        for connector in &connectors {
+            assert!(connector.queue.is_empty(), "records stuck in the queue");
+        }
+        let world = shared.world();
+        let flushed = world
+            .hosts
+            .iter()
+            .flat_map(|host| host.flushed.iter().copied())
+            .collect::<Vec<_>>();
+        assert_eq!(flushed.len(), next_id as usize, "records lost");
 
         // Safety: each connector transaction lands in exactly one pipeline
-        // transaction, of its own, and no record after it lands in that one.
-        // (Records before it may: another participant can hold the pipeline
-        // transaction open before the connector joins it.)
-        let mut landed = BTreeMap::<usize, BTreeSet<Option<TransactionId>>>::new();
-        let mut last_id = BTreeMap::<usize, u32>::new();
-        for (id, open) in &world.flushed {
+        // transaction, which no other connector transaction of the same host
+        // shares, and no later record of the same host lands in it.  (Records
+        // before it may: another participant can hold the pipeline transaction
+        // open before the connector joins it.  Different hosts' parts of the
+        // connector may share a pipeline transaction.)
+        let mut landed = BTreeMap::<(usize, usize), BTreeSet<Option<TransactionId>>>::new();
+        let mut last_id = BTreeMap::<(usize, usize), u32>::new();
+        for (id, open) in &flushed {
             if let Some(transaction) = owner[id] {
                 landed.entry(transaction).or_default().insert(*open);
                 let last = last_id.entry(transaction).or_default();
@@ -2415,41 +2491,53 @@ mod transaction_boundary_model_tests {
             }
         }
         let mut used = BTreeSet::new();
-        for (transaction, opens) in &landed {
+        for (&(host, sequence), opens) in &landed {
             assert_eq!(
                 opens.len(),
                 1,
-                "connector transaction {transaction} landed in {opens:?}"
+                "connector transaction {sequence} of host {host} landed in {opens:?}"
             );
             let open = *opens.first().unwrap();
             assert!(
                 open.is_some(),
-                "connector transaction {transaction} landed outside"
+                "connector transaction {sequence} of host {host} landed outside"
             );
             assert!(
-                used.insert(open),
-                "two connector transactions shared {open:?}"
+                used.insert((host, open)),
+                "two connector transactions of host {host} shared {open:?}"
             );
-            for (id, later) in &world.flushed {
+            for (id, later) in &world.hosts[host].flushed {
                 assert!(
-                    !(*id > last_id[transaction] && owner[id].is_none() && *later == open),
-                    "record {id} after connector transaction {transaction} landed in {open:?}"
+                    !(*id > last_id[&(host, sequence)] && owner[id].is_none() && *later == open),
+                    "record {id} after connector transaction {sequence} of host {host} landed in {open:?}"
                 );
             }
         }
     }
 
+    /// Returns a strategy for one to `max_hosts` hosts' entries, actions for
+    /// them, a batch size, and the flush to use in the drain.
+    fn scenario(
+        max_hosts: usize,
+    ) -> impl Strategy<Value = (Vec<Vec<Entry>>, Vec<Action>, usize, bool)> {
+        (1..=max_hosts).prop_flat_map(|n_hosts| {
+            (
+                prop::collection::vec(entries(), n_hosts),
+                prop::collection::vec(action(n_hosts), 0..80),
+                1usize..5,
+                any::<bool>(),
+            )
+        })
+    }
+
     proptest! {
-        #![proptest_config(ProptestConfig::with_cases(1000))]
+        #![proptest_config(ProptestConfig::with_cases(2000))]
 
         #[test]
         fn boundaries_hold_and_input_drains(
-            entries in entries(),
-            actions in prop::collection::vec(action(), 0..60),
-            max_batch_size in 1usize..5,
-            queue_flush: bool,
+            (host_entries, actions, max_batch_size, queue_flush) in scenario(2),
         ) {
-            run(entries, actions, max_batch_size, queue_flush);
+            run(host_entries, actions, max_batch_size, queue_flush);
         }
     }
 }

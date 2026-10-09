@@ -131,9 +131,16 @@
 //! open, but committing without it, would split its own transaction.  The
 //! coordinator keeps a connector in the open transaction until no pipeline
 //! reports a request for it, and never adds it again after that, so a member
-//! cannot have the transaction commit underneath it.  For a distributed
-//! connector, membership is by connector name, so a host that requests later
-//! than the others still joins.
+//! cannot have the transaction commit underneath it.
+//!
+//! The coordinator tells each pipeline about the connectors that it counts in
+//! the open transaction for that pipeline: those whose request it has seen
+//! from that pipeline.  For a distributed connector, another host's request
+//! does not count, because the coordinator might see that host withdraw
+//! before it sees this host's request, and commit.  The exception is a
+//! request that every host makes ([TransactionCoordination::all_hosts]): the
+//! coordinator keeps that connector in the transaction until every host has
+//! finished with it, so it counts the connector in for every host.
 //!
 //! After a request to commit, the connector waits until the transaction is no
 //! longer open.
@@ -436,9 +443,11 @@ pub struct StepRequest {
     pub inputs: StepInputs,
 
     /// The input connectors that the coordinator counts in the open
-    /// transaction, if one is open.  A connector that requested a transaction
-    /// does not flush input until it is in this set, because the coordinator
-    /// may have decided to commit the open transaction without it.
+    /// transaction for this pipeline, if one is open.  A connector that
+    /// requested a transaction does not flush input until it is in this set,
+    /// because the coordinator may have decided to commit the open transaction
+    /// without it.  The set differs from one pipeline to another (see the
+    /// module documentation).
     ///
     /// `None` means that the coordinator predates this field.  Then a
     /// connector that requested a transaction flushes input as soon as any
