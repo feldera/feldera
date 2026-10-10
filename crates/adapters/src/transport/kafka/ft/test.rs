@@ -298,6 +298,7 @@ fn test_synchronization() {
     let metadata = Metadata {
         offsets: expect_lens.into_iter().map(|len| 0..len).collect(),
         shard: None,
+        partitions: None,
     };
     receiver.expect(vec![ConsumerCall::Extended {
         num_records: n,
@@ -360,6 +361,7 @@ fn test_synchronization_backpressure() {
     let metadata = Metadata {
         offsets: [2001, 1].into_iter().map(|len| 0..len).collect(),
         shard: None,
+        partitions: None,
     };
     receiver.expect(vec![ConsumerCall::Extended {
         num_records: expect,
@@ -403,6 +405,7 @@ fn test_synchronization_backpressure() {
     let metadata = Metadata {
         offsets: [2001..3500, 1..1].into_iter().collect(),
         shard: None,
+        partitions: None,
     };
     receiver.expect(vec![ConsumerCall::Extended {
         num_records: expect,
@@ -426,6 +429,7 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
         let metadata = Metadata {
             offsets: vec![batch.start as i64..batch.end as i64],
             shard: None,
+            partitions: None,
         };
         serde_json::to_value(metadata).unwrap()
     }
@@ -539,6 +543,7 @@ fn test_input_tombstone() {
     let metadata = Metadata {
         offsets: vec![0..4],
         shard: None,
+        partitions: None,
     };
     receiver.expect(vec![ConsumerCall::Extended {
         num_records: 3,
@@ -598,6 +603,7 @@ fn test_input_header_filter() {
     let metadata = Metadata {
         offsets: vec![0..5],
         shard: None,
+        partitions: None,
     };
     receiver.expect(vec![ConsumerCall::Extended {
         num_records: 3,
@@ -673,6 +679,7 @@ fn test_input_header_filter_boolean() {
     let metadata = Metadata {
         offsets: vec![1..4],
         shard: None,
+        partitions: None,
     };
     receiver.expect(vec![ConsumerCall::Extended {
         num_records: 2,
@@ -3352,6 +3359,7 @@ mod distributed {
             let metadata = Metadata {
                 offsets: partitions.iter().map(|&p| 0..p as i64 + 1).collect(),
                 shard: Some(shard(host, 3, 1)),
+                partitions: Some(partitions.iter().map(|&p| p as i32).collect()),
             };
             receiver.expect(vec![ConsumerCall::Extended {
                 num_records: n,
@@ -3388,9 +3396,11 @@ mod distributed {
         // Host 0 of 2 with home host 0 reads partition 0.  It read 1 record
         // before the checkpoint, so 2 remain.
         let ours = shard(0, 2, 0);
+        // An older checkpoint, which does not name its partitions.
         let checkpoint = |shard| Metadata {
             offsets: vec![0..1],
             shard: Some(shard),
+            partitions: None,
         };
         let (_endpoint, receiver, reader) =
             create_resumed_reader(TOPIC, ours, json!("earliest"), Some(&checkpoint(ours)));
@@ -3402,6 +3412,7 @@ mod distributed {
             metadata: serde_json::to_value(Metadata {
                 offsets: vec![1..3],
                 shard: Some(ours),
+                partitions: Some(vec![0]),
             })
             .unwrap(),
         }]);
@@ -3425,11 +3436,11 @@ mod distributed {
         receiver.expect(vec![ConsumerCall::Error(true)]);
     }
 
-    /// A host that owns no partitions reads nothing and, unlike a reader that
-    /// has reached the end of all of its partitions, does not end its input.
-    /// This holds for every way to choose where to start reading.
+    /// A host that owns no partitions reads nothing, and ends its input once
+    /// it runs, so that it does not hold back the connector's merged
+    /// frontier.  This holds for every way to choose where to start reading.
     #[test]
-    fn host_without_partitions_is_idle() {
+    fn host_without_partitions_ends_input() {
         init_test_logger();
         const TOPIC: &str = "distributed_idle_host";
         let _kafka_resources = KafkaResources::create_topics(&[(TOPIC, 2)]);
@@ -3447,18 +3458,14 @@ mod distributed {
         ] {
             println!("start_from: {start_from}");
             let (_endpoint, receiver, reader) = create_reader(TOPIC, shard(2, 3, 0), start_from);
-            reader.extend();
-            reader.queue(false);
-            let metadata = Metadata {
-                offsets: vec![],
-                shard: Some(shard(2, 3, 0)),
-            };
-            receiver.expect(vec![ConsumerCall::Extended {
-                num_records: 0,
-                metadata: serde_json::to_value(&metadata).unwrap(),
-            }]);
-            sleep(Duration::from_secs(2));
+
+            // While paused, the host does not end its input.
+            reader.pause();
+            sleep(Duration::from_secs(1));
             assert_eq!(*receiver.inner.calls.lock().unwrap(), vec![]);
+
+            reader.extend();
+            receiver.expect(vec![ConsumerCall::Eoi]);
             assert_eq!(take_flushed(&receiver), Vec::<String>::new());
         }
     }
@@ -3608,6 +3615,7 @@ mod unsorted_partitions {
         let metadata = Metadata {
             offsets: vec![0..2, 0..0, 0..0],
             shard: None,
+            partitions: None,
         };
         receiver.expect(vec![ConsumerCall::Extended {
             num_records: 2,
@@ -3632,6 +3640,7 @@ mod unsorted_partitions {
         let resume_info = Metadata {
             offsets: vec![0..1, 0..5],
             shard: None,
+            partitions: None,
         };
         let (_endpoint, receiver, reader) = create_reader(
             TOPIC,
@@ -3644,6 +3653,7 @@ mod unsorted_partitions {
         let metadata = Metadata {
             offsets: vec![1..5, 5..5],
             shard: None,
+            partitions: None,
         };
         receiver.expect(vec![ConsumerCall::Extended {
             num_records: 4,

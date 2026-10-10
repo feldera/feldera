@@ -3450,6 +3450,19 @@ impl TransportConfig {
             TransportConfig::DeltaTableInput(_) | TransportConfig::IcebergInput(_)
         )
     }
+
+    /// Returns how to combine the completed frontiers' metadata that the hosts
+    /// of a distributed input connector with this transport report.
+    pub fn frontier_merge(&self) -> crate::adapter_stats::FrontierMerge {
+        use crate::adapter_stats::FrontierMerge;
+        match self {
+            TransportConfig::KafkaInput(_) => FrontierMerge::Partitioned,
+            TransportConfig::DeltaTableInput(_) | TransportConfig::IcebergInput(_) => {
+                FrontierMerge::Shared
+            }
+            _ => FrontierMerge::Opaque,
+        }
+    }
 }
 
 /// Data format specification used to parse raw data received from the
