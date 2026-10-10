@@ -13,15 +13,19 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.RemoveClones;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.RemoveTypedBox;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPComparatorItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -179,6 +183,32 @@ public final class ExpressionOracleHarvest {
 
     private record NamedNode(String field, IDBSPInnerNode node) {}
 
+    /** The instant every harvested {@code now()} reads, 2020-01-01T00:00:00Z. The IR and the
+     * Rust ground truth come from the same rewritten copy, so a case is reproducible without
+     * pinning any clock. */
+    static final long PINNED_NOW_MICROS = 1_577_836_800_000_000L;
+
+    /** Replaces each {@code now()} call with {@link #PINNED_NOW_MICROS}. */
+    static final class PinNow extends InnerRewriteVisitor {
+        PinNow(DBSPCompiler compiler) {
+            super(compiler, false);
+        }
+
+        @Override
+        public VisitDecision preorder(DBSPApplyExpression expression) {
+            String name = expression.getFunctionName();
+            if (name == null || !name.equalsIgnoreCase("now") || expression.arguments.length != 0)
+                return super.preorder(expression);
+            this.push(expression);
+            DBSPExpression pinned = DBSPTimestampLiteral.fromMicroseconds(PINNED_NOW_MICROS);
+            if (expression.getType().mayBeNull)
+                pinned = pinned.some();
+            this.pop(expression);
+            this.map(expression, pinned);
+            return VisitDecision.STOP;
+        }
+    }
+
     /**
      * Every public non-static field of the operator that holds a {@code DBSPExpression} or
      * a {@code DBSPAggregateList}: {@code function}, {@code aggregateList},
@@ -212,21 +242,22 @@ public final class ExpressionOracleHarvest {
     private static void harvestExpression(
             DBSPCircuit circuit, DBSPCompiler compiler, Path dir, DBSPOperator operator,
             NamedNode named, Map<DBSPOperator, Set<String>> provenance) throws Exception {
+        IDBSPInnerNode node = new PinNow(compiler).apply(named.node);
         ObjectNode record;
-        if (named.node instanceof DBSPClosureExpression closure) {
+        if (node instanceof DBSPClosureExpression closure) {
             record = closureRecord(compiler, closure);
-        } else if (named.node instanceof DBSPAggregateList list) {
+        } else if (node instanceof DBSPAggregateList list) {
             // The Gen-2 circuit keeps the per-aggregate list. The Rust driver needs one
             // fold, so the ground truth comes from the packed form of the same list.
             record = foldRecord(compiler, list.asFold(compiler));
-        } else if (named.node instanceof DBSPFold fold) {
+        } else if (node instanceof DBSPFold fold) {
             record = foldRecord(compiler, fold);
-        } else if (named.node instanceof DBSPMinMax minMax) {
+        } else if (node instanceof DBSPMinMax minMax) {
             record = minMaxRecord(compiler, operator, minMax);
-        } else if (named.node instanceof DBSPZSetExpression zset) {
+        } else if (node instanceof DBSPZSetExpression zset) {
             record = constRecord(compiler, zset);
         } else {
-            skip("unsupported_expression_" + named.node.getClass().getSimpleName());
+            skip("unsupported_expression_" + node.getClass().getSimpleName());
             return;
         }
         if (record == null) {
@@ -251,8 +282,8 @@ public final class ExpressionOracleHarvest {
         record.put("operator", operator.getClass().getSimpleName());
         record.put("field", named.field);
         attachDeclarations(compiler, declarations, record);
-        attachComparators(compiler, named.node, allRust.toString(), record);
-        record.set("ir", buildIr(compiler, named.node, declarations));
+        attachComparators(compiler, node, allRust.toString(), record);
+        record.set("ir", buildIr(compiler, node, declarations));
 
         String hash = sha1(allRust.toString());
         record.put("name", "case_" + hash);
