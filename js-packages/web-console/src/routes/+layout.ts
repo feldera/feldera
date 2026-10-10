@@ -4,7 +4,7 @@ import duration from 'dayjs/plugin/duration'
 import equal from 'fast-deep-equal'
 import posthog from 'posthog-js'
 import { goto, invalidateAll } from '$app/navigation'
-import { fromAxaUserInfo, toAxaOidcConfig } from '$lib/compositions/@axa-fr/auth'
+import { authTimeOf, fromAxaUserInfo, toAxaOidcConfig } from '$lib/compositions/@axa-fr/auth'
 import { loadAuthConfig } from '$lib/compositions/auth'
 import {
   clearConfigCaches,
@@ -25,6 +25,7 @@ import {
   setSelectedTenantUser,
   triggerOidcLogin
 } from '$lib/services/auth'
+import { reportLogin } from '$lib/services/analytics'
 import { initConceptualHq } from '$lib/services/conceptualHq'
 import { setInvalidateAll } from '$lib/services/invalidateAll'
 import type { Configuration, SessionInfo } from '$lib/services/manager'
@@ -222,7 +223,7 @@ const OPTIMISTIC_CONFIG_CACHE = true
  * own promise memoization, ensures the `invalidateAll()` re-run (when it
  * does fire) does not re-enter this path.
  */
-const lazyUpdateConfig = async () => {
+const lazyUpdateConfig = async (auth: AuthDetails) => {
   // Snapshot cache BEFORE `fetchConfigs` overwrites it, so we can detect no-op
   // refreshes by comparing what we rendered against what the server returned.
   const prevConfig = getConfigFromCache()
@@ -233,11 +234,10 @@ const lazyUpdateConfig = async () => {
     result = await fetchConfigs()
   } catch (e) {
     console.warn('Background config refresh failed:', e)
+    trackLogin(auth)
     return
   }
-  if (result.config) {
-    syncServerTimeFromConfig(result.config)
-  }
+  applyFreshConfigs(auth, result.config)
 
   // `config` may be undefined here: the session stopped resolving an acting
   // tenant mid-session (e.g. this user was removed from the selected tenant).
@@ -367,7 +367,7 @@ export const load: LayoutLoad = async (): Promise<LayoutData> => {
     if (!lazyUpdateScheduled) {
       lazyUpdateScheduled = true
       setTimeout(() => {
-        lazyUpdateConfig()
+        lazyUpdateConfig(auth)
       }, LAZY_UPDATE_DELAY_MS)
     }
     return buildLayoutData(auth, cachedConfig, cachedSessionConfig)
@@ -404,8 +404,7 @@ export const load: LayoutLoad = async (): Promise<LayoutData> => {
     return emptyLayoutData
   }
 
-  syncServerTimeFromConfig(result.config)
-  initializeConfigDependencies(auth, result.config)
+  applyFreshConfigs(auth, result.config)
 
   return buildLayoutData(auth, result.config, result.sessionConfig)
 }
@@ -449,6 +448,26 @@ function buildLayoutData(
   return {
     auth,
     feldera: buildFelderaData(config, sessionConfig)
+  }
+}
+
+/**
+ * Run the side effects of a fetched config, on the cold path and in the
+ * background refresh. `trackLogin` runs last, because the analytics backends
+ * drop `signin` until `initializeConfigDependencies` starts them with the
+ * key from this config.
+ */
+function applyFreshConfigs(auth: AuthDetails, config: Configuration | undefined) {
+  if (config) {
+    syncServerTimeFromConfig(config)
+    initializeConfigDependencies(auth, config)
+  }
+  trackLogin(auth)
+}
+
+function trackLogin(auth: AuthDetails) {
+  if (typeof auth === 'object' && 'logout' in auth) {
+    reportLogin(auth.profile, auth.authTime)
   }
 }
 
@@ -552,6 +571,7 @@ const axaOidcAuth = async (params: {
           },
           userInfo,
           profile: fromAxaUserInfo(userInfo),
+          authTime: authTimeOf(tokens.idTokenPayload) ?? authTimeOf(tokens.accessTokenPayload),
           accessToken: tokens.accessToken // Only used in HTTP requests that cannot be handled with the global HTTP client instance from @hey-api/client-fetch
         }
       }
