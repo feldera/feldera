@@ -22,6 +22,7 @@ use crate::db::types::user::{
 use crate::db::types::version::Version;
 use crate::oidc::destination::TenantIssuerPolicy;
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{BootstrapConfig, RuntimeDesiredStatus, RuntimeStatus};
 use uuid::Uuid;
@@ -171,6 +172,14 @@ pub(crate) trait Storage {
         provider: &str,
         subject: &str,
     ) -> Result<Vec<UserMembership>, DBError>;
+
+    /// When the user record was created.
+    /// See [`crate::db::operations::user::get_user_created_at`].
+    async fn get_user_created_at(
+        &self,
+        provider: &str,
+        subject: &str,
+    ) -> Result<Option<DateTime<Utc>>, DBError>;
 
     /// Enrolls a user into the listed tenants where the tenant exists and the
     /// user is not yet a member; never creates tenants or changes existing

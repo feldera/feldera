@@ -34,6 +34,7 @@ use crate::is_supported_runtime;
 use crate::oidc::destination::TenantIssuerPolicy;
 use crate::{auth::TenantRecord, config::DatabaseConfig};
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use deadpool_postgres::{Manager, Pool, RecyclingMethod};
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
@@ -229,6 +230,18 @@ impl Storage for StoragePostgres {
         let mut client = self.pool.get().await?;
         let txn = transaction::begin(&mut client).await?;
         let result = operations::user::list_user_memberships(&txn, provider, subject).await?;
+        txn.commit().await?;
+        Ok(result)
+    }
+
+    async fn get_user_created_at(
+        &self,
+        provider: &str,
+        subject: &str,
+    ) -> Result<Option<DateTime<Utc>>, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = transaction::begin(&mut client).await?;
+        let result = operations::user::get_user_created_at(&txn, provider, subject).await?;
         txn.commit().await?;
         Ok(result)
     }

@@ -6052,6 +6052,12 @@ export type SessionInfo = {
    * Acting tenant name; `null` exactly when `tenant_id` is.
    */
   tenant_name?: string | null
+  /**
+   * When the user record was created, usually at the first login. The web
+   * console uses it to report a signup. Is `null` for principals that are
+   * not human logins, and for users created before this field was added.
+   */
+  user_created_at?: string | null
 }
 
 /**
