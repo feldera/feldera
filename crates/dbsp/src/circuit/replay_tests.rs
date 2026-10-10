@@ -5328,6 +5328,297 @@ fn test_concurrent_balanced_shared_cluster_freeze() {
     circuit.kill().unwrap();
 }
 
+// --- A kept `Broadcast` integral replays into a new balanced join. ---
+//
+// A balanced integral replays straight into its accumulator's output, on
+// each worker separately.  Under `Broadcast`, every worker's integral holds
+// the whole stream, so the replay must keep it there: each worker rebuilds
+// its own full copy and feeds it to its own instance of the new join.  A
+// replay that repartitioned the integral would hand every worker one copy
+// per worker instead.
+//
+// Old: s1 ⋈ s2 with s2 pinned to `Broadcast`, and s3 ⋈ s4.
+// New: adds s2 ⋈ s4.  The checkpointed policies satisfy it (`Broadcast` ×
+// `Shard`), so both integrals are kept and replayed rather than invalidated
+// and rebuilt from their inputs.
+
+#[allow(clippy::type_complexity)]
+fn balanced_broadcast_new(
+    circuit: &mut RootCircuit,
+) -> (
+    (
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+    ),
+    (
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    ),
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+) {
+    let (s1, h1) = circuit.add_input_zset::<u64>();
+    s1.set_persistent_id(Some("input1"));
+    let (s2, h2) = circuit.add_input_zset::<u64>();
+    s2.set_persistent_id(Some("input2"));
+    let (s3, h3) = circuit.add_input_zset::<u64>();
+    s3.set_persistent_id(Some("input3"));
+    let (s4, h4) = circuit.add_input_zset::<u64>();
+    s4.set_persistent_id(Some("input4"));
+
+    s1.integrate_trace();
+    s2.integrate_trace();
+    s3.integrate_trace();
+    s4.integrate_trace();
+
+    let s1i = s1.map_index(|x| (*x, *x)).set_persistent_id(Some("s1i"));
+    let s2i = s2.map_index(|x| (*x, *x)).set_persistent_id(Some("s2i"));
+    let s3i = s3.map_index(|x| (*x, *x)).set_persistent_id(Some("s3i"));
+    let s4i = s4.map_index(|x| (*x, *x)).set_persistent_id(Some("s4i"));
+
+    let out1 = s1i
+        .join_balanced_inner(&s2i, |k, _v1, _v2| *k)
+        .accumulate_output_persistent(Some("output1"));
+    let out2 = s3i
+        .join_balanced_inner(&s4i, |k, _v1, _v2| *k)
+        .accumulate_output_persistent(Some("output2"));
+
+    // The new join reads the broadcast integral of s2 and the sharded
+    // integral of s4.
+    let out3 = s2i
+        .join_balanced_inner(&s4i, |k, _v1, _v2| *k)
+        .accumulate_output_persistent(Some("output3"));
+
+    ((h1, h2, h3, h4), (out1, out2), out3)
+}
+
+/// Reads and consolidates everything that `handle` has received since the
+/// last read.
+fn read_zset(handle: &OutputHandle<SpineSnapshot<OrdZSet<u64>>>) -> OrdZSet<u64> {
+    SpineSnapshot::<OrdZSet<u64>>::concat(&handle.take_from_all()).consolidate()
+}
+
+/// Returns a Z-set that holds each key in `keys` with weight 1.
+fn keys_zset(keys: std::ops::Range<u64>) -> OrdZSet<u64> {
+    OrdZSet::from_keys((), keys.map(|x| Tup2(x, 1)).collect())
+}
+
+/// Runs the old circuit of the `Broadcast` replay tests, with `s2i` pinned to
+/// `Broadcast`, over one key per transaction from `keys`, and checkpoints it.
+///
+/// # Arguments
+///
+/// * `path` - The storage directory.
+/// * `keys` - The keys to insert into all four inputs.
+///
+/// # Returns
+///
+/// The checkpoint.
+fn checkpoint_broadcast_cluster(
+    path: &PathBuf,
+    keys: std::ops::Range<u64>,
+) -> feldera_types::checkpoint::CheckpointMetadata {
+    let (mut circuit, ((h1, h2, h3, h4), (out1, out2))) =
+        Runtime::init_circuit(circuit_config_with_workers(path, NUM_WORKERS), |circuit| {
+            Ok(balanced_shared_old(circuit))
+        })
+        .unwrap();
+
+    circuit
+        .set_balancer_hint(
+            "s2i",
+            BalancerHint::Policy(Some(PartitioningPolicy::Broadcast)),
+        )
+        .unwrap();
+    circuit.rebalance().unwrap();
+
+    for x in keys {
+        h1.push(x, 1);
+        h2.push(x, 1);
+        h3.push(x, 1);
+        h4.push(x, 1);
+        circuit.transaction().unwrap();
+        assert_eq!(read_zset(&out1), zset! { x => 1 });
+        assert_eq!(read_zset(&out2), zset! { x => 1 });
+    }
+
+    // The tests are about replaying a broadcast integral, so make sure that
+    // the checkpoint holds one.
+    assert_eq!(
+        circuit.get_current_balancer_policy("s2i").unwrap(),
+        PartitioningPolicy::Broadcast
+    );
+    assert_eq!(
+        circuit.get_current_balancer_policy("s4i").unwrap(),
+        PartitioningPolicy::Shard
+    );
+
+    let checkpoint = circuit.checkpoint().run().unwrap();
+    circuit.kill().unwrap();
+    checkpoint
+}
+
+/// Bootstraps the new join of `balanced_broadcast_new` from a checkpoint
+/// with the classic, stop-the-world replay.
+#[test]
+fn test_balanced_broadcast_replay() {
+    init_test_logger();
+
+    let path = tempfile::tempdir().unwrap().keep();
+    println!(
+        "Running test_balanced_broadcast_replay in {}",
+        path.display()
+    );
+
+    let checkpoint = checkpoint_broadcast_cluster(&path, 0..12);
+
+    let mut config = circuit_config_with_workers(&path, NUM_WORKERS);
+    config.storage.as_mut().unwrap().init_checkpoint = Some(checkpoint.uuid);
+    let (mut circuit, ((h1, h2, h3, h4), (out1, out2), out3)) =
+        Runtime::init_circuit(config, |circuit| Ok(balanced_broadcast_new(circuit))).unwrap();
+    assert!(circuit.bootstrap_in_progress());
+
+    // The bootstrap transaction computes the new join over the replayed
+    // integrals; the kept joins do not run.
+    circuit.start_transaction().unwrap();
+    circuit.start_commit_transaction().unwrap();
+    while !circuit.step().unwrap() {}
+    assert!(!circuit.bootstrap_in_progress());
+    assert_eq!(read_zset(&out1), zset! {});
+    assert_eq!(read_zset(&out2), zset! {});
+    assert_eq!(read_zset(&out3), keys_zset(0..12));
+
+    // Keep s2 broadcast, so that the joins below read the replayed broadcast
+    // integral rather than a repartitioned one.
+    circuit
+        .set_balancer_hint(
+            "s2i",
+            BalancerHint::Policy(Some(PartitioningPolicy::Broadcast)),
+        )
+        .unwrap();
+
+    // Every join is live and joins each new key exactly once.
+    for x in 12..20u64 {
+        h1.push(x, 1);
+        h2.push(x, 1);
+        h3.push(x, 1);
+        h4.push(x, 1);
+        circuit.transaction().unwrap();
+        assert_eq!(read_zset(&out1), zset! { x => 1 });
+        assert_eq!(read_zset(&out2), zset! { x => 1 });
+        assert_eq!(read_zset(&out3), zset! { x => 1 });
+    }
+
+    // Retracting a key that the integrals replayed removes its only copy.
+    h2.push(3, -1);
+    h4.push(3, -1);
+    circuit.transaction().unwrap();
+    assert_eq!(read_zset(&out1), zset! { 3 => -1 });
+    assert_eq!(read_zset(&out2), zset! { 3 => -1 });
+    assert_eq!(read_zset(&out3), zset! { 3 => -1 });
+
+    circuit.kill().unwrap();
+}
+
+/// Bootstraps the new join of `balanced_broadcast_new` from a checkpoint
+/// concurrently.  The live copy records the deltas that it appends to the
+/// kept integrals, including the broadcast one, and the synchronization
+/// transaction replays them into the bootstrap copy.
+#[test]
+fn test_concurrent_balanced_broadcast_replay() {
+    init_test_logger();
+
+    let path = tempfile::tempdir().unwrap().keep();
+    println!(
+        "Running test_concurrent_balanced_broadcast_replay in {}",
+        path.display()
+    );
+
+    let checkpoint = checkpoint_broadcast_cluster(&path, 0..12);
+
+    let (mut circuit, ((h1, h2, h3, h4), (out1, out2), out3)) =
+        Runtime::init_circuit(circuit_config_with_workers(&path, NUM_WORKERS), |circuit| {
+            Ok(balanced_broadcast_new(circuit))
+        })
+        .unwrap();
+
+    let outcome = circuit
+        .start_concurrent_bootstrap(checkpoint.uuid.to_string().into())
+        .unwrap();
+    let crate::circuit::ConcurrentRestoreOutcome::Concurrent(info) = outcome else {
+        panic!("the new balanced join must bootstrap concurrently, got {outcome:?}");
+    };
+    // The checkpointed policies satisfy the new join, so the kept joins are
+    // not invalidated: only the new join backfills.
+    assert!(backfill_pids_contain(&info, "output3"));
+    assert!(!backfill_pids_contain(&info, "output1"));
+    assert!(!backfill_pids_contain(&info, "output2"));
+
+    // The kept joins stay live while the bootstrap copy replays, and the
+    // broadcast stream stays frozen at its checkpointed policy.
+    let mut bootstrap_done = false;
+    for x in 12..20u64 {
+        h1.push(x, 1);
+        h2.push(x, 1);
+        h3.push(x, 1);
+        h4.push(x, 1);
+        circuit.transaction().unwrap();
+        assert_eq!(read_zset(&out1), zset! { x => 1 });
+        assert_eq!(read_zset(&out2), zset! { x => 1 });
+        assert_eq!(read_zset(&out3), zset! {});
+        assert_eq!(
+            circuit.get_current_balancer_policy("s2i").unwrap(),
+            PartitioningPolicy::Broadcast
+        );
+
+        if !bootstrap_done {
+            bootstrap_done = circuit.step_bootstrap_circuit().unwrap();
+        }
+    }
+    while !bootstrap_done {
+        bootstrap_done = circuit.step_bootstrap_circuit().unwrap();
+    }
+
+    circuit.sync_concurrent_bootstrap().unwrap();
+    while !circuit.step_bootstrap_circuit().unwrap() {}
+    circuit.complete_concurrent_bootstrap().unwrap();
+
+    // Keep s2 broadcast, so that the joins below read the replayed broadcast
+    // integral rather than a repartitioned one.
+    circuit
+        .set_balancer_hint(
+            "s2i",
+            BalancerHint::Policy(Some(PartitioningPolicy::Broadcast)),
+        )
+        .unwrap();
+
+    // The first post-cutover transaction delivers the new join's whole
+    // contents: the backfill, the synchronized deltas, and its own delta.
+    h1.push(20, 1);
+    h2.push(20, 1);
+    h3.push(20, 1);
+    h4.push(20, 1);
+    circuit.transaction().unwrap();
+    assert_eq!(read_zset(&out1), zset! { 20 => 1 });
+    assert_eq!(read_zset(&out2), zset! { 20 => 1 });
+    assert_eq!(read_zset(&out3), keys_zset(0..21));
+
+    // Afterwards every join produces per-transaction deltas.  Retracting a
+    // key from each phase (the backfill, the synchronization, and after the
+    // cutover) removes its only copy.
+    for x in [3, 15, 20] {
+        h2.push(x, -1);
+        h4.push(x, -1);
+        circuit.transaction().unwrap();
+        assert_eq!(read_zset(&out1), zset! { x => -1 });
+        assert_eq!(read_zset(&out2), zset! { x => -1 });
+        assert_eq!(read_zset(&out3), zset! { x => -1 });
+    }
+
+    circuit.kill().unwrap();
+}
+
 // ============================================================================
 // Torture tests: balanced joins in complex topologies, all bootstrapped
 // concurrently.  Each stresses a different way a balanced cluster can interact

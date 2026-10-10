@@ -4,7 +4,7 @@ use crate::{
     circuit::{
         GlobalNodeId, NodeId, OwnershipPreference, WithClock,
         checkpointer::EmptyCheckpoint,
-        circuit_builder::{MetadataExchange, StreamId, register_replay_stream},
+        circuit_builder::{MetadataExchange, StreamId, register_accumulated_replay_stream},
         metadata::{
             ACCUMULATOR_RECORDS_TO_REPARTITION_COUNT, BALANCER_POLICY, BatchSizeStats,
             INPROGRESS_REBALANCING_TIME_SECONDS, INPUT_BATCHES_STATS,
@@ -190,9 +190,14 @@ where
                         ),
                     );
 
+                    // The integral replays straight into the accumulator's output,
+                    // bypassing the exchange and the accumulator.  The replay stays
+                    // local to each worker, which keeps the integral partitioned as
+                    // its checkpointed policy requires (under `Broadcast`, every
+                    // worker replays its own full copy).
                     let replay_stream = z1feedback
                         .operator_mut()
-                        .prepare_replay_stream(&sharded_stream);
+                        .prepare_accumulated_replay_stream(&accumulator_stream);
 
                     let trace = circuit.add_binary_operator_with_preference(
                         <AccumulateTraceAppend<TimedSpine<B, C>, B, C>>::new(
@@ -208,9 +213,9 @@ where
                         OwnershipPreference::STRONGLY_PREFER_OWNED,
                     );
 
-                    register_replay_stream(
+                    register_accumulated_replay_stream(
                         circuit,
-                        &sharded_stream,
+                        &accumulator_stream,
                         &replay_stream,
                         batch_factories,
                     );
