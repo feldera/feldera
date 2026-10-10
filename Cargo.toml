@@ -392,7 +392,7 @@ uuid = { version = "1.17.0", features = ["serde"] }
 vergen-gitcl = "1.0.0"
 wiremock = "0.6"
 xxhash-rust = "0.8.6"
-zip = "6.0.0"
+zip = "9.0.1"
 zstd = "0.12.0"
 backtrace = "0.3.75"
 parking_lot = "0.12.4"
