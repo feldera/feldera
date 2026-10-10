@@ -113,7 +113,11 @@ def dataframe_from_response(
                 if datum[col] is not None:
                     datum[col] = uuid.UUID(datum[col])
 
-    df = pd.DataFrame(data)
+    df = (
+        pd.DataFrame(data)
+        if data
+        else pd.DataFrame(columns=[*pd_schema, "insert_delete"])
+    )
     df = df.astype(pd_schema)
 
     return df
