@@ -91,8 +91,25 @@ circuit_cache_key!(local ExchangeCacheId<T>(ExchangeId => Arc<Exchange<T>>));
 struct ExchangeHeader {
     /// The unique identifier for the exchange.
     exchange_id: ExchangeId,
-    /// Sequence number for the collection of messages.
+    /// Position of this message among all of the messages on its connection,
+    /// that is, from the sending host to the receiving host for one
+    /// [MessageType], across all exchanges and all sending workers.  The
+    /// receiver uses it to drop retransmissions and to acknowledge.
     sequence: u64,
+    /// In synchronous exchange, the sender's round: how many messages the
+    /// sender sent to this host for this exchange before this one.  Zero for
+    /// streaming messages and pings.
+    ///
+    /// The receiver must deliver each sender's rounds of an exchange in
+    /// order, and `sequence` cannot ensure that.  Big and small messages
+    /// travel over different connections, each with its own sequence
+    /// numbers, so round `r + 1` on one connection can arrive before round
+    /// `r` on the other.  One sequence for both connections would order every
+    /// message from one host to another, across all exchanges and workers,
+    /// which would make small messages wait for big ones and defeat the
+    /// reason for separate connections (see [MessageSize]).  `round` orders
+    /// only the messages that must be in order.
+    round: u64,
     #[bw(write_with = MessageType::write)]
     #[br(parse_with = MessageType::read)]
     message_type: MessageType,
@@ -107,7 +124,7 @@ impl ExchangeHeader {
     /// Returns the number of bytes that `ExchangeHeader::to_bytes()` will
     /// return for the given `count`.
     fn len_for_count(count: usize) -> usize {
-        (4 + 8 + 1 + 4) + 8 * count
+        (4 + 8 + 8 + 1 + 4) + 8 * count
     }
 
     /// Serializes this header into a `Vec` that contains
@@ -162,6 +179,7 @@ impl ExchangeHeader {
         Self {
             exchange_id,
             sequence: PING_SEQUENCE,
+            round: 0,
             sender,
             message_type,
             payload_lens: vec![0; count],
@@ -194,6 +212,9 @@ struct ExchangeMessage {
     /// The sender's worker ID.
     sender: usize,
 
+    /// The sender's round (see [ExchangeHeader::round]).
+    round: u64,
+
     /// The messages to send, one per worker on the destination remote host.
     ///
     /// The workers and the host are implicit in the [ExchangeClient] that this
@@ -214,6 +235,7 @@ impl ExchangeMessage {
         global_node_id: Arc<String>,
         exchange_id: ExchangeId,
         sender: usize,
+        round: u64,
         data: Vec<FBuf>,
     ) -> Self {
         let payloads = data.iter().map(|payload| payload.len()).sum::<usize>();
@@ -224,6 +246,7 @@ impl ExchangeMessage {
             global_node_id,
             exchange_id,
             sender,
+            round,
             data,
             wire_len,
         }
@@ -503,6 +526,7 @@ impl ExchangeClient {
             let header = ExchangeHeader {
                 exchange_id: message.exchange_id,
                 sequence,
+                round: message.round,
                 sender: message.sender as u32,
                 message_type,
                 payload_lens: message
@@ -590,17 +614,21 @@ impl ExchangeClient {
         }
     }
 
+    /// Queues a message.  `round` is the sender's round in synchronous
+    /// exchange (see [ExchangeHeader::round]), otherwise 0.
     pub fn send(
         &self,
         global_node_id: Arc<String>,
         exchange_id: ExchangeId,
         sender: usize,
+        round: u64,
         data: Vec<FBuf>,
     ) -> Option<impl Future<Output = ()> + Send + use<>> {
         self.channel.push(ExchangeMessage::new(
             global_node_id,
             exchange_id,
             sender,
+            round,
             data,
         ))
     }
@@ -618,11 +646,14 @@ pub type ExchangeId = u32;
 pub trait ExchangeDelivery: Send + Sync {
     fn name(&self) -> Arc<String>;
 
-    fn received<'a>(
-        &'a self,
+    /// Delivers `data` from `sender`.  `round` is the sender's round in
+    /// synchronous exchange (see [ExchangeHeader::round]), otherwise 0.
+    fn received(
+        self: Arc<Self>,
         sender: usize,
+        round: u64,
         data: Vec<AlignedVec>,
-    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>>;
 }
 
 /// Ensures that at most one connection at a time serves as the receiver for a
@@ -998,7 +1029,7 @@ impl ExchangeServer {
 
             EXCHANGE_MESSAGES_RECEIVED.fetch_add(n, Ordering::Relaxed);
             if let Some(delivery) = delivery {
-                delivery.received(sender, data).await;
+                delivery.received(sender, header.round, data).await;
             } else {
                 DUPLICATE_EXCHANGE_MESSAGES_RECEIVED.fetch_add(n, Ordering::Relaxed);
             }
@@ -1142,6 +1173,12 @@ impl CallbackInner {
 
 struct Callback(AtomicPtr<CallbackInner>);
 
+impl Default for Callback {
+    fn default() -> Self {
+        Self::empty()
+    }
+}
+
 impl Callback {
     fn empty() -> Self {
         Self(AtomicPtr::new(Box::into_raw(Box::new(
@@ -1198,6 +1235,69 @@ impl<T> Mailbox<T> {
     }
 }
 
+/// The state of one worker, in its role as a receiver, in an [Exchange].
+#[derive(Default)]
+struct ReceiverState {
+    /// Counts the number of messages received in the current round of
+    /// communication.  The receiver must wait until it has all `npeers`
+    /// messages before reading all of them from mailboxes in one pass.
+    full_mailboxes: AtomicUsize,
+
+    /// Invoked when all `npeers` messages are ready.
+    callback: Callback,
+
+    /// Notified when all `npeers` messages are ready.
+    notify: Notify,
+}
+
+/// The state of one worker, in its role as a sender, in an [Exchange].
+#[derive(Default)]
+struct SenderState {
+    /// Counts the local mailboxes that hold data from this sender that their
+    /// receivers have not yet taken.  Delivery from the sender waits until
+    /// this is 0, then sets it to `local_workers.len()` and writes all of the
+    /// mailboxes in one pass.
+    full_mailboxes: AtomicUsize,
+
+    /// Invoked when `full_mailboxes` drops to 0.
+    callback: Callback,
+
+    /// Notified when `full_mailboxes` drops to 0.
+    notify: Notify,
+
+    /// For a local sender, the round of its next message to remote hosts
+    /// (see [ExchangeHeader::round]).
+    next_send_round: AtomicU64,
+
+    /// For a remote sender, the rounds of its messages received here.
+    receive_rounds: Mutex<ReceiveRounds>,
+}
+
+/// The rounds received from one remote sender in an [Exchange] (see
+/// [ExchangeHeader::round]).
+#[derive(Default)]
+struct ReceiveRounds {
+    /// The round to deliver next.  It advances to `r + 1` as soon as round
+    /// `r` claims the receivers' mailboxes, before round `r` is delivered, so
+    /// that it is never behind a round that the receivers have taken.
+    next: u64,
+
+    /// A round that arrived before it was `next`, with its data.  A sender's
+    /// big and small messages travel over different connections, so its round
+    /// `r + 1` can arrive while round `r` is still in flight.
+    ///
+    /// There can be only one.  Every worker on the sending host pushes its
+    /// round `r` of an exchange before any of them pushes round `r + 1` (a
+    /// worker can push round `r + 1` only after every local receiver,
+    /// including each sender itself, has taken round `r`, and a worker takes
+    /// round `r` only after its own `send_all` for round `r` returns).  So the
+    /// sender's round `r + 2` can arrive only after its host has every
+    /// worker's round `r + 1`, which the workers here send only after the
+    /// receivers here have taken the sender's round `r`, which in turn claimed
+    /// the mailboxes and made `next` at least `r + 1`.
+    early: Option<(u64, Vec<AlignedVec>)>,
+}
+
 /// `Exchange` is an N-to-N communication primitive that partitions data across
 /// multiple concurrent threads.
 ///
@@ -1220,29 +1320,14 @@ pub(crate) struct Exchange<T> {
     /// Range of worker IDs on the local host.
     local_workers: Range<usize>,
 
-    /// Counts the number of messages received in the current round of
-    /// communication per receiver.  The receiver must wait until it has all
-    /// `npeers` messages before reading all of them from mailboxes in one
-    /// pass.
-    receiver_counters: Vec<AtomicUsize>,
+    /// The state of each worker as a receiver, indexed by worker.  Only the
+    /// local workers' entries are used.  Padded to a cache line because
+    /// senders on many threads update different receivers' counters.
+    receivers: Vec<CachePadded<ReceiverState>>,
 
-    /// Callback invoked when all `npeers` messages are ready for a receiver.
-    receiver_callbacks: Vec<Callback>,
-
-    /// Notified when all `npeers` messages are ready for a receiver.
-    receiver_notifies: Vec<Notify>,
-
-    /// Counts the number of empty mailboxes ready to accept new data per
-    /// sender.  Delivery from any given sender waits until all
-    /// `local_workers.len()` mailboxes are available before writing them in one
-    /// pass.
-    sender_counters: Vec<CachePadded<AtomicUsize>>,
-
-    /// Callback invoked when all `npeers` mailboxes are available.
-    sender_callbacks: Vec<Callback>,
-
-    /// Notified when all `npeers` mailboxes are available.
-    sender_notifies: Vec<Notify>,
+    /// The state of each worker as a sender, indexed by worker.  Padded to a
+    /// cache line for the same reason as `receivers`.
+    senders: Vec<CachePadded<SenderState>>,
 
     /// The RPC clients to contact remote hosts.
     clients: Arc<ExchangeClients>,
@@ -1374,14 +1459,8 @@ where
             npeers,
             local_workers: layout.local_workers(),
             clients,
-            receiver_counters: (0..npeers).map(|_| AtomicUsize::new(0)).collect(),
-            receiver_callbacks: (0..npeers).map(|_| Callback::empty()).collect(),
-            receiver_notifies: (0..npeers).map(|_| Notify::new()).collect(),
-            sender_counters: (0..npeers)
-                .map(|_| CachePadded::new(AtomicUsize::new(layout.local_workers().len())))
-                .collect(),
-            sender_notifies: (0..npeers).map(|_| Notify::new()).collect(),
-            sender_callbacks: (0..npeers).map(|_| Callback::empty()).collect(),
+            receivers: (0..npeers).map(|_| CachePadded::default()).collect(),
+            senders: (0..npeers).map(|_| CachePadded::default()).collect(),
             mailboxes,
             deserialization_usecs: AtomicU64::new(0),
             deserialized_bytes: AtomicUsize::new(0),
@@ -1458,20 +1537,60 @@ where
         F: Fn() + Send + Sync + 'static,
     {
         debug_assert!(sender < self.npeers);
-        self.sender_callbacks[sender].set_callback(cb);
+        self.senders[sender].callback.set_callback(cb);
     }
 
     pub fn ready_to_send(&self, sender: usize) -> bool {
-        self.sender_counters[sender].load(Ordering::Acquire) == self.local_workers.len()
+        self.senders[sender].full_mailboxes.load(Ordering::Acquire) == 0
+    }
+
+    /// Delivers `round` from remote `sender`, which must be the next round to
+    /// deliver from it, then each early round that follows it.
+    ///
+    /// Delivering a round waits until the receivers take the previous round,
+    /// which can need other senders' messages that are queued behind `round`
+    /// on the connection that brought it.  So the caller, which serves that
+    /// connection, delivers only `round`, and a new task delivers each early
+    /// round after it.  Claiming the mailboxes orders the deliveries: a round
+    /// claims them only after the receivers take the round before it.
+    fn deliver_rounds(
+        self: Arc<Self>,
+        sender: usize,
+        round: u64,
+        data: Vec<AlignedVec>,
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
+        Box::pin(async move {
+            self.wait_for_ready_to_send(sender).await;
+
+            // Advance `next` before delivering `round`, because the receivers
+            // can take `round` as soon as it is delivered, and then the sender
+            // can go on to round `round + 2`.
+            let early = {
+                let mut rounds = self.senders[sender].receive_rounds.lock().unwrap();
+                rounds.next = round + 1;
+                rounds
+                    .early
+                    .take_if(|(early, _)| *early == round + 1)
+                    .map(|(_, data)| data)
+            };
+
+            for (receiver, data) in zip(self.local_workers.clone(), data) {
+                self.deliver(sender, receiver, Mailbox::Rx(data));
+            }
+            if let Some(data) = early {
+                TOKIO.spawn(self.clone().deliver_rounds(sender, round + 1, data));
+            }
+        })
     }
 
     /// Waits until all the mailboxes to receive data from `sender` are empty.
     async fn wait_for_ready_to_send(&self, sender: usize) {
         fn ready_to_send<T>(this: &Exchange<T>, sender: usize) -> bool {
-            this.sender_counters[sender]
+            this.senders[sender]
+                .full_mailboxes
                 .compare_exchange(
-                    this.local_workers.len(),
                     0,
+                    this.local_workers.len(),
                     Ordering::AcqRel,
                     Ordering::Acquire,
                 )
@@ -1482,7 +1601,7 @@ where
         if !ready_to_send(self, sender) {
             let _parked = ParkingFor::new(ParkReason::Peers);
             loop {
-                let notify = self.sender_notifies[sender].notified();
+                let notify = self.senders[sender].notify.notified();
                 if ready_to_send(self, sender) {
                     break;
                 }
@@ -1515,10 +1634,11 @@ where
         assert!(mailbox.is_none());
         *mailbox = Some(item);
 
-        let old_counter = self.receiver_counters[receiver].fetch_add(1, Ordering::AcqRel);
+        let receiver_state = &self.receivers[receiver];
+        let old_counter = receiver_state.full_mailboxes.fetch_add(1, Ordering::AcqRel);
         if old_counter >= self.npeers - 1 {
-            self.receiver_callbacks[receiver].call();
-            self.receiver_notifies[receiver].notify_waiters();
+            receiver_state.callback.call();
+            receiver_state.notify.notify_waiters();
         }
     }
 
@@ -1540,6 +1660,12 @@ where
         let sender = Runtime::worker_index();
 
         self.wait_for_ready_to_send(sender).await;
+
+        // Every call sends one message to each remote host, so one round
+        // counter per sender serves all of them.
+        let round = self.senders[sender]
+            .next_send_round
+            .fetch_add(1, Ordering::Relaxed);
 
         let runtime = Runtime::runtime().unwrap();
         let layout = runtime.layout();
@@ -1570,12 +1696,21 @@ where
                     // We discard the return value that could allow us to wait
                     // for the channel tx buffer to drain, because exchange is
                     // synchronous, meaning that it will drain before we send
-                    // the next message.
+                    // the next message.  Big and small messages use different
+                    // connections, so they may arrive out of order; `round`
+                    // lets the receiver put them back in order (see
+                    // [ReceiveRounds]).
                     let _ = self
                         .clients
                         .connect(receivers.start, message_type)
                         .await
-                        .send(global_node_id.clone(), self.exchange_id, sender, items);
+                        .send(
+                            global_node_id.clone(),
+                            self.exchange_id,
+                            sender,
+                            round,
+                            items,
+                        );
                 }
             }
         }
@@ -1598,14 +1733,15 @@ where
     {
         let receiver = Runtime::worker_index();
         fn may_receive<T>(exchange: &Exchange<T>, receiver: usize) -> bool {
-            exchange.receiver_counters[receiver]
+            exchange.receivers[receiver]
+                .full_mailboxes
                 .compare_exchange(exchange.npeers, 0, Ordering::AcqRel, Ordering::Acquire)
                 .is_ok()
         }
         if !may_receive(self, receiver) {
             let _parked = ParkingFor::new(ParkReason::Peers);
             loop {
-                let notifier = self.receiver_notifies[receiver].notified();
+                let notifier = self.receivers[receiver].notify.notified();
                 if may_receive(self, receiver) {
                     break;
                 }
@@ -1622,10 +1758,12 @@ where
         for sender in 0..self.npeers {
             let mailbox = self.mailbox(sender, receiver).take().unwrap();
             data.push(mailbox.deserialize(&deserialize));
-            let old_counter = self.sender_counters[sender].fetch_add(1, Ordering::AcqRel);
-            if old_counter + 1 >= self.local_workers.len() {
-                self.sender_callbacks[sender].call();
-                self.sender_notifies[sender].notify_waiters();
+            let sender_state = &self.senders[sender];
+            let old_counter = sender_state.full_mailboxes.fetch_sub(1, Ordering::AcqRel);
+            debug_assert!(old_counter > 0);
+            if old_counter == 1 {
+                sender_state.callback.call();
+                sender_state.notify.notify_waiters();
             }
         }
 
@@ -1641,17 +1779,43 @@ where
         self.name.get()
     }
 
-    fn received<'a>(
-        &'a self,
+    fn received(
+        self: Arc<Self>,
         sender: usize,
+        round: u64,
         data: Vec<AlignedVec>,
-    ) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
         Box::pin(async move {
-            self.wait_for_ready_to_send(sender).await;
-
-            for (receiver, data) in zip(self.local_workers.clone(), data) {
-                self.deliver(sender, receiver, Mailbox::Rx(data));
+            // Deliver `round` now only if it is the next round from `sender`.
+            // Keep an early round for later, so that the connection that
+            // brought it can go on to its next message without waiting.
+            {
+                let mut rounds = self.senders[sender].receive_rounds.lock().unwrap();
+                if round < rounds.next {
+                    error!(
+                        "exchange {}: dropping round {round} from worker {sender}, which was already delivered (next round is {})",
+                        self.exchange_id, rounds.next
+                    );
+                    return;
+                } else if round > rounds.next {
+                    if round > rounds.next + 1 {
+                        error!(
+                            "exchange {}: round {round} from worker {sender} arrived while waiting for round {}",
+                            self.exchange_id, rounds.next
+                        );
+                    }
+                    assert!(
+                        rounds.early.is_none(),
+                        "exchange {}: round {round} from worker {sender} arrived while round {} was already waiting for round {}",
+                        self.exchange_id,
+                        rounds.early.as_ref().unwrap().0,
+                        rounds.next
+                    );
+                    rounds.early = Some((round, data));
+                    return;
+                }
             }
+            self.deliver_rounds(sender, round, data).await
         })
     }
 }
@@ -2470,6 +2634,159 @@ pub(crate) mod tests {
         }
     }
 
+    /// Seed for the padding in the mixed-size tests:
+    /// `DBSP_EXCHANGE_TEST_SEED`, or a random one.  Printed, so that a failing
+    /// run's padding can be replayed.
+    fn mixed_size_seed() -> u64 {
+        let seed = match std::env::var("DBSP_EXCHANGE_TEST_SEED") {
+            Ok(seed) => seed
+                .parse()
+                .expect("DBSP_EXCHANGE_TEST_SEED must be a number"),
+            Err(_) => rand::random(),
+        };
+        println!("mixed-size exchange test seed {seed} (set DBSP_EXCHANGE_TEST_SEED to replay)");
+        seed
+    }
+
+    /// A circuit that iterates for `ROUNDS` rounds, like `circuit`, over
+    /// `n_exchanges` exchanges at once.  In each round, each sender sends
+    /// on every exchange before it receives on any of them, and it pads its
+    /// value with a number of bytes drawn from `seed`, so that the message
+    /// for one host goes over the big-message connection in some rounds and
+    /// over the small-message connection in others.  Rounds must still
+    /// arrive in order.
+    fn mixed_size_circuit(seed: u64, n_exchanges: usize) {
+        use rand::{Rng, SeedableRng, rngs::StdRng};
+
+        // Padding per value: none, under the small-message limit, and over it.
+        const PADDING: [usize; 4] = [0, 1000, 4097, 8192];
+        const ROUNDS: usize = if cfg!(miri) { 16 } else { 256 };
+
+        let runtime = Runtime::runtime().unwrap();
+        let exchanges = (0..n_exchanges)
+            .map(|id| Exchange::with_runtime(&runtime, id as u32, ExchangeActivity::AllSteps))
+            .collect_vec();
+        TOKIO.block_on(async {
+            let sender = Runtime::worker_index();
+            let n_workers = Runtime::num_workers();
+            let global_node_id = Arc::new(String::from("test_global_node_id"));
+            let mut rng = StdRng::seed_from_u64(seed ^ ((sender as u64) << 32));
+            for round in 0..ROUNDS {
+                for exchange in &exchanges {
+                    let padding = vec![0u8; PADDING[rng.gen_range(0..PADDING.len())]];
+                    exchange
+                        .send_all_with_serializer(
+                            &global_node_id,
+                            repeat((sender, round, padding)),
+                            |data| to_bytes(&data).unwrap(),
+                        )
+                        .await;
+                }
+                for exchange in &exchanges {
+                    let (received, _) = exchange
+                        .receive_all(|data| aligned_deserialize(&data[..]), None)
+                        .await;
+                    let received = received
+                        .into_iter()
+                        .map(|(sender, round, _padding): (usize, usize, Vec<u8>)| (sender, round))
+                        .collect_vec();
+
+                    let expected = (0..n_workers).map(|worker| (worker, round)).collect_vec();
+                    assert_eq!(received, expected, "seed {seed}");
+                }
+            }
+        });
+    }
+
+    // Test an exchange whose messages alternate between big and small, on
+    // multiple hosts.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn multihost_mixed_size() {
+        init_test_logger();
+        let seed = mixed_size_seed();
+        for (workers, hosts) in [(2, 2), (4, 2), (3, 3), (4, 4)] {
+            test_circuit(workers, hosts, move || mixed_size_circuit(seed, 1));
+        }
+    }
+
+    // Like `multihost_mixed_size`, with two exchanges whose messages share
+    // the connections, so that a round waiting for its predecessor on the
+    // other connection holds up the other exchange's messages too.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn multihost_mixed_size_two_exchanges() {
+        init_test_logger();
+        let seed = mixed_size_seed();
+        for (workers, hosts) in [(2, 2), (4, 2), (3, 3), (4, 4)] {
+            test_circuit(workers, hosts, move || mixed_size_circuit(seed, 2));
+        }
+    }
+
+    // `received` delivers each sender's rounds in order: a round that arrives
+    // early returns at once but is delivered only after its predecessor, and
+    // a round that was already delivered is dropped.
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn received_delivers_rounds_in_order() {
+        use super::ExchangeDelivery;
+        use rkyv::AlignedVec;
+
+        init_test_logger();
+        Runtime::run(1, |_parker| {
+            let exchange = Exchange::<usize>::with_runtime(
+                &Runtime::runtime().unwrap(),
+                0,
+                ExchangeActivity::AllSteps,
+            );
+            let payload = |n: usize| {
+                let mut data = AlignedVec::new();
+                data.extend_from_slice(&to_bytes(&n).unwrap());
+                vec![data]
+            };
+            let receive = |exchange: &Exchange<usize>| {
+                TOKIO
+                    .block_on(exchange.receive_all(|data| aligned_deserialize(&data[..]), None))
+                    .0
+            };
+
+            // Round 1 arrives before round 0: it returns at once (so that its
+            // connection can go on), but it is not delivered yet.
+            TOKIO.block_on(exchange.clone().received(0, 1, payload(11)));
+            assert!(exchange.ready_to_send(0), "round 1 must wait for round 0");
+
+            // Round 0 is delivered, then round 1, which has to wait until
+            // round 0 is taken, so deliver round 0 from another task.
+            let on_time = TOKIO.spawn({
+                let exchange = exchange.clone();
+                async move { exchange.received(0, 0, payload(10)).await }
+            });
+            assert_eq!(receive(&exchange), vec![10]);
+            assert_eq!(receive(&exchange), vec![11]);
+            TOKIO.block_on(on_time).unwrap();
+
+            // The task that delivered round 1 advances the next round to 2 just
+            // after the delivery that `receive` saw, so wait for that.
+            while exchange.senders[0].receive_rounds.lock().unwrap().next != 2 {
+                std::thread::yield_now();
+            }
+
+            // Round 1 again: already delivered, so it is dropped.
+            TOKIO.block_on(exchange.clone().received(0, 1, payload(99)));
+            assert!(
+                exchange.ready_to_send(0),
+                "a stale round must not be delivered"
+            );
+
+            // Round 2 is delivered normally.
+            TOKIO.block_on(exchange.clone().received(0, 2, payload(12)));
+            assert_eq!(receive(&exchange), vec![12]);
+        })
+        .expect("failed to start runtime")
+        .join()
+        .unwrap();
+    }
+
     fn operator_circuit<S>()
     where
         S: Scheduler + 'static,
@@ -2608,7 +2925,7 @@ pub(crate) mod tests {
             .await;
             let (mut stream, _) = listener.accept().await.unwrap();
 
-            client.send(Arc::new("test".into()), 0, 0, vec![FBuf::new()]);
+            client.send(Arc::new("test".into()), 0, 0, 0, vec![FBuf::new()]);
 
             // Read the message but never acknowledge it.
             let header = ExchangeHeader::read(1, &mut stream).await.unwrap().unwrap();
@@ -2660,7 +2977,7 @@ pub(crate) mod tests {
             // Send and never acknowledge the first message, leaving the sender
             // idle with an unacknowledged backlog, then wait for it to actually
             // ping rather than guessing how long that takes.
-            client.send(Arc::new("test".into()), 0, 0, vec![FBuf::new()]);
+            client.send(Arc::new("test".into()), 0, 0, 0, vec![FBuf::new()]);
             let header = ExchangeHeader::read(1, &mut stream).await.unwrap().unwrap();
             assert_eq!(header.sequence, 0);
             let ping = ExchangeHeader::read(1, &mut stream).await.unwrap().unwrap();
@@ -2668,7 +2985,7 @@ pub(crate) mod tests {
 
             // Queue a second message right after the ping and check it
             // arrives promptly, not held up by anything.
-            client.send(Arc::new("test".into()), 0, 0, vec![FBuf::new()]);
+            client.send(Arc::new("test".into()), 0, 0, 0, vec![FBuf::new()]);
             let start = Instant::now();
             let header =
                 tokio::time::timeout(Duration::from_secs(5), ExchangeHeader::read(1, &mut stream))
@@ -2706,7 +3023,7 @@ pub(crate) mod tests {
                 payload
             })
             .collect();
-        super::ExchangeMessage::new(Arc::new("test".into()), 0, 0, data)
+        super::ExchangeMessage::new(Arc::new("test".into()), 0, 0, 0, data)
     }
 
     fn remaining(channel: &super::ExchangeChannel) -> isize {
@@ -2849,7 +3166,7 @@ pub(crate) mod tests {
                 vec![payload]
             };
             let send =
-                |client: &ExchangeClient| client.send(Arc::new("test".into()), 0, 0, message());
+                |client: &ExchangeClient| client.send(Arc::new("test".into()), 0, 0, 0, message());
 
             assert!(send(&client).is_none(), "half the budget should fit");
             assert!(send(&client).is_none(), "the whole budget should fit");
