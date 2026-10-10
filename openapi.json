@@ -10531,6 +10531,14 @@
             "nullable": true,
             "minimum": 0
           },
+          "lazy_input_map_keys_per_step": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many keys a lazy input map resolves against its integral before it\nyields to the rest of the circuit.\n\nThe map yields once it has produced a chunk of adjustments, which bounds\na step by its output.  A transaction that rewrites keys with the values\nthey already hold produces almost no adjustments, so this bounds the same\nstep by its input.\n\nThe default is 100,000.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
           "max_level0_batch_size_records": {
             "type": "integer",
             "format": "int32",

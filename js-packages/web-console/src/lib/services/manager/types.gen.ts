@@ -1876,6 +1876,18 @@ export type DevTweaks = {
    */
   integral_merge_threshold_batches?: number | null
   /**
+   * How many keys a lazy input map resolves against its integral before it
+   * yields to the rest of the circuit.
+   *
+   * The map yields once it has produced a chunk of adjustments, which bounds
+   * a step by its output.  A transaction that rewrites keys with the values
+   * they already hold produces almost no adjustments, so this bounds the same
+   * step by its input.
+   *
+   * The default is 100,000.
+   */
+  lazy_input_map_keys_per_step?: number | null
+  /**
    * Maximum batch size in records for level 0 merges.
    */
   max_level0_batch_size_records?: number | null

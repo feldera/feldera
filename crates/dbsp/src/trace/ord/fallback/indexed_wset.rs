@@ -96,6 +96,25 @@ where
         }
     }
 
+    /// Factories for a batch whose values end in the trailing `u32` that
+    /// factories from [`Self::with_projection`] hide.
+    ///
+    /// Files written through these factories record the stamp.  Factories from
+    /// [`Self::with_projection`] reopen such a file as a batch that hides the
+    /// stamp, and factories for the unstamped values refuse it, so a restored
+    /// batch never reads the stamp as part of a value.
+    pub fn stamped<KType, VType, RType>() -> Self
+    where
+        KType: DBData + Erase<K>,
+        VType: DBData + Erase<V>,
+        RType: DBWeight + Erase<R>,
+    {
+        Self {
+            plain: FileIndexedWSetFactories::stamped::<KType, VType, RType>(),
+            projected: None,
+        }
+    }
+
     /// Factories for the projected representation, whose values carry a hidden
     /// trailing column.
     ///
@@ -340,6 +359,35 @@ where
             cursor.seek_key(key);
             if cursor.get_key() == Some(key) {
                 sample.push_ref(key);
+            }
+        }
+    }
+
+    /// Presents `batch`, whose values carry a trailing column, as a batch over
+    /// the leading column alone.
+    ///
+    /// The two spellings describe the same records, so this rewraps the inner
+    /// batch rather than copying it.
+    ///
+    /// # Arguments
+    ///
+    /// * `factories` - factories describing both value types.
+    /// * `batch` - the batch to present, whose values carry the trailing column.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless `factories` came from
+    /// [`FallbackIndexedWSetFactories::with_projection`], and on a `batch` that
+    /// is already projected, whose values would then carry two trailing columns.
+    pub fn project_batch(
+        factories: &FallbackIndexedWSetFactories<K, V, R>,
+        batch: &FallbackIndexedWSet<K, DynPair<V, DynData>, R>,
+    ) -> Self {
+        match &batch.inner {
+            Inner::Vec(vec) => Self::from_projected_vec(factories, vec.clone()),
+            Inner::File(file) => Self::from_projected_file(factories, file.clone()),
+            Inner::VecProj(_) | Inner::FileProj(_) => {
+                panic!("a batch that already hides a trailing column cannot hide another")
             }
         }
     }
@@ -787,6 +835,13 @@ where
             inner,
             projected_is_empty: OnceLock::new(),
         })
+    }
+
+    fn restorable_with(&self, factories: &Self::Factories) -> bool {
+        // A projected batch on storage is checkpointed as its stamped file,
+        // which only factories with a projection can reopen.  A projected batch
+        // in memory drops the stamp as it persists, so it needs neither.
+        !matches!(self.inner, Inner::FileProj(_)) || factories.has_projection()
     }
 
     fn key_bounds(&self) -> Option<(&Self::Key, &Self::Key)> {
