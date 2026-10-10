@@ -5,8 +5,13 @@ Provides shared fixtures for OIDC authentication caching across pytest workers.
 Uses pytest-xdist hooks to ensure OIDC token fetching happens only once on the master node.
 """
 
+import os
+
 import pytest
 import logging
+
+# The one runtime besides the platform's own that the platform tests may run on.
+GEN2_RUNTIME_VERSION = "gen2"
 
 
 def is_master(config) -> bool:
@@ -14,8 +19,25 @@ def is_master(config) -> bool:
     return not hasattr(config, "workerinput")
 
 
+def refuse_unexpected_runtime_version():
+    """
+    `FELDERA_RUNTIME_VERSION` pins every pipeline the platform tests create.
+    Any value but gen2 is most likely leaked from the runtime tests' CI job,
+    which sets it to the commit SHA, so fail before running on the wrong runtime.
+    """
+    runtime_version = os.environ.get("FELDERA_RUNTIME_VERSION")
+    if runtime_version and runtime_version != GEN2_RUNTIME_VERSION:
+        raise pytest.UsageError(
+            f"FELDERA_RUNTIME_VERSION is '{runtime_version}', but the platform tests "
+            f"run on the platform's own runtime or on '{GEN2_RUNTIME_VERSION}'. "
+            "Unset FELDERA_RUNTIME_VERSION to test the platform's own runtime."
+        )
+
+
 def pytest_configure(config):
-    """Configure hook: fetch OIDC token on master node only."""
+    """Configure hook: refuse an unexpected runtime pin, fetch OIDC token on master node only."""
+    refuse_unexpected_runtime_version()
+
     # Keep SDK debug logs enabled in tests without affecting production defaults.
     logging.getLogger("feldera.rest.feldera_client").setLevel(logging.DEBUG)
 

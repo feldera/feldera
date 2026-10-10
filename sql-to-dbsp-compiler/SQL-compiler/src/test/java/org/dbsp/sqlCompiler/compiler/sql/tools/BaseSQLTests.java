@@ -243,6 +243,12 @@ public class BaseSQLTests {
             className = className.substring(className.lastIndexOf('.') + 1);
             BaseSQLTests.this.currentTestInformation  = className + "#" + methodName;
         }
+
+        @Override
+        protected void failed(Throwable error, Description description) {
+            if (Gen2CaseExport.isEnabled())
+                Gen2CaseExport.recordFailedTest(BaseSQLTests.this.currentTestInformation, error);
+        }
     };
 
     public static final String PROJECT_DIRECTORY = "..";
@@ -286,6 +292,11 @@ public class BaseSQLTests {
     /** Runs all the tests from the testsToRun list. */
     @AfterClass
     public static void runAllTests() throws IOException, InterruptedException {
+        if (Gen2CaseExport.isEnabled()) {
+            // The cases run on a Gen-2 pipeline, not as Rust tests.
+            Gen2CaseExport.exportAll(testsToRun);
+            testsToRun.clear();
+        }
         if (testsToRun.isEmpty())
             return;
 
@@ -436,6 +447,7 @@ public class BaseSQLTests {
     /** Return the default compiler used for testing. */
     public final DBSPCompiler testCompiler() {
         CompilerOptions options = this.testOptions();
+        Gen2CaseExport.adjustOptions(options);
         return new DBSPCompiler(options);
     }
 
