@@ -234,10 +234,11 @@ const lazyUpdateConfig = async (auth: AuthDetails) => {
     result = await fetchConfigs()
   } catch (e) {
     console.warn('Background config refresh failed:', e)
-    trackLogin(auth)
+    // Without a new session, send `signin` and skip the signup check.
+    trackLogin(auth, undefined)
     return
   }
-  applyFreshConfigs(auth, result.config)
+  applyFreshConfigs(auth, result.config, result.sessionConfig)
 
   // `config` may be undefined here: the session stopped resolving an acting
   // tenant mid-session (e.g. this user was removed from the selected tenant).
@@ -404,7 +405,7 @@ export const load: LayoutLoad = async (): Promise<LayoutData> => {
     return emptyLayoutData
   }
 
-  applyFreshConfigs(auth, result.config)
+  applyFreshConfigs(auth, result.config, result.sessionConfig)
 
   return buildLayoutData(auth, result.config, result.sessionConfig)
 }
@@ -457,17 +458,25 @@ function buildLayoutData(
  * drop `signin` until `initializeConfigDependencies` starts them with the
  * key from this config.
  */
-function applyFreshConfigs(auth: AuthDetails, config: Configuration | undefined) {
+function applyFreshConfigs(
+  auth: AuthDetails,
+  config: Configuration | undefined,
+  sessionConfig: SessionInfo | undefined
+) {
   if (config) {
     syncServerTimeFromConfig(config)
     initializeConfigDependencies(auth, config)
   }
-  trackLogin(auth)
+  trackLogin(auth, sessionConfig)
 }
 
-function trackLogin(auth: AuthDetails) {
+/**
+ * Report the login to analytics. Call only with a session from a new fetch,
+ * because the cached session can be from the previous user of this browser.
+ */
+function trackLogin(auth: AuthDetails, sessionConfig: SessionInfo | undefined) {
   if (typeof auth === 'object' && 'logout' in auth) {
-    reportLogin(auth.profile, auth.authTime)
+    reportLogin(auth.profile, auth.authTime, sessionConfig?.user_created_at)
   }
 }
 
