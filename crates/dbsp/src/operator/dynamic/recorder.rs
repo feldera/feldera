@@ -11,9 +11,13 @@
 //! them.
 //!
 //! A recorder is attached, disabled, to every stream registered as a replay
-//! source (see `register_replay_stream` in `circuit_builder`), because any
+//! source (see `register_replay_stream` and
+//! `register_accumulated_replay_stream` in `circuit_builder`), because any
 //! of them can turn out to be a boundary stream when a checkpoint is
-//! restored into a modified circuit.  Building recorders unconditionally
+//! restored into a modified circuit.  The recorded stream carries either
+//! batches or, for an integral fed by an accumulator, the accumulator's
+//! output: one spine per transaction.  Either way the recorder accumulates
+//! the stream's contents into a single spine.  Building recorders unconditionally
 //! at construction time keeps circuit construction — and therefore
 //! [`Runtime::sequence_next`](crate::circuit::Runtime::sequence_next)-based
 //! exchange-id allocation — identical across workers.  A disabled recorder
@@ -40,7 +44,7 @@ use crate::{
         operator_traits::{Operator, OperatorName, SinkOperator},
     },
     circuit_cache_key,
-    trace::{Batch, Spine, Trace, TraceRole},
+    trace::{Batch, BatchReader, Spine, Trace, TraceRole, spine_async::WithSnapshot},
 };
 use size_of::SizeOf;
 
@@ -329,6 +333,31 @@ where
     }
 }
 
+/// Records an accumulated stream: each transaction's spine contributes its
+/// batches to the recording, which shares them instead of copying them.
+impl<B> SinkOperator<Option<Spine<B>>> for Recorder<B>
+where
+    B: Batch,
+{
+    async fn eval(&mut self, spine: &Option<Spine<B>>) {
+        let Some(spine) = spine else {
+            return;
+        };
+        if spine.is_empty() || !self.state.is_recording() {
+            return;
+        }
+        // See `eval_owned` above for why the trace is taken out of the
+        // shared state.
+        let Some(mut trace) = self.state.take_trace() else {
+            return;
+        };
+        for batch in spine.ro_snapshot().batches() {
+            trace.insert(batch.clone()).await;
+        }
+        self.state.put_trace(trace);
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::{Recorder, RecorderId};
@@ -415,6 +444,59 @@ mod test {
             let trace = recorder.stop_recording().unwrap();
             let consolidated = trace.consolidate().unwrap();
             assert_eq!(zset_contents(&consolidated), vec![(6, 1)]);
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+    }
+
+    /// A recorder on an accumulated stream records each transaction's spine,
+    /// so that its recording sums the stream across transactions just like a
+    /// recorder on a stream of batches.
+    #[test]
+    fn test_recorder_accumulated() {
+        Runtime::run(CircuitConfig::with_workers(1), move |_parker| {
+            let (circuit, (input, recorder)) = RootCircuit::build(|circuit| {
+                let (stream, input) = circuit.add_input_zset::<u64>();
+                let factories = <<OrdZSet<DynData> as crate::trace::BatchReader>::Factories>::new::<
+                    u64,
+                    (),
+                    ZWeight,
+                >();
+                let accumulated = stream
+                    .inner()
+                    .dyn_accumulate(&factories)
+                    .into_enabled_stream();
+                let recorder = Recorder::<OrdZSet<DynData>>::new(&factories, Location::caller());
+                let handle = recorder.handle();
+                circuit.add_sink_with_preference(
+                    recorder,
+                    &accumulated,
+                    OwnershipPreference::YIELD_OWNERSHIP,
+                );
+                Ok((input, handle))
+            })
+            .unwrap();
+
+            // A disabled recorder records nothing.
+            input.push(1, 1);
+            circuit.transaction().unwrap();
+            assert!(recorder.stop_recording().is_none());
+
+            recorder.start_recording();
+            input.push(2, 1);
+            input.push(3, 2);
+            circuit.transaction().unwrap();
+            input.push(2, -1);
+            input.push(4, 1);
+            circuit.transaction().unwrap();
+            circuit.transaction().unwrap();
+
+            let trace = recorder
+                .stop_recording()
+                .expect("a recording recorder returns its contents");
+            let consolidated = trace.consolidate().expect("recorded data is non-empty");
+            assert_eq!(zset_contents(&consolidated), vec![(3, 2), (4, 1)]);
         })
         .unwrap()
         .join()
