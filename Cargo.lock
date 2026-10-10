@@ -5431,6 +5431,7 @@ dependencies = [
  "futures",
  "num-derive",
  "num-traits",
+ "proptest",
  "rand 0.8.6",
  "rmp-serde",
  "rmpv",
@@ -5519,6 +5520,7 @@ name = "feldera-iceberg"
 version = "0.365.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "atomic",
  "bytemuck",
  "chrono",

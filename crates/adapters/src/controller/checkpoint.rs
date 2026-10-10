@@ -2,11 +2,12 @@ use chrono::{DateTime, Utc};
 use dbsp::storage::backend::{StorageBackend, StoragePath};
 use feldera_types::{
     adapter_stats::ConnectorError, checkpoint::CheckpointMetadata, config::PipelineConfig,
+    coordination::InputDistribution,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     sync::{
         Mutex,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -66,6 +67,16 @@ pub struct Checkpoint {
     /// Statistics for the output endpoints.
     #[serde(default)]
     pub output_statistics: HashMap<String, CheckpointOutputEndpointMetrics>,
+
+    /// The distribution of the distributed input connectors that this host
+    /// used (see `CoordinationActivate::input_distribution`).
+    ///
+    /// A distributed connector's resume state on each host covers only the
+    /// part of the input that its distribution gave that host, so resuming
+    /// from this checkpoint must keep the distribution.  This is empty without
+    /// a coordinator and in checkpoints that predate distributed connectors.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub input_distribution: BTreeMap<String, InputDistribution>,
 }
 
 impl Checkpoint {

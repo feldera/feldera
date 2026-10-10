@@ -3,10 +3,13 @@ use std::collections::{BTreeMap, HashSet};
 use feldera_adapterlib::errors::controller::ConfigError;
 use feldera_types::config::PipelineConfig;
 
+use super::distribution::validate_distribution;
+
 pub fn validate_config(config: &PipelineConfig) -> Result<(), ConfigError> {
     let mut dependencies = Vec::new();
 
     for (endpoint_name, input) in config.inputs.iter() {
+        validate_distribution(endpoint_name, &input.connector_config)?;
         if let Some(start_after) = input.connector_config.start_after.as_ref() {
             if start_after.is_empty() {
                 return Err(ConfigError::empty_start_after(endpoint_name));

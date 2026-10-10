@@ -61,6 +61,7 @@ mod pubsub;
 mod redis;
 
 use feldera_types::config::TransportConfig;
+use feldera_types::coordination::InputShard;
 
 #[cfg(feature = "with-redis")]
 use redis::output::RedisOutputEndpoint;
@@ -90,6 +91,10 @@ pub use feldera_adapterlib::transport::*;
 /// Creates an input transport endpoint instance using an input transport
 /// configuration, resolving secrets by reading `secrets_dir`.
 ///
+/// `shard` is `Some` for a distributed connector, and then it specifies the
+/// part of the input that the endpoint reads.  Only transports for which
+/// [TransportConfig::supports_distribution] is true accept `Some`.
+///
 /// Returns an error if there is a invalid configuration for the endpoint.
 /// Returns `None` if the transport configuration variant is incompatible with an input endpoint.
 #[allow(unused_variables)]
@@ -97,12 +102,14 @@ pub fn input_transport_config_to_endpoint(
     config: &TransportConfig,
     endpoint_name: &str,
     secrets_dir: &Path,
+    shard: Option<InputShard>,
 ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+    debug_assert!(shard.is_none() || config.supports_distribution());
     let config = resolve_secret_references_via_json(secrets_dir, config)?;
     let endpoint: Box<dyn TransportInputEndpoint> = match config {
         TransportConfig::FileInput(config) => Box::new(FileInputEndpoint::new(config)),
         #[cfg(feature = "with-kafka")]
-        TransportConfig::KafkaInput(config) => Box::new(KafkaFtInputEndpoint::new(config)?),
+        TransportConfig::KafkaInput(config) => Box::new(KafkaFtInputEndpoint::new(config, shard)?),
         #[cfg(not(feature = "with-kafka"))]
         TransportConfig::KafkaInput(_) => return Ok(None),
         #[cfg(feature = "with-nats")]

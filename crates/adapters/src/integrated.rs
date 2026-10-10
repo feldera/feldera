@@ -2,6 +2,7 @@ use crate::controller::{ControllerInner, EndpointId};
 use crate::transport::IntegratedInputEndpoint;
 use crate::{ControllerError, Encoder, InputConsumer, OutputEndpoint};
 use datafusion::execution::runtime_env::RuntimeEnv;
+pub use feldera_adapterlib::transport::DistributedInput;
 use feldera_adapterlib::utils::datafusion::with_private_object_store_registry;
 use feldera_types::config::{ConnectorConfig, PipelineConfig, TransportConfig};
 use feldera_types::program_schema::Relation;
@@ -110,6 +111,8 @@ pub fn create_integrated_output_endpoint(
     Ok(ep)
 }
 
+/// Creates an integrated input endpoint.  `distributed` is `Some` only for a
+/// distributed connector, whose transport must support distribution.
 #[allow(unused_variables)]
 pub fn create_integrated_input_endpoint(
     endpoint_name: &str,
@@ -117,7 +120,9 @@ pub fn create_integrated_input_endpoint(
     pipeline_config: &PipelineConfig,
     runtime_env: Arc<RuntimeEnv>,
     consumer: Box<dyn InputConsumer>,
+    distributed: Option<DistributedInput>,
 ) -> Result<Box<dyn IntegratedInputEndpoint>, ControllerError> {
+    debug_assert!(distributed.is_none() || config.transport.supports_distribution());
     // Every connector gets its own object store registry: DataFusion keys stores
     // by scheme, host and port, so a shared registry lets one connector reroute
     // another's reads (#7080). The memory pool and caches stay shared.
@@ -132,6 +137,7 @@ pub fn create_integrated_input_endpoint(
                 pipeline_config,
                 runtime_env,
                 consumer,
+                distributed,
             ))
         }
         #[cfg(feature = "with-iceberg")]
@@ -142,6 +148,7 @@ pub fn create_integrated_input_endpoint(
                 pipeline_config,
                 runtime_env,
                 consumer,
+                distributed,
             ))
         }
         TransportConfig::PostgresInput(config) => {

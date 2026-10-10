@@ -1064,6 +1064,7 @@ mod tests {
             paused: false,
             labels: vec![],
             start_after: None,
+            distributed: false,
         };
 
         // Reuse property value as it is only used in the errors

@@ -327,6 +327,10 @@ ingested in a separate transaction.
 
 See `timestamp_column` documentation for more details.
 
+A [distributed connector](#distributed-connectors) ingests the snapshot
+in one transaction across all of the hosts: the transaction commits
+only after every host has ingested its part of the snapshot.
+
 ### Ingesting the Delta transaction log using transactions
 
 If the connector is configured in the `follow`, `snapshot_and_follow`, or `cdc` mode, and its
@@ -453,39 +457,70 @@ it is marked **UNHEALTHY** while retrying failed operations.
 If the pipeline is stopped and restarted during a retry, the connector resumes from the last successfully
 ingested table version. This guarantees that no data loss occurs due to object store read errors.
 
-## Optimizing multihost performance for unbalanced large data
+## Distributed connectors
 
-In a multihost pipeline, Feldera currently assigns each input
-connector to one host.  All of the work related to reading data from
-that input connector then takes place on that host.  When a pipeline
-has several input connectors that read comparable amounts of data,
-this spreads the network and CPU load related to them across the
-hosts.
+In a multihost pipeline, Feldera assigns each input connector to one
+host by default.  That host does all of the work to read the
+connector's data.  When one input connector reads most of the
+pipeline's data, one host does most of the work.
 
-On the other hand, if a pipeline that has one input connector that
-reads most of the pipeline's data, only a single host does all the
-work.  In such a case, it makes sense to divide the connector into
-multiple connectors, one per host.  Feldera places input connectors on
-hosts "round robin" in alphabetical order, which means that using the
-default connector names or names with the same prefix and a sequential
-suffix will ensure that they are spread as evenly as possible across
-the hosts.
+To spread the work of reading a Delta Lake table's snapshot across the
+hosts, set the generic [`distributed`](/connectors#distributed)
+attribute to `true`.  Then the connector runs on every host, and each
+host reads a different subset of the snapshot's data files.  Together,
+the hosts read each file exactly once.
 
-When a Delta Lake source is divided into
-[partitions](https://docs.delta.io/best-practices/), its input
-connector can be divided into multiple connectors by specifying a
-different [`filter`](#filter) for each one.  For example, if the
-source is partitioned by an integer column `partition` that takes one
-of the six values 0 through 5, and there are 3 hosts, one might use 3
-copies of the input connector, one with `"filter": "partition = 0 OR
-partition = 1"`, one with `"filter": "partition = 2 OR partition =
-3"`, and one with `"filter": "partition = 4 OR partition = 5`.
+```json
+{
+  "transport": {
+    "name": "delta_table_input",
+    "config": {
+      "uri": "s3://my-bucket/big_table",
+      "mode": "snapshot_and_follow",
+      "transaction_mode": "snapshot"
+    }
+  },
+  "distributed": true
+}
+```
 
-> ⚠️ [Tables with LATENESS] cannot correctly be divided into multiple
-> connectors this way, because the different connectors can read data
-> "out of sync" from one another.
+A distributed connector works as follows:
 
-[Tables with LATENESS]: /sql/streaming/#lateness-expressions
+- Host 0 opens the table at the version that the connector's
+  configuration selects (the latest version, or the one that `version`
+  or `datetime` selects).  The other hosts open the same version, so
+  that all of the hosts read one snapshot.
+- The hosts divide the snapshot's data files, not its partitions, so an
+  unpartitioned table divides as well as a partitioned one.
+- In `follow` and `snapshot_and_follow` modes, only one host follows the
+  table's transaction log after the snapshot, because the log is a
+  single sequence of commits.  The other hosts end their input after
+  their part of the snapshot.
+- In `snapshot_and_follow` mode, a distributed connector requires a
+  [`transaction_mode`](#transactions) other than `none`.  The hosts
+  then read the snapshot in one transaction, which commits after every
+  host has read its part, and the host that follows the table reads
+  changes only after that.  Otherwise, it could read changes to rows
+  before the other hosts read those rows from the snapshot.
+- When the pipeline resumes from a checkpoint, each host continues from
+  its own checkpointed state.
+  As for any multihost pipeline, the pipeline must have the same number
+  of hosts as when it took the checkpoint (see [checkpoint
+  sync](/pipelines/checkpoint-sync#how-sync-works)).
+
+Limits:
+
+- A distributed connector does not support
+  [`timestamp_column`](#ingesting-time-series-data-from-a-delta-lake),
+  because each host reads its part of the snapshot in its own order.
+  Thus, [tables with LATENESS] that need the snapshot in timestamp order
+  cannot use a distributed connector.
+- A distributed connector does not support `cdc` mode.
+- The pipeline and its multihost coordinator must both support
+  distributed Delta Lake connectors.  Otherwise, the pipeline fails to
+  start.
+
+[tables with LATENESS]: /sql/streaming/#lateness-expressions
 
 ## Additional examples
 

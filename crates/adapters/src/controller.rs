@@ -71,6 +71,7 @@ use dbsp::{
     profile::{DbspProfile, GraphProfile},
 };
 use dbsp::{Error as DbspError, Runtime, WeakRuntime};
+use distribution::{ActivationInput, input_shard, resume_distribution};
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::metrics::{ConnectorMetrics, ValueType};
 use feldera_adapterlib::soft_delete::SoftDeleteHandle;
@@ -93,8 +94,8 @@ use feldera_types::adapter_stats::{
 };
 use feldera_types::checkpoint::{CheckpointActivity, CheckpointMetadata, HostInfo};
 use feldera_types::coordination::{
-    self, AdHocCatalog, AdHocTableType, CheckpointCoordination, Completion, StepAction, StepInputs,
-    StepRequest, StepStatus, TransactionCoordination,
+    self, AdHocCatalog, AdHocTableType, CheckpointCoordination, Completion, InputDistribution,
+    StepAction, StepInputs, StepRequest, StepStatus, TransactionCoordination,
 };
 use feldera_types::format::json::JsonLines;
 use feldera_types::pipeline_diff::PipelineDiff;
@@ -150,6 +151,7 @@ use uuid::Uuid;
 use validate::validate_config;
 
 mod checkpoint;
+mod distribution;
 mod error;
 mod journal;
 #[cfg(target_os = "macos")]
@@ -180,7 +182,7 @@ use crate::format::{
     MessageOrientedPreprocessedParser, PostprocessedConsumer, StreamingPreprocessedParser,
 };
 use crate::format::{get_input_format, get_output_format};
-use crate::integrated::create_integrated_input_endpoint;
+use crate::integrated::{DistributedInput, create_integrated_input_endpoint};
 pub use error::{ConfigError, ControllerError};
 pub use feldera_types::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
@@ -250,6 +252,16 @@ pub struct ControllerBuilder {
     /// workers).
     layout: Option<Layout>,
 
+    /// The coordinator's instructions for distributed input connectors (see
+    /// [coordination::CoordinationActivate::input_distribution]).  This is empty without a
+    /// coordinator.
+    input_distribution: BTreeMap<String, InputDistribution>,
+
+    /// The values that host 0 chose for the distributed input connectors that
+    /// need a choice (see
+    /// [coordination::CoordinationActivate::input_choices]).
+    input_choices: BTreeMap<String, JsonValue>,
+
     storage: Option<CircuitStorageConfig>,
 }
 
@@ -296,6 +308,8 @@ impl ControllerBuilder {
         Ok(Self {
             config: config.clone(),
             layout: None,
+            input_distribution: BTreeMap::new(),
+            input_choices: BTreeMap::new(),
             storage,
         })
     }
@@ -393,6 +407,18 @@ impl ControllerBuilder {
         }
     }
 
+    pub(crate) fn with_input_distribution(
+        self,
+        input_distribution: BTreeMap<String, InputDistribution>,
+        input_choices: BTreeMap<String, JsonValue>,
+    ) -> Self {
+        Self {
+            input_distribution,
+            input_choices,
+            ..self
+        }
+    }
+
     /// Creates a [ControllerInit] that will open the specific
     /// `checkpoint_uuid`.
     pub(crate) fn open_checkpoint(
@@ -406,6 +432,7 @@ impl ControllerBuilder {
             self.storage.clone().unwrap(),
             checkpoint_uuid,
         )
+        .map(|init| init.with_input_distribution(self.input_distribution, self.input_choices))
     }
 
     /// Creates a [ControllerInit] that will start fresh without using a
@@ -413,6 +440,7 @@ impl ControllerBuilder {
     pub(crate) fn open_without_checkpoint(self) -> Result<ControllerInit, ControllerError> {
         self.take_bucket_ownership()?;
         ControllerInit::without_checkpoint(self.layout, self.config.clone(), self.storage.clone())
+            .map(|init| init.with_input_distribution(self.input_distribution, self.input_choices))
     }
 
     /// Creates a [ControllerInit] that will start from the latest checkpoint,
@@ -424,6 +452,7 @@ impl ControllerBuilder {
             self.config.clone(),
             self.storage.clone(),
         )
+        .map(|init| init.with_input_distribution(self.input_distribution, self.input_choices))
     }
 
     pub(crate) fn storage(&self) -> Option<Arc<dyn StorageBackend>> {
@@ -901,7 +930,8 @@ impl Controller {
     ) -> Result<EndpointId, ControllerError> {
         debug!("Connecting input endpoint '{endpoint_name}'; config: {config:?}");
         self.inner.fail_if_bootstrapping_or_restoring()?;
-        self.inner.connect_input(endpoint_name, config, resume_info)
+        self.inner
+            .connect_input(endpoint_name, config, resume_info, None)
     }
 
     /// Disconnect an existing input endpoint.
@@ -2371,6 +2401,11 @@ impl Controller {
             .map(|(_step, snapshot)| snapshot.clone())
     }
 
+    /// See [ControllerInner::input_choices].
+    pub fn input_choices(&self) -> BTreeMap<String, JsonValue> {
+        self.inner.input_choices()
+    }
+
     pub fn incomplete_labels(&self) -> HashSet<String> {
         let mut incomplete_labels = HashSet::new();
         for status in self.inner.status.inputs.read().values() {
@@ -3056,6 +3091,9 @@ impl CircuitThread {
             modified_output_endpoints,
             pipeline_diff,
             incarnation_uuid,
+            input_distribution,
+            checkpointed_input_distribution: _,
+            input_choices,
         } = controller_init;
 
         let storage = circuit_config
@@ -3260,11 +3298,20 @@ impl CircuitThread {
             step_receiver,
             checkpoint_receiver,
             incarnation_uuid,
+            input_distribution,
+            input_choices,
             storage
                 .as_ref()
                 .and_then(|backend| backend.file_system_path())
                 .map(PathBuf::from),
         )?;
+
+        // The connectors have initialized.  Publish their choices now: the
+        // first step, below in `run`, needs the other hosts, and the
+        // coordinator activates them only after it reads these.
+        if let Some(state) = &state {
+            state.set_input_choices(controller.input_choices());
+        }
 
         let bootstrapping = circuit.bootstrap_in_progress();
 
@@ -5113,6 +5160,7 @@ impl FtState {
             input_metadata: CheckpointOffsets::default(),
             input_statistics: HashMap::new(),
             output_statistics: HashMap::new(),
+            input_distribution: controller.input_distribution.clone(),
         };
         checkpoint.write(&*backend, &StoragePath::from(STATE_FILE))?;
 
@@ -5186,7 +5234,7 @@ impl FtState {
             controller.disconnect_input(&endpoint_id);
         }
         for (endpoint_name, config) in &metadata.add_inputs {
-            controller.connect_input(endpoint_name, config, None)?;
+            controller.connect_input(endpoint_name, config, None, None)?;
         }
         for (endpoint_name, pause) in &metadata.changed_inputs {
             if *pause {
@@ -5791,9 +5839,36 @@ pub struct ControllerInit {
 
     /// The incarnation UUID to report in controller statistics.
     pub incarnation_uuid: Uuid,
+
+    /// See [ControllerBuilder::input_distribution].
+    input_distribution: BTreeMap<String, InputDistribution>,
+
+    /// The input distribution recorded in the checkpoint, if one was read.
+    checkpointed_input_distribution: BTreeMap<String, InputDistribution>,
+
+    /// See [ControllerBuilder::input_choices].
+    input_choices: BTreeMap<String, JsonValue>,
 }
 
 impl ControllerInit {
+    /// Sets the coordinator's input distribution.  For connectors that the
+    /// checkpoint distributed, the checkpoint's distribution wins (see
+    /// [resume_distribution]).
+    fn with_input_distribution(
+        self,
+        input_distribution: BTreeMap<String, InputDistribution>,
+        input_choices: BTreeMap<String, JsonValue>,
+    ) -> Self {
+        Self {
+            input_distribution: resume_distribution(
+                input_distribution,
+                &self.checkpointed_input_distribution,
+            ),
+            input_choices,
+            ..self
+        }
+    }
+
     fn without_checkpoint(
         layout: Option<Layout>,
         config: PipelineConfig,
@@ -5812,6 +5887,9 @@ impl ControllerInit {
             modified_output_endpoints: HashSet::new(),
             pipeline_diff: None,
             incarnation_uuid: Uuid::nil(),
+            input_distribution: BTreeMap::new(),
+            checkpointed_input_distribution: BTreeMap::new(),
+            input_choices: BTreeMap::new(),
         })
     }
 
@@ -5869,6 +5947,7 @@ impl ControllerInit {
             input_metadata,
             input_statistics,
             output_statistics,
+            input_distribution: checkpointed_input_distribution,
         } = checkpoint;
         info!("Resuming from checkpoint:\n{checkpoint_summary}");
 
@@ -6049,6 +6128,9 @@ impl ControllerInit {
             initial_start_time: Some(initial_start_time),
             pipeline_diff: Some(pipeline_diff),
             incarnation_uuid: Uuid::nil(),
+            input_distribution: BTreeMap::new(),
+            checkpointed_input_distribution,
+            input_choices: BTreeMap::new(),
         })
     }
 
@@ -6922,6 +7004,10 @@ impl TransactionPhase {
 struct ConnectorTransactionPhase {
     phase: TransactionPhase,
     label: Option<String>,
+
+    /// True if every host of a distributed connector requests this
+    /// transaction (see [TransactionCoordination::all_hosts]).
+    all_hosts: bool,
 }
 
 impl ConnectorTransactionPhase {
@@ -7063,6 +7149,11 @@ pub struct TransactionInfo {
     /// This field is modified by each transaction initiator: the REST API and connectors.
     initiators: TransactionInitiators,
 
+    /// In a multihost pipeline, the connectors that made a request that every
+    /// host makes, and withdrew it, in the current transaction (see
+    /// [TransactionCoordination::all_hosts_done]).
+    all_hosts_done: HashSet<String>,
+
     /// Actual pipeline state, set by the circuit thread.
     transaction_state: TransactionState,
 
@@ -7092,6 +7183,7 @@ impl TransactionInfo {
             is_multihost,
             last_transaction_id: 0,
             initiators: TransactionInitiators::default(),
+            all_hosts_done: HashSet::new(),
             transaction_state: TransactionState::None,
             replay_transaction_id: None,
             replay_open_transaction_id: None,
@@ -7133,6 +7225,7 @@ impl TransactionInfo {
         &mut self,
         endpoint_name: &str,
         label: Option<&str>,
+        all_hosts: bool,
     ) -> Result<(), ControllerError> {
         if self.is_multihost {
             match self
@@ -7144,6 +7237,7 @@ impl TransactionInfo {
                     entry.insert(ConnectorTransactionPhase {
                         phase: TransactionPhase::Started,
                         label: label.map(String::from),
+                        all_hosts,
                     });
                     debug!("Connector {endpoint_name} initiated request for transaction");
                     return Ok(());
@@ -7178,6 +7272,7 @@ impl TransactionInfo {
                 entry.insert(ConnectorTransactionPhase {
                     phase: TransactionPhase::Started,
                     label: label.map(String::from),
+                    all_hosts,
                 });
                 debug!(
                     "Connector {endpoint_name} {} transaction {}{} ({} participants)",
@@ -7206,16 +7301,19 @@ impl TransactionInfo {
     ) -> Result<(), ControllerError> {
         if self.is_multihost {
             debug!("Connector {endpoint_name} requests transaction commit");
-            if self
+            return match self
                 .initiators
                 .initiated_by_connectors
                 .remove(endpoint_name)
-                .is_some()
             {
-                return Ok(());
-            } else {
-                return Err(ControllerError::NoTransactionInProgress);
-            }
+                Some(phase) => {
+                    if phase.all_hosts {
+                        self.all_hosts_done.insert(endpoint_name.to_string());
+                    }
+                    Ok(())
+                }
+                None => Err(ControllerError::NoTransactionInProgress),
+            };
         }
 
         let num_active_participants = self.initiators.num_active_participants();
@@ -7267,23 +7365,30 @@ impl TransactionInfo {
 
     fn clear_initiators(&mut self) {
         self.initiators.clear(self.is_multihost);
+        if !self.all_hosts_done.is_empty() {
+            self.all_hosts_done.clear();
+            self.update_transaction_status();
+        }
     }
 
     /// Sends an update to the transaction coordination status, if it has
     /// changed.
     fn update_transaction_status(&self) {
-        let coordination = TransactionCoordination {
-            requests: self
-                .initiators
+        let started = || {
+            self.initiators
                 .initiated_by_connectors
                 .iter()
-                .filter_map(
-                    |(name, phase)| match phase.phase == TransactionPhase::Started {
-                        true => Some((name.clone(), phase.label.clone())),
-                        false => None,
-                    },
-                )
+                .filter(|(_name, phase)| phase.phase == TransactionPhase::Started)
+        };
+        let coordination = TransactionCoordination {
+            requests: started()
+                .map(|(name, phase)| (name.clone(), phase.label.clone()))
                 .collect(),
+            all_hosts: started()
+                .filter(|(_name, phase)| phase.all_hosts)
+                .map(|(name, _phase)| name.clone())
+                .collect(),
+            all_hosts_done: self.all_hosts_done.clone(),
         };
         if *self.sender.borrow() != coordination {
             self.sender.send_replace(coordination);
@@ -7342,6 +7447,11 @@ pub struct ControllerInner {
     /// Layout of the [Runtime].
     layout: Layout,
 
+    /// The input distribution that this host used at activation, which each
+    /// checkpoint records.  Only connector initialization applies it (see
+    /// [ControllerInner::connect_input]).
+    input_distribution: BTreeMap<String, InputDistribution>,
+
     /// Current transaction number.
     ///
     /// This is not the same as transaction ID. We increment this counter
@@ -7398,6 +7508,8 @@ impl ControllerInner {
         step_receiver: tokio::sync::watch::Receiver<StepStatus>,
         checkpoint_receiver: tokio::sync::watch::Receiver<Option<CheckpointCoordination>>,
         incarnation_uuid: Uuid,
+        input_distribution: BTreeMap<String, InputDistribution>,
+        input_choices: BTreeMap<String, JsonValue>,
         storage_path: Option<PathBuf>,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let status = Arc::new(ControllerStatus::new(
@@ -7432,6 +7544,7 @@ impl ControllerInner {
                 outputs: ShardedLock::new(outputs),
                 next_output_id: Atomic::new(0),
                 layout: runtime.layout().clone(),
+                input_distribution: input_distribution.clone(),
                 runtime: runtime.downgrade(),
                 shutdown: runtime.cancellation_token().child_token(),
                 circuit_thread_unparker: circuit_thread_parker.unparker().clone(),
@@ -7472,12 +7585,24 @@ impl ControllerInner {
                     let input_config = input_config.clone();
 
                     let resume_info = resume_info.get(&*input_name).cloned();
+                    let activation =
+                        input_distribution
+                            .get(&*input_name)
+                            .map(|distribution| ActivationInput {
+                                distribution: *distribution,
+                                choice: input_choices.get(&*input_name).cloned(),
+                            });
 
                     (
                         format!("'{input_name}' input connector initialization"),
                         Box::new(move || {
                             catch_unwind(AssertUnwindSafe(|| {
-                                controller.connect_input(&input_name, &input_config, resume_info)
+                                controller.connect_input(
+                                    &input_name,
+                                    &input_config,
+                                    resume_info,
+                                    activation.as_ref(),
+                                )
                             }))
                             .unwrap_or_else(|_| Err(ControllerError::ControllerPanic))
                         })
@@ -7524,7 +7649,7 @@ impl ControllerInner {
         })?;
 
         if controller.layout.local_host_idx() == 0 {
-            let _ = controller.connect_input("now", &now_endpoint_config(&config), None);
+            let _ = controller.connect_input("now", &now_endpoint_config(&config), None, None);
         }
 
         let backpressure_thread =
@@ -7657,27 +7782,60 @@ impl ControllerInner {
         tables
     }
 
+    /// Creates input endpoint `endpoint_name` from `endpoint_config`.
+    ///
+    /// `activation` is the coordinator's instructions for a distributed
+    /// connector.  Only connector initialization at activation passes `Some`: a
+    /// connector added at runtime is not distributed, even if it reuses the
+    /// name of a connector that was.
     fn connect_input(
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: &InputEndpointConfig,
         resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
+        activation: Option<&ActivationInput>,
     ) -> Result<EndpointId, ControllerError> {
+        let shard = input_shard(
+            endpoint_name,
+            &endpoint_config.connector_config,
+            &self.layout,
+            activation.map(|activation| &activation.distribution),
+        )?;
         let endpoint = input_transport_config_to_endpoint(
             &endpoint_config.connector_config.transport,
             endpoint_name,
             &self.secrets_dir,
+            shard,
         )
         .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
 
         // If `endpoint` is `None`, it means that the endpoint config specifies an integrated
         // input connector.  Such endpoints are instantiated inside `add_input_endpoint`.
-        self.add_input_endpoint(
+        let distributed = shard.map(|shard| DistributedInput {
+            shard,
+            choice: activation.and_then(|activation| activation.choice.clone()),
+        });
+        self.add_input_endpoint_inner(
             endpoint_name,
             endpoint_config.clone(),
             endpoint,
             resume_info,
+            distributed,
         )
+    }
+
+    /// Returns the values that this host's distributed input connectors chose
+    /// for all the hosts to use (see
+    /// [coordination::CoordinationActivate::input_choices]).
+    pub fn input_choices(&self) -> BTreeMap<String, JsonValue> {
+        self.status
+            .input_status()
+            .values()
+            .filter_map(|endpoint| {
+                let choice = endpoint.reader.as_ref()?.startup_choice()?;
+                Some((endpoint.endpoint_name.clone(), choice))
+            })
+            .collect()
     }
 
     pub fn disconnect_input(self: &Arc<Self>, endpoint_id: &EndpointId) {
@@ -7701,6 +7859,19 @@ impl ControllerInner {
         endpoint_config: InputEndpointConfig,
         endpoint: Option<Box<dyn TransportInputEndpoint>>,
         resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
+    ) -> Result<EndpointId, ControllerError> {
+        self.add_input_endpoint_inner(endpoint_name, endpoint_config, endpoint, resume_info, None)
+    }
+
+    /// Like [Self::add_input_endpoint], with `distributed` passed to an
+    /// integrated connector.
+    fn add_input_endpoint_inner(
+        self: &Arc<Self>,
+        endpoint_name: &str,
+        endpoint_config: InputEndpointConfig,
+        endpoint: Option<Box<dyn TransportInputEndpoint>>,
+        resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
+        distributed: Option<DistributedInput>,
     ) -> Result<EndpointId, ControllerError> {
         let (seek, initial_statistics) = resume_info.unzip();
 
@@ -7903,6 +8074,7 @@ impl ControllerInner {
                     &self.status.pipeline_config,
                     self.datafusion_runtime_env.clone(),
                     probe,
+                    distributed,
                 )?;
 
                 let fault_tolerance = endpoint.fault_tolerance();
@@ -9159,14 +9331,38 @@ impl ControllerInner {
         Ok(())
     }
 
+    /// In a multihost pipeline, returns the transaction that input flushed now
+    /// lands in, if any (see [InputConsumer::open_transaction]).  That is the
+    /// transaction that the coordinator has started and not yet committed: a
+    /// step flushes its input before it starts or commits the circuit's
+    /// transaction, so input flushed now lands in the transaction that the
+    /// next step runs in.  Returns `None` in a single-host pipeline, which
+    /// acts on connectors' requests at once.
+    pub fn open_transaction_for_inputs(&self) -> Option<Option<TransactionId>> {
+        let transaction_info = self.transaction_info.lock().unwrap();
+        transaction_info.is_multihost.then(|| {
+            let initiators = &transaction_info.initiators;
+            if initiators.initiated_by_api == Some(TransactionPhase::Started) {
+                initiators.transaction_id
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Starts a transaction, or joins the one that is open, for connector
+    /// `endpoint_name`.  `all_hosts` is true if every host of a distributed
+    /// connector requests the transaction (see
+    /// [TransactionCoordination::all_hosts]).
     pub fn start_transaction_from_connector(
         &self,
         endpoint_name: &str,
         label: Option<&str>,
+        all_hosts: bool,
     ) -> Result<(), ControllerError> {
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
-        transaction_info.start_transaction_from_connector(endpoint_name, label)?;
+        transaction_info.start_transaction_from_connector(endpoint_name, label, all_hosts)?;
         transaction_info.update_transaction_status();
 
         Ok(())
@@ -9468,6 +9664,31 @@ impl Drop for InputProbe {
     }
 }
 
+impl InputProbe {
+    fn start_transaction_from_connector(&self, label: Option<&str>, all_hosts: bool) {
+        match self.controller.start_transaction_from_connector(
+            &self.endpoint_name,
+            label,
+            all_hosts,
+        ) {
+            Err(error) => {
+                self.controller.input_transport_error(
+                    self.endpoint_id,
+                    &self.endpoint_name,
+                    false,
+                    anyhow!(format!(
+                        "connector attempted to initiate a transaction, but failed: {error}"
+                    )),
+                    Some("connector_start_transaction"),
+                );
+            }
+            _ => {
+                self.transaction_in_progress.store(true, Ordering::Release);
+            }
+        }
+    }
+}
+
 impl InputConsumer for InputProbe {
     fn max_batch_size(&self) -> usize {
         self.max_batch_size
@@ -9543,25 +9764,15 @@ impl InputConsumer for InputProbe {
     }
 
     fn start_transaction(&self, label: Option<&str>) {
-        match self
-            .controller
-            .start_transaction_from_connector(&self.endpoint_name, label)
-        {
-            Err(error) => {
-                self.controller.input_transport_error(
-                    self.endpoint_id,
-                    &self.endpoint_name,
-                    false,
-                    anyhow!(format!(
-                        "connector attempted to initiate a transaction, but failed: {error}"
-                    )),
-                    Some("connector_start_transaction"),
-                );
-            }
-            _ => {
-                self.transaction_in_progress.store(true, Ordering::Release);
-            }
-        }
+        self.start_transaction_from_connector(label, false);
+    }
+
+    fn start_transaction_on_all_hosts(&self, label: Option<&str>) {
+        self.start_transaction_from_connector(label, true);
+    }
+
+    fn open_transaction(&self) -> Option<Option<TransactionId>> {
+        self.controller.open_transaction_for_inputs()
     }
 
     fn commit_transaction(&self) {
@@ -9933,6 +10144,7 @@ impl RunningCheckpoint {
             input_metadata: CheckpointOffsets(input_metadata),
             input_statistics,
             output_statistics,
+            input_distribution: circuit.controller.input_distribution.clone(),
         };
         Span::new("blocking")
             .with_category("Checkpoint")
@@ -10340,5 +10552,49 @@ mod controller_init_tests {
             "max_worker_batch_size": max_queued_records + 2,
         }))
         .unwrap()
+    }
+}
+
+#[cfg(test)]
+mod all_hosts_transaction_tests {
+    use std::collections::HashSet;
+
+    use feldera_types::coordination::TransactionCoordination;
+
+    use super::TransactionInfo;
+
+    fn names(names: &[&str]) -> HashSet<String> {
+        names.iter().map(|name| name.to_string()).collect()
+    }
+
+    /// A multihost host reports a request that every host makes, and after
+    /// the connector commits, reports that it finished until the transaction
+    /// commits.
+    #[test]
+    fn host_reports_all_hosts_requests() {
+        let (sender, receiver) = tokio::sync::watch::channel(TransactionCoordination::default());
+        let mut info = TransactionInfo::new(true, sender);
+
+        info.start_transaction_from_connector("d", Some("snapshot-0"), true)
+            .unwrap();
+        info.start_transaction_from_connector("x", None, false)
+            .unwrap();
+        info.update_transaction_status();
+        let status = receiver.borrow().clone();
+        assert_eq!(status.requests.len(), 2);
+        assert_eq!(status.all_hosts, names(&["d"]));
+        assert!(status.all_hosts_done.is_empty());
+
+        info.commit_transaction_from_connector("d").unwrap();
+        info.commit_transaction_from_connector("x").unwrap();
+        info.update_transaction_status();
+        let status = receiver.borrow().clone();
+        assert!(status.requests.is_empty());
+        assert!(status.all_hosts.is_empty());
+        assert_eq!(status.all_hosts_done, names(&["d"]));
+
+        // The transaction starts committing.
+        info.clear_initiators();
+        assert!(receiver.borrow().all_hosts_done.is_empty());
     }
 }

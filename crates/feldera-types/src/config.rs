@@ -2019,6 +2019,20 @@ pub struct ConnectorConfig {
     #[serde(deserialize_with = "deserialize_start_after")]
     #[serde(default)]
     pub start_after: Option<Vec<String>>,
+
+    /// Divide the input of this connector among the hosts of a multihost
+    /// pipeline. Valid for input connectors only.
+    ///
+    /// When `false` (the default), the connector runs on one host, which
+    /// reads all of its input. When `true`, the connector runs on every host,
+    /// and each host reads a different part of the input. Only the Kafka,
+    /// Delta Lake, and Iceberg input transports support this setting.
+    ///
+    /// In a single-host pipeline, this setting has no effect.
+    ///
+    /// Versions of Feldera that predate this option ignore it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub distributed: bool,
 }
 
 impl ConnectorConfig {
@@ -2039,6 +2053,7 @@ impl ConnectorConfig {
             paused: false,
             labels: Vec::new(),
             start_after: None,
+            distributed: false,
         }
     }
 
@@ -2277,6 +2292,36 @@ impl TransportConfig {
 
     pub fn is_http_input(&self) -> bool {
         matches!(self, TransportConfig::HttpInput(_))
+    }
+
+    /// Returns true if an input connector with this transport can divide its
+    /// input among the hosts of a multihost pipeline (see
+    /// [`ConnectorConfig::distributed`]).
+    pub fn supports_distribution(&self) -> bool {
+        matches!(
+            self,
+            TransportConfig::KafkaInput(_)
+                | TransportConfig::DeltaTableInput(_)
+                | TransportConfig::IcebergInput(_)
+        )
+    }
+
+    /// Returns true if host 0 of a distributed input connector with this
+    /// transport must choose a value for all of the hosts before they read any
+    /// input.
+    ///
+    /// For example, the hosts of a Delta Lake connector must read the snapshot
+    /// at the same table version, and the hosts of an Iceberg connector at the
+    /// same snapshot ID, or they could lose or duplicate records.
+    /// Host 0 chooses the value, and the coordinator passes it to the other
+    /// hosts in [CoordinationActivate::input_choices].
+    ///
+    /// [CoordinationActivate::input_choices]: crate::coordination::CoordinationActivate::input_choices
+    pub fn needs_input_choice(&self) -> bool {
+        matches!(
+            self,
+            TransportConfig::DeltaTableInput(_) | TransportConfig::IcebergInput(_)
+        )
     }
 }
 

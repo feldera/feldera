@@ -262,6 +262,7 @@ where
         &config.connector_config.transport,
         "",
         default_secrets_directory(),
+        None,
     )?
     .unwrap();
 

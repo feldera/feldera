@@ -178,6 +178,18 @@ The following attributes are common to all connectors:
   record in the `is_delete` metadata attribute. The default is `false`.
   See [Soft deletes](#soft-deletes).
 
+* <a name="distributed">`distributed`</a> – *(Input connectors only)* When
+  `true`, in a multihost pipeline, the connector runs on every host and each
+  host reads a different part of its input.  When `false` (the default), the
+  connector runs on one host, which reads all of its input.  In a single-host
+  pipeline, this setting has no effect.
+
+  Only the [Kafka](/connectors/sources/kafka#distributed-connectors),
+  [Delta Lake](/connectors/sources/delta#distributed-connectors), and
+  [Iceberg](/connectors/sources/iceberg#distributed-connectors) input
+  connectors support this setting.  For other connectors, a pipeline with
+  `distributed` set to `true` fails to start.
+
 ### Soft deletes
 
 An input connector normally applies the changes it reads to the table it is

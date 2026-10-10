@@ -9,10 +9,45 @@
 //!
 //! # Startup
 //!
-//! At startup, a pipeline within a multihost pipeline enters a special
-//! [RuntimeStatus::Coordination] state, in which it waits for instructions from
-//! the coordinator.  When it is ready, the coordinator sends a
-//! [CoordinationActivate] request to properly start the pipeline.
+//! A pipeline within a multihost pipeline starts up as follows:
+//!
+//! 1. It enters a special [RuntimeStatus::Coordination] state, in which it
+//!    waits for instructions from the coordinator.  It reports its status, and
+//!    the coordination features that it supports (see
+//!    [CoordinationCapabilities]), at `/coordination/status`.
+//!
+//! 2. The coordinator sends a [CoordinationActivate] request.  It tells the
+//!    pipeline the addresses of all of the hosts, the checkpoint to start
+//!    from, the input and output connectors that this host runs, and, for
+//!    distributed input connectors, how their input is divided among the hosts
+//!    ([CoordinationActivate::input_distribution]) and the values that
+//!    host 0 chose for them ([CoordinationActivate::input_choices]).
+//!
+//! 3. The pipeline builds its circuit and restores the checkpoint.  If the
+//!    pipeline changed since the checkpoint and the change needs approval, it
+//!    waits for the coordinator to forward `/approve`.  An `/approve` that
+//!    arrives before activation is remembered, so a host that the coordinator
+//!    activates late does not wait again.
+//!
+//! 4. The pipeline initializes its connectors, and makes the values that its
+//!    distributed input connectors chose available at
+//!    `/coordination/input/choices` (see [InputChoices]).
+//!
+//! 5. Unless it must bootstrap, the pipeline runs one step, which needs every
+//!    other host to be at this stage too.  Then it reports that it is paused,
+//!    or bootstrapping.
+//!
+//! The pipeline exchanges no data with the other hosts before stage 5, so it
+//! can do stages 1 to 4 while the other hosts have not started yet.  The
+//! coordinator relies on that when a distributed input connector needs one
+//! host to choose a value for all of them, such as a Delta Lake table's
+//! version: it activates host 0 alone, waits until
+//! `/coordination/input/choices` on host 0 succeeds, and then activates the
+//! other hosts with those values.
+//! It cannot wait for host 0 to be paused, because host 0 cannot get there
+//! until the other hosts reach stage 5.
+//!
+//! The coordinator's documentation lists the stages of startup in order.
 //!
 //! [RuntimeStatus::Coordination]: crate::runtime_status::RuntimeStatus::Coordination
 //!
@@ -59,6 +94,7 @@ use std::{
 
 use arrow_schema::Schema;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
@@ -74,6 +110,43 @@ use crate::{
 pub struct CoordinationStatus {
     pub incarnation_uuid: Uuid,
     pub status: Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError>,
+
+    /// Coordination features that the pipeline supports.
+    ///
+    /// A pipeline that predates this field supports none of them.
+    #[serde(default)]
+    pub capabilities: CoordinationCapabilities,
+}
+
+/// Coordination features that a pipeline supports.
+///
+/// The coordinator uses these to refuse a configuration that a pipeline would
+/// misinterpret.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct CoordinationCapabilities {
+    /// The pipeline obeys [CoordinationActivate::input_distribution].
+    ///
+    /// A pipeline without this capability ignores
+    /// [ConnectorConfig::distributed](crate::config::ConnectorConfig::distributed),
+    /// so each host would read all of the input of a distributed connector.
+    #[serde(default)]
+    pub distributed_inputs: bool,
+
+    /// The pipeline reports the values that its distributed input connectors
+    /// chose at `/coordination/input/choices`, and it obeys
+    /// [CoordinationActivate::input_choices].
+    #[serde(default)]
+    pub input_choices: bool,
+}
+
+impl CoordinationCapabilities {
+    /// The capabilities of this version of the pipeline.
+    pub const fn current() -> Self {
+        Self {
+            distributed_inputs: true,
+            input_choices: true,
+        }
+    }
 }
 
 /// `/coordination/activate` request, sent by coordinator to pipeline to
@@ -106,6 +179,128 @@ pub struct CoordinationActivate {
 
     /// Global assignment of output streams to workers.
     pub output_assignment: BTreeMap<String, usize>,
+
+    /// The distributed input connectors, by name.
+    ///
+    /// Every host has each of these connectors in `inputs`, and each host
+    /// reads a different part of the connector's input.  A connector that is
+    /// not in this map reads all of its input on the one host that has it.
+    #[serde(default)]
+    pub input_distribution: BTreeMap<String, InputDistribution>,
+
+    /// For distributed input connectors that need one value for all of their
+    /// hosts before they read input, the value that host 0 chose.
+    ///
+    /// The coordinator activates host 0 first, reads its choices from
+    /// `/coordination/input/choices` (see [InputChoices]), and then
+    /// activates the other hosts with this map.  Host 0's own map is empty.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub input_choices: BTreeMap<String, JsonValue>,
+}
+
+/// `/coordination/input/choices` reply.
+///
+/// Maps from the name of each distributed input connector that needs a choice
+/// (see `TransportConfig::needs_input_choice`) to the value that this host
+/// chose for it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct InputChoices {
+    pub choices: BTreeMap<String, JsonValue>,
+}
+
+/// How the coordinator divides the input of a distributed input connector
+/// among the hosts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
+pub struct InputDistribution {
+    /// The ordinal of the connector's home host.
+    ///
+    /// This is the host that would have the connector if it were not
+    /// distributed.  Unit 0 of the input goes to this host, unit 1 to the next
+    /// host, and so on (see [InputShard::owner]).  Thus, a connector whose
+    /// input has only one unit stays on its home host, and connectors whose
+    /// inputs have few units go to different hosts.
+    pub home: usize,
+}
+
+/// The part of a distributed input connector's input that one host reads.
+///
+/// A connector divides its input into numbered units, such as Kafka
+/// partitions.  Each unit goes to exactly one host.
+///
+/// A connector can record its shard in its resume metadata, to detect a resume
+/// on a host that reads a different shard.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InputShard {
+    /// The ordinal of this host, in `0..n_hosts`.
+    host: usize,
+
+    /// The number of hosts.
+    n_hosts: usize,
+
+    /// See [InputDistribution::home].  This is in `0..n_hosts`.
+    home: usize,
+}
+
+impl InputShard {
+    /// The only shard of a single-host pipeline.  It contains all of the
+    /// input.
+    pub const ALL: Self = Self {
+        host: 0,
+        n_hosts: 1,
+        home: 0,
+    };
+
+    /// Returns the shard that host `host` of `n_hosts` reads under
+    /// `distribution`, or an error if an ordinal is out of range.
+    pub fn new(
+        host: usize,
+        n_hosts: usize,
+        distribution: InputDistribution,
+    ) -> Result<Self, String> {
+        if host >= n_hosts {
+            return Err(format!("host ordinal {host} is not less than {n_hosts}"));
+        }
+        if distribution.home >= n_hosts {
+            return Err(format!(
+                "home host ordinal {} is not less than {n_hosts}",
+                distribution.home
+            ));
+        }
+        Ok(Self {
+            host,
+            n_hosts,
+            home: distribution.home,
+        })
+    }
+
+    /// Returns the ordinal of this host.
+    pub fn host(&self) -> usize {
+        self.host
+    }
+
+    /// Returns true if this host chooses the values that all of the hosts use
+    /// (see [CoordinationActivate::input_choices]).
+    pub fn is_leader(&self) -> bool {
+        self.host == 0
+    }
+
+    /// Returns true if this host is the connector's home host (see
+    /// [InputDistribution::home]).  A connector that has work that cannot be
+    /// divided, such as following a Delta table's log, does it on this host.
+    pub fn is_home(&self) -> bool {
+        self.host == self.home
+    }
+
+    /// Returns the ordinal of the host that reads `unit`.
+    pub fn owner(&self, unit: u64) -> usize {
+        let n_hosts = self.n_hosts as u64;
+        ((unit % n_hosts + self.home as u64) % n_hosts) as usize
+    }
+
+    /// Returns true if this host reads `unit`.
+    pub fn contains(&self, unit: u64) -> bool {
+        self.owner(unit) == self.host
+    }
 }
 
 /// A step number.
@@ -254,6 +449,26 @@ pub enum CheckpointCoordination {
 pub struct TransactionCoordination {
     /// Endpoints that want to join a transaction, with their optional labels.
     pub requests: HashMap<String, Option<String>>,
+
+    /// The endpoints in `requests` whose request every host makes, as the
+    /// hosts of a distributed input connector do for a transaction that
+    /// covers all of their input.
+    ///
+    /// A pipeline that predates this field reports none.
+    #[serde(default, skip_serializing_if = "HashSet::is_empty")]
+    pub all_hosts: HashSet<String>,
+
+    /// Endpoints that made a request that every host makes, and have
+    /// withdrawn it, in the current transaction.  The pipeline reports these
+    /// until the transaction commits.
+    ///
+    /// The coordinator keeps the transaction open until every host reports
+    /// such an endpoint here, so that a host that finishes early does not
+    /// commit the transaction before another host joins it.  Unlike a request,
+    /// which appears and disappears, this stays until the commit, so the
+    /// coordinator cannot miss it even if it does not see every update.
+    #[serde(default, skip_serializing_if = "HashSet::is_empty")]
+    pub all_hosts_done: HashSet<String>,
 }
 
 /// `/coordination/adhoc/catalog` reply.
@@ -336,4 +551,97 @@ pub struct RestartArgs {
     /// the request returns an error (since it has presumably already
     /// restarted).
     pub incarnation_uuid: Uuid,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use proptest::prelude::*;
+
+    use super::{
+        CoordinationActivate, CoordinationCapabilities, CoordinationStatus, InputDistribution,
+        InputShard,
+    };
+
+    fn shards(n_hosts: usize, home: usize) -> Vec<InputShard> {
+        (0..n_hosts)
+            .map(|host| InputShard::new(host, n_hosts, InputDistribution { home }).unwrap())
+            .collect()
+    }
+
+    proptest! {
+        /// Exactly one host reads each unit, and each host knows which one.
+        #[test]
+        fn each_unit_has_one_owner(
+            (n_hosts, home) in (1usize..16).prop_flat_map(|n| (Just(n), 0..n)),
+            units in prop::collection::vec(any::<u64>(), 0..64),
+        ) {
+            let shards = shards(n_hosts, home);
+            for unit in units {
+                let owner = shards[0].owner(unit);
+                prop_assert!(owner < n_hosts);
+                for shard in &shards {
+                    prop_assert_eq!(shard.owner(unit), owner);
+                    prop_assert_eq!(shard.contains(unit), shard.host == owner);
+                }
+            }
+        }
+
+        /// Consecutive units go to consecutive hosts, starting at the home
+        /// host, so that `n` units occupy `min(n, n_hosts)` hosts.
+        #[test]
+        fn units_start_at_home(
+            (n_hosts, home) in (1usize..16).prop_flat_map(|n| (Just(n), 0..n)),
+            n_units in 0u64..40,
+        ) {
+            let shard = shards(n_hosts, home)[0];
+            for unit in 0..n_units {
+                prop_assert_eq!(shard.owner(unit), (home + unit as usize) % n_hosts);
+            }
+        }
+    }
+
+    #[test]
+    fn single_host_reads_everything() {
+        for unit in [0, 1, 7, u64::MAX] {
+            assert!(InputShard::ALL.contains(unit));
+        }
+    }
+
+    #[test]
+    fn out_of_range_ordinals_are_rejected() {
+        assert!(InputShard::new(2, 2, InputDistribution { home: 0 }).is_err());
+        assert!(InputShard::new(0, 2, InputDistribution { home: 2 }).is_err());
+        assert!(InputShard::new(0, 0, InputDistribution { home: 0 }).is_err());
+        assert!(InputShard::new(1, 2, InputDistribution { home: 1 }).is_ok());
+    }
+
+    /// A coordinator or pipeline that predates the distribution fields must
+    /// still interoperate: the missing fields mean "no distributed inputs".
+    #[test]
+    fn old_messages_have_no_distribution() {
+        let activate: CoordinationActivate = serde_json::from_value(serde_json::json!({
+            "exchanges": [],
+            "local_address": "127.0.0.1:1",
+            "desired_status": "Paused",
+            "checkpoint": null,
+            "inputs": {},
+            "output_assignment": {},
+        }))
+        .unwrap();
+        assert_eq!(activate.input_distribution, BTreeMap::new());
+
+        let status: CoordinationStatus = serde_json::from_value(serde_json::json!({
+            "incarnation_uuid": "00000000-0000-0000-0000-000000000000",
+            "status": {"Err": {
+                "status_code": 503,
+                "error": {"message": "x", "error_code": "y", "details": null},
+            }},
+        }))
+        .unwrap();
+        assert_eq!(status.capabilities, CoordinationCapabilities::default());
+        assert!(!status.capabilities.distributed_inputs);
+        assert!(CoordinationCapabilities::current().distributed_inputs);
+    }
 }

@@ -554,39 +554,72 @@ Pitfalls of this solution include:
   be added to the partition whose events have been completely
   processed.
 
-## Optimizing multihost performance for unbalanced large data
+## Distributed connectors
 
-In a multihost pipeline, Feldera currently assigns each input
-connector to one host.  All of the work related to reading data from
-that input connector then takes place on that host.  When a pipeline
-has several input connectors that read comparable amounts of data,
-this spreads the network and CPU load related to them across the
-hosts.
+In a multihost pipeline, Feldera assigns each input connector to one
+host by default.  That host does all of the work to read the
+connector's data.  When a pipeline has several input connectors that
+read comparable amounts of data, this spreads the network and CPU
+load across the hosts.  But when one input connector reads most of
+the pipeline's data, one host does most of the work.
 
-On the other hand, if a pipeline that has one input connector that
-reads most of the pipeline's data, only a single host does all the
-work.  In such a case, it makes sense to divide the connector into
-multiple connectors, one per host.  Feldera places input connectors on
-hosts "round robin" in alphabetical order, which means that using the
-default connector names or names with the same prefix and a sequential
-suffix will ensure that they are spread as evenly as possible across
-the hosts.
+To spread the work of one Kafka input connector across the hosts, set
+the generic [`distributed`](/connectors#distributed) attribute to
+`true`.  Then the connector runs on every host, and each host reads a
+different subset of the topic's partitions.  Together, the hosts read
+each partition exactly once.
 
-A Kafka input connector can be divided into multiple connectors by
-specifying different [`partitions`](#partitions) for each one.  For
-example, if the Kafka topic has 6 partitions, and there are 3 hosts,
-one might use 3 copies of the input connector, one with `"partitions":
-[0, 1]`, one with `"partitions": [2, 3]`, and one with `"partitions":
-[4, 5]`.
+```json
+{
+  "transport": {
+    "name": "kafka_input",
+    "config": {
+      "bootstrap.servers": "redpanda:9092",
+      "topic": "big_topic"
+    }
+  },
+  "format": {"name": "json"},
+  "distributed": true
+}
+```
 
-> ⚠️ The [synchronize_partitions] feature does not work across
-> connectors, only within a single connector.  Therefore, [tables with
-> LATENESS] cannot correctly be divided into multiple connectors this
-> way, because the different connectors can read data "out of sync"
-> from one another.
+The hosts divide the partitions as follows:
+
+- Each partition goes to exactly one host.  In order by partition
+  number, consecutive partitions go to consecutive hosts.
+- If [`partitions`](#partitions) is set, then the hosts divide only
+  the listed partitions, evenly even if their numbers are not
+  consecutive.  If `start_from` lists offsets, then each host uses the
+  offsets of its own partitions.
+- If the topic has fewer partitions than the pipeline has hosts, then
+  some hosts read no partitions.  Different distributed connectors
+  start their partitions at different hosts, so that several small
+  topics still use different hosts.
+- If partitions are added to the topic, then the pipeline reads them
+  after it restarts, as for a connector that is not distributed.
+- When the pipeline resumes from a checkpoint, each host reads the same
+  partitions as before, even if input connectors were added or removed.
+  A host that would read different partitions refuses to resume,
+  because its checkpoint has offsets only for its old partitions.
+  As for any multihost pipeline, the pipeline must have the same number
+  of hosts as when it took the checkpoint (see [checkpoint
+  sync](/pipelines/checkpoint-sync#how-sync-works)).
+
+Limits:
+
+- A distributed connector does not support
+  [`synchronize_partitions`](#synchronize_partitions), because the
+  hosts do not synchronize their partitions with each other.  Thus,
+  [tables with LATENESS] that need synchronized partitions cannot use
+  a distributed connector.
+- To change `distributed` changes the connector's configuration.  A
+  pipeline that resumes from a checkpoint treats the connector like
+  any other connector whose configuration changed.
+- The pipeline and its multihost coordinator must both support
+  distributed connectors.  If a host runs a version that does not, the
+  pipeline fails to start, instead of reading each record once per host.
 
 [tables with LATENESS]: /sql/streaming/#lateness-expressions
-[synchronize_partitions]: #synchronize_partitions
 
 ## Additional resources
 
