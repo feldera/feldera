@@ -23,7 +23,9 @@ class TestDataframeFromResponse(unittest.TestCase):
                 df = dataframe_from_response(buffer, fields)
 
                 self.assertTrue(df.empty)
-                self.assertEqual(list(df.columns), ["id", "s", "Quoted", "insert_delete"])
+                self.assertEqual(
+                    list(df.columns), ["id", "s", "Quoted", "insert_delete"]
+                )
                 self.assertEqual(str(df["id"].dtype), "Int32")
                 self.assertEqual(str(df["s"].dtype), "string")
                 self.assertEqual(str(df["Quoted"].dtype), "boolean")
