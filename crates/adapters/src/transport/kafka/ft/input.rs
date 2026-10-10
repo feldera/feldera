@@ -176,14 +176,6 @@ pub(super) fn sort_partitions(mut config: KafkaInputConfig) -> KafkaInputConfig 
     config
 }
 
-/// Returns true if `config` turns on end-of-partition reporting.
-fn partition_eof_enabled(config: &KafkaInputConfig) -> bool {
-    config
-        .kafka_options
-        .get("enable.partition.eof")
-        .is_some_and(|value| value == "true")
-}
-
 struct KafkaFtInputReader {
     inner: Arc<KafkaFtInputReaderInner>,
     command_sender: UnboundedSender<InputReaderCommand>,
@@ -785,6 +777,9 @@ impl KafkaFtInputReaderInner {
         // suspend/resume.
         let hashing = consumer.pipeline_fault_tolerance() == Some(FtModel::ExactlyOnce);
         let mut stager = Stager::new(&receivers, &partitions, hashing);
+        // A distributed connector names its partitions in its metadata, so
+        // that the coordinator can join the hosts' offsets.
+        let shard_partitions = shard.map(|_| receivers.keys().copied().collect::<Vec<_>>());
 
         loop {
             let was_running = running;
@@ -801,6 +796,7 @@ impl KafkaFtInputReaderInner {
                         let metadata = serde_json::to_value(&Metadata {
                             offsets: buffer.offsets,
                             shard,
+                            partitions: shard_partitions.clone(),
                         })
                         .unwrap();
                         consumer.extended(
@@ -920,12 +916,9 @@ impl KafkaFtInputReaderInner {
             if receivers.values().any(|r| r.fatal_error()) {
                 return Ok(());
             }
-            // A host with no partitions reports end of input only if
-            // end-of-partition reporting is on, as a host with partitions
-            // would once it reads all of them.
-            if receivers.values().all(|r| r.eof())
-                && (!receivers.is_empty() || partition_eof_enabled(&config))
-            {
+            // A host with no partitions ends its input once it runs, so
+            // that it does not hold back the connector's merged frontier.
+            if receivers.values().all(|r| r.eof()) && (running || !receivers.is_empty()) {
                 tracing::info!("reached end of all partitions (`enable.partition.eof` configured)");
                 consumer.eoi();
                 return Ok(());
@@ -1134,6 +1127,15 @@ pub(super) struct Metadata {
     /// This is `None` for a connector that is not distributed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shard: Option<InputShard>,
+
+    /// For a distributed connector, this host's partitions, in the same order
+    /// as `offsets`, so that the coordinator can combine the hosts' offsets
+    /// into a frontier for the whole topic (see `FrontierMerge::Partitioned`).
+    ///
+    /// This is `None` for a connector that is not distributed, and in
+    /// checkpoints that older versions wrote.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub partitions: Option<Vec<i32>>,
 }
 
 impl Metadata {

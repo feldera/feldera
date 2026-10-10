@@ -295,6 +295,28 @@ pub struct ExternalInputEndpointStatus {
     pub completed_frontier: Option<CompletedWatermark>,
 }
 
+/// How to combine the metadata of the completed frontiers that the hosts of a
+/// distributed input connector report (see
+/// [`ExternalInputEndpointStatus::merge`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FrontierMerge {
+    /// The metadata is a position in one sequence that every host shares,
+    /// such as a table version.  The combined frontier keeps the metadata of
+    /// the host whose frontier it is.
+    Shared,
+
+    /// Each host's metadata describes only its own partitions, as an object
+    /// with arrays `partitions` and `offsets` of the same length.  The
+    /// combined metadata has every host's partitions, in order.
+    Partitioned,
+
+    /// The metadata has no known structure.  The combined frontier has no
+    /// metadata if more than one host that is not at end of input reports a
+    /// frontier.
+    #[default]
+    Opaque,
+}
+
 impl ExternalInputEndpointStatus {
     /// Combines this status with `other`, which another host reports for its
     /// part of the same distributed connector, into the status of the
@@ -302,11 +324,16 @@ impl ExternalInputEndpointStatus {
     ///
     /// The combined connector is healthy, at end of input, or free of a fatal
     /// error only if every part is.  It is paused or a barrier if any part is.
-    /// Its completed frontier is the oldest one that a host reports, because
-    /// input after that point is not complete on that host.  A host that has
-    /// completed no input yet, for example a host that has no part of the
-    /// input to read, does not hold back the frontier.
-    pub fn merge(&mut self, other: Self) {
+    ///
+    /// Its completed frontier is the oldest one among the hosts that are not
+    /// at end of input, because input after that point is not complete on
+    /// that host.  A host that is not at end of input and has completed no
+    /// input yet gives no frontier.  Hosts at end of input do not hold back
+    /// the frontier; if every host is at end of input, the frontier is the
+    /// newest one.
+    ///
+    /// `frontier_merge` says how to combine the frontiers' metadata.
+    pub fn merge(&mut self, other: Self, frontier_merge: FrontierMerge) {
         // Naming every field makes a new field a compile error until it is
         // merged here.
         let Self {
@@ -322,6 +349,7 @@ impl ExternalInputEndpointStatus {
             barrier,
             completed_frontier,
         } = other;
+        let (a_eoi, b_eoi) = (self.metrics.end_of_input, metrics.end_of_input);
         self.metrics.merge(&metrics);
         if self.fatal_error.is_none() {
             self.fatal_error = fatal_error;
@@ -338,11 +366,71 @@ impl ExternalInputEndpointStatus {
         };
         self.paused |= paused;
         self.barrier |= barrier;
-        self.completed_frontier = match (self.completed_frontier.take(), completed_frontier) {
-            (Some(a), Some(b)) => Some(if b.ingested_at < a.ingested_at { b } else { a }),
-            (a, b) => a.or(b),
+        let (a, b) = (self.completed_frontier.take(), completed_frontier);
+        let several = !a_eoi && !b_eoi && a.is_some() && b.is_some();
+        // Joining with no partitions puts one host's metadata in the joined
+        // form.
+        let no_partitions = serde_json::json!({"partitions": [], "offsets": []});
+        let metadata = |f: &Option<CompletedWatermark>| {
+            f.as_ref().map_or(&no_partitions, |f| &f.metadata).clone()
         };
+        let joined = join_partitions(&metadata(&a), &metadata(&b));
+        let oldest = |a: CompletedWatermark, b: CompletedWatermark| {
+            if b.ingested_at < a.ingested_at { b } else { a }
+        };
+        let newest = |a: CompletedWatermark, b: CompletedWatermark| {
+            if b.ingested_at > a.ingested_at { b } else { a }
+        };
+        self.completed_frontier = match (a_eoi, b_eoi) {
+            (false, false) => a.zip(b).map(|(a, b)| oldest(a, b)),
+            (false, true) => a,
+            (true, false) => b,
+            (true, true) => match (a, b) {
+                (Some(a), Some(b)) => Some(newest(a, b)),
+                (a, b) => a.or(b),
+            },
+        };
+        if let Some(frontier) = &mut self.completed_frontier {
+            match frontier_merge {
+                FrontierMerge::Shared => (),
+                FrontierMerge::Partitioned => frontier.metadata = joined,
+                FrontierMerge::Opaque => {
+                    if several {
+                        frontier.metadata = JsonValue::Null;
+                    }
+                }
+            }
+        }
     }
+}
+
+/// Joins two [`FrontierMerge::Partitioned`] metadata values.  Returns null if
+/// either one is not an object with arrays `partitions` and `offsets` of the
+/// same length, or if they have a partition in common.
+fn join_partitions(a: &JsonValue, b: &JsonValue) -> JsonValue {
+    fn pairs(metadata: &JsonValue) -> Option<Vec<(i64, &JsonValue)>> {
+        let partitions = metadata.get("partitions")?.as_array()?;
+        let offsets = metadata.get("offsets")?.as_array()?;
+        if partitions.len() != offsets.len() {
+            return None;
+        }
+        partitions
+            .iter()
+            .zip(offsets)
+            .map(|(partition, offsets)| Some((partition.as_i64()?, offsets)))
+            .collect()
+    }
+    let (Some(a), Some(b)) = (pairs(a), pairs(b)) else {
+        return JsonValue::Null;
+    };
+    let mut joined = BTreeMap::new();
+    for (partition, offsets) in a.into_iter().chain(b) {
+        if joined.insert(partition, offsets.clone()).is_some() {
+            return JsonValue::Null;
+        }
+    }
+    let (partitions, offsets): (Vec<_>, Vec<_>) = joined.into_iter().unzip();
+    serde_json::json!({"partitions": partitions, "offsets": offsets})
 }
 
 /// Appends `b` to `a` and sorts the result by time, because each host numbers
@@ -700,8 +788,10 @@ mod tests {
 
         use crate::adapter_stats::{
             CompletedWatermark, ConnectorError, ConnectorHealth, ConnectorHealthStatus,
-            ExternalInputEndpointMetrics, ExternalInputEndpointStatus, ShortEndpointConfig,
+            ExternalInputEndpointMetrics, ExternalInputEndpointStatus, FrontierMerge,
+            ShortEndpointConfig,
         };
+        use serde_json::{Value, json};
 
         fn time(secs: i64) -> DateTime<Utc> {
             Utc.timestamp_opt(secs, 0).unwrap()
@@ -755,7 +845,7 @@ mod tests {
             let mut b = status();
             b.metrics.processing_latency_p99_micros = Some(500);
             b.metrics.end_of_input = false;
-            a.merge(b);
+            a.merge(b, FrontierMerge::Opaque);
             let m = &a.metrics;
             assert_eq!(
                 (
@@ -779,7 +869,7 @@ mod tests {
             b.health = Some(ConnectorHealth::unhealthy("sick"));
             b.paused = true;
             b.barrier = true;
-            a.merge(b);
+            a.merge(b, FrontierMerge::Opaque);
             assert_eq!(a.fatal_error.as_deref(), Some("broken"));
             assert!(matches!(
                 a.health.unwrap().status,
@@ -792,8 +882,120 @@ mod tests {
             a.fatal_error = Some("first".into());
             let mut b = status();
             b.fatal_error = Some("second".into());
-            a.merge(b);
+            a.merge(b, FrontierMerge::Opaque);
             assert_eq!(a.fatal_error.as_deref(), Some("first"));
+        }
+
+        /// Merges hosts given as (end of input, frontier ingestion time,
+        /// metadata) with `kind`, and returns the merged frontier's ingestion
+        /// time and metadata.
+        fn merge_metadata(
+            hosts: Vec<(bool, Option<(i64, Value)>)>,
+            kind: FrontierMerge,
+        ) -> Option<(DateTime<Utc>, Value)> {
+            let mut statuses = hosts.into_iter().map(|(eoi, f)| {
+                let mut s = status();
+                s.metrics.end_of_input = eoi;
+                s.completed_frontier = f.map(|(secs, metadata)| CompletedWatermark {
+                    metadata,
+                    ..frontier(secs)
+                });
+                s
+            });
+            let mut x = statuses.next().unwrap();
+            statuses.for_each(|y| x.merge(y, kind));
+            x.completed_frontier.map(|f| (f.ingested_at, f.metadata))
+        }
+
+        /// Shared metadata stays with its host's frontier, however many
+        /// hosts report one.
+        #[test]
+        fn shared_frontier_merge() {
+            let merged = |hosts| merge_metadata(hosts, FrontierMerge::Shared);
+            let version = |v: i64| json!({"version": v});
+            assert_eq!(
+                merged(vec![
+                    (false, Some((10, version(3)))),
+                    (false, Some((5, version(2))))
+                ]),
+                Some((time(5), version(2)))
+            );
+            assert_eq!(
+                merged(vec![
+                    (true, Some((5, version(2)))),
+                    (false, Some((10, version(7))))
+                ]),
+                Some((time(10), version(7)))
+            );
+            assert_eq!(
+                merged(vec![
+                    (true, Some((5, version(2)))),
+                    (true, Some((10, version(2))))
+                ]),
+                Some((time(10), version(2)))
+            );
+        }
+
+        /// Partitioned metadata joins every host's partitions, including
+        /// those of hosts at end of input.
+        #[test]
+        fn partitioned_frontier_merge() {
+            let merged = |hosts| merge_metadata(hosts, FrontierMerge::Partitioned);
+            // A host's metadata, which also has fields that the join drops.
+            let host = |partitions: &[i64], offsets: &[i64]| json!({"partitions": partitions, "offsets": offsets, "shard": {"host": 0}});
+            let joined = |partitions: &[i64], offsets: &[i64]| json!({"partitions": partitions, "offsets": offsets});
+
+            // Busy hosts, in any order.
+            assert_eq!(
+                merged(vec![
+                    (false, Some((10, host(&[1, 4], &[11, 14])))),
+                    (false, Some((5, host(&[2], &[12])))),
+                    (false, Some((7, host(&[0, 3], &[10, 13])))),
+                ]),
+                Some((time(5), joined(&[0, 1, 2, 3, 4], &[10, 11, 12, 13, 14])))
+            );
+
+            // Hosts at end of input add their partitions but not their time.
+            assert_eq!(
+                merged(vec![
+                    (true, Some((5, host(&[1], &[11])))),
+                    (false, Some((10, host(&[0], &[10])))),
+                ]),
+                Some((time(10), joined(&[0, 1], &[10, 11])))
+            );
+            assert_eq!(
+                merged(vec![
+                    (true, Some((10, host(&[1], &[11])))),
+                    (true, Some((5, host(&[0], &[10])))),
+                ]),
+                Some((time(10), joined(&[0, 1], &[10, 11])))
+            );
+
+            // A host with no partitions and no frontier adds nothing, and one
+            // host's metadata takes the joined form.
+            assert_eq!(
+                merged(vec![(true, None), (false, Some((10, host(&[0], &[10]))))]),
+                Some((time(10), joined(&[0], &[10])))
+            );
+
+            // A busy host with no frontier still holds back the frontier.
+            assert_eq!(
+                merged(vec![(false, None), (true, Some((10, host(&[0], &[10]))))]),
+                None
+            );
+
+            // Metadata without partitions, as from an older host, or with a
+            // partition that two hosts report, joins to null.
+            for other in [json!({"offsets": [11]}), host(&[0], &[11]), Value::Null] {
+                assert_eq!(
+                    merged(vec![
+                        (false, Some((10, host(&[0], &[10])))),
+                        (false, Some((5, other.clone()))),
+                    ]),
+                    Some((time(5), Value::Null)),
+                    "{other}"
+                );
+            }
         }
 
         #[test]
@@ -803,7 +1005,7 @@ mod tests {
             let mut b = status();
             b.parse_errors = Some(vec![error(3, "b3")]);
             b.transport_errors = Some(vec![error(2, "b2")]);
-            a.merge(b);
+            a.merge(b, FrontierMerge::Opaque);
             let messages = |errors: &Option<Vec<ConnectorError>>| {
                 errors
                     .iter()
@@ -816,20 +1018,84 @@ mod tests {
         }
 
         #[test]
-        fn frontier_is_the_oldest_reported() {
-            let merged = |a: Option<i64>, b: Option<i64>| {
-                let mut x = status();
-                x.completed_frontier = a.map(frontier);
-                let mut y = status();
-                y.completed_frontier = b.map(frontier);
-                x.merge(y);
-                x.completed_frontier.map(|f| f.ingested_at)
+        fn opaque_frontier_merge() {
+            // Merges hosts given as (end of input, frontier) and returns the
+            // merged frontier's ingestion time and whether it kept metadata.
+            let merged = |hosts: &[(bool, Option<i64>)]| {
+                let mut statuses = hosts.iter().map(|&(eoi, f)| {
+                    let mut s = status();
+                    s.metrics.end_of_input = eoi;
+                    s.completed_frontier = f.map(frontier);
+                    s
+                });
+                let mut x = statuses.next().unwrap();
+                statuses.for_each(|y| x.merge(y, FrontierMerge::Opaque));
+                x.completed_frontier
+                    .map(|f| (f.ingested_at, !f.metadata.is_null()))
             };
-            assert_eq!(merged(Some(10), Some(5)), Some(time(5)));
-            assert_eq!(merged(Some(5), Some(10)), Some(time(5)));
-            assert_eq!(merged(None, Some(10)), Some(time(10)));
-            assert_eq!(merged(Some(10), None), Some(time(10)));
-            assert_eq!(merged(None, None), None);
+            let (busy, done) = (false, true);
+
+            // The oldest frontier among hosts that are still reading.
+            assert_eq!(
+                merged(&[(busy, Some(10)), (busy, Some(5))]),
+                Some((time(5), false))
+            );
+            assert_eq!(
+                merged(&[(busy, Some(5)), (busy, Some(10))]),
+                Some((time(5), false))
+            );
+
+            // A host still reading with no frontier holds back the frontier,
+            // in any position.
+            assert_eq!(merged(&[(busy, None), (busy, Some(10))]), None);
+            assert_eq!(merged(&[(busy, Some(10)), (busy, None)]), None);
+            assert_eq!(
+                merged(&[(busy, Some(10)), (busy, None), (busy, Some(5))]),
+                None
+            );
+            assert_eq!(
+                merged(&[(busy, None), (done, Some(5)), (busy, Some(10))]),
+                None
+            );
+
+            // Hosts at end of input do not hold back the frontier, and the
+            // one host still reading keeps its metadata, as a Delta Lake
+            // connector's home host does while it follows the table.
+            assert_eq!(
+                merged(&[(busy, Some(10)), (done, Some(5))]),
+                Some((time(10), true))
+            );
+            assert_eq!(
+                merged(&[(done, Some(5)), (busy, Some(10))]),
+                Some((time(10), true))
+            );
+            assert_eq!(
+                merged(&[(done, None), (busy, Some(10))]),
+                Some((time(10), true))
+            );
+            assert_eq!(
+                merged(&[(busy, Some(10)), (done, None)]),
+                Some((time(10), true))
+            );
+            assert_eq!(
+                merged(&[(done, Some(5)), (busy, Some(10)), (done, Some(20))]),
+                Some((time(10), true))
+            );
+            assert_eq!(
+                merged(&[(done, Some(5)), (busy, Some(10)), (busy, Some(20))]),
+                Some((time(10), false))
+            );
+
+            // If every host is at end of input, the newest frontier.
+            assert_eq!(
+                merged(&[(done, Some(10)), (done, Some(5))]),
+                Some((time(10), true))
+            );
+            assert_eq!(
+                merged(&[(done, None), (done, Some(5))]),
+                Some((time(5), true))
+            );
+            assert_eq!(merged(&[(done, None), (done, None)]), None);
         }
     }
 }

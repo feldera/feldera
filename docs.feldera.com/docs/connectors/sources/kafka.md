@@ -592,7 +592,8 @@ The hosts divide the partitions as follows:
   consecutive.  If `start_from` lists offsets, then each host uses the
   offsets of its own partitions.
 - If the topic has fewer partitions than the pipeline has hosts, then
-  some hosts read no partitions.  Different distributed connectors
+  some hosts read no partitions.  Such a host ends its input as soon
+  as the connector runs.  Different distributed connectors
   start their partitions at different hosts, so that several small
   topics still use different hosts.
 - If partitions are added to the topic, then the pipeline reads them
