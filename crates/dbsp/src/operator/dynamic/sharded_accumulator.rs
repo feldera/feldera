@@ -31,7 +31,7 @@ use crate::{
     circuit_cache_key,
     operator::{
         communication::{
-            ExchangeClients, ExchangeDelivery, ExchangeDirectory, ExchangeId, MessageType,
+            ExchangeClients, ExchangeDelivery, ExchangeDirectory, ExchangeId, Mailbox, MessageType,
             pop_flushed,
         },
         dynamic::{
@@ -42,6 +42,7 @@ use crate::{
     profile::{ParkReason, ParkingFor},
     trace::{
         Batch, BatchLayout, BatchReader as _, Spine, Trace, TraceRole, deserialize_indexed_wset,
+        serialize_indexed_wset,
     },
 };
 
@@ -440,22 +441,71 @@ where
         self.arrivals[receiver - self.local_workers.start].notify_waiters();
     }
 
+    /// Shards `batch` by key and sends it to the receivers.
     async fn send(self: &Arc<Self>, name: Arc<String>, batch: B, flush: bool) {
-        let sender = Runtime::worker_index();
-
-        let runtime = Runtime::runtime().unwrap();
-        let layout = runtime.layout();
-        let mut builders = Vec::with_capacity(layout.n_workers());
-        let mut batches = Vec::with_capacity(layout.n_workers());
+        let n_workers = Runtime::num_workers();
+        let mut builders = Vec::with_capacity(n_workers);
+        let mut mailboxes = Vec::with_capacity(n_workers);
         shard_batch(
             batch,
             &self.workers,
             &mut builders,
-            &mut batches,
+            &mut mailboxes,
             &self.factories,
         );
+        self.send_mailboxes(name, mailboxes, flush).await;
+    }
+
+    /// Sends `batches`, which the caller has partitioned, to the receivers.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - the sending operator's name, for profiles.
+    /// * `batches` - one batch for each worker in the runtime, in order of
+    ///   worker index.  The batch for a worker that is not a destination of
+    ///   this accumulator must be empty.
+    /// * `flush` - whether these are the sender's last batches in the
+    ///   transaction.
+    #[cfg_attr(not(test), expect(dead_code, reason = "awaiting first caller"))]
+    async fn send_partitioned(self: &Arc<Self>, name: Arc<String>, batches: Vec<B>, flush: bool) {
+        let mut serializer_inner = None;
+        let mailboxes = zip_eq(batches, WorkerLocations::new())
+            .enumerate()
+            .map(|(worker, (batch, location))| {
+                debug_assert!(
+                    self.workers.contains(&worker) || batch.is_empty(),
+                    "batch for worker {worker}, which does not receive from this accumulator"
+                );
+                match location {
+                    WorkerLocation::Local => Mailbox::Plain(batch),
+                    WorkerLocation::Remote => Mailbox::Tx(serialize_indexed_wset(
+                        &batch,
+                        serializer_inner.get_or_insert_default(),
+                    )),
+                }
+            })
+            .collect();
+        self.send_mailboxes(name, mailboxes, flush).await;
+    }
+
+    /// Sends `mailboxes`, one for each worker in the runtime in order of
+    /// worker index.
+    ///
+    /// Local workers' mailboxes hold batches, which this delivers directly.
+    /// Remote workers' mailboxes hold serialized batches, which this sends to
+    /// their hosts, each followed by a flush byte.
+    async fn send_mailboxes(
+        self: &Arc<Self>,
+        name: Arc<String>,
+        mailboxes: Vec<Mailbox<B>>,
+        flush: bool,
+    ) {
+        let sender = Runtime::worker_index();
+
+        let runtime = Runtime::runtime().unwrap();
+        let layout = runtime.layout();
         let worker_locations = WorkerLocations::for_layout(layout);
-        let mut data = batches.into_iter();
+        let mut data = mailboxes.into_iter();
         let mut remote_waiters = Vec::new();
         let mut serialized_bytes = 0;
         for receivers in layout.all_hosts() {
@@ -1206,6 +1256,7 @@ mod tests {
         algebra::OrdZSet as DynOrdZSet,
         circuit::{
             CircuitConfig, Layout, Runtime,
+            circuit_builder::CircuitBase,
             operator_traits::{Operator, SinkOperator},
         },
         dynamic::{Data, DowncastTrait, DynData, DynWeightTyped},
@@ -1761,6 +1812,172 @@ mod tests {
         for (workers, hosts) in [(2, 2), (8, 2), (3, 3), (16, 4)] {
             for enabled in [true, false] {
                 test_arrival(workers, hosts, enabled);
+            }
+        }
+    }
+
+    /// Sender that sends all of its input to one worker with
+    /// [ShardedAccumulator::send_partitioned].
+    struct PartitionedSender<B>
+    where
+        B: Batch,
+    {
+        exchange: Arc<ShardedAccumulator<B>>,
+
+        /// The worker that receives every record.
+        destination: usize,
+
+        flushed: bool,
+    }
+
+    impl<B> Operator for PartitionedSender<B>
+    where
+        B: Batch,
+    {
+        fn name(&self) -> Cow<'static, str> {
+            Cow::Borrowed("PartitionedSender")
+        }
+
+        fn fixedpoint(&self, _scope: crate::circuit::Scope) -> bool {
+            true
+        }
+
+        fn flush(&mut self) {
+            self.flushed = true;
+        }
+    }
+
+    impl<B> SinkOperator<B> for PartitionedSender<B>
+    where
+        B: Batch<Time = ()>,
+    {
+        async fn eval(&mut self, batch: &B) {
+            let mut batches = (0..Runtime::num_workers())
+                .map(|_| B::dyn_empty(&self.exchange.factories))
+                .collect_vec();
+            batches[self.destination] = batch.clone();
+            self.exchange
+                .send_partitioned(
+                    Arc::new("PartitionedSender".to_string()),
+                    batches,
+                    self.flushed,
+                )
+                .await;
+            self.flushed = false;
+        }
+    }
+
+    /// Sink that adds the number of records in each spine that its worker's
+    /// receiver outputs to the worker's count.
+    struct OutputCounter {
+        /// Record counts, indexed by worker.
+        counts: Arc<Vec<AtomicUsize>>,
+    }
+
+    impl Operator for OutputCounter {
+        fn name(&self) -> Cow<'static, str> {
+            Cow::Borrowed("OutputCounter")
+        }
+
+        fn fixedpoint(&self, _scope: crate::circuit::Scope) -> bool {
+            true
+        }
+    }
+
+    impl<B> SinkOperator<Option<Spine<B>>> for OutputCounter
+    where
+        B: Batch<Time = ()>,
+    {
+        async fn eval(&mut self, spine: &Option<Spine<B>>) {
+            if let Some(spine) = spine {
+                self.counts[Runtime::worker_index()]
+                    .fetch_add(spine.len_upper_bound(), Ordering::AcqRel);
+            }
+        }
+    }
+
+    /// Builds a circuit in which every worker sends its input to
+    /// `destination` through a sharded accumulator, and the receivers count
+    /// the records they output in `counts`.
+    fn partitioned_circuit(
+        circuit: &mut RootCircuit,
+        destination: usize,
+        counts: Arc<Vec<AtomicUsize>>,
+    ) -> anyhow::Result<ZSetHandle<usize>> {
+        let (input, input_handle) = circuit.add_input_zset::<usize>();
+        let input = input.inner();
+        let runtime = Runtime::runtime().unwrap();
+        let factories = BatchReaderFactories::new::<usize, (), ZWeight>();
+        let (stream, exchange) = input.add_sharded_accumulator_receiver(
+            &runtime,
+            &factories,
+            0..Runtime::num_workers(),
+            BatchLayout::default(),
+            input.sharded_accumulator_remote_waiter(&runtime),
+            Location::caller(),
+        );
+        let sender = circuit.add_sink(
+            PartitionedSender {
+                exchange,
+                destination,
+                flushed: false,
+            },
+            &input,
+        );
+        circuit.add_dependency(sender.local_node_id().unwrap(), stream.local_node_id());
+        circuit.add_sink(OutputCounter { counts }, &stream);
+        Ok(input_handle)
+    }
+
+    /// Checks that `send_partitioned` delivers each batch to the worker that
+    /// it is for, whether local or remote, by sending every record to
+    /// `destination`.
+    fn test_partitioned_send(workers: usize, hosts: usize, destination: usize) {
+        const TRANSACTIONS: usize = 3;
+        const STEPS: usize = 4;
+
+        let counts = Arc::new((0..workers).map(|_| AtomicUsize::new(0)).collect_vec());
+        let (mut dbsp_handles, input_handles) =
+            start_runtimes(workers, hosts, Gather::ALL_WORKERS, {
+                let counts = counts.clone();
+                move |circuit| partitioned_circuit(circuit, destination, counts)
+            });
+
+        let mut next_key = 0;
+        for _transaction in 0..TRANSACTIONS {
+            for_each_host(&mut dbsp_handles, |h| h.start_transaction().unwrap());
+            let mut n_sent = 0;
+            for step in 0..STEPS {
+                for _ in 0..=step {
+                    input_handles[step % hosts].push(next_key, 1);
+                    next_key += 1;
+                    n_sent += 1;
+                }
+                for_each_host(&mut dbsp_handles, |h| {
+                    h.step().unwrap();
+                });
+            }
+            for_each_host(&mut dbsp_handles, |h| h.commit_transaction().unwrap());
+
+            let received = counts
+                .iter()
+                .map(|count| count.swap(0, Ordering::AcqRel))
+                .collect_vec();
+            let expected = (0..workers)
+                .map(|worker| if worker == destination { n_sent } else { 0 })
+                .collect_vec();
+            assert_eq!(
+                received, expected,
+                "workers={workers} hosts={hosts} destination={destination}"
+            );
+        }
+    }
+
+    #[test]
+    fn partitioned_send() {
+        for (workers, hosts) in [(4, 1), (4, 2), (3, 3)] {
+            for destination in [0, workers - 1] {
+                test_partitioned_send(workers, hosts, destination);
             }
         }
     }
