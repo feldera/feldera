@@ -1,14 +1,17 @@
 use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use proptest::collection::vec;
 use proptest::prelude::*;
-use std::{hash::Hasher, path::Path};
+use std::{hash::Hasher, path::Path, time::Duration};
 use tempfile::tempdir;
 
 use crate::{
-    Circuit, Error as DbspError, IndexedZSetHandle, OrdIndexedZSet, OrdZSet, OutputHandle,
-    RootCircuit, Runtime, RuntimeError, ZWeight,
+    Circuit, DBSPHandle, Error as DbspError, IndexedZSetHandle, OrdIndexedZSet, OrdZSet,
+    OutputHandle, RootCircuit, Runtime, RuntimeError, ZWeight,
     algebra::F64,
-    circuit::{CircuitConfig, CircuitStorageConfig, Mode, StepSize},
+    circuit::{
+        CircuitConfig, CircuitStorageConfig, Mode, StepSize,
+        metadata::{KEY_DISTRIBUTION, MetaItem},
+    },
     default_hasher,
     dynamic::{Data, DowncastTrait as _},
     operator::{
@@ -20,7 +23,10 @@ use crate::{
     },
     trace::{BatchReader as _, Cursor as _},
     typed_batch::{BatchReader, IndexedZSetReader, SpineSnapshot, TypedBatch},
-    utils::{Tup2, Tup3, test::init_test_logger},
+    utils::{
+        Tup2, Tup3,
+        test::{init_test_logger, multihost::TestHosts},
+    },
 };
 use anyhow::Result as AnyResult;
 use proptest::prelude::Strategy;
@@ -528,7 +534,12 @@ struct JoinTestStep {
 }
 
 fn mkconfig(path: &Path, workers: usize) -> CircuitConfig {
-    CircuitConfig::from(workers)
+    configure(CircuitConfig::from(workers), path)
+}
+
+/// Applies the settings of [mkconfig] to `config`, with storage in `path`.
+fn configure(config: CircuitConfig, path: &Path) -> CircuitConfig {
+    config
         .with_splitter_chunk_size_records(2)
         .with_balancer_min_absolute_improvement_threshold(0)
         .with_storage(Some(
@@ -1379,6 +1390,260 @@ fn test_adaptive_joins_reject_full_steps() {
             result.unwrap().0.kill().unwrap();
         }
     }
+}
+
+/// Returns a function that configures each host of a [TestHosts] as
+/// [configure] does, with storage in a directory of its own under `path`.
+fn configure_hosts(path: &Path) -> impl Fn(usize, CircuitConfig) -> CircuitConfig + use<> {
+    let path = path.to_path_buf();
+    move |host, config| {
+        let host_path = path.join(format!("host{host}"));
+        std::fs::create_dir_all(&host_path).unwrap();
+        configure(config, &host_path)
+    }
+}
+
+/// The worker that [join_with_slow_worker_test_circuit] slows down.
+const SLOW_WORKER: usize = 3;
+
+/// Like [join_with_balancer_test_circuit], but [SLOW_WORKER] evaluates the
+/// left input late in every step that has input.  The other workers
+/// therefore send their part of such a step, including one in which the
+/// policy changes, before it does.
+fn join_with_slow_worker_test_circuit(
+    circuit: &mut RootCircuit,
+) -> AnyResult<JoinTestCircuitResult> {
+    let (left_input, left_input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
+    let (right_input, right_input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
+
+    let left = left_input.apply(|batch| {
+        if !batch.is_empty() && Runtime::worker_index() == SLOW_WORKER {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        batch.clone()
+    });
+    left.set_persistent_id(Some("left_input"));
+    right_input.set_persistent_id(Some("right_input"));
+
+    let join_output_handle = left
+        .join_balanced_inner(&right_input, |key, v1, v2| Tup3(*key, *v1, Some(*v2)))
+        .set_persistent_id(Some("join_output"))
+        .accumulate_integrate_trace()
+        .apply(|trace| trace.ro_snapshot().consolidate())
+        .output_persistent(Some("output"));
+
+    Ok((
+        left_input_handle,
+        right_input_handle,
+        "left_input".to_string(),
+        "right_input".to_string(),
+        join_output_handle,
+    ))
+}
+
+/// Policies for the left and right inputs of a join.
+type JoinPolicies = (PartitioningPolicy, PartitioningPolicy);
+
+/// Hints the join's inputs on every host to use `policies`.
+fn set_join_policies<T>(hosts: &mut TestHosts<T>, left: &str, right: &str, policies: JoinPolicies)
+where
+    T: Send + 'static,
+{
+    let (left, right) = (left.to_string(), right.to_string());
+    hosts.for_each(move |handle| {
+        // Clear both hints first, so that no intermediate pair of hints is
+        // invalid.
+        for result in handle
+            .set_balancer_hints(vec![
+                (left.clone(), BalancerHint::Policy(None)),
+                (right.clone(), BalancerHint::Policy(None)),
+            ])
+            .unwrap()
+        {
+            result.unwrap();
+        }
+        handle
+            .set_balancer_hint(&left, BalancerHint::Policy(Some(policies.0)))
+            .unwrap();
+        handle
+            .set_balancer_hint(&right, BalancerHint::Policy(Some(policies.1)))
+            .unwrap();
+    });
+}
+
+/// Returns the total weight that the exchange senders of a circuit's balanced
+/// inputs have counted in their key distributions, over all workers.
+///
+/// # Arguments
+///
+/// * `handles` - one handle for each host of the circuit.
+fn key_distribution_total(handles: &mut [DBSPHandle]) -> ZWeight {
+    let mut total = 0;
+    for handle in handles {
+        for worker in handle.retrieve_profile().unwrap().worker_profiles {
+            for sizes in worker.attribute_profile(&KEY_DISTRIBUTION).into_values() {
+                let MetaItem::Array(sizes) = sizes else {
+                    panic!("a key distribution should be an array: {sizes:?}");
+                };
+                for size in sizes {
+                    let MetaItem::Count(size) = size else {
+                        panic!("a shard size should be a count: {size:?}");
+                    };
+                    // `KeyDistribution::meta_item` casts the signed size to
+                    // `usize`, and this casts it back.
+                    total += size as ZWeight;
+                }
+            }
+        }
+    }
+    total
+}
+
+/// Changes a join's policies in the middle of transactions, several times in
+/// one transaction, and while a transaction commits, with [SLOW_WORKER]
+/// evaluating late, and checks the join's output on every worker and the
+/// total of the key distributions after every transaction.
+///
+/// Every policy change exercises the take race: when the policy changes, a
+/// worker must redistribute what it has received in the transaction, but
+/// faster workers may already have sent it their part of the step.
+fn test_join_with_policy_changes(workers: usize, hosts: usize) {
+    use PartitioningPolicy::{Balance, Broadcast, Shard};
+
+    init_test_logger();
+
+    // For each transaction, the policies to hint before each step, and before
+    // the commit.
+    let schedule: [(Vec<Option<JoinPolicies>>, Option<JoinPolicies>); 5] = [
+        (
+            vec![None, Some((Shard, Broadcast)), None, None],
+            Some((Broadcast, Balance)),
+        ),
+        (
+            vec![
+                None,
+                Some((Broadcast, Shard)),
+                Some((Balance, Broadcast)),
+                None,
+            ],
+            Some((Shard, Shard)),
+        ),
+        (vec![None, None, None, None], Some((Balance, Broadcast))),
+        (
+            vec![
+                Some((Broadcast, Balance)),
+                None,
+                Some((Shard, Broadcast)),
+                None,
+            ],
+            Some((Broadcast, Shard)),
+        ),
+        (vec![None, Some((Shard, Shard)), None, None], None),
+    ];
+
+    let temp = tempdir().expect("Can't create temp dir for storage");
+    let mut test_hosts = TestHosts::start_with(
+        workers,
+        hosts,
+        configure_hosts(temp.path()),
+        join_with_slow_worker_test_circuit,
+    );
+    let (_, _, left_id, right_id, _) = test_hosts.result(0);
+    let (left_id, right_id) = (left_id.clone(), right_id.clone());
+
+    let mut policies = (Shard, Shard);
+    let mut all_left_tuples: Vec<Tup2<Tup2<u64, u64>, ZWeight>> = vec![];
+    let mut all_right_tuples: Vec<Tup2<Tup2<u64, u64>, ZWeight>> = vec![];
+    let mut inserted_left = vec![];
+    let mut n_retracted = 0;
+    let mut next_val = 0;
+    for (transaction, (steps, commit_policies)) in schedule.into_iter().enumerate() {
+        test_hosts.start_transaction();
+        for step_policies in steps {
+            if let Some(step_policies) = step_policies {
+                set_join_policies(&mut test_hosts, &left_id, &right_id, step_policies);
+                policies = step_policies;
+            }
+
+            let (left_input_handle, right_input_handle, _, _, _) = test_hosts.result(0);
+            for key in 0..8 {
+                left_input_handle.push(key, (next_val, 1));
+                all_left_tuples.push(Tup2(Tup2(key, next_val), 1));
+                inserted_left.push((key, next_val));
+                if key % 2 == next_val % 2 {
+                    right_input_handle.push(key, (next_val, 1));
+                    all_right_tuples.push(Tup2(Tup2(key, next_val), 1));
+                }
+                next_val += 1;
+            }
+            // Retract the oldest left record that is still present.
+            let (key, val) = inserted_left[n_retracted];
+            n_retracted += 1;
+            left_input_handle.push(key, (val, -1));
+            all_left_tuples.push(Tup2(Tup2(key, val), -1));
+
+            test_hosts.step();
+        }
+        if let Some(commit_policies) = commit_policies {
+            set_join_policies(&mut test_hosts, &left_id, &right_id, commit_policies);
+            policies = commit_policies;
+        }
+        test_hosts.commit_transaction();
+
+        let output = test_hosts.map_workers(|(_, _, _, _, output_handle), worker| {
+            output_handle.take_from_worker(worker).unwrap()
+        });
+        let expected_output = reference_join(
+            &OrdIndexedZSet::from_tuples((), all_left_tuples.clone()),
+            &OrdIndexedZSet::from_tuples((), all_right_tuples.clone()),
+            policies.0,
+            policies.1,
+            workers,
+            false,
+        );
+        assert_eq!(
+            output, expected_output,
+            "transaction {transaction} with {workers} workers on {hosts} hosts"
+        );
+
+        // A sender counts every record of its input once, whether it sends
+        // the record in the record's step or saves it for the rebalancing.
+        let input_weight: ZWeight = all_left_tuples
+            .iter()
+            .chain(&all_right_tuples)
+            .map(|Tup2(_, weight)| weight)
+            .sum();
+        assert_eq!(
+            key_distribution_total(test_hosts.handles()),
+            input_weight,
+            "transaction {transaction} with {workers} workers on {hosts} hosts"
+        );
+
+        assert_eq!(
+            test_hosts
+                .handle(0)
+                .get_current_balancer_policy(&left_id)
+                .unwrap(),
+            policies.0
+        );
+        assert_eq!(
+            test_hosts
+                .handle(0)
+                .get_current_balancer_policy(&right_id)
+                .unwrap(),
+            policies.1
+        );
+    }
+}
+
+#[test]
+fn test_join_with_policy_changes_single_host() {
+    test_join_with_policy_changes(4, 1);
+}
+
+#[test]
+fn test_join_with_policy_changes_multihost() {
+    test_join_with_policy_changes(4, 2);
 }
 
 /// Join a large left collection with a small right collection. Both are skewed.
